@@ -1,0 +1,44 @@
+﻿# Derived / private runtime data (never sync via git)
+working/
+attachments/
+database/
+indexes/
+exports/
+backup/
+logs/
+
+# Archive: track Takeout originals + checksums only (zips via Git LFS).
+# Ignore other archive contents if added later.
+archive/**
+!archive/google-takeout-original/
+!archive/google-takeout-original/**
+!archive/google-takout-original/
+!archive/google-takout-original/**
+!archive/checksums/
+!archive/checksums/**
+
+# Credentials / secrets
+*.env
+config/immich.env
+config/secrets.json
+config/local.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node / frontend build
+node_modules/
+application/**/dist/
+application/**/build/
+
+# Editors
+.vscode/
+.idea/
+
+# Operating system
+Thumbs.db
+.DS_Store
+Desktop.ini

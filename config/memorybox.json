@@ -1,0 +1,13 @@
+﻿{
+  "memory_box": {
+    "root": "C:\\MemoryBox",
+    "environment": "prototype",
+    "evidence_policy": {
+      "require_source_references": true,
+      "require_confidence": true,
+      "label_inferences": true,
+      "report_missing_evidence": true,
+      "report_conflicting_evidence": true
+    }
+  }
+}
