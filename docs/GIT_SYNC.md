@@ -40,21 +40,18 @@ Or create a PAT with `repo` + `write:packages`/LFS access and:
 gh auth login --with-token
 ```
 
-Discover your GitHub username after login:
+GitHub account (from your other repos): **swill010101**
 
-```powershell
-gh api user --jq .login
-```
+Remote URL:
 
-Then set remote (replace `YOUR_GITHUB_USER`):
+`https://github.com/swill010101/MemoryBox-Gmail-Prototype.git`
 
 ```powershell
 cd C:\memorybox
-git remote add origin https://github.com/YOUR_GITHUB_USER/MemoryBox-Gmail-Prototype.git
+git remote add origin https://github.com/swill010101/MemoryBox-Gmail-Prototype.git
 # If remote already exists:
-# git remote set-url origin https://github.com/YOUR_GITHUB_USER/MemoryBox-Gmail-Prototype.git
+# git remote set-url origin https://github.com/swill010101/MemoryBox-Gmail-Prototype.git
 ```
-
 ## FlightSim — push Takeout (source of truth)
 
 Prerequisites: `git`, `git-lfs`, `gh` authenticated, zips under the Takeout folder.
@@ -63,18 +60,17 @@ Prerequisites: `git`, `git-lfs`, `gh` authenticated, zips under the Takeout fold
 cd C:\memorybox
 
 # If repo not yet cloned/initialized on FlightSim:
-#   Option A (preferred if GitHub already has commits from Toms-Desktop):
-#     Move existing C:\memorybox aside briefly OR ensure this folder becomes the clone.
-#     git clone https://github.com/YOUR_GITHUB_USER/MemoryBox-Gmail-Prototype.git C:\memorybox-git
-#     Then copy ONLY the Takeout zips into archive\google-takeout-original\ on the clone,
-#     preserving originals read-only elsewhere until verified.
-#   Option B: if this folder is already the git working tree (same as Desktop after pull):
-#     continue below
+# Recommended if C:\memorybox on FlightSim is NOT yet a git checkout of this repo:
+#   1) Keep Takeout zips safe (do not delete).
+#   2) git clone https://github.com/swill010101/MemoryBox-Gmail-Prototype.git into a temp folder
+#      OR: git init + remote add + fetch + reset --hard origin/main inside C:\memorybox
+#         ONLY if you understand that untracked local files are kept but tracked files match remote.
+#   3) Place/copy the 8 zip files into archive\google-takeout-original\ (immutable originals).
 
 git lfs install
 git fetch origin
-git checkout main   # or: git checkout -b main
-
+git checkout main
+git pull origin main
 # Ensure zips are present (read-only OK):
 #   C:\memorybox\archive\google-takeout-original\*.zip
 
