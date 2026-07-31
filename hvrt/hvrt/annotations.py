@@ -19,7 +19,11 @@ def sync_people_from_gallery(
     conn: sqlite3.Connection,
     gallery_dirs: list[Path | str],
 ) -> list[dict[str, Any]]:
-    """Ensure every gallery/<PersonName>/ folder is a people row (dropdown source)."""
+    """Ensure every gallery/<PersonName>/ folder is a people row (dropdown source).
+
+    Folders are included even when empty so the top Person list matches the
+    filesystem. Duplicate case-insensitive rows are merged afterward.
+    """
     for gallery_dir in gallery_dirs:
         root = Path(gallery_dir)
         if not root.is_dir():
@@ -27,20 +31,68 @@ def sync_people_from_gallery(
         for person_dir in sorted(root.iterdir()):
             if not person_dir.is_dir() or person_dir.name.startswith("."):
                 continue
-            has_image = any(
-                p.is_file() and p.suffix.lower() in IMAGE_EXTS
-                for p in person_dir.iterdir()
-            )
-            if has_image:
-                upsert_person(conn, person_dir.name, str(person_dir.resolve()))
+            upsert_person(conn, person_dir.name, str(person_dir.resolve()))
+    merge_duplicate_people(conn)
     return list_people(conn)
+
+
+def merge_duplicate_people(conn: sqlite3.Connection) -> int:
+    """Collapse case/whitespace duplicate people rows onto the lowest id."""
+    rows = conn.execute("SELECT id, name FROM people ORDER BY id").fetchall()
+    by_key: dict[str, int] = {}
+    merged = 0
+    for row in rows:
+        key = " ".join(str(row["name"]).split()).casefold()
+        if not key:
+            continue
+        keep_id = by_key.get(key)
+        if keep_id is None:
+            by_key[key] = int(row["id"])
+            continue
+        dup_id = int(row["id"])
+        if dup_id == keep_id:
+            continue
+        # Repoint references then drop the duplicate
+        for table, col in (
+            ("annotations", "person_id"),
+            ("evidence_effective", "person_id"),
+            ("voice_samples", "person_id"),
+        ):
+            try:
+                conn.execute(
+                    f"UPDATE {table} SET {col}=? WHERE {col}=?",
+                    (keep_id, dup_id),
+                )
+            except sqlite3.Error:
+                pass
+        try:
+            conn.execute(
+                "UPDATE face_appearances SET person_id=? WHERE person_id=?",
+                (keep_id, dup_id),
+            )
+        except sqlite3.Error:
+            pass
+        conn.execute("DELETE FROM people WHERE id=?", (dup_id,))
+        merged += 1
+    if merged:
+        conn.commit()
+    return merged
 
 
 def list_people(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, name, gallery_path FROM people ORDER BY name COLLATE NOCASE"
     ).fetchall()
-    return [dict(r) for r in rows]
+    # Deduplicate in the response as a safety net if UNIQUE was missing historically
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        key = " ".join(str(r["name"]).split()).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(r))
+    return out
 
 
 def list_person_exemplars(
@@ -140,7 +192,7 @@ def list_places(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def upsert_person(conn: sqlite3.Connection, name: str, gallery_path: str | None = None) -> int:
-    name = name.strip()
+    name = " ".join(name.strip().split())
     if not name:
         raise ValueError("Person name required")
     existing = conn.execute(
