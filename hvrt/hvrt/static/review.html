@@ -96,7 +96,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build review-toolbar-voice-words</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build voice-speaker-ux</p>
     </header>
 
     <div class="bar">
@@ -110,7 +110,7 @@
       </label>
       <label id="queryWrap"><span id="queryLabel">Person</span>
         <select id="querySelect"></select>
-        <input id="queryText" type="search" placeholder="Happy Birthday" hidden />
+        <input id="queryText" type="search" placeholder="Blank = all spoken lines" hidden />
       </label>
       <button id="loadBtn" type="button">Load hits</button>
       <button id="learnBtn" type="button">Learn from annotations</button>
@@ -153,7 +153,6 @@
                 <datalist id="placeList"></datalist>
               </label>
               <button id="markPlaceBtn" class="secondary" type="button">Mark place</button>
-              <button id="voiceBtn" class="secondary" type="button">Enroll voice span</button>
               <label>Date
                 <input id="dateField" type="text" placeholder="No date in metadata" style="min-width:11rem" />
               </label>
@@ -174,8 +173,17 @@
           </div>
           <div class="transcript" id="transcriptPanel">
             <h3>Spoken text</h3>
-            <div id="transcriptWords" class="transcript-words"><span class="empty">Select a hit to load transcript words.</span></div>
-            <div class="prov" id="transcriptHint">Click a word, then another to highlight a range. Enroll voice span uses those words + times.</div>
+            <div id="transcriptWords" class="transcript-words"><span class="empty">Select a hit or video to load transcript words.</span></div>
+            <div class="tools-row" id="voiceEnrollRow">
+              <label>Speaker
+                <select id="voicePersonSelect"></select>
+              </label>
+              <label><span style="text-transform:none;letter-spacing:0">New speaker?</span>
+                <input id="voiceNewPerson" type="text" placeholder="Type a new name" />
+              </label>
+              <button id="voiceBtn" type="button">Enroll voice span</button>
+            </div>
+            <div class="prov" id="transcriptHint">1) Highlight words · 2) pick Speaker or type New speaker · 3) Enroll voice span</div>
           </div>
           <div id="prov" class="prov">Select a hit. Owner marks supersede AI (confidence 1.0).</div>
         </div>
@@ -296,13 +304,32 @@ function updateEnrollButton(){
   const btn = document.getElementById('saveFaceBtn');
   const newName = document.getElementById('newPerson').value.trim();
   btn.textContent = `Enroll face as ${newName || selectedPersonName() || 'person'}`;
+  updateVoiceButton();
+}
+
+function updateVoiceButton(){
+  const btn = document.getElementById('voiceBtn');
+  if (!btn) return;
+  const newName = document.getElementById('voiceNewPerson').value.trim();
+  const opt = document.getElementById('voicePersonSelect').selectedOptions[0];
+  const fromList = opt ? (opt.getAttribute('data-name') || opt.textContent || '').trim() : '';
+  const target = newName || fromList || 'speaker';
+  const range = typeof selectedVoiceRange === 'function' ? selectedVoiceRange() : null;
+  const quote = range ? ` “${range.text}”` : '';
+  btn.textContent = `Enroll voice as ${target}${quote ? '' : ''}`;
+  btn.title = range
+    ? `Save highlighted “${range.text}” as ${target}`
+    : `Save current Start/End span as ${target} (highlight words first for text)`;
 }
 
 function fillEnrollPeople(people, preferName){
   const html = people.map(personOptionHtml).join('')
     || '<option value="">(none yet)</option>';
   const keepEnroll = personSelect.value;
+  const voiceSelect = document.getElementById('voicePersonSelect');
+  const keepVoice = voiceSelect ? voiceSelect.value : '';
   personSelect.innerHTML = html;
+  if (voiceSelect) voiceSelect.innerHTML = html;
   const want = (preferName || '').trim().toLowerCase();
   let matched = null;
   if (want && people.length) {
@@ -311,11 +338,22 @@ function fillEnrollPeople(people, preferName){
   }
   if (matched) {
     personSelect.value = String(matched.id);
-  } else if (keepEnroll && [...personSelect.options].some(o => o.value === keepEnroll)) {
-    personSelect.value = keepEnroll;
-  } else if (modeEl.value === 'faces' && querySelect.value) {
-    personSelect.value = querySelect.value;
+    if (voiceSelect) voiceSelect.value = String(matched.id);
+  } else {
+    if (keepEnroll && [...personSelect.options].some(o => o.value === keepEnroll)) {
+      personSelect.value = keepEnroll;
+    } else if (modeEl.value === 'faces' && querySelect.value) {
+      personSelect.value = querySelect.value;
+    }
+    if (voiceSelect) {
+      if (keepVoice && [...voiceSelect.options].some(o => o.value === keepVoice)) {
+        voiceSelect.value = keepVoice;
+      } else {
+        voiceSelect.value = personSelect.value;
+      }
+    }
   }
+  updateVoiceButton();
 }
 
 async function refreshPeoplePlaces(preferName){
@@ -602,16 +640,18 @@ function renderTranscriptWords(){
       if (r) {
         startSec.value = Number(r.start_sec).toFixed(1);
         endSec.value = Number(r.end_sec).toFixed(1);
-        hint.textContent = `Selected “${r.text}” · ${fmt(r.start_sec)} → ${fmt(r.end_sec)}. Enroll voice span will attach this to the person below.`;
+        hint.textContent = `Selected “${r.text}” · ${fmt(r.start_sec)} → ${fmt(r.end_sec)}. Pick Speaker (or New speaker), then Enroll voice.`;
         try { video.currentTime = r.start_sec; } catch (e) {}
       }
+      updateVoiceButton();
     };
   });
   if (range) {
-    hint.textContent = `Selected “${range.text}” · ${fmt(range.start_sec)} → ${fmt(range.end_sec)}. Enroll voice span will attach this to the person below.`;
+    hint.textContent = `Selected “${range.text}” · ${fmt(range.start_sec)} → ${fmt(range.end_sec)}. Pick Speaker (or New speaker), then Enroll voice.`;
   } else {
-    hint.textContent = 'Click a word, then another to highlight a range. Enroll voice span uses those words + times.';
+    hint.textContent = '1) Click a word, then another to highlight · 2) Speaker or New speaker · 3) Enroll voice span';
   }
+  updateVoiceButton();
 }
 
 async function loadTranscriptForSelection(){
@@ -876,23 +916,49 @@ document.getElementById('saveFaceBtn').onclick = async () => {
 document.getElementById('voiceBtn').onclick = async () => {
   try {
     requireSelection();
-    const newName = document.getElementById('newPerson').value.trim();
+    const voiceSelect = document.getElementById('voicePersonSelect');
+    let newName = document.getElementById('voiceNewPerson').value.trim();
     const range = selectedVoiceRange();
+    if (!range) {
+      const ok = confirm('No words highlighted. Enroll the numeric Start/End span anyway?');
+      if (!ok) return;
+    }
+    if (!newName && !voiceSelect.value) {
+      newName = (prompt('Who is speaking? Type a new person name') || '').trim();
+      if (!newName) throw new Error('Enter a New speaker name or pick Speaker');
+      document.getElementById('voiceNewPerson').value = newName;
+    }
     const body = {
       video_id: selected.video_id,
       start_sec: range ? range.start_sec : +startSec.value,
       end_sec: range ? range.end_sec : +endSec.value,
-      person_id: newName ? undefined : (+personSelect.value || null),
+      person_id: newName ? undefined : (+voiceSelect.value || null),
       person_name: newName || undefined,
       selected_text: range ? range.text : undefined
     };
-    if (!body.person_id && !body.person_name) throw new Error('Pick Enroll as / New person for the speaker');
     const res = await fetch('/api/annotations/voice', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-    const data = await res.json(); if (!res.ok) throw new Error(JSON.stringify(data.detail || data));
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+    const who = data.person_name || newName || 'speaker';
     const quote = range ? ` “${escapeHtml(range.text)}”` : '';
-    prov.innerHTML = `Voice span enrolled${quote} · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
-  } catch (e) { showErr(e.message); }
+    prov.innerHTML = `Voice enrolled as <strong>${escapeHtml(who)}</strong>${quote} · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
+    document.getElementById('transcriptHint').textContent = `Saved${quote} → ${who}`;
+    document.getElementById('voiceNewPerson').value = '';
+    showErr('');
+    await refreshPeoplePlaces(who);
+    if (data.person_id) {
+      voiceSelect.value = String(data.person_id);
+      personSelect.value = String(data.person_id);
+    }
+    updateVoiceButton();
+  } catch (e) {
+    showErr(e.message);
+    prov.textContent = e.message;
+  }
 };
+
+document.getElementById('voicePersonSelect').addEventListener('change', updateVoiceButton);
+document.getElementById('voiceNewPerson').addEventListener('input', updateVoiceButton);
 
 document.getElementById('dateBtn').onclick = async () => {
   try {

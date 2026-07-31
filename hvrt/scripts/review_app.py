@@ -153,12 +153,25 @@ def index() -> HTMLResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    c = conn()
+    transcript_n = 0
+    video_n = 0
+    try:
+        transcript_n = c.execute("SELECT COUNT(*) AS c FROM transcript_segments").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        video_n = c.execute("SELECT COUNT(*) AS c FROM videos").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "ok": True,
         "release": "R2",
-        "build": "review-toolbar-voice-words",
+        "build": "voice-speaker-ux",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
+        "videos": video_n,
+        "transcript_segments": transcript_n,
         "settings_engine": False,
         "place_recognition_engine": False,
         "decision_model": "owner>user>ai",
@@ -670,24 +683,49 @@ def hits_places(name: str = Query(..., min_length=1)) -> dict[str, Any]:
 
 
 @app.get("/api/hits/text")
-def hits_text(q: str = Query(..., min_length=1)) -> dict[str, Any]:
+def hits_text(q: str = Query("")) -> dict[str, Any]:
+    """Search transcript lines. Empty q returns all spoken segments (browse mode)."""
     c = conn()
+    q = (q or "").strip()
     try:
-        rows = c.execute(
-            """
-            SELECT s.id AS hit_id, s.video_id, s.start_sec, s.end_sec, s.confidence,
-                   'ai' AS actor_key, v.filename, v.path, v.duration_sec,
-                   s.text AS label, NULL AS annotation_id
-            FROM transcript_segments s
-            JOIN videos v ON v.id = s.video_id
-            WHERE s.text LIKE ? COLLATE NOCASE
-            ORDER BY v.filename, s.start_sec
-            """,
-            (f"%{q}%",),
-        ).fetchall()
+        if q:
+            rows = c.execute(
+                """
+                SELECT s.id AS hit_id, s.video_id, s.start_sec, s.end_sec, s.confidence,
+                       'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                       s.text AS label, NULL AS annotation_id
+                FROM transcript_segments s
+                JOIN videos v ON v.id = s.video_id
+                WHERE s.text LIKE ? COLLATE NOCASE
+                ORDER BY v.filename, s.start_sec
+                """,
+                (f"%{q}%",),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT s.id AS hit_id, s.video_id, s.start_sec, s.end_sec, s.confidence,
+                       'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                       s.text AS label, NULL AS annotation_id
+                FROM transcript_segments s
+                JOIN videos v ON v.id = s.video_id
+                ORDER BY v.filename, s.start_sec
+                LIMIT 500
+                """
+            ).fetchall()
     except Exception:  # noqa: BLE001
         rows = []
-    return {"query": q, "count": len(rows), "hits": [_hit(r, "text") for r in rows]}
+    total = 0
+    try:
+        total = c.execute("SELECT COUNT(*) AS c FROM transcript_segments").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        total = len(rows)
+    return {
+        "query": q or "(all spoken lines)",
+        "count": len(rows),
+        "corpus_segments": total,
+        "hits": [_hit(r, "text") for r in rows],
+    }
 
 
 def _hit(r: Any, kind: str) -> dict[str, Any]:
@@ -903,10 +941,13 @@ def enroll_voice(body: EnrollVoiceIn) -> dict[str, Any]:
     c = conn()
     person_id = body.person_id
     name = (body.person_name or "").strip()
+    primary_gallery = cfg_gallery_dirs()[0]
     if person_id is None:
         if not name:
-            raise HTTPException(400, "person required")
-        person_id = upsert_person(c, name)
+            raise HTTPException(400, "person required — pick Speaker or type New speaker")
+        gallery = primary_gallery / name
+        gallery.mkdir(parents=True, exist_ok=True)
+        person_id = upsert_person(c, name, str(gallery.resolve()))
         name_row = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
         name = name_row["name"]
     else:
@@ -954,7 +995,13 @@ def enroll_voice(body: EnrollVoiceIn) -> dict[str, Any]:
         (person_id, body.video_id, ann_id, str(marker), body.start_sec, body.end_sec),
     )
     c.commit()
-    return {"annotation_id": ann_id, "person_id": person_id, "confidence": 1.0}
+    return {
+        "annotation_id": ann_id,
+        "person_id": person_id,
+        "person_name": name,
+        "selected_text": (body.selected_text or "").strip() or None,
+        "confidence": 1.0,
+    }
 
 
 @app.post("/api/annotations/ocr")
