@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HVRT — Review R2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1c2321;
+      --muted: #5c6b66;
+      --panel: rgba(255,252,246,.9);
+      --line: rgba(28,35,33,.12);
+      --accent: #0f6b5c;
+      --accent-soft: #d7efe9;
+      --warn: #8a4b2a;
+      --shadow: 0 18px 50px rgba(28,35,33,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--ink);
+      font-family: "Source Sans 3", sans-serif;
+      background:
+        radial-gradient(1100px 520px at 8% -8%, #e7f2ee 0%, transparent 55%),
+        radial-gradient(800px 420px at 100% 0%, #efe6d8 0%, transparent 50%),
+        linear-gradient(180deg, #f7f3ea, #ebe4d6);
+    }
+    .shell { max-width: 1240px; margin: 0 auto; padding: 1.25rem; display: grid; gap: 1rem; }
+    .brand { font-family: Fraunces, Georgia, serif; font-size: clamp(1.8rem, 3.5vw, 2.5rem); margin: 0; letter-spacing: -.03em; }
+    .tag { margin: .25rem 0 0; color: var(--muted); }
+    .bar, .hits, .player, .learn {
+      background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+    }
+    .bar { display: flex; flex-wrap: wrap; gap: .7rem; align-items: end; padding: .9rem 1rem; }
+    label { display: grid; gap: .25rem; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    select, input, button { font: inherit; min-height: 2.4rem; padding: .45rem .65rem; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    button { background: var(--accent); color: #f7fffc; border-color: transparent; font-weight: 600; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--accent); border-color: rgba(15,107,92,.35); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.ghost-disabled { opacity: .4; background: #ddd; color: #666; border: 0; }
+    .stage { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; }
+    @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+    .hits { display: flex; flex-direction: column; min-height: 480px; overflow: hidden; }
+    .hits h2, .player h2, .learn h2 { font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 1.1rem; margin: 0; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
+    .hit-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+    .hit-list button { width: 100%; text-align: left; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 400; display: grid; gap: .15rem; }
+    .hit-list button:hover { background: var(--accent-soft); }
+    .hit-list button.active { background: var(--accent); color: #f7fffc; }
+    .player-body { padding: 1rem; display: grid; gap: .75rem; }
+    .video-wrap { position: relative; background: #111814; }
+    video { width: 100%; max-height: 56vh; aspect-ratio: 16/9; object-fit: contain; display: block; }
+    canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: none; }
+    .tools { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; }
+    .prov { color: var(--muted); font-size: .92rem; }
+    .prov strong { color: var(--ink); }
+    .learn { padding-bottom: .5rem; }
+    .learn-body { padding: .75rem 1rem 1rem; display: grid; gap: .45rem; }
+    .step { display: grid; grid-template-columns: 1fr auto; gap: .35rem; align-items: center; font-size: .92rem; }
+    .track { height: .45rem; background: #e5e0d6; border-radius: 99px; overflow: hidden; grid-column: 1 / -1; }
+    .fill { height: 100%; background: var(--accent); width: 0%; }
+    .err { color: var(--warn); padding: .5rem 1rem; }
+    .meta { padding: .25rem 1rem .75rem; color: var(--muted); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <h1 class="brand">HVRT</h1>
+      <p class="tag">Evidence review · human over AI · settings coming later</p>
+    </header>
+
+    <div class="bar">
+      <label>Mode
+        <select id="mode">
+          <option value="faces">Faces</option>
+          <option value="places">Places</option>
+          <option value="text">Spoken text</option>
+          <option value="videos">All videos</option>
+        </select>
+      </label>
+      <label id="qWrap">Query
+        <input id="query" type="search" list="peopleList" placeholder="Rick George / Grandpa's house" />
+        <datalist id="peopleList"></datalist>
+      </label>
+      <button id="loadBtn" type="button">Load hits</button>
+      <button id="learnBtn" class="secondary" type="button">Learn from annotations</button>
+      <button class="ghost-disabled" type="button" disabled title="Future">Setting (future)</button>
+    </div>
+
+    <div class="stage">
+      <section class="hits">
+        <h2>Hits</h2>
+        <div id="hitMeta" class="meta">Load hits to begin.</div>
+        <div id="err" class="err" hidden></div>
+        <ul id="hitList" class="hit-list"></ul>
+      </section>
+
+      <section class="player">
+        <h2>Playback & mark</h2>
+        <div class="player-body">
+          <div class="video-wrap">
+            <video id="video" controls playsinline></video>
+            <canvas id="overlay"></canvas>
+          </div>
+          <div class="tools">
+            <label>Start <input id="startSec" type="number" step="0.1" value="0" style="width:6rem" /></label>
+            <label>End <input id="endSec" type="number" step="0.1" value="1" style="width:6rem" /></label>
+            <label>Place
+              <input id="placeName" list="placeList" placeholder="Grandpa's house" />
+              <datalist id="placeList"></datalist>
+            </label>
+            <button id="markPlaceBtn" class="secondary" type="button">Mark place</button>
+            <label>Person
+              <select id="personSelect"></select>
+            </label>
+            <label><span style="text-transform:none;letter-spacing:0">New person?</span>
+              <input id="newPerson" type="text" placeholder="Only if not in list" />
+            </label>
+            <button id="boxFaceBtn" class="secondary" type="button">Box face</button>
+            <button id="saveFaceBtn" type="button" disabled>Enroll face</button>
+            <button id="voiceBtn" class="secondary" type="button">Enroll voice span</button>
+            <button id="dateBtn" class="secondary" type="button">Set date</button>
+            <button id="ocrBtn" class="secondary" type="button">Confirm OCR text</button>
+            <button id="vlcBtn" class="secondary" type="button" disabled>Copy VLC</button>
+          </div>
+          <div id="prov" class="prov">Select a hit. Owner marks supersede AI (confidence 1.0).</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="learn" id="learnPanel">
+      <h2>Learning from annotations</h2>
+      <div class="learn-body">
+        <div class="prov" id="learnNote">Idle · background jobs let you keep reviewing.</div>
+        <div id="learnSteps"></div>
+      </div>
+    </section>
+  </div>
+
+<script>
+const modeEl = document.getElementById('mode');
+const queryEl = document.getElementById('query');
+const hitList = document.getElementById('hitList');
+const hitMeta = document.getElementById('hitMeta');
+const errEl = document.getElementById('err');
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const prov = document.getElementById('prov');
+const personSelect = document.getElementById('personSelect');
+const startSec = document.getElementById('startSec');
+const endSec = document.getElementById('endSec');
+let hits = [];
+let selected = null;
+let boxMode = false;
+let box = null; // {x0,y0,x1,y1} in canvas coords
+let drawing = false;
+
+function showErr(m){ errEl.hidden=!m; errEl.textContent=m||''; }
+function fmt(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), r=Math.floor(s%60); return `${m}:${String(r).padStart(2,'0')}`; }
+function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+async function refreshPeoplePlaces(){
+  const [pe, pl] = await Promise.all([fetch('/api/people'), fetch('/api/places')]);
+  const people = (await pe.json()).people || [];
+  const places = (await pl.json()).places || [];
+  personSelect.innerHTML = people.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('') || '<option value="">(none yet)</option>';
+  document.getElementById('peopleList').innerHTML = people.map(p => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+  document.getElementById('placeList').innerHTML = places.map(p => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+}
+
+async function loadHits(){
+  showErr(''); hitList.innerHTML=''; selected=null; document.getElementById('vlcBtn').disabled=true;
+  const mode = modeEl.value; const q = queryEl.value.trim();
+  let data;
+  if(mode==='videos'){
+    const res = await fetch('/api/videos'); data = await res.json();
+    hits = (data.videos||[]).map(v => ({
+      kind:'video', hit_id:v.id, video_id:v.id, filename:v.filename, path:v.path,
+      start_sec:0, end_sec:v.duration_sec||0, confidence:1, label:v.filename,
+      stream_url:`/api/media/${v.id}`, actor_key:null, duration_sec:v.duration_sec
+    }));
+    hitMeta.textContent = `${hits.length} videos`;
+  } else {
+    if(!q && mode!=='videos'){ showErr('Enter a query'); return; }
+    const url = mode==='faces' ? `/api/hits/faces?name=${encodeURIComponent(q)}`
+      : mode==='places' ? `/api/hits/places?name=${encodeURIComponent(q)}`
+      : `/api/hits/text?q=${encodeURIComponent(q)}`;
+    const res = await fetch(url); data = await res.json();
+    hits = data.hits || [];
+    hitMeta.textContent = `${data.count} hit(s) for “${data.query||q}”`;
+  }
+  if(!hits.length){ hitList.innerHTML = `<li class="meta">No hits.</li>`; return; }
+  hits.forEach((h,i) => {
+    const li=document.createElement('li');
+    const b=document.createElement('button'); b.type='button';
+    b.innerHTML = `<strong>${escapeHtml(h.filename)}</strong>
+      <span>${fmt(h.start_sec)} → ${fmt(h.end_sec)} · conf ${Number(h.confidence||0).toFixed(2)}${h.actor_key? ' · '+h.actor_key:''}</span>
+      <span>${escapeHtml(h.label||'')}</span>`;
+    b.onclick = () => selectHit(i,b);
+    li.appendChild(b); hitList.appendChild(li);
+  });
+}
+
+function selectHit(i, btn){
+  selected = hits[i];
+  [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('vlcBtn').disabled=false;
+  startSec.value = Number(selected.start_sec||0).toFixed(1);
+  endSec.value = Number(selected.end_sec||selected.start_sec||1).toFixed(1);
+  const t = Math.max(0, Number(selected.start_sec)||0);
+  const onMeta = () => { try{ video.currentTime=t; }catch(e){} video.play().catch(()=>{}); video.removeEventListener('loadedmetadata', onMeta); };
+  video.addEventListener('loadedmetadata', onMeta);
+  video.src = selected.stream_url; video.load();
+  syncOverlaySize();
+  prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label||'')} · start <strong>${fmt(t)}</strong>
+    · Owner marks save at confidence <strong>1.00</strong> and supersede AI.`;
+}
+
+function syncOverlaySize(){
+  const r = video.getBoundingClientRect();
+  overlay.width = video.clientWidth; overlay.height = video.clientHeight;
+}
+
+document.getElementById('boxFaceBtn').onclick = () => {
+  boxMode = !boxMode; box=null;
+  overlay.style.display = boxMode ? 'block' : 'none';
+  document.getElementById('saveFaceBtn').disabled = true;
+  syncOverlaySize();
+  drawBox();
+  prov.textContent = boxMode ? 'Drag a box around the face, then Enroll face.' : 'Box face off.';
+};
+
+function drawBox(){
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0,0,overlay.width,overlay.height);
+  if(!box) return;
+  const x=Math.min(box.x0,box.x1), y=Math.min(box.y0,box.y1);
+  const w=Math.abs(box.x1-box.x0), h=Math.abs(box.y1-box.y0);
+  ctx.strokeStyle = '#3ecfb0'; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
+}
+
+overlay.addEventListener('mousedown', e => {
+  if(!boxMode) return;
+  drawing=true;
+  const r=overlay.getBoundingClientRect();
+  box={x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};
+});
+overlay.addEventListener('mousemove', e => {
+  if(!drawing||!box) return;
+  const r=overlay.getBoundingClientRect();
+  box.x1=e.clientX-r.left; box.y1=e.clientY-r.top; drawBox();
+});
+window.addEventListener('mouseup', () => {
+  if(!drawing) return; drawing=false;
+  document.getElementById('saveFaceBtn').disabled = !(box && Math.abs(box.x1-box.x0)>8);
+});
+
+function captureFrameJpeg(){
+  const c=document.createElement('canvas');
+  c.width=video.videoWidth; c.height=video.videoHeight;
+  c.getContext('2d').drawImage(video,0,0);
+  return c.toDataURL('image/jpeg',0.92);
+}
+function captureCropJpeg(){
+  if(!box) throw new Error('No face box');
+  const scaleX = video.videoWidth / overlay.width;
+  const scaleY = video.videoHeight / overlay.height;
+  const x=Math.min(box.x0,box.x1)*scaleX, y=Math.min(box.y0,box.y1)*scaleY;
+  const w=Math.abs(box.x1-box.x0)*scaleX, h=Math.abs(box.y1-box.y0)*scaleY;
+  const c=document.createElement('canvas'); c.width=Math.max(1,w); c.height=Math.max(1,h);
+  c.getContext('2d').drawImage(video,x,y,w,h,0,0,w,h);
+  return c.toDataURL('image/jpeg',0.92);
+}
+function requireSelection(){ if(!selected) throw new Error('Select a hit/video first'); }
+
+document.getElementById('markPlaceBtn').onclick = async () => {
+  try{
+    requireSelection();
+    const place = document.getElementById('placeName').value.trim();
+    if(!place) throw new Error('Enter a place name');
+    const body = {
+      video_id: selected.video_id,
+      start_sec: +startSec.value, end_sec: +endSec.value,
+      place_name: place, use_video_gps: true, save_frame: true,
+      frame_jpeg_base64: captureFrameJpeg()
+    };
+    const res = await fetch('/api/annotations/place',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if(!res.ok) throw new Error(data.detail||res.statusText);
+    prov.innerHTML = `Place marked · annotation #${data.annotation_id} · confidence <strong>1.00</strong> · exemplar saved (no auto place engine).`;
+    await refreshPeoplePlaces();
+  }catch(e){ showErr(e.message); }
+};
+
+document.getElementById('saveFaceBtn').onclick = async () => {
+  try{
+    requireSelection();
+    const newName = document.getElementById('newPerson').value.trim();
+    const body = {
+      video_id: selected.video_id,
+      start_sec: +startSec.value,
+      end_sec: +endSec.value,
+      crop_jpeg_base64: captureCropJpeg(),
+      create_person: !!newName,
+      person_name: newName || undefined,
+      person_id: newName ? undefined : (+personSelect.value || null)
+    };
+    if(!body.create_person && !body.person_id) throw new Error('Pick a person or enter a new name');
+    const res = await fetch('/api/annotations/face',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json();
+    if(!res.ok) throw new Error(typeof data.detail==='string'? data.detail : JSON.stringify(data.detail));
+    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · owner provenance saved.`;
+    document.getElementById('newPerson').value='';
+    boxMode=false; overlay.style.display='none'; document.getElementById('saveFaceBtn').disabled=true;
+    await refreshPeoplePlaces();
+  }catch(e){ showErr(e.message); }
+};
+
+document.getElementById('voiceBtn').onclick = async () => {
+  try{
+    requireSelection();
+    const newName = document.getElementById('newPerson').value.trim();
+    const body = {
+      video_id: selected.video_id,
+      start_sec: +startSec.value, end_sec: +endSec.value,
+      person_id: newName ? undefined : (+personSelect.value || null),
+      person_name: newName || undefined
+    };
+    const res = await fetch('/api/annotations/voice',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if(!res.ok) throw new Error(JSON.stringify(data.detail||data));
+    prov.innerHTML = `Voice span enrolled · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
+  }catch(e){ showErr(e.message); }
+};
+
+document.getElementById('dateBtn').onclick = async () => {
+  try{
+    requireSelection();
+    const date_text = prompt('Date / season label for this span (e.g. 1998-12 or Christmas 1998)');
+    if(!date_text) return;
+    const body = { video_id: selected.video_id, start_sec:+startSec.value, end_sec:+endSec.value, date_text };
+    const res = await fetch('/api/annotations/date',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if(!res.ok) throw new Error(JSON.stringify(data));
+    prov.innerHTML = `Date marked · conf <strong>1.00</strong> · “${escapeHtml(date_text)}”.`;
+  }catch(e){ showErr(e.message); }
+};
+
+document.getElementById('ocrBtn').onclick = async () => {
+  try{
+    requireSelection();
+    const text = prompt('OCR / visible text to confirm for this span');
+    if(!text) return;
+    const body = { video_id: selected.video_id, start_sec:+startSec.value, end_sec:+endSec.value, text };
+    const res = await fetch('/api/annotations/ocr',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if(!res.ok) throw new Error(JSON.stringify(data));
+    prov.innerHTML = `OCR confirmed · conf <strong>1.00</strong>.`;
+  }catch(e){ showErr(e.message); }
+};
+
+document.getElementById('vlcBtn').onclick = async () => {
+  if(!selected) return;
+  const cmd = `vlc "${selected.path}" --start-time=${Math.floor(selected.start_sec||0)}`;
+  try { await navigator.clipboard.writeText(cmd); prov.textContent='VLC command copied.'; }
+  catch { prompt('Copy VLC command', cmd); }
+};
+
+let learnTimer=null;
+async function refreshLearn(){
+  const res = await fetch('/api/learn/status'); const st = await res.json();
+  const note = document.getElementById('learnNote');
+  const steps = document.getElementById('learnSteps');
+  if(!st || st.status==='idle'){ note.textContent='Idle · background jobs let you keep reviewing.'; steps.innerHTML=''; return; }
+  note.textContent = `${st.status} · ${Math.round(st.progress_pct||0)}% · ${st.message||st.note||''}`;
+  steps.innerHTML = (st.steps||[]).map(s => `
+    <div class="step"><span>${escapeHtml(s.label)}</span><span>${escapeHtml(s.status)}</span>
+      <div class="track"><div class="fill" style="width:${s.status==='done'?100:(s.progress_pct||0)}%"></div></div>
+    </div>`).join('');
+  if(st.status==='queued'||st.status==='running'){
+    if(!learnTimer) learnTimer=setInterval(refreshLearn, 800);
+  } else if(learnTimer){ clearInterval(learnTimer); learnTimer=null; }
+}
+
+document.getElementById('learnBtn').onclick = async () => {
+  const res = await fetch('/api/learn/start',{method:'POST'});
+  await res.json(); refreshLearn();
+};
+
+document.getElementById('loadBtn').onclick = () => loadHits().catch(e => showErr(e.message));
+video.addEventListener('loadeddata', syncOverlaySize);
+window.addEventListener('resize', syncOverlaySize);
+
+refreshPeoplePlaces().then(() => {
+  queryEl.value = 'Rick';
+  return loadHits();
+}).catch(e => showErr(e.message));
+refreshLearn();
+</script>
+</body>
+</html>
