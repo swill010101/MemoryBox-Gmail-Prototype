@@ -57,6 +57,23 @@
     .crop-preview.on { display: flex; }
     .crop-preview img { width: 96px; height: 96px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
     .tools { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; }
+    .tools-row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; width: 100%; }
+    .meta-strip { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: baseline; color: var(--muted); font-size: .92rem; }
+    .meta-strip a { color: var(--accent); font-weight: 600; }
+    .meta-strip strong { color: var(--ink); }
+    .transcript {
+      border: 1px solid var(--line); background: rgba(255,255,255,.55); padding: .75rem 1rem; display: grid; gap: .45rem;
+    }
+    .transcript h3 { margin: 0; font-family: Fraunces, Georgia, serif; font-size: 1rem; font-weight: 500; }
+    .transcript-words { line-height: 1.85; max-height: 9rem; overflow: auto; }
+    .transcript-words button.word {
+      display: inline; min-height: 0; padding: .1rem .28rem; margin: 0 .1rem .15rem 0;
+      border: 0; background: transparent; color: inherit; font: inherit; font-weight: 400; cursor: pointer; border-radius: .25rem;
+    }
+    .transcript-words button.word:hover { background: var(--accent-soft); }
+    .transcript-words button.word.selected { background: var(--accent); color: #f7fffc; }
+    .transcript-words .empty { color: var(--muted); }
+    button.learn-running { background: #fff !important; color: var(--accent) !important; border: 1px solid rgba(15,107,92,.35) !important; }
     .prov { color: var(--muted); font-size: .92rem; }
     .prov strong { color: var(--ink); }
     .learn { padding-bottom: .5rem; }
@@ -79,7 +96,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build face-crop-fix</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build review-toolbar-voice-words</p>
     </header>
 
     <div class="bar">
@@ -96,7 +113,7 @@
         <input id="queryText" type="search" placeholder="Happy Birthday" hidden />
       </label>
       <button id="loadBtn" type="button">Load hits</button>
-      <button id="learnBtn" class="secondary" type="button">Learn from annotations</button>
+      <button id="learnBtn" type="button">Learn from annotations</button>
       <button class="ghost-disabled" type="button" disabled title="Future">Setting (future)</button>
     </div>
 
@@ -123,26 +140,42 @@
             <img id="cropPreviewImg" alt="Crop preview" />
             <span id="cropPreviewMeta">Box a face to preview the exact crop that will be saved.</span>
           </div>
+          <div id="metaStrip" class="meta-strip">
+            <span id="metaDateLine">Date: —</span>
+            <span id="metaGpsLine">GPS: —</span>
+          </div>
           <div class="tools">
-            <label>Start <input id="startSec" type="number" step="0.1" value="0" style="width:6rem" /></label>
-            <label>End <input id="endSec" type="number" step="0.1" value="1" style="width:6rem" /></label>
-            <label>Place
-              <input id="placeName" list="placeList" placeholder="Grandpa's house" />
-              <datalist id="placeList"></datalist>
-            </label>
-            <button id="markPlaceBtn" class="secondary" type="button">Mark place</button>
-            <label>Enroll as
-              <select id="personSelect"></select>
-            </label>
-            <label><span style="text-transform:none;letter-spacing:0">New person?</span>
-              <input id="newPerson" type="text" placeholder="Only if not in list" />
-            </label>
-            <button id="boxFaceBtn" class="secondary" type="button">Box face</button>
-            <button id="saveFaceBtn" type="button" disabled>Enroll face</button>
-            <button id="voiceBtn" class="secondary" type="button">Enroll voice span</button>
-            <button id="dateBtn" class="secondary" type="button">Set date</button>
-            <button id="ocrBtn" class="secondary" type="button">Confirm OCR text</button>
-            <button id="vlcBtn" class="secondary" type="button" disabled>Copy VLC</button>
+            <div class="tools-row" id="toolsRow1">
+              <label>Start <input id="startSec" type="number" step="0.1" value="0" style="width:6rem" /></label>
+              <label>End <input id="endSec" type="number" step="0.1" value="1" style="width:6rem" /></label>
+              <label>Place
+                <input id="placeName" list="placeList" placeholder="Grandpa's house" />
+                <datalist id="placeList"></datalist>
+              </label>
+              <button id="markPlaceBtn" class="secondary" type="button">Mark place</button>
+              <button id="voiceBtn" class="secondary" type="button">Enroll voice span</button>
+              <label>Date
+                <input id="dateField" type="text" placeholder="No date in metadata" style="min-width:11rem" />
+              </label>
+              <button id="dateBtn" class="secondary" type="button">Set date</button>
+              <button id="ocrBtn" class="secondary" type="button">Confirm OCR text</button>
+              <button id="vlcBtn" class="secondary" type="button" disabled>Copy VLC</button>
+            </div>
+            <div class="tools-row" id="toolsRow2">
+              <button id="boxFaceBtn" class="secondary" type="button">Box face</button>
+              <label>Enroll as
+                <select id="personSelect"></select>
+              </label>
+              <label><span style="text-transform:none;letter-spacing:0">New person?</span>
+                <input id="newPerson" type="text" placeholder="Only if not in list" />
+              </label>
+              <button id="saveFaceBtn" type="button" disabled>Enroll face</button>
+            </div>
+          </div>
+          <div class="transcript" id="transcriptPanel">
+            <h3>Spoken text</h3>
+            <div id="transcriptWords" class="transcript-words"><span class="empty">Select a hit to load transcript words.</span></div>
+            <div class="prov" id="transcriptHint">Click a word, then another to highlight a range. Enroll voice span uses those words + times.</div>
           </div>
           <div id="prov" class="prov">Select a hit. Owner marks supersede AI (confidence 1.0).</div>
         </div>
@@ -182,6 +215,9 @@ let learnTimer = null;
 let lastFaceQueryId = '';
 let lastPlaceQueryName = '';
 let galleryLoadSeq = 0;
+let transcriptWords = [];
+let voiceSel = { a: null, b: null }; // word indices for highlight range
+let currentVideoMeta = null;
 
 function showErr(m){ errEl.hidden=!m; errEl.textContent=m||''; }
 function fmt(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), r=Math.floor(s%60); return `${m}:${String(r).padStart(2,'0')}`; }
@@ -477,6 +513,8 @@ function selectHit(i, btn){
   }
   updateEnrollButton();
   loadGalleryForSelectedPerson();
+  loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
+  loadTranscriptForSelection().catch(e => showErr(e.message));
   const t = Math.max(0, Number(selected.start_sec) || 0);
   const onMeta = () => { try { video.currentTime = t; } catch (e) {} video.play().catch(()=>{}); video.removeEventListener('loadedmetadata', onMeta); };
   video.addEventListener('loadedmetadata', onMeta);
@@ -485,6 +523,117 @@ function selectHit(i, btn){
   syncOverlaySize();
   prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
     · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+}
+
+async function loadVideoMeta(videoId){
+  const dateLine = document.getElementById('metaDateLine');
+  const gpsLine = document.getElementById('metaGpsLine');
+  const dateField = document.getElementById('dateField');
+  const dateBtn = document.getElementById('dateBtn');
+  const res = await fetch(`/api/videos/${videoId}`);
+  if (!res.ok) {
+    currentVideoMeta = null;
+    dateLine.textContent = 'Date: —';
+    gpsLine.textContent = 'GPS: —';
+    dateField.value = '';
+    dateBtn.textContent = 'Set date';
+    return;
+  }
+  const meta = await res.json();
+  currentVideoMeta = meta;
+  if (meta.display_date) {
+    dateField.value = meta.display_date;
+    const src = meta.date_source === 'owner' ? 'owner mark'
+      : meta.date_source === 'recording_date' ? 'video metadata'
+      : meta.date_source === 'file_mtime' ? 'file date'
+      : meta.date_source || '';
+    dateLine.innerHTML = `Date: <strong>${escapeHtml(meta.display_date)}</strong>${src ? ' · ' + escapeHtml(src) : ''}`;
+    dateBtn.textContent = 'Change date';
+  } else {
+    dateField.value = '';
+    dateLine.textContent = 'Date: none in metadata';
+    dateBtn.textContent = 'Set date';
+  }
+  if (meta.gps && meta.maps_url) {
+    const { lat, lon } = meta.gps;
+    gpsLine.innerHTML = `GPS: <strong>${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}</strong> · <a href="${meta.maps_url}" target="_blank" rel="noopener">Open map</a>`;
+  } else {
+    gpsLine.textContent = 'GPS: no GPS';
+  }
+}
+
+function selectedVoiceRange(){
+  if (voiceSel.a == null) return null;
+  const i0 = Math.min(voiceSel.a, voiceSel.b == null ? voiceSel.a : voiceSel.b);
+  const i1 = Math.max(voiceSel.a, voiceSel.b == null ? voiceSel.a : voiceSel.b);
+  const slice = transcriptWords.slice(i0, i1 + 1);
+  if (!slice.length) return null;
+  return {
+    i0, i1,
+    text: slice.map(w => w.word).join(' '),
+    start_sec: slice[0].start_sec,
+    end_sec: slice[slice.length - 1].end_sec,
+  };
+}
+
+function renderTranscriptWords(){
+  const el = document.getElementById('transcriptWords');
+  const hint = document.getElementById('transcriptHint');
+  if (!transcriptWords.length) {
+    el.innerHTML = '<span class="empty">No spoken text in this time range.</span>';
+    hint.textContent = 'Widen Start/End or pick another hit, then Enroll voice span can still use the numeric span.';
+    return;
+  }
+  const range = selectedVoiceRange();
+  el.innerHTML = transcriptWords.map((w, i) => {
+    const on = range && i >= range.i0 && i <= range.i1;
+    return `<button type="button" class="word${on ? ' selected' : ''}" data-i="${i}">${escapeHtml(w.word)}</button>`;
+  }).join(' ');
+  el.querySelectorAll('button.word').forEach(btn => {
+    btn.onclick = () => {
+      const i = Number(btn.getAttribute('data-i'));
+      if (voiceSel.a == null || (voiceSel.a != null && voiceSel.b != null)) {
+        voiceSel = { a: i, b: null };
+      } else {
+        voiceSel.b = i;
+      }
+      renderTranscriptWords();
+      const r = selectedVoiceRange();
+      if (r) {
+        startSec.value = Number(r.start_sec).toFixed(1);
+        endSec.value = Number(r.end_sec).toFixed(1);
+        hint.textContent = `Selected “${r.text}” · ${fmt(r.start_sec)} → ${fmt(r.end_sec)}. Enroll voice span will attach this to the person below.`;
+        try { video.currentTime = r.start_sec; } catch (e) {}
+      }
+    };
+  });
+  if (range) {
+    hint.textContent = `Selected “${range.text}” · ${fmt(range.start_sec)} → ${fmt(range.end_sec)}. Enroll voice span will attach this to the person below.`;
+  } else {
+    hint.textContent = 'Click a word, then another to highlight a range. Enroll voice span uses those words + times.';
+  }
+}
+
+async function loadTranscriptForSelection(){
+  voiceSel = { a: null, b: null };
+  transcriptWords = [];
+  const el = document.getElementById('transcriptWords');
+  if (!selected) {
+    el.innerHTML = '<span class="empty">Select a hit to load transcript words.</span>';
+    return;
+  }
+  const s = Number(startSec.value || selected.start_sec || 0);
+  // Load a little context around the hit so Tom can highlight nearby words
+  const pad = 8;
+  const e = Number(endSec.value || selected.end_sec || s + 1);
+  const res = await fetch(`/api/videos/${selected.video_id}/transcript?start_sec=${encodeURIComponent(Math.max(0, s - pad))}&end_sec=${encodeURIComponent(e + pad)}`);
+  if (!res.ok) {
+    el.innerHTML = '<span class="empty">Could not load transcript.</span>';
+    return;
+  }
+  const data = await res.json();
+  transcriptWords = data.words || [];
+  renderTranscriptWords();
 }
 
 function syncOverlaySize(){
@@ -591,6 +740,9 @@ document.getElementById('boxFaceBtn').onclick = () => {
   overlay.style.display = boxMode ? 'block' : 'none';
   document.getElementById('saveFaceBtn').disabled = true;
   document.getElementById('cropPreview').classList.remove('on');
+  if (boxMode) {
+    try { video.pause(); } catch (e) {}
+  }
   syncOverlaySize();
   drawBox();
   prov.textContent = boxMode
@@ -705,12 +857,19 @@ document.getElementById('saveFaceBtn').onclick = async () => {
     const res = await fetch('/api/annotations/face', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const data = await res.json();
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
-    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · owner provenance saved.`;
+    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · saved <strong>${escapeHtml(data.exemplar_filename || '')}</strong>.`;
     document.getElementById('newPerson').value = '';
     boxMode = false; box = null; overlay.style.display = 'none';
     document.getElementById('saveFaceBtn').disabled = true;
     document.getElementById('cropPreview').classList.remove('on');
+    // Keep both dropdowns on the enrolled person and reload gallery (cache-busted URLs)
+    if (data.person_id) {
+      lastFaceQueryId = String(data.person_id);
+      querySelect.value = String(data.person_id);
+      personSelect.value = String(data.person_id);
+    }
     await refreshPeoplePlaces(data.person_name);
+    await loadGalleryForSelectedPerson();
   } catch (e) { showErr(e.message); }
 };
 
@@ -718,26 +877,39 @@ document.getElementById('voiceBtn').onclick = async () => {
   try {
     requireSelection();
     const newName = document.getElementById('newPerson').value.trim();
+    const range = selectedVoiceRange();
     const body = {
       video_id: selected.video_id,
-      start_sec: +startSec.value, end_sec: +endSec.value,
+      start_sec: range ? range.start_sec : +startSec.value,
+      end_sec: range ? range.end_sec : +endSec.value,
       person_id: newName ? undefined : (+personSelect.value || null),
-      person_name: newName || undefined
+      person_name: newName || undefined,
+      selected_text: range ? range.text : undefined
     };
+    if (!body.person_id && !body.person_name) throw new Error('Pick Enroll as / New person for the speaker');
     const res = await fetch('/api/annotations/voice', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const data = await res.json(); if (!res.ok) throw new Error(JSON.stringify(data.detail || data));
-    prov.innerHTML = `Voice span enrolled · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
+    const quote = range ? ` “${escapeHtml(range.text)}”` : '';
+    prov.innerHTML = `Voice span enrolled${quote} · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
   } catch (e) { showErr(e.message); }
 };
 
 document.getElementById('dateBtn').onclick = async () => {
   try {
     requireSelection();
-    const date_text = prompt('Date / season label for this span (e.g. 1998-12 or Christmas 1998)');
+    const dateField = document.getElementById('dateField');
+    let date_text = dateField.value.trim();
+    if (!date_text) {
+      date_text = prompt('Date / season label (e.g. 1998-12 or Christmas 1998)') || '';
+      date_text = date_text.trim();
+    }
     if (!date_text) return;
     const body = { video_id: selected.video_id, start_sec:+startSec.value, end_sec:+endSec.value, date_text };
     const res = await fetch('/api/annotations/date', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const data = await res.json(); if (!res.ok) throw new Error(JSON.stringify(data));
+    dateField.value = date_text;
+    document.getElementById('dateBtn').textContent = 'Change date';
+    document.getElementById('metaDateLine').innerHTML = `Date: <strong>${escapeHtml(date_text)}</strong> · owner mark`;
     prov.innerHTML = `Date marked · conf <strong>1.00</strong> · “${escapeHtml(date_text)}”.`;
   } catch (e) { showErr(e.message); }
 };
@@ -765,13 +937,20 @@ async function refreshLearn(){
   const res = await fetch('/api/learn/status'); const st = await res.json();
   const note = document.getElementById('learnNote');
   const steps = document.getElementById('learnSteps');
+  const learnBtn = document.getElementById('learnBtn');
+  const running = st && (st.status === 'queued' || st.status === 'running');
+  // Idle/done: green like Load hits. While running: white.
+  learnBtn.classList.toggle('learn-running', !!running);
+  learnBtn.classList.toggle('secondary', !!running);
+  learnBtn.disabled = !!running;
+  learnBtn.textContent = running ? `Learning… ${Math.round(st.progress_pct || 0)}%` : 'Learn from annotations';
   if (!st || st.status === 'idle') { note.textContent = 'Idle · background jobs let you keep reviewing.'; steps.innerHTML = ''; return; }
   note.textContent = `${st.status} · ${Math.round(st.progress_pct || 0)}% · ${st.message || st.note || ''}`;
   steps.innerHTML = (st.steps || []).map(s => `
     <div class="step"><span>${escapeHtml(s.label)}</span><span>${escapeHtml(s.status)}</span>
       <div class="track"><div class="fill" style="width:${s.status==='done'?100:(s.progress_pct||0)}%"></div></div>
     </div>`).join('');
-  if (st.status === 'queued' || st.status === 'running') {
+  if (running) {
     if (!learnTimer) learnTimer = setInterval(refreshLearn, 800);
   } else if (learnTimer) { clearInterval(learnTimer); learnTimer = null; }
 }
@@ -801,6 +980,12 @@ personSelect.addEventListener('change', () => {
   loadGalleryForSelectedPerson().catch(e => showErr(e.message));
 });
 document.getElementById('newPerson').addEventListener('input', updateEnrollButton);
+startSec.addEventListener('change', () => {
+  if (selected) loadTranscriptForSelection().catch(e => showErr(e.message));
+});
+endSec.addEventListener('change', () => {
+  if (selected) loadTranscriptForSelection().catch(e => showErr(e.message));
+});
 modeEl.addEventListener('change', () => {
   syncMode(); // rebuild query dropdown options for this mode
   loadHits().catch(e => showErr(e.message));

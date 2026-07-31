@@ -81,6 +81,7 @@ class EnrollVoiceIn(BaseModel):
     end_sec: float
     person_id: int | None = None
     person_name: str | None = None
+    selected_text: str | None = None
 
 
 class OcrConfirmIn(BaseModel):
@@ -155,7 +156,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "gallery-cache-fix-8662a3d",
+        "build": "review-toolbar-voice-words",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "settings_engine": False,
@@ -292,6 +293,129 @@ def api_videos() -> dict[str, Any]:
         """
     ).fetchall()
     return {"count": len(rows), "videos": [dict(r) for r in rows]}
+
+
+@app.get("/api/videos/{video_id}")
+def api_video(video_id: int) -> dict[str, Any]:
+    """Video metadata for the review toolbar (date + GPS)."""
+    c = conn()
+    v = c.execute(
+        """
+        SELECT id, filename, path, duration_sec, recording_date, file_mtime,
+               gps_lat, gps_lon, camera, device
+        FROM videos WHERE id=?
+        """,
+        (video_id,),
+    ).fetchone()
+    if not v:
+        raise HTTPException(404, "video not found")
+    out = dict(v)
+
+    # Prefer owner date annotation; else recording_date; else file_mtime
+    date_ann = c.execute(
+        """
+        SELECT id, label_text, start_sec, end_sec, created_at
+        FROM annotations
+        WHERE video_id=? AND kind='date' AND revoked=0
+        ORDER BY id DESC LIMIT 1
+        """,
+        (video_id,),
+    ).fetchone()
+    if date_ann and date_ann["label_text"]:
+        out["display_date"] = date_ann["label_text"]
+        out["date_source"] = "owner"
+        out["date_annotation_id"] = date_ann["id"]
+    elif v["recording_date"]:
+        out["display_date"] = v["recording_date"]
+        out["date_source"] = "recording_date"
+        out["date_annotation_id"] = None
+    elif v["file_mtime"]:
+        out["display_date"] = str(v["file_mtime"])[:10]
+        out["date_source"] = "file_mtime"
+        out["date_annotation_id"] = None
+    else:
+        out["display_date"] = None
+        out["date_source"] = None
+        out["date_annotation_id"] = None
+
+    lat, lon = v["gps_lat"], v["gps_lon"]
+    if lat is not None and lon is not None:
+        out["gps"] = {"lat": lat, "lon": lon}
+        out["maps_url"] = (
+            f"https://www.google.com/maps?q={lat},{lon}"
+        )
+    else:
+        out["gps"] = None
+        out["maps_url"] = None
+    return out
+
+
+@app.get("/api/videos/{video_id}/transcript")
+def api_video_transcript(
+    video_id: int,
+    start_sec: float = Query(0.0),
+    end_sec: float | None = Query(None),
+) -> dict[str, Any]:
+    """Transcript segments + approximate word timings for voice enroll highlighting."""
+    c = conn()
+    v = c.execute("SELECT id FROM videos WHERE id=?", (video_id,)).fetchone()
+    if not v:
+        raise HTTPException(404, "video not found")
+    end = end_sec if end_sec is not None else 1e12
+    try:
+        rows = c.execute(
+            """
+            SELECT s.id, s.start_sec, s.end_sec, s.text, s.confidence
+            FROM transcript_segments s
+            WHERE s.video_id=?
+              AND s.start_sec < ?
+              AND s.end_sec > ?
+            ORDER BY s.start_sec
+            """,
+            (video_id, end, start_sec),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    segments = []
+    words: list[dict[str, Any]] = []
+    for r in rows:
+        text = (r["text"] or "").strip()
+        if not text:
+            continue
+        seg = {
+            "id": r["id"],
+            "start_sec": float(r["start_sec"] or 0),
+            "end_sec": float(r["end_sec"] or r["start_sec"] or 0),
+            "text": text,
+            "confidence": r["confidence"],
+        }
+        segments.append(seg)
+        toks = text.split()
+        if not toks:
+            continue
+        s0, s1 = seg["start_sec"], seg["end_sec"]
+        dur = max(0.01, s1 - s0)
+        for i, tok in enumerate(toks):
+            w0 = s0 + dur * (i / len(toks))
+            w1 = s0 + dur * ((i + 1) / len(toks))
+            words.append(
+                {
+                    "i": len(words),
+                    "word": tok,
+                    "start_sec": w0,
+                    "end_sec": w1,
+                    "segment_id": r["id"],
+                }
+            )
+    return {
+        "video_id": video_id,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
+        "segment_count": len(segments),
+        "segments": segments,
+        "words": words,
+    }
 
 
 @app.get("/api/hits/faces")
@@ -802,6 +926,7 @@ def enroll_voice(body: EnrollVoiceIn) -> dict[str, Any]:
                 "start_sec": body.start_sec,
                 "end_sec": body.end_sec,
                 "person_id": person_id,
+                "selected_text": (body.selected_text or "").strip() or None,
             }
         ),
         encoding="utf-8",
@@ -816,7 +941,10 @@ def enroll_voice(body: EnrollVoiceIn) -> dict[str, Any]:
         label_text=name,
         person_id=person_id,
         exemplar_path=str(marker),
-        payload={"voice_enroll": True},
+        payload={
+            "voice_enroll": True,
+            "selected_text": (body.selected_text or "").strip() or None,
+        },
     )
     c.execute(
         """
