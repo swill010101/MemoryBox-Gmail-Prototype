@@ -38,6 +38,7 @@ python scripts\review_app.py
 - Mark **places** (spans + optional GPS pin); exemplars saved; **no** place recognition engine  
 - **Box face** → enroll to existing person (dropdown) or new (dup-safe)  
 - **Voice span** enroll, **OCR** confirm, **Set date**  
+- **Add & process videos** = multi-select upload into `sample\` + background `process_videos.py`  
 - **Learn from annotations** = background job + progress panel  
 - **Setting (future)** disabled  
 - Rescoring: Owner > User > AI; human confirm = 1.0  
