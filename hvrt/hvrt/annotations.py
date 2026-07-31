@@ -100,7 +100,7 @@ def list_person_exemplars(
     person_id: int,
     extra_dirs: list[Path | str] | None = None,
 ) -> list[dict[str, Any]]:
-    """List image files for a person from gallery_path and annotation exemplars."""
+    """List image files for a person from that person's gallery folders only."""
     person = conn.execute(
         "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
     ).fetchone()
@@ -111,33 +111,30 @@ def list_person_exemplars(
     out: list[dict[str, Any]] = []
 
     def add_file(path: Path, source: str) -> None:
-        key = str(path.resolve()).lower()
-        if key in seen or not path.is_file():
+        try:
+            resolved = path.resolve()
+        except OSError:
             return
-        if path.suffix.lower() not in IMAGE_EXTS:
+        key = str(resolved).lower()
+        if key in seen or not resolved.is_file():
+            return
+        if resolved.suffix.lower() not in IMAGE_EXTS:
             return
         seen.add(key)
         out.append(
             {
-                "path": str(path.resolve()),
-                "filename": path.name,
+                "path": str(resolved),
+                "filename": resolved.name,
                 "source": source,
                 "person_id": person_id,
                 "person_name": person["name"],
+                "index": len(out),
             }
         )
 
-    if person["gallery_path"]:
-        gdir = Path(person["gallery_path"])
-        if gdir.is_dir():
-            for img in sorted(gdir.iterdir()):
-                add_file(img, "gallery")
-
-    for extra in extra_dirs or []:
-        extra_person = Path(extra) / person["name"]
-        if extra_person.is_dir():
-            for img in sorted(extra_person.iterdir()):
-                add_file(img, "gallery")
+    for gdir in person_gallery_dirs(person, extra_dirs):
+        for img in sorted(gdir.iterdir()):
+            add_file(img, "gallery")
 
     rows = conn.execute(
         """
@@ -154,18 +151,105 @@ def list_person_exemplars(
     return out
 
 
+def person_gallery_dirs(
+    person: sqlite3.Row | dict[str, Any],
+    extra_dirs: list[Path | str] | None = None,
+) -> list[Path]:
+    """Folders that belong to this person (name must match folder name)."""
+    name = str(person["name"]).strip()
+    dirs: list[Path] = []
+    seen: set[str] = set()
+
+    def add_dir(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        if not resolved.is_dir():
+            return
+        # Require folder name to match person — prevents Andy listing Peggy's path
+        if resolved.name.casefold() != name.casefold():
+            return
+        key = str(resolved).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        dirs.append(resolved)
+
+    raw = person["gallery_path"] if "gallery_path" in person.keys() else None
+    if raw:
+        add_dir(Path(str(raw)))
+    for extra in extra_dirs or []:
+        add_dir(Path(extra) / name)
+    return dirs
+
+
+def exemplar_belongs_to_person(
+    conn: sqlite3.Connection,
+    person_id: int,
+    path: str | Path,
+    extra_dirs: list[Path | str] | None = None,
+) -> bool:
+    """True if path is under this person's gallery or an annotation they own."""
+    person = conn.execute(
+        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+    ).fetchone()
+    if not person:
+        return False
+    try:
+        target = Path(path).resolve()
+    except OSError:
+        return False
+
+    for root in person_gallery_dirs(person, extra_dirs):
+        try:
+            target.relative_to(root)
+            return True
+        except ValueError:
+            continue
+
+    row = conn.execute(
+        """
+        SELECT 1 FROM annotations
+        WHERE person_id=? AND kind='person_face' AND revoked=0
+          AND (exemplar_path = ? OR exemplar_path = ?)
+        LIMIT 1
+        """,
+        (person_id, str(path), str(target)),
+    ).fetchone()
+    return row is not None
+
+
 def delete_exemplar(
     conn: sqlite3.Connection,
     path: str,
     *,
     person_id: int | None = None,
+    extra_dirs: list[Path | str] | None = None,
 ) -> dict[str, Any]:
-    """Remove a bad gallery/exemplar image and unlink annotation refs."""
+    """Remove a bad gallery/exemplar image and unlink annotation refs.
+
+    When person_id is provided, refuse to delete files that do not belong
+    to that person (prevents cross-person deletes from a bad client path).
+    """
+    if person_id is not None and not exemplar_belongs_to_person(
+        conn, person_id, path, extra_dirs=extra_dirs
+    ):
+        raise PermissionError(
+            f"path does not belong to person_id={person_id}: {path}"
+        )
+
     target = Path(path)
-    resolved = str(target.resolve()) if target.exists() else str(Path(path))
+    try:
+        resolved = str(target.resolve())
+    except OSError:
+        resolved = str(Path(path))
     removed_file = False
     if target.is_file():
         target.unlink()
+        removed_file = True
+    elif Path(resolved).is_file():
+        Path(resolved).unlink()
         removed_file = True
 
     cleared = conn.execute(
@@ -179,9 +263,31 @@ def delete_exemplar(
     return {
         "removed_file": removed_file,
         "cleared_annotations": cleared,
-        "path": path,
+        "path": resolved,
         "person_id": person_id,
     }
+
+
+def delete_exemplar_by_index(
+    conn: sqlite3.Connection,
+    person_id: int,
+    index: int,
+    extra_dirs: list[Path | str] | None = None,
+) -> dict[str, Any]:
+    """Delete the Nth exemplar currently listed for this person (safe path)."""
+    exemplars = list_person_exemplars(conn, person_id, extra_dirs=extra_dirs)
+    if index < 0 or index >= len(exemplars):
+        raise IndexError(f"exemplar index {index} out of range (0..{len(exemplars)-1})")
+    ex = exemplars[index]
+    result = delete_exemplar(
+        conn,
+        ex["path"],
+        person_id=person_id,
+        extra_dirs=extra_dirs,
+    )
+    result["index"] = index
+    result["filename"] = ex["filename"]
+    return result
 
 
 def list_places(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -196,15 +302,18 @@ def upsert_person(conn: sqlite3.Connection, name: str, gallery_path: str | None 
     if not name:
         raise ValueError("Person name required")
     existing = conn.execute(
-        "SELECT id FROM people WHERE name = ? COLLATE NOCASE", (name,)
+        "SELECT id, gallery_path FROM people WHERE name = ? COLLATE NOCASE", (name,)
     ).fetchone()
     if existing:
         if gallery_path:
-            conn.execute(
-                "UPDATE people SET gallery_path=COALESCE(?, gallery_path) WHERE id=?",
-                (gallery_path, existing["id"]),
-            )
-            conn.commit()
+            # Always correct path on sync (folder name must match this person)
+            gp = Path(gallery_path)
+            if gp.name.casefold() == name.casefold():
+                conn.execute(
+                    "UPDATE people SET gallery_path=? WHERE id=?",
+                    (str(gp.resolve()) if gp.exists() else gallery_path, existing["id"]),
+                )
+                conn.commit()
         return int(existing["id"])
     cur = conn.execute(
         "INSERT INTO people (name, gallery_path) VALUES (?,?)",

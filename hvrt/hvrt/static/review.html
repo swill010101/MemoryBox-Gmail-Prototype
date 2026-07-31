@@ -173,6 +173,7 @@ let drawing = false;
 let learnTimer = null;
 let lastFaceQueryId = '';
 let lastPlaceQueryName = '';
+let galleryLoadSeq = 0;
 
 function showErr(m){ errEl.hidden=!m; errEl.textContent=m||''; }
 function fmt(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), r=Math.floor(s%60); return `${m}:${String(r).padStart(2,'0')}`; }
@@ -309,40 +310,64 @@ async function refreshPeoplePlaces(preferName){
 async function loadGalleryForSelectedPerson(){
   const galleryEl = document.getElementById('gallery');
   if (modeEl.value !== 'faces') return;
-  const personId = personSelect.value || (modeEl.value === 'faces' ? querySelect.value : '');
+  // Prefer the top Person query so gallery matches who you are reviewing
+  const personId = (modeEl.value === 'faces' && querySelect.value)
+    ? querySelect.value
+    : personSelect.value;
   if (!personId) {
     galleryEl.innerHTML = '<div class="meta">No person selected.</div>';
     return;
   }
+  const reqId = String(++galleryLoadSeq);
   const res = await fetch(`/api/people/${personId}/exemplars`);
+  if (reqId !== String(galleryLoadSeq)) return; // stale response
   if (!res.ok) {
     galleryEl.innerHTML = '<div class="meta">Could not load gallery.</div>';
     return;
   }
   const data = await res.json();
+  if (reqId !== String(galleryLoadSeq)) return;
+  if (String(data.person.id) !== String(personId)) {
+    galleryEl.innerHTML = '<div class="meta">Gallery person mismatch — reload.</div>';
+    return;
+  }
   if (!data.exemplars.length) {
     galleryEl.innerHTML = `<div class="meta">No photos yet for ${escapeHtml(data.person.name)}. Add files under gallery\\${escapeHtml(data.person.name)}\\ or box a face.</div>`;
     return;
   }
-  galleryEl.innerHTML = data.exemplars.map((ex) => `
+  // Delete by index only — never put Windows paths in HTML attributes
+  galleryEl.innerHTML = data.exemplars.map((ex, i) => `
     <div class="gal-item">
-      <img src="${ex.url}" alt="${escapeHtml(ex.filename)}" />
-      <button type="button" class="gal-del" data-path="${escapeHtml(ex.path)}" data-person="${personId}">Remove</button>
+      <img src="${ex.url}" alt="${escapeHtml(ex.filename)}" title="${escapeHtml(ex.filename)}" />
+      <button type="button" class="gal-del" data-index="${i}" data-person="${personId}" data-name="${escapeHtml(data.person.name)}">Remove</button>
     </div>
   `).join('');
   galleryEl.querySelectorAll('.gal-del').forEach(btn => {
     btn.onclick = async (e) => {
       e.preventDefault();
-      const path = btn.getAttribute('data-path');
+      e.stopPropagation();
+      const index = Number(btn.getAttribute('data-index'));
       const pid = btn.getAttribute('data-person');
+      const pname = btn.getAttribute('data-name') || '';
+      if (!Number.isInteger(index) || index < 0 || !pid) {
+        showErr('Bad remove target');
+        return;
+      }
       const res = await fetch(`/api/people/${pid}/exemplars/delete`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ path })
+        body: JSON.stringify({ index })
       });
       const data = await res.json();
-      if (!res.ok) { showErr(data.detail || 'Delete failed'); return; }
-      prov.textContent = `Removed bad photo for ${data.person.name}`;
+      if (!res.ok) {
+        showErr(typeof data.detail === 'string' ? data.detail : (data.detail || 'Delete failed'));
+        return;
+      }
+      if (data.person && String(data.person.id) !== String(pid)) {
+        showErr('Refused delete — person mismatch');
+        return;
+      }
+      prov.textContent = `Removed ${data.filename || 'photo'} for ${data.person.name || pname}`;
       await loadGalleryForSelectedPerson();
     };
   });

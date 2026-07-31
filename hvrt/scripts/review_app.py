@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from hvrt.annotations import (  # noqa: E402
     add_annotation,
     delete_exemplar,
+    delete_exemplar_by_index,
     ensure_gallery_dir,
     list_people,
     list_person_exemplars,
@@ -90,7 +91,9 @@ class OcrConfirmIn(BaseModel):
 
 
 class DeleteExemplarIn(BaseModel):
-    path: str
+    """Prefer index (safe). path is accepted only as a fallback with ownership check."""
+    index: int | None = None
+    path: str | None = None
     person_id: int | None = None
 
 
@@ -217,18 +220,30 @@ def api_person_exemplar_image(person_id: int, index: int):
 
 
 @app.delete("/api/people/{person_id}/exemplars")
-def api_delete_exemplar(person_id: int, path: str = Query(...)) -> dict[str, Any]:
+def api_delete_exemplar(
+    person_id: int,
+    path: str | None = Query(None),
+    index: int | None = Query(None),
+) -> dict[str, Any]:
     c = conn()
     person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
     if not person:
         raise HTTPException(404, "person not found")
-    # Only allow delete inside known gallery dirs or annotation exemplars
-    target = Path(path).resolve()
-    allowed_roots = [p.resolve() for p in cfg_gallery_dirs()]
-    allowed_roots.append((cfg_working() / "exemplars").resolve())
-    if not any(str(target).startswith(str(root)) for root in allowed_roots):
-        raise HTTPException(403, "path outside gallery")
-    result = delete_exemplar(c, str(target), person_id=person_id)
+    try:
+        if index is not None:
+            result = delete_exemplar_by_index(
+                c, person_id, index, extra_dirs=cfg_gallery_dirs()
+            )
+        elif path:
+            result = delete_exemplar(
+                c, path, person_id=person_id, extra_dirs=cfg_gallery_dirs()
+            )
+        else:
+            raise HTTPException(400, "index or path required")
+    except IndexError as e:
+        raise HTTPException(404, str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     return {"ok": True, "person": dict(person), **result}
 
 
@@ -238,12 +253,21 @@ def api_delete_exemplar_post(person_id: int, body: DeleteExemplarIn) -> dict[str
     person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
     if not person:
         raise HTTPException(404, "person not found")
-    target = Path(body.path).resolve()
-    allowed_roots = [p.resolve() for p in cfg_gallery_dirs()]
-    allowed_roots.append((cfg_working() / "exemplars").resolve())
-    if not any(str(target).startswith(str(root)) for root in allowed_roots):
-        raise HTTPException(403, "path outside gallery")
-    result = delete_exemplar(c, str(target), person_id=person_id)
+    try:
+        if body.index is not None:
+            result = delete_exemplar_by_index(
+                c, person_id, body.index, extra_dirs=cfg_gallery_dirs()
+            )
+        elif body.path:
+            result = delete_exemplar(
+                c, body.path, person_id=person_id, extra_dirs=cfg_gallery_dirs()
+            )
+        else:
+            raise HTTPException(400, "index or path required")
+    except IndexError as e:
+        raise HTTPException(404, str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
     return {"ok": True, "person": dict(person), **result}
 
 
