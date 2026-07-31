@@ -12,11 +12,124 @@ from hvrt.rescoring import human_confidence, load_rules, rebuild_effective_evide
 SAFE_NAME = re.compile(r"[^\w\s\-'.]", re.UNICODE)
 
 
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def sync_people_from_gallery(
+    conn: sqlite3.Connection,
+    gallery_dirs: list[Path | str],
+) -> list[dict[str, Any]]:
+    """Ensure every gallery/<PersonName>/ folder is a people row (dropdown source)."""
+    for gallery_dir in gallery_dirs:
+        root = Path(gallery_dir)
+        if not root.is_dir():
+            continue
+        for person_dir in sorted(root.iterdir()):
+            if not person_dir.is_dir() or person_dir.name.startswith("."):
+                continue
+            has_image = any(
+                p.is_file() and p.suffix.lower() in IMAGE_EXTS
+                for p in person_dir.iterdir()
+            )
+            if has_image:
+                upsert_person(conn, person_dir.name, str(person_dir.resolve()))
+    return list_people(conn)
+
+
 def list_people(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, name, gallery_path FROM people ORDER BY name COLLATE NOCASE"
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_person_exemplars(
+    conn: sqlite3.Connection,
+    person_id: int,
+    extra_dirs: list[Path | str] | None = None,
+) -> list[dict[str, Any]]:
+    """List image files for a person from gallery_path and annotation exemplars."""
+    person = conn.execute(
+        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+    ).fetchone()
+    if not person:
+        return []
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def add_file(path: Path, source: str) -> None:
+        key = str(path.resolve()).lower()
+        if key in seen or not path.is_file():
+            return
+        if path.suffix.lower() not in IMAGE_EXTS:
+            return
+        seen.add(key)
+        out.append(
+            {
+                "path": str(path.resolve()),
+                "filename": path.name,
+                "source": source,
+                "person_id": person_id,
+                "person_name": person["name"],
+            }
+        )
+
+    if person["gallery_path"]:
+        gdir = Path(person["gallery_path"])
+        if gdir.is_dir():
+            for img in sorted(gdir.iterdir()):
+                add_file(img, "gallery")
+
+    for extra in extra_dirs or []:
+        extra_person = Path(extra) / person["name"]
+        if extra_person.is_dir():
+            for img in sorted(extra_person.iterdir()):
+                add_file(img, "gallery")
+
+    rows = conn.execute(
+        """
+        SELECT id, exemplar_path FROM annotations
+        WHERE person_id=? AND kind='person_face' AND revoked=0
+          AND exemplar_path IS NOT NULL
+        ORDER BY id DESC
+        """,
+        (person_id,),
+    ).fetchall()
+    for r in rows:
+        add_file(Path(r["exemplar_path"]), f"annotation:{r['id']}")
+
+    return out
+
+
+def delete_exemplar(
+    conn: sqlite3.Connection,
+    path: str,
+    *,
+    person_id: int | None = None,
+) -> dict[str, Any]:
+    """Remove a bad gallery/exemplar image and unlink annotation refs."""
+    target = Path(path)
+    resolved = str(target.resolve()) if target.exists() else str(Path(path))
+    removed_file = False
+    if target.is_file():
+        target.unlink()
+        removed_file = True
+
+    cleared = conn.execute(
+        """
+        UPDATE annotations SET exemplar_path=NULL
+        WHERE exemplar_path = ? OR exemplar_path = ?
+        """,
+        (path, resolved),
+    ).rowcount
+    conn.commit()
+    return {
+        "removed_file": removed_file,
+        "cleared_annotations": cleared,
+        "path": path,
+        "person_id": person_id,
+    }
 
 
 def list_places(conn: sqlite3.Connection) -> list[dict[str, Any]]:

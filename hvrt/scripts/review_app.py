@@ -25,9 +25,12 @@ sys.path.insert(0, str(ROOT))
 
 from hvrt.annotations import (  # noqa: E402
     add_annotation,
+    delete_exemplar,
     ensure_gallery_dir,
     list_people,
+    list_person_exemplars,
     list_places,
+    sync_people_from_gallery,
     upsert_person,
     upsert_place,
 )
@@ -35,6 +38,7 @@ from hvrt.learning import LearningManager  # noqa: E402
 from hvrt.schema_r2 import init_r2_schema  # noqa: E402
 
 DEFAULT_DB = ROOT / "database" / "hvrt.sqlite"
+DEFAULT_GALLERY = ROOT / "gallery"
 STATIC = ROOT / "hvrt" / "static" / "review.html"
 HOST = "127.0.0.1"
 PORT = 8788
@@ -85,12 +89,31 @@ class OcrConfirmIn(BaseModel):
     text: str
 
 
+class DeleteExemplarIn(BaseModel):
+    path: str
+    person_id: int | None = None
+
+
+def _load_hvrt_config() -> dict[str, Any]:
+    cfg_path = ROOT / "config" / "hvrt.json"
+    if cfg_path.is_file():
+        return json.loads(cfg_path.read_text(encoding="utf-8"))
+    return {}
+
+
 def cfg_db() -> Path:
     return Path(getattr(app.state, "db_path", DEFAULT_DB))
 
 
 def cfg_working() -> Path:
     return Path(getattr(app.state, "working_dir", ROOT / "working"))
+
+
+def cfg_gallery_dirs() -> list[Path]:
+    dirs = getattr(app.state, "gallery_dirs", None)
+    if dirs:
+        return [Path(d) for d in dirs]
+    return [DEFAULT_GALLERY, cfg_working() / "exemplars" / "people"]
 
 
 def conn():
@@ -110,6 +133,10 @@ def _startup() -> None:
     init_r2_schema(cfg_db())
     cfg_working().mkdir(parents=True, exist_ok=True)
     (cfg_working() / "exemplars").mkdir(parents=True, exist_ok=True)
+    (cfg_working() / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    DEFAULT_GALLERY.mkdir(parents=True, exist_ok=True)
+    # Sync gallery folders (Peggy/Andy/Carri/...) into people table for dropdowns
+    sync_people_from_gallery(conn(), cfg_gallery_dirs())
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -126,6 +153,7 @@ def health() -> dict[str, Any]:
         "ok": True,
         "release": "R2",
         "database": str(cfg_db()),
+        "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "settings_engine": False,
         "place_recognition_engine": False,
         "decision_model": "owner>user>ai",
@@ -135,16 +163,88 @@ def health() -> dict[str, Any]:
 @app.get("/api/people")
 def api_people() -> dict[str, Any]:
     c = conn()
-    people = list_people(c)
-    # hit counts from effective evidence when present
+    # Sync filesystem gallery folders into DB so dropdown shows Peggy/Andy/Carri/etc.
+    people = sync_people_from_gallery(c, cfg_gallery_dirs())
     out = []
     for p in people:
         n = c.execute(
             "SELECT COUNT(*) AS c FROM evidence_effective WHERE person_id=? AND kind='person_face'",
             (p["id"],),
         ).fetchone()["c"]
+        # Also count Phase-1 face_appearances if present
+        try:
+            n2 = c.execute(
+                "SELECT COUNT(*) AS c FROM face_appearances WHERE person_id=?",
+                (p["id"],),
+            ).fetchone()["c"]
+            n = max(n, n2)
+        except Exception:  # noqa: BLE001
+            pass
         out.append({**p, "hit_count": n})
-    return {"people": out}
+    return {"people": out, "gallery_dirs": [str(p) for p in cfg_gallery_dirs()]}
+
+
+@app.get("/api/people/{person_id}/exemplars")
+def api_person_exemplars(person_id: int) -> dict[str, Any]:
+    c = conn()
+    person = c.execute(
+        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+    ).fetchone()
+    if not person:
+        raise HTTPException(404, "person not found")
+    exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
+    # Add stable URLs for browser display
+    for i, ex in enumerate(exemplars):
+        ex["url"] = f"/api/people/{person_id}/exemplars/{i}/image"
+    return {
+        "person": dict(person),
+        "count": len(exemplars),
+        "exemplars": exemplars,
+    }
+
+
+@app.get("/api/people/{person_id}/exemplars/{index}/image")
+def api_person_exemplar_image(person_id: int, index: int):
+    c = conn()
+    exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
+    if index < 0 or index >= len(exemplars):
+        raise HTTPException(404, "exemplar not found")
+    path = Path(exemplars[index]["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    media_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@app.delete("/api/people/{person_id}/exemplars")
+def api_delete_exemplar(person_id: int, path: str = Query(...)) -> dict[str, Any]:
+    c = conn()
+    person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
+    if not person:
+        raise HTTPException(404, "person not found")
+    # Only allow delete inside known gallery dirs or annotation exemplars
+    target = Path(path).resolve()
+    allowed_roots = [p.resolve() for p in cfg_gallery_dirs()]
+    allowed_roots.append((cfg_working() / "exemplars").resolve())
+    if not any(str(target).startswith(str(root)) for root in allowed_roots):
+        raise HTTPException(403, "path outside gallery")
+    result = delete_exemplar(c, str(target), person_id=person_id)
+    return {"ok": True, "person": dict(person), **result}
+
+
+@app.post("/api/people/{person_id}/exemplars/delete")
+def api_delete_exemplar_post(person_id: int, body: DeleteExemplarIn) -> dict[str, Any]:
+    c = conn()
+    person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
+    if not person:
+        raise HTTPException(404, "person not found")
+    target = Path(body.path).resolve()
+    allowed_roots = [p.resolve() for p in cfg_gallery_dirs()]
+    allowed_roots.append((cfg_working() / "exemplars").resolve())
+    if not any(str(target).startswith(str(root)) for root in allowed_roots):
+        raise HTTPException(403, "path outside gallery")
+    result = delete_exemplar(c, str(target), person_id=person_id)
+    return {"ok": True, "person": dict(person), **result}
 
 
 @app.get("/api/places")
@@ -426,10 +526,11 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
     c = conn()
     name = (body.person_name or "").strip()
     person_id = body.person_id
+    primary_gallery = cfg_gallery_dirs()[0]
+
     if body.create_person:
         if not name:
             raise HTTPException(400, "person_name required to create")
-        # duplicate guard
         existing = c.execute(
             "SELECT id, name FROM people WHERE name = ? COLLATE NOCASE", (name,)
         ).fetchone()
@@ -438,24 +539,33 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
                 409,
                 f"Person '{existing['name']}' already exists — pick from dropdown",
             )
-        gallery = ensure_gallery_dir(cfg_working() / "exemplars", "people", name)
-        person_id = upsert_person(c, name, str(gallery))
-    else:
-        if person_id is None and name:
-            row = c.execute(
-                "SELECT id, name FROM people WHERE name = ? COLLATE NOCASE", (name,)
-            ).fetchone()
-            if not row:
-                raise HTTPException(404, "Person not found — enable create or pick dropdown")
-            person_id = int(row["id"])
-            name = row["name"]
-        if person_id is None:
-            raise HTTPException(400, "person_id or person_name required")
-        prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        gallery = primary_gallery / name
+        gallery.mkdir(parents=True, exist_ok=True)
+        person_id = upsert_person(c, name, str(gallery.resolve()))
+    elif person_id is not None:
+        prow = c.execute(
+            "SELECT name, gallery_path FROM people WHERE id=?", (person_id,)
+        ).fetchone()
         if not prow:
             raise HTTPException(404, "person_id not found")
         name = prow["name"]
-        gallery = ensure_gallery_dir(cfg_working() / "exemplars", "people", name)
+        gallery = Path(prow["gallery_path"]) if prow["gallery_path"] else (primary_gallery / name)
+        gallery.mkdir(parents=True, exist_ok=True)
+        upsert_person(c, name, str(gallery.resolve()))
+    elif name:
+        row = c.execute(
+            "SELECT id, name, gallery_path FROM people WHERE name = ? COLLATE NOCASE",
+            (name,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Person not found — enable create or pick dropdown")
+        person_id = int(row["id"])
+        name = row["name"]
+        gallery = Path(row["gallery_path"]) if row["gallery_path"] else (primary_gallery / name)
+        gallery.mkdir(parents=True, exist_ok=True)
+        upsert_person(c, name, str(gallery.resolve()))
+    else:
+        raise HTTPException(400, "person_id or person_name required")
 
     dest = gallery / f"face_{body.video_id}_{int(body.start_sec)}_{uuid.uuid4().hex[:8]}.jpg"
     exemplar = str(_save_b64_jpeg(body.crop_jpeg_base64, dest))
@@ -579,20 +689,35 @@ def learn_status() -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="HVRT R2 Review App")
-    parser.add_argument("--db", default=str(DEFAULT_DB))
-    parser.add_argument("--working", default=str(ROOT / "working"))
-    parser.add_argument("--host", default=HOST)
-    parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--db", default=None)
+    parser.add_argument("--working", default=None)
+    parser.add_argument("--gallery", default=None, help="Primary face gallery dir")
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
-    app.state.db_path = Path(args.db)
-    app.state.working_dir = Path(args.working)
-    app.state.learner = LearningManager(app.state.db_path, app.state.working_dir)
-    init_r2_schema(app.state.db_path)
-    print(f"HVRT Review R2   http://{args.host}:{args.port}")
-    print(f"Database         {app.state.db_path}")
+
+    file_cfg = _load_hvrt_config()
+    db_path = Path(args.db or file_cfg.get("database_path") or DEFAULT_DB)
+    working = Path(args.working or file_cfg.get("working_dir") or (ROOT / "working"))
+    gallery = Path(args.gallery or file_cfg.get("gallery_dir") or DEFAULT_GALLERY)
+    host = args.host or file_cfg.get("api", {}).get("host", HOST)
+    port = int(args.port or file_cfg.get("api", {}).get("port", PORT))
+
+    app.state.db_path = db_path
+    app.state.working_dir = working
+    app.state.gallery_dirs = [gallery, working / "exemplars" / "people"]
+    app.state.learner = LearningManager(db_path, working)
+    init_r2_schema(db_path)
+    gallery.mkdir(parents=True, exist_ok=True)
+    (working / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    sync_people_from_gallery(conn(), app.state.gallery_dirs)
+
+    print(f"HVRT Review R2   http://{host}:{port}")
+    print(f"Database         {db_path}")
+    print(f"Gallery dirs     {app.state.gallery_dirs}")
     print("Settings engine  disabled (placeholder)")
     print("Place recognition disabled (annotate/exemplars only)")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
