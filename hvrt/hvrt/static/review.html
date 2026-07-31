@@ -87,14 +87,9 @@
           <option value="videos">All videos</option>
         </select>
       </label>
-      <label id="personQueryWrap">Person
-        <select id="personQuery"></select>
-      </label>
-      <label id="placeQueryWrap" hidden>Place
-        <select id="placeQuery"></select>
-      </label>
-      <label id="textQueryWrap" hidden>Phrase
-        <input id="query" type="search" placeholder="Happy Birthday" />
+      <label id="queryWrap"><span id="queryLabel">Person</span>
+        <select id="querySelect"></select>
+        <input id="queryText" type="search" placeholder="Happy Birthday" hidden />
       </label>
       <button id="loadBtn" type="button">Load hits</button>
       <button id="learnBtn" class="secondary" type="button">Learn from annotations</button>
@@ -107,7 +102,7 @@
         <div id="hitMeta" class="meta">Load hits to begin.</div>
         <div id="err" class="err" hidden></div>
         <ul id="hitList" class="hit-list"></ul>
-        <div class="gallery">
+        <div class="gallery" id="galleryPanel">
           <h3>Person gallery</h3>
           <div id="gallery" class="gal-grid"><div class="meta">Select a person to manage photos.</div></div>
         </div>
@@ -157,12 +152,10 @@
 
 <script>
 const modeEl = document.getElementById('mode');
-const queryEl = document.getElementById('query');
-const personQuery = document.getElementById('personQuery');
-const placeQuery = document.getElementById('placeQuery');
-const personQueryWrap = document.getElementById('personQueryWrap');
-const placeQueryWrap = document.getElementById('placeQueryWrap');
-const textQueryWrap = document.getElementById('textQueryWrap');
+const queryWrap = document.getElementById('queryWrap');
+const querySelect = document.getElementById('querySelect');
+const queryText = document.getElementById('queryText');
+const galleryPanel = document.getElementById('galleryPanel');
 const hitList = document.getElementById('hitList');
 const hitMeta = document.getElementById('hitMeta');
 const errEl = document.getElementById('err');
@@ -178,22 +171,21 @@ let boxMode = false;
 let box = null;
 let drawing = false;
 let learnTimer = null;
+let lastFaceQueryId = '';
+let lastPlaceQueryName = '';
 
 function showErr(m){ errEl.hidden=!m; errEl.textContent=m||''; }
 function fmt(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), r=Math.floor(s%60); return `${m}:${String(r).padStart(2,'0')}`; }
 function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 
-function syncMode(){
-  const mode = modeEl.value;
-  personQueryWrap.hidden = mode !== 'faces';
-  placeQueryWrap.hidden = mode !== 'places';
-  textQueryWrap.hidden = mode !== 'text';
+function personOptionHtml(p){
+  const n = Number(p.hit_count || 0);
+  const label = n ? `${p.name} · ${n} hit${n===1?'':'s'}` : p.name;
+  return `<option value="${p.id}" data-name="${escapeHtml(p.name)}">${escapeHtml(label)}</option>`;
 }
 
-function personOptionHtml(p){
-  const hits = Number(p.hit_count || 0);
-  const label = hits ? `${p.name} · ${hits} hit${hits===1?'':'s'}` : p.name;
-  return `<option value="${p.id}" data-name="${escapeHtml(p.name)}">${escapeHtml(label)}</option>`;
+function placeOptionHtml(p){
+  return `<option value="${escapeHtml(p.name)}" data-name="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`;
 }
 
 function optionName(selectEl){
@@ -202,14 +194,53 @@ function optionName(selectEl){
   return (opt.getAttribute('data-name') || opt.textContent || '').trim();
 }
 
+/** Swap the top query control to match Mode: people / places / phrase / none. */
+function syncMode(){
+  const mode = modeEl.value;
+  const people = window._people || [];
+  const places = window._places || [];
+  const queryLabel = document.getElementById('queryLabel');
+
+  galleryPanel.hidden = mode !== 'faces';
+
+  if (mode === 'videos') {
+    queryWrap.hidden = true;
+    querySelect.hidden = true;
+    queryText.hidden = true;
+    return;
+  }
+
+  queryWrap.hidden = false;
+  if (mode === 'faces') {
+    queryLabel.textContent = 'Person';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastFaceQueryId || querySelect.value;
+    querySelect.innerHTML = people.map(personOptionHtml).join('')
+      || '<option value="">(no people in gallery yet)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastFaceQueryId = querySelect.value;
+  } else if (mode === 'places') {
+    queryLabel.textContent = 'Place';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastPlaceQueryName || querySelect.value;
+    querySelect.innerHTML = places.map(placeOptionHtml).join('')
+      || '<option value="">(no places yet — mark one below)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastPlaceQueryName = querySelect.value;
+  } else {
+    queryLabel.textContent = 'Phrase';
+    querySelect.hidden = true;
+    queryText.hidden = false;
+  }
+}
+
 function currentQueryName(){
   const mode = modeEl.value;
-  if (mode === 'faces') return optionName(personQuery);
-  if (mode === 'places') {
-    const opt = placeQuery.selectedOptions[0];
-    return opt ? opt.textContent.trim() : '';
-  }
-  return queryEl.value.trim();
+  if (mode === 'faces' || mode === 'places') return optionName(querySelect) || querySelect.value.trim();
+  if (mode === 'text') return queryText.value.trim();
+  return '';
 }
 
 function selectedPersonName(){
@@ -222,14 +253,11 @@ function updateEnrollButton(){
   btn.textContent = `Enroll face as ${newName || selectedPersonName() || 'person'}`;
 }
 
-function fillPersonSelects(people, preferId, preferName){
+function fillEnrollPeople(people, preferName){
   const html = people.map(personOptionHtml).join('')
-    || '<option value="">(no people in gallery yet)</option>';
-  const keepQuery = preferId || personQuery.value;
+    || '<option value="">(none yet)</option>';
   const keepEnroll = personSelect.value;
-  personQuery.innerHTML = html;
   personSelect.innerHTML = html;
-
   const want = (preferName || '').trim().toLowerCase();
   let matched = null;
   if (want && people.length) {
@@ -237,17 +265,11 @@ function fillPersonSelects(people, preferId, preferName){
       || people.find(p => p.name.toLowerCase().includes(want) || want.includes(p.name.toLowerCase()));
   }
   if (matched) {
-    personQuery.value = String(matched.id);
     personSelect.value = String(matched.id);
-  } else {
-    if (keepQuery && [...personQuery.options].some(o => o.value === keepQuery)) {
-      personQuery.value = keepQuery;
-    }
-    if (keepEnroll && [...personSelect.options].some(o => o.value === keepEnroll)) {
-      personSelect.value = keepEnroll;
-    } else if (personQuery.value) {
-      personSelect.value = personQuery.value;
-    }
+  } else if (keepEnroll && [...personSelect.options].some(o => o.value === keepEnroll)) {
+    personSelect.value = keepEnroll;
+  } else if (modeEl.value === 'faces' && querySelect.value) {
+    personSelect.value = querySelect.value;
   }
 }
 
@@ -257,13 +279,25 @@ async function refreshPeoplePlaces(preferName){
   const people = peoplePayload.people || [];
   const places = ((await pl.json()).places || []);
   window._people = people;
+  window._places = places;
   window._galleryDirs = peoplePayload.gallery_dirs || [];
 
-  fillPersonSelects(people, null, preferName);
+  // Remember current face/place selection across rebuilds
+  if (modeEl.value === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
+  if (modeEl.value === 'places' && querySelect.value) lastPlaceQueryName = querySelect.value;
 
-  placeQuery.innerHTML = places.map(p =>
-    `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`
-  ).join('') || '<option value="">(no places yet)</option>';
+  fillEnrollPeople(people, preferName);
+  syncMode(); // rebuild top query dropdown for current mode
+
+  if (preferName && modeEl.value === 'faces') {
+    const matched = people.find(p => p.name.toLowerCase() === preferName.trim().toLowerCase());
+    if (matched) {
+      querySelect.value = String(matched.id);
+      personSelect.value = String(matched.id);
+      lastFaceQueryId = String(matched.id);
+    }
+  }
+
   document.getElementById('placeList').innerHTML = places.map(p =>
     `<option value="${escapeHtml(p.name)}"></option>`
   ).join('');
@@ -274,7 +308,8 @@ async function refreshPeoplePlaces(preferName){
 
 async function loadGalleryForSelectedPerson(){
   const galleryEl = document.getElementById('gallery');
-  const personId = personSelect.value || personQuery.value;
+  if (modeEl.value !== 'faces') return;
+  const personId = personSelect.value || (modeEl.value === 'faces' ? querySelect.value : '');
   if (!personId) {
     galleryEl.innerHTML = '<div class="meta">No person selected.</div>';
     return;
@@ -320,15 +355,18 @@ async function loadHits(){
   document.getElementById('vlcBtn').disabled = true;
 
   const mode = modeEl.value;
-  // Refresh list from gallery folders, but keep the top Person selection
-  const keepName = mode === 'faces' ? currentQueryName() : '';
-  const keepId = personQuery.value;
+  if (mode === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
+  if (mode === 'places' && querySelect.value) lastPlaceQueryName = querySelect.value;
+
   await refreshPeoplePlaces();
-  if (keepId && [...personQuery.options].some(o => o.value === keepId)) {
-    personQuery.value = keepId;
-    personSelect.value = keepId;
-  } else if (keepName) {
-    fillPersonSelects(window._people || [], keepId, keepName);
+
+  // Restore face selection after refresh rebuilt the dropdown
+  if (mode === 'faces' && lastFaceQueryId && [...querySelect.options].some(o => o.value === lastFaceQueryId)) {
+    querySelect.value = lastFaceQueryId;
+    personSelect.value = lastFaceQueryId;
+  }
+  if (mode === 'places' && lastPlaceQueryName && [...querySelect.options].some(o => o.value === lastPlaceQueryName)) {
+    querySelect.value = lastPlaceQueryName;
   }
   updateEnrollButton();
   await loadGalleryForSelectedPerson();
@@ -346,12 +384,11 @@ async function loadHits(){
     hitMeta.textContent = `${hits.length} videos`;
   } else {
     if (!q) {
-      showErr(mode === 'faces' ? 'Pick a person from the top Person list (everyone in gallery\\)' : mode === 'places' ? 'Pick a place' : 'Enter a phrase');
+      showErr(mode === 'faces' ? 'Pick a person' : mode === 'places' ? 'Pick a place' : 'Enter a phrase');
       return;
     }
-    // Enroll target follows the person you are searching
     if (mode === 'faces') {
-      personSelect.value = personQuery.value;
+      personSelect.value = querySelect.value;
       updateEnrollButton();
       await loadGalleryForSelectedPerson();
     }
@@ -365,7 +402,10 @@ async function loadHits(){
   }
 
   if (!hits.length) {
-    hitList.innerHTML = `<li class="meta">No hits for ${escapeHtml(q || 'selection')}. Gallery people with 0 hits still appear in the top list — enroll faces or run process_videos.</li>`;
+    const tip = mode === 'faces'
+      ? ' People with 0 hits still appear in the list — enroll faces or run process_videos.'
+      : '';
+    hitList.innerHTML = `<li class="meta">No hits for ${escapeHtml(q || 'selection')}.${tip}</li>`;
     return;
   }
 
@@ -389,7 +429,6 @@ function selectHit(i, btn){
   document.getElementById('vlcBtn').disabled = false;
   startSec.value = Number(selected.start_sec || 0).toFixed(1);
   endSec.value = Number(selected.end_sec || selected.start_sec || 1).toFixed(1);
-  // Enroll target follows the hit label; top Person stays on who you queried
   if (selected.label && modeEl.value === 'faces') {
     const match = (window._people || []).find(p => p.name === selected.label);
     if (match) personSelect.value = String(match.id);
@@ -575,26 +614,32 @@ document.getElementById('learnBtn').onclick = async () => {
 };
 
 document.getElementById('loadBtn').onclick = () => loadHits().catch(e => showErr(e.message));
-personQuery.addEventListener('change', () => {
-  personSelect.value = personQuery.value;
-  updateEnrollButton();
-  loadGalleryForSelectedPerson();
+querySelect.addEventListener('change', () => {
+  if (modeEl.value === 'faces') {
+    lastFaceQueryId = querySelect.value;
+    personSelect.value = querySelect.value;
+    updateEnrollButton();
+    loadGalleryForSelectedPerson();
+  } else if (modeEl.value === 'places') {
+    lastPlaceQueryName = querySelect.value;
+  }
   loadHits().catch(e => showErr(e.message));
 });
-placeQuery.addEventListener('change', () => loadHits().catch(e => showErr(e.message)));
+queryText.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadHits().catch(err => showErr(err.message));
+});
 personSelect.addEventListener('change', () => {
   updateEnrollButton();
   loadGalleryForSelectedPerson().catch(e => showErr(e.message));
 });
 document.getElementById('newPerson').addEventListener('input', updateEnrollButton);
 modeEl.addEventListener('change', () => {
-  syncMode();
+  syncMode(); // rebuild query dropdown options for this mode
   loadHits().catch(e => showErr(e.message));
 });
 video.addEventListener('loadeddata', syncOverlaySize);
 window.addEventListener('resize', syncOverlaySize);
 
-syncMode();
 refreshPeoplePlaces().then(() => loadHits()).catch(e => showErr(e.message));
 refreshLearn();
 </script>
