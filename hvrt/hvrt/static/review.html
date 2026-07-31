@@ -51,8 +51,11 @@
     .hit-list button.active { background: var(--accent); color: #f7fffc; }
     .player-body { padding: 1rem; display: grid; gap: .75rem; }
     .video-wrap { position: relative; background: #111814; }
-    video { width: 100%; max-height: 56vh; aspect-ratio: 16/9; object-fit: contain; display: block; }
+    video { width: 100%; max-height: 56vh; object-fit: contain; display: block; background: #0b100e; }
     canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: none; }
+    .crop-preview { display: none; align-items: center; gap: .75rem; }
+    .crop-preview.on { display: flex; }
+    .crop-preview img { width: 96px; height: 96px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
     .tools { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; }
     .prov { color: var(--muted); font-size: .92rem; }
     .prov strong { color: var(--ink); }
@@ -114,6 +117,10 @@
           <div class="video-wrap">
             <video id="video" controls playsinline></video>
             <canvas id="overlay"></canvas>
+          </div>
+          <div id="cropPreview" class="crop-preview prov">
+            <img id="cropPreviewImg" alt="Crop preview" />
+            <span id="cropPreviewMeta">Box a face to preview the exact crop that will be saved.</span>
           </div>
           <div class="tools">
             <label>Start <input id="startSec" type="number" step="0.1" value="0" style="width:6rem" /></label>
@@ -479,59 +486,183 @@ function selectHit(i, btn){
 }
 
 function syncOverlaySize(){
-  overlay.width = video.clientWidth;
-  overlay.height = video.clientHeight;
+  // Match canvas bitmap to the laid-out video box (CSS pixels)
+  const w = Math.max(1, Math.round(video.clientWidth));
+  const h = Math.max(1, Math.round(video.clientHeight));
+  if (overlay.width !== w) overlay.width = w;
+  if (overlay.height !== h) overlay.height = h;
+  drawBox();
+}
+
+/**
+ * Where the actual video pixels are drawn inside the <video> element.
+ * object-fit:contain (browser default when we don't stretch) letterboxes;
+ * we also used to force aspect-ratio:16/9 which made non-16:9 clips worse.
+ * Map overlay box → this content rect → source video pixels.
+ */
+function videoContentRect(){
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  const ew = overlay.width || video.clientWidth || 0;
+  const eh = overlay.height || video.clientHeight || 0;
+  if (!vw || !vh || !ew || !eh) return null;
+  const videoRatio = vw / vh;
+  const elemRatio = ew / eh;
+  let drawW, drawH, offsetX, offsetY;
+  if (videoRatio > elemRatio) {
+    // fit width → letterbox top/bottom
+    drawW = ew;
+    drawH = ew / videoRatio;
+    offsetX = 0;
+    offsetY = (eh - drawH) / 2;
+  } else {
+    // fit height → pillarbox left/right
+    drawH = eh;
+    drawW = eh * videoRatio;
+    offsetX = (ew - drawW) / 2;
+    offsetY = 0;
+  }
+  return { vw, vh, ew, eh, drawW, drawH, offsetX, offsetY };
+}
+
+function overlayEventToCanvas(e){
+  const r = overlay.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (overlay.width / Math.max(1, r.width));
+  const y = (e.clientY - r.top) * (overlay.height / Math.max(1, r.height));
+  return { x, y };
+}
+
+/** Map overlay canvas box → integer source pixels in the video frame. */
+function boxToVideoPixels(b){
+  const content = videoContentRect();
+  if (!content) throw new Error('Video not ready — wait for playback then box again');
+  const { vw, vh, drawW, drawH, offsetX, offsetY } = content;
+  const x0 = Math.min(b.x0, b.x1);
+  const y0 = Math.min(b.y0, b.y1);
+  const x1 = Math.max(b.x0, b.x1);
+  const y1 = Math.max(b.y0, b.y1);
+
+  // Convert overlay coords into content-rect coords, then into video pixels
+  let sx0 = ((x0 - offsetX) / drawW) * vw;
+  let sy0 = ((y0 - offsetY) / drawH) * vh;
+  let sx1 = ((x1 - offsetX) / drawW) * vw;
+  let sy1 = ((y1 - offsetY) / drawH) * vh;
+
+  // Clamp to frame
+  sx0 = Math.max(0, Math.min(vw, sx0));
+  sy0 = Math.max(0, Math.min(vh, sy0));
+  sx1 = Math.max(0, Math.min(vw, sx1));
+  sy1 = Math.max(0, Math.min(vh, sy1));
+
+  const x = Math.floor(Math.min(sx0, sx1));
+  const y = Math.floor(Math.min(sy0, sy1));
+  const w = Math.ceil(Math.abs(sx1 - sx0));
+  const h = Math.ceil(Math.abs(sy1 - sy0));
+  if (w < 8 || h < 8) {
+    throw new Error('Face box is too small or mostly in the black letterbox — drag over the face in the picture');
+  }
+  return { x, y, w, h, vw, vh };
+}
+
+function updateCropPreview(){
+  const panel = document.getElementById('cropPreview');
+  const img = document.getElementById('cropPreviewImg');
+  const meta = document.getElementById('cropPreviewMeta');
+  if (!boxMode || !box) {
+    panel.classList.remove('on');
+    return;
+  }
+  try {
+    const dataUrl = captureCropJpeg();
+    const pix = boxToVideoPixels(box);
+    img.src = dataUrl;
+    meta.textContent = `Crop preview ${pix.w}×${pix.h}px — this is exactly what will be saved.`;
+    panel.classList.add('on');
+  } catch (err) {
+    panel.classList.remove('on');
+    meta.textContent = err.message || 'Invalid box';
+  }
 }
 
 document.getElementById('boxFaceBtn').onclick = () => {
   boxMode = !boxMode; box = null;
   overlay.style.display = boxMode ? 'block' : 'none';
   document.getElementById('saveFaceBtn').disabled = true;
+  document.getElementById('cropPreview').classList.remove('on');
   syncOverlaySize();
   drawBox();
-  prov.textContent = boxMode ? 'Drag a box around the face, then Enroll face.' : 'Box face off.';
+  prov.textContent = boxMode
+    ? 'Drag a box around the face. Check the crop preview, then Enroll face.'
+    : 'Box face off.';
 };
 
 function drawBox(){
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
+  // Dim letterbox so the drawable video area is obvious
+  const content = videoContentRect();
+  if (content && boxMode) {
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(0, 0, overlay.width, overlay.height);
+    ctx.clearRect(content.offsetX, content.offsetY, content.drawW, content.drawH);
+    ctx.strokeStyle = 'rgba(62,207,176,.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(content.offsetX + 0.5, content.offsetY + 0.5, content.drawW - 1, content.drawH - 1);
+  }
   if (!box) return;
   const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1);
   const w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
-  ctx.strokeStyle = '#3ecfb0'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = '#3ecfb0';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
 }
 
 overlay.addEventListener('mousedown', e => {
   if (!boxMode) return;
+  e.preventDefault();
   drawing = true;
-  const r = overlay.getBoundingClientRect();
-  box = {x0:e.clientX-r.left, y0:e.clientY-r.top, x1:e.clientX-r.left, y1:e.clientY-r.top};
+  const p = overlayEventToCanvas(e);
+  box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  drawBox();
 });
 overlay.addEventListener('mousemove', e => {
   if (!drawing || !box) return;
-  const r = overlay.getBoundingClientRect();
-  box.x1 = e.clientX - r.left; box.y1 = e.clientY - r.top; drawBox();
+  const p = overlayEventToCanvas(e);
+  box.x1 = p.x; box.y1 = p.y;
+  drawBox();
 });
 window.addEventListener('mouseup', () => {
   if (!drawing) return;
   drawing = false;
-  document.getElementById('saveFaceBtn').disabled = !(box && Math.abs(box.x1 - box.x0) > 8);
+  let ok = false;
+  try {
+    if (box) {
+      boxToVideoPixels(box); // validate mapping
+      ok = true;
+    }
+  } catch (err) {
+    showErr(err.message);
+    ok = false;
+  }
+  document.getElementById('saveFaceBtn').disabled = !ok;
+  updateCropPreview();
 });
 
 function captureFrameJpeg(){
+  if (!video.videoWidth) throw new Error('Video frame not ready');
   const c = document.createElement('canvas');
   c.width = video.videoWidth; c.height = video.videoHeight;
-  c.getContext('2d').drawImage(video, 0, 0);
+  c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
   return c.toDataURL('image/jpeg', 0.92);
 }
+
 function captureCropJpeg(){
   if (!box) throw new Error('No face box');
-  const scaleX = video.videoWidth / overlay.width;
-  const scaleY = video.videoHeight / overlay.height;
-  const x = Math.min(box.x0, box.x1) * scaleX, y = Math.min(box.y0, box.y1) * scaleY;
-  const w = Math.abs(box.x1 - box.x0) * scaleX, h = Math.abs(box.y1 - box.y0) * scaleY;
+  if (!video.videoWidth) throw new Error('Video frame not ready');
+  const { x, y, w, h } = boxToVideoPixels(box);
   const c = document.createElement('canvas');
-  c.width = Math.max(1, w); c.height = Math.max(1, h);
+  c.width = w;
+  c.height = h;
   c.getContext('2d').drawImage(video, x, y, w, h, 0, 0, w, h);
   return c.toDataURL('image/jpeg', 0.92);
 }

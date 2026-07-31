@@ -155,7 +155,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "face-hits-merge-00097d2",
+        "build": "face-crop-fix-5955ac6",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "settings_engine": False,
