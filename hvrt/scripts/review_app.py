@@ -701,7 +701,8 @@ def main() -> None:
     working = Path(args.working or file_cfg.get("working_dir") or (ROOT / "working"))
     gallery = Path(args.gallery or file_cfg.get("gallery_dir") or DEFAULT_GALLERY)
     host = args.host or file_cfg.get("api", {}).get("host", HOST)
-    port = int(args.port or file_cfg.get("api", {}).get("port", PORT))
+    # Review UI stays on 8788 by default so it doesn't collide with run_api.py (8787).
+    port = int(args.port or file_cfg.get("api", {}).get("review_port") or PORT)
 
     app.state.db_path = db_path
     app.state.working_dir = working
