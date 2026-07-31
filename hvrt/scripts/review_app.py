@@ -155,7 +155,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "face-crop-fix-5955ac6",
+        "build": "gallery-cache-fix-8662a3d",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "settings_engine": False,
@@ -186,9 +186,16 @@ def api_person_exemplars(person_id: int) -> dict[str, Any]:
     if not person:
         raise HTTPException(404, "person not found")
     exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
-    # Add stable URLs for browser display
+    # Add stable URLs for browser display (cache-bust with mtime so re-enroll
+    # after Remove does not show the previous sliver from browser cache).
     for i, ex in enumerate(exemplars):
-        ex["url"] = f"/api/people/{person_id}/exemplars/{i}/image"
+        mtime = 0
+        try:
+            mtime = int(Path(ex["path"]).stat().st_mtime)
+        except OSError:
+            pass
+        ex["index"] = i
+        ex["url"] = f"/api/people/{person_id}/exemplars/{i}/image?v={mtime}"
     return {
         "person": dict(person),
         "count": len(exemplars),
@@ -206,7 +213,15 @@ def api_person_exemplar_image(person_id: int, index: int):
     if not path.is_file():
         raise HTTPException(404, f"missing file: {path}")
     media_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
-    return FileResponse(path, media_type=media_type, filename=path.name)
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=path.name,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.delete("/api/people/{person_id}/exemplars")
@@ -705,9 +720,7 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
                 409,
                 f"Person '{existing['name']}' already exists — pick from dropdown",
             )
-        gallery = primary_gallery / name
-        gallery.mkdir(parents=True, exist_ok=True)
-        person_id = upsert_person(c, name, str(gallery.resolve()))
+        person_id = upsert_person(c, name, str((primary_gallery / name).resolve()))
     elif person_id is not None:
         prow = c.execute(
             "SELECT name, gallery_path FROM people WHERE id=?", (person_id,)
@@ -715,9 +728,7 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
         if not prow:
             raise HTTPException(404, "person_id not found")
         name = prow["name"]
-        gallery = Path(prow["gallery_path"]) if prow["gallery_path"] else (primary_gallery / name)
-        gallery.mkdir(parents=True, exist_ok=True)
-        upsert_person(c, name, str(gallery.resolve()))
+        upsert_person(c, name, str((primary_gallery / name).resolve()))
     elif name:
         row = c.execute(
             "SELECT id, name, gallery_path FROM people WHERE name = ? COLLATE NOCASE",
@@ -727,14 +738,19 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
             raise HTTPException(404, "Person not found — enable create or pick dropdown")
         person_id = int(row["id"])
         name = row["name"]
-        gallery = Path(row["gallery_path"]) if row["gallery_path"] else (primary_gallery / name)
-        gallery.mkdir(parents=True, exist_ok=True)
-        upsert_person(c, name, str(gallery.resolve()))
+        upsert_person(c, name, str((primary_gallery / name).resolve()))
     else:
         raise HTTPException(400, "person_id or person_name required")
 
+    # Always save into gallery/<PersonName>/ — never a stale/wrong gallery_path
+    gallery = primary_gallery / name
+    gallery.mkdir(parents=True, exist_ok=True)
     dest = gallery / f"face_{body.video_id}_{int(body.start_sec)}_{uuid.uuid4().hex[:8]}.jpg"
     exemplar = str(_save_b64_jpeg(body.crop_jpeg_base64, dest))
+    # Sanity: refuse empty/tiny writes so a bad crop cannot silently land
+    if Path(exemplar).stat().st_size < 500:
+        Path(exemplar).unlink(missing_ok=True)
+        raise HTTPException(400, "Crop image was empty — box the face again")
     end = body.end_sec if body.end_sec is not None else body.start_sec + 1.0
     ann_id = add_annotation(
         c,
@@ -746,13 +762,14 @@ def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
         label_text=name,
         person_id=person_id,
         exemplar_path=exemplar,
-        payload={"enroll": True},
+        payload={"enroll": True, "bytes": Path(exemplar).stat().st_size},
     )
     return {
         "annotation_id": ann_id,
         "person_id": person_id,
         "person_name": name,
         "exemplar_path": exemplar,
+        "exemplar_filename": Path(exemplar).name,
         "confidence": 1.0,
     }
 
