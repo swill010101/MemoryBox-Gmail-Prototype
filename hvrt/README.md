@@ -48,18 +48,30 @@ Docs: [docs/HVRT_R2_PRD.md](docs/HVRT_R2_PRD.md) · R3 voice notes: [docs/ROADMA
 
 **Learn from annotations** does **not** ingest new video files. It only updates galleries from human marks.
 
-To add a video:
+### From the review UI (preferred)
 
-1. Copy the file into `C:\memorybox\hvrt\sample\`
-2. Run recognition engines on new files only (skips already-done passes):
+1. Keep `python scripts\review_app.py` running on **8788**
+2. Click **Add & process videos**
+3. Multi-select files (local disk or a mapped share like `P:` — the browser uploads them to the local app)
+4. Files land in `sample\`, then `scripts\process_videos.py` runs in the background with an in-page progress panel
+5. When status is done, click **Load hits**
+
+Requires your Desktop `scripts\process_videos.py` (the Phase 1 pipeline). Do not stop the review app while it runs.
+
+### CLI (same pipeline)
 
 ```powershell
 cd C:\memorybox\hvrt
+# copy files into sample\ first, then:
 .\.venv\Scripts\Activate.ps1
 python scripts\process_videos.py
 ```
 
-3. Refresh the review UI (Load hits) or restart `review_app.py`
+Optional second-window DB watcher:
+
+```powershell
+python scripts\process_status.py
+```
 
 Older clips with no GPS/date still get metadata rows (`file_mtime`, duration, etc.). Place/date for those come from review markup later.
 

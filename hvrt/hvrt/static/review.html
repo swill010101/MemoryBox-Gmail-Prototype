@@ -74,6 +74,10 @@
     .transcript-words button.word.selected { background: var(--accent); color: #f7fffc; }
     .transcript-words .empty { color: var(--muted); }
     button.learn-running { background: #fff !important; color: var(--accent) !important; border: 1px solid rgba(15,107,92,.35) !important; }
+    .process-log {
+      margin: 0; max-height: 10rem; overflow: auto; font-size: .78rem; line-height: 1.35;
+      background: #111814; color: #d7efe9; padding: .6rem .75rem; white-space: pre-wrap; word-break: break-word;
+    }
     .prov { color: var(--muted); font-size: .92rem; }
     .prov strong { color: var(--ink); }
     .learn { padding-bottom: .5rem; }
@@ -96,7 +100,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build voice-speaker-ux</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build add-process-videos</p>
     </header>
 
     <div class="bar">
@@ -113,10 +117,20 @@
         <input id="queryText" type="search" placeholder="Blank = all spoken lines" hidden />
       </label>
       <button id="loadBtn" type="button">Load hits</button>
+      <button id="addProcessBtn" type="button">Add &amp; process videos</button>
+      <input id="videoFiles" type="file" multiple accept="video/*,.mov,.mp4,.m4v,.avi,.mkv,.mpg,.mpeg,.wmv" hidden />
       <button id="learnBtn" type="button">Learn from annotations</button>
       <button class="ghost-disabled" type="button" disabled title="Future">Setting (future)</button>
     </div>
 
+    <section class="learn" id="processPanel" hidden>
+      <h2>Add &amp; process videos</h2>
+      <div class="learn-body">
+        <div class="prov" id="processNote">Pick one or more videos (P: share is fine) — they copy into sample\\ then process_videos runs.</div>
+        <div id="processSteps"></div>
+        <pre id="processLog" class="process-log" hidden></pre>
+      </div>
+    </section>
     <div class="stage">
       <section class="hits">
         <h2>Hits</h2>
@@ -220,6 +234,7 @@ let boxMode = false;
 let box = null;
 let drawing = false;
 let learnTimer = null;
+let processTimer = null;
 let lastFaceQueryId = '';
 let lastPlaceQueryName = '';
 let galleryLoadSeq = 0;
@@ -1003,6 +1018,109 @@ document.getElementById('vlcBtn').onclick = async () => {
   catch { prompt('Copy VLC command', cmd); }
 };
 
+async function refreshProcess(){
+  const panel = document.getElementById('processPanel');
+  const note = document.getElementById('processNote');
+  const steps = document.getElementById('processSteps');
+  const logEl = document.getElementById('processLog');
+  const btn = document.getElementById('addProcessBtn');
+  const res = await fetch('/api/process/status');
+  const st = await res.json();
+  const running = st && (st.status === 'queued' || st.status === 'running');
+  const active = st && st.status && st.status !== 'idle';
+  panel.hidden = !active;
+  btn.classList.toggle('learn-running', !!running);
+  btn.classList.toggle('secondary', !!running);
+  btn.disabled = !!running;
+  btn.textContent = running
+    ? `Processing… ${Math.round(st.progress_pct || 0)}%`
+    : 'Add & process videos';
+  if (!active) return;
+  note.textContent = `${st.status} · ${Math.round(st.progress_pct || 0)}% · ${st.message || st.note || ''}`;
+  steps.innerHTML = (st.steps || []).map(s => `
+    <div class="step"><span>${escapeHtml(s.label)}</span><span>${escapeHtml(s.status)}</span>
+      <div class="track"><div class="fill" style="width:${s.status==='done'?100:(s.progress_pct||0)}%"></div></div>
+    </div>`).join('');
+  const lines = st.log || [];
+  if (lines.length) {
+    logEl.hidden = false;
+    logEl.textContent = lines.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (running) {
+    if (!processTimer) processTimer = setInterval(() => refreshProcess().catch(()=>{}), 1000);
+  } else if (processTimer) {
+    clearInterval(processTimer); processTimer = null;
+    if (st.status === 'done') {
+      note.textContent = `${st.message || 'Done'} — click Load hits to refresh.`;
+    }
+  }
+}
+
+function uploadVideos(fileList){
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    [...fileList].forEach(f => fd.append('files', f, f.name));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/process/upload');
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      const pct = Math.round(100 * ev.loaded / ev.total);
+      document.getElementById('processNote').textContent = `Uploading from share/disk… ${pct}% (${ev.loaded} / ${ev.total} bytes)`;
+      document.getElementById('addProcessBtn').textContent = `Uploading… ${pct}%`;
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.detail || xhr.statusText || 'Upload failed'));
+    };
+    xhr.onerror = () => reject(new Error('Upload network error'));
+    xhr.send(fd);
+  });
+}
+
+document.getElementById('addProcessBtn').onclick = () => {
+  if (document.getElementById('addProcessBtn').disabled) return;
+  document.getElementById('videoFiles').click();
+};
+
+document.getElementById('videoFiles').addEventListener('change', async (ev) => {
+  const input = ev.target;
+  const files = input.files;
+  if (!files || !files.length) return;
+  const panel = document.getElementById('processPanel');
+  panel.hidden = false;
+  document.getElementById('processLog').hidden = true;
+  document.getElementById('processLog').textContent = '';
+  document.getElementById('processSteps').innerHTML = '';
+  document.getElementById('processNote').textContent = `Preparing ${files.length} video(s) from picker (P: share OK)…`;
+  const btn = document.getElementById('addProcessBtn');
+  btn.disabled = true;
+  btn.classList.add('learn-running', 'secondary');
+  try {
+    const uploaded = await uploadVideos(files);
+    document.getElementById('processNote').textContent =
+      `Saved ${uploaded.count} file(s) into sample\\ — starting process_videos…`;
+    const res = await fetch('/api/process/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ saved: uploaded.saved || [] })
+    });
+    const st = await res.json();
+    if (!res.ok) throw new Error(st.detail || 'Could not start process_videos');
+    await refreshProcess();
+  } catch (e) {
+    showErr(e.message);
+    document.getElementById('processNote').textContent = e.message;
+    btn.disabled = false;
+    btn.classList.remove('learn-running', 'secondary');
+    btn.textContent = 'Add & process videos';
+  } finally {
+    input.value = '';
+  }
+});
+
 async function refreshLearn(){
   const res = await fetch('/api/learn/status'); const st = await res.json();
   const note = document.getElementById('learnNote');
@@ -1065,6 +1183,7 @@ window.addEventListener('resize', syncOverlaySize);
 
 refreshPeoplePlaces().then(() => loadHits()).catch(e => showErr(e.message));
 refreshLearn();
+refreshProcess().catch(() => {});
 </script>
 </body>
 </html>

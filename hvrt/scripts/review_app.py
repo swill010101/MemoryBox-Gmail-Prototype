@@ -11,11 +11,12 @@ import base64
 import json
 import mimetypes
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
@@ -36,10 +37,12 @@ from hvrt.annotations import (  # noqa: E402
     upsert_place,
 )
 from hvrt.learning import LearningManager  # noqa: E402
+from hvrt.process_jobs import ProcessJobManager, safe_sample_name  # noqa: E402
 from hvrt.schema_r2 import init_r2_schema  # noqa: E402
 
 DEFAULT_DB = ROOT / "database" / "hvrt.sqlite"
 DEFAULT_GALLERY = ROOT / "gallery"
+DEFAULT_SAMPLE = ROOT / "sample"
 STATIC = ROOT / "hvrt" / "static" / "review.html"
 HOST = "127.0.0.1"
 PORT = 8788
@@ -120,6 +123,10 @@ def cfg_gallery_dirs() -> list[Path]:
     return [DEFAULT_GALLERY, cfg_working() / "exemplars" / "people"]
 
 
+def cfg_sample() -> Path:
+    return Path(getattr(app.state, "sample_dir", DEFAULT_SAMPLE))
+
+
 def conn():
     return init_r2_schema(cfg_db())
 
@@ -129,6 +136,14 @@ def learner() -> LearningManager:
     if mgr is None:
         mgr = LearningManager(cfg_db(), cfg_working())
         app.state.learner = mgr
+    return mgr
+
+
+def processor() -> ProcessJobManager:
+    mgr = getattr(app.state, "processor", None)
+    if mgr is None:
+        mgr = ProcessJobManager(db_path=cfg_db(), root=ROOT, sample_dir=cfg_sample())
+        app.state.processor = mgr
     return mgr
 
 
@@ -167,9 +182,10 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "voice-speaker-ux",
+        "build": "add-process-videos",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
+        "sample_dir": str(cfg_sample()),
         "videos": video_n,
         "transcript_segments": transcript_n,
         "settings_engine": False,
@@ -1045,11 +1061,64 @@ def learn_status() -> dict[str, Any]:
     return st or {"status": "idle", "steps": [], "background": True}
 
 
+@app.post("/api/process/upload")
+async def process_upload(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    """Accept one or more videos (e.g. from P: share) and save into sample\\."""
+    if processor().busy():
+        raise HTTPException(409, "A process job is already running")
+    if not files:
+        raise HTTPException(400, "No files selected")
+    sample = cfg_sample()
+    sample.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, Any]] = []
+    for uf in files:
+        try:
+            name = safe_sample_name(uf.filename or "video.bin")
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        dest = sample / name
+        # Avoid clobber: if exists, add a short suffix
+        if dest.exists():
+            stem, suf = dest.stem, dest.suffix
+            dest = sample / f"{stem}_{int(time.time())}{suf}"
+            name = dest.name
+        size = 0
+        with dest.open("wb") as out:
+            while True:
+                chunk = await uf.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                size += len(chunk)
+        if size < 1000:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, f"{name} looks empty — check the share path")
+        saved.append({"filename": name, "path": str(dest), "bytes": size})
+    return {"ok": True, "count": len(saved), "saved": saved, "sample_dir": str(sample)}
+
+
+class ProcessStartIn(BaseModel):
+    saved: list[dict[str, Any]] | None = None
+
+
+@app.post("/api/process/start")
+def process_start(body: ProcessStartIn | None = None) -> dict[str, Any]:
+    """Run process_videos.py in the background (new/pending passes)."""
+    saved = body.saved if body else None
+    return processor().start(saved_files=saved)
+
+
+@app.get("/api/process/status")
+def process_status() -> dict[str, Any]:
+    return processor().status()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="HVRT R2 Review App")
     parser.add_argument("--db", default=None)
     parser.add_argument("--working", default=None)
     parser.add_argument("--gallery", default=None, help="Primary face gallery dir")
+    parser.add_argument("--sample", default=None, help="Sample video ingest dir")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
@@ -1058,21 +1127,26 @@ def main() -> None:
     db_path = Path(args.db or file_cfg.get("database_path") or DEFAULT_DB)
     working = Path(args.working or file_cfg.get("working_dir") or (ROOT / "working"))
     gallery = Path(args.gallery or file_cfg.get("gallery_dir") or DEFAULT_GALLERY)
+    sample = Path(args.sample or file_cfg.get("sample_dir") or DEFAULT_SAMPLE)
     host = args.host or file_cfg.get("api", {}).get("host", HOST)
     # Review UI stays on 8788 by default so it doesn't collide with run_api.py (8787).
     port = int(args.port or file_cfg.get("api", {}).get("review_port") or PORT)
 
     app.state.db_path = db_path
     app.state.working_dir = working
+    app.state.sample_dir = sample
     app.state.gallery_dirs = [gallery, working / "exemplars" / "people"]
     app.state.learner = LearningManager(db_path, working)
+    app.state.processor = ProcessJobManager(db_path=db_path, root=ROOT, sample_dir=sample)
     init_r2_schema(db_path)
     gallery.mkdir(parents=True, exist_ok=True)
+    sample.mkdir(parents=True, exist_ok=True)
     (working / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
     sync_people_from_gallery(conn(), app.state.gallery_dirs)
 
     print(f"HVRT Review R2   http://{host}:{port}")
     print(f"Database         {db_path}")
+    print(f"Sample dir       {sample}")
     print(f"Gallery dirs     {app.state.gallery_dirs}")
     print("Settings engine  disabled (placeholder)")
     print("Place recognition disabled (annotate/exemplars only)")
