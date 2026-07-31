@@ -491,8 +491,8 @@ async function loadHits(){
     }));
     hitMeta.textContent = `${hits.length} videos`;
   } else {
-    if (!q) {
-      showErr(mode === 'faces' ? 'Pick a person' : mode === 'places' ? 'Pick a place' : 'Enter a phrase');
+    if (!q && mode !== 'text') {
+      showErr(mode === 'faces' ? 'Pick a person' : 'Pick a place');
       return;
     }
     if (mode === 'faces') {
@@ -513,9 +513,13 @@ async function loadHits(){
     hits = data.hits || [];
     if (mode === 'faces' && (data.effective_count != null || data.ai_count != null)) {
       hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}” · ${data.effective_count || 0} owner/user · ${data.ai_count || 0} AI`;
+    } else if (mode === 'text') {
+      const corpus = data.corpus_segments != null ? ` · ${data.corpus_segments} segment(s) in DB` : '';
+      hitMeta.textContent = `${data.count} spoken line(s)${q ? ` matching “${q}”` : ' (all)'}${corpus}`;
     } else {
       hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}”`;
-    }  }
+    }
+  }
 
   if (!hits.length) {
     const tip = mode === 'faces'
