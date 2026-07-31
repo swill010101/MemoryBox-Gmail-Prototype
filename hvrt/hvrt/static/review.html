@@ -417,14 +417,22 @@ async function loadHits(){
       updateEnrollButton();
       await loadGalleryForSelectedPerson();
     }
-    const url = mode === 'faces' ? `/api/hits/faces?name=${encodeURIComponent(q)}`
+    const url = mode === 'faces'
+      ? `/api/hits/faces?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
       : mode === 'places' ? `/api/hits/places?name=${encodeURIComponent(q)}`
       : `/api/hits/text?q=${encodeURIComponent(q)}`;
     const res = await fetch(url);
     data = await res.json();
+    if (!res.ok) {
+      showErr(typeof data.detail === 'string' ? data.detail : 'Load hits failed');
+      return;
+    }
     hits = data.hits || [];
-    hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}”`;
-  }
+    if (mode === 'faces' && (data.effective_count != null || data.ai_count != null)) {
+      hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}” · ${data.effective_count || 0} owner/user · ${data.ai_count || 0} AI`;
+    } else {
+      hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}”`;
+    }  }
 
   if (!hits.length) {
     const tip = mode === 'faces'

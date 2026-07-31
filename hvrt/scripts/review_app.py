@@ -279,15 +279,38 @@ def api_videos() -> dict[str, Any]:
 
 
 @app.get("/api/hits/faces")
-def hits_faces(name: str = Query(..., min_length=1)) -> dict[str, Any]:
+def hits_faces(
+    name: str | None = Query(None),
+    person_id: int | None = Query(None),
+) -> dict[str, Any]:
     """Return owner/user face marks AND Phase-1 AI face appearances.
 
-    Previously, any row in evidence_effective hid all face_appearances, so
-    Peggy could show \"16 hits\" in the dropdown but only 1 owner mark on Load.
+    One owner row in evidence_effective must not hide face_appearances.
+    Prefer person_id from the Person dropdown when provided.
     """
+    if person_id is None and not (name or "").strip():
+        raise HTTPException(400, "person_id or name required")
     c = conn()
-    hits = _merged_face_hits(c, name=name)
-    return {"query": name, "count": len(hits), "hits": hits}
+    hits = _merged_face_hits(
+        c,
+        person_id=person_id,
+        name=(name or "").strip() or None,
+    )
+    label = name
+    if person_id is not None:
+        prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        if prow:
+            label = prow["name"]
+    eff_n = sum(1 for h in hits if str(h.get("source", "")).startswith("eff") or h.get("source") == "effective")
+    fa_n = len(hits) - eff_n
+    return {
+        "query": label or name or str(person_id),
+        "person_id": person_id,
+        "count": len(hits),
+        "effective_count": eff_n,
+        "ai_count": fa_n,
+        "hits": hits,
+    }
 
 
 def _ranges_overlap(
@@ -296,28 +319,88 @@ def _ranges_overlap(
     return a0 < (b1 + pad) and b0 < (a1 + pad)
 
 
+def _table_columns(c, table: str) -> set[str]:
+    try:
+        return {r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _load_face_appearances(
+    c,
+    *,
+    person_id: int | None,
+    name: str | None,
+) -> list[Any]:
+    """Load Phase-1 AI face hits; tolerate schema drift and missing passes."""
+    cols = _table_columns(c, "face_appearances")
+    if not cols:
+        return []
+
+    start_col = "start_sec" if "start_sec" in cols else ("start_time" if "start_time" in cols else None)
+    end_col = "end_sec" if "end_sec" in cols else ("end_time" if "end_time" in cols else None)
+    if not start_col:
+        return []
+
+    end_expr = f"f.{end_col}" if end_col else f"f.{start_col}"
+    has_pass = "pass_id" in cols and bool(_table_columns(c, "analysis_passes"))
+
+    def run(where_sql: str, params: tuple[Any, ...], *, require_done_pass: bool) -> list[Any]:
+        pass_join = ""
+        if require_done_pass and has_pass:
+            pass_join = "JOIN analysis_passes p ON p.id = f.pass_id AND p.status = 'done'"
+        sql = f"""
+            SELECT f.id AS hit_id, f.video_id, f.{start_col} AS start_sec,
+                   {end_expr} AS end_sec, f.confidence,
+                   'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                   pe.name AS label, f.person_id, NULL AS annotation_id,
+                   'face_appearances' AS source
+            FROM face_appearances f
+            JOIN people pe ON pe.id = f.person_id
+            JOIN videos v ON v.id = f.video_id
+            {pass_join}
+            WHERE {where_sql}
+            ORDER BY f.confidence DESC, v.filename, f.{start_col}
+        """
+        return list(c.execute(sql, params).fetchall())
+
+    rows: list[Any] = []
+    try:
+        if person_id is not None:
+            # Prefer done analysis passes, then fall back to all rows for that person
+            rows = run("f.person_id = ?", (person_id,), require_done_pass=True)
+            if not rows:
+                rows = run("f.person_id = ?", (person_id,), require_done_pass=False)
+        elif name:
+            rows = run("pe.name = ? COLLATE NOCASE", (name,), require_done_pass=True)
+            if not rows:
+                rows = run("pe.name = ? COLLATE NOCASE", (name,), require_done_pass=False)
+            if not rows:
+                rows = run(
+                    "pe.name LIKE ? COLLATE NOCASE",
+                    (f"%{name}%",),
+                    require_done_pass=False,
+                )
+    except Exception:  # noqa: BLE001
+        rows = []
+    return rows
+
+
 def _merged_face_hits(
     c,
     *,
     name: str | None = None,
     person_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Merge evidence_effective face marks with Phase-1 face_appearances.
-
-    Owner/user marks win on overlap; non-overlapping AI hits are kept so Load
-    hits matches the dropdown count.
-    """
+    """Merge evidence_effective face marks with Phase-1 face_appearances."""
     if person_id is None and not name:
         return []
 
     if person_id is not None:
         person_filter_eff = "e.person_id = ?"
-        person_filter_fa = "f.person_id = ?"
         params: tuple[Any, ...] = (person_id,)
     else:
-        # Exact name first; fall back to substring for typed queries
         person_filter_eff = "pe.name = ? COLLATE NOCASE"
-        person_filter_fa = "pe.name = ? COLLATE NOCASE"
         params = (name.strip(),)
 
     eff_sql = f"""
@@ -332,7 +415,6 @@ def _merged_face_hits(
     """
     eff_rows = list(c.execute(eff_sql, params).fetchall())
 
-    # If exact name matched nothing, try substring (typed partial queries)
     if not eff_rows and name and person_id is None:
         eff_rows = list(
             c.execute(
@@ -350,39 +432,7 @@ def _merged_face_hits(
             ).fetchall()
         )
 
-    fa_rows: list[Any] = []
-    try:
-        fa_sql = f"""
-            SELECT f.id AS hit_id, f.video_id, f.start_sec, f.end_sec, f.confidence,
-                   'ai' AS actor_key, v.filename, v.path, v.duration_sec,
-                   pe.name AS label, f.person_id, NULL AS annotation_id,
-                   'face_appearances' AS source
-            FROM face_appearances f
-            JOIN people pe ON pe.id = f.person_id
-            JOIN videos v ON v.id = f.video_id
-            WHERE {person_filter_fa}
-            ORDER BY f.confidence DESC, v.filename, f.start_sec
-        """
-        fa_rows = list(c.execute(fa_sql, params).fetchall())
-        if not fa_rows and name and person_id is None:
-            fa_rows = list(
-                c.execute(
-                    """
-                    SELECT f.id AS hit_id, f.video_id, f.start_sec, f.end_sec, f.confidence,
-                           'ai' AS actor_key, v.filename, v.path, v.duration_sec,
-                           pe.name AS label, f.person_id, NULL AS annotation_id,
-                           'face_appearances' AS source
-                    FROM face_appearances f
-                    JOIN people pe ON pe.id = f.person_id
-                    JOIN videos v ON v.id = f.video_id
-                    WHERE pe.name LIKE ? COLLATE NOCASE
-                    ORDER BY f.confidence DESC, v.filename, f.start_sec
-                    """,
-                    (f"%{name.strip()}%",),
-                ).fetchall()
-            )
-    except Exception:  # noqa: BLE001
-        fa_rows = []
+    fa_rows = _load_face_appearances(c, person_id=person_id, name=name)
 
     hits: list[dict[str, Any]] = []
     covered: list[tuple[int, float, float]] = []
@@ -400,7 +450,6 @@ def _merged_face_hits(
             )
         )
 
-    # Human / effective first (owner marks supersede overlapping AI)
     for r in eff_rows:
         add_row(r, source_prefix="eff")
 
@@ -408,9 +457,7 @@ def _merged_face_hits(
         vid = int(r["video_id"])
         s0 = float(r["start_sec"] or 0)
         s1 = float(r["end_sec"] or s0)
-        if any(
-            vid == cv and _ranges_overlap(s0, s1, c0, c1) for cv, c0, c1 in covered
-        ):
+        if any(vid == cv and _ranges_overlap(s0, s1, c0, c1) for cv, c0, c1 in covered):
             continue
         add_row(r, source_prefix="fa")
 
