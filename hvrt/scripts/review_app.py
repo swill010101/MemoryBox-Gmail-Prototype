@@ -170,19 +170,8 @@ def api_people() -> dict[str, Any]:
     people = sync_people_from_gallery(c, cfg_gallery_dirs())
     out = []
     for p in people:
-        n = c.execute(
-            "SELECT COUNT(*) AS c FROM evidence_effective WHERE person_id=? AND kind='person_face'",
-            (p["id"],),
-        ).fetchone()["c"]
-        # Also count Phase-1 face_appearances if present
-        try:
-            n2 = c.execute(
-                "SELECT COUNT(*) AS c FROM face_appearances WHERE person_id=?",
-                (p["id"],),
-            ).fetchone()["c"]
-            n = max(n, n2)
-        except Exception:  # noqa: BLE001
-            pass
+        # Same merge as Load hits so dropdown count matches the sidebar
+        n = len(_merged_face_hits(c, person_id=int(p["id"])))
         out.append({**p, "hit_count": n})
     return {"people": out, "gallery_dirs": [str(p) for p in cfg_gallery_dirs()]}
 
@@ -291,43 +280,148 @@ def api_videos() -> dict[str, Any]:
 
 @app.get("/api/hits/faces")
 def hits_faces(name: str = Query(..., min_length=1)) -> dict[str, Any]:
+    """Return owner/user face marks AND Phase-1 AI face appearances.
+
+    Previously, any row in evidence_effective hid all face_appearances, so
+    Peggy could show \"16 hits\" in the dropdown but only 1 owner mark on Load.
+    """
     c = conn()
-    # Prefer effective human/AI merged evidence; fall back to Phase-1 face_appearances
-    rows = c.execute(
-        """
+    hits = _merged_face_hits(c, name=name)
+    return {"query": name, "count": len(hits), "hits": hits}
+
+
+def _ranges_overlap(
+    a0: float, a1: float, b0: float, b1: float, *, pad: float = 0.75
+) -> bool:
+    return a0 < (b1 + pad) and b0 < (a1 + pad)
+
+
+def _merged_face_hits(
+    c,
+    *,
+    name: str | None = None,
+    person_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Merge evidence_effective face marks with Phase-1 face_appearances.
+
+    Owner/user marks win on overlap; non-overlapping AI hits are kept so Load
+    hits matches the dropdown count.
+    """
+    if person_id is None and not name:
+        return []
+
+    if person_id is not None:
+        person_filter_eff = "e.person_id = ?"
+        person_filter_fa = "f.person_id = ?"
+        params: tuple[Any, ...] = (person_id,)
+    else:
+        # Exact name first; fall back to substring for typed queries
+        person_filter_eff = "pe.name = ? COLLATE NOCASE"
+        person_filter_fa = "pe.name = ? COLLATE NOCASE"
+        params = (name.strip(),)
+
+    eff_sql = f"""
         SELECT e.id AS hit_id, e.video_id, e.start_sec, e.end_sec, e.confidence,
                e.actor_key, v.filename, v.path, v.duration_sec, pe.name AS label,
-               e.person_id, e.annotation_id
+               e.person_id, e.annotation_id, 'effective' AS source
         FROM evidence_effective e
         JOIN videos v ON v.id = e.video_id
         JOIN people pe ON pe.id = e.person_id
-        WHERE e.kind='person_face' AND pe.name LIKE ? COLLATE NOCASE
+        WHERE e.kind='person_face' AND {person_filter_eff}
         ORDER BY e.confidence DESC, v.filename, e.start_sec
-        """,
-        (f"%{name}%",),
-    ).fetchall()
-    if not rows:
-        try:
-            rows = c.execute(
+    """
+    eff_rows = list(c.execute(eff_sql, params).fetchall())
+
+    # If exact name matched nothing, try substring (typed partial queries)
+    if not eff_rows and name and person_id is None:
+        eff_rows = list(
+            c.execute(
                 """
-                SELECT f.id AS hit_id, f.video_id, f.start_sec, f.end_sec, f.confidence,
-                       'ai' AS actor_key, v.filename, v.path, v.duration_sec,
-                       pe.name AS label, f.person_id, NULL AS annotation_id
-                FROM face_appearances f
-                JOIN people pe ON pe.id = f.person_id
-                JOIN videos v ON v.id = f.video_id
-                WHERE pe.name LIKE ? COLLATE NOCASE
-                ORDER BY f.confidence DESC, v.filename, f.start_sec
+                SELECT e.id AS hit_id, e.video_id, e.start_sec, e.end_sec, e.confidence,
+                       e.actor_key, v.filename, v.path, v.duration_sec, pe.name AS label,
+                       e.person_id, e.annotation_id, 'effective' AS source
+                FROM evidence_effective e
+                JOIN videos v ON v.id = e.video_id
+                JOIN people pe ON pe.id = e.person_id
+                WHERE e.kind='person_face' AND pe.name LIKE ? COLLATE NOCASE
+                ORDER BY e.confidence DESC, v.filename, e.start_sec
                 """,
-                (f"%{name}%",),
+                (f"%{name.strip()}%",),
             ).fetchall()
-        except Exception:  # noqa: BLE001
-            rows = []
-    return {
-        "query": name,
-        "count": len(rows),
-        "hits": [_hit(r, "face") for r in rows],
-    }
+        )
+
+    fa_rows: list[Any] = []
+    try:
+        fa_sql = f"""
+            SELECT f.id AS hit_id, f.video_id, f.start_sec, f.end_sec, f.confidence,
+                   'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                   pe.name AS label, f.person_id, NULL AS annotation_id,
+                   'face_appearances' AS source
+            FROM face_appearances f
+            JOIN people pe ON pe.id = f.person_id
+            JOIN videos v ON v.id = f.video_id
+            WHERE {person_filter_fa}
+            ORDER BY f.confidence DESC, v.filename, f.start_sec
+        """
+        fa_rows = list(c.execute(fa_sql, params).fetchall())
+        if not fa_rows and name and person_id is None:
+            fa_rows = list(
+                c.execute(
+                    """
+                    SELECT f.id AS hit_id, f.video_id, f.start_sec, f.end_sec, f.confidence,
+                           'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                           pe.name AS label, f.person_id, NULL AS annotation_id,
+                           'face_appearances' AS source
+                    FROM face_appearances f
+                    JOIN people pe ON pe.id = f.person_id
+                    JOIN videos v ON v.id = f.video_id
+                    WHERE pe.name LIKE ? COLLATE NOCASE
+                    ORDER BY f.confidence DESC, v.filename, f.start_sec
+                    """,
+                    (f"%{name.strip()}%",),
+                ).fetchall()
+            )
+    except Exception:  # noqa: BLE001
+        fa_rows = []
+
+    hits: list[dict[str, Any]] = []
+    covered: list[tuple[int, float, float]] = []
+
+    def add_row(r: Any, *, source_prefix: str) -> None:
+        h = _hit(r, "face")
+        h["hit_id"] = f"{source_prefix}:{r['hit_id']}"
+        h["source"] = r["source"] if "source" in r.keys() else source_prefix
+        hits.append(h)
+        covered.append(
+            (
+                int(r["video_id"]),
+                float(r["start_sec"] or 0),
+                float(r["end_sec"] or r["start_sec"] or 0),
+            )
+        )
+
+    # Human / effective first (owner marks supersede overlapping AI)
+    for r in eff_rows:
+        add_row(r, source_prefix="eff")
+
+    for r in fa_rows:
+        vid = int(r["video_id"])
+        s0 = float(r["start_sec"] or 0)
+        s1 = float(r["end_sec"] or s0)
+        if any(
+            vid == cv and _ranges_overlap(s0, s1, c0, c1) for cv, c0, c1 in covered
+        ):
+            continue
+        add_row(r, source_prefix="fa")
+
+    hits.sort(
+        key=lambda h: (
+            -float(h.get("confidence") or 0),
+            str(h.get("filename") or ""),
+            float(h.get("start_sec") or 0),
+        )
+    )
+    return hits
 
 
 @app.get("/api/hits/places")
