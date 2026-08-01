@@ -88,12 +88,12 @@
       position: relative;
       background: #111814;
       width: 100%;
-      min-height: 12rem;
+      min-height: 4rem;
       max-height: 56vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: visible;
+      overflow: hidden;
     }
     video {
       width: auto;
@@ -106,7 +106,13 @@
     }
     canvas#overlay {
       position: absolute; left: 0; top: 0; cursor: crosshair; display: none;
+      pointer-events: none;
+      z-index: 2;
       /* left/top/width/height set in syncOverlaySize to match the <video> box */
+    }
+    canvas#overlay.boxing {
+      display: block;
+      pointer-events: auto;
     }
     #videoFitNote { color: var(--muted); font-size: .85rem; }
     .crop-preview { display: none; align-items: center; gap: .75rem; }
@@ -156,7 +162,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build browser-proxy</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build box-exit-proxy</p>
     </header>
 
     <div class="bar">
@@ -296,6 +302,7 @@ let processTimer = null;
 let proxyTimer = null;
 let proxyWatchVideoId = null;
 let usingBrowserProxy = false;
+const readyProxyIds = new Set(); // video_ids with a ready H.264 browser copy
 let lastFaceQueryId = '';
 let lastPlaceQueryName = '';
 let galleryLoadSeq = 0;
@@ -621,6 +628,7 @@ async function loadHits(){
 function selectHit(i, btn){
   selected = hits[i];
   usingBrowserProxy = false;
+  exitBoxMode();
   if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
   proxyWatchVideoId = selected.video_id;
   [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
@@ -641,15 +649,37 @@ function selectHit(i, btn){
   loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
   loadTranscriptForSelection().catch(e => showErr(e.message));
   const t = Math.max(0, Number(selected.start_sec) || 0);
+  const vid = selected.video_id;
+  // Prefer existing H.264 proxy immediately (don't replay HEVC source first).
+  preferProxyThenPlay(vid, t).catch(e => showErr(e.message));
+  prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
+    · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+}
+
+async function preferProxyThenPlay(videoId, t){
+  const note = document.getElementById('videoFitNote');
+  // Fast path: we already know this id has a proxy from earlier this session
+  if (readyProxyIds.has(videoId)) {
+    reloadWithProxy(videoId, t);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/videos/${videoId}/browser-proxy`);
+    const st = await res.json();
+    if (st.status === 'ready') {
+      readyProxyIds.add(videoId);
+      reloadWithProxy(videoId, t);
+      return;
+    }
+  } catch (e) { /* fall through to source */ }
+  if (!selected || selected.video_id !== videoId) return;
   playSelectedStream(selected.stream_url, t);
-  // If Chrome never reports frame size (common with HEVC), auto-build H.264 proxy.
+  if (note) note.textContent = 'Checking whether Chrome can decode this video…';
   setTimeout(() => {
     if (selected && selected.video_id === proxyWatchVideoId && !(video.videoWidth && video.videoHeight)) {
       ensureBrowserProxy({ auto: true }).catch(() => {});
     }
-  }, 1500);
-  prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
-    · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+  }, 1200);
 }
 
 function playSelectedStream(url, startSecVal){
@@ -682,6 +712,7 @@ async function ensureBrowserProxy({ auto = false } = {}){
   const startData = await startRes.json();
   if (!startRes.ok) throw new Error(startData.detail || 'Could not start browser proxy');
   if (startData.status === 'ready') {
+    readyProxyIds.add(videoId);
     reloadWithProxy(videoId);
     return;
   }
@@ -699,6 +730,7 @@ async function ensureBrowserProxy({ auto = false } = {}){
       if (note) note.textContent = st.message || st.status;
       if (st.status === 'ready') {
         clearInterval(proxyTimer); proxyTimer = null;
+        readyProxyIds.add(videoId);
         reloadWithProxy(videoId);
       } else if (st.status === 'error') {
         clearInterval(proxyTimer); proxyTimer = null;
@@ -713,12 +745,16 @@ async function ensureBrowserProxy({ auto = false } = {}){
   }, 1000);
 }
 
-function reloadWithProxy(videoId){
+function reloadWithProxy(videoId, startSecVal){
   if (!selected || selected.video_id !== videoId) return;
   usingBrowserProxy = true;
-  const t = Math.max(0, Number(startSec.value || selected.start_sec) || 0);
+  readyProxyIds.add(videoId);
+  const t = Math.max(0, Number(startSecVal != null ? startSecVal : (startSec.value || selected.start_sec)) || 0);
   const url = `/api/media/${videoId}?proxy=1`;
   selected.stream_url = url;
+  // Keep hits[] in sync so re-clicking the same row keeps the proxy URL
+  const hit = hits.find(h => h.video_id === videoId);
+  if (hit) hit.stream_url = url;
   playSelectedStream(url, t);
   const proxyBtn = document.getElementById('browserProxyBtn');
   proxyBtn.disabled = false;
