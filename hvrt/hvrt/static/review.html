@@ -162,7 +162,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build box-exit-proxy</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build hit-click-ocr</p>
     </header>
 
     <div class="bar">
@@ -171,6 +171,7 @@
           <option value="faces">Faces</option>
           <option value="places">Places</option>
           <option value="text">Spoken text</option>
+          <option value="ocr">OCR text</option>
           <option value="videos">All videos</option>
         </select>
       </label>
@@ -365,17 +366,23 @@ function syncMode(){
       || '<option value="">(no places yet — mark one below)</option>';
     if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
     lastPlaceQueryName = querySelect.value;
+  } else if (mode === 'ocr') {
+    queryLabel.textContent = 'OCR phrase';
+    querySelect.hidden = true;
+    queryText.hidden = false;
+    queryText.placeholder = 'Blank = all OCR marks';
   } else {
     queryLabel.textContent = 'Phrase';
     querySelect.hidden = true;
     queryText.hidden = false;
+    queryText.placeholder = 'Blank = all spoken lines';
   }
 }
 
 function currentQueryName(){
   const mode = modeEl.value;
   if (mode === 'faces' || mode === 'places') return optionName(querySelect) || querySelect.value.trim();
-  if (mode === 'text') return queryText.value.trim();
+  if (mode === 'text' || mode === 'ocr') return queryText.value.trim();
   return '';
 }
 
@@ -574,7 +581,7 @@ async function loadHits(){
     }));
     hitMeta.textContent = `${hits.length} videos`;
   } else {
-    if (!q && mode !== 'text') {
+    if (!q && mode !== 'text' && mode !== 'ocr') {
       showErr(mode === 'faces' ? 'Pick a person' : 'Pick a place');
       return;
     }
@@ -586,6 +593,7 @@ async function loadHits(){
     const url = mode === 'faces'
       ? `/api/hits/faces?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
       : mode === 'places' ? `/api/hits/places?name=${encodeURIComponent(q)}`
+      : mode === 'ocr' ? `/api/hits/ocr?q=${encodeURIComponent(q)}`
       : `/api/hits/text?q=${encodeURIComponent(q)}`;
     const res = await fetch(url);
     data = await res.json();
@@ -599,6 +607,8 @@ async function loadHits(){
     } else if (mode === 'text') {
       const corpus = data.corpus_segments != null ? ` · ${data.corpus_segments} segment(s) in DB` : '';
       hitMeta.textContent = `${data.count} spoken line(s)${q ? ` matching “${q}”` : ' (all)'}${corpus}`;
+    } else if (mode === 'ocr') {
+      hitMeta.textContent = `${data.count} OCR mark(s)${q ? ` matching “${q}”` : ' (all)'}`;
     } else {
       hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}”`;
     }
@@ -626,55 +636,65 @@ async function loadHits(){
 }
 
 function selectHit(i, btn){
-  selected = hits[i];
-  usingBrowserProxy = false;
-  exitBoxMode();
-  if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
-  proxyWatchVideoId = selected.video_id;
-  [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('vlcBtn').disabled = false;
-  const proxyBtn = document.getElementById('browserProxyBtn');
-  proxyBtn.hidden = false;
-  proxyBtn.disabled = false;
-  proxyBtn.textContent = 'Make browser-playable (H.264)';
-  startSec.value = Number(selected.start_sec || 0).toFixed(1);
-  endSec.value = Number(selected.end_sec || selected.start_sec || 1).toFixed(1);
-  if (selected.label && modeEl.value === 'faces') {
-    const match = (window._people || []).find(p => p.name === selected.label);
-    if (match) personSelect.value = String(match.id);
+  try {
+    selected = hits[i];
+    if (!selected) throw new Error('Hit missing — click Load hits again');
+    usingBrowserProxy = false;
+    try { exitBoxMode(); } catch (e) { /* never block hit select */ }
+    if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
+    proxyWatchVideoId = selected.video_id;
+    [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('vlcBtn').disabled = false;
+    const proxyBtn = document.getElementById('browserProxyBtn');
+    if (proxyBtn) {
+      proxyBtn.hidden = false;
+      proxyBtn.disabled = false;
+      proxyBtn.textContent = 'Make browser-playable (H.264)';
+    }
+    startSec.value = Number(selected.start_sec || 0).toFixed(1);
+    endSec.value = Number(selected.end_sec || selected.start_sec || 1).toFixed(1);
+    if (selected.label && modeEl.value === 'faces') {
+      const match = (window._people || []).find(p => p.name === selected.label);
+      if (match) personSelect.value = String(match.id);
+    }
+    updateEnrollButton();
+    loadGalleryForSelectedPerson().catch(() => {});
+    loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
+    loadTranscriptForSelection().catch(e => showErr(e.message));
+    const t = Math.max(0, Number(selected.start_sec) || 0);
+    const vid = selected.video_id;
+    const sourceUrl = selected.stream_url || `/api/media/${vid}`;
+    // Play immediately so the click always feels live; upgrade to H.264 proxy after.
+    if (readyProxyIds.has(vid) || (selected.stream_url || '').includes('proxy=1')) {
+      reloadWithProxy(vid, t);
+    } else {
+      playSelectedStream(sourceUrl, t);
+      upgradeToProxyIfReady(vid, t).catch(() => {});
+    }
+    prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
+      · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+  } catch (e) {
+    showErr(e.message || String(e));
   }
-  updateEnrollButton();
-  loadGalleryForSelectedPerson();
-  loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
-  loadTranscriptForSelection().catch(e => showErr(e.message));
-  const t = Math.max(0, Number(selected.start_sec) || 0);
-  const vid = selected.video_id;
-  // Prefer existing H.264 proxy immediately (don't replay HEVC source first).
-  preferProxyThenPlay(vid, t).catch(e => showErr(e.message));
-  prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
-    · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
 }
 
-async function preferProxyThenPlay(videoId, t){
+async function upgradeToProxyIfReady(videoId, t){
   const note = document.getElementById('videoFitNote');
-  // Fast path: we already know this id has a proxy from earlier this session
-  if (readyProxyIds.has(videoId)) {
-    reloadWithProxy(videoId, t);
-    return;
-  }
   try {
     const res = await fetch(`/api/videos/${videoId}/browser-proxy`);
     const st = await res.json();
+    if (!selected || selected.video_id !== videoId) return;
     if (st.status === 'ready') {
       readyProxyIds.add(videoId);
       reloadWithProxy(videoId, t);
       return;
     }
-  } catch (e) { /* fall through to source */ }
+  } catch (e) { /* keep source playback */ }
   if (!selected || selected.video_id !== videoId) return;
-  playSelectedStream(selected.stream_url, t);
-  if (note) note.textContent = 'Checking whether Chrome can decode this video…';
+  if (note && !(video.videoWidth && video.videoHeight)) {
+    note.textContent = 'Checking whether Chrome can decode this video…';
+  }
   setTimeout(() => {
     if (selected && selected.video_id === proxyWatchVideoId && !(video.videoWidth && video.videoHeight)) {
       ensureBrowserProxy({ auto: true }).catch(() => {});
@@ -911,13 +931,14 @@ function fitVideoToWrap(){
 
 function syncOverlaySize(){
   fitVideoToWrap();
-  // Pin overlay to the actual <video> box inside the flex wrap (not the full letterbox).
+  // Pin overlay to the actual <video> box, leaving the bottom control bar clickable.
   const wrap = video.parentElement;
   if (!wrap) return;
   const vr = video.getBoundingClientRect();
   const wr = wrap.getBoundingClientRect();
+  const controlsPad = 44; // native video controls strip
   const w = Math.max(1, Math.round(vr.width));
-  const h = Math.max(1, Math.round(vr.height));
+  const h = Math.max(1, Math.round(vr.height - (boxMode ? controlsPad : 0)));
   const left = Math.round(vr.left - wr.left);
   const top = Math.round(vr.top - wr.top);
   overlay.style.left = `${left}px`;
@@ -927,6 +948,48 @@ function syncOverlaySize(){
   if (overlay.width !== w) overlay.width = w;
   if (overlay.height !== h) overlay.height = h;
   drawBox();
+}
+
+function exitBoxMode(msg){
+  boxMode = false;
+  box = null;
+  drawing = false;
+  try {
+    if (overlay) {
+      overlay.classList.remove('boxing');
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+    }
+  } catch (e) { /* ignore */ }
+  const saveBtn = document.getElementById('saveFaceBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  const preview = document.getElementById('cropPreview');
+  if (preview) preview.classList.remove('on');
+  try { drawBox(); } catch (e) { /* ignore */ }
+  if (msg && prov) prov.textContent = msg;
+}
+
+function drawBox(){
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, overlay.width || 0, overlay.height || 0);
+  // Dim letterbox so the drawable video area is obvious
+  const content = videoContentRect();
+  if (content && boxMode) {
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(0, 0, overlay.width, overlay.height);
+    ctx.clearRect(content.offsetX, content.offsetY, content.drawW, content.drawH);
+    ctx.strokeStyle = 'rgba(62,207,176,.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(content.offsetX + 0.5, content.offsetY + 0.5, content.drawW - 1, content.drawH - 1);
+  }
+  if (!box) return;
+  const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1);
+  const w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
+  ctx.strokeStyle = '#3ecfb0';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
 }
 
 /**
@@ -1020,40 +1083,22 @@ function updateCropPreview(){
 }
 
 document.getElementById('boxFaceBtn').onclick = () => {
-  boxMode = !boxMode; box = null;
-  overlay.style.display = boxMode ? 'block' : 'none';
+  if (boxMode) {
+    exitBoxMode('Box face off — player controls work again.');
+    return;
+  }
+  boxMode = true;
+  box = null;
+  overlay.classList.add('boxing');
+  overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
   document.getElementById('saveFaceBtn').disabled = true;
   document.getElementById('cropPreview').classList.remove('on');
-  if (boxMode) {
-    try { video.pause(); } catch (e) {}
-  }
+  try { video.pause(); } catch (e) {}
   syncOverlaySize();
   drawBox();
-  prov.textContent = boxMode
-    ? 'Drag a box around the face. Check the crop preview, then Enroll face.'
-    : 'Box face off.';
+  prov.textContent = 'Drag a box around the face. Check the crop preview, then Enroll face. (Click Box face again to cancel.)';
 };
-
-function drawBox(){
-  const ctx = overlay.getContext('2d');
-  ctx.clearRect(0, 0, overlay.width, overlay.height);
-  // Dim letterbox so the drawable video area is obvious
-  const content = videoContentRect();
-  if (content && boxMode) {
-    ctx.fillStyle = 'rgba(0,0,0,.28)';
-    ctx.fillRect(0, 0, overlay.width, overlay.height);
-    ctx.clearRect(content.offsetX, content.offsetY, content.drawW, content.drawH);
-    ctx.strokeStyle = 'rgba(62,207,176,.35)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(content.offsetX + 0.5, content.offsetY + 0.5, content.drawW - 1, content.drawH - 1);
-  }
-  if (!box) return;
-  const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1);
-  const w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
-  ctx.strokeStyle = '#3ecfb0';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
-}
 
 overlay.addEventListener('mousedown', e => {
   if (!boxMode) return;
@@ -1141,11 +1186,7 @@ document.getElementById('saveFaceBtn').onclick = async () => {
     const res = await fetch('/api/annotations/face', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const data = await res.json();
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
-    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · saved <strong>${escapeHtml(data.exemplar_filename || '')}</strong>.`;
     document.getElementById('newPerson').value = '';
-    boxMode = false; box = null; overlay.style.display = 'none';
-    document.getElementById('saveFaceBtn').disabled = true;
-    document.getElementById('cropPreview').classList.remove('on');
     // Keep both dropdowns on the enrolled person and reload gallery (cache-busted URLs)
     if (data.person_id) {
       lastFaceQueryId = String(data.person_id);
@@ -1154,7 +1195,14 @@ document.getElementById('saveFaceBtn').onclick = async () => {
     }
     await refreshPeoplePlaces(data.person_name);
     await loadGalleryForSelectedPerson();
-  } catch (e) { showErr(e.message); }
+    exitBoxMode();
+    updateEnrollButton();
+    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · saved <strong>${escapeHtml(data.exemplar_filename || '')}</strong>. Player controls unlocked.`;
+  } catch (e) {
+    showErr(e.message);
+    // Always unlock player controls even if enroll failed
+    exitBoxMode('Enroll failed — box mode cleared so you can use player controls.');
+  }
 };
 
 document.getElementById('voiceBtn').onclick = async () => {

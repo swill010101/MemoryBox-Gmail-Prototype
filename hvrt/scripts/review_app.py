@@ -220,7 +220,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "box-exit-proxy",
+        "build": "hit-click-ocr",
         "ui_path": str(ui),
         "ui_build": ui_build,
         "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
@@ -782,6 +782,49 @@ def hits_text(q: str = Query("")) -> dict[str, Any]:
         "count": len(rows),
         "corpus_segments": total,
         "hits": [_hit(r, "text") for r in rows],
+    }
+
+
+@app.get("/api/hits/ocr")
+def hits_ocr(q: str = Query("")) -> dict[str, Any]:
+    """Browse owner OCR marks. Empty q returns all OCR annotations."""
+    c = conn()
+    q = (q or "").strip()
+    try:
+        if q:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, '') AS label, a.id AS annotation_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                WHERE a.revoked=0 AND a.kind='ocr'
+                  AND (a.label_text LIKE ? COLLATE NOCASE
+                       OR CAST(a.payload AS TEXT) LIKE ? COLLATE NOCASE)
+                ORDER BY v.filename, a.start_sec
+                """,
+                (f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, '') AS label, a.id AS annotation_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                WHERE a.revoked=0 AND a.kind='ocr'
+                ORDER BY v.filename, a.start_sec
+                LIMIT 500
+                """
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    return {
+        "query": q or "(all OCR marks)",
+        "count": len(rows),
+        "hits": [_hit(r, "ocr") for r in rows],
     }
 
 
