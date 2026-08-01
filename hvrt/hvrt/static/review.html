@@ -50,9 +50,29 @@
     .hit-list button:hover { background: var(--accent-soft); }
     .hit-list button.active { background: var(--accent); color: #f7fffc; }
     .player-body { padding: 1rem; display: grid; gap: .75rem; }
-    .video-wrap { position: relative; background: #111814; }
-    video { width: 100%; max-height: 56vh; object-fit: contain; display: block; background: #0b100e; }
-    canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: none; }
+    /* Size from intrinsic aspect; constrain both axes so wide/tall clips
+       letterbox instead of cropping (width:100% + max-height was cutting tops). */
+    .video-wrap {
+      position: relative;
+      background: #111814;
+      max-height: 56vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 56vh;
+      object-fit: contain;
+      display: block;
+      background: #0b100e;
+    }
+    canvas#overlay {
+      position: absolute; left: 0; top: 0; cursor: crosshair; display: none;
+      /* left/top/width/height set in syncOverlaySize to match the <video> box */
+    }
     .crop-preview { display: none; align-items: center; gap: .75rem; }
     .crop-preview.on { display: flex; }
     .crop-preview img { width: 96px; height: 96px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
@@ -100,7 +120,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build add-process-videos</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build video-full-frame</p>
     </header>
 
     <div class="bar">
@@ -696,9 +716,19 @@ async function loadTranscriptForSelection(){
 }
 
 function syncOverlaySize(){
-  // Match canvas bitmap to the laid-out video box (CSS pixels)
-  const w = Math.max(1, Math.round(video.clientWidth));
-  const h = Math.max(1, Math.round(video.clientHeight));
+  // Pin overlay to the actual <video> box inside the flex wrap (not the full letterbox).
+  const wrap = video.parentElement;
+  if (!wrap) return;
+  const vr = video.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  const w = Math.max(1, Math.round(vr.width));
+  const h = Math.max(1, Math.round(vr.height));
+  const left = Math.round(vr.left - wr.left);
+  const top = Math.round(vr.top - wr.top);
+  overlay.style.left = `${left}px`;
+  overlay.style.top = `${top}px`;
+  overlay.style.width = `${w}px`;
+  overlay.style.height = `${h}px`;
   if (overlay.width !== w) overlay.width = w;
   if (overlay.height !== h) overlay.height = h;
   drawBox();
