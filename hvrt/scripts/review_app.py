@@ -38,6 +38,7 @@ from hvrt.annotations import (  # noqa: E402
     upsert_person,
     upsert_place,
 )
+from hvrt.browser_proxy import BrowserProxyManager  # noqa: E402
 from hvrt.learning import LearningManager  # noqa: E402
 from hvrt.process_jobs import ProcessJobManager, safe_sample_name  # noqa: E402
 from hvrt.schema_r2 import init_r2_schema  # noqa: E402
@@ -149,6 +150,23 @@ def processor() -> ProcessJobManager:
     return mgr
 
 
+def proxies() -> BrowserProxyManager:
+    mgr = getattr(app.state, "proxies", None)
+    if mgr is None:
+        mgr = BrowserProxyManager(cfg_working())
+        app.state.proxies = mgr
+    return mgr
+
+
+def _video_row(video_id: int):
+    row = conn().execute(
+        "SELECT id, path, filename FROM videos WHERE id=?", (video_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "video not found")
+    return row
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_r2_schema(cfg_db())
@@ -202,7 +220,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "hits-scroll",
+        "build": "browser-proxy",
         "ui_path": str(ui),
         "ui_build": ui_build,
         "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
@@ -789,12 +807,7 @@ def _hit(r: Any, kind: str) -> dict[str, Any]:
 @app.post("/api/videos/{video_id}/open-local")
 def open_local_video(video_id: int) -> dict[str, Any]:
     """Open the source file in the OS default player (Windows/macOS/Linux)."""
-    c = conn()
-    row = c.execute(
-        "SELECT path, filename FROM videos WHERE id=?", (video_id,)
-    ).fetchone()
-    if not row:
-        raise HTTPException(404, "video not found")
+    row = _video_row(video_id)
     path = Path(row["path"])
     if not path.is_file():
         raise HTTPException(404, f"missing file: {path}")
@@ -810,15 +823,40 @@ def open_local_video(video_id: int) -> dict[str, Any]:
     return {"ok": True, "path": str(path), "filename": row["filename"]}
 
 
-@app.get("/api/media/{video_id}")
-def stream_media(video_id: int, request: Request):
-    c = conn()
-    row = c.execute(
-        "SELECT path, filename FROM videos WHERE id=?", (video_id,)
-    ).fetchone()
-    if not row:
-        raise HTTPException(404, "video not found")
+@app.post("/api/videos/{video_id}/browser-proxy")
+def start_browser_proxy(video_id: int) -> dict[str, Any]:
+    """Transcode source → H.264/AAC so Chrome can show frames (fixes HEVC)."""
+    row = _video_row(video_id)
     path = Path(row["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    try:
+        return proxies().start(video_id, path)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.get("/api/videos/{video_id}/browser-proxy")
+def browser_proxy_status(video_id: int) -> dict[str, Any]:
+    row = _video_row(video_id)
+    return proxies().status(video_id, Path(row["path"]))
+
+
+@app.get("/api/media/{video_id}")
+def stream_media(video_id: int, request: Request, proxy: int = Query(0)):
+    row = _video_row(video_id)
+    source = Path(row["path"])
+    if int(proxy) == 1:
+        path = proxies().proxy_path(video_id)
+        if not path.is_file():
+            raise HTTPException(
+                404,
+                "Browser proxy not ready — POST /api/videos/{id}/browser-proxy first",
+            )
+        filename = f"{Path(row['filename']).stem}_browser.mp4"
+    else:
+        path = source
+        filename = row["filename"]
     if not path.is_file():
         raise HTTPException(404, f"missing file: {path}")
     media_type = mimetypes.guess_type(str(path))[0] or "video/mp4"
@@ -828,7 +866,7 @@ def stream_media(video_id: int, request: Request):
         return FileResponse(
             path,
             media_type=media_type,
-            filename=row["filename"],
+            filename=filename,
             headers={"Accept-Ranges": "bytes"},
         )
     units, _, rng = range_header.partition("=")
@@ -1185,10 +1223,12 @@ def main() -> None:
     app.state.gallery_dirs = [gallery, working / "exemplars" / "people"]
     app.state.learner = LearningManager(db_path, working)
     app.state.processor = ProcessJobManager(db_path=db_path, root=ROOT, sample_dir=sample)
+    app.state.proxies = BrowserProxyManager(working)
     init_r2_schema(db_path)
     gallery.mkdir(parents=True, exist_ok=True)
     sample.mkdir(parents=True, exist_ok=True)
     (working / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    (working / "browser_proxies").mkdir(parents=True, exist_ok=True)
     sync_people_from_gallery(conn(), app.state.gallery_dirs)
 
     print(f"HVRT Review R2   http://{host}:{port}")

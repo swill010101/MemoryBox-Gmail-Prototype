@@ -156,7 +156,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build hits-scroll</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build browser-proxy</p>
     </header>
 
     <div class="bar">
@@ -207,6 +207,7 @@
             <canvas id="overlay"></canvas>
           </div>
           <div id="videoFitNote" class="prov">Select a hit to play.</div>
+          <button id="browserProxyBtn" class="secondary" type="button" hidden>Make browser-playable (H.264)</button>
           <div id="cropPreview" class="crop-preview prov">
             <img id="cropPreviewImg" alt="Crop preview" />
             <span id="cropPreviewMeta">Box a face to preview the exact crop that will be saved.</span>
@@ -292,6 +293,9 @@ let box = null;
 let drawing = false;
 let learnTimer = null;
 let processTimer = null;
+let proxyTimer = null;
+let proxyWatchVideoId = null;
+let usingBrowserProxy = false;
 let lastFaceQueryId = '';
 let lastPlaceQueryName = '';
 let galleryLoadSeq = 0;
@@ -616,9 +620,16 @@ async function loadHits(){
 
 function selectHit(i, btn){
   selected = hits[i];
+  usingBrowserProxy = false;
+  if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
+  proxyWatchVideoId = selected.video_id;
   [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('vlcBtn').disabled = false;
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  proxyBtn.hidden = false;
+  proxyBtn.disabled = false;
+  proxyBtn.textContent = 'Make browser-playable (H.264)';
   startSec.value = Number(selected.start_sec || 0).toFixed(1);
   endSec.value = Number(selected.end_sec || selected.start_sec || 1).toFixed(1);
   if (selected.label && modeEl.value === 'faces') {
@@ -630,13 +641,91 @@ function selectHit(i, btn){
   loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
   loadTranscriptForSelection().catch(e => showErr(e.message));
   const t = Math.max(0, Number(selected.start_sec) || 0);
-  const onMeta = () => { try { video.currentTime = t; } catch (e) {} video.play().catch(()=>{}); video.removeEventListener('loadedmetadata', onMeta); };
-  video.addEventListener('loadedmetadata', onMeta);
-  video.src = selected.stream_url;
-  video.load();
-  syncOverlaySize();
+  playSelectedStream(selected.stream_url, t);
+  // If Chrome never reports frame size (common with HEVC), auto-build H.264 proxy.
+  setTimeout(() => {
+    if (selected && selected.video_id === proxyWatchVideoId && !(video.videoWidth && video.videoHeight)) {
+      ensureBrowserProxy({ auto: true }).catch(() => {});
+    }
+  }, 1500);
   prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
     · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+}
+
+function playSelectedStream(url, startSecVal){
+  const t = Math.max(0, Number(startSecVal) || 0);
+  const onMeta = () => {
+    try { video.currentTime = t; } catch (e) {}
+    video.play().catch(()=>{});
+    video.removeEventListener('loadedmetadata', onMeta);
+    syncOverlaySize();
+  };
+  video.addEventListener('loadedmetadata', onMeta);
+  video.src = url;
+  video.load();
+  syncOverlaySize();
+}
+
+async function ensureBrowserProxy({ auto = false } = {}){
+  if (!selected) return;
+  const videoId = selected.video_id;
+  const note = document.getElementById('videoFitNote');
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  proxyBtn.hidden = false;
+  proxyBtn.disabled = true;
+  if (note) {
+    note.textContent = auto
+      ? 'Chrome has no video frames (often HEVC). Building H.264 browser copy with ffmpeg…'
+      : 'Building H.264 browser copy with ffmpeg…';
+  }
+  const startRes = await fetch(`/api/videos/${videoId}/browser-proxy`, { method: 'POST' });
+  const startData = await startRes.json();
+  if (!startRes.ok) throw new Error(startData.detail || 'Could not start browser proxy');
+  if (startData.status === 'ready') {
+    reloadWithProxy(videoId);
+    return;
+  }
+  if (proxyTimer) clearInterval(proxyTimer);
+  proxyTimer = setInterval(async () => {
+    if (!selected || selected.video_id !== videoId) {
+      clearInterval(proxyTimer); proxyTimer = null; return;
+    }
+    try {
+      const res = await fetch(`/api/videos/${videoId}/browser-proxy`);
+      const st = await res.json();
+      proxyBtn.textContent = st.status === 'running' || st.status === 'queued'
+        ? `Preparing browser copy… ${Math.round(st.progress_pct || 0)}%`
+        : 'Make browser-playable (H.264)';
+      if (note) note.textContent = st.message || st.status;
+      if (st.status === 'ready') {
+        clearInterval(proxyTimer); proxyTimer = null;
+        reloadWithProxy(videoId);
+      } else if (st.status === 'error') {
+        clearInterval(proxyTimer); proxyTimer = null;
+        proxyBtn.disabled = false;
+        showErr(st.message || st.error || 'Browser proxy failed — is ffmpeg installed?');
+      }
+    } catch (e) {
+      clearInterval(proxyTimer); proxyTimer = null;
+      proxyBtn.disabled = false;
+      showErr(e.message);
+    }
+  }, 1000);
+}
+
+function reloadWithProxy(videoId){
+  if (!selected || selected.video_id !== videoId) return;
+  usingBrowserProxy = true;
+  const t = Math.max(0, Number(startSec.value || selected.start_sec) || 0);
+  const url = `/api/media/${videoId}?proxy=1`;
+  selected.stream_url = url;
+  playSelectedStream(url, t);
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  proxyBtn.disabled = false;
+  proxyBtn.textContent = 'Using browser-playable copy';
+  const note = document.getElementById('videoFitNote');
+  if (note) note.textContent = 'Loaded H.264 browser copy — waiting for frame size…';
+  document.getElementById('prov').textContent = 'Playing browser-playable H.264 copy (source may be HEVC).';
 }
 
 async function loadVideoMeta(videoId){
@@ -755,11 +844,17 @@ async function loadTranscriptForSelection(){
 function fitVideoToWrap(){
   const wrap = video.parentElement;
   const note = document.getElementById('videoFitNote');
+  const proxyBtn = document.getElementById('browserProxyBtn');
   if (!wrap) return;
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) {
-    if (note) note.textContent = 'Waiting for video frame size…';
+    if (note && selected) {
+      note.textContent = usingBrowserProxy
+        ? 'Browser copy loaded but still no frames — check ffmpeg output / Open in system player'
+        : 'Waiting for video frame size… (if this sticks, Chrome can’t decode this codec — auto-converting to H.264)';
+    }
+    if (proxyBtn && selected) proxyBtn.hidden = false;
     return;
   }
   // Use wrap width; height budget is viewport-based (wrap may not have height yet).
@@ -771,7 +866,10 @@ function fitVideoToWrap(){
   video.style.width = `${w}px`;
   video.style.height = `${h}px`;
   if (note) {
-    note.textContent = `Frame ${vw}×${vh} · shown ${w}×${h} · if picture is black/cropped, use Open in system player (browser codec limit)`;
+    note.textContent = `Frame ${vw}×${vh} · shown ${w}×${h}${usingBrowserProxy ? ' · H.264 browser copy' : ''}`;
+  }
+  if (proxyBtn) {
+    proxyBtn.hidden = usingBrowserProxy;
   }
 }
 
@@ -1116,6 +1214,10 @@ document.getElementById('vlcBtn').onclick = async () => {
     catch { prompt('Video path', path); }
     showErr(e.message);
   }
+};
+
+document.getElementById('browserProxyBtn').onclick = () => {
+  ensureBrowserProxy({ auto: false }).catch(e => showErr(e.message));
 };
 
 async function refreshProcess(){
