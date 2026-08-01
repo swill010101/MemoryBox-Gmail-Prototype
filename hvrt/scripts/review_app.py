@@ -184,7 +184,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "video-fit-js",
+        "build": "hits-scroll",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "sample_dir": str(cfg_sample()),

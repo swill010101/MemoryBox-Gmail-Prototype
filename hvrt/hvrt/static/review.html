@@ -41,11 +41,43 @@
     button.secondary { background: transparent; color: var(--accent); border-color: rgba(15,107,92,.35); }
     button:disabled { opacity: .45; cursor: not-allowed; }
     button.ghost-disabled { opacity: .4; background: #ddd; color: #666; border: 0; }
-    .stage { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; }
-    @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
-    .hits { display: flex; flex-direction: column; min-height: 480px; overflow: hidden; }
-    .hits h2, .player h2, .learn h2 { font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 1.1rem; margin: 0; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
-    .hit-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+    .stage {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .stage { grid-template-columns: 1fr; }
+      .hits { height: auto; max-height: 50vh; }
+    }
+    /* Hits column stays on screen; only the list scrolls — no page yo-yo. */
+    .hits {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 10rem);
+      max-height: calc(100vh - 10rem);
+      min-height: 20rem;
+      overflow: hidden;
+      position: sticky;
+      top: .75rem;
+    }
+    .hits h2, .player h2, .learn h2 { font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 1.1rem; margin: 0; padding: .8rem 1rem; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    .hits .meta, .hits .err { flex: 0 0 auto; }
+    .hit-list {
+      list-style: none; margin: 0; padding: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex: 1 1 auto;
+      min-height: 0;
+      overscroll-behavior: contain;
+    }
+    .hits .gallery {
+      flex: 0 1 auto;
+      max-height: 28%;
+      overflow-y: auto;
+      min-height: 0;
+    }
     .hit-list button { width: 100%; text-align: left; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 400; display: grid; gap: .15rem; }
     .hit-list button:hover { background: var(--accent-soft); }
     .hit-list button.active { background: var(--accent); color: #f7fffc; }
@@ -124,7 +156,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build video-fit-js</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build hits-scroll</p>
     </header>
 
     <div class="bar">
