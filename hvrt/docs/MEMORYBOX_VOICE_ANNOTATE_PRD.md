@@ -1,7 +1,8 @@
 # Memory Box — Voice Annotate PRD
 
-**Status:** Draft — awaiting Tom sign-off (plan only; no HVRT build)  
+**Status:** Approved (Tom) — **parked** until Memory Box app work (no HVRT build)  
 **Decisions (2026-08-01):** Memory Box feature (not HVRT POC now) · STT = **local faster-whisper**  
+**UX defaults (signed off):** max note **10 min** · show transcript then one **Save** · mic **tap start / tap stop**  
 **Related:** [ROADMAP_R3_VOICE_NOTES.md](ROADMAP_R3_VOICE_NOTES.md) · Memory Box ask/teach UI mockups
 
 ## Problem being solved
@@ -74,12 +75,12 @@ No separate “voice app.” One interface.
 6. Standalone note entry (no asset)  
 7. Wire Immich/disk/email/text asset types as they land  
 
-## Open questions for Tom
+## Resolved defaults
 
-1. Max note length before we force a split (e.g. 3 min / 10 min)?  
-2. Should Save require Tom to confirm/edit the transcript, or one-tap save after Whisper?  
-3. Preferred mic UX: hold-to-talk vs tap-to-start/stop?
+1. Max note length before split: **10 minutes**  
+2. After Whisper: **show transcript** (editable) → one **Save** tap  
+3. Mic UX: **tap to start / tap to stop** (not hold-to-talk)
 
 ## Sign-off
 
-- [ ] Tom approves this PRD (plan only; implement with Memory Box, not HVRT now)
+- [x] Tom approves this PRD (2026-08-01) — parked; implement with Memory Box, not HVRT now

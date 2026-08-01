@@ -2,8 +2,8 @@
 
 ## Voice annotate → Whisper → searchable (Memory Box)
 
-**Status:** Spec’d in [MEMORYBOX_VOICE_ANNOTATE_PRD.md](MEMORYBOX_VOICE_ANNOTATE_PRD.md)  
-**Tom decisions (2026-08-01):** Plan for **Memory Box** (not HVRT build now) · STT = **local faster-whisper**
+**Status:** **Approved & parked** — [MEMORYBOX_VOICE_ANNOTATE_PRD.md](MEMORYBOX_VOICE_ANNOTATE_PRD.md)  
+**Tom decisions (2026-08-01):** Memory Box only (not HVRT now) · Whisper local · 10 min max · transcript then Save · tap start/stop
 
 **Idea:** If Memory Box doesn’t know something, Tom **voice-annotates**. System transcribes with Whisper, stores **audio + transcript**, and that text is searchable like email, texts, and video speech.
 
