@@ -50,22 +50,25 @@
     .hit-list button:hover { background: var(--accent-soft); }
     .hit-list button.active { background: var(--accent); color: #f7fffc; }
     .player-body { padding: 1rem; display: grid; gap: .75rem; }
-    /* Size from intrinsic aspect; constrain both axes so wide/tall clips
-       letterbox instead of cropping (width:100% + max-height was cutting tops). */
+    /* JS sets exact pixel width/height from videoWidth/Height (Chrome object-fit
+       on <video> is unreliable and was cropping tops of some MP4s). */
     .video-wrap {
       position: relative;
       background: #111814;
+      width: 100%;
+      min-height: 12rem;
       max-height: 56vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: visible;
     }
     video {
       width: auto;
       height: auto;
-      max-width: 100%;
-      max-height: 56vh;
-      object-fit: contain;
+      max-width: none;
+      max-height: none;
+      object-fit: fill;
       display: block;
       background: #0b100e;
     }
@@ -73,6 +76,7 @@
       position: absolute; left: 0; top: 0; cursor: crosshair; display: none;
       /* left/top/width/height set in syncOverlaySize to match the <video> box */
     }
+    #videoFitNote { color: var(--muted); font-size: .85rem; }
     .crop-preview { display: none; align-items: center; gap: .75rem; }
     .crop-preview.on { display: flex; }
     .crop-preview img { width: 96px; height: 96px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
@@ -120,7 +124,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build video-full-frame</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build video-fit-js</p>
     </header>
 
     <div class="bar">
@@ -170,6 +174,7 @@
             <video id="video" controls playsinline></video>
             <canvas id="overlay"></canvas>
           </div>
+          <div id="videoFitNote" class="prov">Select a hit to play.</div>
           <div id="cropPreview" class="crop-preview prov">
             <img id="cropPreviewImg" alt="Crop preview" />
             <span id="cropPreviewMeta">Box a face to preview the exact crop that will be saved.</span>
@@ -192,7 +197,7 @@
               </label>
               <button id="dateBtn" class="secondary" type="button">Set date</button>
               <button id="ocrBtn" class="secondary" type="button">Confirm OCR text</button>
-              <button id="vlcBtn" class="secondary" type="button" disabled>Copy VLC</button>
+              <button id="vlcBtn" class="secondary" type="button" disabled>Open in system player</button>
             </div>
             <div class="tools-row" id="toolsRow2">
               <button id="boxFaceBtn" class="secondary" type="button">Box face</button>
@@ -715,7 +720,31 @@ async function loadTranscriptForSelection(){
   renderTranscriptWords();
 }
 
+function fitVideoToWrap(){
+  const wrap = video.parentElement;
+  const note = document.getElementById('videoFitNote');
+  if (!wrap) return;
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  if (!vw || !vh) {
+    if (note) note.textContent = 'Waiting for video frame size…';
+    return;
+  }
+  // Use wrap width; height budget is viewport-based (wrap may not have height yet).
+  const maxW = Math.max(160, wrap.clientWidth || wrap.parentElement?.clientWidth || 640);
+  const maxH = Math.max(120, Math.floor(window.innerHeight * 0.56));
+  const scale = Math.min(maxW / vw, maxH / vh);
+  const w = Math.max(1, Math.round(vw * scale));
+  const h = Math.max(1, Math.round(vh * scale));
+  video.style.width = `${w}px`;
+  video.style.height = `${h}px`;
+  if (note) {
+    note.textContent = `Frame ${vw}×${vh} · shown ${w}×${h} · if picture is black/cropped, use Open in system player (browser codec limit)`;
+  }
+}
+
 function syncOverlaySize(){
+  fitVideoToWrap();
   // Pin overlay to the actual <video> box inside the flex wrap (not the full letterbox).
   const wrap = video.parentElement;
   if (!wrap) return;
@@ -1043,9 +1072,18 @@ document.getElementById('ocrBtn').onclick = async () => {
 
 document.getElementById('vlcBtn').onclick = async () => {
   if (!selected) return;
-  const cmd = `vlc "${selected.path}" --start-time=${Math.floor(selected.start_sec || 0)}`;
-  try { await navigator.clipboard.writeText(cmd); prov.textContent = 'VLC command copied.'; }
-  catch { prompt('Copy VLC command', cmd); }
+  try {
+    const res = await fetch(`/api/videos/${selected.video_id}/open-local`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not open file');
+    prov.textContent = `Opened in system player: ${data.path || selected.filename}`;
+  } catch (e) {
+    // Fallback: copy path for Explorer
+    const path = selected.path || '';
+    try { await navigator.clipboard.writeText(path); prov.textContent = `Open failed — path copied: ${path}`; }
+    catch { prompt('Video path', path); }
+    showErr(e.message);
+  }
 };
 
 async function refreshProcess(){
@@ -1208,7 +1246,9 @@ modeEl.addEventListener('change', () => {
   syncMode(); // rebuild query dropdown options for this mode
   loadHits().catch(e => showErr(e.message));
 });
+video.addEventListener('loadedmetadata', syncOverlaySize);
 video.addEventListener('loadeddata', syncOverlaySize);
+video.addEventListener('resize', syncOverlaySize);
 window.addEventListener('resize', syncOverlaySize);
 
 refreshPeoplePlaces().then(() => loadHits()).catch(e => showErr(e.message));

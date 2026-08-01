@@ -10,6 +10,8 @@ import argparse
 import base64
 import json
 import mimetypes
+import os
+import subprocess
 import sys
 import time
 import uuid
@@ -182,7 +184,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "video-full-frame",
+        "build": "video-fit-js",
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "sample_dir": str(cfg_sample()),
@@ -761,6 +763,30 @@ def _hit(r: Any, kind: str) -> dict[str, Any]:
         "annotation_id": r["annotation_id"] if "annotation_id" in r.keys() else None,
         "stream_url": f"/api/media/{r['video_id']}",
     }
+
+
+@app.post("/api/videos/{video_id}/open-local")
+def open_local_video(video_id: int) -> dict[str, Any]:
+    """Open the source file in the OS default player (Windows/macOS/Linux)."""
+    c = conn()
+    row = c.execute(
+        "SELECT path, filename FROM videos WHERE id=?", (video_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "video not found")
+    path = Path(row["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except OSError as e:
+        raise HTTPException(500, f"Could not open: {e}") from e
+    return {"ok": True, "path": str(path), "filename": row["filename"]}
 
 
 @app.get("/api/media/{video_id}")
