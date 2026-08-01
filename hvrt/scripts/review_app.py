@@ -165,7 +165,15 @@ def index() -> HTMLResponse:
     path = STATIC if STATIC.is_file() else ROOT / "hvrt" / "static" / "viewer.html"
     if not path.is_file():
         raise HTTPException(404, f"UI missing: {STATIC}")
-    return HTMLResponse(path.read_text(encoding="utf-8"))
+    # Always re-read from disk; never let the browser keep a stale review.html.
+    return HTMLResponse(
+        path.read_text(encoding="utf-8"),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/health")
@@ -181,10 +189,23 @@ def health() -> dict[str, Any]:
         video_n = c.execute("SELECT COUNT(*) AS c FROM videos").fetchone()["c"]
     except Exception:  # noqa: BLE001
         pass
+    ui = STATIC if STATIC.is_file() else ROOT / "hvrt" / "static" / "viewer.html"
+    ui_build = None
+    if ui.is_file():
+        text = ui.read_text(encoding="utf-8")
+        marker = "build "
+        # pull first "build xxx" from the tagline
+        idx = text.find(marker)
+        if idx >= 0:
+            frag = text[idx : idx + 40].split("·")[0].split("<")[0].strip()
+            ui_build = frag
     return {
         "ok": True,
         "release": "R2",
         "build": "hits-scroll",
+        "ui_path": str(ui),
+        "ui_build": ui_build,
+        "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
         "database": str(cfg_db()),
         "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
         "sample_dir": str(cfg_sample()),
