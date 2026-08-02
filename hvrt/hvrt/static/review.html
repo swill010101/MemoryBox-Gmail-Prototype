@@ -162,13 +162,14 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build learn-face-voice</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build speech-mode</p>
     </header>
 
     <div class="bar">
       <label>Mode
         <select id="mode">
           <option value="faces">Faces</option>
+          <option value="voice">Speech</option>
           <option value="places">Places</option>
           <option value="text">Spoken text</option>
           <option value="ocr">OCR text</option>
@@ -305,6 +306,7 @@ let proxyWatchVideoId = null;
 let usingBrowserProxy = false;
 const readyProxyIds = new Set(); // video_ids with a ready H.264 browser copy
 let lastFaceQueryId = '';
+let lastVoiceQueryId = '';
 let lastPlaceQueryName = '';
 let galleryLoadSeq = 0;
 let transcriptWords = [];
@@ -357,6 +359,15 @@ function syncMode(){
       || '<option value="">(no people in gallery yet)</option>';
     if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
     lastFaceQueryId = querySelect.value;
+  } else if (mode === 'voice') {
+    queryLabel.textContent = 'Speaker';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastVoiceQueryId || lastFaceQueryId || querySelect.value;
+    querySelect.innerHTML = people.map(personOptionHtml).join('')
+      || '<option value="">(enroll a voice span first)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastVoiceQueryId = querySelect.value;
   } else if (mode === 'places') {
     queryLabel.textContent = 'Place';
     querySelect.hidden = false;
@@ -381,7 +392,7 @@ function syncMode(){
 
 function currentQueryName(){
   const mode = modeEl.value;
-  if (mode === 'faces' || mode === 'places') return optionName(querySelect) || querySelect.value.trim();
+  if (mode === 'faces' || mode === 'voice' || mode === 'places') return optionName(querySelect) || querySelect.value.trim();
   if (mode === 'text' || mode === 'ocr') return queryText.value.trim();
   return '';
 }
@@ -554,14 +565,21 @@ async function loadHits(){
 
   const mode = modeEl.value;
   if (mode === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
+  if (mode === 'voice' && querySelect.value) lastVoiceQueryId = querySelect.value;
   if (mode === 'places' && querySelect.value) lastPlaceQueryName = querySelect.value;
 
   await refreshPeoplePlaces();
 
-  // Restore face selection after refresh rebuilt the dropdown
+  // Restore face/voice selection after refresh rebuilt the dropdown
   if (mode === 'faces' && lastFaceQueryId && [...querySelect.options].some(o => o.value === lastFaceQueryId)) {
     querySelect.value = lastFaceQueryId;
     personSelect.value = lastFaceQueryId;
+  }
+  if (mode === 'voice' && lastVoiceQueryId && [...querySelect.options].some(o => o.value === lastVoiceQueryId)) {
+    querySelect.value = lastVoiceQueryId;
+    if (document.getElementById('voicePersonSelect')) {
+      document.getElementById('voicePersonSelect').value = lastVoiceQueryId;
+    }
   }
   if (mode === 'places' && lastPlaceQueryName && [...querySelect.options].some(o => o.value === lastPlaceQueryName)) {
     querySelect.value = lastPlaceQueryName;
@@ -582,7 +600,7 @@ async function loadHits(){
     hitMeta.textContent = `${hits.length} videos`;
   } else {
     if (!q && mode !== 'text' && mode !== 'ocr') {
-      showErr(mode === 'faces' ? 'Pick a person' : 'Pick a place');
+      showErr(mode === 'places' ? 'Pick a place' : 'Pick a person / speaker');
       return;
     }
     if (mode === 'faces') {
@@ -590,8 +608,15 @@ async function loadHits(){
       updateEnrollButton();
       await loadGalleryForSelectedPerson();
     }
+    if (mode === 'voice') {
+      const vs = document.getElementById('voicePersonSelect');
+      if (vs) vs.value = querySelect.value;
+      updateVoiceButton();
+    }
     const url = mode === 'faces'
       ? `/api/hits/faces?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
+      : mode === 'voice'
+        ? `/api/hits/voice?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
       : mode === 'places' ? `/api/hits/places?name=${encodeURIComponent(q)}`
       : mode === 'ocr' ? `/api/hits/ocr?q=${encodeURIComponent(q)}`
       : `/api/hits/text?q=${encodeURIComponent(q)}`;
@@ -604,6 +629,8 @@ async function loadHits(){
     hits = data.hits || [];
     if (mode === 'faces' && (data.effective_count != null || data.ai_count != null)) {
       hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}” · ${data.effective_count || 0} owner/user · ${data.ai_count || 0} AI`;
+    } else if (mode === 'voice') {
+      hitMeta.textContent = `${data.count} speech span(s) for “${data.query || q}” · ${data.owner_count || 0} enrolled · ${data.ai_count || 0} AI`;
     } else if (mode === 'text') {
       const corpus = data.corpus_segments != null ? ` · ${data.corpus_segments} segment(s) in DB` : '';
       hitMeta.textContent = `${data.count} spoken line(s)${q ? ` matching “${q}”` : ' (all)'}${corpus}`;
@@ -616,7 +643,9 @@ async function loadHits(){
 
   if (!hits.length) {
     const tip = mode === 'faces'
-      ? ' People with 0 hits still appear in the list — enroll faces or run process_videos.'
+      ? ' People with 0 hits still appear — enroll faces or run Learn.'
+      : mode === 'voice'
+        ? ' Enroll a voice span on a transcript, then Learn to find more speech.'
       : '';
     hitList.innerHTML = `<li class="meta">No hits for ${escapeHtml(q || 'selection')}.${tip}</li>`;
     return;

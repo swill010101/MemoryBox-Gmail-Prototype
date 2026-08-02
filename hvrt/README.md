@@ -36,6 +36,7 @@ python scripts\review_app.py
 ```
 
 - Mark **places** (spans + optional GPS pin); exemplars saved; **no** place recognition engine  
+- **Modes:** Faces · **Speech** · Places · Spoken text · OCR · All videos  
 - **Box face** → enroll to existing person (dropdown) or new (dup-safe)  
 - **Voice span** enroll, **OCR** confirm, **Set date**  
 - **Add & process videos** = multi-select upload into `sample\` + background `process_videos.py`  

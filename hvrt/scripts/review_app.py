@@ -220,7 +220,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "learn-face-voice",
+        "build": "speech-mode",
         "ui_path": str(ui),
         "ui_build": ui_build,
         "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
@@ -782,6 +782,69 @@ def hits_text(q: str = Query("")) -> dict[str, Any]:
         "count": len(rows),
         "corpus_segments": total,
         "hits": [_hit(r, "text") for r in rows],
+    }
+
+
+@app.get("/api/hits/voice")
+def hits_voice(
+    name: str | None = Query(None),
+    person_id: int | None = Query(None),
+) -> dict[str, Any]:
+    """Browse enrolled + AI-matched speech spans for a speaker."""
+    if person_id is None and not (name or "").strip():
+        raise HTTPException(400, "person_id or name required")
+    c = conn()
+    label = (name or "").strip() or None
+    if person_id is not None:
+        prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        if prow:
+            label = prow["name"]
+    try:
+        if person_id is not None:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, pe.name, '') AS label,
+                       a.id AS annotation_id, a.person_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                LEFT JOIN people pe ON pe.id = a.person_id
+                WHERE a.revoked=0 AND a.kind='person_voice' AND a.person_id=?
+                ORDER BY CASE a.actor_key WHEN 'owner' THEN 0 WHEN 'user' THEN 1 ELSE 2 END,
+                         v.filename, a.start_sec
+                """,
+                (person_id,),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, pe.name, '') AS label,
+                       a.id AS annotation_id, a.person_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                LEFT JOIN people pe ON pe.id = a.person_id
+                WHERE a.revoked=0 AND a.kind='person_voice'
+                  AND (pe.name = ? COLLATE NOCASE OR a.label_text = ? COLLATE NOCASE)
+                ORDER BY CASE a.actor_key WHEN 'owner' THEN 0 WHEN 'user' THEN 1 ELSE 2 END,
+                         v.filename, a.start_sec
+                """,
+                (label, label),
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    hits = [_hit(r, "voice") for r in rows]
+    owner_n = sum(1 for h in hits if h.get("actor_key") in ("owner", "user"))
+    ai_n = len(hits) - owner_n
+    return {
+        "query": label or name or str(person_id),
+        "person_id": person_id,
+        "count": len(hits),
+        "owner_count": owner_n,
+        "ai_count": ai_n,
+        "hits": hits,
     }
 
 
