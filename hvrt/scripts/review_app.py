@@ -220,7 +220,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "speech-mode",
+        "build": "fix-analysis-passes",
         "ui_path": str(ui),
         "ui_build": ui_build,
         "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,

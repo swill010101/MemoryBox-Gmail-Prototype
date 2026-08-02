@@ -58,7 +58,22 @@ def ensure_face_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    # Soft-migrate common missing columns on older DBs
+    # Soft-migrate common missing columns on older Desktop Phase-1 DBs
+    ap = _cols(conn, "analysis_passes")
+    for col, decl in (
+        ("engine", "TEXT"),
+        ("model_version", "TEXT"),
+        ("status", "TEXT"),
+        ("started_at", "TEXT"),
+        ("finished_at", "TEXT"),
+        ("message", "TEXT"),
+        ("video_id", "INTEGER"),
+    ):
+        if col not in ap:
+            try:
+                conn.execute(f"ALTER TABLE analysis_passes ADD COLUMN {col} {decl}")
+            except sqlite3.Error:
+                pass
     fa = _cols(conn, "face_appearances")
     for col, decl in (
         ("end_sec", "REAL"),
@@ -74,6 +89,72 @@ def ensure_face_tables(conn: sqlite3.Connection) -> None:
             except sqlite3.Error:
                 pass
     conn.commit()
+
+
+def _insert_pass(
+    conn: sqlite3.Connection,
+    *,
+    video_id: int,
+    message: str,
+) -> int:
+    """Insert a learn_faces analysis pass using only columns that exist."""
+    cols = _cols(conn, "analysis_passes")
+    fields: dict[str, Any] = {}
+    if "video_id" in cols:
+        fields["video_id"] = video_id
+    if "engine" in cols:
+        fields["engine"] = "learn_faces"
+    elif "pass_type" in cols:
+        fields["pass_type"] = "learn_faces"
+    elif "kind" in cols:
+        fields["kind"] = "learn_faces"
+    if "model_version" in cols:
+        fields["model_version"] = "insightface-buffalo_l"
+    if "status" in cols:
+        fields["status"] = "running"
+    if "started_at" in cols:
+        fields["started_at"] = time_now()
+    if "message" in cols:
+        fields["message"] = message
+    if not fields:
+        # Last resort: minimal insert
+        cur = conn.execute("INSERT INTO analysis_passes DEFAULT VALUES")
+        return int(cur.lastrowid)
+    keys = ", ".join(fields.keys())
+    placeholders = ", ".join("?" for _ in fields)
+    cur = conn.execute(
+        f"INSERT INTO analysis_passes ({keys}) VALUES ({placeholders})",
+        tuple(fields.values()),
+    )
+    return int(cur.lastrowid)
+
+
+def _finish_pass(conn: sqlite3.Connection, pass_id: int, message: str) -> None:
+    cols = _cols(conn, "analysis_passes")
+    sets: list[str] = []
+    vals: list[Any] = []
+    if "status" in cols:
+        sets.append("status=?")
+        vals.append("done")
+    if "finished_at" in cols:
+        sets.append("finished_at=?")
+        vals.append(time_now())
+    if "message" in cols:
+        sets.append("message=?")
+        vals.append(message)
+    if not sets:
+        return
+    vals.append(pass_id)
+    conn.execute(
+        f"UPDATE analysis_passes SET {', '.join(sets)} WHERE id=?",
+        tuple(vals),
+    )
+
+
+def time_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _load_insightface():
@@ -323,22 +404,17 @@ def rescan_faces(
         prog(pct, f"Scanning {v['filename']}")
         if not path.is_file():
             continue
-        cur = conn.execute(
-            """
-            INSERT INTO analysis_passes (video_id, engine, model_version, status, started_at, message)
-            VALUES (?, 'learn_faces', 'insightface-buffalo_l', 'running', datetime('now'), ?)
-            """,
-            (int(v["id"]), f"centroids={len(centroids)}"),
-        )
-        pass_id = int(cur.lastrowid)
-        conn.commit()
+        try:
+            pass_id = _insert_pass(
+                conn, video_id=int(v["id"]), message=f"centroids={len(centroids)}"
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            return f"Could not create analysis_passes row: {e}"
 
         cap = cv2.VideoCapture(str(path))
         if not cap.isOpened():
-            conn.execute(
-                "UPDATE analysis_passes SET status='done', finished_at=datetime('now'), message=? WHERE id=?",
-                ("could not open video", pass_id),
-            )
+            _finish_pass(conn, pass_id, "could not open video")
             conn.commit()
             continue
         fps = float(cap.get(cv2.CAP_PROP_FPS) or 0) or 25.0
@@ -384,14 +460,7 @@ def rescan_faces(
                 else:
                     updated += 1
         cap.release()
-        conn.execute(
-            """
-            UPDATE analysis_passes SET status='done', finished_at=datetime('now'),
-                message=?
-            WHERE id=?
-            """,
-            (f"new_hits={vid_new}", pass_id),
-        )
+        _finish_pass(conn, pass_id, f"new_hits={vid_new}")
         conn.commit()
 
     prog(100, "Face rescan done")
