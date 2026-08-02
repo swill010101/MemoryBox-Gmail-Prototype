@@ -459,6 +459,8 @@ def rescan_faces(
                     vid_new += 1
                 else:
                     updated += 1
+            # Release write lock between sample frames so Load hits can read
+            conn.commit()
         cap.release()
         _finish_pass(conn, pass_id, f"new_hits={vid_new}")
         conn.commit()

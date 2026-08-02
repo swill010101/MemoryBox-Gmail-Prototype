@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from hvrt.schema_r2 import connect as db_connect
+
 STEPS = [
     ("rescoring", "Rebuild effective evidence"),
     ("faces_gallery", "Rescan videos for enrolled faces"),
@@ -36,10 +38,7 @@ class LearningManager:
         self._thread: threading.Thread | None = None
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        return db_connect(self.db_path)
 
     def active_run(self) -> dict[str, Any] | None:
         conn = self.connect()

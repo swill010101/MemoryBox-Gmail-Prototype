@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from hvrt.schema_r2 import connect as db_connect
+
 
 PROCESS_STEPS = [
     ("upload", "Save videos into sample\\"),
@@ -112,7 +114,7 @@ class ProcessJobManager:
         if not self.db_path.is_file():
             return out
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = db_connect(self.db_path)
             conn.row_factory = sqlite3.Row
 
             def q(sql: str) -> int:

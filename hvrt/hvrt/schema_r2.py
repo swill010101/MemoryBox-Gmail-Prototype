@@ -141,15 +141,24 @@ CREATE TABLE IF NOT EXISTS voice_samples (
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
+    """Open SQLite with WAL + busy timeout so Learn/process can write while review reads."""
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if mode and str(mode[0]).lower() == "wal":
+            conn.execute("PRAGMA synchronous=NORMAL")
+    except sqlite3.Error:
+        pass
     return conn
 
 
 def init_r2_schema(db_path: Path | str) -> sqlite3.Connection:
+    """Create/migrate R2 tables. Call at process startup — not on every request."""
     conn = connect(db_path)
     conn.executescript(R2_SCHEMA_SQL)
     # Ensure Phase-1 people table exists for FK-less person_id usage

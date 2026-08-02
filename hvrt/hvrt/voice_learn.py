@@ -322,6 +322,8 @@ def recognize_voices(
             )
             written += 1
             per_video_count[vid] = per_video_count.get(vid, 0) + 1
+            if written % 5 == 0:
+                conn.commit()
 
         conn.commit()
 

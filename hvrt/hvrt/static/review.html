@@ -162,7 +162,7 @@
   <div class="shell">
     <header>
       <h1 class="brand">HVRT</h1>
-      <p class="tag">Evidence review · human over AI · settings coming later · build fix-analysis-passes</p>
+      <p class="tag">Evidence review · human over AI · settings coming later · build db-busy-load-hits</p>
     </header>
 
     <div class="bar">
@@ -294,6 +294,25 @@ const prov = document.getElementById('prov');
 const personSelect = document.getElementById('personSelect');
 const startSec = document.getElementById('startSec');
 const endSec = document.getElementById('endSec');
+
+async function readJson(res){
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    const snip = (text || res.statusText || 'non-JSON response').trim().slice(0, 160);
+    throw new Error(res.ok ? snip : `${res.status}: ${snip}`);
+  }
+  if (!res.ok) {
+    const detail = data && data.detail;
+    const msg = typeof detail === 'string' ? detail
+      : (detail && detail.msg) ? detail.msg
+      : (typeof detail === 'object' ? JSON.stringify(detail) : null);
+    throw new Error(msg || `${res.status}: ${res.statusText || 'request failed'}`);
+  }
+  return data;
+}
 let hits = [];
 let selected = null;
 let boxMode = false;
@@ -459,9 +478,9 @@ function fillEnrollPeople(people, preferName){
 
 async function refreshPeoplePlaces(preferName){
   const [pe, pl] = await Promise.all([fetch('/api/people'), fetch('/api/places')]);
-  const peoplePayload = await pe.json();
+  const peoplePayload = await readJson(pe);
   const people = peoplePayload.people || [];
-  const places = ((await pl.json()).places || []);
+  const places = ((await readJson(pl)).places || []);
   window._people = people;
   window._places = places;
   window._galleryDirs = peoplePayload.gallery_dirs || [];
@@ -560,9 +579,11 @@ async function loadGalleryForSelectedPerson(){
 async function loadHits(){
   showErr('');
   hitList.innerHTML = '';
+  hitMeta.textContent = 'Loading…';
   selected = null;
   document.getElementById('vlcBtn').disabled = true;
 
+  try {
   const mode = modeEl.value;
   if (mode === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
   if (mode === 'voice' && querySelect.value) lastVoiceQueryId = querySelect.value;
@@ -591,7 +612,7 @@ async function loadHits(){
   let data;
   if (mode === 'videos') {
     const res = await fetch('/api/videos');
-    data = await res.json();
+    data = await readJson(res);
     hits = (data.videos || []).map(v => ({
       kind: 'video', hit_id: v.id, video_id: v.id, filename: v.filename, path: v.path,
       start_sec: 0, end_sec: v.duration_sec || 0, confidence: 1, label: v.filename,
@@ -601,6 +622,7 @@ async function loadHits(){
   } else {
     if (!q && mode !== 'text' && mode !== 'ocr') {
       showErr(mode === 'places' ? 'Pick a place' : 'Pick a person / speaker');
+      hitMeta.textContent = 'Load hits to begin.';
       return;
     }
     if (mode === 'faces') {
@@ -621,11 +643,7 @@ async function loadHits(){
       : mode === 'ocr' ? `/api/hits/ocr?q=${encodeURIComponent(q)}`
       : `/api/hits/text?q=${encodeURIComponent(q)}`;
     const res = await fetch(url);
-    data = await res.json();
-    if (!res.ok) {
-      showErr(typeof data.detail === 'string' ? data.detail : 'Load hits failed');
-      return;
-    }
+    data = await readJson(res);
     hits = data.hits || [];
     if (mode === 'faces' && (data.effective_count != null || data.ai_count != null)) {
       hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}” · ${data.effective_count || 0} owner/user · ${data.ai_count || 0} AI`;
@@ -662,6 +680,11 @@ async function loadHits(){
     li.appendChild(b);
     hitList.appendChild(li);
   });
+  } catch (e) {
+    hits = [];
+    hitMeta.textContent = 'Load hits failed — retry.';
+    throw e;
+  }
 }
 
 function selectHit(i, btn){

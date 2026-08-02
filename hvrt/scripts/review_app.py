@@ -11,6 +11,7 @@ import base64
 import json
 import mimetypes
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -41,7 +42,7 @@ from hvrt.annotations import (  # noqa: E402
 from hvrt.browser_proxy import BrowserProxyManager  # noqa: E402
 from hvrt.learning import LearningManager  # noqa: E402
 from hvrt.process_jobs import ProcessJobManager, safe_sample_name  # noqa: E402
-from hvrt.schema_r2 import init_r2_schema  # noqa: E402
+from hvrt.schema_r2 import connect as db_connect, init_r2_schema  # noqa: E402
 
 DEFAULT_DB = ROOT / "database" / "hvrt.sqlite"
 DEFAULT_GALLERY = ROOT / "gallery"
@@ -131,7 +132,26 @@ def cfg_sample() -> Path:
 
 
 def conn():
-    return init_r2_schema(cfg_db())
+    """Per-request DB handle. Schema is applied at startup only (avoids write locks during Learn)."""
+    return db_connect(cfg_db())
+
+
+def _learning_busy() -> bool:
+    try:
+        run = learner().active_run()
+    except sqlite3.Error:
+        return False
+    return bool(run and run.get("status") in ("queued", "running"))
+
+
+def _db_http_error(exc: BaseException) -> HTTPException:
+    msg = str(exc)
+    if isinstance(exc, sqlite3.OperationalError) and "locked" in msg.lower():
+        return HTTPException(
+            503,
+            "Database busy while Learn/process is writing — retry Load hits in a moment",
+        )
+    return HTTPException(500, msg or "Database error")
 
 
 def learner() -> LearningManager:
@@ -238,22 +258,32 @@ def health() -> dict[str, Any]:
 @app.get("/api/people")
 def api_people() -> dict[str, Any]:
     c = conn()
-    # Sync filesystem gallery folders into DB so dropdown shows Peggy/Andy/Carri/etc.
-    people = sync_people_from_gallery(c, cfg_gallery_dirs())
-    out = []
-    for p in people:
-        # Same merge as Load hits so dropdown count matches the sidebar
-        n = len(_merged_face_hits(c, person_id=int(p["id"])))
-        out.append({**p, "hit_count": n})
-    return {"people": out, "gallery_dirs": [str(p) for p in cfg_gallery_dirs()]}
+    try:
+        # Gallery sync writes — skip while Learn holds the DB so Load hits can read.
+        if _learning_busy():
+            people = list_people(c)
+        else:
+            people = sync_people_from_gallery(c, cfg_gallery_dirs())
+            c.commit()
+        out = []
+        for p in people:
+            # Same merge as Load hits so dropdown count matches the sidebar
+            n = len(_merged_face_hits(c, person_id=int(p["id"])))
+            out.append({**p, "hit_count": n})
+        return {"people": out, "gallery_dirs": [str(p) for p in cfg_gallery_dirs()]}
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
 
 
 @app.get("/api/people/{person_id}/exemplars")
 def api_person_exemplars(person_id: int) -> dict[str, Any]:
     c = conn()
-    person = c.execute(
-        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
-    ).fetchone()
+    try:
+        person = c.execute(
+            "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+        ).fetchone()
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
     if not person:
         raise HTTPException(404, "person not found")
     exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
@@ -501,16 +531,19 @@ def hits_faces(
     if person_id is None and not (name or "").strip():
         raise HTTPException(400, "person_id or name required")
     c = conn()
-    hits = _merged_face_hits(
-        c,
-        person_id=person_id,
-        name=(name or "").strip() or None,
-    )
-    label = name
-    if person_id is not None:
-        prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
-        if prow:
-            label = prow["name"]
+    try:
+        hits = _merged_face_hits(
+            c,
+            person_id=person_id,
+            name=(name or "").strip() or None,
+        )
+        label = name
+        if person_id is not None:
+            prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+            if prow:
+                label = prow["name"]
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
     eff_n = sum(1 for h in hits if str(h.get("source", "")).startswith("eff") or h.get("source") == "effective")
     fa_n = len(hits) - eff_n
     return {
