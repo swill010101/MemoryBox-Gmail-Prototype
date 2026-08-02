@@ -2,3 +2,9 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.9
 pydantic>=2.0
+# Learn face rescan (usually already in process_videos venv):
+#   insightface onnxruntime opencv-python-headless numpy
+# Learn voice recognition (optional):
+#   speechbrain torch torchaudio
+# Browser proxy / voice clip extract:
+#   imageio-ffmpeg  (or system ffmpeg)

@@ -137,7 +137,7 @@ def conn():
 def learner() -> LearningManager:
     mgr = getattr(app.state, "learner", None)
     if mgr is None:
-        mgr = LearningManager(cfg_db(), cfg_working())
+        mgr = LearningManager(cfg_db(), cfg_working(), gallery_dirs=cfg_gallery_dirs())
         app.state.learner = mgr
     return mgr
 
@@ -220,7 +220,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "release": "R2",
-        "build": "hit-click-ocr",
+        "build": "learn-face-voice",
         "ui_path": str(ui),
         "ui_build": ui_build,
         "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
@@ -1264,7 +1264,7 @@ def main() -> None:
     app.state.working_dir = working
     app.state.sample_dir = sample
     app.state.gallery_dirs = [gallery, working / "exemplars" / "people"]
-    app.state.learner = LearningManager(db_path, working)
+    app.state.learner = LearningManager(db_path, working, gallery_dirs=[gallery, working / "exemplars" / "people"])
     app.state.processor = ProcessJobManager(db_path=db_path, root=ROOT, sample_dir=sample)
     app.state.proxies = BrowserProxyManager(working)
     init_r2_schema(db_path)

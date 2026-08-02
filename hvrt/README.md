@@ -39,7 +39,7 @@ python scripts\review_app.py
 - **Box face** → enroll to existing person (dropdown) or new (dup-safe)  
 - **Voice span** enroll, **OCR** confirm, **Set date**  
 - **Add & process videos** = multi-select upload into `sample\` + background `process_videos.py`  
-- **Learn from annotations** = background job + progress panel  
+- **Learn from annotations** = rescoring + **rescan faces** in all videos from gallery enrollments + **voice recognition** on transcript spans (needs InsightFace / speechbrain)  
 - **Setting (future)** disabled  
 - Rescoring: Owner > User > AI; human confirm = 1.0  
 
@@ -47,7 +47,20 @@ Docs: [docs/HVRT_R2_PRD.md](docs/HVRT_R2_PRD.md) · R3 voice notes: [docs/ROADMA
 
 ## Add a new / older video to the POC sample
 
-**Learn from annotations** does **not** ingest new video files. It only updates galleries from human marks.
+**Learn from annotations** does **not** ingest new video files. It does:
+
+1. Rebuild owner>user>AI evidence  
+2. **Rescan all videos** for faces matching enrolled gallery people (InsightFace)  
+3. **Recognize enrolled voices** on transcript spans (SpeechBrain ECAPA — optional install)  
+4. Index place exemplars / OCR strings  
+
+```powershell
+# Face rescan uses the same InsightFace venv as process_videos.
+# Voice recognition (optional):
+pip install speechbrain torch torchaudio
+```
+
+After enrolling a new face (e.g. Eugene Will), click **Learn from annotations**, wait for the faces step to finish, then **Load hits** in Faces mode for that person.
 
 ### From the review UI (preferred)
 

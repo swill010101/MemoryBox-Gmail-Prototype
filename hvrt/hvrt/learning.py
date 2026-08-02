@@ -1,6 +1,6 @@
-"""Background learning job — scan new owner annotations; update galleries.
+"""Background learning job — rescoring + face/voice recognition from enrollments.
 
-No auto place-recognition engine. Places step only indexes saved exemplars.
+Places stay exemplar-only (no place recognition engine).
 """
 from __future__ import annotations
 
@@ -13,17 +13,25 @@ from typing import Any, Callable
 
 STEPS = [
     ("rescoring", "Rebuild effective evidence"),
-    ("faces_gallery", "Update face gallery from exemplars"),
-    ("voice_gallery", "Index voice enrollments"),
+    ("faces_gallery", "Rescan videos for enrolled faces"),
+    ("voice_gallery", "Recognize enrolled voices in transcripts"),
     ("places_gallery", "Index place exemplars (no recognition)"),
     ("ocr_lexicon", "Refresh OCR confirm lexicon"),
 ]
 
 
 class LearningManager:
-    def __init__(self, db_path: Path | str, working_dir: Path | str) -> None:
+    def __init__(
+        self,
+        db_path: Path | str,
+        working_dir: Path | str,
+        gallery_dirs: list[Path | str] | None = None,
+    ) -> None:
         self.db_path = Path(db_path)
         self.working_dir = Path(working_dir)
+        root = self.db_path.resolve().parents[1] if self.db_path.parents else Path(".")
+        default_gallery = [root / "gallery", self.working_dir / "exemplars" / "people"]
+        self.gallery_dirs = [Path(p) for p in (gallery_dirs or default_gallery)]
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
 
@@ -186,28 +194,25 @@ class LearningManager:
         return f"{n} effective evidence rows"
 
     def _step_faces(self, conn: sqlite3.Connection, run_id: int) -> str:
-        self._set_step(conn, run_id, "faces_gallery", "running", 30, "scanning exemplars")
-        rows = conn.execute(
-            """
-            SELECT id, person_id, exemplar_path FROM annotations
-            WHERE kind='person_face' AND revoked=0 AND actor_key IN ('owner','user')
-              AND exemplar_path IS NOT NULL
-            """
-        ).fetchall()
-        # Index only — Phase-1 face re-embed is optional if insightface present
-        counted = 0
-        for r in rows:
-            if r["exemplar_path"] and Path(r["exemplar_path"]).is_file():
-                counted += 1
-        self._set_step(
-            conn, run_id, "faces_gallery", "running", 80, f"{counted} face files"
+        from hvrt.face_learn import rescan_faces
+
+        def prog(pct: float, msg: str) -> None:
+            self._set_step(conn, run_id, "faces_gallery", "running", pct, msg)
+
+        return rescan_faces(
+            conn,
+            gallery_dirs=self.gallery_dirs,
+            working_dir=self.working_dir,
+            progress=prog,
         )
-        return f"Indexed {counted} owner face exemplars (recognition re-run optional)"
 
     def _step_voice(self, conn: sqlite3.Connection, run_id: int) -> str:
-        self._set_step(conn, run_id, "voice_gallery", "running", 50, "indexing")
-        n = conn.execute("SELECT COUNT(*) AS c FROM voice_samples").fetchone()["c"]
-        return f"{n} voice samples on file (diarization bind later)"
+        from hvrt.voice_learn import recognize_voices
+
+        def prog(pct: float, msg: str) -> None:
+            self._set_step(conn, run_id, "voice_gallery", "running", pct, msg)
+
+        return recognize_voices(conn, working_dir=self.working_dir, progress=prog)
 
     def _step_places(self, conn: sqlite3.Connection, run_id: int) -> str:
         """Exemplars only — no place recognition engine."""
