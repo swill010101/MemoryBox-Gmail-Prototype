@@ -41,6 +41,8 @@ python scripts\review_app.py
 - **Voice span** enroll, **OCR** confirm, **Set date**  
 - **Add & process videos** = multi-select upload into `sample\` + background `process_videos.py`  
 - **Learn from annotations** = rescoring + **rescan faces** in all videos from gallery enrollments + **voice recognition** on transcript spans (needs InsightFace / speechbrain)  
+- **Faces Load hits** coalesces AI sample bookmarks into **presence spans** (merge gap **60s**; one row per span)  
+- **Spoken text** panel scrolls; playing word follows the video (YouTube-style). Full transcript when the hit is ≥2 min, or in Spoken text / All videos mode; short hits still get a local window  
 - **Setting (future)** disabled  
 - Rescoring: Owner > User > AI; human confirm = 1.0  
 
