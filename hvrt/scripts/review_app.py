@@ -16,10 +16,11 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
@@ -51,7 +52,32 @@ STATIC = ROOT / "hvrt" / "static" / "review.html"
 HOST = "127.0.0.1"
 PORT = 8788
 
-app = FastAPI(title="HVRT Review R2", version="0.2.0")
+
+def _multipart_installed() -> bool:
+    try:
+        import python_multipart  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    try:
+        import multipart  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    init_r2_schema(cfg_db())
+    cfg_working().mkdir(parents=True, exist_ok=True)
+    (cfg_working() / "exemplars").mkdir(parents=True, exist_ok=True)
+    (cfg_working() / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    DEFAULT_GALLERY.mkdir(parents=True, exist_ok=True)
+    sync_people_from_gallery(conn(), cfg_gallery_dirs())
+    yield
+
+
+app = FastAPI(title="HVRT Review R2", version="0.2.0", lifespan=_lifespan)
 
 
 class MarkPlaceIn(BaseModel):
@@ -185,17 +211,6 @@ def _video_row(video_id: int):
     if not row:
         raise HTTPException(404, "video not found")
     return row
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_r2_schema(cfg_db())
-    cfg_working().mkdir(parents=True, exist_ok=True)
-    (cfg_working() / "exemplars").mkdir(parents=True, exist_ok=True)
-    (cfg_working() / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
-    DEFAULT_GALLERY.mkdir(parents=True, exist_ok=True)
-    # Sync gallery folders (Peggy/Andy/Carri/...) into people table for dropdowns
-    sync_people_from_gallery(conn(), cfg_gallery_dirs())
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1353,40 +1368,56 @@ def learn_status() -> dict[str, Any]:
     return st or {"status": "idle", "steps": [], "background": True}
 
 
-@app.post("/api/process/upload")
-async def process_upload(files: list[UploadFile] = File(...)) -> dict[str, Any]:
-    """Accept one or more videos (e.g. from P: share) and save into sample\\."""
-    if processor().busy():
-        raise HTTPException(409, "A process job is already running")
-    if not files:
-        raise HTTPException(400, "No files selected")
-    sample = cfg_sample()
-    sample.mkdir(parents=True, exist_ok=True)
-    saved: list[dict[str, Any]] = []
-    for uf in files:
-        try:
-            name = safe_sample_name(uf.filename or "video.bin")
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from e
-        dest = sample / name
-        # Avoid clobber: if exists, add a short suffix
-        if dest.exists():
-            stem, suf = dest.stem, dest.suffix
-            dest = sample / f"{stem}_{int(time.time())}{suf}"
-            name = dest.name
-        size = 0
-        with dest.open("wb") as out:
-            while True:
-                chunk = await uf.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-                size += len(chunk)
-        if size < 1000:
-            dest.unlink(missing_ok=True)
-            raise HTTPException(400, f"{name} looks empty — check the share path")
-        saved.append({"filename": name, "path": str(dest), "bytes": size})
-    return {"ok": True, "count": len(saved), "saved": saved, "sample_dir": str(sample)}
+def _register_process_upload() -> None:
+    """File upload needs python-multipart. Register only when installed."""
+    if not _multipart_installed():
+        @app.post("/api/process/upload")
+        async def process_upload_missing() -> dict[str, Any]:
+            raise HTTPException(
+                503,
+                'Install python-multipart then restart: pip install python-multipart',
+            )
+        return
+
+    from fastapi import File, UploadFile
+
+    @app.post("/api/process/upload")
+    async def process_upload(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        """Accept one or more videos (e.g. from P: share) and save into sample\\."""
+        if processor().busy():
+            raise HTTPException(409, "A process job is already running")
+        if not files:
+            raise HTTPException(400, "No files selected")
+        sample = cfg_sample()
+        sample.mkdir(parents=True, exist_ok=True)
+        saved: list[dict[str, Any]] = []
+        for uf in files:
+            try:
+                name = safe_sample_name(uf.filename or "video.bin")
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+            dest = sample / name
+            # Avoid clobber: if exists, add a short suffix
+            if dest.exists():
+                stem, suf = dest.stem, dest.suffix
+                dest = sample / f"{stem}_{int(time.time())}{suf}"
+                name = dest.name
+            size = 0
+            with dest.open("wb") as out:
+                while True:
+                    chunk = await uf.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    size += len(chunk)
+            if size < 1000:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, f"{name} looks empty — check the share path")
+            saved.append({"filename": name, "path": str(dest), "bytes": size})
+        return {"ok": True, "count": len(saved), "saved": saved, "sample_dir": str(sample)}
+
+
+_register_process_upload()
 
 
 class ProcessStartIn(BaseModel):
@@ -1444,6 +1475,9 @@ def main() -> None:
     print(f"Gallery dirs     {app.state.gallery_dirs}")
     print("Settings engine  disabled (placeholder)")
     print("Place recognition disabled (annotate/exemplars only)")
+    if not _multipart_installed():
+        print("WARNING: python-multipart missing — Add & process upload disabled.")
+        print("         Prefer the project venv, then: pip install -r requirements.txt")
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

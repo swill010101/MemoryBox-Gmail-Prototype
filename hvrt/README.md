@@ -18,6 +18,7 @@ python scripts\review_app.py
 # http://127.0.0.1:8788
 ```
 
+If you see `python-multipart` missing, you are probably on system Python instead of `.venv`. Activate the venv (or `pip install python-multipart`) and retry.
 If git checkout is blocked by local changes, download instead:
 
 ```powershell
