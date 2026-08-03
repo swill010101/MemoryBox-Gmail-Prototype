@@ -1,6 +1,6 @@
 ﻿# Memory Box Prototype
 
-**Product:** See [docs/product/README.md](docs/product/README.md) — [Founder's Book (MB-FB-001)](docs/product/MB-FB-001%20Memory%20Box%20Founders%20Book.md) → [MBPS-001](docs/product/MBPS-001%20Memory%20Box%20Product%20Specification.md) → Functional Architecture.
+**Product:** See [docs/product/README.md](docs/product/README.md) — [Founder's Book (MB-FB-001)](docs/product/MB-FB-001%20Memory%20Box%20Founders%20Book.md) → [MBPS-001](docs/product/MBPS-001%20Memory%20Box%20Product%20Specification.md) → [MBUX-001](docs/product/MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) → Functional Architecture.
 
 **Project Architecture:** See [docs/architecture/MBX-A-001 Functional Architecture Part 1.md](docs/architecture/MBX-A-001%20Functional%20Architecture%20Part%201.md)
 
