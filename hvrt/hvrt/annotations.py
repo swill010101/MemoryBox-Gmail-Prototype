@@ -1,0 +1,435 @@
+"""Annotation + place helpers for HVRT R2."""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+from hvrt.rescoring import human_confidence, load_rules, rebuild_effective_evidence
+
+SAFE_NAME = re.compile(r"[^\w\s\-'.]", re.UNICODE)
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def sync_people_from_gallery(
+    conn: sqlite3.Connection,
+    gallery_dirs: list[Path | str],
+) -> list[dict[str, Any]]:
+    """Ensure every gallery/<PersonName>/ folder is a people row (dropdown source).
+
+    Folders are included even when empty so the top Person list matches the
+    filesystem. Duplicate case-insensitive rows are merged afterward.
+    """
+    for gallery_dir in gallery_dirs:
+        root = Path(gallery_dir)
+        if not root.is_dir():
+            continue
+        for person_dir in sorted(root.iterdir()):
+            if not person_dir.is_dir() or person_dir.name.startswith("."):
+                continue
+            upsert_person(conn, person_dir.name, str(person_dir.resolve()))
+    merge_duplicate_people(conn)
+    return list_people(conn)
+
+
+def merge_duplicate_people(conn: sqlite3.Connection) -> int:
+    """Collapse case/whitespace duplicate people rows onto the lowest id."""
+    rows = conn.execute("SELECT id, name FROM people ORDER BY id").fetchall()
+    by_key: dict[str, int] = {}
+    merged = 0
+    for row in rows:
+        key = " ".join(str(row["name"]).split()).casefold()
+        if not key:
+            continue
+        keep_id = by_key.get(key)
+        if keep_id is None:
+            by_key[key] = int(row["id"])
+            continue
+        dup_id = int(row["id"])
+        if dup_id == keep_id:
+            continue
+        # Repoint references then drop the duplicate
+        for table, col in (
+            ("annotations", "person_id"),
+            ("evidence_effective", "person_id"),
+            ("voice_samples", "person_id"),
+        ):
+            try:
+                conn.execute(
+                    f"UPDATE {table} SET {col}=? WHERE {col}=?",
+                    (keep_id, dup_id),
+                )
+            except sqlite3.Error:
+                pass
+        try:
+            conn.execute(
+                "UPDATE face_appearances SET person_id=? WHERE person_id=?",
+                (keep_id, dup_id),
+            )
+        except sqlite3.Error:
+            pass
+        conn.execute("DELETE FROM people WHERE id=?", (dup_id,))
+        merged += 1
+    if merged:
+        conn.commit()
+    return merged
+
+
+def list_people(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT id, name, gallery_path FROM people ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    # Deduplicate in the response as a safety net if UNIQUE was missing historically
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        key = " ".join(str(r["name"]).split()).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(r))
+    return out
+
+
+def list_person_exemplars(
+    conn: sqlite3.Connection,
+    person_id: int,
+    extra_dirs: list[Path | str] | None = None,
+) -> list[dict[str, Any]]:
+    """List image files for a person from that person's gallery folders only."""
+    person = conn.execute(
+        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+    ).fetchone()
+    if not person:
+        return []
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def add_file(path: Path, source: str) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        key = str(resolved).lower()
+        if key in seen or not resolved.is_file():
+            return
+        if resolved.suffix.lower() not in IMAGE_EXTS:
+            return
+        seen.add(key)
+        out.append(
+            {
+                "path": str(resolved),
+                "filename": resolved.name,
+                "source": source,
+                "person_id": person_id,
+                "person_name": person["name"],
+                "index": len(out),
+            }
+        )
+
+    for gdir in person_gallery_dirs(person, extra_dirs):
+        for img in sorted(gdir.iterdir()):
+            add_file(img, "gallery")
+
+    rows = conn.execute(
+        """
+        SELECT id, exemplar_path FROM annotations
+        WHERE person_id=? AND kind='person_face' AND revoked=0
+          AND exemplar_path IS NOT NULL
+        ORDER BY id DESC
+        """,
+        (person_id,),
+    ).fetchall()
+    for r in rows:
+        add_file(Path(r["exemplar_path"]), f"annotation:{r['id']}")
+
+    return out
+
+
+def person_gallery_dirs(
+    person: sqlite3.Row | dict[str, Any],
+    extra_dirs: list[Path | str] | None = None,
+) -> list[Path]:
+    """Folders that belong to this person (name must match folder name)."""
+    name = str(person["name"]).strip()
+    dirs: list[Path] = []
+    seen: set[str] = set()
+
+    def add_dir(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        if not resolved.is_dir():
+            return
+        # Require folder name to match person — prevents Andy listing Peggy's path
+        if resolved.name.casefold() != name.casefold():
+            return
+        key = str(resolved).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        dirs.append(resolved)
+
+    raw = person["gallery_path"] if "gallery_path" in person.keys() else None
+    if raw:
+        add_dir(Path(str(raw)))
+    for extra in extra_dirs or []:
+        add_dir(Path(extra) / name)
+    return dirs
+
+
+def exemplar_belongs_to_person(
+    conn: sqlite3.Connection,
+    person_id: int,
+    path: str | Path,
+    extra_dirs: list[Path | str] | None = None,
+) -> bool:
+    """True if path is under this person's gallery or an annotation they own."""
+    person = conn.execute(
+        "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+    ).fetchone()
+    if not person:
+        return False
+    try:
+        target = Path(path).resolve()
+    except OSError:
+        return False
+
+    for root in person_gallery_dirs(person, extra_dirs):
+        try:
+            target.relative_to(root)
+            return True
+        except ValueError:
+            continue
+
+    row = conn.execute(
+        """
+        SELECT 1 FROM annotations
+        WHERE person_id=? AND kind='person_face' AND revoked=0
+          AND (exemplar_path = ? OR exemplar_path = ?)
+        LIMIT 1
+        """,
+        (person_id, str(path), str(target)),
+    ).fetchone()
+    return row is not None
+
+
+def delete_exemplar(
+    conn: sqlite3.Connection,
+    path: str,
+    *,
+    person_id: int | None = None,
+    extra_dirs: list[Path | str] | None = None,
+) -> dict[str, Any]:
+    """Remove a bad gallery/exemplar image and unlink annotation refs.
+
+    When person_id is provided, refuse to delete files that do not belong
+    to that person (prevents cross-person deletes from a bad client path).
+    """
+    if person_id is not None and not exemplar_belongs_to_person(
+        conn, person_id, path, extra_dirs=extra_dirs
+    ):
+        raise PermissionError(
+            f"path does not belong to person_id={person_id}: {path}"
+        )
+
+    target = Path(path)
+    try:
+        resolved = str(target.resolve())
+    except OSError:
+        resolved = str(Path(path))
+    removed_file = False
+    if target.is_file():
+        target.unlink()
+        removed_file = True
+    elif Path(resolved).is_file():
+        Path(resolved).unlink()
+        removed_file = True
+
+    cleared = conn.execute(
+        """
+        UPDATE annotations SET exemplar_path=NULL
+        WHERE exemplar_path = ? OR exemplar_path = ?
+        """,
+        (path, resolved),
+    ).rowcount
+    conn.commit()
+    return {
+        "removed_file": removed_file,
+        "cleared_annotations": cleared,
+        "path": resolved,
+        "person_id": person_id,
+    }
+
+
+def delete_exemplar_by_index(
+    conn: sqlite3.Connection,
+    person_id: int,
+    index: int,
+    extra_dirs: list[Path | str] | None = None,
+) -> dict[str, Any]:
+    """Delete the Nth exemplar currently listed for this person (safe path)."""
+    exemplars = list_person_exemplars(conn, person_id, extra_dirs=extra_dirs)
+    if index < 0 or index >= len(exemplars):
+        raise IndexError(f"exemplar index {index} out of range (0..{len(exemplars)-1})")
+    ex = exemplars[index]
+    result = delete_exemplar(
+        conn,
+        ex["path"],
+        person_id=person_id,
+        extra_dirs=extra_dirs,
+    )
+    result["index"] = index
+    result["filename"] = ex["filename"]
+    return result
+
+
+def list_places(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM places ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_person(conn: sqlite3.Connection, name: str, gallery_path: str | None = None) -> int:
+    name = " ".join(name.strip().split())
+    if not name:
+        raise ValueError("Person name required")
+    existing = conn.execute(
+        "SELECT id, gallery_path FROM people WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone()
+    if existing:
+        if gallery_path:
+            # Always correct path on sync (folder name must match this person)
+            gp = Path(gallery_path)
+            if gp.name.casefold() == name.casefold():
+                conn.execute(
+                    "UPDATE people SET gallery_path=? WHERE id=?",
+                    (str(gp.resolve()) if gp.exists() else gallery_path, existing["id"]),
+                )
+                conn.commit()
+        return int(existing["id"])
+    cur = conn.execute(
+        "INSERT INTO people (name, gallery_path) VALUES (?,?)",
+        (name, gallery_path),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def upsert_place(
+    conn: sqlite3.Connection,
+    name: str,
+    *,
+    address_label: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_m: float = 100.0,
+    gallery_path: str | None = None,
+    actor_key: str = "owner",
+) -> int:
+    name = name.strip()
+    if not name:
+        raise ValueError("Place name required")
+    existing = conn.execute(
+        "SELECT id FROM places WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            """
+            UPDATE places SET
+                address_label=COALESCE(?, address_label),
+                lat=COALESCE(?, lat),
+                lon=COALESCE(?, lon),
+                radius_m=COALESCE(?, radius_m),
+                gallery_path=COALESCE(?, gallery_path)
+            WHERE id=?
+            """,
+            (address_label, lat, lon, radius_m, gallery_path, existing["id"]),
+        )
+        conn.commit()
+        return int(existing["id"])
+    cur = conn.execute(
+        """
+        INSERT INTO places (name, address_label, lat, lon, radius_m, gallery_path, created_by_actor)
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        (name, address_label, lat, lon, radius_m, gallery_path, actor_key),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def add_annotation(
+    conn: sqlite3.Connection,
+    *,
+    video_id: int,
+    kind: str,
+    start_sec: float,
+    end_sec: float,
+    actor_key: str = "owner",
+    confidence: float | None = None,
+    label_text: str | None = None,
+    place_id: int | None = None,
+    person_id: int | None = None,
+    payload: dict[str, Any] | None = None,
+    exemplar_path: str | None = None,
+    supersedes_id: int | None = None,
+    provenance: dict[str, Any] | None = None,
+) -> int:
+    rules = load_rules(conn)
+    if confidence is None:
+        confidence = human_confidence(rules, actor_key, 0.5)
+    else:
+        confidence = human_confidence(rules, actor_key, confidence)
+
+    prov = {
+        "source": "review_ui",
+        "actor_key": actor_key,
+        **(provenance or {}),
+    }
+    cur = conn.execute(
+        """
+        INSERT INTO annotations (
+            video_id, kind, start_sec, end_sec, label_text, place_id, person_id,
+            payload_json, actor_key, confidence, provenance_json, supersedes_id,
+            exemplar_path
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            video_id,
+            kind,
+            float(start_sec),
+            float(max(end_sec, start_sec)),
+            label_text,
+            place_id,
+            person_id,
+            json.dumps(payload or {}),
+            actor_key,
+            float(confidence),
+            json.dumps(prov),
+            supersedes_id,
+            exemplar_path,
+        ),
+    )
+    conn.commit()
+    ann_id = int(cur.lastrowid)
+    rebuild_effective_evidence(conn)
+    return ann_id
+
+
+def folder_name(name: str) -> str:
+    cleaned = SAFE_NAME.sub("", name).strip() or "unnamed"
+    return cleaned
+
+
+def ensure_gallery_dir(root: Path, kind: str, name: str) -> Path:
+    path = root / kind / folder_name(name)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
