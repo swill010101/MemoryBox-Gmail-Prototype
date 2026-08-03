@@ -562,6 +562,62 @@ def _ranges_overlap(
     return a0 < (b1 + pad) and b0 < (a1 + pad)
 
 
+# AI face samples are ~1s bookmarks every ~10s; coalesce for review.
+FACE_AI_MERGE_GAP_SEC = 60.0
+FACE_AI_MIN_SPAN_SEC = 3.0
+
+
+def _coalesce_ai_face_spans(
+    hits: list[dict[str, Any]],
+    *,
+    gap_sec: float = FACE_AI_MERGE_GAP_SEC,
+    min_span_sec: float = FACE_AI_MIN_SPAN_SEC,
+) -> list[dict[str, Any]]:
+    """Merge consecutive AI face samples on the same video into presence spans.
+
+    Gap is measured between the previous span end and the next sample start.
+    Owner/user marks are not passed through here.
+    """
+    if not hits:
+        return []
+    ordered = sorted(
+        hits,
+        key=lambda h: (
+            int(h.get("video_id") or 0),
+            float(h.get("start_sec") or 0),
+            float(h.get("end_sec") or 0),
+        ),
+    )
+    out: list[dict[str, Any]] = []
+    for h in ordered:
+        cur = dict(h)
+        cur["sample_count"] = int(cur.get("sample_count") or 1)
+        if (
+            out
+            and int(out[-1]["video_id"]) == int(cur["video_id"])
+            and float(cur["start_sec"]) - float(out[-1]["end_sec"]) <= gap_sec
+        ):
+            prev = out[-1]
+            prev["end_sec"] = max(float(prev["end_sec"]), float(cur["end_sec"]))
+            prev["confidence"] = max(
+                float(prev.get("confidence") or 0),
+                float(cur.get("confidence") or 0),
+            )
+            prev["sample_count"] = int(prev.get("sample_count") or 1) + cur["sample_count"]
+            # Stable id for the run; keep first sample id prefix
+            if "ids" in prev and isinstance(prev["ids"], list):
+                prev["ids"].append(cur.get("hit_id"))
+            continue
+        cur["ids"] = [cur.get("hit_id")]
+        out.append(cur)
+    for h in out:
+        span = float(h["end_sec"]) - float(h["start_sec"])
+        if span < min_span_sec:
+            h["end_sec"] = float(h["start_sec"]) + min_span_sec
+        h["hit_id"] = f"fa-span:{h.get('video_id')}:{int(float(h['start_sec']))}-{int(float(h['end_sec']))}"
+    return out
+
+
 def _table_columns(c, table: str) -> set[str]:
     try:
         return {r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -680,10 +736,10 @@ def _merged_face_hits(
     hits: list[dict[str, Any]] = []
     covered: list[tuple[int, float, float]] = []
 
-    def add_row(r: Any, *, source_prefix: str) -> None:
+    def add_eff(r: Any) -> None:
         h = _hit(r, "face")
-        h["hit_id"] = f"{source_prefix}:{r['hit_id']}"
-        h["source"] = r["source"] if "source" in r.keys() else source_prefix
+        h["hit_id"] = f"eff:{r['hit_id']}"
+        h["source"] = r["source"] if "source" in r.keys() else "effective"
         hits.append(h)
         covered.append(
             (
@@ -694,21 +750,33 @@ def _merged_face_hits(
         )
 
     for r in eff_rows:
-        add_row(r, source_prefix="eff")
+        add_eff(r)
 
+    fa_hits: list[dict[str, Any]] = []
     for r in fa_rows:
-        vid = int(r["video_id"])
-        s0 = float(r["start_sec"] or 0)
-        s1 = float(r["end_sec"] or s0)
+        h = _hit(r, "face")
+        h["hit_id"] = f"fa:{r['hit_id']}"
+        h["source"] = r["source"] if "source" in r.keys() else "face_appearances"
+        if not h.get("actor_key"):
+            h["actor_key"] = "ai"
+        h["sample_count"] = 1
+        fa_hits.append(h)
+
+    for h in _coalesce_ai_face_spans(fa_hits):
+        vid = int(h["video_id"])
+        s0 = float(h["start_sec"] or 0)
+        s1 = float(h["end_sec"] or s0)
         if any(vid == cv and _ranges_overlap(s0, s1, c0, c1) for cv, c0, c1 in covered):
             continue
-        add_row(r, source_prefix="fa")
+        hits.append(h)
+        covered.append((vid, s0, s1))
 
+    # Chronological within file — presence spans read as a timeline
     hits.sort(
         key=lambda h: (
-            -float(h.get("confidence") or 0),
             str(h.get("filename") or ""),
             float(h.get("start_sec") or 0),
+            -float(h.get("confidence") or 0),
         )
     )
     return hits
