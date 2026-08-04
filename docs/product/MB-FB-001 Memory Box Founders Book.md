@@ -8,6 +8,7 @@
 | **Status** | Governing — living constitution |
 | **Authority** | Top product constitution. Governs philosophy, product direction, and guiding principles. All product and engineering documents are subordinate to this book. |
 | **Source** | `Memory_Box_Founders_Book_v0.91.docx` |
+| **Terminology** | Shared terms and conflict resolutions: [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). Knowledge concepts: [MBKM-001](MBKM-001%20Memory%20Box%20Knowledge%20Model.md). |
 
 This is a living constitution for Memory Box. It captures the philosophy, product direction, and guiding principles that should outlive any particular implementation. It is intentionally iterative and should evolve alongside the product.
 

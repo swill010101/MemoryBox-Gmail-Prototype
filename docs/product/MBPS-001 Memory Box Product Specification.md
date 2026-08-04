@@ -8,6 +8,7 @@
 | **Status** | Governing — product definition |
 | **Authority** | Defines WHAT Memory Box is. Subordinate to [MB-FB-001 Founder's Book](MB-FB-001%20Memory%20Box%20Founders%20Book.md). Guides engineering, UX, architecture, and future business decisions. Functional Architecture (MBX-A-*) is subordinate to this specification. |
 | **Source** | `MBPS-001_Memory_Box_Product_Specification_v0.1.docx` |
+| **Terminology** | Shared terms and conflict resolutions: [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). Knowledge concepts: [MBKM-001](MBKM-001%20Memory%20Box%20Knowledge%20Model.md). |
 
 This document defines WHAT Memory Box is. It intentionally avoids implementation details. It is the product definition that guides engineering, UX, architecture and future business decisions.
 
@@ -163,9 +164,12 @@ Memory Box is a trusted personal knowledge system that helps people preserve, re
 
 | Doc ID | Title | Status |
 |--------|--------|--------|
-| MBUX-001 | User Experience Specification | Planned |
-| MBKM-001 | Knowledge Model | Planned |
-| MBDM-001 | Conceptual Data Model | Planned |
+| [MBUX-001](MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) | User Experience Specification | Canonized (0.9) |
+| [MBKM-001](MBKM-001%20Memory%20Box%20Knowledge%20Model.md) | Knowledge Model | Canonized (0.1) |
+| [MBMS-001](MBMS-001%20Memory%20Box%20Mental%20Model.md) | Mental Model | Canonized (0.9) |
+| [MBIA-001](MBIA-001%20Memory%20Box%20Information%20Architecture.md) | Information Architecture | Canonized (0.9) |
+| [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) | Core Terminology and Principles | Binding |
+| MBDM-001 | Conceptual Data Model | Planned — derive from MBKM + MB-RECONCILE-001; align with MBX-A-003 |
 | MBTS-001 | Technical Specification | Planned |
 
 Functional Architecture series ([MBX-A-*](../architecture/README.md)) elaborates HOW these product requirements are realized in layers, query model, data model, learning, and UX — and remains subordinate to this specification and the Founder's Book.

@@ -1,6 +1,6 @@
 # Memory Box Product Documentation
 
-This folder holds the **product constitution, product definition, and product UX specification**. Engineering architecture under [`docs/architecture/`](../architecture/README.md) is subordinate to these documents.
+This folder holds the **product constitution, product definition, domain specifications, and UX specification**. Engineering architecture under [`docs/architecture/`](../architecture/README.md) is subordinate to these documents.
 
 ## Document hierarchy (binding)
 
@@ -9,20 +9,37 @@ flowchart TB
   FB[MB_FB_001_FoundersBook]
   MBPS[MBPS_001_ProductSpec]
   MBUX[MBUX_001_UXSpec]
+  MBKM[MBKM_001_KnowledgeModel]
+  MBMS[MBMS_001_MentalModel]
+  MBIA[MBIA_001_InformationArchitecture]
   MBXA[MBX_A_FunctionalArchitecture]
-  FB --> MBPS --> MBUX
+  FB --> MBPS
+  MBPS --> MBUX
+  MBPS --> MBKM
+  MBPS --> MBMS
+  MBPS --> MBIA
   MBPS --> MBXA
   MBUX --> MBXA
+  MBKM --> MBXA
 ```
 
 | Order | Doc | Answers |
 |-------|-----|---------|
 | 1 | [MB-FB-001 Founder's Book](MB-FB-001%20Memory%20Box%20Founders%20Book.md) | Why / philosophy / ethics / what Memory Box is not |
 | 2 | [MBPS-001 Product Specification](MBPS-001%20Memory%20Box%20Product%20Specification.md) | WHAT the product is: goals, concepts, capabilities, flows, v1 out-of-scope |
-| 3 | [MBUX-001 User Experience Specification](MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) | Product experience: curator behavior, modes, conversation, trust presentation |
-| 4 | [MBX-A-* Functional Architecture](../architecture/README.md) | HOW functionally: layers, query model, reconstruction, learning, data model (MBX-A-006 elaborates UX binding and remains subordinate to MBUX-001) |
+| 3a | [MBUX-001 User Experience Specification](MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) | Experience behavior: curator, modes, conversation, trust presentation |
+| 3b | [MBKM-001 Knowledge Model](MBKM-001%20Memory%20Box%20Knowledge%20Model.md) | Conceptual vocabulary of a life |
+| 3c | [MBMS-001 Mental Model](MBMS-001%20Memory%20Box%20Mental%20Model.md) | Anchors vs supporting concepts vs lenses |
+| 3d | [MBIA-001 Information Architecture](MBIA-001%20Memory%20Box%20Information%20Architecture.md) | Entry points, discovery loop, layers, modes |
+| 4 | [MBX-A-* Functional Architecture](../architecture/README.md) | HOW functionally: layers, query model, reconstruction, learning, data model |
 
-**Conflict rule:** Higher documents win on product intent. MBX-A-* must not knowingly violate the Founder's Book, MBPS-001, or MBUX-001. Where MBX-A-* is more specific on Evidence-First mechanics (for example Facts / Observations / Inferences / Unknowns), that specificity stands unless a higher document contradicts it. UX may present those labels in human language (MBUX forbids raw “Confidence 71%” style copy).
+**Conflict rule:** Higher documents win on product intent. Domain peers under MBPS (MBUX · MBKM · MBMS · MBIA) own their domains; when definitions clash, see [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). MBX-A-* must not knowingly violate the Founder's Book, MBPS-001, or the domain peers. Where MBX-A-* is more specific on Evidence-First mechanics (Facts / Observations / Inferences / Unknowns), that specificity stands unless a higher document contradicts it. UX may present those labels in human language (MBUX forbids raw “Confidence 71%” style copy).
+
+## Binding reconciliation
+
+| Doc ID | Title | Status |
+|--------|--------|--------|
+| [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) | Core Terminology and Principles | Binding — glossary, principles map, conflict register |
 
 ## Canonized product documents
 
@@ -31,20 +48,22 @@ flowchart TB
 | [MB-FB-001](MB-FB-001%20Memory%20Box%20Founders%20Book.md) | Memory Box Founder's Book | 0.91 | Governing |
 | [MBPS-001](MBPS-001%20Memory%20Box%20Product%20Specification.md) | Memory Box Product Specification | 0.1 | Governing |
 | [MBUX-001](MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) | Memory Box User Experience Specification | 0.9 | Governing (UX) |
+| [MBKM-001](MBKM-001%20Memory%20Box%20Knowledge%20Model.md) | Memory Box Knowledge Model | 0.1 | Governing (concepts) |
+| [MBMS-001](MBMS-001%20Memory%20Box%20Mental%20Model.md) | Memory Box Mental Model | 0.9 | Governing (mental model) |
+| [MBIA-001](MBIA-001%20Memory%20Box%20Information%20Architecture.md) | Memory Box Information Architecture | 0.9 | Governing (IA / discovery) |
 
 ## Planned product specifications (from MBPS-001)
 
 | Doc ID | Title | Status |
 |--------|--------|--------|
-| MBKM-001 | Knowledge Model | Planned |
-| MBDM-001 | Conceptual Data Model | Planned |
+| MBDM-001 | Conceptual Data Model | Planned — derive from MBKM-001 + MB-RECONCILE-001; align with MBX-A-003 |
 | MBTS-001 | Technical Specification | Planned |
 
-MBKM-001 / MBDM-001 should align with the personal knowledge graph direction in Functional Architecture Part 3 (MBX-A-003) rather than forking a separate conceptual model.
+MBKM-001 is canonized. MBDM-001 / MBX-A-003 should align with MBKM + [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) rather than forking a separate conceptual model.
 
 ## Related
 
 - Architecture series and reconciliation: [docs/architecture/README.md](../architecture/README.md)
-- MBUX reconcile: [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
+- MBUX reconcile (report): [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
 - Experience storyboards (philosophy validation): [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)
 - Experience mockups (supporting actor, not final UI): [MB-EX-001](MB-EX-001%20Experience%20Mockups.md) · [gallery](../../application/ui/mockup/experience/index.html)

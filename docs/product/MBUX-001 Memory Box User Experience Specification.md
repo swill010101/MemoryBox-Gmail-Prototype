@@ -8,6 +8,7 @@
 | **Status** | Governing — product UX specification |
 | **Authority** | Subordinate to [MB-FB-001 Founder's Book](MB-FB-001%20Memory%20Box%20Founders%20Book.md) and [MBPS-001 Product Specification](MBPS-001%20Memory%20Box%20Product%20Specification.md). Governs product experience (conversation, modes, trust presentation, invitation patterns). Functional Architecture [MBX-A-006](../architecture/README.md) (planned) elaborates UX binding to reconstruction/learning layers and remains subordinate to this document. |
 | **Source** | `MBUX-001_V0dot9_a943.docx` (body version line originally said 0.1; normalized to 0.9 per filename/upload) |
+| **Terminology** | Shared terms and conflict resolutions: [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). Knowledge concepts: [MBKM-001](MBKM-001%20Memory%20Box%20Knowledge%20Model.md). Evidence: invisible by default, always available on request. |
 
 This document is a specification for an **experience**, not a screen-by-screen UI kit.
 
