@@ -12,15 +12,19 @@ flowchart TB
   MBKM[MBKM_001_KnowledgeModel]
   MBMS[MBMS_001_MentalModel]
   MBIA[MBIA_001_InformationArchitecture]
+  MBAR[MBAR_001_SystemArchitecture]
   MBXA[MBX_A_FunctionalArchitecture]
   FB --> MBPS
   MBPS --> MBUX
   MBPS --> MBKM
   MBPS --> MBMS
   MBPS --> MBIA
-  MBPS --> MBXA
-  MBUX --> MBXA
-  MBKM --> MBXA
+  MBPS --> MBAR
+  MBUX --> MBAR
+  MBKM --> MBAR
+  MBMS --> MBAR
+  MBIA --> MBAR
+  MBAR --> MBXA
 ```
 
 | Order | Doc | Answers |
@@ -31,9 +35,10 @@ flowchart TB
 | 3b | [MBKM-001 Knowledge Model](MBKM-001%20Memory%20Box%20Knowledge%20Model.md) | Conceptual vocabulary of a life |
 | 3c | [MBMS-001 Mental Model](MBMS-001%20Memory%20Box%20Mental%20Model.md) | Anchors vs supporting concepts vs lenses |
 | 3d | [MBIA-001 Information Architecture](MBIA-001%20Memory%20Box%20Information%20Architecture.md) | Entry points, discovery loop, layers, modes |
-| 4 | [MBX-A-* Functional Architecture](../architecture/README.md) | HOW functionally: layers, query model, reconstruction, learning, data model |
+| 4 | [MBAR-001 System Architecture](../architecture/MBAR-001%20Memory%20Box%20System%20Architecture.md) | Technology-neutral system boundaries, flows, authority, provenance, deployment models |
+| 5 | [MBX-A-* Functional Architecture](../architecture/README.md) | HOW functionally (elaborations under MBAR): layers, query model, reconstruction, learning, data model |
 
-**Conflict rule:** Higher documents win on product intent. Domain peers under MBPS (MBUX · MBKM · MBMS · MBIA) own their domains; when definitions clash, see [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). MBX-A-* must not knowingly violate the Founder's Book, MBPS-001, or the domain peers. Where MBX-A-* is more specific on Evidence-First mechanics (Facts / Observations / Inferences / Unknowns), that specificity stands unless a higher document contradicts it. UX may present those labels in human language (MBUX forbids raw “Confidence 71%” style copy).
+**Conflict rule:** Higher documents win on product intent. Domain peers under MBPS (MBUX · MBKM · MBMS · MBIA) own their domains; when definitions clash, see [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). **MBAR-001** parents MBX-A-*. MBX-A-* must not knowingly violate higher product documents or MBAR. Where MBX-A-* is more specific on Evidence-First mechanics (Facts / Observations / Inferences / Unknowns), that specificity stands unless a higher document contradicts it. UX may present those labels in human language (MBUX forbids raw “Confidence 71%” style copy).
 
 ## Binding reconciliation
 
@@ -56,14 +61,15 @@ flowchart TB
 
 | Doc ID | Title | Status |
 |--------|--------|--------|
-| MBDM-001 | Conceptual Data Model | Planned — derive from MBKM-001 + MB-RECONCILE-001; align with MBX-A-003 |
+| MBDM-001 | Conceptual Data Model | Planned — derive from MBKM-001 + MB-RECONCILE-001 + MBAR-001; align with MBX-A-003 |
 | MBTS-001 | Technical Specification | Planned |
 
-MBKM-001 is canonized. MBDM-001 / MBX-A-003 should align with MBKM + [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) rather than forking a separate conceptual model.
+MBKM-001 is canonized. MBDM-001 / MBX-A-003 should align with MBKM + [MB-RECONCILE-001](MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) + [MBAR-001](../architecture/MBAR-001%20Memory%20Box%20System%20Architecture.md) rather than forking a separate conceptual model.
 
 ## Related
 
-- Architecture series and reconciliation: [docs/architecture/README.md](../architecture/README.md)
+- System architecture: [MBAR-001](../architecture/MBAR-001%20Memory%20Box%20System%20Architecture.md)
+- Functional architecture series and reconciliation: [docs/architecture/README.md](../architecture/README.md)
 - MBUX reconcile (report): [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
 - Experience storyboards (philosophy validation): [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)
 - Experience mockups (supporting actor, not final UI): [MB-EX-001](MB-EX-001%20Experience%20Mockups.md) · [gallery](../../application/ui/mockup/experience/index.html)
