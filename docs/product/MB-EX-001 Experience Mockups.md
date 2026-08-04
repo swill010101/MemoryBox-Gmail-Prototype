@@ -4,18 +4,45 @@
 |-------|--------|
 | **Doc ID** | MB-EX-001 |
 | **Title** | Experience Mockups (low / mid fidelity) |
-| **Version** | 0.1 |
+| **Version** | 0.2 |
 | **Status** | Validation artifact — not final UI |
-| **Authority** | Subordinate to Founder's Book, MBPS, MBUX, MBMS, MBIA. Does **not** replace Experience Validation storyboards (philosophy). Screens are a supporting actor only. |
-| **Location** | [`application/ui/mockup/experience/`](../../application/ui/mockup/experience/index.html) |
+| **Authority** | Subordinate to Founder's Book, MBPS, MBUX, MBMS, MBIA, MB-SB-001. Screens and scenes are a supporting actor only. |
+| **Gallery** | [`application/ui/mockup/experience/`](../../application/ui/mockup/experience/index.html) |
+| **Prototype 1** | [`application/ui/mockup/prototype/`](../../application/ui/mockup/prototype/index.html) — clickable **scenes** (First Five Minutes + Grandpa) |
 
 ## Purpose
 
-Let reviewers *see* curator attention and discovery flow without mistaking this for a shipped design system.
+Let reviewers *feel* curator attention and discovery flow without mistaking this for a shipped design system.
 
-Open the gallery: [experience/index.html](../../application/ui/mockup/experience/index.html)
+- Still frames: [experience gallery](../../application/ui/mockup/experience/index.html)
+- Clickable Prototype 1: [prototype/index.html](../../application/ui/mockup/prototype/index.html)
 
-## Screens
+## Prototype 1 — scenes (not pages)
+
+Mindset: **Storyboard → Scenes** (like a movie), not Storyboard → Screens/Pages.
+
+| Scene | Intent |
+|-------|--------|
+| Threshold | Wonder; invitation; no folders |
+| Invitation | Human question accepted as conversation |
+| Discovery | Narrative first (Christmas, then Grandpa) |
+| Reflection | Trust; soft invite; evidence only if curiosity asks |
+| Teaching | Family teaches; MB remembers — after emotion |
+| Presence | Photos & papers serve understanding |
+| **Silence** | After Grandpa’s story/voice: **~5 seconds of nothing** — no flashing button, popup, suggestion, or animation |
+| Wonder | Another door; bloom; open ask |
+
+**Explorer Mode is postponed to Prototype 2.** Shop Prototype 1 first; adjust from feedback.
+
+### Success criteria (Yes / No)
+
+1. **One entry URL** — Prototype 1 opens from a single link and walks the scene sequence.
+2. **Never feels like operating software** — visitor feels a museum with a quiet curator.
+3. **Every click answers curiosity rather than navigates** — moves between discoveries, not “pages.”
+4. **Silence is honored** — after Grandpa, the prototype waits before any invite returns.
+5. **Favorite:** The visitor **naturally asks another question before the end**. If they only say “Okay,” Prototype 1 failed.
+
+## Still-frame gallery (EX-01–EX-08)
 
 | ID | File | Validates |
 |----|------|-----------|
@@ -26,21 +53,21 @@ Open the gallery: [experience/index.html](../../application/ui/mockup/experience
 | EX-05 | [ex-05-voice-story.html](../../application/ui/mockup/experience/ex-05-voice-story.html) | Human Story capture; People/Place/Moment |
 | EX-06 | [ex-06-review-learn.html](../../application/ui/mockup/experience/ex-06-review-learn.html) | Stewardship; suggestion ≠ knowledge |
 | EX-07 | [ex-07-family-night.html](../../application/ui/mockup/experience/ex-07-family-night.html) | Family Mode; multi-generational; no admin |
-| EX-08 | [ex-08-explorer.html](../../application/ui/mockup/experience/ex-08-explorer.html) | Explorer; lenses; graph is not home |
+| EX-08 | [ex-08-explorer.html](../../application/ui/mockup/experience/ex-08-explorer.html) | Explorer reference still — **not in Prototype 1 path** |
 
-## Validation questions (per screen)
-
-Ask of each EX page:
+## Validation questions
 
 1. Does this still feel like a museum curator — or like software to operate?
 2. Is the visitor the main character?
 3. Does evidence support understanding without stealing the emotional beat?
 4. Would MBUX “never say” lines appear anywhere? (They must not.)
-5. Do Guided (EX-01) and Explorer (EX-08) feel like the **same archive** with different interaction?
+5. Did silence after Grandpa feel like a feature — or a bug?
+6. Did the visitor want another question before the end?
 
 ## Out of scope
 
 - FastAPI / live archive wiring  
 - Final visual design system  
-- Implementing real modes  
-- Replacing philosophy storyboards (MB-SB-001 when written)
+- **Explorer in Prototype 1** (held for Prototype 2)  
+- Family Night / Memory Care / Funeral as full journeys  
+- Replacing philosophy storyboards (MB-SB-001)
