@@ -54,6 +54,12 @@ Founder's Book (MB-FB-001)
 
 Canonical definition · **Owner** · Aliases / forbidden confusions.
 
+| **Memory Reconstruction** | The product verb: assemble situated understanding (Story, People, Evidence, Timeline, Artifacts, Voice, Relationships, Narrative) from the archive. **Not** search, retrieval, or RAG as the visitor-facing act. | MBAR-001 | Internal vault lookup may still exist as mechanism. |
+| **Personal Context Model** | Durable understood slice of the owner/visitor world used by Planner/Reconstruction so the generative layer need not re-infer everything each turn. Sits between Knowledge Graph and Planner. | MBAR-001 / MBX-A-001 | Distinct from raw Evidence and from ephemeral prompt scratch. |
+| **Knowledge Graph** | Interconnected life knowledge (life graph). Feeds Personal Context Model. | MBAR / MBKM / MBX-A-003 | Conceptual model; storage tech open. |
+| **Understanding Loop** | Question → Reconstruction → Narrative → Understanding → Curiosity → Question | MBAR-001 | Architectural loop. |
+| **Archive Growth Loop** | Capture → Evidence → Teaching → Knowledge → Better Reconstruction → Better Answers → More Teaching | MBAR-001 | Architectural loop. |
+
 ### Anchors and knowledge concepts
 
 | Term | Canonical definition | Owner | Aliases / forbidden confusions |

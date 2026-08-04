@@ -12,7 +12,7 @@ Product documentation lives in [`docs/product/`](../product/README.md). Project 
 
 | Doc | Title | Status |
 |-----|--------|--------|
-| [MBAR-001](MBAR-001%20Memory%20Box%20System%20Architecture.md) | Memory Box System Architecture (technology-neutral) | **Governing (system)** — parents MBX-A-* |
+| [MBAR-001](MBAR-001%20Memory%20Box%20System%20Architecture.md) | Memory Box System Architecture (technology-neutral) — Memory Reconstruction, heart pipeline, Understanding + Archive Growth loops | **Governing (system)** — parents MBX-A-* |
 
 ## Functional architecture series (elaborations under MBAR-001)
 

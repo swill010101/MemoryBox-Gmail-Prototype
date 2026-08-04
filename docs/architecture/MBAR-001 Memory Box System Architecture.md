@@ -4,7 +4,7 @@
 |-------|--------|
 | **Doc ID** | MBAR-001 |
 | **Title** | Memory Box System Architecture |
-| **Version** | 0.1 |
+| **Version** | 0.2 |
 | **Status** | Governing — overarching technology-neutral system architecture |
 | **Authority** | Parent system architecture for engineering. Subordinate to [MB-FB-001](../product/MB-FB-001%20Memory%20Box%20Founders%20Book.md), [MBPS-001](../product/MBPS-001%20Memory%20Box%20Product%20Specification.md), and domain peers ([MBUX-001](../product/MBUX-001%20Memory%20Box%20User%20Experience%20Specification.md) · [MBKM-001](../product/MBKM-001%20Memory%20Box%20Knowledge%20Model.md) · [MBMS-001](../product/MBMS-001%20Memory%20Box%20Mental%20Model.md) · [MBIA-001](../product/MBIA-001%20Memory%20Box%20Information%20Architecture.md)). Terminology: [MB-RECONCILE-001](../product/MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md). **Governs** [MBX-A-001](MBX-A-001%20Functional%20Architecture%20Part%201.md) through MBX-A-006 as functional elaborations. |
 | **Validated by** | [MB-SB-001](../product/MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md) (philosophy, not interface) |
@@ -14,7 +14,7 @@
 
 ## 1. Purpose
 
-This document defines the **system architecture** of Memory Box: responsibilities, boundaries, information flow, authority, provenance, learning loops, shared-archive governance, and deployment models.
+This document defines the **system architecture** of Memory Box: **Memory Reconstruction** as the core verb, the heart pipeline (Evidence → Knowledge Graph → Personal Context Model → Planner → Reconstruction → Narrative), architectural loops, responsibilities, boundaries, authority, provenance, shared-archive governance, and deployment models.
 
 It is **technology-neutral**. It does not select storage engines, application frameworks, model vendors, or hosting stacks.
 
@@ -61,6 +61,33 @@ Memory Box is a **Memory Reconstruction Engine**.
 
 It reconstructs understanding from personal evidence. It does not invent memories. It does not replace human judgment.
 
+### 2.1 Memory Reconstruction (named concept)
+
+The magic is **Memory Reconstruction**.
+
+Not Retrieval.  
+Not Search.  
+Not RAG.
+
+**Reconstruction.**
+
+When the visitor asks *Tell me about Grandpa*, Memory Box does not retrieve a document. It **reconstructs** a situated understanding by assembling what the archive knows and supports:
+
+| Assembled facets (illustrative) | Role in reconstruction |
+|---------------------------------|------------------------|
+| **Story** | Human/curated meaning already preserved |
+| **People** | Who mattered in this life |
+| **Evidence** | Epistemic support (always available on request) |
+| **Timeline** | Temporal lens over moments and eras |
+| **Artifacts** | Intentional keepsakes and meaningful objects |
+| **Voice** | Spoken presence — including silence |
+| **Relationships** | Social ties and knowledge links (naming → MBKM 0.2) |
+| **Narrative** | AI assembly offered as the answer — distinct from Story |
+
+Search finds files. RAG retrieves chunks for a prompt. **Memory Reconstruction** rebuilds context so a life can be understood again — honestly, with provenance, without invention.
+
+This word is binding product and architecture language. Downstream docs and engineering shall prefer *reconstruct* over *search* / *retrieve* when describing what Memory Box does for the visitor (internal index lookup may still exist as a mechanism inside Evidence Vault — it is not the product verb).
+
 Architecture succeeds when:
 
 - Every reconstructive claim is traceable to evidence or labeled uncertainty
@@ -69,7 +96,7 @@ Architecture succeeds when:
 - Modes and lenses change experience without changing archive truth
 - Primary custody of identity, sensitive knowledge, and basic operation remains under owner control
 - Storyboards’ philosophy holds: understanding over retrieval; curator invites; Story ≠ Narrative; evidence supports and stays available
-
+- The model does **not** re-infer the owner’s entire world from raw evidence on every question — Personal Context Model carries durable understood context (§4.2)
 ---
 
 ## 3. Architectural commitments
@@ -92,6 +119,8 @@ These are expensive to undo once product and data assume them. Treat as binding 
 | **C-10** | **Modes change experience, never the archive** | MBMS, MBIA |
 | **C-11** | **Evidence invisible by default; always available on request** | MB-RECONCILE-001 |
 | **C-12** | **Suggestions are not knowledge** until appropriately confirmed or otherwise elevated under the authority model | MB-P-004; refined in §7 |
+| **C-13** | **Memory Reconstruction is the product verb** — not search, not retrieval, not RAG as the visitor-facing act | This document §2.1; MBX-A-001 philosophy |
+| **C-14** | **Personal Context Model sits between Knowledge Graph and Planner** — durable understood context so the generative layer is not forced to re-infer everything each turn | This document §4.2; MBX-A-001 Personal Context |
 
 ### 3.2 Reversible / deferred decisions
 
@@ -119,10 +148,10 @@ Map MBPS capabilities onto architectural responsibility domains. Names are capab
 | Capability (MBPS) | Architectural responsibility | Primary collaborators |
 |-------------------|------------------------------|------------------------|
 | **Capture** | Ingest media and human input; create immutable originals + working copies; attach initial provenance | Evidence Vault, Provenance, Ingest Boundary |
-| **Discover** | Answer curiosity via reconstruction; surface anchors and links; invite next questions | Reconstruction, Personal Context, Experience |
-| **Teach** | Accept human assertions, corrections, annotations; record perspective and authority dimensions | Learning, Authority, Personal Context |
-| **Learn** | Elevate, demote, or hold suggestions; never silent personal-fact learning | Learning, Authority, Provenance |
-| **Remember** | Preserve Stories, confirmed knowledge, and prompts that deepen archive over decades | Personal Context, Story Store, Evidence Vault |
+| **Discover** | Answer curiosity via **Memory Reconstruction**; surface anchors and links; invite next questions | Planner, Reconstruction, Personal Context Model, Experience |
+| **Teach** | Accept human assertions, corrections, annotations; record perspective and authority dimensions | Learning, Authority, Personal Context Model |
+| **Learn** | Elevate, demote, or hold suggestions; never silent personal-fact learning | Learning, Authority, Provenance, Knowledge Graph |
+| **Remember** | Preserve Stories, confirmed knowledge, and prompts that deepen archive over decades | Personal Context Model, Knowledge Graph, Evidence Vault |
 | **Share** | Controlled disclosure under steward rules; read-mostly and contribution paths; revocation | Access Governance, Experience modes |
 
 ### 4.1 Responsibility domains (logical systems)
@@ -130,21 +159,28 @@ Map MBPS capabilities onto architectural responsibility domains. Names are capab
 ```mermaid
 flowchart LR
   EXP[Experience_Surface]
+  PLN[Planner]
   REC[Reconstruction]
-  CTX[Personal_Context]
+  PCM[Personal_Context_Model]
+  KG[Knowledge_Graph]
   EV[Evidence_Vault]
   LR[Learning]
   AUTH[Authority_Provenance]
   GOV[Access_Governance]
-  EXP --> REC
-  REC --> CTX
+  EXP --> PLN
+  PLN --> PCM
+  PLN --> REC
+  REC --> PCM
   REC --> EV
   REC --> AUTH
-  LR --> CTX
+  PCM --> KG
+  KG --> EV
+  LR --> PCM
+  LR --> KG
   LR --> AUTH
   EXP --> GOV
   GOV --> EV
-  GOV --> CTX
+  GOV --> PCM
   Capture[Capture_Ingest] --> EV
   Capture --> AUTH
   Teach[Teach_Input] --> LR
@@ -152,15 +188,55 @@ flowchart LR
 
 | Domain | Responsibility | Must not |
 |--------|----------------|----------|
-| **Evidence Vault** | Preserve originals; expose derived views; retrieve by provenance | Modify originals; invent content |
-| **Personal Context** | Life-graph knowledge: people, stories, moments, places, links, roles | Treat tables as the product model; silently invent people |
-| **Reconstruction** | Plan queries; correlate; assemble Narratives; separate claim types; expose evidence | Present inference as fact; hide uncertainty |
-| **Learning** | Process teach/confirm/correct; update context under authority rules | Silent personal-fact promotion |
+| **Evidence Vault** | Preserve originals; expose derived views; look up by provenance | Modify originals; invent content; be mistaken for the product verb |
+| **Knowledge Graph** | Durable interconnected life knowledge (people, stories, moments, places, links, roles) — the life graph | Become a folder tree; silently invent nodes |
+| **Personal Context Model** | The understood slice of the owner/visitor world ready for planning — aliases, active people, homes, traditions, depth, perspective, confirmed vs candidate knowledge drawn from the graph | Force the LLM to re-infer the entire world from raw evidence each turn; pretend to be evidence |
+| **Planner** | Turn a question into a reconstruction plan (what facets to assemble, what evidence to open, what unknowns to admit) | Skip Personal Context; plan invention |
+| **Reconstruction** | Execute the plan; correlate; assemble Narrative + supporting facets; separate claim types; expose evidence handles | Present inference as fact; hide uncertainty; reduce to chunk retrieval |
+| **Learning** | Process teach/confirm/correct; update graph and Personal Context under authority rules | Silent personal-fact promotion |
 | **Authority & Provenance** | Record source, assertion type, strength, confidence explanation, perspective, recency, supersession | Flatten conflicts; drop provenance |
 | **Access Governance** | Roles, depth, underage, share, revoke, succession | Bypass steward; make MB the owner |
 | **Experience Surface** | Conversation, modes, lenses, progressive disclosure | Change archive truth; instruct like enterprise software |
 
-Functional detail of components → **MBX-A-002**. Life-graph schema → **MBX-A-003**. Reconstruction pipeline → **MBX-A-004**. Learning mechanisms → **MBX-A-005**. Experience binding → **MBX-A-006** (subordinate to MBUX).
+### 4.2 Heart of Memory Box (canonical pipeline)
+
+This is the architectural heart. Generative models participate **inside** Reconstruction (and optionally planning aids); they do not replace Personal Context.
+
+```mermaid
+flowchart TD
+  Q[Question]
+  EV[Evidence]
+  KG[Knowledge_Graph]
+  PCM[Personal_Context_Model]
+  PLN[Planner]
+  REC[Memory_Reconstruction]
+  NAR[Narrative]
+  Q --> PLN
+  EV --> KG
+  KG --> PCM
+  PCM --> PLN
+  PLN --> REC
+  EV --> REC
+  PCM --> REC
+  REC --> NAR
+```
+
+**Normative sequence:**
+
+**Evidence → Knowledge Graph → Personal Context Model → Planner → Reconstruction → Narrative**
+
+| Stage | What it is | Why it exists |
+|-------|------------|---------------|
+| **Evidence** | Immutable originals and derived views | Truth substrate; never modified |
+| **Knowledge Graph** | Interconnected life knowledge grown over time | Relationships before storage; durable structure |
+| **Personal Context Model** | Working model of *this* world’s understood context for the current steward/visitor/depth | Stops “LLM infers everything every time” |
+| **Planner** | Structured intent: which anchors, eras, media, claim risks | Reconstruction is planned, not improvised dump |
+| **Reconstruction** | Assembly of Story / People / Evidence / Timeline / Artifacts / Voice / Relationships into understanding | The magic — not search |
+| **Narrative** | Visitor-facing AI assembly of the answer | Distinct from human Story; evidence on request |
+
+Without Personal Context Model, every question collapses toward brittle retrieval-plus-prompt — the opposite of Memory Reconstruction.
+
+Functional detail of components → **MBX-A-002**. Life-graph schema → **MBX-A-003**. Reconstruction pipeline (incl. Planner) → **MBX-A-004**. Learning mechanisms → **MBX-A-005**. Experience binding → **MBX-A-006** (subordinate to MBUX).
 
 ---
 
@@ -171,33 +247,42 @@ Functional detail of components → **MBX-A-002**. Life-graph schema → **MBX-A
 | Inside (archive) | Outside (may influence, not own) |
 |------------------|----------------------------------|
 | Original evidence and derived views | External world knowledge / web facts (if used, must be labeled non-personal and never silently fused as memory) |
-| Personal Context / life graph | Vendor model weights and ephemeral inference scratch space |
+| Knowledge Graph and Personal Context Model | Vendor model weights and ephemeral inference scratch space |
 | Human Stories and Narratives with provenance | Transient UI session chrome |
 | Authority and provenance records | Analytics that identify persons (forbidden as product direction) |
 | Access policies and steward designations | Cloud relays that hold durable custody of primary secrets (violates C-08 if primary) |
 
-### 5.2 Layer boundaries (aligned with MBX-A-001)
+### 5.2 Layer boundaries
 
 | From → To | Allowed flow | Forbidden flow |
 |-----------|--------------|----------------|
-| Evidence → Reconstruction | Retrieved originals/derived views + provenance | Reconstruction rewriting originals |
-| Personal Context → Reconstruction | Confirmed and candidate knowledge with authority metadata | Context pretending to be evidence |
-| Reconstruction → Experience | Narrative + claim labels + evidence handles + invitations | Raw “Confidence 71%” as primary trust UX |
+| Evidence → Knowledge Graph | Derived links, candidates, embeddings-as-mechanism | Graph rewriting originals |
+| Knowledge Graph → Personal Context Model | Scoped, authority-aware context for plan/reconstruct | Dumping entire raw vault into the prompt as “context” |
+| Personal Context Model → Planner | Understood world + depth + perspective | Context pretending to be evidence |
+| Planner → Reconstruction | Reconstruction plan (facets, evidence handles, unknowns) | Plan to invent |
+| Evidence → Reconstruction | Opened originals/derived views per plan + provenance | Reconstruction rewriting originals |
+| Reconstruction → Experience | Narrative + claim labels + evidence handles + invitations | Raw “Confidence 71%” as primary trust UX; search-result page as the answer |
 | Experience → Learning | Teach/confirm/correct/depth choices | Silent acceptance without record |
-| Learning → Personal Context | Updates retaining prior conflicting assertions per §7 | Destructive overwrite without supersession record |
+| Learning → Knowledge Graph / Personal Context Model | Updates retaining prior conflicting assertions per §7 | Destructive overwrite without supersession record |
 | Access Governance → all | Permit/deny/redact by role and depth | Governance by the model vendor |
 
 ### 5.3 Story vs Narrative boundary
 
 | | **Story** | **Narrative** |
 |--|-----------|---------------|
-| Author nature | Human / curated | System assembly from evidence |
+| Author nature | Human / curated | System assembly from Memory Reconstruction |
 | Persistence | First-class archive meaning | Reconstructive answer; may be saved as derived artifact with provenance |
 | Authority | High as human assertion (still dimensional — §7) | Bound by evidence and claim labels |
 | UX | Anchor / entry (MBMS/MBIA) | Discovery-loop response (MBIA) |
 
----
+### 5.4 What Memory Reconstruction is not
 
+| Term | Relationship to MBAR |
+|------|----------------------|
+| **Search** | May exist internally as vault lookup; **not** the visitor-facing act |
+| **Retrieval** | Mechanism inside Evidence Vault / plan execution; **not** the product verb |
+| **RAG** | One possible implementation tactic for grounding text; **not** the architecture name and not sufficient alone (lacks Personal Context Model + authority + conflict preservation) |
+| **Chatbot** | Forbidden product framing (FB / MBUX) |
 ## 6. Information flows
 
 ### 6.1 Discovery heartbeat (MBIA)
@@ -206,31 +291,36 @@ Functional detail of components → **MBX-A-002**. Life-graph schema → **MBX-A
 sequenceDiagram
   participant V as Visitor
   participant E as Experience
+  participant P as Planner
   participant R as Reconstruction
-  participant C as PersonalContext
+  participant C as PersonalContextModel
+  participant G as KnowledgeGraph
   participant Ev as EvidenceVault
   participant A as Authority
   participant L as Learning
   V->>E: Question
-  E->>R: Interpret request
-  R->>C: Context lookup
-  R->>Ev: Evidence retrieval
+  E->>P: Interpret request
+  P->>C: Load Personal Context
+  C->>G: Graph-backed context
+  P->>R: Reconstruction plan
+  R->>Ev: Open evidence per plan
   R->>A: Score assertions / preserve conflicts
-  R->>E: Narrative + claims + evidence handles
+  R->>E: Narrative + facets + evidence handles
   E->>V: Narrative first; evidence on request
   V->>E: Teach / confirm / correct / next question
   E->>L: Record teaching event
-  L->>C: Update with provenance and supersession
+  L->>G: Update graph with provenance and supersession
+  L->>C: Refresh Personal Context Model
   L->>A: Retain conflicts if unresolved
 ```
 
 ### 6.2 Capture flow (MBPS)
 
-Capture → immutable original in Vault → derived working views → optional provisional links (suggestions, not knowledge) → invite Teach → Learning elevates under authority model → Personal Context enriched → future Discover improves.
+Capture → immutable original in Vault → derived working views → graph candidates (suggestions, not knowledge) → invite Teach → Learning elevates under authority model → Knowledge Graph + Personal Context Model enriched → future Reconstruction improves.
 
 ### 6.3 Review & Learn (stewardship)
 
-Stewardship is not a second product. Same archive; Contributor / Review & Learn lens. Confirmations raise authority dimensions; rejections record negative evidence; unresolved candidates remain candidates.
+Stewardship is not a second product. Same archive; Contributor / Review & Learn lens. Confirmations raise authority dimensions; rejections record negative evidence; unresolved candidates remain candidates; Personal Context Model refreshes from the graph.
 
 ### 6.4 Share flow (boundary only)
 
@@ -253,7 +343,7 @@ Earlier drafts treated “owner confirmation” as an automatic top rung and “
 
 ### 7.2 Authority dimensions
 
-Every assertion in Personal Context (and every reconstructive claim offered as more than Unknown) carries or inherits:
+Every assertion in the Knowledge Graph / Personal Context Model (and every reconstructive claim offered as more than Unknown) carries or inherits:
 
 | Dimension | Meaning |
 |-----------|---------|
@@ -295,7 +385,7 @@ Detailed learning state machines → **MBX-A-005**.
 | **P-01** | Every original has stable identity and ingest provenance (when, how, from where). |
 | **P-02** | Every derived view points to its original(s) and derivation kind. |
 | **P-03** | Every Narrative cites evidence handles and claim labels for non-Unknown statements. |
-| **P-04** | Every Personal Context assertion carries authority dimensions (§7.2). |
+| **P-04** | Every Knowledge Graph / Personal Context assertion carries authority dimensions (§7.2). |
 | **P-05** | Teaching events are themselves provenance (who taught, when, in what mode/depth). |
 | **P-06** | Share and export events are auditable (what left, under which authorization). |
 | **P-07** | Redaction/revocation records remain (tombstones or equivalent) so “forgotten from channel” ≠ “history never existed” for steward audit — subject to legal erase requests as a later policy overlay. |
@@ -394,21 +484,75 @@ Concrete succession UX and legal templates → later product docs; MBAR only req
 
 ---
 
-## 10. Learning loops
+## 10. Architectural loops
 
-### 10.1 Experience learning loop (MBMS)
+MBAR defines two **system loops**. Experience digests in MBMS (Explore→… and Evidence→Knowledge→…) remain valid mental-model language; these two are the architectural engines.
 
-Explore → Discover → Teach → Remember → Understand → Explore Again
+### 10.1 Understanding Loop
 
-Architecture: each arrow is an event with provenance; Teach enters Learning domain; Remember persists Stories/context; Discover uses Reconstruction.
+Curiosity becomes understanding; understanding creates new curiosity.
 
-### 10.2 Knowledge loop (MBMS)
+```text
+Question
+  ↓
+Reconstruction
+  ↓
+Narrative
+  ↓
+Understanding
+  ↓
+Curiosity
+  ↓
+Question
+```
 
-Evidence → Knowledge → Relationships → Stories → Understanding → New Questions
+| Stage | Architectural meaning |
+|-------|----------------------|
+| Question | Experience admits curiosity (conversation front door) |
+| Reconstruction | Planner + Personal Context Model + Evidence → Memory Reconstruction (§4.2) |
+| Narrative | Visitor-facing assembly (≠ Story) |
+| Understanding | Visitor leaves knowing a life better — success criterion |
+| Curiosity | Next door opens (MBIA); not a dead-end search result |
+| Question | Loop continues |
 
-Architecture: Evidence Vault feeds Reconstruction; Learning writes Personal Context; Stories remain human-first-class; Questions return to Experience.
+### 10.2 Archive Growth Loop
 
-### 10.3 Closed-loop rules
+The archive gets smarter because people teach; better reconstruction earns more teaching.
+
+```text
+Capture
+  ↓
+Evidence
+  ↓
+Teaching
+  ↓
+Knowledge
+  ↓
+Better Reconstruction
+  ↓
+Better Answers
+  ↓
+More Teaching
+```
+
+| Stage | Architectural meaning |
+|-------|----------------------|
+| Capture | Ingest without forcing organization first |
+| Evidence | Immutable vault growth |
+| Teaching | Human authority events (confirm/correct/Story) |
+| Knowledge | Knowledge Graph + Personal Context Model updates under §7 |
+| Better Reconstruction | Plans and assemblies improve because context is richer |
+| Better Answers | Narratives more present, honest, and useful |
+| More Teaching | Soft invites after emotion — stewardship as joy |
+
+### 10.3 Relation to MBMS loops
+
+| MBMS digest | Maps primarily to |
+|-------------|-------------------|
+| Explore → Discover → Teach → Remember → Understand → Explore Again | Understanding Loop + teaching moments from Archive Growth |
+| Evidence → Knowledge → Relationships → Stories → Understanding → New Questions | Archive Growth feeding Understanding |
+
+### 10.4 Closed-loop rules
 
 | Rule | Statement |
 |------|-----------|
@@ -417,8 +561,10 @@ Architecture: Evidence Vault feeds Reconstruction; Learning writes Personal Cont
 | L-03 | Negative evidence (rejection) informs future Reconstruction |
 | L-04 | Learning never modifies originals |
 | L-05 | Learning preserves conflicts pending explicit supersession |
+| L-06 | Personal Context Model must refresh from Knowledge Graph after material teaching — not drift as an unanchored prompt cache |
+| L-07 | Understanding Loop must not skip Reconstruction in favor of bare retrieval UX |
 
-Mechanisms → **MBX-A-005**.
+Mechanisms → **MBX-A-005**. Planner/Reconstruction detail → **MBX-A-004**.
 
 ---
 
@@ -426,7 +572,7 @@ Mechanisms → **MBX-A-005**.
 
 ### 11.1 Local-first commitment (hard-to-reverse, not absolute)
 
-**Primary custody, identity material, sensitive Personal Context, and basic Discover/Capture/Teach operation shall remain available under owner/steward control locally whenever practical.**
+**Primary custody, identity material, sensitive Personal Context Model / Knowledge Graph content, and basic Discover/Capture/Teach operation shall remain available under owner/steward control locally whenever practical.**
 
 Cloud services are **not banned**. They may **extend**:
 
@@ -477,11 +623,11 @@ Transport, encryption product, key escrow, multi-device sync algorithm, SaaS reg
 
 | SB | Philosophy signal | MBAR obligation |
 |----|-------------------|-----------------|
-| 1 First five minutes | Wonder → Narrative → evidence available → soft teach | Discovery flow §6.1; C-11 |
-| 2 Grandpa | Presence; silence; no invention | Reconstruction honesty; Experience restraint |
-| 3 China Trip | Forgotten media → human Story | Capture + Story boundary §5.3 |
-| 4 Pocket Watch | Meaning > media | Artifact role; KnowledgeLinks (naming → MBKM 0.2) |
-| 5 Review & Learn | Stewardship as joy | Learning loop; Contributor path |
+| 1 First five minutes | Wonder → Narrative → evidence available → soft teach | Understanding Loop §10.1; C-11 |
+| 2 Grandpa | Presence; silence; no invention | Memory Reconstruction honesty; Experience restraint |
+| 3 China Trip | Forgotten media → human Story | Capture + Story boundary §5.3; Archive Growth |
+| 4 Pocket Watch | Meaning > media | Artifact role; Knowledge Graph links |
+| 5 Review & Learn | Stewardship as joy | Archive Growth Loop §10.2; Contributor path |
 | 6 Recording a Story | Capture easier than organization | Capture flow; offline-then-sync remains open |
 | 7 Family Night | Multi-gen same archive | Modes; shared roles §9 |
 | 8 Explorer Mode | Power without new product | Lenses; same archive C-10 |
@@ -529,6 +675,25 @@ Transport, encryption product, key escrow, multi-device sync algorithm, SaaS reg
 - **Status:** Accepted
 - **Reversibility:** N/A
 
+### ADR-012 — Memory Reconstruction as product verb
+
+- **Decision:** Name and bind **Memory Reconstruction** (not search / retrieval / RAG) as the visitor-facing act; assemble Story, People, Evidence, Timeline, Artifacts, Voice, Relationships, Narrative
+- **Status:** Accepted (Tom recommendation)
+- **Reversibility:** Hard for product language
+
+### ADR-013 — Two architectural loops
+
+- **Decision:** Define **Understanding Loop** (Question → Reconstruction → Narrative → Understanding → Curiosity → Question) and **Archive Growth Loop** (Capture → Evidence → Teaching → Knowledge → Better Reconstruction → Better Answers → More Teaching) as system loops in MBAR
+- **Status:** Accepted (Tom recommendation)
+- **Reversibility:** Moderate — names sticky; MBMS digests remain complementary
+
+### ADR-014 — Personal Context Model in the heart pipeline
+
+- **Decision:** Canonical heart: Evidence → Knowledge Graph → **Personal Context Model** → Planner → Reconstruction → Narrative. PCM prevents re-inferring the whole world every turn.
+- **Status:** Accepted (Tom recommendation; restores earlier Personal Context concept)
+- **Reversibility:** Hard once A-003/A-004 assume the split
+- **Follow-up:** MBX-A-002/003/004
+
 ### Open ADRs (to resolve later)
 
 | ID | Question | Notes |
@@ -566,7 +731,9 @@ Personal Context in MBX-A-001 may *mention* pets/organizations as examples of le
 Architecture is adequate when engineering can:
 
 - Place any feature in a responsibility domain without crossing forbidden boundaries  
-- Trace Ask → Narrative → Evidence → Teach → Learn without invention  
+- Trace Ask → **Memory Reconstruction** → Narrative → Evidence → Teach → Learn without invention  
+- Trace the heart pipeline Evidence → Knowledge Graph → Personal Context Model → Planner → Reconstruction → Narrative  
+- Run Understanding Loop and Archive Growth Loop without collapsing either into “search results”  
 - Represent disagreement without data loss  
 - Explain how local-first custody holds under a chosen deployment model  
 - Delegate detail to MBX-A-002…006 without rewriting MBAR  
@@ -578,10 +745,10 @@ Architecture is adequate when engineering can:
 | Concern | Home |
 |---------|------|
 | Evidence-First principles, query grammar, personal context sketch | [MBX-A-001](MBX-A-001%20Functional%20Architecture%20Part%201.md) |
-| Component responsibilities inside domains | MBX-A-002 (planned) |
-| Canonical life-graph data model | MBX-A-003 (planned) ← MBKM + MB-RECONCILE-001 + §7 dimensions |
-| Query planning & reconstruction pipeline | MBX-A-004 (planned) |
-| Learning state machines & promotion rules | MBX-A-005 (planned) |
+| Component responsibilities inside domains (Vault, Graph, PCM, Planner, …) | MBX-A-002 (planned) |
+| Canonical life-graph / Knowledge Graph data model | MBX-A-003 (planned) ← MBKM + MB-RECONCILE-001 + §7 dimensions |
+| Planner & Memory Reconstruction pipeline | MBX-A-004 (planned) |
+| Learning / Archive Growth mechanisms | MBX-A-005 (planned) |
 | UX binding to layers | MBX-A-006 (planned) ← subordinate to MBUX |
 | Product terminology | [MB-RECONCILE-001](../product/MB-RECONCILE-001%20Core%20Terminology%20and%20Principles.md) |
 | Implementation stack | MBTS-001 (planned) — after architecture series |
@@ -592,6 +759,7 @@ Architecture is adequate when engineering can:
 
 | | |
 |--|--|
-| **What we decided** | Publish MBAR-001 as technology-neutral parent system architecture with multi-dimensional authority, local-first custody allowing cloud extensions, and shared-archive governance without sync/ACL implementation. |
-| **Why** | Give A-002…A-006 and future MBTS a single boundary document derived from reconciled product law and validated storyboards. |
+| **What we decided** | Publish MBAR-001 as technology-neutral parent system architecture with **Memory Reconstruction** as the product verb, heart pipeline including **Personal Context Model**, Understanding + Archive Growth loops, multi-dimensional authority, local-first custody allowing cloud extensions, and shared-archive governance without sync/ACL implementation. |
+| **Why** | Give A-002…A-006 and future MBTS a single boundary document derived from reconciled product law and validated storyboards — and keep the generative layer from re-inferring an entire life on every question. |
 | **Open questions** | See §13 open ADRs and §14 unresolved ontology. |
+| **v0.2** | Tom recommendations: name Memory Reconstruction; add Understanding + Archive Growth loops; restore Personal Context Model in heart pipeline. |
