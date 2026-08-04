@@ -46,4 +46,5 @@ MBKM-001 / MBDM-001 should align with the personal knowledge graph direction in 
 
 - Architecture series and reconciliation: [docs/architecture/README.md](../architecture/README.md)
 - MBUX reconcile: [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
+- Experience storyboards (philosophy validation): [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)
 - Experience mockups (supporting actor, not final UI): [MB-EX-001](MB-EX-001%20Experience%20Mockups.md) · [gallery](../../application/ui/mockup/experience/index.html)
