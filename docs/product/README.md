@@ -72,5 +72,6 @@ MBKM-001 is canonized. MBDM-001 / MBX-A-003 should align with MBKM + [MB-RECONCI
 - Functional architecture series and reconciliation: [docs/architecture/README.md](../architecture/README.md)
 - MBUX reconcile (report): [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
 - Experience storyboards (philosophy validation): [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)
+- Feedback walkthrough (shoppable story): [MB-FW-001](MB-FW-001%20Feedback%20Walkthrough.md) · [walkthrough](../../application/ui/mockup/walkthrough/index.html)
 - Experience boards (feeling): [MB-XB-001](MB-XB-001%20Experience%20Boards.md) · [boards](../../application/ui/mockup/experience-boards/index.html)
 - Experience mockups (supporting actor, not final UI): [MB-EX-001](MB-EX-001%20Experience%20Mockups.md) · [Prototype 1 scenes](../../application/ui/mockup/prototype/index.html) · [gallery](../../application/ui/mockup/experience/index.html)
