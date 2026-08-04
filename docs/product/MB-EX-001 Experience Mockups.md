@@ -9,6 +9,7 @@
 | **Authority** | Subordinate to Founder's Book, MBPS, MBUX, MBMS, MBIA, MB-SB-001. Screens and scenes are a supporting actor only. |
 | **Gallery** | [`application/ui/mockup/experience/`](../../application/ui/mockup/experience/index.html) |
 | **Prototype 1** | [`application/ui/mockup/prototype/`](../../application/ui/mockup/prototype/index.html) — clickable **scenes** (First Five Minutes + Grandpa) |
+| **Experience Boards** | [`application/ui/mockup/experience-boards/`](../../application/ui/mockup/experience-boards/index.html) — feeling, not mechanism ([MB-XB-001](MB-XB-001%20Experience%20Boards.md)) |
 
 ## Purpose
 
