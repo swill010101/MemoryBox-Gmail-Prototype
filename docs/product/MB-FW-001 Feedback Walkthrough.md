@@ -37,7 +37,11 @@ Experience Boards convey feeling. Prototype 1 validates interaction. Feedback se
 | 12 | Family night — shared archive |
 | 13 | Door open — another question |
 
-Open: [walkthrough/index.html](../../application/ui/mockup/walkthrough/index.html)
+Open: [walkthrough/index.html](../../application/ui/mockup/walkthrough/index.html) (HTML panels)
+
+**Rich media (show folks this):** [walkthrough/rich.html](../../application/ui/mockup/walkthrough/rich.html) — 12 generated panels + ~48s video
+
+Video file: [`MemoryBox-Feedback-Walkthrough.mp4`](../../application/ui/mockup/walkthrough/media/MemoryBox-Feedback-Walkthrough.mp4)
 
 ## Related
 
