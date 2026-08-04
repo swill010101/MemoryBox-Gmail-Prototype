@@ -147,6 +147,34 @@ a:hover { color: var(--paper); }
   font-weight: 400;
 }
 
+/* Continuity — museum tour tissue outside the frame */
+.tour-bridge {
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto 1rem;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem 0 0.15rem;
+  border-top: 1px solid rgba(197, 206, 200, 0.12);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--mist);
+}
+
+.tour-bridge p {
+  margin: 0;
+}
+
+.tour-bridge span {
+  display: inline-block;
+  min-width: 4.6rem;
+  color: var(--gold-mute);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 0.5rem;
+}
+
 .stage {
   flex: 1;
   max-width: 1100px;

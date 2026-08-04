@@ -271,6 +271,19 @@ Every family should be able to decide what "appropriate" means.
 - Stories should not.
 - Trust before convenience.
 - Preserve meaning, not merely media.
+- **Every screen answers three questions** — Why am I seeing this? Why does it matter? Where could this naturally lead?
+
+### Every Screen Answers Three Questions
+
+If a screen does not answer these, the visitor feels lost.
+
+| Question | Meaning |
+|----------|---------|
+| **Why am I seeing this?** | What just happened in the archive or conversation that brought me here |
+| **Why does it matter?** | Why this person, story, artifact, or moment deserves attention now |
+| **Where could this naturally lead?** | The next curiosity the archive opens — not a menu of destinations |
+
+Continuity is part of curation. Transitions should explain themselves through the archive. The experience unfolds like chapters in a museum tour — not disconnected screens.
 
 ### What We Decided
 
@@ -280,6 +293,7 @@ Every family should be able to decide what "appropriate" means.
 - Guided Exploration, Explorer Mode, and Family Mode provide three distinct experiences.
 - Every interaction should leave the family archive richer.
 - Features are discovered naturally, not taught through tutorials.
+- Every screen must answer why this, why it matters, and where it can lead.
 
 ### Why We Decided It
 
