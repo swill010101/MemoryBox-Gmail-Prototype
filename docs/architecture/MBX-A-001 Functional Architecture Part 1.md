@@ -5,8 +5,8 @@
 | **Doc ID** | MBX-A-001 |
 | **Title** | Functional Architecture — Part 1: Foundational Principles & Query Model |
 | **Status** | Governing — Part 1 of 6 (functional / engineering) |
-| **Authority** | Functional Architecture. **Subordinate to** [MB-FB-001 Founder's Book](../product/MB-FB-001%20Memory%20Box%20Founders%20Book.md) and [MBPS-001 Product Specification](../product/MBPS-001%20Memory%20Box%20Product%20Specification.md). Governs requirements elaboration, architecture, database design, prompt engineering, APIs, UI, and evaluation **within** that product hierarchy. No implementation shall knowingly violate this document or the higher product documents. |
-| **Series** | See [README.md](README.md) in this folder for Parts 2–6 (planned). |
+| **Authority** | Functional Architecture Part 1. **Subordinate to** [MB-FB-001](../product/MB-FB-001%20Memory%20Box%20Founders%20Book.md), [MBPS-001](../product/MBPS-001%20Memory%20Box%20Product%20Specification.md), domain peers, and parent system architecture [MBAR-001](MBAR-001%20Memory%20Box%20System%20Architecture.md). Elaborates principles and query model within MBAR boundaries. No implementation shall knowingly violate this document or higher documents. |
+| **Series** | [MBAR-001](MBAR-001%20Memory%20Box%20System%20Architecture.md) (parent) → Parts 1–6; see [README.md](README.md). |
 
 ---
 
@@ -80,7 +80,7 @@ Example:
 
 #### MB-P-005 — Owner Confirmation Is Highest Authority
 
-Owner-confirmed knowledge supersedes:
+Owner-confirmed knowledge supersedes, **for elevating system suggestions about the owner's world**:
 
 - AI inference
 - Pattern recognition
@@ -88,6 +88,7 @@ Owner-confirmed knowledge supersedes:
 - Metadata inference
 - External knowledge
 
+> **Interpreted under [MBAR-001 §7](MBAR-001%20Memory%20Box%20System%20Architecture.md):** human/owner teaching is high-authority but not automatically absolute. Authority is multi-dimensional; conflicts and perspectives are preserved; confirmation cannot erase originals or silently delete rival narrators.
 #### MB-P-006 — Confidence Shall Be Explained
 
 Confidence is not merely a percentage.
@@ -372,7 +373,9 @@ This separation improves retrieval accuracy while preserving evidence.
 
 ### 10. Learning Hierarchy
 
-Knowledge confidence follows this order.
+> **Superseded as a single ladder by [MBAR-001 §7](MBAR-001%20Memory%20Box%20System%20Architecture.md):** authority is multi-dimensional (source, assertion type, evidence strength, confidence, provenance, perspective, recency, supersession). Conflicts are preserved. The ordering below remains a useful *heuristic for elevating system suggestions*, not an absolute flatten-to-one-truth rule.
+
+Knowledge confidence follows this order **as a suggestion-elevation heuristic**:
 
 1. Owner confirmed
 2. Owner corrected AI suggestion

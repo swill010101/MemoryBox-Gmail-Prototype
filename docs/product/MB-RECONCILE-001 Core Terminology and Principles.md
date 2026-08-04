@@ -21,7 +21,8 @@ Tom asked to reconcile **Founder's Book, MBPS, MBUX, MBKM, MBMS, and MBIA** for 
 Founder's Book (MB-FB-001)
   → MBPS-001
     → MBUX-001 · MBKM-001 · MBMS-001 · MBIA-001  (peers under MBPS for their domains)
-      → MBX-A-*
+      → MBAR-001 (system architecture)
+        → MBX-A-* (functional elaborations)
 ```
 
 | Doc | Domain |
@@ -32,6 +33,8 @@ Founder's Book (MB-FB-001)
 | MBKM-001 | Conceptual vocabulary (knowledge concepts) |
 | MBMS-001 | Mental model — anchors vs supporting vs lenses |
 | MBIA-001 | Discovery / IA flow — entry, layers, modes |
+| MBAR-001 | Technology-neutral system architecture |
+| MBX-A-* | Functional elaborations under MBAR |
 
 ### Conflict rule
 
@@ -50,6 +53,12 @@ Founder's Book (MB-FB-001)
 ## 2. Term glossary
 
 Canonical definition · **Owner** · Aliases / forbidden confusions.
+
+| **Memory Reconstruction** | The product verb: assemble situated understanding (Story, People, Evidence, Timeline, Artifacts, Voice, Relationships, Narrative) from the archive. **Not** search, retrieval, or RAG as the visitor-facing act. | MBAR-001 | Internal vault lookup may still exist as mechanism. |
+| **Personal Context Model** | Durable understood slice of the owner/visitor world used by Planner/Reconstruction so the generative layer need not re-infer everything each turn. Sits between Knowledge Graph and Planner. | MBAR-001 / MBX-A-001 | Distinct from raw Evidence and from ephemeral prompt scratch. |
+| **Knowledge Graph** | Interconnected life knowledge (life graph). Feeds Personal Context Model. | MBAR / MBKM / MBX-A-003 | Conceptual model; storage tech open. |
+| **Understanding Loop** | Question → Reconstruction → Narrative → Understanding → Curiosity → Question | MBAR-001 | Architectural loop. |
+| **Archive Growth Loop** | Capture → Evidence → Teaching → Knowledge → Better Reconstruction → Better Answers → More Teaching | MBAR-001 | Architectural loop. |
 
 ### Anchors and knowledge concepts
 
@@ -137,7 +146,7 @@ Shared principle IDs for cross-document alignment. Sources are digests of govern
 
 ## 5. Implications for MBX-A-003 / MBDM
 
-- Derive the life-graph / conceptual data model from **MBKM-001 + this glossary**, not a fork.
+- Derive the life-graph / conceptual data model from **MBKM-001 + this glossary + [MBAR-001](../architecture/MBAR-001%20Memory%20Box%20System%20Architecture.md) authority/provenance dimensions**, not a fork.
 - Prefer node types aligned to: Person, Story, Moment, Place, Artifact (incl. legacy Thing), Evidence/Media as roles or facets, SocialRelationship, KnowledgeLink, Collection, Tradition, Season, Life Chapter (supporting), Conversation (as interaction/provenance as needed).
 - **Timeline** is primarily a view/lens over time-bearing links — not necessarily a peer destination node type.
 - **Contributor / User / Narrator** are roles or attributes on Person (and session), not competing human entity types.
