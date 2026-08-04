@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Rich Media Walkthrough</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #eef1ef;
+      --mist: #c5cec8;
+      --gold: #a68b4b;
+      --font-display: "Newsreader", Georgia, serif;
+      --font-body: "Figtree", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-body);
+      color: var(--paper);
+      background: #0c0f0d;
+    }
+    a { color: var(--gold); text-decoration: none; }
+    a:hover { color: #d4c08a; }
+    .bar {
+      display: flex; flex-wrap: wrap; gap: 1rem;
+      justify-content: space-between; align-items: baseline;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(8,10,9,0.8);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .brand { font-family: var(--font-display); font-size: 1.3rem; }
+    .meta { font-size: 0.78rem; color: var(--mist); max-width: 36rem; }
+    .nav { display: flex; gap: 0.85rem; font-size: 0.78rem; flex-wrap: wrap; }
+    .nav a { color: var(--mist); }
+    .intro { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1.5rem 1rem; }
+    .intro h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.8rem,4vw,2.6rem); margin: 0.4rem 0; }
+    .intro p { color: var(--mist); line-height: 1.5; }
+    .video-wrap {
+      max-width: 1100px; margin: 0 auto 2.5rem; padding: 0 1.25rem;
+    }
+    video {
+      width: 100%; border-radius: 12px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+      background: #000;
+    }
+    .panel {
+      max-width: 1100px; margin: 0 auto 2.5rem; padding: 0 1.25rem;
+      scroll-margin-top: 4.5rem;
+    }
+    .panel .label {
+      display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+      margin-bottom: 0.6rem; font-size: 0.78rem; color: var(--mist);
+    }
+    .panel .label strong { color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+    .panel img {
+      width: 100%; border-radius: 12px; display: block;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+    }
+    .toc { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+    .toc a {
+      font-size: 0.72rem; padding: 0.3rem 0.55rem;
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; color: var(--mist);
+    }
+    footer { max-width: 44rem; margin: 0 auto; padding: 1rem 1.5rem 4rem; color: var(--mist); font-size: 0.85rem; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <div>
+      <div class="brand">MemoryBox</div>
+      <div class="meta">Rich media walkthrough · generated panels + video · for feedback</div>
+    </div>
+    <nav class="nav">
+      <a href="../walkthrough/index.html">HTML panels</a>
+      <a href="../experience-boards/index.html">Boards</a>
+      <a href="index.html" style="color:var(--gold);border-bottom:1px solid var(--gold)">Rich media</a>
+    </nav>
+  </header>
+
+  <header class="intro">
+    <p style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--mist);margin:0">MB-FW-001 · Rich media</p>
+    <h1>Show folks this</h1>
+    <p>Twelve photoreal panels through the Christmas → Grandpa → Sue → watch → family story. Play the video, or scroll panel by panel.</p>
+    <nav class="toc">
+      <a href="#v">Video</a>
+      <a href="#p01">01</a><a href="#p02">02</a><a href="#p03">03</a><a href="#p04">04</a>
+      <a href="#p05">05</a><a href="#p06">06</a><a href="#p07">07</a><a href="#p08">08</a>
+      <a href="#p09">09</a><a href="#p10">10</a><a href="#p11">11</a><a href="#p12">12</a>
+    </nav>
+  </header>
+
+  <section class="video-wrap" id="v">
+    <video controls playsinline poster="media/01-threshold.png">
+      <source src="media/MemoryBox-Feedback-Walkthrough.mp4" type="video/mp4" />
+    </video>
+  </section>
+
+  <article class="panel" id="p01"><div class="label"><strong>01 · Threshold</strong><span>The room is quiet.</span></div><img src="media/01-threshold.png" alt="Threshold" /></article>
+  <article class="panel" id="p02"><div class="label"><strong>02 · You ask</strong><span>Typed question + microphone.</span></div><img src="media/02-typed-ask.png" alt="Typed ask" /></article>
+  <article class="panel" id="p03"><div class="label"><strong>03 · Christmas</strong><span>Narrative + 129 photos / emails / texts.</span></div><img src="media/03-christmas-rich.png" alt="Christmas reconstruction" /></article>
+  <article class="panel" id="p04"><div class="label"><strong>04 · Evidence</strong><span>Mail and texts — not a file browser.</span></div><img src="media/04-evidence-mail-texts.png" alt="Email and texts" /></article>
+  <article class="panel" id="p05"><div class="label"><strong>05 · One photo</strong><span>When was this taken?</span></div><img src="media/05-living-room.png" alt="Living room teach" /></article>
+  <article class="panel" id="p06"><div class="label"><strong>06 · Grandpa</strong><span>Presence from the archive.</span></div><img src="media/06-grandpa.png" alt="Grandpa" /></article>
+  <article class="panel" id="p07"><div class="label"><strong>07 · Silence</strong><span>Grandpa · 1998.</span></div><img src="media/07-silence.png" alt="Silence" /></article>
+  <article class="panel" id="p08"><div class="label"><strong>08 · Who is she?</strong><span>I don’t know this person with Grandpa.</span></div><img src="media/08-who-is-she.png" alt="Who is she" /></article>
+  <article class="panel" id="p09"><div class="label"><strong>09 · Sue</strong><span>183 photographs.</span></div><img src="media/09-sue-bloom.png" alt="Sue bloom" /></article>
+  <article class="panel" id="p10"><div class="label"><strong>10 · Pocket watch</strong><span>Meaning before inventory.</span></div><img src="media/10-pocket-watch.png" alt="Pocket watch" /></article>
+  <article class="panel" id="p11"><div class="label"><strong>11 · Family night</strong><span>Same archive. Shared light.</span></div><img src="media/11-family-night.png" alt="Family night" /></article>
+  <article class="panel" id="p12"><div class="label"><strong>12 · Another question</strong><span>The door stays open.</span></div><img src="media/12-another-question.png" alt="Another question" /></article>
+
+  <footer>
+    <p>For feedback: play the video first (~48s), then linger on any panel. Ask only — do you want to spend time here?</p>
+    <p><a href="index.html">HTML wire panels</a> remain for interaction testing; this gallery is the feeling set.</p>
+  </footer>
+</body>
+</html>
