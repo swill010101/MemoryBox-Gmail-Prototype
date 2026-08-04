@@ -34,6 +34,10 @@ Mindset: **Storyboard → Scenes** (like a movie), not Storyboard → Screens/Pa
 
 **Explorer Mode is postponed to Prototype 2.** Shop Prototype 1 first; adjust from feedback.
 
+### Voice (Prototype 1 copy pass)
+
+Quiet curator — not movie narrator. Reduce emotional narration; let people and artifacts create the emotion. Software is respectful, factual, and curious.
+
 ### Success criteria (Yes / No)
 
 1. **One entry URL** — Prototype 1 opens from a single link and walks the scene sequence.
