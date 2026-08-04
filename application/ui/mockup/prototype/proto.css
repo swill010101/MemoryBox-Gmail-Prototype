@@ -1,0 +1,160 @@
+/* Prototype scene chrome — extends experience visual language; no redesign.
+   Scenes = movie beats. Clicks = discoveries, not navigation. */
+
+.btn,
+.conversation button,
+.hint.hint-action {
+  cursor: pointer;
+}
+
+.hint.hint-action:hover,
+.hint.hint-action:focus-visible {
+  border-style: solid;
+  border-color: var(--forest);
+  color: var(--forest);
+}
+
+.scene {
+  display: none;
+}
+
+.scene.is-active {
+  display: block;
+  animation: scene-in 0.55s ease;
+}
+
+@keyframes scene-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Reviewer cue outside the device — quiet, not chrome inside the museum */
+.review-strip {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(197, 206, 200, 0.15);
+  color: var(--mist);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-width: 40rem;
+}
+
+.review-strip strong {
+  color: var(--paper-deep);
+  font-weight: 600;
+}
+
+.scene-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--gold-mute);
+  margin: 0 0 0.35rem;
+  letter-spacing: 0.04em;
+}
+
+.silence-hold .listening {
+  min-height: 520px;
+}
+
+.silence-hold .wave {
+  animation: none;
+  opacity: 0.25;
+  transform: scaleY(0.55);
+}
+
+.silence-hold .continue-ready {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+  margin-top: 1.5rem;
+}
+
+.silence-hold.is-ready .continue-ready {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bloom-count {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: var(--forest);
+  margin: 0;
+}
+
+.device-body .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.evidence-panel {
+  display: none;
+  margin-top: 0.35rem;
+  padding: 0.85rem 1rem;
+  background: #fff;
+  border: 1px solid var(--mist);
+  border-radius: var(--radius);
+}
+
+.evidence-panel.is-open {
+  display: block;
+}
+
+.evidence-panel p {
+  margin: 0 0 0.45rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.success-cue {
+  margin-top: 1.35rem;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--gold-mute);
+  color: var(--mist);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-width: 36rem;
+}
+
+.photo.photo-warm {
+  background: linear-gradient(145deg, #b8a078 0%, #6a5a42 100%);
+}
+
+.photo.photo-cool {
+  background: linear-gradient(145deg, #8a9aab 0%, #4a5566 100%);
+}
+
+.paper-chip {
+  font-size: 0.8rem;
+  padding: 0.65rem 0.85rem;
+  background: #fff;
+  border: 1px solid var(--mist);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.ask-echo {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 0;
+}
+
+.win-note {
+  display: none;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background: rgba(31, 77, 63, 0.12);
+  border: 1px solid var(--forest);
+  border-radius: var(--radius);
+  color: var(--forest);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.win-note.is-shown {
+  display: block;
+}
