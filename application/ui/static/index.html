@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/shell.css" />
+</head>
+<body>
+  <div id="archiveToast" class="archive-toast" hidden role="status" aria-live="polite">Archive Updated</div>
+
+  <header class="site-bar">
+    <div>
+      <div class="brand">MemoryBox</div>
+      <div class="meta">Demonstrator · Ask · Review · People · build mbd-001-evidence-people-v3</div>
+    </div>
+    <nav class="site-nav" aria-label="Consoles">
+      <button type="button" data-view="ask" class="nav-btn is-active">Ask</button>
+      <button type="button" data-view="review" class="nav-btn">Review</button>
+      <button type="button" data-view="people" class="nav-btn">People</button>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <!-- ASK -->
+    <section id="view-ask" class="view is-active" aria-label="Ask">
+      <p class="screen-label">Guided exploration</p>
+      <h1 class="screen-title">What would you like to explore?</h1>
+      <p class="screen-thesis">Conversation is the front door. Open evidence to see it. Teach only when you choose to.</p>
+
+      <div class="device">
+        <div class="device-top">
+          <span class="mode">Ask</span>
+          <span id="askHint">Searching archives…</span>
+        </div>
+        <div class="device-body">
+          <p class="brand-mark">MemoryBox</p>
+          <form id="askForm" class="conversation">
+            <input id="askInput" type="text" placeholder="Ask anything about your family…" autocomplete="off" />
+            <button type="submit">Explore</button>
+          </form>
+          <div class="hints" aria-label="Suggestions">
+            <button type="button" class="hint" data-q="Peggy George">Peggy George</button>
+            <button type="button" class="hint" data-q="Eugene Will">Eugene Will</button>
+            <button type="button" class="hint" data-q="Christmas">Christmas</button>
+          </div>
+          <div id="askAnswer" class="narrative" hidden></div>
+          <div id="askEvidence" class="evidence-list" hidden></div>
+        </div>
+      </div>
+
+      <aside id="detailPanel" class="detail-panel device" hidden>
+        <div class="device-top">
+          <span class="mode">Evidence</span>
+          <button type="button" id="detailClose" class="ghost tiny">Close</button>
+        </div>
+        <div class="device-body" id="detailBody"></div>
+        <div class="device-body teach-grid" id="teachBlock" hidden>
+          <div class="device-top" style="margin:0 -1.25rem;padding:.55rem 1.25rem">
+            <span class="mode">Teach</span>
+            <span>Optional — only when you want to add to the archive</span>
+          </div>
+          <label>Title
+            <input id="memTitle" type="text" />
+          </label>
+          <label class="grow">What should MemoryBox remember?
+            <textarea id="memBody" rows="3" placeholder="Add a note about this evidence…"></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" id="saveMemoryBtn" class="primary">Save memory</button>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- REVIEW -->
+    <section id="view-review" class="view" aria-label="Review" hidden>
+      <p class="screen-label">Review · teach while watching</p>
+      <h1 class="screen-title">Video evidence</h1>
+      <p class="screen-thesis">HVRT tools in shared chrome — box face, enroll, spoken text, Learn.</p>
+      <div class="review-frame-wrap">
+        <iframe id="hvrtFrame" class="review-frame" title="HVRT Review" src="about:blank"></iframe>
+      </div>
+    </section>
+
+    <!-- PEOPLE -->
+    <section id="view-people" class="view" aria-label="People" hidden>
+      <p class="screen-label">People</p>
+      <h1 class="screen-title">Who’s in the archive</h1>
+      <p class="screen-thesis">Select a person to see face hits and open Review tools.</p>
+      <div class="library-bar">
+        <input id="peopleSearch" type="search" placeholder="Find a person…" />
+        <button type="button" id="peopleRefresh">Refresh</button>
+      </div>
+      <div class="people-layout">
+        <ul id="peopleList" class="lib-list"></ul>
+        <aside id="personDetail" class="detail-panel device" hidden>
+          <div class="device-top">
+            <span class="mode">Person</span>
+            <button type="button" id="personDetailClose" class="ghost tiny">Close</button>
+          </div>
+          <div class="device-body" id="personDetailBody"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="editDialog" class="edit-dialog">
+    <form method="dialog" id="editForm" class="device-body">
+      <h2 class="edit-title">Edit Memory</h2>
+      <p id="editMeta" class="quiet"></p>
+      <label class="grow">Current text (saving creates a new version)
+        <textarea id="editBody" rows="8" required></textarea>
+      </label>
+      <label>Edit note (optional)
+        <input id="editNote" type="text" placeholder="Clarified who gave him the watch" />
+      </label>
+      <div class="actions">
+        <button type="submit" value="save" class="primary">Save version</button>
+        <button type="button" id="editCancel" class="ghost">Cancel</button>
+      </div>
+      <div id="editHistory" class="history"></div>
+    </form>
+  </dialog>
+
+  <script src="/static/shell.js"></script>
+</body>
+</html>

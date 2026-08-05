@@ -34,6 +34,10 @@ C:\MemoryBox
 
 ## Git / Takeout sync
 
-Takeout zips sync FlightSim → GitHub → Toms-Desktop via **Git LFS**.
+Takeout zips sync FlightSim → GitHub → Desktop via **Git LFS**.
 
 See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHIVE_LAYOUT.md).
+
+## Demonstrator
+
+[MBD-001 — MemoryBox Demonstrator PRD](docs/product/MBD-001_MEMORYBOX_DEMONSTRATOR_PRD.md) — **Approved** (Tom) · implement

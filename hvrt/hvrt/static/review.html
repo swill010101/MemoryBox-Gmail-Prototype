@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HVRT — Review R2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1c2321;
+      --muted: #5c6b66;
+      --panel: rgba(255,252,246,.9);
+      --line: rgba(28,35,33,.12);
+      --accent: #0f6b5c;
+      --accent-soft: #d7efe9;
+      --warn: #8a4b2a;
+      --shadow: 0 18px 50px rgba(28,35,33,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--ink);
+      font-family: "Source Sans 3", sans-serif;
+      background:
+        radial-gradient(1100px 520px at 8% -8%, #e7f2ee 0%, transparent 55%),
+        radial-gradient(800px 420px at 100% 0%, #efe6d8 0%, transparent 50%),
+        linear-gradient(180deg, #f7f3ea, #ebe4d6);
+    }
+    .shell { max-width: 1240px; margin: 0 auto; padding: 1.25rem; display: grid; gap: 1rem; }
+    .brand { font-family: Fraunces, Georgia, serif; font-size: clamp(1.8rem, 3.5vw, 2.5rem); margin: 0; letter-spacing: -.03em; }
+    .tag { margin: .25rem 0 0; color: var(--muted); }
+    .bar, .hits, .player, .learn {
+      background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+    }
+    .bar { display: flex; flex-wrap: wrap; gap: .7rem; align-items: end; padding: .9rem 1rem; }
+    label { display: grid; gap: .25rem; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    select, input, button { font: inherit; min-height: 2.4rem; padding: .45rem .65rem; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    select { min-width: 14rem; }
+    button { background: var(--accent); color: #f7fffc; border-color: transparent; font-weight: 600; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--accent); border-color: rgba(15,107,92,.35); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.ghost-disabled { opacity: .4; background: #ddd; color: #666; border: 0; }
+    .stage {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .stage { grid-template-columns: 1fr; }
+      .hits { height: auto; max-height: 50vh; }
+    }
+    /* Hits column stays on screen; only the list scrolls — no page yo-yo. */
+    .hits {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 10rem);
+      max-height: calc(100vh - 10rem);
+      min-height: 20rem;
+      overflow: hidden;
+      position: sticky;
+      top: .75rem;
+    }
+    .hits h2, .player h2, .learn h2 { font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 1.1rem; margin: 0; padding: .8rem 1rem; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    .hits .meta, .hits .err { flex: 0 0 auto; }
+    .hit-list {
+      list-style: none; margin: 0; padding: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex: 1 1 auto;
+      min-height: 0;
+      overscroll-behavior: contain;
+    }
+    .hits .gallery {
+      flex: 0 1 auto;
+      max-height: 28%;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .hit-list button { width: 100%; text-align: left; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 400; display: grid; gap: .15rem; }
+    .hit-list button:hover { background: var(--accent-soft); }
+    .hit-list button.active { background: var(--accent); color: #f7fffc; }
+    .player-body { padding: 1rem; display: grid; gap: .75rem; }
+    /* JS sets exact pixel width/height from videoWidth/Height (Chrome object-fit
+       on <video> is unreliable and was cropping tops of some MP4s). */
+    .video-wrap {
+      position: relative;
+      background: #111814;
+      width: 100%;
+      min-height: 4rem;
+      max-height: 56vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    video {
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      object-fit: fill;
+      display: block;
+      background: #0b100e;
+    }
+    canvas#overlay {
+      position: absolute; left: 0; top: 0; cursor: crosshair; display: none;
+      pointer-events: none;
+      z-index: 2;
+      /* left/top/width/height set in syncOverlaySize to match the <video> box */
+    }
+    canvas#overlay.boxing {
+      display: block;
+      pointer-events: auto;
+    }
+    #videoFitNote { color: var(--muted); font-size: .85rem; }
+    .crop-preview { display: none; align-items: center; gap: .75rem; }
+    .crop-preview.on { display: flex; }
+    .crop-preview img { width: 96px; height: 96px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
+    .tools { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; }
+    .tools-row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: end; width: 100%; }
+    .meta-strip { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: baseline; color: var(--muted); font-size: .92rem; }
+    .meta-strip a { color: var(--accent); font-weight: 600; }
+    .meta-strip strong { color: var(--ink); }
+    .transcript {
+      border: 1px solid var(--line); background: rgba(255,255,255,.55); padding: .75rem 1rem; display: grid; gap: .45rem;
+    }
+    .transcript h3 { margin: 0; font-family: Fraunces, Georgia, serif; font-size: 1rem; font-weight: 500; }
+    .transcript-words {
+      line-height: 1.85; max-height: min(42vh, 24rem); overflow: auto;
+      overscroll-behavior: contain; padding-right: .25rem;
+    }
+    .transcript-words button.word {
+      display: inline; min-height: 0; padding: .1rem .28rem; margin: 0 .1rem .15rem 0;
+      border: 0; background: transparent; color: inherit; font: inherit; font-weight: 400; cursor: pointer; border-radius: .25rem;
+    }
+    .transcript-words button.word:hover { background: var(--accent-soft); }
+    .transcript-words button.word.playing { background: rgba(15,107,92,.16); box-shadow: inset 0 -2px 0 var(--accent); }
+    .transcript-words button.word.selected { background: var(--accent); color: #f7fffc; box-shadow: none; }
+    .transcript-words button.word.selected.playing { background: var(--accent); color: #f7fffc; }
+    .transcript-words .empty { color: var(--muted); }
+    button.learn-running { background: #fff !important; color: var(--accent) !important; border: 1px solid rgba(15,107,92,.35) !important; }
+    .process-log {
+      margin: 0; max-height: 10rem; overflow: auto; font-size: .78rem; line-height: 1.35;
+      background: #111814; color: #d7efe9; padding: .6rem .75rem; white-space: pre-wrap; word-break: break-word;
+    }
+    .prov { color: var(--muted); font-size: .92rem; }
+    .prov strong { color: var(--ink); }
+    .learn { padding-bottom: .5rem; }
+    .learn-body { padding: .75rem 1rem 1rem; display: grid; gap: .45rem; }
+    .step { display: grid; grid-template-columns: 1fr auto; gap: .35rem; align-items: center; font-size: .92rem; }
+    .track { height: .45rem; background: #e5e0d6; border-radius: 99px; overflow: hidden; grid-column: 1 / -1; }
+    .fill { height: 100%; background: var(--accent); width: 0%; }
+    .err { color: var(--warn); padding: .5rem 1rem; }
+    .meta { padding: .25rem 1rem .75rem; color: var(--muted); font-size: .9rem; }
+    .gallery { padding: .75rem 1rem 1rem; border-top: 1px solid var(--line); }
+    .gallery h3 { margin: 0 0 .5rem; font-family: Fraunces, Georgia, serif; font-size: 1rem; font-weight: 500; }
+    .gal-grid { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .gal-item { width: 88px; display: grid; gap: .25rem; }
+    .gal-item img { width: 88px; height: 88px; object-fit: contain; background: #111814; border: 1px solid var(--line); }
+    .gal-item .gal-name { font-size: .65rem; color: var(--muted); word-break: break-all; line-height: 1.2; }
+    .gal-del { min-height: 1.6rem; padding: .2rem .4rem; font-size: .75rem; background: transparent; color: var(--warn); border: 1px solid rgba(138,75,42,.35); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <h1 class="brand">HVRT</h1>
+      <p class="tag">Evidence review · human over AI · settings coming later · build multipart-lifespan</p>
+    </header>
+
+    <div class="bar">
+      <label>Mode
+        <select id="mode">
+          <option value="faces">Faces</option>
+          <option value="voice">Speech</option>
+          <option value="places">Places</option>
+          <option value="text">Spoken text</option>
+          <option value="ocr">OCR text</option>
+          <option value="videos">All videos</option>
+        </select>
+      </label>
+      <label id="queryWrap"><span id="queryLabel">Person</span>
+        <select id="querySelect"></select>
+        <input id="queryText" type="search" placeholder="Blank = all spoken lines" hidden />
+      </label>
+      <button id="loadBtn" type="button">Load hits</button>
+      <button id="addProcessBtn" type="button">Add &amp; process videos</button>
+      <input id="videoFiles" type="file" multiple accept="video/*,.mov,.mp4,.m4v,.avi,.mkv,.mpg,.mpeg,.wmv" hidden />
+      <button id="learnBtn" type="button">Learn from annotations</button>
+      <button class="ghost-disabled" type="button" disabled title="Future">Setting (future)</button>
+    </div>
+
+    <section class="learn" id="processPanel" hidden>
+      <h2>Add &amp; process videos</h2>
+      <div class="learn-body">
+        <div class="prov" id="processNote">Pick one or more videos (P: share is fine) — they copy into sample\\ then process_videos runs.</div>
+        <div id="processSteps"></div>
+        <pre id="processLog" class="process-log" hidden></pre>
+      </div>
+    </section>
+    <div class="stage">
+      <section class="hits">
+        <h2>Hits</h2>
+        <div id="hitMeta" class="meta">Load hits to begin.</div>
+        <div id="err" class="err" hidden></div>
+        <ul id="hitList" class="hit-list"></ul>
+        <div class="gallery" id="galleryPanel">
+          <h3>Person gallery</h3>
+          <div id="gallery" class="gal-grid"><div class="meta">Select a person to manage photos.</div></div>
+        </div>
+      </section>
+
+      <section class="player">
+        <h2>Playback & mark</h2>
+        <div class="player-body">
+          <div class="video-wrap">
+            <video id="video" controls playsinline></video>
+            <canvas id="overlay"></canvas>
+          </div>
+          <div id="videoFitNote" class="prov">Select a hit to play.</div>
+          <button id="browserProxyBtn" class="secondary" type="button" hidden>Make browser-playable (H.264)</button>
+          <div id="cropPreview" class="crop-preview prov">
+            <img id="cropPreviewImg" alt="Crop preview" />
+            <span id="cropPreviewMeta">Box a face to preview the exact crop that will be saved.</span>
+          </div>
+          <div id="metaStrip" class="meta-strip">
+            <span id="metaDateLine">Date: —</span>
+            <span id="metaGpsLine">GPS: —</span>
+          </div>
+          <div class="tools">
+            <div class="tools-row" id="toolsRow1">
+              <label>Start <input id="startSec" type="number" step="0.1" value="0" style="width:6rem" /></label>
+              <label>End <input id="endSec" type="number" step="0.1" value="1" style="width:6rem" /></label>
+              <label>Place
+                <input id="placeName" list="placeList" placeholder="Grandpa's house" />
+                <datalist id="placeList"></datalist>
+              </label>
+              <button id="markPlaceBtn" class="secondary" type="button">Mark place</button>
+              <label>Date
+                <input id="dateField" type="text" placeholder="No date in metadata" style="min-width:11rem" />
+              </label>
+              <button id="dateBtn" class="secondary" type="button">Set date</button>
+              <button id="ocrBtn" class="secondary" type="button">Confirm OCR text</button>
+              <button id="vlcBtn" class="secondary" type="button" disabled>Open in system player</button>
+            </div>
+            <div class="tools-row" id="toolsRow2">
+              <button id="boxFaceBtn" class="secondary" type="button">Box face</button>
+              <label>Enroll as
+                <select id="personSelect"></select>
+              </label>
+              <label><span style="text-transform:none;letter-spacing:0">New person?</span>
+                <input id="newPerson" type="text" placeholder="Only if not in list" />
+              </label>
+              <button id="saveFaceBtn" type="button" disabled>Enroll face</button>
+            </div>
+          </div>
+          <div class="transcript" id="transcriptPanel">
+            <h3>Spoken text</h3>
+            <div id="transcriptWords" class="transcript-words"><span class="empty">Select a hit or video to load transcript words.</span></div>
+            <div class="tools-row" id="voiceEnrollRow">
+              <label>Speaker
+                <select id="voicePersonSelect"></select>
+              </label>
+              <label><span style="text-transform:none;letter-spacing:0">New speaker?</span>
+                <input id="voiceNewPerson" type="text" placeholder="Type a new name" />
+              </label>
+              <button id="voiceBtn" type="button">Enroll voice span</button>
+            </div>
+            <div class="prov" id="transcriptHint">1) Highlight words · 2) pick Speaker or type New speaker · 3) Enroll voice span</div>
+          </div>
+          <div id="prov" class="prov">Select a hit. Owner marks supersede AI (confidence 1.0).</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="learn" id="learnPanel">
+      <h2>Learning from annotations</h2>
+      <div class="learn-body">
+        <div class="prov" id="learnNote">Idle · background jobs let you keep reviewing.</div>
+        <div id="learnSteps"></div>
+      </div>
+    </section>
+  </div>
+
+<script>
+const modeEl = document.getElementById('mode');
+const queryWrap = document.getElementById('queryWrap');
+const querySelect = document.getElementById('querySelect');
+const queryText = document.getElementById('queryText');
+const galleryPanel = document.getElementById('galleryPanel');
+const hitList = document.getElementById('hitList');
+const hitMeta = document.getElementById('hitMeta');
+const errEl = document.getElementById('err');
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const prov = document.getElementById('prov');
+const personSelect = document.getElementById('personSelect');
+const startSec = document.getElementById('startSec');
+const endSec = document.getElementById('endSec');
+
+async function readJson(res){
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    const snip = (text || res.statusText || 'non-JSON response').trim().slice(0, 160);
+    throw new Error(res.ok ? snip : `${res.status}: ${snip}`);
+  }
+  if (!res.ok) {
+    const detail = data && data.detail;
+    const msg = typeof detail === 'string' ? detail
+      : (detail && detail.msg) ? detail.msg
+      : (typeof detail === 'object' ? JSON.stringify(detail) : null);
+    throw new Error(msg || `${res.status}: ${res.statusText || 'request failed'}`);
+  }
+  return data;
+}
+let hits = [];
+let selected = null;
+let boxMode = false;
+let box = null;
+let drawing = false;
+let learnTimer = null;
+let processTimer = null;
+let proxyTimer = null;
+let proxyWatchVideoId = null;
+let usingBrowserProxy = false;
+const readyProxyIds = new Set(); // video_ids with a ready H.264 browser copy
+let lastFaceQueryId = '';
+let lastVoiceQueryId = '';
+let lastPlaceQueryName = '';
+let galleryLoadSeq = 0;
+let transcriptWords = [];
+let voiceSel = { a: null, b: null }; // word indices for highlight range
+let playingWordIdx = -1;
+const FULL_TRANSCRIPT_MIN_SPAN_SEC = 120; // option C: long spans / text mode get full video
+let currentVideoMeta = null;
+
+function showErr(m){ errEl.hidden=!m; errEl.textContent=m||''; }
+function fmt(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), r=Math.floor(s%60); return `${m}:${String(r).padStart(2,'0')}`; }
+function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+function personOptionHtml(p){
+  const n = Number(p.hit_count || 0);
+  const label = n ? `${p.name} · ${n} hit${n===1?'':'s'}` : p.name;
+  return `<option value="${p.id}" data-name="${escapeHtml(p.name)}">${escapeHtml(label)}</option>`;
+}
+
+function placeOptionHtml(p){
+  return `<option value="${escapeHtml(p.name)}" data-name="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`;
+}
+
+function optionName(selectEl){
+  const opt = selectEl.selectedOptions[0];
+  if (!opt) return '';
+  return (opt.getAttribute('data-name') || opt.textContent || '').trim();
+}
+
+/** Swap the top query control to match Mode: people / places / phrase / none. */
+function syncMode(){
+  const mode = modeEl.value;
+  const people = window._people || [];
+  const places = window._places || [];
+  const queryLabel = document.getElementById('queryLabel');
+
+  galleryPanel.hidden = mode !== 'faces';
+
+  if (mode === 'videos') {
+    queryWrap.hidden = true;
+    querySelect.hidden = true;
+    queryText.hidden = true;
+    return;
+  }
+
+  queryWrap.hidden = false;
+  if (mode === 'faces') {
+    queryLabel.textContent = 'Person';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastFaceQueryId || querySelect.value;
+    querySelect.innerHTML = people.map(personOptionHtml).join('')
+      || '<option value="">(no people in gallery yet)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastFaceQueryId = querySelect.value;
+  } else if (mode === 'voice') {
+    queryLabel.textContent = 'Speaker';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastVoiceQueryId || lastFaceQueryId || querySelect.value;
+    querySelect.innerHTML = people.map(personOptionHtml).join('')
+      || '<option value="">(enroll a voice span first)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastVoiceQueryId = querySelect.value;
+  } else if (mode === 'places') {
+    queryLabel.textContent = 'Place';
+    querySelect.hidden = false;
+    queryText.hidden = true;
+    const keep = lastPlaceQueryName || querySelect.value;
+    querySelect.innerHTML = places.map(placeOptionHtml).join('')
+      || '<option value="">(no places yet — mark one below)</option>';
+    if (keep && [...querySelect.options].some(o => o.value === keep)) querySelect.value = keep;
+    lastPlaceQueryName = querySelect.value;
+  } else if (mode === 'ocr') {
+    queryLabel.textContent = 'OCR phrase';
+    querySelect.hidden = true;
+    queryText.hidden = false;
+    queryText.placeholder = 'Blank = all OCR marks';
+  } else {
+    queryLabel.textContent = 'Phrase';
+    querySelect.hidden = true;
+    queryText.hidden = false;
+    queryText.placeholder = 'Blank = all spoken lines';
+  }
+}
+
+function currentQueryName(){
+  const mode = modeEl.value;
+  if (mode === 'faces' || mode === 'voice' || mode === 'places') return optionName(querySelect) || querySelect.value.trim();
+  if (mode === 'text' || mode === 'ocr') return queryText.value.trim();
+  return '';
+}
+
+function selectedPersonName(){
+  return optionName(personSelect);
+}
+
+function updateEnrollButton(){
+  const btn = document.getElementById('saveFaceBtn');
+  const newName = document.getElementById('newPerson').value.trim();
+  btn.textContent = `Enroll face as ${newName || selectedPersonName() || 'person'}`;
+  updateVoiceButton();
+}
+
+function updateVoiceButton(){
+  const btn = document.getElementById('voiceBtn');
+  if (!btn) return;
+  const newName = document.getElementById('voiceNewPerson').value.trim();
+  const opt = document.getElementById('voicePersonSelect').selectedOptions[0];
+  const fromList = opt ? (opt.getAttribute('data-name') || opt.textContent || '').trim() : '';
+  const target = newName || fromList || 'speaker';
+  const range = typeof selectedVoiceRange === 'function' ? selectedVoiceRange() : null;
+  const quote = range ? ` “${range.text}”` : '';
+  btn.textContent = `Enroll voice as ${target}${quote ? '' : ''}`;
+  btn.title = range
+    ? `Save highlighted “${range.text}” as ${target}`
+    : `Save current Start/End span as ${target} (highlight words first for text)`;
+}
+
+function fillEnrollPeople(people, preferName){
+  const html = people.map(personOptionHtml).join('')
+    || '<option value="">(none yet)</option>';
+  const keepEnroll = personSelect.value;
+  const voiceSelect = document.getElementById('voicePersonSelect');
+  const keepVoice = voiceSelect ? voiceSelect.value : '';
+  personSelect.innerHTML = html;
+  if (voiceSelect) voiceSelect.innerHTML = html;
+  const want = (preferName || '').trim().toLowerCase();
+  let matched = null;
+  if (want && people.length) {
+    matched = people.find(p => p.name.toLowerCase() === want)
+      || people.find(p => p.name.toLowerCase().includes(want) || want.includes(p.name.toLowerCase()));
+  }
+  if (matched) {
+    personSelect.value = String(matched.id);
+    if (voiceSelect) voiceSelect.value = String(matched.id);
+  } else {
+    if (keepEnroll && [...personSelect.options].some(o => o.value === keepEnroll)) {
+      personSelect.value = keepEnroll;
+    } else if (modeEl.value === 'faces' && querySelect.value) {
+      personSelect.value = querySelect.value;
+    }
+    if (voiceSelect) {
+      if (keepVoice && [...voiceSelect.options].some(o => o.value === keepVoice)) {
+        voiceSelect.value = keepVoice;
+      } else {
+        voiceSelect.value = personSelect.value;
+      }
+    }
+  }
+  updateVoiceButton();
+}
+
+async function refreshPeoplePlaces(preferName){
+  const [pe, pl] = await Promise.all([fetch('/api/people'), fetch('/api/places')]);
+  const peoplePayload = await readJson(pe);
+  const people = peoplePayload.people || [];
+  const places = ((await readJson(pl)).places || []);
+  window._people = people;
+  window._places = places;
+  window._galleryDirs = peoplePayload.gallery_dirs || [];
+
+  // Remember current face/place selection across rebuilds
+  if (modeEl.value === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
+  if (modeEl.value === 'places' && querySelect.value) lastPlaceQueryName = querySelect.value;
+
+  fillEnrollPeople(people, preferName);
+  syncMode(); // rebuild top query dropdown for current mode
+
+  if (preferName && modeEl.value === 'faces') {
+    const matched = people.find(p => p.name.toLowerCase() === preferName.trim().toLowerCase());
+    if (matched) {
+      querySelect.value = String(matched.id);
+      personSelect.value = String(matched.id);
+      lastFaceQueryId = String(matched.id);
+    }
+  }
+
+  document.getElementById('placeList').innerHTML = places.map(p =>
+    `<option value="${escapeHtml(p.name)}"></option>`
+  ).join('');
+
+  updateEnrollButton();
+  await loadGalleryForSelectedPerson();
+}
+
+async function loadGalleryForSelectedPerson(){
+  const galleryEl = document.getElementById('gallery');
+  if (modeEl.value !== 'faces') return;
+  // Prefer the top Person query so gallery matches who you are reviewing
+  const personId = (modeEl.value === 'faces' && querySelect.value)
+    ? querySelect.value
+    : personSelect.value;
+  if (!personId) {
+    galleryEl.innerHTML = '<div class="meta">No person selected.</div>';
+    return;
+  }
+  const reqId = String(++galleryLoadSeq);
+  const res = await fetch(`/api/people/${personId}/exemplars`);
+  if (reqId !== String(galleryLoadSeq)) return; // stale response
+  if (!res.ok) {
+    galleryEl.innerHTML = '<div class="meta">Could not load gallery.</div>';
+    return;
+  }
+  const data = await res.json();
+  if (reqId !== String(galleryLoadSeq)) return;
+  if (String(data.person.id) !== String(personId)) {
+    galleryEl.innerHTML = '<div class="meta">Gallery person mismatch — reload.</div>';
+    return;
+  }
+  if (!data.exemplars.length) {
+    galleryEl.innerHTML = `<div class="meta">No photos yet for ${escapeHtml(data.person.name)}. Add files under gallery\\${escapeHtml(data.person.name)}\\ or box a face.</div>`;
+    return;
+  }
+  // Delete by index only — never put Windows paths in HTML attributes
+  galleryEl.innerHTML = data.exemplars.map((ex, i) => `
+    <div class="gal-item">
+      <img src="${ex.url}" alt="${escapeHtml(ex.filename)}" title="${escapeHtml(ex.filename)} · ${escapeHtml(ex.source || '')}" loading="eager" />
+      <div class="gal-name">${escapeHtml(ex.filename)}</div>
+      <button type="button" class="gal-del" data-index="${i}" data-person="${personId}" data-name="${escapeHtml(data.person.name)}">Remove</button>
+    </div>
+  `).join('');
+  galleryEl.querySelectorAll('.gal-del').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const index = Number(btn.getAttribute('data-index'));
+      const pid = btn.getAttribute('data-person');
+      const pname = btn.getAttribute('data-name') || '';
+      if (!Number.isInteger(index) || index < 0 || !pid) {
+        showErr('Bad remove target');
+        return;
+      }
+      const res = await fetch(`/api/people/${pid}/exemplars/delete`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ index })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showErr(typeof data.detail === 'string' ? data.detail : (data.detail || 'Delete failed'));
+        return;
+      }
+      if (data.person && String(data.person.id) !== String(pid)) {
+        showErr('Refused delete — person mismatch');
+        return;
+      }
+      prov.textContent = `Removed ${data.filename || 'photo'} for ${data.person.name || pname}`;
+      await loadGalleryForSelectedPerson();
+    };
+  });
+}
+
+async function loadHits(){
+  showErr('');
+  hitList.innerHTML = '';
+  hitMeta.textContent = 'Loading…';
+  selected = null;
+  document.getElementById('vlcBtn').disabled = true;
+
+  try {
+  const mode = modeEl.value;
+  if (mode === 'faces' && querySelect.value) lastFaceQueryId = querySelect.value;
+  if (mode === 'voice' && querySelect.value) lastVoiceQueryId = querySelect.value;
+  if (mode === 'places' && querySelect.value) lastPlaceQueryName = querySelect.value;
+
+  await refreshPeoplePlaces();
+
+  // Restore face/voice selection after refresh rebuilt the dropdown
+  if (mode === 'faces' && lastFaceQueryId && [...querySelect.options].some(o => o.value === lastFaceQueryId)) {
+    querySelect.value = lastFaceQueryId;
+    personSelect.value = lastFaceQueryId;
+  }
+  if (mode === 'voice' && lastVoiceQueryId && [...querySelect.options].some(o => o.value === lastVoiceQueryId)) {
+    querySelect.value = lastVoiceQueryId;
+    if (document.getElementById('voicePersonSelect')) {
+      document.getElementById('voicePersonSelect').value = lastVoiceQueryId;
+    }
+  }
+  if (mode === 'places' && lastPlaceQueryName && [...querySelect.options].some(o => o.value === lastPlaceQueryName)) {
+    querySelect.value = lastPlaceQueryName;
+  }
+  updateEnrollButton();
+  await loadGalleryForSelectedPerson();
+
+  const q = currentQueryName();
+  let data;
+  if (mode === 'videos') {
+    const res = await fetch('/api/videos');
+    data = await readJson(res);
+    hits = (data.videos || []).map(v => ({
+      kind: 'video', hit_id: v.id, video_id: v.id, filename: v.filename, path: v.path,
+      start_sec: 0, end_sec: v.duration_sec || 0, confidence: 1, label: v.filename,
+      stream_url: `/api/media/${v.id}`, actor_key: null, duration_sec: v.duration_sec
+    }));
+    hitMeta.textContent = `${hits.length} videos`;
+  } else {
+    if (!q && mode !== 'text' && mode !== 'ocr') {
+      showErr(mode === 'places' ? 'Pick a place' : 'Pick a person / speaker');
+      hitMeta.textContent = 'Load hits to begin.';
+      return;
+    }
+    if (mode === 'faces') {
+      personSelect.value = querySelect.value;
+      updateEnrollButton();
+      await loadGalleryForSelectedPerson();
+    }
+    if (mode === 'voice') {
+      const vs = document.getElementById('voicePersonSelect');
+      if (vs) vs.value = querySelect.value;
+      updateVoiceButton();
+    }
+    const url = mode === 'faces'
+      ? `/api/hits/faces?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
+      : mode === 'voice'
+        ? `/api/hits/voice?person_id=${encodeURIComponent(querySelect.value)}&name=${encodeURIComponent(q)}`
+      : mode === 'places' ? `/api/hits/places?name=${encodeURIComponent(q)}`
+      : mode === 'ocr' ? `/api/hits/ocr?q=${encodeURIComponent(q)}`
+      : `/api/hits/text?q=${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    data = await readJson(res);
+    hits = data.hits || [];
+    if (mode === 'faces' && (data.effective_count != null || data.ai_count != null)) {
+      hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}” · ${data.effective_count || 0} owner/user · ${data.ai_count || 0} AI`;
+    } else if (mode === 'voice') {
+      hitMeta.textContent = `${data.count} speech span(s) for “${data.query || q}” · ${data.owner_count || 0} enrolled · ${data.ai_count || 0} AI`;
+    } else if (mode === 'text') {
+      const corpus = data.corpus_segments != null ? ` · ${data.corpus_segments} segment(s) in DB` : '';
+      hitMeta.textContent = `${data.count} spoken line(s)${q ? ` matching “${q}”` : ' (all)'}${corpus}`;
+    } else if (mode === 'ocr') {
+      hitMeta.textContent = `${data.count} OCR mark(s)${q ? ` matching “${q}”` : ' (all)'}`;
+    } else {
+      hitMeta.textContent = `${data.count} hit(s) for “${data.query || q}”`;
+    }
+  }
+
+  if (!hits.length) {
+    const tip = mode === 'faces'
+      ? ' People with 0 hits still appear — enroll faces or run Learn.'
+      : mode === 'voice'
+        ? ' Enroll a voice span on a transcript, then Learn to find more speech.'
+      : '';
+    hitList.innerHTML = `<li class="meta">No hits for ${escapeHtml(q || 'selection')}.${tip}</li>`;
+    return;
+  }
+
+  hits.forEach((h, i) => {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `<strong>${escapeHtml(h.filename)}</strong>
+      <span>${fmt(h.start_sec)} → ${fmt(h.end_sec)} · conf ${Number(h.confidence || 0).toFixed(2)}${h.actor_key ? ' · ' + h.actor_key : ''}${h.sample_count > 1 ? ' · ' + h.sample_count + ' samples' : ''}</span>
+      <span>${escapeHtml(h.label || '')}</span>`;
+    b.onclick = () => selectHit(i, b);
+    li.appendChild(b);
+    hitList.appendChild(li);
+  });
+  } catch (e) {
+    hits = [];
+    hitMeta.textContent = 'Load hits failed — retry.';
+    throw e;
+  }
+}
+
+function selectHit(i, btn){
+  try {
+    selected = hits[i];
+    if (!selected) throw new Error('Hit missing — click Load hits again');
+    usingBrowserProxy = false;
+    try { exitBoxMode(); } catch (e) { /* never block hit select */ }
+    if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
+    proxyWatchVideoId = selected.video_id;
+    [...hitList.querySelectorAll('button')].forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('vlcBtn').disabled = false;
+    const proxyBtn = document.getElementById('browserProxyBtn');
+    if (proxyBtn) {
+      proxyBtn.hidden = false;
+      proxyBtn.disabled = false;
+      proxyBtn.textContent = 'Make browser-playable (H.264)';
+    }
+    startSec.value = Number(selected.start_sec || 0).toFixed(1);
+    endSec.value = Number(selected.end_sec || selected.start_sec || 1).toFixed(1);
+    if (selected.label && modeEl.value === 'faces') {
+      const match = (window._people || []).find(p => p.name === selected.label);
+      if (match) personSelect.value = String(match.id);
+    }
+    updateEnrollButton();
+    loadGalleryForSelectedPerson().catch(() => {});
+    loadVideoMeta(selected.video_id).catch(e => showErr(e.message));
+    loadTranscriptForSelection().catch(e => showErr(e.message));
+    const t = Math.max(0, Number(selected.start_sec) || 0);
+    const vid = selected.video_id;
+    const sourceUrl = selected.stream_url || `/api/media/${vid}`;
+    // Play immediately so the click always feels live; upgrade to H.264 proxy after.
+    if (readyProxyIds.has(vid) || (selected.stream_url || '').includes('proxy=1')) {
+      reloadWithProxy(vid, t);
+    } else {
+      playSelectedStream(sourceUrl, t);
+      upgradeToProxyIfReady(vid, t).catch(() => {});
+    }
+    prov.innerHTML = `<strong>${escapeHtml(selected.filename)}</strong> · ${escapeHtml(selected.label || '')} · start <strong>${fmt(t)}</strong>
+      · Enroll target: <strong>${escapeHtml(document.getElementById('newPerson').value.trim() || selectedPersonName())}</strong>`;
+  } catch (e) {
+    showErr(e.message || String(e));
+  }
+}
+
+async function upgradeToProxyIfReady(videoId, t){
+  const note = document.getElementById('videoFitNote');
+  try {
+    const res = await fetch(`/api/videos/${videoId}/browser-proxy`);
+    const st = await res.json();
+    if (!selected || selected.video_id !== videoId) return;
+    if (st.status === 'ready') {
+      readyProxyIds.add(videoId);
+      reloadWithProxy(videoId, t);
+      return;
+    }
+  } catch (e) { /* keep source playback */ }
+  if (!selected || selected.video_id !== videoId) return;
+  if (note && !(video.videoWidth && video.videoHeight)) {
+    note.textContent = 'Checking whether Chrome can decode this video…';
+  }
+  setTimeout(() => {
+    if (selected && selected.video_id === proxyWatchVideoId && !(video.videoWidth && video.videoHeight)) {
+      ensureBrowserProxy({ auto: true }).catch(() => {});
+    }
+  }, 1200);
+}
+
+function playSelectedStream(url, startSecVal){
+  const t = Math.max(0, Number(startSecVal) || 0);
+  const onMeta = () => {
+    try { video.currentTime = t; } catch (e) {}
+    video.play().catch(()=>{});
+    video.removeEventListener('loadedmetadata', onMeta);
+    syncOverlaySize();
+  };
+  video.addEventListener('loadedmetadata', onMeta);
+  video.src = url;
+  video.load();
+  syncOverlaySize();
+}
+
+async function ensureBrowserProxy({ auto = false } = {}){
+  if (!selected) return;
+  const videoId = selected.video_id;
+  const note = document.getElementById('videoFitNote');
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  proxyBtn.hidden = false;
+  proxyBtn.disabled = true;
+  if (note) {
+    note.textContent = auto
+      ? 'Chrome has no video frames (often HEVC). Building H.264 browser copy with ffmpeg…'
+      : 'Building H.264 browser copy with ffmpeg…';
+  }
+  const startRes = await fetch(`/api/videos/${videoId}/browser-proxy`, { method: 'POST' });
+  const startData = await startRes.json();
+  if (!startRes.ok) throw new Error(startData.detail || 'Could not start browser proxy');
+  if (startData.status === 'ready') {
+    readyProxyIds.add(videoId);
+    reloadWithProxy(videoId);
+    return;
+  }
+  if (proxyTimer) clearInterval(proxyTimer);
+  proxyTimer = setInterval(async () => {
+    if (!selected || selected.video_id !== videoId) {
+      clearInterval(proxyTimer); proxyTimer = null; return;
+    }
+    try {
+      const res = await fetch(`/api/videos/${videoId}/browser-proxy`);
+      const st = await res.json();
+      proxyBtn.textContent = st.status === 'running' || st.status === 'queued'
+        ? `Preparing browser copy… ${Math.round(st.progress_pct || 0)}%`
+        : 'Make browser-playable (H.264)';
+      if (note) note.textContent = st.message || st.status;
+      if (st.status === 'ready') {
+        clearInterval(proxyTimer); proxyTimer = null;
+        readyProxyIds.add(videoId);
+        reloadWithProxy(videoId);
+      } else if (st.status === 'error') {
+        clearInterval(proxyTimer); proxyTimer = null;
+        proxyBtn.disabled = false;
+        showErr(st.message || st.error || 'Browser proxy failed — is ffmpeg installed?');
+      }
+    } catch (e) {
+      clearInterval(proxyTimer); proxyTimer = null;
+      proxyBtn.disabled = false;
+      showErr(e.message);
+    }
+  }, 1000);
+}
+
+function reloadWithProxy(videoId, startSecVal){
+  if (!selected || selected.video_id !== videoId) return;
+  usingBrowserProxy = true;
+  readyProxyIds.add(videoId);
+  const t = Math.max(0, Number(startSecVal != null ? startSecVal : (startSec.value || selected.start_sec)) || 0);
+  const url = `/api/media/${videoId}?proxy=1`;
+  selected.stream_url = url;
+  // Keep hits[] in sync so re-clicking the same row keeps the proxy URL
+  const hit = hits.find(h => h.video_id === videoId);
+  if (hit) hit.stream_url = url;
+  playSelectedStream(url, t);
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  proxyBtn.disabled = false;
+  proxyBtn.textContent = 'Using browser-playable copy';
+  const note = document.getElementById('videoFitNote');
+  if (note) note.textContent = 'Loaded H.264 browser copy — waiting for frame size…';
+  document.getElementById('prov').textContent = 'Playing browser-playable H.264 copy (source may be HEVC).';
+}
+
+async function loadVideoMeta(videoId){
+  const dateLine = document.getElementById('metaDateLine');
+  const gpsLine = document.getElementById('metaGpsLine');
+  const dateField = document.getElementById('dateField');
+  const dateBtn = document.getElementById('dateBtn');
+  const res = await fetch(`/api/videos/${videoId}`);
+  if (!res.ok) {
+    currentVideoMeta = null;
+    dateLine.textContent = 'Date: —';
+    gpsLine.textContent = 'GPS: —';
+    dateField.value = '';
+    dateBtn.textContent = 'Set date';
+    return;
+  }
+  const meta = await res.json();
+  currentVideoMeta = meta;
+  if (meta.display_date) {
+    dateField.value = meta.display_date;
+    const src = meta.date_source === 'owner' ? 'owner mark'
+      : meta.date_source === 'recording_date' ? 'video metadata'
+      : meta.date_source === 'file_mtime' ? 'file date'
+      : meta.date_source || '';
+    dateLine.innerHTML = `Date: <strong>${escapeHtml(meta.display_date)}</strong>${src ? ' · ' + escapeHtml(src) : ''}`;
+    dateBtn.textContent = 'Change date';
+  } else {
+    dateField.value = '';
+    dateLine.textContent = 'Date: none in metadata';
+    dateBtn.textContent = 'Set date';
+  }
+  if (meta.gps && meta.maps_url) {
+    const { lat, lon } = meta.gps;
+    gpsLine.innerHTML = `GPS: <strong>${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}</strong> · <a href="${meta.maps_url}" target="_blank" rel="noopener">Open map</a>`;
+  } else {
+    gpsLine.textContent = 'GPS: no GPS';
+  }
+}
+
+function selectedVoiceRange(){
+  if (voiceSel.a == null) return null;
+  const i0 = Math.min(voiceSel.a, voiceSel.b == null ? voiceSel.a : voiceSel.b);
+  const i1 = Math.max(voiceSel.a, voiceSel.b == null ? voiceSel.a : voiceSel.b);
+  const slice = transcriptWords.slice(i0, i1 + 1);
+  if (!slice.length) return null;
+  return {
+    i0, i1,
+    text: slice.map(w => w.word).join(' '),
+    start_sec: slice[0].start_sec,
+    end_sec: slice[slice.length - 1].end_sec,
+  };
+}
+
+function shouldLoadFullTranscript(){
+  if (modeEl.value === 'text' || modeEl.value === 'videos') return true;
+  if (!selected) return false;
+  const s = Number(selected.start_sec || 0);
+  const e = Number(selected.end_sec != null ? selected.end_sec : s);
+  return (e - s) >= FULL_TRANSCRIPT_MIN_SPAN_SEC;
+}
+
+function findPlayingWordIndex(t){
+  if (!transcriptWords.length) return -1;
+  // Words are ordered by time; linear scan is fine for typical Whisper sizes
+  let lo = 0;
+  let hi = transcriptWords.length - 1;
+  let best = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const w = transcriptWords[mid];
+    if (t < w.start_sec) hi = mid - 1;
+    else if (t >= w.end_sec) { best = mid; lo = mid + 1; }
+    else return mid;
+  }
+  // If between words, keep last started word briefly
+  if (best >= 0 && t - transcriptWords[best].end_sec < 0.35) return best;
+  return -1;
+}
+
+function syncTranscriptToVideo(){
+  const el = document.getElementById('transcriptWords');
+  if (!el || !transcriptWords.length) return;
+  const idx = findPlayingWordIndex(video.currentTime || 0);
+  if (idx === playingWordIdx) return;
+  if (playingWordIdx >= 0) {
+    const prev = el.querySelector(`button.word[data-i="${playingWordIdx}"]`);
+    if (prev) prev.classList.remove('playing');
+  }
+  playingWordIdx = idx;
+  if (idx < 0) return;
+  const cur = el.querySelector(`button.word[data-i="${idx}"]`);
+  if (!cur) return;
+  cur.classList.add('playing');
+  // Avoid fighting the user while they are selecting an enroll range
+  if (voiceSel.a != null && voiceSel.b == null) return;
+  const box = el.getBoundingClientRect();
+  const wr = cur.getBoundingClientRect();
+  if (wr.top < box.top || wr.bottom > box.bottom) {
+    cur.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function renderTranscriptWords(){
+  const el = document.getElementById('transcriptWords');
+  const hint = document.getElementById('transcriptHint');
+  playingWordIdx = -1;
+  if (!transcriptWords.length) {
+    el.innerHTML = '<span class="empty">No spoken text in this time range.</span>';
+    hint.textContent = 'Widen Start/End or pick another hit, then Enroll voice span can still use the numeric span.';
+    return;
+  }
+  const range = selectedVoiceRange();
+  el.innerHTML = transcriptWords.map((w, i) => {
+    const on = range && i >= range.i0 && i <= range.i1;
+    return `<button type="button" class="word${on ? ' selected' : ''}" data-i="${i}">${escapeHtml(w.word)}</button>`;
+  }).join(' ');
+  el.querySelectorAll('button.word').forEach(btn => {
+    btn.onclick = () => {
+      const i = Number(btn.getAttribute('data-i'));
+      if (voiceSel.a == null || (voiceSel.a != null && voiceSel.b != null)) {
+        voiceSel = { a: i, b: null };
+      } else {
+        voiceSel.b = i;
+      }
+      renderTranscriptWords();
+      const r = selectedVoiceRange();
+      if (r) {
+        startSec.value = Number(r.start_sec).toFixed(1);
+        endSec.value = Number(r.end_sec).toFixed(1);
+        hint.textContent = `Selected “${r.text}” · ${fmt(r.start_sec)} → ${fmt(r.end_sec)}. Pick Speaker (or New speaker), then Enroll voice.`;
+        try { video.currentTime = r.start_sec; } catch (e) {}
+      }
+      updateVoiceButton();
+      syncTranscriptToVideo();
+    };
+  });
+  if (range) {
+    hint.textContent = `Selected “${range.text}” · ${fmt(range.start_sec)} → ${fmt(range.end_sec)}. Pick Speaker (or New speaker), then Enroll voice.`;
+  } else if (shouldLoadFullTranscript()) {
+    hint.textContent = 'Full video transcript · playing word follows the video · click two words to enroll a voice span';
+  } else {
+    hint.textContent = '1) Click a word, then another to highlight · 2) Speaker or New speaker · 3) Enroll voice span';
+  }
+  updateVoiceButton();
+  syncTranscriptToVideo();
+}
+
+async function loadTranscriptForSelection(){
+  voiceSel = { a: null, b: null };
+  transcriptWords = [];
+  playingWordIdx = -1;
+  const el = document.getElementById('transcriptWords');
+  if (!selected) {
+    el.innerHTML = '<span class="empty">Select a hit to load transcript words.</span>';
+    return;
+  }
+  const s = Number(startSec.value || selected.start_sec || 0);
+  const e = Number(endSec.value || selected.end_sec || s + 1);
+  const full = shouldLoadFullTranscript();
+  const url = full
+    ? `/api/videos/${selected.video_id}/transcript?start_sec=0`
+    : `/api/videos/${selected.video_id}/transcript?start_sec=${encodeURIComponent(Math.max(0, s - 8))}&end_sec=${encodeURIComponent(e + 8)}`;
+  el.innerHTML = `<span class="empty">${full ? 'Loading full transcript…' : 'Loading spoken text…'}</span>`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    el.innerHTML = '<span class="empty">Could not load transcript.</span>';
+    return;
+  }
+  const data = await res.json();
+  transcriptWords = data.words || [];
+  renderTranscriptWords();
+}
+
+function fitVideoToWrap(){
+  const wrap = video.parentElement;
+  const note = document.getElementById('videoFitNote');
+  const proxyBtn = document.getElementById('browserProxyBtn');
+  if (!wrap) return;
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  if (!vw || !vh) {
+    if (note && selected) {
+      note.textContent = usingBrowserProxy
+        ? 'Browser copy loaded but still no frames — check ffmpeg output / Open in system player'
+        : 'Waiting for video frame size… (if this sticks, Chrome can’t decode this codec — auto-converting to H.264)';
+    }
+    if (proxyBtn && selected) proxyBtn.hidden = false;
+    return;
+  }
+  // Use wrap width; height budget is viewport-based (wrap may not have height yet).
+  const maxW = Math.max(160, wrap.clientWidth || wrap.parentElement?.clientWidth || 640);
+  const maxH = Math.max(120, Math.floor(window.innerHeight * 0.56));
+  const scale = Math.min(maxW / vw, maxH / vh);
+  const w = Math.max(1, Math.round(vw * scale));
+  const h = Math.max(1, Math.round(vh * scale));
+  video.style.width = `${w}px`;
+  video.style.height = `${h}px`;
+  if (note) {
+    note.textContent = `Frame ${vw}×${vh} · shown ${w}×${h}${usingBrowserProxy ? ' · H.264 browser copy' : ''}`;
+  }
+  if (proxyBtn) {
+    proxyBtn.hidden = usingBrowserProxy;
+  }
+}
+
+function syncOverlaySize(){
+  fitVideoToWrap();
+  // Pin overlay to the actual <video> box, leaving the bottom control bar clickable.
+  const wrap = video.parentElement;
+  if (!wrap) return;
+  const vr = video.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  const controlsPad = 44; // native video controls strip
+  const w = Math.max(1, Math.round(vr.width));
+  const h = Math.max(1, Math.round(vr.height - (boxMode ? controlsPad : 0)));
+  const left = Math.round(vr.left - wr.left);
+  const top = Math.round(vr.top - wr.top);
+  overlay.style.left = `${left}px`;
+  overlay.style.top = `${top}px`;
+  overlay.style.width = `${w}px`;
+  overlay.style.height = `${h}px`;
+  if (overlay.width !== w) overlay.width = w;
+  if (overlay.height !== h) overlay.height = h;
+  drawBox();
+}
+
+function exitBoxMode(msg){
+  boxMode = false;
+  box = null;
+  drawing = false;
+  try {
+    if (overlay) {
+      overlay.classList.remove('boxing');
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+    }
+  } catch (e) { /* ignore */ }
+  const saveBtn = document.getElementById('saveFaceBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  const preview = document.getElementById('cropPreview');
+  if (preview) preview.classList.remove('on');
+  try { drawBox(); } catch (e) { /* ignore */ }
+  if (msg && prov) prov.textContent = msg;
+}
+
+function drawBox(){
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, overlay.width || 0, overlay.height || 0);
+  // Dim letterbox so the drawable video area is obvious
+  const content = videoContentRect();
+  if (content && boxMode) {
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(0, 0, overlay.width, overlay.height);
+    ctx.clearRect(content.offsetX, content.offsetY, content.drawW, content.drawH);
+    ctx.strokeStyle = 'rgba(62,207,176,.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(content.offsetX + 0.5, content.offsetY + 0.5, content.drawW - 1, content.drawH - 1);
+  }
+  if (!box) return;
+  const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1);
+  const w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
+  ctx.strokeStyle = '#3ecfb0';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+}
+
+/**
+ * Where the actual video pixels are drawn inside the <video> element.
+ * object-fit:contain (browser default when we don't stretch) letterboxes;
+ * we also used to force aspect-ratio:16/9 which made non-16:9 clips worse.
+ * Map overlay box → this content rect → source video pixels.
+ */
+function videoContentRect(){
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  const ew = overlay.width || video.clientWidth || 0;
+  const eh = overlay.height || video.clientHeight || 0;
+  if (!vw || !vh || !ew || !eh) return null;
+  const videoRatio = vw / vh;
+  const elemRatio = ew / eh;
+  let drawW, drawH, offsetX, offsetY;
+  if (videoRatio > elemRatio) {
+    // fit width → letterbox top/bottom
+    drawW = ew;
+    drawH = ew / videoRatio;
+    offsetX = 0;
+    offsetY = (eh - drawH) / 2;
+  } else {
+    // fit height → pillarbox left/right
+    drawH = eh;
+    drawW = eh * videoRatio;
+    offsetX = (ew - drawW) / 2;
+    offsetY = 0;
+  }
+  return { vw, vh, ew, eh, drawW, drawH, offsetX, offsetY };
+}
+
+function overlayEventToCanvas(e){
+  const r = overlay.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (overlay.width / Math.max(1, r.width));
+  const y = (e.clientY - r.top) * (overlay.height / Math.max(1, r.height));
+  return { x, y };
+}
+
+/** Map overlay canvas box → integer source pixels in the video frame. */
+function boxToVideoPixels(b){
+  const content = videoContentRect();
+  if (!content) throw new Error('Video not ready — wait for playback then box again');
+  const { vw, vh, drawW, drawH, offsetX, offsetY } = content;
+  const x0 = Math.min(b.x0, b.x1);
+  const y0 = Math.min(b.y0, b.y1);
+  const x1 = Math.max(b.x0, b.x1);
+  const y1 = Math.max(b.y0, b.y1);
+
+  // Convert overlay coords into content-rect coords, then into video pixels
+  let sx0 = ((x0 - offsetX) / drawW) * vw;
+  let sy0 = ((y0 - offsetY) / drawH) * vh;
+  let sx1 = ((x1 - offsetX) / drawW) * vw;
+  let sy1 = ((y1 - offsetY) / drawH) * vh;
+
+  // Clamp to frame
+  sx0 = Math.max(0, Math.min(vw, sx0));
+  sy0 = Math.max(0, Math.min(vh, sy0));
+  sx1 = Math.max(0, Math.min(vw, sx1));
+  sy1 = Math.max(0, Math.min(vh, sy1));
+
+  const x = Math.floor(Math.min(sx0, sx1));
+  const y = Math.floor(Math.min(sy0, sy1));
+  const w = Math.ceil(Math.abs(sx1 - sx0));
+  const h = Math.ceil(Math.abs(sy1 - sy0));
+  if (w < 8 || h < 8) {
+    throw new Error('Face box is too small or mostly in the black letterbox — drag over the face in the picture');
+  }
+  return { x, y, w, h, vw, vh };
+}
+
+function updateCropPreview(){
+  const panel = document.getElementById('cropPreview');
+  const img = document.getElementById('cropPreviewImg');
+  const meta = document.getElementById('cropPreviewMeta');
+  if (!boxMode || !box) {
+    panel.classList.remove('on');
+    return;
+  }
+  try {
+    const dataUrl = captureCropJpeg();
+    const pix = boxToVideoPixels(box);
+    img.src = dataUrl;
+    meta.textContent = `Crop preview ${pix.w}×${pix.h}px — this is exactly what will be saved.`;
+    panel.classList.add('on');
+  } catch (err) {
+    panel.classList.remove('on');
+    meta.textContent = err.message || 'Invalid box';
+  }
+}
+
+document.getElementById('boxFaceBtn').onclick = () => {
+  if (boxMode) {
+    exitBoxMode('Box face off — player controls work again.');
+    return;
+  }
+  boxMode = true;
+  box = null;
+  overlay.classList.add('boxing');
+  overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
+  document.getElementById('saveFaceBtn').disabled = true;
+  document.getElementById('cropPreview').classList.remove('on');
+  try { video.pause(); } catch (e) {}
+  syncOverlaySize();
+  drawBox();
+  prov.textContent = 'Drag a box around the face. Check the crop preview, then Enroll face. (Click Box face again to cancel.)';
+};
+
+overlay.addEventListener('mousedown', e => {
+  if (!boxMode) return;
+  e.preventDefault();
+  drawing = true;
+  const p = overlayEventToCanvas(e);
+  box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  drawBox();
+});
+overlay.addEventListener('mousemove', e => {
+  if (!drawing || !box) return;
+  const p = overlayEventToCanvas(e);
+  box.x1 = p.x; box.y1 = p.y;
+  drawBox();
+});
+window.addEventListener('mouseup', () => {
+  if (!drawing) return;
+  drawing = false;
+  let ok = false;
+  try {
+    if (box) {
+      boxToVideoPixels(box); // validate mapping
+      ok = true;
+    }
+  } catch (err) {
+    showErr(err.message);
+    ok = false;
+  }
+  document.getElementById('saveFaceBtn').disabled = !ok;
+  updateCropPreview();
+});
+
+function captureFrameJpeg(){
+  if (!video.videoWidth) throw new Error('Video frame not ready');
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.92);
+}
+
+function captureCropJpeg(){
+  if (!box) throw new Error('No face box');
+  if (!video.videoWidth) throw new Error('Video frame not ready');
+  const { x, y, w, h } = boxToVideoPixels(box);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  c.getContext('2d').drawImage(video, x, y, w, h, 0, 0, w, h);
+  return c.toDataURL('image/jpeg', 0.92);
+}
+function requireSelection(){ if (!selected) throw new Error('Select a hit/video first'); }
+
+document.getElementById('markPlaceBtn').onclick = async () => {
+  try {
+    requireSelection();
+    const place = document.getElementById('placeName').value.trim();
+    if (!place) throw new Error('Enter a place name');
+    const body = {
+      video_id: selected.video_id,
+      start_sec: +startSec.value, end_sec: +endSec.value,
+      place_name: place, use_video_gps: true, save_frame: true,
+      frame_jpeg_base64: captureFrameJpeg()
+    };
+    const res = await fetch('/api/annotations/place', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if (!res.ok) throw new Error(data.detail || res.statusText);
+    prov.innerHTML = `Place marked · annotation #${data.annotation_id} · confidence <strong>1.00</strong> · exemplar saved (no auto place engine).`;
+    await refreshPeoplePlaces();
+  } catch (e) { showErr(e.message); }
+};
+
+document.getElementById('saveFaceBtn').onclick = async () => {
+  try {
+    requireSelection();
+    const newName = document.getElementById('newPerson').value.trim();
+    const body = {
+      video_id: selected.video_id,
+      start_sec: +startSec.value,
+      end_sec: +endSec.value,
+      crop_jpeg_base64: captureCropJpeg(),
+      create_person: !!newName,
+      person_name: newName || undefined,
+      person_id: newName ? undefined : (+personSelect.value || null)
+    };
+    if (!body.create_person && !body.person_id) throw new Error('Pick a person or enter a new name');
+    const res = await fetch('/api/annotations/face', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
+    document.getElementById('newPerson').value = '';
+    // Keep both dropdowns on the enrolled person and reload gallery (cache-busted URLs)
+    if (data.person_id) {
+      lastFaceQueryId = String(data.person_id);
+      querySelect.value = String(data.person_id);
+      personSelect.value = String(data.person_id);
+    }
+    await refreshPeoplePlaces(data.person_name);
+    await loadGalleryForSelectedPerson();
+    exitBoxMode();
+    updateEnrollButton();
+    prov.innerHTML = `Face enrolled as <strong>${escapeHtml(data.person_name)}</strong> · conf <strong>1.00</strong> · saved <strong>${escapeHtml(data.exemplar_filename || '')}</strong>. Player controls unlocked.`;
+  } catch (e) {
+    showErr(e.message);
+    // Always unlock player controls even if enroll failed
+    exitBoxMode('Enroll failed — box mode cleared so you can use player controls.');
+  }
+};
+
+document.getElementById('voiceBtn').onclick = async () => {
+  try {
+    requireSelection();
+    const voiceSelect = document.getElementById('voicePersonSelect');
+    let newName = document.getElementById('voiceNewPerson').value.trim();
+    const range = selectedVoiceRange();
+    if (!range) {
+      const ok = confirm('No words highlighted. Enroll the numeric Start/End span anyway?');
+      if (!ok) return;
+    }
+    if (!newName && !voiceSelect.value) {
+      newName = (prompt('Who is speaking? Type a new person name') || '').trim();
+      if (!newName) throw new Error('Enter a New speaker name or pick Speaker');
+      document.getElementById('voiceNewPerson').value = newName;
+    }
+    const body = {
+      video_id: selected.video_id,
+      start_sec: range ? range.start_sec : +startSec.value,
+      end_sec: range ? range.end_sec : +endSec.value,
+      person_id: newName ? undefined : (+voiceSelect.value || null),
+      person_name: newName || undefined,
+      selected_text: range ? range.text : undefined
+    };
+    const res = await fetch('/api/annotations/voice', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+    const who = data.person_name || newName || 'speaker';
+    const quote = range ? ` “${escapeHtml(range.text)}”` : '';
+    prov.innerHTML = `Voice enrolled as <strong>${escapeHtml(who)}</strong>${quote} · annotation #${data.annotation_id} · conf <strong>1.00</strong>.`;
+    document.getElementById('transcriptHint').textContent = `Saved${quote} → ${who}`;
+    document.getElementById('voiceNewPerson').value = '';
+    showErr('');
+    await refreshPeoplePlaces(who);
+    if (data.person_id) {
+      voiceSelect.value = String(data.person_id);
+      personSelect.value = String(data.person_id);
+    }
+    updateVoiceButton();
+  } catch (e) {
+    showErr(e.message);
+    prov.textContent = e.message;
+  }
+};
+
+document.getElementById('voicePersonSelect').addEventListener('change', updateVoiceButton);
+document.getElementById('voiceNewPerson').addEventListener('input', updateVoiceButton);
+
+document.getElementById('dateBtn').onclick = async () => {
+  try {
+    requireSelection();
+    const dateField = document.getElementById('dateField');
+    let date_text = dateField.value.trim();
+    if (!date_text) {
+      date_text = prompt('Date / season label (e.g. 1998-12 or Christmas 1998)') || '';
+      date_text = date_text.trim();
+    }
+    if (!date_text) return;
+    const body = { video_id: selected.video_id, start_sec:+startSec.value, end_sec:+endSec.value, date_text };
+    const res = await fetch('/api/annotations/date', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if (!res.ok) throw new Error(JSON.stringify(data));
+    dateField.value = date_text;
+    document.getElementById('dateBtn').textContent = 'Change date';
+    document.getElementById('metaDateLine').innerHTML = `Date: <strong>${escapeHtml(date_text)}</strong> · owner mark`;
+    prov.innerHTML = `Date marked · conf <strong>1.00</strong> · “${escapeHtml(date_text)}”.`;
+  } catch (e) { showErr(e.message); }
+};
+
+document.getElementById('ocrBtn').onclick = async () => {
+  try {
+    requireSelection();
+    const text = prompt('OCR / visible text to confirm for this span');
+    if (!text) return;
+    const body = { video_id: selected.video_id, start_sec:+startSec.value, end_sec:+endSec.value, text };
+    const res = await fetch('/api/annotations/ocr', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const data = await res.json(); if (!res.ok) throw new Error(JSON.stringify(data));
+    prov.innerHTML = `OCR confirmed · conf <strong>1.00</strong>.`;
+  } catch (e) { showErr(e.message); }
+};
+
+document.getElementById('vlcBtn').onclick = async () => {
+  if (!selected) return;
+  try {
+    const res = await fetch(`/api/videos/${selected.video_id}/open-local`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not open file');
+    prov.textContent = `Opened in system player: ${data.path || selected.filename}`;
+  } catch (e) {
+    // Fallback: copy path for Explorer
+    const path = selected.path || '';
+    try { await navigator.clipboard.writeText(path); prov.textContent = `Open failed — path copied: ${path}`; }
+    catch { prompt('Video path', path); }
+    showErr(e.message);
+  }
+};
+
+document.getElementById('browserProxyBtn').onclick = () => {
+  ensureBrowserProxy({ auto: false }).catch(e => showErr(e.message));
+};
+
+async function refreshProcess(){
+  const panel = document.getElementById('processPanel');
+  const note = document.getElementById('processNote');
+  const steps = document.getElementById('processSteps');
+  const logEl = document.getElementById('processLog');
+  const btn = document.getElementById('addProcessBtn');
+  const res = await fetch('/api/process/status');
+  const st = await res.json();
+  const running = st && (st.status === 'queued' || st.status === 'running');
+  const active = st && st.status && st.status !== 'idle';
+  panel.hidden = !active;
+  btn.classList.toggle('learn-running', !!running);
+  btn.classList.toggle('secondary', !!running);
+  btn.disabled = !!running;
+  btn.textContent = running
+    ? `Processing… ${Math.round(st.progress_pct || 0)}%`
+    : 'Add & process videos';
+  if (!active) return;
+  note.textContent = `${st.status} · ${Math.round(st.progress_pct || 0)}% · ${st.message || st.note || ''}`;
+  steps.innerHTML = (st.steps || []).map(s => `
+    <div class="step"><span>${escapeHtml(s.label)}</span><span>${escapeHtml(s.status)}</span>
+      <div class="track"><div class="fill" style="width:${s.status==='done'?100:(s.progress_pct||0)}%"></div></div>
+    </div>`).join('');
+  const lines = st.log || [];
+  if (lines.length) {
+    logEl.hidden = false;
+    logEl.textContent = lines.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (running) {
+    if (!processTimer) processTimer = setInterval(() => refreshProcess().catch(()=>{}), 1000);
+  } else if (processTimer) {
+    clearInterval(processTimer); processTimer = null;
+    if (st.status === 'done') {
+      note.textContent = `${st.message || 'Done'} — click Load hits to refresh.`;
+    }
+  }
+}
+
+function uploadVideos(fileList){
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    [...fileList].forEach(f => fd.append('files', f, f.name));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/process/upload');
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      const pct = Math.round(100 * ev.loaded / ev.total);
+      document.getElementById('processNote').textContent = `Uploading from share/disk… ${pct}% (${ev.loaded} / ${ev.total} bytes)`;
+      document.getElementById('addProcessBtn').textContent = `Uploading… ${pct}%`;
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.detail || xhr.statusText || 'Upload failed'));
+    };
+    xhr.onerror = () => reject(new Error('Upload network error'));
+    xhr.send(fd);
+  });
+}
+
+document.getElementById('addProcessBtn').onclick = () => {
+  if (document.getElementById('addProcessBtn').disabled) return;
+  document.getElementById('videoFiles').click();
+};
+
+document.getElementById('videoFiles').addEventListener('change', async (ev) => {
+  const input = ev.target;
+  const files = input.files;
+  if (!files || !files.length) return;
+  const panel = document.getElementById('processPanel');
+  panel.hidden = false;
+  document.getElementById('processLog').hidden = true;
+  document.getElementById('processLog').textContent = '';
+  document.getElementById('processSteps').innerHTML = '';
+  document.getElementById('processNote').textContent = `Preparing ${files.length} video(s) from picker (P: share OK)…`;
+  const btn = document.getElementById('addProcessBtn');
+  btn.disabled = true;
+  btn.classList.add('learn-running', 'secondary');
+  try {
+    const uploaded = await uploadVideos(files);
+    document.getElementById('processNote').textContent =
+      `Saved ${uploaded.count} file(s) into sample\\ — starting process_videos…`;
+    const res = await fetch('/api/process/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ saved: uploaded.saved || [] })
+    });
+    const st = await res.json();
+    if (!res.ok) throw new Error(st.detail || 'Could not start process_videos');
+    await refreshProcess();
+  } catch (e) {
+    showErr(e.message);
+    document.getElementById('processNote').textContent = e.message;
+    btn.disabled = false;
+    btn.classList.remove('learn-running', 'secondary');
+    btn.textContent = 'Add & process videos';
+  } finally {
+    input.value = '';
+  }
+});
+
+async function refreshLearn(){
+  const res = await fetch('/api/learn/status'); const st = await res.json();
+  const note = document.getElementById('learnNote');
+  const steps = document.getElementById('learnSteps');
+  const learnBtn = document.getElementById('learnBtn');
+  const running = st && (st.status === 'queued' || st.status === 'running');
+  // Idle/done: green like Load hits. While running: white.
+  learnBtn.classList.toggle('learn-running', !!running);
+  learnBtn.classList.toggle('secondary', !!running);
+  learnBtn.disabled = !!running;
+  learnBtn.textContent = running ? `Learning… ${Math.round(st.progress_pct || 0)}%` : 'Learn from annotations';
+  if (!st || st.status === 'idle') { note.textContent = 'Idle · background jobs let you keep reviewing.'; steps.innerHTML = ''; return; }
+  note.textContent = `${st.status} · ${Math.round(st.progress_pct || 0)}% · ${st.message || st.note || ''}`;
+  steps.innerHTML = (st.steps || []).map(s => `
+    <div class="step"><span>${escapeHtml(s.label)}</span><span>${escapeHtml(s.status)}</span>
+      <div class="track"><div class="fill" style="width:${s.status==='done'?100:(s.progress_pct||0)}%"></div></div>
+    </div>`).join('');
+  if (running) {
+    if (!learnTimer) learnTimer = setInterval(refreshLearn, 800);
+  } else if (learnTimer) { clearInterval(learnTimer); learnTimer = null; }
+}
+
+document.getElementById('learnBtn').onclick = async () => {
+  const res = await fetch('/api/learn/start', {method:'POST'});
+  await res.json(); refreshLearn();
+};
+
+document.getElementById('loadBtn').onclick = () => loadHits().catch(e => showErr(e.message));
+querySelect.addEventListener('change', () => {
+  if (modeEl.value === 'faces') {
+    lastFaceQueryId = querySelect.value;
+    personSelect.value = querySelect.value;
+    updateEnrollButton();
+    loadGalleryForSelectedPerson();
+  } else if (modeEl.value === 'places') {
+    lastPlaceQueryName = querySelect.value;
+  }
+  loadHits().catch(e => showErr(e.message));
+});
+queryText.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadHits().catch(err => showErr(err.message));
+});
+personSelect.addEventListener('change', () => {
+  updateEnrollButton();
+  loadGalleryForSelectedPerson().catch(e => showErr(e.message));
+});
+document.getElementById('newPerson').addEventListener('input', updateEnrollButton);
+startSec.addEventListener('change', () => {
+  if (selected) loadTranscriptForSelection().catch(e => showErr(e.message));
+});
+endSec.addEventListener('change', () => {
+  if (selected) loadTranscriptForSelection().catch(e => showErr(e.message));
+});
+modeEl.addEventListener('change', () => {
+  syncMode(); // rebuild query dropdown options for this mode
+  loadHits().catch(e => showErr(e.message));
+});
+video.addEventListener('loadedmetadata', syncOverlaySize);
+video.addEventListener('loadeddata', syncOverlaySize);
+video.addEventListener('resize', syncOverlaySize);
+video.addEventListener('timeupdate', syncTranscriptToVideo);
+video.addEventListener('seeked', syncTranscriptToVideo);
+window.addEventListener('resize', syncOverlaySize);
+
+refreshPeoplePlaces().then(() => loadHits()).catch(e => showErr(e.message));
+refreshLearn();
+refreshProcess().catch(() => {});
+</script>
+</body>
+</html>
