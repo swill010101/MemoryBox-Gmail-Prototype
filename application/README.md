@@ -27,15 +27,27 @@ Tailscale: open `http://<media-server-tailscale-ip>:8780` (Tom only).
 
 | Nav | Role |
 |-----|------|
-| **Ask** | Conversation front door (proxies Desktop Ask API when configured; local memories always searchable) |
-| **Review** | HVRT teach/learn (iframe → `:8788` until fully mounted) |
-| **Library** | Timeline/browse across local memories (+ Ask evidence when wired) |
+| **Ask** | Searches **memorybox.db** + **hvrt.sqlite** (+ Immich when configured) |
+| **Review** | HVRT teach/learn (iframe → `:8788`) |
+| **Library** | Timeline/browse across POC archives + versioned memories |
 
-## Teach loop (shipped in shell)
+Teach stays **hidden** until you select evidence and click **Teach about this**.
 
-- **Archive Updated** — quiet toast after save/edit
-- **Edit Memory** — edit transcript/story text → **new version** → latest is searchable (audio re-record deferred)
+## POC databases
 
-## Import still needed
+Defaults (override with env):
 
-Email/text Ask tree from Desktop (`application/api` historian) is not in git yet. Set `MBD_ASK_ORIGIN` when that service is up to proxy `/api/ask`. Until then Ask searches **versioned local memories**.
+| DB | Default path |
+|----|----------------|
+| Email/SMS/calendar/photos cache | `database/memorybox.db` |
+| HVRT faces/transcripts | `hvrt/database/hvrt.sqlite` |
+| Versioned teach memories | `database/mbd_demonstrator.sqlite` |
+
+On Media-Server / Desktop these should already exist from the two POCs. If Ask says databases not found, set:
+
+```powershell
+$env:MBD_MEMORYBOX_DB="C:\memorybox\database\memorybox.db"
+$env:MBD_HVRT_DB="C:\memorybox\hvrt\database\hvrt.sqlite"
+```
+
+Immich: copy `config/immich.env.example` → `config/immich.env` and fill key/URL.
