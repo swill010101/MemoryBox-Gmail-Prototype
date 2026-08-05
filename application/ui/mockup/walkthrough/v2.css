@@ -1,0 +1,159 @@
+/* Experience Walkthrough v2 — light home aesthetic, not dark museum */
+
+:root {
+  --bg: #f3f1ec;
+  --paper: #fffcf8;
+  --ink: #1c1c1e;
+  --mute: #6e6e73;
+  --line: #e5e2db;
+  --accent: #3a5f7a;
+  --accent-soft: #d7e4ee;
+  --wood: #c4a882;
+  --ok: #2f6b56;
+  --font-display: "Source Serif 4", Georgia, serif;
+  --font-body: "Figtree", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background:
+    radial-gradient(900px 500px at 10% -10%, #e8eef3 0%, transparent 55%),
+    radial-gradient(700px 400px at 100% 0%, #f0e6d8 0%, transparent 50%),
+    var(--bg);
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.bar {
+  display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
+  justify-content: space-between; align-items: baseline;
+  padding: 1rem 1.5rem;
+  background: rgba(255,252,248,0.86);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 20;
+}
+.brand { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; }
+.meta { font-size: 0.78rem; color: var(--mute); max-width: 38rem; }
+.bar nav { display: flex; gap: 0.85rem; font-size: 0.78rem; flex-wrap: wrap; }
+.bar nav a { color: var(--mute); }
+.bar nav a[aria-current="page"] { color: var(--accent); font-weight: 600; }
+
+.intro {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 1rem;
+}
+.eyebrow {
+  font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--mute); margin: 0 0 0.5rem;
+}
+.intro h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  margin: 0 0 0.6rem;
+}
+.intro p { color: var(--mute); line-height: 1.5; margin: 0 0 0.65rem; }
+.test-note {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--wood);
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  color: var(--ink) !important;
+  font-size: 0.9rem;
+}
+
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 1rem; }
+button {
+  font: inherit; font-weight: 600; font-size: 0.85rem;
+  padding: 0.55rem 0.95rem; border-radius: 999px; border: 0;
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+.timer { font-size: 0.8rem; color: var(--mute); margin-left: 0.35rem; }
+
+.player { max-width: 1100px; margin: 0 auto; padding: 0.5rem 1.25rem 0; }
+.frame {
+  background: #111;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(60,50,40,0.18);
+  aspect-ratio: 16/9;
+}
+.frame img { width: 100%; height: 100%; object-fit: cover; display: block; background: #ddd; }
+.progress {
+  height: 3px; background: var(--line); border-radius: 2px; margin-top: 0.65rem; overflow: hidden;
+}
+.progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s linear; }
+
+.cause {
+  max-width: 1100px;
+  margin: 1rem auto 0;
+  padding: 0 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.65rem;
+}
+@media (max-width: 900px) { .cause { grid-template-columns: 1fr 1fr; } }
+.cause > div {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+}
+.cause span {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+.cause p { margin: 0; font-size: 0.88rem; line-height: 1.4; color: var(--ink); }
+
+.input-tag {
+  max-width: 1100px;
+  margin: 0.75rem auto 0;
+  padding: 0 1.25rem;
+  font-size: 0.8rem;
+  color: var(--mute);
+}
+.input-tag strong { color: var(--ok); font-weight: 600; }
+
+.strip {
+  max-width: 1100px;
+  margin: 1.25rem auto 0;
+  padding: 0 1.25rem 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.45rem;
+}
+.strip button {
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: #fff;
+}
+.strip button.is-on { border-color: var(--accent); }
+.strip img { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; }
+.strip span {
+  display: block; font-size: 0.65rem; padding: 0.25rem 0.35rem; color: var(--mute);
+  font-weight: 500; text-align: left;
+}
+
+.foot {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3.5rem;
+  color: var(--mute);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
