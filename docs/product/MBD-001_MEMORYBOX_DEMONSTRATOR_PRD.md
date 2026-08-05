@@ -1,6 +1,6 @@
 # MBD-001 — MemoryBox Demonstrator PRD
 
-**Status:** Draft v2 — awaiting Tom sign-off (do not build until Approved)  
+**Status:** Approved (Tom) — implement · 2026-08-05  
 **ID:** MBD-001  
 **Owner:** Tom Will (sole demonstrator user; multi-user deferred)  
 **Charter:** Integrate the existing HVRT POC and email/text search POC into a single coherent application. Add only the minimum new capabilities required to demonstrate the MemoryBox experience. Goal = **validation of the product experience**, not completion of the product. Host on **Media-Server**, reachable outside the LAN via **Tailscale** (Tom only).
@@ -270,31 +270,14 @@ Not a fixed narrative—checklist that both consoles work:
 5. **Tailscale port** — Preferred listen port.
 6. **Import path** — Exact Desktop Ask folders to copy into git.
 
-### One confirm (please answer)
-**A.** For Edit Memory on a voice note, is **editing the transcript/story text** enough for the investor demo, or must **re-record audio** also be in v1?  
-*(Recommendation: text edit + versioning in v1; re-record audio as v1.1 if time—both still version, never overwrite.)*
+### Confirm A (locked 2026-08-05)
+**Edit Memory (voice) v1 = edit transcript/story text only.** Saving creates a **new version**; that version is what Ask/Library **search**. Prior versions retained in history. Re-record audio deferred. Never silent overwrite.
 
----
+### Still open (non-blocking; resolve during import/hosting)
+1. **Qdrant location** — Remain on FlightSim, or move/replicate beside the app on Media-Server?
+2. **Single port** — One listen port (e.g. 8780) vs two internal ports behind one shell origin.
+3. **People / versions storage** — New SQLite on Media-Server vs tables inside `memorybox.db`. *(Demonstrator v1 uses `database/mbd_demonstrator.sqlite` for memories/versions.)*
+4. **Artifact media** — Box on Immich stills only for v1, or also HVRT video frames?
+5. **Tailscale port** — Preferred listen port (default **8780**).
+6. **Import path** — Exact Desktop Ask folders to copy into git *(required for full email/text Ask inside the shell)*.
 
-## 11. Re-assessment
-
-| Risk | Mitigation |
-|------|------------|
-| Scope creep from “full version control product” | Cap at version list + latest cite + restore; no collaborative branching |
-| Voice PRD “as-is” conflicted with edit | Explicitly **extend** parked PRD in §3.3 |
-| Quiet toast easy to miss in demo | Use calm, readable Archive Updated; call it out once in the validation script |
-| Search stale after edit | Build step must re-index **latest** only |
-
-**Verdict:** With §3 teach loop added and defaults above, the PRD is **coherent and demo-ready**. Not “good to go” for build until Tom **Approves** (and optionally answers confirm **A**).
-
----
-
-## 12. Sign-off
-
-| Role | Decision |
-|------|----------|
-| Tom | Approve / request changes / defer |
-
-**Approval means:** implement MBD-001 per this PRD (build plan order), creating implementation branches as needed; no silent scope expansion into Out list.
-
-**Status after approval:** change header to `Approved (Tom) — implement` and date it.

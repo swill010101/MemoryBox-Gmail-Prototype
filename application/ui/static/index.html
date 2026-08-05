@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/shell.css" />
+</head>
+<body>
+  <div id="archiveToast" class="archive-toast" hidden role="status" aria-live="polite">Archive Updated</div>
+
+  <header class="site-bar">
+    <div>
+      <div class="brand">MemoryBox</div>
+      <div class="meta">Demonstrator · Ask · Review · Library · build mbd-001-shell-v1</div>
+    </div>
+    <nav class="site-nav" aria-label="Consoles">
+      <button type="button" data-view="ask" class="nav-btn is-active">Ask</button>
+      <button type="button" data-view="review" class="nav-btn">Review</button>
+      <button type="button" data-view="library" class="nav-btn">Library</button>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <!-- ASK -->
+    <section id="view-ask" class="view is-active" aria-label="Ask">
+      <p class="screen-label">Guided exploration</p>
+      <h1 class="screen-title">What would you like to explore?</h1>
+      <p class="screen-thesis">Conversation is the front door. Evidence stays close. Teaching grows the archive.</p>
+
+      <div class="device">
+        <div class="device-top">
+          <span class="mode">Ask</span>
+          <span id="askHint">Local memories · email/text when Ask POC is connected</span>
+        </div>
+        <div class="device-body">
+          <p class="brand-mark">MemoryBox</p>
+          <form id="askForm" class="conversation">
+            <input id="askInput" type="text" placeholder="Ask anything about your family…" autocomplete="off" />
+            <button type="submit">Explore</button>
+          </form>
+          <div class="hints" aria-label="Suggestions">
+            <button type="button" class="hint" data-q="pocket watch">pocket watch</button>
+            <button type="button" class="hint" data-q="Grandpa">Grandpa</button>
+            <button type="button" class="hint" data-q="Christmas">Christmas</button>
+          </div>
+          <div id="askAnswer" class="narrative" hidden></div>
+          <div id="askEvidence" class="evidence-list" hidden></div>
+        </div>
+      </div>
+
+      <div class="teach-panel device">
+        <div class="device-top"><span class="mode">Teach</span><span>Voice story (text) · Edit Memory versions</span></div>
+        <div class="device-body teach-grid">
+          <label>Title
+            <input id="memTitle" type="text" placeholder="Pocket watch" />
+          </label>
+          <label class="grow">Story / transcript
+            <textarea id="memBody" rows="4" placeholder="Record later — for now, type the story you would speak…"></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" id="saveMemoryBtn" class="primary">Save memory</button>
+          </div>
+          <p class="quiet">Mic capture ships next; v1 teaches with text, then Edit Memory improves it without overwrite.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- REVIEW -->
+    <section id="view-review" class="view" aria-label="Review" hidden>
+      <p class="screen-label">Review · teach while watching</p>
+      <h1 class="screen-title">Video evidence</h1>
+      <p class="screen-thesis">HVRT console in shared chrome. Start Review on :8788 if the frame is empty.</p>
+      <div class="review-frame-wrap">
+        <iframe id="hvrtFrame" class="review-frame" title="HVRT Review" src="about:blank"></iframe>
+      </div>
+      <p class="quiet"><a id="hvrtOpen" href="http://127.0.0.1:8788" target="_blank" rel="noopener">Open Review in a tab</a></p>
+    </section>
+
+    <!-- LIBRARY -->
+    <section id="view-library" class="view" aria-label="Library" hidden>
+      <p class="screen-label">Library · timeline</p>
+      <h1 class="screen-title">Archive</h1>
+      <p class="screen-thesis">Browse memories. Edit tomorrow’s improvement as a new version — never a silent overwrite.</p>
+      <div class="library-bar">
+        <input id="libSearch" type="search" placeholder="Search archive…" />
+        <button type="button" id="libRefresh">Refresh</button>
+      </div>
+      <ul id="libList" class="lib-list"></ul>
+
+      <dialog id="editDialog" class="edit-dialog">
+        <form method="dialog" id="editForm" class="device-body">
+          <h2 class="edit-title">Edit Memory</h2>
+          <p id="editMeta" class="quiet"></p>
+          <label class="grow">Current text (saving creates a new version)
+            <textarea id="editBody" rows="8" required></textarea>
+          </label>
+          <label>Edit note (optional)
+            <input id="editNote" type="text" placeholder="Clarified who gave him the watch" />
+          </label>
+          <div class="actions">
+            <button type="submit" value="save" class="primary">Save version</button>
+            <button type="button" id="editCancel" class="ghost">Cancel</button>
+          </div>
+          <div id="editHistory" class="history"></div>
+        </form>
+      </dialog>
+    </section>
+  </main>
+
+  <script src="/static/shell.js"></script>
+</body>
+</html>
