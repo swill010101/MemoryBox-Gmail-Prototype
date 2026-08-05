@@ -253,31 +253,46 @@ Not a fixed narrative—checklist that both consoles work:
 
 ## 10. Open questions
 
-### Resolved in v2 (with recommended defaults)
-| Topic | Default locked unless Tom overrides |
-|-------|-------------------------------------|
+### Locked
+| Topic | Decision |
+|-------|----------|
 | Archive Updated copy | Exact phrase **Archive Updated** |
 | Archive Updated scope | All successful owner teach commits listed in §3.1 |
-| Edit Memory scope (v1) | Voice notes + artifact labels/stories (not full HVRT span surgery UI) |
+| Edit Memory scope (v1) | Voice notes + artifact labels/stories |
+| Confirm A | **Text edit only** → new version → **latest searchable**; audio re-record deferred |
 | Ask cites | **Latest** version only by default |
-| History | List versions + open prior + **restore** (restore writes a new current version) |
+| History | Version list retained; restore can land as follow-on |
 
-### Still open (non-blocking for sign-off; resolve in build)
-1. **Qdrant location** — Remain on FlightSim, or move/replicate beside the app on Media-Server?
-2. **Single port** — One listen port (e.g. 8780) vs two internal ports behind one shell origin.
-3. **People / versions storage** — New SQLite on Media-Server vs tables inside `memorybox.db`.
-4. **Artifact media** — Box on Immich stills only for v1, or also HVRT video frames?
-5. **Tailscale port** — Preferred listen port.
-6. **Import path** — Exact Desktop Ask folders to copy into git.
+### Still open (resolve during import/hosting)
+1. **Qdrant location** — Remain on FlightSim, or move/replicate on Media-Server?
+2. **Single port** — Shell default **8780**; HVRT still **8788** until fully mounted.
+3. **People registry storage** — New SQLite vs inside `memorybox.db`.
+4. **Artifact media** — Immich stills only for v1, or also HVRT frames?
+5. **Import path** — Exact Desktop Ask folders to copy into git *(required for full email/text Ask)*.
 
-### Confirm A (locked 2026-08-05)
-**Edit Memory (voice) v1 = edit transcript/story text only.** Saving creates a **new version**; that version is what Ask/Library **search**. Prior versions retained in history. Re-record audio deferred. Never silent overwrite.
+---
 
-### Still open (non-blocking; resolve during import/hosting)
-1. **Qdrant location** — Remain on FlightSim, or move/replicate beside the app on Media-Server?
-2. **Single port** — One listen port (e.g. 8780) vs two internal ports behind one shell origin.
-3. **People / versions storage** — New SQLite on Media-Server vs tables inside `memorybox.db`. *(Demonstrator v1 uses `database/mbd_demonstrator.sqlite` for memories/versions.)*
-4. **Artifact media** — Box on Immich stills only for v1, or also HVRT video frames?
-5. **Tailscale port** — Preferred listen port (default **8780**).
-6. **Import path** — Exact Desktop Ask folders to copy into git *(required for full email/text Ask inside the shell)*.
+## 11. Implementation status (started 2026-08-05)
+
+| Step | Status |
+|------|--------|
+| PRD approved + Confirm A | Done |
+| Demonstrator package `application/` + curator shell Ask/Review/Library | Done (shell v1) |
+| Archive Updated toast | Done |
+| Edit Memory text versions + searchable latest | Done (`database/mbd_demonstrator.sqlite`) |
+| HVRT in Review iframe | Done (requires `:8788` running) |
+| Import Desktop Ask historian into git | **Blocked** — need Tom to sync Ask tree |
+| Shared people, Immich, artifact boxing, mic capture, always-on services | Next |
+
+Run: `python scripts/run_demonstrator.py` → `http://127.0.0.1:8780`
+
+---
+
+## 12. Sign-off
+
+| Role | Decision |
+|------|----------|
+| Tom | **Approved** 2026-08-05 — implement (Confirm A: text edit → searchable new version) |
+
+**Approval means:** implement MBD-001 per this PRD (build plan order); no silent scope expansion into Out list.
 
