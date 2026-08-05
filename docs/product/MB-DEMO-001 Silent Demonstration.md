@@ -46,6 +46,6 @@ After watching in silence: can a newcomer explain what MemoryBox is, what it is 
 
 ## Related
 
-- Rich panels: [MB-FW-001](MB-FW-001%20Feedback%20Walkthrough.md)
+- Rich panels / walkthrough: [MB-FW-001](MB-FW-001%20Feedback%20Walkthrough.md) · [Experience Walkthrough v2](../../application/ui/mockup/walkthrough/index.html)
 - Feeling boards: [MB-XB-001](MB-XB-001%20Experience%20Boards.md)
 - Philosophy: [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)

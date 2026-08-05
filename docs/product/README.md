@@ -73,6 +73,6 @@ MBKM-001 is canonized. MBDM-001 / MBX-A-003 should align with MBKM + [MB-RECONCI
 - MBUX reconcile (report): [MBX-A-001-RECONCILE-MBUX](../architecture/MBX-A-001-RECONCILE-MBUX.md)
 - Experience storyboards (philosophy validation): [MB-SB-001](MB-SB-001%20Memory%20Box%20Experience%20Storyboards.md)
 - Silent demonstration (~15 min, no narrator): [MB-DEMO-001](MB-DEMO-001%20Silent%20Demonstration.md) · [**play demo**](../../application/ui/mockup/demo/index.html)
-- Feedback walkthrough (shoppable story): [MB-FW-001](MB-FW-001%20Feedback%20Walkthrough.md) · [**rich media + video**](../../application/ui/mockup/walkthrough/rich.html) · [HTML panels](../../application/ui/mockup/walkthrough/index.html)
+- Experience Walkthrough v2.0 (show folks this): [MB-FW-001](MB-FW-001%20Feedback%20Walkthrough.md) · [**timed player + cause captions**](../../application/ui/mockup/walkthrough/index.html) · [video ~110s](../../application/ui/mockup/walkthrough/v2/MemoryBox-Walkthrough-v2.mp4)
 - Experience boards (feeling): [MB-XB-001](MB-XB-001%20Experience%20Boards.md) · [boards](../../application/ui/mockup/experience-boards/index.html)
 - Experience mockups (supporting actor, not final UI): [MB-EX-001](MB-EX-001%20Experience%20Mockups.md) · [Prototype 1 scenes](../../application/ui/mockup/prototype/index.html) · [gallery](../../application/ui/mockup/experience/index.html)
