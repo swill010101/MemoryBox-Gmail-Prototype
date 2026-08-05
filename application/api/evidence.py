@@ -10,7 +10,6 @@ import httpx
 
 from api import config
 
-
 def _connect_ro(path: Path) -> sqlite3.Connection | None:
     if not path.is_file():
         return None
@@ -501,9 +500,203 @@ def compose_answer(q: str, evidence: list[dict[str, Any]], sources: dict[str, An
     for e in evidence:
         m = e.get("modality") or e.get("type") or "other"
         by_mod[m] = by_mod.get(m, 0) + 1
-    parts = [f"Found {len(evidence)} piece(s) of evidence for “{q}”:"]
+    parts = [f"Found {len(evidence)} piece(s) of evidence for “{q}”. Open a card below for Tell me more."]
     for m, n in sorted(by_mod.items(), key=lambda x: -x[1]):
         parts.append(f"· {n} × {m}")
-    for e in evidence[:6]:
-        parts.append(f"• {e.get('title')}: {(e.get('snippet') or '')[:140]}")
     return "\n".join(parts)
+
+
+def get_email(message_id: int) -> dict[str, Any] | None:
+    conn = _connect_ro(config.MEMORYBOX_DB)
+    if not conn:
+        return None
+    try:
+        if "messages" not in _tables(conn):
+            return None
+        r = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        return {
+            "type": "email",
+            "id": message_id,
+            "title": d.get("subject") or "(no subject)",
+            "from_addr": d.get("from_addr"),
+            "to_addrs": d.get("to_addrs"),
+            "date_utc": d.get("date_utc"),
+            "body_text": d.get("body_text") or "",
+            "modality": "email",
+            "source": "memorybox.db",
+        }
+    finally:
+        conn.close()
+
+
+def get_sms(sms_id: int) -> dict[str, Any] | None:
+    conn = _connect_ro(config.MEMORYBOX_DB)
+    if not conn:
+        return None
+    try:
+        if "text_messages" not in _tables(conn):
+            return None
+        r = conn.execute("SELECT * FROM text_messages WHERE id=?", (sms_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        return {
+            "type": "sms",
+            "id": sms_id,
+            "title": f"Text · {d.get('sender') or d.get('chat_id') or 'chat'}",
+            "sender": d.get("sender"),
+            "timestamp": d.get("timestamp"),
+            "body": d.get("body") or "",
+            "modality": "sms",
+            "source": "memorybox.db",
+        }
+    finally:
+        conn.close()
+
+
+def get_hvrt_person(person_id: int) -> dict[str, Any] | None:
+    conn = _connect_ro(config.HVRT_DB)
+    if not conn:
+        return None
+    try:
+        tables = _tables(conn)
+        if "people" not in tables:
+            return None
+        p = conn.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
+        if not p:
+            return None
+        hits: list[dict[str, Any]] = []
+        if "face_appearances" in tables:
+            start_col = "start_sec"
+            cols = _cols(conn, "face_appearances")
+            if "start_sec" not in cols and "start_time" in cols:
+                start_col = "start_time"
+            end_col = "end_sec" if "end_sec" in cols else ("end_time" if "end_time" in cols else start_col)
+            try:
+                rows = conn.execute(
+                    f"""
+                    SELECT f.id, f.video_id, f.{start_col} AS start_sec, f.{end_col} AS end_sec,
+                           f.confidence, v.filename, v.path, v.duration_sec
+                    FROM face_appearances f
+                    JOIN videos v ON v.id = f.video_id
+                    WHERE f.person_id=?
+                    ORDER BY v.filename, f.{start_col}
+                    LIMIT 80
+                    """,
+                    (person_id,),
+                ).fetchall()
+                for r in rows:
+                    hits.append({
+                        "hit_id": int(r["id"]),
+                        "video_id": int(r["video_id"]),
+                        "filename": r["filename"],
+                        "start_sec": float(r["start_sec"] or 0),
+                        "end_sec": float(r["end_sec"] or r["start_sec"] or 0),
+                        "confidence": r["confidence"],
+                        "duration_sec": r["duration_sec"],
+                    })
+            except sqlite3.Error:
+                hits = []
+        return {
+            "type": "hvrt_person",
+            "id": person_id,
+            "title": p["name"],
+            "name": p["name"],
+            "hit_count": len(hits),
+            "hits": hits,
+            "modality": "video_face",
+            "source": "hvrt.sqlite",
+            "review_url": f"/review-embed?person_id={person_id}&person_name={p['name']}",
+        }
+    finally:
+        conn.close()
+
+
+def list_people(*, q: str | None = None, limit: int = 80) -> list[dict[str, Any]]:
+    """Unified people directory from HVRT + memorybox person_memory."""
+    q = (q or "").strip()
+    by_key: dict[str, dict[str, Any]] = {}
+
+    def add(name: str, **extra: Any) -> None:
+        key = " ".join(name.split()).casefold()
+        if not key:
+            return
+        if q and q.casefold() not in key and q.casefold() not in str(extra.get("snippet", "")).casefold():
+            return
+        cur = by_key.get(key)
+        if not cur:
+            by_key[key] = {
+                "name": name,
+                "sources": [],
+                "hvrt_person_id": extra.get("hvrt_person_id"),
+                "memorybox_person_id": extra.get("memorybox_person_id"),
+                "face_hits": extra.get("face_hits", 0),
+                "snippet": extra.get("snippet") or "",
+                "role": extra.get("role"),
+            }
+        else:
+            if extra.get("hvrt_person_id") and not cur.get("hvrt_person_id"):
+                cur["hvrt_person_id"] = extra["hvrt_person_id"]
+            if extra.get("memorybox_person_id") and not cur.get("memorybox_person_id"):
+                cur["memorybox_person_id"] = extra["memorybox_person_id"]
+            if extra.get("face_hits", 0) > (cur.get("face_hits") or 0):
+                cur["face_hits"] = extra["face_hits"]
+            if extra.get("role") and not cur.get("role"):
+                cur["role"] = extra["role"]
+            if extra.get("snippet"):
+                cur["snippet"] = extra["snippet"]
+        src = extra.get("source")
+        if src and src not in by_key[key]["sources"]:
+            by_key[key]["sources"].append(src)
+
+    # HVRT people
+    conn = _connect_ro(config.HVRT_DB)
+    if conn:
+        try:
+            if "people" in _tables(conn):
+                rows = conn.execute("SELECT id, name FROM people ORDER BY name").fetchall()
+                has_fa = "face_appearances" in _tables(conn)
+                for r in rows:
+                    n = 0
+                    if has_fa:
+                        try:
+                            n = int(conn.execute(
+                                "SELECT COUNT(*) FROM face_appearances WHERE person_id=?",
+                                (int(r["id"]),),
+                            ).fetchone()[0])
+                        except sqlite3.Error:
+                            n = 0
+                    add(
+                        r["name"],
+                        hvrt_person_id=int(r["id"]),
+                        face_hits=n,
+                        snippet=f"{n} face hit(s) in HVRT",
+                        source="hvrt.sqlite",
+                    )
+        finally:
+            conn.close()
+
+    # memorybox person hubs
+    conn = _connect_ro(config.MEMORYBOX_DB)
+    if conn:
+        try:
+            if "person_memory" in _tables(conn):
+                rows = conn.execute(
+                    "SELECT id, display_name, role, notes FROM person_memory ORDER BY display_name"
+                ).fetchall()
+                for r in rows:
+                    add(
+                        r["display_name"],
+                        memorybox_person_id=int(r["id"]),
+                        role=r["role"],
+                        snippet=(r["role"] or r["notes"] or "Person hub")[:160],
+                        source="memorybox.db",
+                    )
+        finally:
+            conn.close()
+
+    people = sorted(by_key.values(), key=lambda p: (p["name"] or "").casefold())
+    return people[:limit]

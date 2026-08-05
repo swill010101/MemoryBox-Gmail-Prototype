@@ -27,11 +27,11 @@ Tailscale: open `http://<media-server-tailscale-ip>:8780` (Tom only).
 
 | Nav | Role |
 |-----|------|
-| **Ask** | Searches **memorybox.db** + **hvrt.sqlite** (+ Immich when configured) |
-| **Review** | HVRT teach/learn (iframe → `:8788`) |
-| **Library** | Timeline/browse across POC archives + versioned memories |
+| **Ask** | Search POC archives; open evidence cards → **Tell me more** |
+| **Review** | Full HVRT tools **embedded** (box face, enroll, spoken text, Learn) — no second process required |
+| **People** | Select a person → face hits → Open in Review |
 
-Teach stays **hidden** until you select evidence and click **Teach about this**.
+Teach stays hidden until you open evidence and choose to add a note.
 
 ## POC databases
 

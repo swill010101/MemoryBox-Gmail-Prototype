@@ -22,9 +22,11 @@ sys.path.insert(0, str(ROOT / "application"))
 from api import config  # noqa: E402
 from api import memories as mem  # noqa: E402
 from api import evidence as ev  # noqa: E402
+from api import hvrt_embed  # noqa: E402
 
-app = FastAPI(title="MemoryBox Demonstrator", version="0.1.0")
+app = FastAPI(title="MemoryBox Demonstrator", version="0.2.0")
 _db = mem.init_db(config.DEMONSTRATOR_DB)
+_hvrt_ok = hvrt_embed.mount_hvrt(app)
 
 
 class MemoryCreateIn(BaseModel):
@@ -51,6 +53,7 @@ def health() -> dict[str, Any]:
         "ok": True,
         "service": "mbd-001",
         "hvrt_origin": config.HVRT_ORIGIN,
+        "hvrt_embed": hvrt_embed.hvrt_status(),
         "ask_origin": config.ASK_ORIGIN or None,
         "demonstrator_db": str(config.DEMONSTRATOR_DB),
         "sources": sources,
@@ -62,11 +65,14 @@ def health() -> dict[str, Any]:
 @app.get("/api/config")
 def client_config() -> dict[str, Any]:
     sources = ev.source_status()
+    hs = hvrt_embed.hvrt_status()
     return {
         "hvrt_origin": config.HVRT_ORIGIN,
+        "review_embed": "/review-embed",
+        "hvrt_mounted": hs.get("mounted"),
         "ask_proxy": bool(config.ASK_ORIGIN),
         "brand": "MemoryBox",
-        "build": "mbd-001-poc-ask-v2",
+        "build": "mbd-001-evidence-people-v3",
         "sources": sources,
     }
 
@@ -190,63 +196,60 @@ async def api_ask(body: AskIn) -> dict[str, Any]:
     }
 
 
+@app.get("/api/people")
+def api_people(q: str | None = None) -> dict[str, Any]:
+    people = ev.list_people(q=q, limit=100)
+    return {"count": len(people), "people": people, "sources": ev.source_status()}
+
+
+@app.get("/api/evidence/email/{message_id}")
+def api_evidence_email(message_id: int) -> dict[str, Any]:
+    item = ev.get_email(message_id)
+    if not item:
+        raise HTTPException(404, "email not found")
+    return item
+
+
+@app.get("/api/evidence/sms/{sms_id}")
+def api_evidence_sms(sms_id: int) -> dict[str, Any]:
+    item = ev.get_sms(sms_id)
+    if not item:
+        raise HTTPException(404, "sms not found")
+    return item
+
+
+@app.get("/api/evidence/hvrt/person/{person_id}")
+def api_evidence_hvrt_person(person_id: int) -> dict[str, Any]:
+    item = ev.get_hvrt_person(person_id)
+    if not item:
+        raise HTTPException(404, "person not found in HVRT")
+    return item
+
+
 @app.get("/api/library")
 def api_library(q: str | None = None) -> dict[str, Any]:
-    """Browseable timeline across POC DBs + versioned memories."""
-    sources = ev.source_status()
-    timeline: list[dict[str, Any]] = []
+    """Deprecated alias — use /api/people."""
+    return api_people(q=q)
 
-    if q and q.strip():
-        for e in ev.search_all(q.strip(), limit=50):
-            timeline.append({
-                "id": f"{e.get('type')}:{e.get('id')}",
-                "modality": e.get("modality") or e.get("type"),
-                "title": e.get("title"),
-                "snippet": e.get("snippet"),
-                "when": e.get("when"),
-                "source": e.get("source"),
-                "memory_id": e.get("id") if e.get("type") == "memory" else None,
-                "raw": e,
-            })
-        for m in mem.search_memories(_db, q.strip(), limit=30):
-            timeline.append({
-                "id": f"memory:{m['id']}",
-                "modality": m["kind"],
-                "title": m.get("title") or m["kind"],
-                "snippet": (m.get("body_text") or "")[:220],
-                "when": m.get("updated_at") or m.get("created_at"),
-                "version": m.get("current_version"),
-                "memory_id": m["id"],
-                "source": "mbd_demonstrator",
-            })
-    else:
-        for m in mem.list_memories(_db, limit=40):
-            timeline.append({
-                "id": f"memory:{m['id']}",
-                "modality": m["kind"],
-                "title": m.get("title") or m["kind"],
-                "snippet": (m.get("body_text") or "")[:220],
-                "when": m.get("updated_at") or m.get("created_at"),
-                "version": m.get("current_version"),
-                "memory_id": m["id"],
-                "source": "mbd_demonstrator",
-            })
-        for e in ev.list_hvrt_people(limit=40):
-            timeline.append({
-                "id": f"hvrt_person:{e['id']}",
-                "modality": "video_face",
-                "title": e["title"],
-                "snippet": e.get("snippet"),
-                "source": e.get("source"),
-                "raw": e,
-            })
 
-    return {
-        "count": len(timeline),
-        "items": timeline,
-        "sources": sources,
-        "note": "Searches memorybox.db + hvrt.sqlite (+ Immich when configured).",
-    }
+@app.get("/review-embed", response_class=HTMLResponse)
+def review_embed(person_id: str | None = None, person_name: str | None = None) -> HTMLResponse:
+    """HVRT review UI patched to call /hvrt/api (mounted in-process)."""
+    if not hvrt_embed.hvrt_status().get("mounted"):
+        err = hvrt_embed.hvrt_status().get("error") or "HVRT not mounted"
+        return HTMLResponse(
+            f"""<!doctype html><meta charset=utf-8>
+            <body style="font-family:system-ui;padding:2rem;background:#eef1ef">
+            <h1>Review unavailable</h1>
+            <p>{err}</p>
+            <p>Ensure <code>hvrt/</code> is present and <code>hvrt/database/hvrt.sqlite</code> exists.</p>
+            </body>""",
+            status_code=503,
+        )
+    return HTMLResponse(
+        hvrt_embed.patched_review_html(person_id=person_id, person_name=person_name),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 if config.UI_DIR.is_dir():
