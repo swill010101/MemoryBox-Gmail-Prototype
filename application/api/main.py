@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "application"))
 
 from api import config  # noqa: E402
 from api import memories as mem  # noqa: E402
+from api import evidence as ev  # noqa: E402
 
 app = FastAPI(title="MemoryBox Demonstrator", version="0.1.0")
 _db = mem.init_db(config.DEMONSTRATOR_DB)
@@ -45,12 +46,14 @@ class AskIn(BaseModel):
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    sources = ev.source_status()
     return {
         "ok": True,
         "service": "mbd-001",
         "hvrt_origin": config.HVRT_ORIGIN,
         "ask_origin": config.ASK_ORIGIN or None,
         "demonstrator_db": str(config.DEMONSTRATOR_DB),
+        "sources": sources,
         "archive_updated": True,
         "edit_memory": "text_versions",
     }
@@ -58,11 +61,13 @@ def health() -> dict[str, Any]:
 
 @app.get("/api/config")
 def client_config() -> dict[str, Any]:
+    sources = ev.source_status()
     return {
         "hvrt_origin": config.HVRT_ORIGIN,
         "ask_proxy": bool(config.ASK_ORIGIN),
         "brand": "MemoryBox",
-        "build": "mbd-001-shell-v1",
+        "build": "mbd-001-poc-ask-v2",
+        "sources": sources,
     }
 
 
@@ -123,10 +128,13 @@ def api_edit_memory(memory_id: int, body: MemoryEditIn) -> dict[str, Any]:
 
 @app.post("/api/ask")
 async def api_ask(body: AskIn) -> dict[str, Any]:
-    """Ask: proxy historian when configured; always include local memory hits."""
+    """Ask across HVRT + memorybox POC DBs, Immich, versioned memories; optional Ask proxy."""
     q = body.question.strip()
+    sources = ev.source_status()
+
+    poc = ev.search_all(q, limit=36)
     local = mem.search_memories(_db, q, limit=12)
-    evidence = [
+    local_ev = [
         {
             "type": "memory",
             "id": m["id"],
@@ -135,9 +143,12 @@ async def api_ask(body: AskIn) -> dict[str, Any]:
             "version": m.get("current_version"),
             "updated_at": m.get("updated_at"),
             "kind": m.get("kind"),
+            "modality": "memory",
+            "source": "mbd_demonstrator",
         }
         for m in local
     ]
+    evidence = poc + local_ev
 
     remote: dict[str, Any] | None = None
     if config.ASK_ORIGIN:
@@ -161,31 +172,19 @@ async def api_ask(body: AskIn) -> dict[str, Any]:
             "question": q,
             "answer": answer,
             "evidence": list(up_ev) + evidence,
-            "local_memories": evidence,
+            "sources": sources,
             "upstream": True,
-            "archive_note": "Local versioned memories appended when they match.",
         }
 
-    # Local-only narrative for demonstrator until Ask tree is imported
-    if evidence:
-        lines = [f"I found {len(evidence)} memory(ies) in your archive that relate to that:"]
-        for e in evidence[:5]:
-            lines.append(f"• {e['title']} (v{e['version']}): {e['snippet'][:120]}")
-        answer = "\n".join(lines)
-    else:
-        answer = (
-            "No matching memories in the demonstrator archive yet. "
-            "Teach a voice note or artifact label, or connect the email/text Ask service "
-            f"({config.ASK_ORIGIN or 'set MBD_ASK_ORIGIN'})."
-        )
-        if remote and remote.get("error"):
-            answer += f"\n\n(Ask upstream: {remote.get('error')})"
+    answer = ev.compose_answer(q, evidence, sources)
+    if remote and remote.get("error"):
+        answer += f"\n\n(Ask upstream: {remote.get('error')})"
 
     return {
         "question": q,
         "answer": answer,
         "evidence": evidence,
-        "local_memories": evidence,
+        "sources": sources,
         "upstream": False,
         "upstream_status": remote,
     }
@@ -193,24 +192,60 @@ async def api_ask(body: AskIn) -> dict[str, Any]:
 
 @app.get("/api/library")
 def api_library(q: str | None = None) -> dict[str, Any]:
-    """Browseable timeline/library — local memories first; email/SMS when Ask imported."""
-    items = mem.search_memories(_db, q or "") if q else mem.list_memories(_db)
-    timeline = [
-        {
-            "id": f"memory:{m['id']}",
-            "modality": m["kind"],
-            "title": m.get("title") or m["kind"],
-            "snippet": (m.get("body_text") or "")[:220],
-            "when": m.get("updated_at") or m.get("created_at"),
-            "version": m.get("current_version"),
-            "memory_id": m["id"],
-        }
-        for m in items
-    ]
+    """Browseable timeline across POC DBs + versioned memories."""
+    sources = ev.source_status()
+    timeline: list[dict[str, Any]] = []
+
+    if q and q.strip():
+        for e in ev.search_all(q.strip(), limit=50):
+            timeline.append({
+                "id": f"{e.get('type')}:{e.get('id')}",
+                "modality": e.get("modality") or e.get("type"),
+                "title": e.get("title"),
+                "snippet": e.get("snippet"),
+                "when": e.get("when"),
+                "source": e.get("source"),
+                "memory_id": e.get("id") if e.get("type") == "memory" else None,
+                "raw": e,
+            })
+        for m in mem.search_memories(_db, q.strip(), limit=30):
+            timeline.append({
+                "id": f"memory:{m['id']}",
+                "modality": m["kind"],
+                "title": m.get("title") or m["kind"],
+                "snippet": (m.get("body_text") or "")[:220],
+                "when": m.get("updated_at") or m.get("created_at"),
+                "version": m.get("current_version"),
+                "memory_id": m["id"],
+                "source": "mbd_demonstrator",
+            })
+    else:
+        for m in mem.list_memories(_db, limit=40):
+            timeline.append({
+                "id": f"memory:{m['id']}",
+                "modality": m["kind"],
+                "title": m.get("title") or m["kind"],
+                "snippet": (m.get("body_text") or "")[:220],
+                "when": m.get("updated_at") or m.get("created_at"),
+                "version": m.get("current_version"),
+                "memory_id": m["id"],
+                "source": "mbd_demonstrator",
+            })
+        for e in ev.list_hvrt_people(limit=40):
+            timeline.append({
+                "id": f"hvrt_person:{e['id']}",
+                "modality": "video_face",
+                "title": e["title"],
+                "snippet": e.get("snippet"),
+                "source": e.get("source"),
+                "raw": e,
+            })
+
     return {
         "count": len(timeline),
         "items": timeline,
-        "note": "Email/SMS/Immich rows join here once Ask POC is imported and proxied.",
+        "sources": sources,
+        "note": "Searches memorybox.db + hvrt.sqlite (+ Immich when configured).",
     }
 
 

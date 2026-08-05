@@ -15,7 +15,7 @@
   <header class="site-bar">
     <div>
       <div class="brand">MemoryBox</div>
-      <div class="meta">Demonstrator · Ask · Review · Library · build mbd-001-shell-v1</div>
+      <div class="meta">Demonstrator · Ask · Review · Library · build mbd-001-poc-ask-v2</div>
     </div>
     <nav class="site-nav" aria-label="Consoles">
       <button type="button" data-view="ask" class="nav-btn is-active">Ask</button>
@@ -52,19 +52,23 @@
         </div>
       </div>
 
-      <div class="teach-panel device">
-        <div class="device-top"><span class="mode">Teach</span><span>Voice story (text) · Edit Memory versions</span></div>
+      <div id="teachPanel" class="teach-panel device" hidden>
+        <div class="device-top">
+          <span class="mode">Teach</span>
+          <span id="teachAbout">About selected evidence</span>
+        </div>
         <div class="device-body teach-grid">
           <label>Title
             <input id="memTitle" type="text" placeholder="Pocket watch" />
           </label>
           <label class="grow">Story / transcript
-            <textarea id="memBody" rows="4" placeholder="Record later — for now, type the story you would speak…"></textarea>
+            <textarea id="memBody" rows="4" placeholder="Add what you know about this…"></textarea>
           </label>
           <div class="actions">
             <button type="button" id="saveMemoryBtn" class="primary">Save memory</button>
+            <button type="button" id="teachCancelBtn" class="ghost">Close</button>
           </div>
-          <p class="quiet">Mic capture ships next; v1 teaches with text, then Edit Memory improves it without overwrite.</p>
+          <p class="quiet">Teach only after you are looking at evidence. Saving versions the memory — never silent overwrite.</p>
         </div>
       </div>
     </section>

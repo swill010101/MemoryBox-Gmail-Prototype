@@ -3,6 +3,7 @@ const toastEl = document.getElementById('archiveToast');
 let toastTimer = null;
 let cfg = { hvrt_origin: 'http://127.0.0.1:8788' };
 let editingId = null;
+let teachContext = null; // selected evidence for teaching
 
 function showArchiveUpdated() {
   toastEl.hidden = false;
@@ -24,6 +25,26 @@ async function readJson(res) {
   return data;
 }
 
+function hideTeach() {
+  teachContext = null;
+  const panel = document.getElementById('teachPanel');
+  if (panel) panel.hidden = true;
+}
+
+function openTeach(item) {
+  teachContext = item || null;
+  const panel = document.getElementById('teachPanel');
+  panel.hidden = false;
+  const title = item?.title || '';
+  document.getElementById('teachAbout').textContent = title
+    ? `About “${title}”`
+    : 'About selected evidence';
+  document.getElementById('memTitle').value = title || '';
+  document.getElementById('memBody').value = '';
+  document.getElementById('memBody').focus();
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 function setView(name) {
   document.querySelectorAll('.nav-btn').forEach(b => {
     b.classList.toggle('is-active', b.dataset.view === name);
@@ -33,6 +54,7 @@ function setView(name) {
     v.hidden = !on;
     v.classList.toggle('is-active', on);
   });
+  if (name !== 'ask') hideTeach();
   if (name === 'review') {
     const frame = document.getElementById('hvrtFrame');
     const origin = cfg.hvrt_origin || 'http://127.0.0.1:8788';
@@ -56,8 +78,49 @@ document.querySelectorAll('.hint[data-q]').forEach(btn => {
   });
 });
 
+function renderEvidence(items) {
+  const ev = document.getElementById('askEvidence');
+  if (!items.length) {
+    ev.hidden = true;
+    ev.innerHTML = '';
+    return;
+  }
+  ev.hidden = false;
+  ev.innerHTML = items.map((item, idx) => {
+    const title = item.title || item.type || 'Evidence';
+    const snip = item.snippet || item.text || '';
+    const ver = item.version != null ? ` · v${item.version}` : '';
+    const src = item.source ? ` · ${item.source}` : '';
+    const mid = item.id || item.memory_id;
+    const isMem = item.type === 'memory' || item.kind === 'voice_note' || item.kind === 'artifact_label';
+    const actions = [
+      `<button type="button" class="ghost" data-teach="${idx}">Teach about this</button>`,
+    ];
+    if (isMem) {
+      actions.push(`<button type="button" class="ghost" data-edit="${mid}">Edit Memory</button>`);
+    }
+    if (item.open_hint) {
+      actions.push(`<span class="quiet">${escapeHtml(item.open_hint)}</span>`);
+    }
+    return `<article>
+      <h3>${escapeHtml(title)}${escapeHtml(ver)}</h3>
+      <p class="snippet">${escapeHtml(snip)}</p>
+      <p class="quiet">${escapeHtml((item.modality || item.type || '') + src)}</p>
+      <div class="lib-actions">${actions.join('')}</div>
+    </article>`;
+  }).join('');
+
+  ev.querySelectorAll('[data-teach]').forEach(b => {
+    b.addEventListener('click', () => openTeach(items[Number(b.dataset.teach)]));
+  });
+  ev.querySelectorAll('[data-edit]').forEach(b => {
+    b.addEventListener('click', () => openEdit(Number(b.dataset.edit)));
+  });
+}
+
 document.getElementById('askForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  hideTeach();
   const q = document.getElementById('askInput').value.trim();
   if (!q) return;
   const ans = document.getElementById('askAnswer');
@@ -72,47 +135,37 @@ document.getElementById('askForm').addEventListener('submit', async (e) => {
       body: JSON.stringify({ question: q }),
     }));
     ans.textContent = data.answer || '';
-    const items = data.evidence || [];
-    if (items.length) {
-      ev.hidden = false;
-      ev.innerHTML = items.map(item => {
-        const title = item.title || item.type || 'Evidence';
-        const snip = item.snippet || item.text || '';
-        const ver = item.version != null ? ` · v${item.version}` : '';
-        const mid = item.id || item.memory_id;
-        const edit = item.type === 'memory' || item.kind
-          ? `<button type="button" class="ghost" data-edit="${mid}">Edit Memory</button>`
-          : '';
-        return `<article>
-          <h3>${escapeHtml(title)}${escapeHtml(ver)}</h3>
-          <p class="snippet">${escapeHtml(snip)}</p>
-          <div class="lib-actions">${edit}</div>
-        </article>`;
-      }).join('');
-      ev.querySelectorAll('[data-edit]').forEach(b => {
-        b.addEventListener('click', () => openEdit(Number(b.dataset.edit)));
-      });
-    }
+    renderEvidence(data.evidence || []);
   } catch (err) {
     ans.textContent = err.message || String(err);
   }
 });
 
+document.getElementById('teachCancelBtn').addEventListener('click', hideTeach);
+
 document.getElementById('saveMemoryBtn').addEventListener('click', async () => {
   const title = document.getElementById('memTitle').value.trim();
   const body_text = document.getElementById('memBody').value.trim();
   if (!body_text) {
-    alert('Add a story or transcript first');
+    alert('Add what you know first');
     return;
   }
+  const asset_ref = teachContext
+    ? `${teachContext.type || 'evidence'}:${teachContext.id || ''}`
+    : null;
   try {
     const data = await readJson(await fetch('/api/memories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'voice_note', title: title || null, body_text }),
+      body: JSON.stringify({
+        kind: 'voice_note',
+        title: title || null,
+        body_text,
+        asset_ref,
+      }),
     }));
     if (data.archive_updated) showArchiveUpdated();
-    document.getElementById('memBody').value = '';
+    hideTeach();
   } catch (err) {
     alert(err.message || String(err));
   }
@@ -127,19 +180,35 @@ async function refreshLibrary() {
     const data = await readJson(await fetch(url));
     const items = data.items || [];
     if (!items.length) {
-      list.innerHTML = '<li class="quiet">Archive is quiet — teach a memory from Ask.</li>';
+      list.innerHTML = '<li class="quiet">No archive rows yet — check that memorybox.db and hvrt/database/hvrt.sqlite are present.</li>';
       return;
     }
-    list.innerHTML = items.map(it => `<li>
-      <h3>${escapeHtml(it.title)} · v${it.version}</h3>
+    list.innerHTML = items.map((it, idx) => {
+      const ver = it.version != null ? ` · v${it.version}` : '';
+      const edit = it.memory_id
+        ? `<button type="button" class="ghost" data-edit="${it.memory_id}">Edit Memory</button>`
+        : `<button type="button" class="ghost" data-teach-idx="${idx}">Teach about this</button>`;
+      return `<li>
+      <h3>${escapeHtml(it.title || '')}${escapeHtml(ver)}</h3>
       <p class="snippet">${escapeHtml(it.snippet || '')}</p>
-      <p class="quiet">${escapeHtml(it.when || '')} · ${escapeHtml(it.modality || '')}</p>
-      <div class="lib-actions">
-        <button type="button" class="ghost" data-edit="${it.memory_id}">Edit Memory</button>
-      </div>
-    </li>`).join('');
+      <p class="quiet">${escapeHtml(it.when || '')} · ${escapeHtml(it.modality || '')} · ${escapeHtml(it.source || '')}</p>
+      <div class="lib-actions">${edit}</div>
+    </li>`;
+    }).join('');
+    list._items = items;
     list.querySelectorAll('[data-edit]').forEach(b => {
       b.addEventListener('click', () => openEdit(Number(b.dataset.edit)));
+    });
+    list.querySelectorAll('[data-teach-idx]').forEach(b => {
+      b.addEventListener('click', () => {
+        const it = list._items[Number(b.dataset.teachIdx)];
+        setView('ask');
+        openTeach({
+          type: (it.raw && it.raw.type) || it.modality,
+          id: it.raw && it.raw.id,
+          title: it.title,
+        });
+      });
     });
   } catch (err) {
     list.innerHTML = `<li class="quiet">${escapeHtml(err.message || String(err))}</li>`;
@@ -200,8 +269,13 @@ function escapeHtml(s) {
 
 fetch('/api/config').then(r => r.json()).then(c => {
   cfg = c;
-  document.getElementById('askHint').textContent = c.ask_proxy
-    ? 'Ask POC connected · local memories included'
-    : 'Local versioned memories · set MBD_ASK_ORIGIN when email/text Ask is up';
+  const s = c.sources || {};
+  const bits = [];
+  if (s.hvrt_present) bits.push('HVRT');
+  if (s.memorybox_present) bits.push('email/SMS');
+  if (s.immich_configured) bits.push('Immich');
+  document.getElementById('askHint').textContent = bits.length
+    ? `Searching ${bits.join(' + ')}`
+    : 'POC databases not found — place memorybox.db and hvrt/database/hvrt.sqlite under the repo';
   document.getElementById('hvrtOpen').href = c.hvrt_origin || 'http://127.0.0.1:8788';
 }).catch(() => {});

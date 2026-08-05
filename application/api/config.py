@@ -26,4 +26,8 @@ ASK_ORIGIN = os.environ.get("MBD_ASK_ORIGIN", "").rstrip("/")
 # FlightSim Ollama (Ask path when wired)
 OLLAMA_BASE = os.environ.get("MBD_OLLAMA_BASE", "http://192.168.4.39:11434").rstrip("/")
 
+# Immich (optional — also loaded from config/immich.env)
+IMMICH_BASE_URL = os.environ.get("IMMICH_BASE_URL", "").rstrip("/")
+IMMICH_API_KEY = os.environ.get("IMMICH_API_KEY", "")
+
 UI_DIR = APP_ROOT / "ui" / "static"
