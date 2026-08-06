@@ -22,6 +22,9 @@ archive/**
 config/immich.env
 config/secrets.json
 config/local.json
+config/marvin_capture.json
+config/gmail_credentials.json
+config/gmail_token.json
 
 # Python
 .venv/

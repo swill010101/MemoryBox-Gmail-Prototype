@@ -1,0 +1,31 @@
+{
+  "gmail": {
+    "credentials_file": "config/gmail_credentials.json",
+    "token_file": "config/gmail_token.json",
+    "user_email": "YOUR_GMAIL@gmail.com",
+    "processed_label": "MB/Processed"
+  },
+  "polling_interval_seconds": 300,
+  "sqlite_path": "database/marvin_capture.db",
+  "attachment_storage": "attachments/marvin_capture",
+  "raw_email_storage": "attachments/marvin_capture/raw",
+  "whisper": {
+    "endpoint": "http://127.0.0.1:9000/v1/audio/transcriptions",
+    "api_key": "",
+    "model": "whisper-1",
+    "timeout_seconds": 300
+  },
+  "schedule": {
+    "daily_journal": {
+      "enabled": true,
+      "hour": 18,
+      "minute": 0,
+      "subject_template": "[MB-JRN-{date}] What happened today?",
+      "body": "What happened today?\n\nReply naturally. Attach photos, documents, or voice memos if you want.\nNo special formatting required."
+    }
+  },
+  "review_ui": {
+    "host": "127.0.0.1",
+    "port": 8790
+  }
+}
