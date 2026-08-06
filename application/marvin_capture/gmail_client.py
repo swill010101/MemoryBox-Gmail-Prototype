@@ -222,8 +222,13 @@ class LiveGmailClient:
         processed_label: str,
         query_extra: str = "",
     ) -> list[dict[str, Any]]:
-        # Replies that are not yet labeled MB/Processed
-        q = f"-label:{processed_label} in:inbox"
+        # Nested Gmail labels use hyphens in search: MB/Processed → mb-processed
+        label_query = processed_label.replace("/", "-")
+        # Prefer Marvin-tagged threads; also catch Re: replies still in inbox.
+        q = (
+            f"in:inbox -label:{label_query} "
+            f'(subject:[MB- OR subject:"[MB-")'
+        )
         if query_extra:
             q = f"{q} {query_extra}"
         result = (
@@ -232,7 +237,21 @@ class LiveGmailClient:
             .list(userId="me", q=q, maxResults=50)
             .execute()
         )
-        return result.get("messages") or []
+        messages = result.get("messages") or []
+        # Fallback: any inbox mail not yet processed (self-replies sometimes
+        # drop brackets from search indexing).
+        if not messages:
+            q2 = f"in:inbox -label:{label_query}"
+            if query_extra:
+                q2 = f"{q2} {query_extra}"
+            result = (
+                self.service.users()
+                .messages()
+                .list(userId="me", q=q2, maxResults=50)
+                .execute()
+            )
+            messages = result.get("messages") or []
+        return messages
 
     def get_message_raw(self, message_id: str) -> bytes:
         result = (

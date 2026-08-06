@@ -224,6 +224,7 @@ def poll_once(
 ) -> list[dict[str, Any]]:
     processed_label = cfg["gmail"].get("processed_label") or "MB/Processed"
     messages = client.list_unread_or_unprocessed(processed_label=processed_label)
+    log.info("poll listed %s candidate message(s)", len(messages))
     results: list[dict[str, Any]] = []
     for item in messages:
         mid = item["id"]
@@ -231,6 +232,7 @@ def poll_once(
             result = process_message(conn, client, cfg, mid)
             if result:
                 results.append(result)
+                log.info("poll result %s → %s", mid, result.get("status"))
         except Exception as exc:  # noqa: BLE001
             log.exception("failed processing %s: %s", mid, exc)
             results.append({"status": "error", "gmail_message_id": mid, "error": str(exc)})

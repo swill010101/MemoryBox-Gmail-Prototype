@@ -75,8 +75,31 @@ def load_config() -> dict[str, Any]:
     path = config_path()
     if path.is_file():
         data = json.loads(path.read_text(encoding="utf-8"))
-        return _deep_merge(DEFAULT_CONFIG, data)
-    return dict(DEFAULT_CONFIG)
+        cfg = _deep_merge(DEFAULT_CONFIG, data)
+    else:
+        cfg = dict(DEFAULT_CONFIG)
+    return _resolve_paths(cfg)
+
+
+def _resolve_paths(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Make relative paths stable against repo root, not the caller's cwd."""
+
+    def fix(value: str) -> str:
+        p = Path(value)
+        if p.is_absolute():
+            return str(p)
+        return str((ROOT / p).resolve())
+
+    cfg = dict(cfg)
+    for key in ("sqlite_path", "attachment_storage", "raw_email_storage"):
+        if cfg.get(key):
+            cfg[key] = fix(cfg[key])
+    gmail = dict(cfg.get("gmail") or {})
+    for key in ("credentials_file", "token_file"):
+        if gmail.get(key):
+            gmail[key] = fix(gmail[key])
+    cfg["gmail"] = gmail
+    return cfg
 
 
 def ensure_runtime_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
