@@ -224,33 +224,34 @@ class LiveGmailClient:
     ) -> list[dict[str, Any]]:
         # Nested Gmail labels use hyphens in search: MB/Processed → mb-processed
         label_query = processed_label.replace("/", "-")
-        # Prefer Marvin-tagged threads; also catch Re: replies still in inbox.
-        q = (
-            f"in:inbox -label:{label_query} "
-            f'(subject:[MB- OR subject:"[MB-")'
-        )
-        if query_extra:
-            q = f"{q} {query_extra}"
-        result = (
-            self.service.users()
-            .messages()
-            .list(userId="me", q=q, maxResults=50)
-            .execute()
-        )
-        messages = result.get("messages") or []
-        # Fallback: any inbox mail not yet processed (self-replies sometimes
-        # drop brackets from search indexing).
-        if not messages:
-            q2 = f"in:inbox -label:{label_query}"
+        queries = [
+            # Tagged Marvin mail still in inbox
+            f'in:inbox -label:{label_query} (subject:[MB- OR subject:"[MB-")',
+            # Self-replies / archived threads: search anywhere recent
+            f'in:anywhere newer_than:7d -label:{label_query} (subject:[MB- OR subject:"[MB-")',
+            # Broad inbox fallback
+            f"in:inbox -label:{label_query}",
+        ]
+        seen: set[str] = set()
+        messages: list[dict[str, Any]] = []
+        for q in queries:
             if query_extra:
-                q2 = f"{q2} {query_extra}"
+                q = f"{q} {query_extra}"
             result = (
                 self.service.users()
                 .messages()
-                .list(userId="me", q=q2, maxResults=50)
+                .list(userId="me", q=q, maxResults=50)
                 .execute()
             )
-            messages = result.get("messages") or []
+            for m in result.get("messages") or []:
+                mid = m["id"]
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                messages.append(m)
+            # Prefer early precise hits; still accumulate fallbacks
+            if messages and q.startswith("in:anywhere"):
+                break
         return messages
 
     def get_message_raw(self, message_id: str) -> bytes:
