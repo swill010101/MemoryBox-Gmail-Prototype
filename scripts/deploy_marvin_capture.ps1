@@ -148,7 +148,7 @@ function Start-ServiceInstance {
 
     $owners = @(Get-PortOwnerPid $Port)
     if ($owners.Count -gt 0) {
-        Write-Info "port $Port still busy (PID $($owners -join ', ')) — forcing stop"
+        Write-Info "port $Port still busy (PID $($owners -join ', ')) - forcing stop"
         foreach ($procId in $owners) {
             try {
                 Stop-Process -Id $procId -Force -ErrorAction Stop
@@ -160,7 +160,7 @@ function Start-ServiceInstance {
         Start-Sleep -Seconds 2
         $left = @(Get-PortOwnerPid $Port)
         if ($left.Count -gt 0) {
-            throw "port $Port busy (PID $($left -join ', ')). Run -Action stop, then: taskkill /PID <pid> /F"
+            throw "port $Port busy (PID $($left -join ', ')). Run -Action stop, then: taskkill /PID THE_PID /F"
         }
     }
 
