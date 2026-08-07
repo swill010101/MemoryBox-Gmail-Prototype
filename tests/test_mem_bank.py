@@ -101,10 +101,24 @@ def test_tick_sends_next_then_resend_and_complete(tmp_path: Path):
     conn.close()
 
 
+def test_sends_toggle_skips_tick(tmp_path: Path):
+    cfg = _cfg(tmp_path, [{"id": 1, "text": "Q?"}])
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    store.set_mem_bank_state(conn, sends_enabled=0)
+    r = tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 1, 5), force=False)
+    assert r["skipped"] and r["reason"] == "disabled"
+    store.set_mem_bank_state(conn, sends_enabled=1)
+    r2 = tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 1, 5), force=False)
+    assert not r2["skipped"]
+    conn.close()
+
+
 def test_voice_only_promotes_whisper_to_answer(tmp_path: Path, monkeypatch):
     cfg = _cfg(tmp_path, [{"id": 1, "text": "Speak"}])
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
+    store.set_mem_bank_state(conn, sends_enabled=1)
     tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 1, 5), force=True)
     last = store.last_mem_send(conn, 1)
     mid = client.inject_reply(

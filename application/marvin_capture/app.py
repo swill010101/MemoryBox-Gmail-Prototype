@@ -235,19 +235,38 @@ def api_mem_tick(force: bool = True, fake: bool = False) -> dict[str, Any]:
     return {"ok": True, **result}
 
 
+class MemSendsIn(BaseModel):
+    enabled: bool
+
+
 @app.get("/api/mem/status")
 def api_mem_status() -> dict[str, Any]:
     bank = _cfg.get("mem_bank") or {}
     state = store.get_mem_bank_state(_db)
     qpath = bank.get("questions_file")
+    sends_on = store.mem_sends_are_enabled(_db, _cfg)
     return {
-        "enabled": bool(bank.get("enabled")),
+        "enabled": sends_on,
+        "config_enabled": bool(bank.get("enabled")),
+        "sends_enabled": state.get("sends_enabled"),
         "questions_file": qpath,
         "questions_file_exists": bool(qpath and Path(qpath).is_file()),
         "hour": bank.get("hour"),
         "minute": bank.get("minute"),
         "state": state,
         "id_rule": "Questions must be numbered contiguously 1..N",
+    }
+
+
+@app.post("/api/mem/sends")
+def api_mem_sends(body: MemSendsIn) -> dict[str, Any]:
+    """Turn MEM question-bank email sends on or off (persisted)."""
+    state = store.set_mem_bank_state(_db, sends_enabled=1 if body.enabled else 0)
+    _db.commit()
+    return {
+        "ok": True,
+        "enabled": bool(body.enabled),
+        "state": state,
     }
 
 

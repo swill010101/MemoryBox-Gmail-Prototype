@@ -168,7 +168,7 @@ def tick_mem_bank(
 ) -> dict[str, Any]:
     """Run once per scheduled day: resends due + next unsent; completion when done."""
     bank = cfg.get("mem_bank") or {}
-    if not bank.get("enabled") and not force:
+    if not force and not store.mem_sends_are_enabled(conn, cfg):
         return {"skipped": True, "reason": "disabled"}
 
     questions_path = bank.get("questions_file")

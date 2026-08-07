@@ -72,8 +72,8 @@ def send_daily_journal_if_due(
     force: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    # MEM bank owns the scheduled outbound slot when enabled
-    if (cfg.get("mem_bank") or {}).get("enabled") and not force:
+    # MEM bank owns the scheduled outbound slot when sends are on
+    if store.mem_sends_are_enabled(conn, cfg) and not force:
         return None
 
     journal = cfg.get("schedule", {}).get("daily_journal") or {}

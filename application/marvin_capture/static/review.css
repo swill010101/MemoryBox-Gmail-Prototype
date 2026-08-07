@@ -113,6 +113,18 @@ html, body {
   transform: translateY(-1px);
 }
 
+#btn-mem-sends[aria-pressed="true"] {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: rgba(15, 107, 92, 0.08);
+  font-weight: 600;
+}
+
+#btn-mem-sends[aria-pressed="false"] {
+  border-color: #9b1c1c;
+  color: #9b1c1c;
+}
+
 @keyframes fade-down {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }

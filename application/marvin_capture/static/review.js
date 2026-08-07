@@ -12,7 +12,21 @@
   const batchStatus = document.getElementById("batch-status");
   const btnMemExtract = document.getElementById("btn-mem-extract");
   const btnMemOpenQuestions = document.getElementById("btn-mem-open-questions");
+  const btnMemSends = document.getElementById("btn-mem-sends");
   const memStatus = document.getElementById("mem-status");
+  let memSendsOn = false;
+
+  function renderMemSendsButton() {
+    btnMemSends.textContent = memSendsOn ? "MEM sends: ON" : "MEM sends: OFF";
+    btnMemSends.setAttribute("aria-pressed", memSendsOn ? "true" : "false");
+  }
+
+  async function refreshMemStatus() {
+    const data = await fetchJSON("/api/mem/status");
+    memSendsOn = Boolean(data.enabled);
+    renderMemSendsButton();
+    return data;
+  }
 
   let view = "inbox";
   let selectedId = null;
@@ -238,6 +252,29 @@
       .catch((e) => {
         memStatus.textContent = e.message;
       });
+  });
+  btnMemSends.addEventListener("click", () => {
+    const next = !memSendsOn;
+    memStatus.textContent = next ? "Enabling sends…" : "Disabling sends…";
+    fetchJSON("/api/mem/sends", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: next }),
+    })
+      .then((data) => {
+        memSendsOn = Boolean(data.enabled);
+        renderMemSendsButton();
+        memStatus.textContent = memSendsOn
+          ? "MEM question emails ON (M–F 01:00)"
+          : "MEM question emails OFF";
+      })
+      .catch((e) => {
+        memStatus.textContent = e.message;
+      });
+  });
+
+  refreshMemStatus().catch(() => {
+    btnMemSends.textContent = "MEM sends: ?";
   });
 
   loadList().catch((err) => {

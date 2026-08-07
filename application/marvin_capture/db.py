@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS mem_bank_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_tick_date TEXT,
     completed_at TEXT,
-    completion_email_sent INTEGER NOT NULL DEFAULT 0
+    completion_email_sent INTEGER NOT NULL DEFAULT 0,
+    sends_enabled INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS mem_send_log (
@@ -104,6 +105,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(response)").fetchall()}
     if "subject" not in cols:
         conn.execute("ALTER TABLE response ADD COLUMN subject TEXT")
+    state_cols = {row[1] for row in conn.execute("PRAGMA table_info(mem_bank_state)").fetchall()}
+    if "sends_enabled" not in state_cols:
+        # NULL = inherit from config; 0 = forced off; 1 = forced on
+        conn.execute("ALTER TABLE mem_bank_state ADD COLUMN sends_enabled INTEGER")
 
 
 @contextmanager
@@ -469,6 +474,7 @@ def set_mem_bank_state(
     last_tick_date: str | None = None,
     completed_at: str | None = None,
     completion_email_sent: int | None = None,
+    sends_enabled: int | None = None,
 ) -> dict[str, Any]:
     get_mem_bank_state(conn)
     if last_tick_date is not None:
@@ -486,7 +492,21 @@ def set_mem_bank_state(
             "UPDATE mem_bank_state SET completion_email_sent = ? WHERE id = 1",
             (completion_email_sent,),
         )
+    if sends_enabled is not None:
+        conn.execute(
+            "UPDATE mem_bank_state SET sends_enabled = ? WHERE id = 1",
+            (1 if sends_enabled else 0,),
+        )
     return get_mem_bank_state(conn)
+
+
+def mem_sends_are_enabled(conn: sqlite3.Connection, cfg: dict[str, Any]) -> bool:
+    """UI/DB toggle overrides config when sends_enabled is 0 or 1."""
+    state = get_mem_bank_state(conn)
+    flag = state.get("sends_enabled")
+    if flag is None:
+        return bool((cfg.get("mem_bank") or {}).get("enabled"))
+    return bool(flag)
 
 
 def log_mem_send(
