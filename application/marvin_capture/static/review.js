@@ -64,6 +64,10 @@
     listEl.innerHTML = "";
     listTitle.textContent = reviewed ? "Reviewed" : "Inbox";
 
+    if (!reviewed && data.duplicates_collapsed) {
+      batchStatus.textContent = `Collapsed ${data.duplicates_collapsed} duplicate(s) → Reviewed.`;
+    }
+
     if (!data.responses.length) {
       emptyEl.classList.remove("hidden");
       emptyEl.textContent = "Nothing here yet.";

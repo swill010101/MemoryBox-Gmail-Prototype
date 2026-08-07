@@ -456,61 +456,104 @@ def find_response_by_normalized_text(
 def auto_review_duplicate_bodies(
     conn: sqlite3.Connection,
     *,
-    similarity_threshold: float = 0.88,
+    similarity_threshold: float = 0.75,
+    adhoc_window_minutes: int = 30,
 ) -> int:
     """Mark newer unreviewed rows reviewed when an older twin exists.
 
     Match rules (same prompt_id):
       1. Exact normalized body
-      2. High similarity (SequenceMatcher on normalized body)
+      2. High similarity / containment on normalized body
+      3. Same gmail_thread_id
+      4. Ad-hoc canonical ids (JRN/EVS/MEM): received within the time window
 
-    Keeps raw email + both DB rows (additive). Clears Inbox clutter for
-    accidental double-captures of the same journal/MEM body.
+    Empty bodies still participate in (3) and (4).
+    Keeps raw email + both DB rows (additive).
     """
     import difflib
+    from datetime import datetime
 
     from .reply_extract import normalize_for_dedupe
 
     rows = conn.execute(
         """
-        SELECT id, prompt_id, response_text, reviewed, received_date
+        SELECT id, prompt_id, response_text, reviewed, received_date, gmail_thread_id
         FROM response
-        WHERE length(trim(response_text)) > 0
         ORDER BY id ASC
         """
     ).fetchall()
 
-    # Keep first (oldest) keeper per prompt_id as list of (norm, id)
-    keepers: dict[str, list[tuple[str, int]]] = {}
+    def _parse_dt(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    # Keepers: oldest kept row per prompt_id
+    keepers: dict[str, list[Any]] = {}
     marked = 0
+    adhoc_ids = {"JRN", "EVS", "MEM"}
+
     for row in rows:
         pid = row["prompt_id"]
-        norm = normalize_for_dedupe(row["response_text"])
-        if not norm:
-            continue
+        norm = normalize_for_dedupe(row["response_text"] or "")
         prior = keepers.setdefault(pid, [])
         is_dupe = False
-        for prev_norm, _prev_id in prior:
-            if prev_norm == norm:
+        row_dt = _parse_dt(row["received_date"])
+
+        for prev in prior:
+            prev_norm = prev["norm"]
+            # Same Gmail thread → almost always a twin capture
+            if (
+                row["gmail_thread_id"]
+                and prev["thread"]
+                and row["gmail_thread_id"] == prev["thread"]
+            ):
                 is_dupe = True
                 break
-            # Long journals: require solid overlap; short notes need near-exact
-            ratio = difflib.SequenceMatcher(None, prev_norm, norm).ratio()
-            need = similarity_threshold if min(len(prev_norm), len(norm)) >= 80 else 0.97
-            if ratio >= need:
-                is_dupe = True
-                break
-            # One body fully contains the other (truncated / extended resend)
-            if len(prev_norm) >= 40 and len(norm) >= 40:
-                if prev_norm in norm or norm in prev_norm:
+
+            if norm and prev_norm:
+                if prev_norm == norm:
                     is_dupe = True
                     break
+                ratio = difflib.SequenceMatcher(None, prev_norm, norm).ratio()
+                need = similarity_threshold if min(len(prev_norm), len(norm)) >= 60 else 0.95
+                if ratio >= need:
+                    is_dupe = True
+                    break
+                if len(prev_norm) >= 40 and len(norm) >= 40:
+                    if prev_norm in norm or norm in prev_norm:
+                        is_dupe = True
+                        break
+
+            # Ad-hoc window: only when bodies are empty or at least half-similar
+            if pid in adhoc_ids and row_dt and prev["dt"]:
+                delta = abs((row_dt - prev["dt"]).total_seconds())
+                if delta <= adhoc_window_minutes * 60:
+                    if not norm or not prev_norm:
+                        is_dupe = True
+                        break
+                    soft = difflib.SequenceMatcher(None, prev_norm, norm).ratio()
+                    if soft >= 0.5:
+                        is_dupe = True
+                        break
+
         if is_dupe:
             if not row["reviewed"]:
                 mark_reviewed(conn, row["id"], reviewed=True)
                 marked += 1
             continue
-        prior.append((norm, row["id"]))
+
+        prior.append(
+            {
+                "id": row["id"],
+                "norm": norm,
+                "thread": row["gmail_thread_id"],
+                "dt": row_dt,
+            }
+        )
     return marked
 
 

@@ -281,6 +281,7 @@ def test_auto_review_near_duplicate_journals(tmp_path: Path):
         raw_email_path=str(tmp_path / "a.eml"),
         gmail_message_id="j1",
         gmail_thread_id="tj",
+        received_date="2026-08-07T14:50:47",
     )
     store.insert_response(
         conn,
@@ -289,11 +290,12 @@ def test_auto_review_near_duplicate_journals(tmp_path: Path):
         raw_email_path=str(tmp_path / "b.eml"),
         gmail_message_id="j2",
         gmail_thread_id="tj",
+        received_date="2026-08-07T14:55:50",
     )
     n = store.auto_review_duplicate_bodies(conn)
     assert n == 1
     assert len(store.list_responses(conn, reviewed=False)) == 1
-    # Distinct journal later same day must stay
+    # Distinct journal hours later must stay
     store.insert_response(
         conn,
         prompt_id="JRN",
@@ -304,7 +306,50 @@ def test_auto_review_near_duplicate_journals(tmp_path: Path):
         raw_email_path=str(tmp_path / "c.eml"),
         gmail_message_id="j3",
         gmail_thread_id="tj2",
+        received_date="2026-08-07T18:00:00",
     )
     assert store.auto_review_duplicate_bodies(conn) == 0
     assert len(store.list_responses(conn, reviewed=False)) == 2
+    conn.close()
+
+
+def test_auto_review_jrn_time_window(tmp_path: Path):
+    """Two ad-hoc JRNs within 30 minutes collapse when moderately similar."""
+    cfg = _cfg(tmp_path)
+    conn = store.init_db(cfg["sqlite_path"])
+    store.insert_prompt(
+        conn,
+        prompt_id="JRN",
+        prompt_type="JRN",
+        subject="[MB-JRN]",
+        body="(Ad-hoc journal)",
+    )
+    a = (
+        "Today the grandkids went home to Texas. School and sports are starting. "
+        "We had fun in St Louis with Top Golf and Sky Zone."
+    )
+    b = (
+        "Today the grandkids went home to TX. School and sports starting soon. "
+        "We had fun in St. Louis with Top Golf and Sky Zone."
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=a,
+        raw_email_path=str(tmp_path / "a.eml"),
+        gmail_message_id="t1",
+        gmail_thread_id="thr-a",
+        received_date="2026-08-07T14:50:47",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=b,
+        raw_email_path=str(tmp_path / "b.eml"),
+        gmail_message_id="t2",
+        gmail_thread_id="thr-b",
+        received_date="2026-08-07T14:55:50",
+    )
+    assert store.auto_review_duplicate_bodies(conn) == 1
+    assert len(store.list_responses(conn, reviewed=False)) == 1
     conn.close()
