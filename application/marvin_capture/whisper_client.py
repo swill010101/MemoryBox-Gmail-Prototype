@@ -61,8 +61,21 @@ def process_pending_transcriptions(
             )
             # Store transcript beside original — never replace audio
             store.update_transcript(conn, att["id"], transcript=text, status="done")
-            results.append({"id": att["id"], "status": "done", "chars": len(text)})
-            log.info("transcribed attachment %s (%s chars)", att["id"], len(text))
+            promoted = store.maybe_promote_transcript_to_answer(conn, att["id"], text)
+            results.append(
+                {
+                    "id": att["id"],
+                    "status": "done",
+                    "chars": len(text),
+                    "promoted_to_answer": promoted,
+                }
+            )
+            log.info(
+                "transcribed attachment %s (%s chars)%s",
+                att["id"],
+                len(text),
+                " → answer text" if promoted else "",
+            )
         except Exception as exc:  # noqa: BLE001 — keep queue healthy
             store.update_transcript(conn, att["id"], transcript=None, status="error")
             results.append({"id": att["id"], "status": "error", "error": str(exc)})

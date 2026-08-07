@@ -24,11 +24,12 @@
 
   <section class="keys-bar" aria-label="Subject keys">
     <p><strong>Subject keys</strong> (minimum tag; headline optional):
-      <code>[MB-JRN]</code> journal ·
-      <code>[MB-MEM]</code> memory ·
+      <code>[MB-JRN]</code> journal (ad-hoc) ·
+      <code>[MB-MEM-n]</code> memory bank ·
+      <code>[MB-MEM]</code> ad-hoc mem ·
       <code>[MB-EVS]</code> EVS
     </p>
-    <p class="keys-note">Dates come from send/receive timestamps — no token required. Legacy <code>[MB-JRN-YYYYMMDD]</code> still matches.</p>
+    <p class="keys-note">MEM bank uses bare ids in subject, e.g. <code>[MB-MEM-1] What is your earliest childhood memory?</code>. Scheduled M–F 01:00 when enabled.</p>
   </section>
 
   <section class="batch-bar" aria-label="EVS batch actions">
@@ -36,6 +37,12 @@
     <button type="button" id="btn-evs-extract" class="primary">Extract EVS…</button>
     <button type="button" id="btn-evs-remove" class="danger">Remove all EVS</button>
     <span id="batch-status" class="batch-status" aria-live="polite"></span>
+  </section>
+
+  <section class="batch-bar" aria-label="MEM bank actions">
+    <span class="batch-label">MEM bank</span>
+    <button type="button" id="btn-mem-extract" class="primary">Extract MEM</button>
+    <span id="mem-status" class="batch-status" aria-live="polite"></span>
   </section>
 
   <main class="layout">

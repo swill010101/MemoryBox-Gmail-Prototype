@@ -7,12 +7,20 @@ Proof-of-concept email capture loop for MemoryBox.
 ## Subject keys (minimum)
 
 ```text
-[MB-JRN] optional headline
-[MB-MEM] optional headline
-[MB-EVS] optional headline
+[MB-JRN] optional headline          # journal (ad-hoc when MEM bank on)
+[MB-MEM-n] question text…           # memory bank (bare id, e.g. [MB-MEM-1])
+[MB-MEM] optional headline          # ad-hoc memory drop
+[MB-EVS] optional headline          # EVS
 ```
 
-No token/date in the subject is required. Send/receive timestamps are stored on each record. Legacy `[MB-JRN-YYYYMMDD]` still matches.
+## MEM question bank (MBC-002)
+
+1. Copy `config/mem_questions.example.json` → `config/mem_questions.json` and fill `1…N`
+2. In `config/marvin_capture.json` set `mem_bank.enabled: true`, `hour: 1`, `to: swill01@gmail.com`, and `schedule.daily_journal.enabled: false`
+3. Restart via deploy script — M–F at 01:00 sends next unsent; unanswered resent after 7 days
+4. **Extract MEM** in the review UI writes `exports/mem_bank/mem_batch_…/` (combined + per-Q files + attachments)
+
+See `docs/product/MBC-002_MEM_QUESTION_BANK_PRD.md`.
 
 ## EVS batch (review UI)
 

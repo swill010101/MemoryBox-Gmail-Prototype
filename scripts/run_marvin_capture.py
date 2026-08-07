@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "application"))
 
 from marvin_capture import config as cfgmod  # noqa: E402
 from marvin_capture import db as store  # noqa: E402
+from marvin_capture.mem_bank import tick_mem_bank  # noqa: E402
 from marvin_capture.service import (  # noqa: E402
     get_gmail_client,
     poll_once,
@@ -34,6 +35,9 @@ def worker_loop(cfg: dict, *, fake: bool, stop: threading.Event) -> None:
         try:
             with store.db_session(cfg["sqlite_path"]) as conn:
                 client = get_gmail_client(cfg, fake=fake)
+                mem = tick_mem_bank(conn, client, cfg)
+                if not mem.get("skipped"):
+                    log.info("mem_bank tick: %s", mem)
                 send_daily_journal_if_due(conn, client, cfg)
                 results = poll_once(conn, client, cfg)
                 tx = process_pending_transcriptions(conn, cfg["whisper"])

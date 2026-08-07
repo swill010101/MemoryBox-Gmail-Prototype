@@ -10,6 +10,8 @@
   const btnEvsExtract = document.getElementById("btn-evs-extract");
   const btnEvsRemove = document.getElementById("btn-evs-remove");
   const batchStatus = document.getElementById("batch-status");
+  const btnMemExtract = document.getElementById("btn-mem-extract");
+  const memStatus = document.getElementById("mem-status");
 
   let view = "inbox";
   let selectedId = null;
@@ -216,6 +218,16 @@
   btnEvsRemove.addEventListener("click", () => removeEvs().catch((e) => {
     batchStatus.textContent = e.message;
   }));
+  btnMemExtract.addEventListener("click", () => {
+    memStatus.textContent = "Exporting…";
+    fetchJSON("/api/mem/extract", { method: "POST" })
+      .then((data) => {
+        memStatus.textContent = `Wrote ${data.count} Q&A → ${data.batch_dir}`;
+      })
+      .catch((e) => {
+        memStatus.textContent = e.message;
+      });
+  });
 
   loadList().catch((err) => {
     emptyEl.classList.remove("hidden");

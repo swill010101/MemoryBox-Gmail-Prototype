@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "application"))
 
 from marvin_capture import config as cfgmod  # noqa: E402
 from marvin_capture import db as store  # noqa: E402
+from marvin_capture.mem_bank import export_mem_bank, tick_mem_bank  # noqa: E402
 from marvin_capture.service import (  # noqa: E402
     get_gmail_client,
     poll_once,
@@ -210,6 +211,36 @@ def api_evs_remove() -> dict[str, Any]:
     result = store.delete_responses_by_type(_db, "EVS")
     _db.commit()
     return {"ok": True, **result}
+
+
+@app.post("/api/mem/extract")
+def api_mem_extract() -> dict[str, Any]:
+    result = export_mem_bank(_db, _cfg)
+    return {"ok": True, **result}
+
+
+@app.post("/api/mem/tick")
+def api_mem_tick(force: bool = True, fake: bool = False) -> dict[str, Any]:
+    """Manual / test trigger for the MEM bank scheduler."""
+    if fake:
+        _cfg["use_fake_gmail"] = True
+    client = get_gmail_client(_cfg, fake=fake or bool(_cfg.get("use_fake_gmail")))
+    result = tick_mem_bank(_db, client, _cfg, force=force)
+    _db.commit()
+    return {"ok": True, **result}
+
+
+@app.get("/api/mem/status")
+def api_mem_status() -> dict[str, Any]:
+    bank = _cfg.get("mem_bank") or {}
+    state = store.get_mem_bank_state(_db)
+    return {
+        "enabled": bool(bank.get("enabled")),
+        "questions_file": bank.get("questions_file"),
+        "hour": bank.get("hour"),
+        "minute": bank.get("minute"),
+        "state": state,
+    }
 
 
 @app.post("/api/reextract")

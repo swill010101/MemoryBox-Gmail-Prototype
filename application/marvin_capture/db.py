@@ -53,6 +53,24 @@ CREATE INDEX IF NOT EXISTS idx_response_prompt ON response(prompt_id);
 CREATE INDEX IF NOT EXISTS idx_response_reviewed ON response(reviewed);
 CREATE INDEX IF NOT EXISTS idx_attachment_response ON attachment(response_id);
 CREATE INDEX IF NOT EXISTS idx_attachment_transcript ON attachment(transcript_status);
+
+CREATE TABLE IF NOT EXISTS mem_bank_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_tick_date TEXT,
+    completed_at TEXT,
+    completion_email_sent INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS mem_send_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    gmail_message_id TEXT,
+    gmail_thread_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_mem_send_question ON mem_send_log(question_id, sent_at);
 """
 
 AUDIO_MIME_PREFIXES = ("audio/",)
@@ -427,3 +445,122 @@ def update_transcript(
         """,
         (transcript, status, attachment_id),
     )
+
+
+def prompt_has_response(conn: sqlite3.Connection, prompt_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM response WHERE prompt_id = ? LIMIT 1",
+        (prompt_id,),
+    ).fetchone()
+    return row is not None
+
+
+def get_mem_bank_state(conn: sqlite3.Connection) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM mem_bank_state WHERE id = 1").fetchone()
+    if not row:
+        conn.execute("INSERT INTO mem_bank_state (id) VALUES (1)")
+        row = conn.execute("SELECT * FROM mem_bank_state WHERE id = 1").fetchone()
+    return dict(row)
+
+
+def set_mem_bank_state(
+    conn: sqlite3.Connection,
+    *,
+    last_tick_date: str | None = None,
+    completed_at: str | None = None,
+    completion_email_sent: int | None = None,
+) -> dict[str, Any]:
+    get_mem_bank_state(conn)
+    if last_tick_date is not None:
+        conn.execute(
+            "UPDATE mem_bank_state SET last_tick_date = ? WHERE id = 1",
+            (last_tick_date,),
+        )
+    if completed_at is not None:
+        conn.execute(
+            "UPDATE mem_bank_state SET completed_at = ? WHERE id = 1",
+            (completed_at,),
+        )
+    if completion_email_sent is not None:
+        conn.execute(
+            "UPDATE mem_bank_state SET completion_email_sent = ? WHERE id = 1",
+            (completion_email_sent,),
+        )
+    return get_mem_bank_state(conn)
+
+
+def log_mem_send(
+    conn: sqlite3.Connection,
+    *,
+    question_id: int,
+    kind: str,
+    sent_at: str,
+    gmail_message_id: str | None = None,
+    gmail_thread_id: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO mem_send_log (question_id, kind, sent_at, gmail_message_id, gmail_thread_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (question_id, kind, sent_at, gmail_message_id, gmail_thread_id),
+    )
+
+
+def last_mem_send(conn: sqlite3.Connection, question_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT * FROM mem_send_log
+        WHERE question_id = ?
+        ORDER BY sent_at DESC, id DESC
+        LIMIT 1
+        """,
+        (question_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_mem_bank_qa(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Responses for prompt ids MEM-<digits>, oldest first, with attachments."""
+    rows = conn.execute(
+        """
+        SELECT r.*, p.subject AS prompt_subject, p.body AS prompt_body, p.type AS prompt_type
+        FROM response r
+        JOIN prompt p ON p.id = r.prompt_id
+        WHERE p.type = 'MEM' AND r.prompt_id GLOB 'MEM-[0-9]*'
+        ORDER BY CAST(substr(r.prompt_id, 5) AS INTEGER) ASC, r.received_date ASC, r.id ASC
+        """
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        atts = conn.execute(
+            "SELECT * FROM attachment WHERE response_id = ? ORDER BY id",
+            (item["id"],),
+        ).fetchall()
+        item["attachments"] = [dict(a) for a in atts]
+        out.append(item)
+    return out
+
+
+def maybe_promote_transcript_to_answer(conn: sqlite3.Connection, attachment_id: int, transcript: str) -> bool:
+    """If the parent response has empty text, use Whisper transcript as the answer."""
+    row = conn.execute(
+        """
+        SELECT r.id, r.response_text
+        FROM attachment a
+        JOIN response r ON r.id = a.response_id
+        WHERE a.id = ?
+        """,
+        (attachment_id,),
+    ).fetchone()
+    if not row:
+        return False
+    if (row["response_text"] or "").strip():
+        return False
+    conn.execute(
+        "UPDATE response SET response_text = ? WHERE id = ?",
+        (transcript.strip(), row["id"]),
+    )
+    return True
+

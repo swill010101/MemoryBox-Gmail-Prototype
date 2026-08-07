@@ -35,7 +35,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "schedule": {
         "daily_journal": {
-            "enabled": True,
+            "enabled": False,
             "hour": 18,
             "minute": 0,
             "timezone": "local",
@@ -46,6 +46,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "No special formatting required."
             ),
         }
+    },
+    "mem_bank": {
+        "enabled": False,
+        "questions_file": str(ROOT / "config" / "mem_questions.json"),
+        "export_dir": str(ROOT / "exports" / "mem_bank"),
+        "to": "",
+        "hour": 1,
+        "minute": 0,
+        "days_mon_through_fri": [0, 1, 2, 3, 4],
+        "resend_after_days": 7,
     },
     "review_ui": {
         "host": "127.0.0.1",
@@ -99,6 +109,11 @@ def _resolve_paths(cfg: dict[str, Any]) -> dict[str, Any]:
         if gmail.get(key):
             gmail[key] = fix(gmail[key])
     cfg["gmail"] = gmail
+    mem = dict(cfg.get("mem_bank") or {})
+    for key in ("questions_file", "export_dir"):
+        if mem.get(key):
+            mem[key] = fix(mem[key])
+    cfg["mem_bank"] = mem
     return cfg
 
 
@@ -107,4 +122,7 @@ def ensure_runtime_dirs(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     Path(cfg["sqlite_path"]).parent.mkdir(parents=True, exist_ok=True)
     Path(cfg["attachment_storage"]).mkdir(parents=True, exist_ok=True)
     Path(cfg["raw_email_storage"]).mkdir(parents=True, exist_ok=True)
+    export_dir = (cfg.get("mem_bank") or {}).get("export_dir")
+    if export_dir:
+        Path(export_dir).mkdir(parents=True, exist_ok=True)
     return cfg
