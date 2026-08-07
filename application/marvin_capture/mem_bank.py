@@ -17,6 +17,50 @@ log = logging.getLogger("marvin.mem_bank")
 SAFE_RE = re.compile(r"[^\w.\-]+", re.UNICODE)
 
 
+def ensure_questions_file(path: str | Path, *, example: str | Path | None = None) -> Path:
+    """Create questions file from example if missing; return resolved path."""
+    path = Path(path)
+    if path.is_file():
+        return path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if example and Path(example).is_file():
+        path.write_text(Path(example).read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "title": "Memory interview",
+                    "questions": [
+                        {"id": 1, "text": "What is your earliest childhood memory?"}
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return path.resolve()
+
+
+def open_questions_file_in_editor(path: str | Path) -> str:
+    """Open the JSON in the OS default editor (local PoC server only)."""
+    import os
+    import subprocess
+    import sys
+
+    resolved = Path(path).resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(str(resolved))
+    if sys.platform == "win32":
+        os.startfile(str(resolved))  # noqa: S606 — intentional local open
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(resolved)], shell=False)  # noqa: S603
+    else:
+        subprocess.Popen(["xdg-open", str(resolved)], shell=False)  # noqa: S603
+    return str(resolved)
+
+
 def load_questions(path: str | Path) -> list[dict[str, Any]]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     questions = data.get("questions") or data

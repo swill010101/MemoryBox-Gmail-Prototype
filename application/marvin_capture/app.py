@@ -23,7 +23,12 @@ sys.path.insert(0, str(ROOT / "application"))
 
 from marvin_capture import config as cfgmod  # noqa: E402
 from marvin_capture import db as store  # noqa: E402
-from marvin_capture.mem_bank import export_mem_bank, tick_mem_bank  # noqa: E402
+from marvin_capture.mem_bank import (  # noqa: E402
+    ensure_questions_file,
+    export_mem_bank,
+    open_questions_file_in_editor,
+    tick_mem_bank,
+)
 from marvin_capture.service import (  # noqa: E402
     get_gmail_client,
     poll_once,
@@ -234,12 +239,35 @@ def api_mem_tick(force: bool = True, fake: bool = False) -> dict[str, Any]:
 def api_mem_status() -> dict[str, Any]:
     bank = _cfg.get("mem_bank") or {}
     state = store.get_mem_bank_state(_db)
+    qpath = bank.get("questions_file")
     return {
         "enabled": bool(bank.get("enabled")),
-        "questions_file": bank.get("questions_file"),
+        "questions_file": qpath,
+        "questions_file_exists": bool(qpath and Path(qpath).is_file()),
         "hour": bank.get("hour"),
         "minute": bank.get("minute"),
         "state": state,
+        "id_rule": "Questions must be numbered contiguously 1..N",
+    }
+
+
+@app.post("/api/mem/questions/open")
+def api_mem_questions_open() -> dict[str, Any]:
+    """Open config/mem_questions.json in the desktop default editor."""
+    bank = _cfg.get("mem_bank") or {}
+    qpath = bank.get("questions_file")
+    if not qpath:
+        raise HTTPException(400, "mem_bank.questions_file is not configured")
+    example = str(ROOT / "config" / "mem_questions.example.json")
+    path = ensure_questions_file(qpath, example=example)
+    try:
+        opened = open_questions_file_in_editor(path)
+    except OSError as exc:
+        raise HTTPException(500, f"could not open editor: {exc}") from exc
+    return {
+        "ok": True,
+        "path": opened,
+        "hint": "Number questions contiguously as id 1..N. Save the file, then restart is not required — next tick reloads JSON.",
     }
 
 

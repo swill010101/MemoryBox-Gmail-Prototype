@@ -11,6 +11,7 @@
   const btnEvsRemove = document.getElementById("btn-evs-remove");
   const batchStatus = document.getElementById("batch-status");
   const btnMemExtract = document.getElementById("btn-mem-extract");
+  const btnMemOpenQuestions = document.getElementById("btn-mem-open-questions");
   const memStatus = document.getElementById("mem-status");
 
   let view = "inbox";
@@ -223,6 +224,16 @@
     fetchJSON("/api/mem/extract", { method: "POST" })
       .then((data) => {
         memStatus.textContent = `Wrote ${data.count} Q&A → ${data.batch_dir}`;
+      })
+      .catch((e) => {
+        memStatus.textContent = e.message;
+      });
+  });
+  btnMemOpenQuestions.addEventListener("click", () => {
+    memStatus.textContent = "Opening…";
+    fetchJSON("/api/mem/questions/open", { method: "POST" })
+      .then((data) => {
+        memStatus.textContent = `Opened ${data.path} — use ids 1..N contiguous`;
       })
       .catch((e) => {
         memStatus.textContent = e.message;
