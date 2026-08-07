@@ -55,6 +55,7 @@ def test_tick_sends_next_then_resend_and_complete(tmp_path: Path):
 
     # Monday 01:05 — send Q1
     mon = datetime(2026, 8, 10, 1, 5)  # Monday
+    store.set_mem_bank_state(conn, sends_enabled=1)
     r1 = tick_mem_bank(conn, client, cfg, now=mon, force=False)
     assert not r1["skipped"]
     assert any(a["kind"] == "initial" and a["question_id"] == 1 for a in r1["actions"])
