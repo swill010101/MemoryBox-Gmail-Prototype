@@ -22,10 +22,18 @@ Proof-of-concept email capture loop for MemoryBox.
 
 See `docs/product/MBC-002_MEM_QUESTION_BANK_PRD.md`.
 
-## EVS batch (review UI)
+## EVS batch (review UI) — MBC-003
 
-1. **Extract EVS…** — downloads all EVS responses as a `.txt` (you choose the filename)
-2. **Remove all EVS** — deletes EVS rows and their linked files (after extract); JRN/MEM untouched
+Subject `[MB-EVS]` marks the body as EVS payload. Multiple EVSs in one email are split on:
+
+`…end of sentence. Stop. Next sentence…`
+
+(any casing of `Stop`; optional `Stop.` / `Stop!`). Trailing `Stop` with nothing after is ignored. Each segment is its own inbox row / export block (`=== EVS n ===`). Attachments are ignored for EVS (voice-only empty body still Whispers once, then splits).
+
+1. **Extract EVS…** — downloads all EVS segments as a `.txt`
+2. **Remove all EVS** — deletes EVS rows and linked files (after extract); JRN/MEM untouched
+
+See `docs/product/MBC-003_EVS_MULTI_SEGMENT_PRD.md`.
 
 ## Setup
 

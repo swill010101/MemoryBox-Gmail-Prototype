@@ -16,7 +16,7 @@ from .mail_store import (
     save_attachments,
     save_raw_email,
 )
-from .reply_extract import make_subject, normalize_for_dedupe, parse_subject_tag
+from .reply_extract import make_subject, normalize_for_dedupe, parse_subject_tag, split_evs_segments
 
 log = logging.getLogger("marvin.capture")
 
@@ -227,55 +227,73 @@ def process_message(
         }
 
     prompt_id = prompt["id"]
+    prompt_type = (prompt.get("type") or "").upper()
     raw_path = save_raw_email(raw, raw_dir / prompt_id, message_id)
     reply_text = derive_reply_text(msg)
 
-    # Soft dedupe: same prompt + identical / near-identical body
-    norm = normalize_for_dedupe(reply_text)
-    if norm:
-        existing = store.find_response_by_normalized_text(
-            conn, prompt_id=prompt_id, normalized_text=norm
-        )
-        if not existing:
-            # Near-match (resend with tiny edit / truncation)
-            import difflib
-
-            rows = conn.execute(
-                """
-                SELECT id, response_text FROM response
-                WHERE prompt_id = ? AND length(trim(response_text)) > 0
-                ORDER BY id ASC
-                """,
-                (prompt_id,),
-            ).fetchall()
-            for row in rows:
-                prev = normalize_for_dedupe(row["response_text"])
-                if not prev:
-                    continue
-                ratio = difflib.SequenceMatcher(None, prev, norm).ratio()
-                need = 0.88 if min(len(prev), len(norm)) >= 80 else 0.97
-                if ratio >= need or (
-                    min(len(prev), len(norm)) >= 40 and (prev in norm or norm in prev)
-                ):
-                    existing = dict(row)
-                    break
-        if existing:
-            if apply_label:
-                label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
-                label_id = client.ensure_label(label_name)
-                client.apply_label(message_id, label_id)
-            log.info(
-                "duplicate body skipped for prompt %s (existing response %s); raw kept at %s",
-                prompt_id,
-                existing["id"],
-                raw_path,
+    # Soft dedupe: same prompt + identical / near-identical body (non-EVS / whole body)
+    # EVS segments are deduped individually below.
+    if prompt_type != "EVS":
+        norm = normalize_for_dedupe(reply_text)
+        if norm:
+            existing = store.find_response_by_normalized_text(
+                conn, prompt_id=prompt_id, normalized_text=norm
             )
-            return {
-                "status": "duplicate_skipped",
-                "existing_response_id": existing["id"],
-                "raw_email_path": str(raw_path),
-                "gmail_message_id": message_id,
-            }
+            if not existing:
+                import difflib
+
+                rows = conn.execute(
+                    """
+                    SELECT id, response_text FROM response
+                    WHERE prompt_id = ? AND length(trim(response_text)) > 0
+                    ORDER BY id ASC
+                    """,
+                    (prompt_id,),
+                ).fetchall()
+                for row in rows:
+                    prev = normalize_for_dedupe(row["response_text"])
+                    if not prev:
+                        continue
+                    ratio = difflib.SequenceMatcher(None, prev, norm).ratio()
+                    need = 0.88 if min(len(prev), len(norm)) >= 80 else 0.97
+                    if ratio >= need or (
+                        min(len(prev), len(norm)) >= 40 and (prev in norm or norm in prev)
+                    ):
+                        existing = dict(row)
+                        break
+            if existing:
+                if apply_label:
+                    label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+                    label_id = client.ensure_label(label_name)
+                    client.apply_label(message_id, label_id)
+                log.info(
+                    "duplicate body skipped for prompt %s (existing response %s); raw kept at %s",
+                    prompt_id,
+                    existing["id"],
+                    raw_path,
+                )
+                return {
+                    "status": "duplicate_skipped",
+                    "existing_response_id": existing["id"],
+                    "raw_email_path": str(raw_path),
+                    "gmail_message_id": message_id,
+                }
+
+    if prompt_type == "EVS":
+        return _capture_evs(
+            conn,
+            client,
+            cfg,
+            prompt_id=prompt_id,
+            reply_text=reply_text,
+            raw_path=raw_path,
+            message_id=message_id,
+            thread_id=thread_id,
+            subject=subject,
+            msg=msg,
+            att_root=att_root,
+            apply_label=apply_label,
+        )
 
     attachments = extract_attachments(msg)
     att_dir = att_root / prompt_id / message_id
@@ -289,6 +307,7 @@ def process_message(
         gmail_message_id=message_id,
         gmail_thread_id=thread_id,
         subject=subject,
+        segment_index=1,
     )
 
     for att in saved_atts:
@@ -315,13 +334,128 @@ def process_message(
     return {"status": "captured", "response": detail}
 
 
+def _capture_evs(
+    conn: Any,
+    client: GmailClient,
+    cfg: dict[str, Any],
+    *,
+    prompt_id: str,
+    reply_text: str,
+    raw_path: Path,
+    message_id: str,
+    thread_id: str,
+    subject: str,
+    msg: Any,
+    att_root: Path,
+    apply_label: bool,
+) -> dict[str, Any]:
+    """Capture EVS: split on Stop; ignore attachments unless voice-only empty body."""
+    segments = split_evs_segments(reply_text)
+
+    if segments:
+        details = []
+        for i, seg in enumerate(segments, start=1):
+            norm = normalize_for_dedupe(seg)
+            if norm and store.find_response_by_normalized_text(
+                conn, prompt_id=prompt_id, normalized_text=norm
+            ):
+                log.info("EVS segment %02d duplicate skipped for prompt %s", i, prompt_id)
+                continue
+            row = store.insert_response(
+                conn,
+                prompt_id=prompt_id,
+                response_text=seg,
+                raw_email_path=str(raw_path),
+                gmail_message_id=message_id,
+                gmail_thread_id=thread_id,
+                subject=subject,
+                segment_index=i,
+            )
+            details.append(store.get_response_detail(conn, row["id"]))
+        if apply_label:
+            label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+            label_id = client.ensure_label(label_name)
+            client.apply_label(message_id, label_id)
+        log.info(
+            "captured %s EVS segment(s) for message %s (attachments ignored)",
+            len(details),
+            message_id,
+        )
+        return {
+            "status": "captured",
+            "segment_count": len(details),
+            "responses": details,
+            "response": details[0] if details else None,
+        }
+
+    # Voice-only: empty body → hold audio for Whisper, then split on promote
+    attachments = extract_attachments(msg)
+    audio_atts = [
+        a for a in attachments if store.is_audio(a.get("filename") or "", a.get("mime_type"))
+    ]
+    if not audio_atts:
+        if apply_label:
+            label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+            label_id = client.ensure_label(label_name)
+            client.apply_label(message_id, label_id)
+        log.info("EVS message %s empty (no text/audio segments)", message_id)
+        return {
+            "status": "evs_empty",
+            "raw_email_path": str(raw_path),
+            "gmail_message_id": message_id,
+        }
+
+    att_dir = att_root / prompt_id / message_id
+    saved_atts = save_attachments(audio_atts, att_dir)
+    response = store.insert_response(
+        conn,
+        prompt_id=prompt_id,
+        response_text="",
+        raw_email_path=str(raw_path),
+        gmail_message_id=message_id,
+        gmail_thread_id=thread_id,
+        subject=subject,
+        segment_index=1,
+    )
+    for att in saved_atts:
+        store.insert_attachment(
+            conn,
+            response_id=response["id"],
+            filename=att["filename"],
+            mime_type=att["mime_type"],
+            storage_path=att["storage_path"],
+        )
+    if apply_label:
+        label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+        label_id = client.ensure_label(label_name)
+        client.apply_label(message_id, label_id)
+    detail = store.get_response_detail(conn, response["id"])
+    log.info(
+        "captured EVS voice placeholder %s (%s audio) awaiting Whisper split",
+        response["id"],
+        len(saved_atts),
+    )
+    return {"status": "captured", "segment_count": 1, "response": detail, "responses": [detail]}
+
+
 def reextract_all_responses(conn: Any) -> int:
-    """Re-derive response_text from preserved raw .eml (additive cleanup)."""
+    """Re-derive response_text from preserved raw .eml (additive cleanup).
+
+    Skips EVS rows — multi-segment Stop splits must not be overwritten by a
+    full-body reextract.
+    """
     rows = conn.execute(
-        "SELECT id, raw_email_path FROM response WHERE raw_email_path IS NOT NULL"
+        """
+        SELECT r.id, r.raw_email_path, p.type AS prompt_type
+        FROM response r
+        JOIN prompt p ON p.id = r.prompt_id
+        WHERE r.raw_email_path IS NOT NULL
+        """
     ).fetchall()
     updated = 0
     for row in rows:
+        if (row["prompt_type"] or "").upper() == "EVS":
+            continue
         path = Path(row["raw_email_path"])
         if not path.is_file():
             continue

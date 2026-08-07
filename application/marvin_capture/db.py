@@ -30,12 +30,14 @@ CREATE TABLE IF NOT EXISTS response (
     response_text TEXT NOT NULL DEFAULT '',
     raw_email_path TEXT NOT NULL,
     subject TEXT,
-    gmail_message_id TEXT UNIQUE,
+    gmail_message_id TEXT,
     gmail_thread_id TEXT,
+    segment_index INTEGER NOT NULL DEFAULT 1,
     processed INTEGER NOT NULL DEFAULT 1,
     reviewed INTEGER NOT NULL DEFAULT 0,
     reviewed_at TEXT,
-    FOREIGN KEY (prompt_id) REFERENCES prompt(id)
+    FOREIGN KEY (prompt_id) REFERENCES prompt(id),
+    UNIQUE (gmail_message_id, segment_index)
 );
 
 CREATE TABLE IF NOT EXISTS attachment (
@@ -112,6 +114,80 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE mem_bank_state ADD COLUMN sends_enabled INTEGER")
     if "next_initial_date" not in state_cols:
         conn.execute("ALTER TABLE mem_bank_state ADD COLUMN next_initial_date TEXT")
+
+    # MBC-003: segment_index + composite uniqueness (replace UNIQUE gmail_message_id)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(response)").fetchall()}
+    if "segment_index" not in cols:
+        conn.execute(
+            "ALTER TABLE response ADD COLUMN segment_index INTEGER NOT NULL DEFAULT 1"
+        )
+    _rebuild_response_unique(conn)
+
+
+def _rebuild_response_unique(conn: sqlite3.Connection) -> None:
+    """Drop old UNIQUE(gmail_message_id); enforce UNIQUE(gmail_message_id, segment_index)."""
+    # Detect legacy unique index on gmail_message_id alone
+    indexes = conn.execute("PRAGMA index_list(response)").fetchall()
+    needs_rebuild = False
+    for idx in indexes:
+        # Row: seq, name, unique, origin, partial
+        if not idx[2]:
+            continue
+        name = idx[1]
+        info = conn.execute(f"PRAGMA index_info({name})").fetchall()
+        cols = [r[2] for r in info]
+        if cols == ["gmail_message_id"]:
+            needs_rebuild = True
+            break
+    # Fresh DBs created with new SCHEMA already have composite UNIQUE — skip
+    if not needs_rebuild:
+        # Ensure composite unique exists for DBs that never had gmail unique
+        existing = {
+            row[1] for row in conn.execute("PRAGMA index_list(response)").fetchall()
+        }
+        if "sqlite_autoindex_response_1" not in existing and not any(
+            True
+            for idx in indexes
+            if idx[2]
+            and [r[2] for r in conn.execute(f"PRAGMA index_info({idx[1]})").fetchall()]
+            == ["gmail_message_id", "segment_index"]
+        ):
+            # Table may already declare UNIQUE in CREATE — only rebuild when needed
+            pass
+        return
+
+    conn.executescript(
+        """
+        CREATE TABLE response_mbc003 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt_id TEXT NOT NULL REFERENCES prompt(id),
+            received_date TEXT NOT NULL,
+            response_text TEXT NOT NULL DEFAULT '',
+            raw_email_path TEXT NOT NULL,
+            subject TEXT,
+            gmail_message_id TEXT,
+            gmail_thread_id TEXT,
+            segment_index INTEGER NOT NULL DEFAULT 1,
+            processed INTEGER NOT NULL DEFAULT 1,
+            reviewed INTEGER NOT NULL DEFAULT 0,
+            reviewed_at TEXT,
+            FOREIGN KEY (prompt_id) REFERENCES prompt(id),
+            UNIQUE (gmail_message_id, segment_index)
+        );
+        INSERT INTO response_mbc003 (
+            id, prompt_id, received_date, response_text, raw_email_path, subject,
+            gmail_message_id, gmail_thread_id, segment_index, processed, reviewed, reviewed_at
+        )
+        SELECT
+            id, prompt_id, received_date, response_text, raw_email_path, subject,
+            gmail_message_id, gmail_thread_id, segment_index, processed, reviewed, reviewed_at
+        FROM response;
+        DROP TABLE response;
+        ALTER TABLE response_mbc003 RENAME TO response;
+        CREATE INDEX IF NOT EXISTS idx_response_prompt ON response(prompt_id);
+        CREATE INDEX IF NOT EXISTS idx_response_reviewed ON response(reviewed);
+        """
+    )
 
 
 @contextmanager
@@ -236,13 +312,14 @@ def insert_response(
     gmail_message_id: str | None = None,
     gmail_thread_id: str | None = None,
     subject: str | None = None,
+    segment_index: int = 1,
 ) -> dict[str, Any]:
     cur = conn.execute(
         """
         INSERT INTO response (
             prompt_id, received_date, response_text, raw_email_path, subject,
-            gmail_message_id, gmail_thread_id, processed, reviewed
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+            gmail_message_id, gmail_thread_id, segment_index, processed, reviewed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
         """,
         (
             prompt_id,
@@ -252,6 +329,7 @@ def insert_response(
             subject,
             gmail_message_id,
             gmail_thread_id,
+            int(segment_index),
         ),
     )
     return get_response(conn, int(cur.lastrowid))  # type: ignore[return-value]
@@ -271,7 +349,7 @@ def list_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> list[d
         FROM response r
         JOIN prompt p ON p.id = r.prompt_id
         WHERE p.type = ?
-        ORDER BY r.received_date ASC, r.id ASC
+        ORDER BY r.received_date ASC, r.segment_index ASC, r.id ASC
         """,
         (prompt_type.upper(),),
     ).fetchall()
@@ -282,10 +360,12 @@ def delete_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> dict
     """Delete responses (and attachments) for a type. Also removes linked files.
 
     Explicit batch wipe for EVS workflow — originals for other types untouched.
+    Shared raw paths across EVS segments are deleted once.
     """
     prompt_type = prompt_type.upper()
     rows = list_responses_by_type(conn, prompt_type)
     removed_files: list[str] = []
+    seen_raw: set[str] = set()
     for resp in rows:
         atts = conn.execute(
             "SELECT * FROM attachment WHERE response_id = ?",
@@ -298,8 +378,11 @@ def delete_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> dict
                 removed_files.append(str(path))
         raw = Path(resp["raw_email_path"]) if resp.get("raw_email_path") else None
         if raw and raw.is_file():
-            raw.unlink()
-            removed_files.append(str(raw))
+            key = str(raw.resolve()) if raw.exists() else str(raw)
+            if key not in seen_raw:
+                raw.unlink()
+                removed_files.append(str(raw))
+                seen_raw.add(key)
         conn.execute("DELETE FROM attachment WHERE response_id = ?", (resp["id"],))
         conn.execute("DELETE FROM response WHERE id = ?", (resp["id"],))
 
@@ -324,14 +407,17 @@ def delete_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> dict
 
 
 def format_evs_export(items: list[dict[str, Any]]) -> str:
-    """Plain-text batch export for MemoryBox EVS processing."""
+    """Plain-text batch export for MemoryBox EVS processing (one block per segment)."""
     blocks: list[str] = []
     for i, item in enumerate(items, start=1):
+        seg = int(item.get("segment_index") or 1)
         subject = item.get("subject") or item.get("prompt_subject") or ""
         header = (
             f"=== EVS {i} ===\n"
+            f"segment: {seg:02d}\n"
             f"received: {item.get('received_date') or ''}\n"
             f"subject: {subject}\n"
+            f"gmail_message_id: {item.get('gmail_message_id') or ''}\n"
             f"id: {item.get('id')}\n"
             f"---\n"
         )
@@ -733,12 +819,21 @@ def list_mem_bank_qa(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def maybe_promote_transcript_to_answer(conn: sqlite3.Connection, attachment_id: int, transcript: str) -> bool:
-    """If the parent response has empty text, use Whisper transcript as the answer."""
+    """If the parent response has empty text, use Whisper transcript as the answer.
+
+    For EVS (MBC-003): split transcript on Stop into segment rows; drop attachment
+    links so review UI ignores audio (files remain on disk until Remove).
+    """
+    from .reply_extract import split_evs_segments
+
     row = conn.execute(
         """
-        SELECT r.id, r.response_text
+        SELECT r.id, r.response_text, r.prompt_id, r.raw_email_path, r.subject,
+               r.gmail_message_id, r.gmail_thread_id, r.received_date, r.segment_index,
+               p.type AS prompt_type
         FROM attachment a
         JOIN response r ON r.id = a.response_id
+        JOIN prompt p ON p.id = r.prompt_id
         WHERE a.id = ?
         """,
         (attachment_id,),
@@ -747,9 +842,36 @@ def maybe_promote_transcript_to_answer(conn: sqlite3.Connection, attachment_id: 
         return False
     if (row["response_text"] or "").strip():
         return False
+
+    text = (transcript or "").strip()
+    if not text:
+        return False
+
+    if (row["prompt_type"] or "").upper() == "EVS":
+        segments = split_evs_segments(text) or [text]
+        conn.execute(
+            "UPDATE response SET response_text = ? WHERE id = ?",
+            (segments[0], row["id"]),
+        )
+        for i, seg in enumerate(segments[1:], start=2):
+            insert_response(
+                conn,
+                prompt_id=row["prompt_id"],
+                response_text=seg,
+                raw_email_path=row["raw_email_path"],
+                received_date=row["received_date"],
+                gmail_message_id=row["gmail_message_id"],
+                gmail_thread_id=row["gmail_thread_id"],
+                subject=row["subject"],
+                segment_index=i,
+            )
+        # Ignore attachments for EVS in UI — unlink DB rows (files stay until Remove)
+        conn.execute("DELETE FROM attachment WHERE response_id = ?", (row["id"],))
+        return True
+
     conn.execute(
         "UPDATE response SET response_text = ? WHERE id = ?",
-        (transcript.strip(), row["id"]),
+        (text, row["id"]),
     )
     return True
 

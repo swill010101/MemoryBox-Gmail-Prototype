@@ -37,6 +37,12 @@ SENT_FROM_INLINE_RE = re.compile(
     r"(?:\s+Mobile)?\s*$"
 )
 
+# EVS multi-segment (MBC-003): sentence end → Stop → next sentence.
+# ASR may emit stop / Stop. / STOP! — any case + optional trailing punct.
+EVS_STOP_SPLIT_RE = re.compile(
+    r"(?<=[.!?])\s+[Ss][Tt][Oo][Pp](?:\s*[.!?…])?(?=\s+|$)",
+)
+
 
 class SubjectTag(NamedTuple):
     prompt_type: str
@@ -93,6 +99,19 @@ def html_to_text(html: str) -> str:
 def normalize_for_dedupe(text: str) -> str:
     """Collapse whitespace so soft-wrap / resend variants compare equal."""
     return re.sub(r"\s+", " ", (text or "").strip()).casefold()
+
+
+def split_evs_segments(text: str) -> list[str]:
+    """Split EVS body on sentence-ending punctuation + Stop + next sentence.
+
+    Trailing Stop with no follow-on sentence yields no empty segment.
+    No Stop → single segment (full stripped body). Mid-sentence \"stop\" is kept.
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    parts = EVS_STOP_SPLIT_RE.split(text)
+    return [part.strip() for part in parts if part.strip()]
 
 
 def unwrap_soft_line_breaks(text: str) -> str:

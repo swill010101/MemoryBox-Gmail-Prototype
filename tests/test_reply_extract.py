@@ -11,6 +11,7 @@ from marvin_capture.reply_extract import (  # noqa: E402
     extract_reply_text,
     make_subject,
     parse_subject_tag,
+    split_evs_segments,
 )
 
 
@@ -79,3 +80,36 @@ def test_strip_sent_from_variants():
 
 def test_extract_empty_ok():
     assert extract_reply_text("") == ""
+
+
+def test_split_evs_segments_stop_delimiter():
+    text = (
+        "Find all the pics of Laura. Stop. "
+        "Find all the pictures of grandpa's funny hat. Stop."
+    )
+    segs = split_evs_segments(text)
+    assert len(segs) == 2
+    assert segs[0].endswith("Laura.")
+    assert "funny hat" in segs[1]
+    # Trailing Stop ignored (no follow-on)
+    assert split_evs_segments(segs[1] + " Stop.") == [segs[1]]
+
+
+def test_split_evs_no_stop_single():
+    assert split_evs_segments("Just one ask about the watch.") == [
+        "Just one ask about the watch."
+    ]
+
+
+def test_split_evs_mid_sentence_stop_kept():
+    text = "Please don't stop looking for the album."
+    assert split_evs_segments(text) == [text]
+
+
+def test_split_evs_asr_case_variants():
+    text = "Ask one. stop Ask two. STOP! Ask three."
+    segs = split_evs_segments(text)
+    assert len(segs) == 3
+    assert segs[0] == "Ask one."
+    assert segs[1] == "Ask two."
+    assert segs[2] == "Ask three."

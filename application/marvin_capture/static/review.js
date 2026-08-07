@@ -54,6 +54,11 @@
   function listLabel(item) {
     const snippet = (item.response_text || "").trim().replace(/\s+/g, " ");
     const short = snippet.length > 72 ? snippet.slice(0, 69) + "…" : snippet;
+    if ((item.prompt_type || "").toUpperCase() === "EVS") {
+      const seg = String(item.segment_index || 1).padStart(2, "0");
+      if (short) return `EVS-${seg}: ${short}`;
+      return `EVS-${seg}`;
+    }
     if (short) return short;
     return item.subject || item.prompt_subject || item.prompt_id || "Response";
   }
@@ -106,8 +111,12 @@
     placeholder.classList.add("hidden");
     detailBody.classList.remove("hidden");
 
+    const seg =
+      (detail.prompt_type || "").toUpperCase() === "EVS"
+        ? ` · segment ${String(detail.segment_index || 1).padStart(2, "0")}`
+        : "";
     document.getElementById("d-meta").textContent =
-      `${detail.prompt_type || detail.prompt_id} · received ${formatDate(detail.received_date)}` +
+      `${detail.prompt_type || detail.prompt_id}${seg} · received ${formatDate(detail.received_date)}` +
       (detail.reviewed ? " · reviewed" : "");
     document.getElementById("d-prompt-subject").textContent =
       detail.subject || detail.prompt_subject || "";
@@ -124,9 +133,15 @@
     const attList = document.getElementById("d-attachments");
     const noAtt = document.getElementById("d-no-attachments");
     attList.innerHTML = "";
-    const atts = detail.attachments || [];
+    // MBC-003: EVS ignores attachments in the review UI
+    const atts =
+      (detail.prompt_type || "").toUpperCase() === "EVS" ? [] : detail.attachments || [];
     if (!atts.length) {
       noAtt.classList.remove("hidden");
+      noAtt.textContent =
+        (detail.prompt_type || "").toUpperCase() === "EVS"
+          ? "EVS ignores attachments (text / Whisper only)."
+          : "No attachments.";
     } else {
       noAtt.classList.add("hidden");
       for (const a of atts) {

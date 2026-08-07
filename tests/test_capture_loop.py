@@ -106,16 +106,91 @@ def test_evs_tokenless_extract_and_delete(tmp_path: Path):
     result = process_message(conn, client, cfg, mid)
     assert result["status"] == "captured"
     assert result["response"]["prompt_id"] == "EVS"
+    assert result["response"]["segment_index"] == 1
 
     items = store.list_responses_by_type(conn, "EVS")
     assert len(items) == 1
     export = store.format_evs_export(items)
     assert "Pocket watch" in export
     assert "belonged to Dad" in export
+    assert "segment: 01" in export
 
     wiped = store.delete_responses_by_type(conn, "EVS")
     assert wiped["responses_deleted"] == 1
     assert store.list_responses_by_type(conn, "EVS") == []
+    conn.close()
+
+
+def test_evs_multi_segment_stop_split(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+
+    body = (
+        "Find all the pics of Laura. Stop. "
+        "Find all the pictures of grandpa's funny hat. STOP. "
+        "Find the beach trip album. stop."
+    )
+    mid = client.inject_reply(
+        thread_id="thr-evs-multi",
+        subject="[MB-EVS]",
+        body=body,
+        attachments=[("ignore.jpg", "image/jpeg", b"\xff\xd8fake")],
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "captured"
+    assert result["segment_count"] == 3
+    items = store.list_responses_by_type(conn, "EVS")
+    assert len(items) == 3
+    assert [i["segment_index"] for i in items] == [1, 2, 3]
+    assert items[0]["gmail_message_id"] == items[1]["gmail_message_id"] == mid
+    assert "Laura" in items[0]["response_text"]
+    assert "funny hat" in items[1]["response_text"]
+    assert "beach" in items[2]["response_text"]
+    # Attachments ignored for text EVS
+    for item in items:
+        detail = store.get_response_detail(conn, item["id"])
+        assert detail["attachments"] == []
+    export = store.format_evs_export(items)
+    assert "=== EVS 1 ===" in export and "=== EVS 3 ===" in export
+    wiped = store.delete_responses_by_type(conn, "EVS")
+    assert wiped["responses_deleted"] == 3
+    conn.close()
+
+
+def test_evs_whisper_promote_splits(tmp_path: Path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+
+    mid = client.inject_reply(
+        thread_id="thr-evs-voice",
+        subject="[MB-EVS]",
+        body="",
+        attachments=[("asks.m4a", "audio/mp4", b"fake-audio")],
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "captured"
+    assert result["response"]["response_text"] == ""
+    assert len(result["response"]["attachments"]) == 1
+
+    monkeypatch.setattr(
+        "marvin_capture.whisper_client.transcribe_file",
+        lambda path, **kwargs: (
+            "Find Laura photos. Stop. Find grandpa hat pictures. Stop."
+        ),
+    )
+    tx = process_pending_transcriptions(conn, cfg["whisper"])
+    assert tx[0]["status"] == "done"
+    assert tx[0]["promoted_to_answer"] is True
+    items = store.list_responses_by_type(conn, "EVS")
+    assert len(items) == 2
+    assert items[0]["segment_index"] == 1
+    assert "Laura" in items[0]["response_text"]
+    assert "grandpa" in items[1]["response_text"]
+    # Attachment rows removed after EVS promote
+    d0 = store.get_response_detail(conn, items[0]["id"])
+    assert d0["attachments"] == []
     conn.close()
 
 

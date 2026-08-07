@@ -156,4 +156,7 @@ Tom presses Reply. No special formatting required. May attach images, PDF, DOCX,
 
 ## 10. Future (explicitly deferred)
 
-EVS / story capture, automatic tagging, Ollama summarization, MemoryBox ingestion, relationship suggestions, weekly interviews, multi-user, public API.
+Automatic tagging, Ollama summarization, MemoryBox ingestion, relationship suggestions, weekly interviews, multi-user, public API.
+
+**EVS multi-segment** is specified in `MBC-003_EVS_MULTI_SEGMENT_PRD.md` (implemented alongside this PoC).
+
