@@ -453,32 +453,64 @@ def find_response_by_normalized_text(
     return None
 
 
-def auto_review_duplicate_bodies(conn: sqlite3.Connection) -> int:
-    """Mark newer unreviewed rows reviewed when an older same-body twin exists.
+def auto_review_duplicate_bodies(
+    conn: sqlite3.Connection,
+    *,
+    similarity_threshold: float = 0.88,
+) -> int:
+    """Mark newer unreviewed rows reviewed when an older twin exists.
+
+    Match rules (same prompt_id):
+      1. Exact normalized body
+      2. High similarity (SequenceMatcher on normalized body)
 
     Keeps raw email + both DB rows (additive). Clears Inbox clutter for
     accidental double-captures of the same journal/MEM body.
     """
+    import difflib
+
     from .reply_extract import normalize_for_dedupe
 
     rows = conn.execute(
         """
-        SELECT id, prompt_id, response_text, reviewed
+        SELECT id, prompt_id, response_text, reviewed, received_date
         FROM response
         WHERE length(trim(response_text)) > 0
         ORDER BY id ASC
         """
     ).fetchall()
-    seen: dict[tuple[str, str], int] = {}
+
+    # Keep first (oldest) keeper per prompt_id as list of (norm, id)
+    keepers: dict[str, list[tuple[str, int]]] = {}
     marked = 0
     for row in rows:
-        key = (row["prompt_id"], normalize_for_dedupe(row["response_text"]))
-        if key not in seen:
-            seen[key] = row["id"]
+        pid = row["prompt_id"]
+        norm = normalize_for_dedupe(row["response_text"])
+        if not norm:
             continue
-        if not row["reviewed"]:
-            mark_reviewed(conn, row["id"], reviewed=True)
-            marked += 1
+        prior = keepers.setdefault(pid, [])
+        is_dupe = False
+        for prev_norm, _prev_id in prior:
+            if prev_norm == norm:
+                is_dupe = True
+                break
+            # Long journals: require solid overlap; short notes need near-exact
+            ratio = difflib.SequenceMatcher(None, prev_norm, norm).ratio()
+            need = similarity_threshold if min(len(prev_norm), len(norm)) >= 80 else 0.97
+            if ratio >= need:
+                is_dupe = True
+                break
+            # One body fully contains the other (truncated / extended resend)
+            if len(prev_norm) >= 40 and len(norm) >= 40:
+                if prev_norm in norm or norm in prev_norm:
+                    is_dupe = True
+                    break
+        if is_dupe:
+            if not row["reviewed"]:
+                mark_reviewed(conn, row["id"], reviewed=True)
+                marked += 1
+            continue
+        prior.append((norm, row["id"]))
     return marked
 
 

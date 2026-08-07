@@ -255,3 +255,56 @@ def test_auto_review_duplicate_bodies(tmp_path: Path):
     assert len(rows) == 1
     assert rows[0]["gmail_message_id"] == "m1"
     conn.close()
+
+
+def test_auto_review_near_duplicate_journals(tmp_path: Path):
+    """Near-identical long JRN bodies (resend with a tiny edit) collapse."""
+    cfg = _cfg(tmp_path)
+    conn = store.init_db(cfg["sqlite_path"])
+    store.insert_prompt(
+        conn,
+        prompt_id="JRN",
+        prompt_type="JRN",
+        subject="[MB-JRN]",
+        body="(Ad-hoc journal)",
+    )
+    base = (
+        "Today, the grandkids and Laura went home to TX. They have school coming up "
+        "and sports starting back up again. Baseball, Hockey for Sam and Softball for Ava. "
+        "We had a great time here in St. Louis, playing games, Top Golf, Mini Golf, "
+        "Sky Zone, Main Event Games, a game night, Ava's Ice Cream shop."
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=base,
+        raw_email_path=str(tmp_path / "a.eml"),
+        gmail_message_id="j1",
+        gmail_thread_id="tj",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=base + " Have a great day!",
+        raw_email_path=str(tmp_path / "b.eml"),
+        gmail_message_id="j2",
+        gmail_thread_id="tj",
+    )
+    n = store.auto_review_duplicate_bodies(conn)
+    assert n == 1
+    assert len(store.list_responses(conn, reviewed=False)) == 1
+    # Distinct journal later same day must stay
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=(
+            "Walked to Crunch Gym this morning. Joined as part of Medicare. "
+            "People seem nice. Going to start walking tomorrow and the next day."
+        ),
+        raw_email_path=str(tmp_path / "c.eml"),
+        gmail_message_id="j3",
+        gmail_thread_id="tj2",
+    )
+    assert store.auto_review_duplicate_bodies(conn) == 0
+    assert len(store.list_responses(conn, reviewed=False)) == 2
+    conn.close()

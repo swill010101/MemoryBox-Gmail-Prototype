@@ -230,12 +230,35 @@ def process_message(
     raw_path = save_raw_email(raw, raw_dir / prompt_id, message_id)
     reply_text = derive_reply_text(msg)
 
-    # Soft dedupe: same prompt + identical body (whitespace-insensitive)
+    # Soft dedupe: same prompt + identical / near-identical body
     norm = normalize_for_dedupe(reply_text)
     if norm:
         existing = store.find_response_by_normalized_text(
             conn, prompt_id=prompt_id, normalized_text=norm
         )
+        if not existing:
+            # Near-match (resend with tiny edit / truncation)
+            import difflib
+
+            rows = conn.execute(
+                """
+                SELECT id, response_text FROM response
+                WHERE prompt_id = ? AND length(trim(response_text)) > 0
+                ORDER BY id ASC
+                """,
+                (prompt_id,),
+            ).fetchall()
+            for row in rows:
+                prev = normalize_for_dedupe(row["response_text"])
+                if not prev:
+                    continue
+                ratio = difflib.SequenceMatcher(None, prev, norm).ratio()
+                need = 0.88 if min(len(prev), len(norm)) >= 80 else 0.97
+                if ratio >= need or (
+                    min(len(prev), len(norm)) >= 40 and (prev in norm or norm in prev)
+                ):
+                    existing = dict(row)
+                    break
         if existing:
             if apply_label:
                 label_name = cfg["gmail"].get("processed_label") or "MB/Processed"

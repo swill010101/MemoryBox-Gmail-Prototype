@@ -151,8 +151,24 @@ def api_config() -> dict[str, Any]:
 def api_list_responses(
     reviewed: bool | None = Query(default=None),
 ) -> dict[str, Any]:
+    # Inbox refresh also collapses near-duplicate bodies (keeps raw + older row).
+    if reviewed is False:
+        try:
+            n = store.auto_review_duplicate_bodies(_db)
+            if n:
+                _db.commit()
+                log.info("inbox refresh auto-reviewed %s duplicate(s)", n)
+        except Exception:  # noqa: BLE001
+            log.exception("inbox duplicate cleanup skipped")
     items = store.list_responses(_db, reviewed=reviewed)
     return {"count": len(items), "responses": items}
+
+
+@app.post("/api/cleanup-duplicates")
+def api_cleanup_duplicates() -> dict[str, Any]:
+    n = store.auto_review_duplicate_bodies(_db)
+    _db.commit()
+    return {"auto_reviewed": n}
 
 
 @app.get("/api/responses/{response_id}")
