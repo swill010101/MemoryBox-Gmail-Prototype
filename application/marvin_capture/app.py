@@ -55,6 +55,22 @@ try:
 except Exception:  # noqa: BLE001
     log.exception("startup reextract skipped")
 
+# Humanize old ad-hoc prompt placeholders
+try:
+    cur = _db.execute(
+        """
+        UPDATE prompt SET body = ?
+        WHERE body LIKE '%original outbound not in DB%'
+          AND type = 'JRN'
+        """,
+        ("(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",),
+    )
+    if cur.rowcount:
+        _db.commit()
+        log.info("updated %s ad-hoc JRN prompt placeholder(s)", cur.rowcount)
+except Exception:  # noqa: BLE001
+    log.exception("adhoc prompt cleanup skipped")
+
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
