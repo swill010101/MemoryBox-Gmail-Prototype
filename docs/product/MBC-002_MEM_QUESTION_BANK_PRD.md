@@ -13,9 +13,10 @@ Run a sequenced life-interview: 300+ questions from JSON, one new question per w
 | Topic | Decision |
 |-------|----------|
 | Source | `config/mem_questions.json` — ids `1…N` in order |
-| Cadence | Mon–Fri **01:00** local — email waiting when Tom wakes |
-| Advance | Send **next unsent** each scheduled day |
-| Unanswered | Still advance next day; **resend** unanswered question **7 days** after last send |
+| Cadence | **Every other day** at **01:00** local |
+| Advance | Send **next unsent** on each send day (keep going even if prior unanswered) |
+| Unanswered | **One** resend only, **7 days** after the initial send |
+| Arming | Turning **MEM sends ON** schedules the first new question for **tomorrow** 01:00 |
 | Subject | `[MB-MEM-n] <question text>` (bare id). Tokenless `[MB-MEM]` = ad-hoc only |
 | Answered | Any captured reply for that `MEM-n` |
 | Voice-only | Whisper transcript → `response_text`; original audio kept |

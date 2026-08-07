@@ -80,6 +80,95 @@ def load_questions(path: str | Path) -> list[dict[str, Any]]:
     return out
 
 
+def validate_questions_file(path: str | Path) -> dict[str, Any]:
+    """Return a review-friendly validation report without raising."""
+    path = Path(path)
+    report: dict[str, Any] = {
+        "ok": False,
+        "path": str(path),
+        "exists": path.is_file(),
+        "count": 0,
+        "errors": [],
+        "warnings": [],
+        "sample": [],
+    }
+    if not path.is_file():
+        report["errors"].append("questions file not found")
+        return report
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        report["errors"].append(f"invalid JSON: {exc}")
+        return report
+    except OSError as exc:
+        report["errors"].append(f"cannot read file: {exc}")
+        return report
+
+    questions = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(questions, list):
+        report["errors"].append("expected top-level 'questions' array")
+        return report
+    if not questions:
+        report["errors"].append("questions array is empty")
+        return report
+
+    ids: list[int] = []
+    texts: list[str] = []
+    for i, q in enumerate(questions):
+        if not isinstance(q, dict):
+            report["errors"].append(f"item {i}: not an object")
+            continue
+        if "id" not in q:
+            report["errors"].append(f"item {i}: missing id")
+            continue
+        try:
+            qid = int(q["id"])
+        except (TypeError, ValueError):
+            report["errors"].append(f"item {i}: id must be an integer (got {q.get('id')!r})")
+            continue
+        text = str(q.get("text") or "").strip()
+        if not text:
+            report["errors"].append(f"id {qid}: empty text")
+            continue
+        if qid in ids:
+            report["errors"].append(f"duplicate id {qid}")
+        ids.append(qid)
+        texts.append(text)
+        if len(text) > 500:
+            report["warnings"].append(f"id {qid}: long text ({len(text)} chars) — subject headline will truncate")
+
+    if ids:
+        expected = list(range(1, len(ids) + 1))
+        sorted_ids = sorted(ids)
+        if sorted_ids != expected:
+            report["errors"].append(
+                f"ids must be contiguous 1..N; have {sorted_ids[:5]}{'…' if len(sorted_ids) > 5 else ''} "
+                f"(n={len(sorted_ids)}), expected 1..{len(sorted_ids)}"
+            )
+        # gaps detail
+        missing = [n for n in expected if n not in set(ids)]
+        if missing:
+            report["errors"].append(f"missing ids: {missing[:20]}{'…' if len(missing) > 20 else ''}")
+
+    report["count"] = len(texts)
+    # samples for human review
+    samples: list[dict[str, Any]] = []
+    by_id = {int(q["id"]): str(q.get("text") or "").strip() for q in questions if isinstance(q, dict) and "id" in q}
+    for qid in [1, 2, 3]:
+        if qid in by_id:
+            samples.append({"id": qid, "text": by_id[qid][:180]})
+    if report["count"] >= 4:
+        mid = (report["count"] + 1) // 2
+        if mid in by_id and mid not in (1, 2, 3):
+            samples.append({"id": mid, "text": by_id[mid][:180]})
+    if report["count"] >= 1 and report["count"] not in (1, 2, 3):
+        samples.append({"id": report["count"], "text": by_id.get(report["count"], "")[:180]})
+    report["sample"] = samples
+    report["ok"] = len(report["errors"]) == 0
+    return report
+
+
 def mem_prompt_id(question_id: int) -> str:
     return f"MEM-{question_id}"
 
@@ -166,7 +255,7 @@ def tick_mem_bank(
     now: datetime | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Run once per scheduled day: resends due + next unsent; completion when done."""
+    """Daily 01:00 pass: one-time weekly resends + every-other-day new questions."""
     bank = cfg.get("mem_bank") or {}
     if not force and not store.mem_sends_are_enabled(conn, cfg):
         return {"skipped": True, "reason": "disabled"}
@@ -179,18 +268,14 @@ def tick_mem_bank(
     now = now or datetime.now()
     hour = int(bank.get("hour", 1))
     minute = int(bank.get("minute", 0))
-    days = bank.get("days_mon_through_fri")
-    if days is None:
-        days = [0, 1, 2, 3, 4]
     resend_after = int(bank.get("resend_after_days", 7))
+    interval_days = int(bank.get("interval_days", 2))
 
     state = store.get_mem_bank_state(conn)
     if state.get("completion_email_sent"):
         return {"skipped": True, "reason": "already_complete"}
 
     if not force:
-        if not _weekday_ok(now, list(days)):
-            return {"skipped": True, "reason": "not_weekday"}
         if not _past_send_time(now, hour, minute):
             return {"skipped": True, "reason": "before_send_time"}
         today = now.date().isoformat()
@@ -198,19 +283,22 @@ def tick_mem_bank(
             return {"skipped": True, "reason": "already_ticked_today"}
 
     actions: list[dict[str, Any]] = []
+    today_d = now.date()
 
-    # 1) Resend unanswered whose last send was >= resend_after days ago
+    # 1) One-time resend: unanswered, had initial, never resent, >= resend_after days
     for q in questions:
         qid = q["id"]
         if question_answered(conn, qid):
             continue
-        last = store.last_mem_send(conn, qid)
-        if not last:
+        if store.count_mem_sends(conn, qid, "initial") < 1:
             continue
-        sent_day = _parse_day(last["sent_at"])
+        if store.count_mem_sends(conn, qid, "resend") >= 1:
+            continue
+        first = store.first_mem_send(conn, qid, "initial")
+        sent_day = _parse_day(first["sent_at"] if first else None)
         if sent_day is None:
             continue
-        if now.date() - sent_day >= timedelta(days=resend_after):
+        if today_d - sent_day >= timedelta(days=resend_after):
             actions.append(
                 {
                     "kind": "resend",
@@ -221,22 +309,35 @@ def tick_mem_bank(
                 }
             )
 
-    # 2) Send next never-sent question
-    next_q = None
-    for q in questions:
-        if store.last_mem_send(conn, q["id"]) is None:
-            next_q = q
-            break
-    if next_q is not None:
-        actions.append(
-            {
-                "kind": "initial",
-                "question_id": next_q["id"],
-                **send_mem_question(
-                    conn, client, cfg, question=next_q, kind="initial", now=now
-                ),
-            }
-        )
+    # 2) New question every interval_days, starting on next_initial_date (set when armed)
+    next_initial = _parse_day(state.get("next_initial_date"))
+    send_new = False
+    if force and next_initial is None:
+        send_new = True
+    elif next_initial is not None and today_d >= next_initial:
+        send_new = True
+
+    if send_new:
+        next_q = None
+        for q in questions:
+            if store.count_mem_sends(conn, q["id"], "initial") < 1:
+                next_q = q
+                break
+        if next_q is not None:
+            actions.append(
+                {
+                    "kind": "initial",
+                    "question_id": next_q["id"],
+                    **send_mem_question(
+                        conn, client, cfg, question=next_q, kind="initial", now=now
+                    ),
+                }
+            )
+            store.set_mem_bank_state(
+                conn,
+                next_initial_date=(today_d + timedelta(days=interval_days)).isoformat(),
+            )
+        # else: no more new questions; still allow resends/completion
 
     # 3) Completion when every question has an answer
     all_answered = all(question_answered(conn, q["id"]) for q in questions)
@@ -244,8 +345,13 @@ def tick_mem_bank(
         send_completion_email(conn, client, cfg, total=len(questions))
         actions.append({"kind": "complete", "total": len(questions)})
 
-    store.set_mem_bank_state(conn, last_tick_date=now.date().isoformat())
-    return {"skipped": False, "actions": actions, "total_questions": len(questions)}
+    store.set_mem_bank_state(conn, last_tick_date=today_d.isoformat())
+    return {
+        "skipped": False,
+        "actions": actions,
+        "total_questions": len(questions),
+        "next_initial_date": store.get_mem_bank_state(conn).get("next_initial_date"),
+    }
 
 
 def _parse_day(iso: str | None) -> date | None:

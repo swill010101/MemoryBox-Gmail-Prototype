@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS mem_bank_state (
     last_tick_date TEXT,
     completed_at TEXT,
     completion_email_sent INTEGER NOT NULL DEFAULT 0,
-    sends_enabled INTEGER
+    sends_enabled INTEGER,
+    next_initial_date TEXT
 );
 
 CREATE TABLE IF NOT EXISTS mem_send_log (
@@ -109,6 +110,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "sends_enabled" not in state_cols:
         # NULL = inherit from config; 0 = forced off; 1 = forced on
         conn.execute("ALTER TABLE mem_bank_state ADD COLUMN sends_enabled INTEGER")
+    if "next_initial_date" not in state_cols:
+        conn.execute("ALTER TABLE mem_bank_state ADD COLUMN next_initial_date TEXT")
 
 
 @contextmanager
@@ -475,6 +478,7 @@ def set_mem_bank_state(
     completed_at: str | None = None,
     completion_email_sent: int | None = None,
     sends_enabled: int | None = None,
+    next_initial_date: str | None = None,
 ) -> dict[str, Any]:
     get_mem_bank_state(conn)
     if last_tick_date is not None:
@@ -497,7 +501,21 @@ def set_mem_bank_state(
             "UPDATE mem_bank_state SET sends_enabled = ? WHERE id = 1",
             (1 if sends_enabled else 0,),
         )
+    if next_initial_date is not None:
+        conn.execute(
+            "UPDATE mem_bank_state SET next_initial_date = ? WHERE id = 1",
+            (next_initial_date,),
+        )
     return get_mem_bank_state(conn)
+
+
+def arm_mem_sends(conn: sqlite3.Connection, *, enabled: bool, now: datetime | None = None) -> dict[str, Any]:
+    """Turn sends on/off. When turning on, first new question is tomorrow."""
+    now = now or datetime.now()
+    if enabled:
+        tomorrow = (now.date() + timedelta(days=1)).isoformat()
+        return set_mem_bank_state(conn, sends_enabled=1, next_initial_date=tomorrow)
+    return set_mem_bank_state(conn, sends_enabled=0)
 
 
 def mem_sends_are_enabled(conn: sqlite3.Connection, cfg: dict[str, Any]) -> bool:
@@ -525,6 +543,27 @@ def log_mem_send(
         """,
         (question_id, kind, sent_at, gmail_message_id, gmail_thread_id),
     )
+
+
+def count_mem_sends(conn: sqlite3.Connection, question_id: int, kind: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM mem_send_log WHERE question_id = ? AND kind = ?",
+        (question_id, kind),
+    ).fetchone()
+    return int(row["n"] if row else 0)
+
+
+def first_mem_send(conn: sqlite3.Connection, question_id: int, kind: str = "initial") -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT * FROM mem_send_log
+        WHERE question_id = ? AND kind = ?
+        ORDER BY sent_at ASC, id ASC
+        LIMIT 1
+        """,
+        (question_id, kind),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def last_mem_send(conn: sqlite3.Connection, question_id: int) -> dict[str, Any] | None:

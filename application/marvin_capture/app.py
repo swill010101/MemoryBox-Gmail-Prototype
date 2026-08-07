@@ -28,6 +28,7 @@ from marvin_capture.mem_bank import (  # noqa: E402
     export_mem_bank,
     open_questions_file_in_editor,
     tick_mem_bank,
+    validate_questions_file,
 )
 from marvin_capture.service import (  # noqa: E402
     get_gmail_client,
@@ -249,10 +250,13 @@ def api_mem_status() -> dict[str, Any]:
         "enabled": sends_on,
         "config_enabled": bool(bank.get("enabled")),
         "sends_enabled": state.get("sends_enabled"),
+        "next_initial_date": state.get("next_initial_date"),
         "questions_file": qpath,
         "questions_file_exists": bool(qpath and Path(qpath).is_file()),
         "hour": bank.get("hour"),
         "minute": bank.get("minute"),
+        "interval_days": bank.get("interval_days", 2),
+        "resend_after_days": bank.get("resend_after_days", 7),
         "state": state,
         "id_rule": "Questions must be numbered contiguously 1..N",
     }
@@ -260,14 +264,33 @@ def api_mem_status() -> dict[str, Any]:
 
 @app.post("/api/mem/sends")
 def api_mem_sends(body: MemSendsIn) -> dict[str, Any]:
-    """Turn MEM question-bank email sends on or off (persisted)."""
-    state = store.set_mem_bank_state(_db, sends_enabled=1 if body.enabled else 0)
+    """Turn MEM question-bank email sends on or off (persisted).
+
+    When turned ON, the first new question is scheduled for tomorrow at 01:00.
+    """
+    state = store.arm_mem_sends(_db, enabled=body.enabled)
     _db.commit()
     return {
         "ok": True,
         "enabled": bool(body.enabled),
+        "next_initial_date": state.get("next_initial_date"),
         "state": state,
+        "hint": (
+            f"First new question on {state.get('next_initial_date')} at 01:00; then every other day."
+            if body.enabled
+            else "MEM question emails paused."
+        ),
     }
+
+
+@app.get("/api/mem/questions/validate")
+def api_mem_questions_validate() -> dict[str, Any]:
+    bank = _cfg.get("mem_bank") or {}
+    qpath = bank.get("questions_file")
+    if not qpath:
+        raise HTTPException(400, "mem_bank.questions_file is not configured")
+    report = validate_questions_file(qpath)
+    return report
 
 
 @app.post("/api/mem/questions/open")
@@ -286,7 +309,8 @@ def api_mem_questions_open() -> dict[str, Any]:
     return {
         "ok": True,
         "path": opened,
-        "hint": "Number questions contiguously as id 1..N. Save the file, then restart is not required — next tick reloads JSON.",
+        "hint": "Number questions contiguously as id 1..N. Save the file — next tick reloads JSON.",
+        "validation": validate_questions_file(opened),
     }
 
 

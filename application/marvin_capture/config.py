@@ -54,7 +54,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "to": "",
         "hour": 1,
         "minute": 0,
-        "days_mon_through_fri": [0, 1, 2, 3, 4],
+        "interval_days": 2,
         "resend_after_days": 7,
     },
     "review_ui": {

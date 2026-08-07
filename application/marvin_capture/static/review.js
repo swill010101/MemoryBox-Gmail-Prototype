@@ -12,6 +12,7 @@
   const batchStatus = document.getElementById("batch-status");
   const btnMemExtract = document.getElementById("btn-mem-extract");
   const btnMemOpenQuestions = document.getElementById("btn-mem-open-questions");
+  const btnMemValidate = document.getElementById("btn-mem-validate");
   const btnMemSends = document.getElementById("btn-mem-sends");
   const memStatus = document.getElementById("mem-status");
   let memSendsOn = false;
@@ -264,9 +265,24 @@
       .then((data) => {
         memSendsOn = Boolean(data.enabled);
         renderMemSendsButton();
-        memStatus.textContent = memSendsOn
-          ? "MEM question emails ON (M–F 01:00)"
-          : "MEM question emails OFF";
+        memStatus.textContent = data.hint || (memSendsOn ? "MEM sends ON" : "MEM sends OFF");
+      })
+      .catch((e) => {
+        memStatus.textContent = e.message;
+      });
+  });
+  btnMemValidate.addEventListener("click", () => {
+    memStatus.textContent = "Validating…";
+    fetchJSON("/api/mem/questions/validate")
+      .then((data) => {
+        if (data.ok) {
+          const samples = (data.sample || [])
+            .map((s) => `#${s.id}: ${s.text}`)
+            .join(" | ");
+          memStatus.textContent = `OK — ${data.count} questions. ${samples}`;
+        } else {
+          memStatus.textContent = `INVALID — ${(data.errors || []).join("; ")}`;
+        }
       })
       .catch((e) => {
         memStatus.textContent = e.message;

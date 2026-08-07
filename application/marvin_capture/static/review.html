@@ -29,7 +29,7 @@
       <code>[MB-MEM]</code> ad-hoc mem ·
       <code>[MB-EVS]</code> EVS
     </p>
-    <p class="keys-note">MEM bank uses bare ids in subject, e.g. <code>[MB-MEM-1] What is your earliest childhood memory?</code>. Scheduled M–F 01:00 when enabled.</p>
+    <p class="keys-note">MEM bank: bare ids <code>[MB-MEM-1]</code>…. When sends are ON, first email is <strong>tomorrow 01:00</strong>, then <strong>every other day</strong>. Unanswered get one resend after 7 days.</p>
   </section>
 
   <section class="batch-bar" aria-label="EVS batch actions">
@@ -43,6 +43,7 @@
     <span class="batch-label">MEM bank</span>
     <button type="button" id="btn-mem-sends" class="ghost" aria-pressed="false">MEM sends: …</button>
     <button type="button" id="btn-mem-open-questions" class="ghost">Open questions JSON</button>
+    <button type="button" id="btn-mem-validate" class="ghost">Validate questions</button>
     <button type="button" id="btn-mem-extract" class="primary">Extract MEM</button>
     <span id="mem-status" class="batch-status" aria-live="polite"></span>
   </section>
