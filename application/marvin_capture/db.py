@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS response (
     received_date TEXT NOT NULL,
     response_text TEXT NOT NULL DEFAULT '',
     raw_email_path TEXT NOT NULL,
+    subject TEXT,
     gmail_message_id TEXT UNIQUE,
     gmail_thread_id TEXT,
     processed INTEGER NOT NULL DEFAULT 1,
@@ -76,8 +77,15 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 def init_db(db_path: str | Path) -> sqlite3.Connection:
     conn = connect(db_path)
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(response)").fetchall()}
+    if "subject" not in cols:
+        conn.execute("ALTER TABLE response ADD COLUMN subject TEXT")
 
 
 @contextmanager
@@ -147,10 +155,47 @@ def find_prompt_by_thread(conn: sqlite3.Connection, thread_id: str) -> dict[str,
     return dict(row) if row else None
 
 
+def find_prompt_by_type(conn: sqlite3.Connection, prompt_type: str) -> dict[str, Any] | None:
+    """Prefer canonical TYPE id (no token); fall back to newest typed prompt."""
+    prompt_type = prompt_type.upper()
+    row = conn.execute("SELECT * FROM prompt WHERE id = ?", (prompt_type,)).fetchone()
+    if row:
+        return dict(row)
+    row = conn.execute(
+        "SELECT * FROM prompt WHERE type = ? ORDER BY sent_date DESC LIMIT 1",
+        (prompt_type,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def response_exists(conn: sqlite3.Connection, gmail_message_id: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM response WHERE gmail_message_id = ?",
         (gmail_message_id,),
+    ).fetchone()
+    return row is not None
+
+
+def journal_sent_on_date(conn: sqlite3.Connection, day: date) -> bool:
+    """True if a JRN prompt was already sent on the given local calendar day."""
+    day_s = day.isoformat()
+    row = conn.execute(
+        """
+        SELECT 1 FROM prompt
+        WHERE type = 'JRN'
+          AND sent_date IS NOT NULL
+          AND substr(sent_date, 1, 10) = ?
+        LIMIT 1
+        """,
+        (day_s,),
+    ).fetchone()
+    if row:
+        return True
+    # Also accept legacy JRN-YYYYMMDD prompt ids
+    legacy = f"JRN-{day.strftime('%Y%m%d')}"
+    row = conn.execute(
+        "SELECT 1 FROM prompt WHERE id = ? AND gmail_message_id IS NOT NULL LIMIT 1",
+        (legacy,),
     ).fetchone()
     return row is not None
 
@@ -164,24 +209,111 @@ def insert_response(
     received_date: str | None = None,
     gmail_message_id: str | None = None,
     gmail_thread_id: str | None = None,
+    subject: str | None = None,
 ) -> dict[str, Any]:
     cur = conn.execute(
         """
         INSERT INTO response (
-            prompt_id, received_date, response_text, raw_email_path,
+            prompt_id, received_date, response_text, raw_email_path, subject,
             gmail_message_id, gmail_thread_id, processed, reviewed
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
         """,
         (
             prompt_id,
             received_date or utc_now_iso(),
             response_text,
             raw_email_path,
+            subject,
             gmail_message_id,
             gmail_thread_id,
         ),
     )
     return get_response(conn, int(cur.lastrowid))  # type: ignore[return-value]
+
+
+def update_response_text(conn: sqlite3.Connection, response_id: int, response_text: str) -> None:
+    conn.execute(
+        "UPDATE response SET response_text = ? WHERE id = ?",
+        (response_text, response_id),
+    )
+
+
+def list_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT r.*, p.subject AS prompt_subject, p.body AS prompt_body, p.type AS prompt_type
+        FROM response r
+        JOIN prompt p ON p.id = r.prompt_id
+        WHERE p.type = ?
+        ORDER BY r.received_date ASC, r.id ASC
+        """,
+        (prompt_type.upper(),),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_responses_by_type(conn: sqlite3.Connection, prompt_type: str) -> dict[str, Any]:
+    """Delete responses (and attachments) for a type. Also removes linked files.
+
+    Explicit batch wipe for EVS workflow — originals for other types untouched.
+    """
+    prompt_type = prompt_type.upper()
+    rows = list_responses_by_type(conn, prompt_type)
+    removed_files: list[str] = []
+    for resp in rows:
+        atts = conn.execute(
+            "SELECT * FROM attachment WHERE response_id = ?",
+            (resp["id"],),
+        ).fetchall()
+        for att in atts:
+            path = Path(att["storage_path"])
+            if path.is_file():
+                path.unlink()
+                removed_files.append(str(path))
+        raw = Path(resp["raw_email_path"]) if resp.get("raw_email_path") else None
+        if raw and raw.is_file():
+            raw.unlink()
+            removed_files.append(str(raw))
+        conn.execute("DELETE FROM attachment WHERE response_id = ?", (resp["id"],))
+        conn.execute("DELETE FROM response WHERE id = ?", (resp["id"],))
+
+    # Remove prompt rows for this type that have no remaining responses
+    prompts = conn.execute("SELECT id FROM prompt WHERE type = ?", (prompt_type,)).fetchall()
+    removed_prompts = 0
+    for p in prompts:
+        left = conn.execute(
+            "SELECT 1 FROM response WHERE prompt_id = ? LIMIT 1",
+            (p["id"],),
+        ).fetchone()
+        if not left:
+            conn.execute("DELETE FROM prompt WHERE id = ?", (p["id"],))
+            removed_prompts += 1
+
+    return {
+        "type": prompt_type,
+        "responses_deleted": len(rows),
+        "prompts_deleted": removed_prompts,
+        "files_removed": len(removed_files),
+    }
+
+
+def format_evs_export(items: list[dict[str, Any]]) -> str:
+    """Plain-text batch export for MemoryBox EVS processing."""
+    blocks: list[str] = []
+    for i, item in enumerate(items, start=1):
+        subject = item.get("subject") or item.get("prompt_subject") or ""
+        header = (
+            f"=== EVS {i} ===\n"
+            f"received: {item.get('received_date') or ''}\n"
+            f"subject: {subject}\n"
+            f"id: {item.get('id')}\n"
+            f"---\n"
+        )
+        body = (item.get("response_text") or "").strip()
+        blocks.append(header + body)
+    if not blocks:
+        return "=== EVS export ===\n(no EVS responses)\n"
+    return "\n\n".join(blocks) + "\n"
 
 
 def get_response(conn: sqlite3.Connection, response_id: int) -> dict[str, Any] | None:

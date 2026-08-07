@@ -20,7 +20,7 @@
       "enabled": true,
       "hour": 18,
       "minute": 0,
-      "subject_template": "[MB-JRN-{date}] What happened today?",
+      "subject_template": "[MB-JRN] What happened today?",
       "body": "What happened today?\n\nReply naturally. Attach photos, documents, or voice memos if you want.\nNo special formatting required."
     }
   },

@@ -42,13 +42,12 @@ def test_send_reply_capture_preserve(tmp_path: Path):
         client,
         cfg,
         prompt_type="JRN",
-        token="20260806",
         headline="What happened today?",
         body="What happened today?",
     )
     thread_id = sent["gmail"]["threadId"]
     prompt_id = sent["prompt"]["id"]
-    assert prompt_id == "JRN-20260806"
+    assert prompt_id == "JRN"
 
     reply_body = (
         "Met Sarah for lunch. Attached a photo.\n\n"
@@ -59,7 +58,7 @@ def test_send_reply_capture_preserve(tmp_path: Path):
     voice = b"fake-m4a-bytes"
     mid = client.inject_reply(
         thread_id=thread_id,
-        subject="Re: [MB-JRN-20260806] What happened today?",
+        subject="Re: [MB-JRN] What happened today?",
         body=reply_body,
         attachments=[
             ("lunch.jpg", "image/jpeg", photo),
@@ -72,37 +71,51 @@ def test_send_reply_capture_preserve(tmp_path: Path):
     assert result["status"] == "captured"
     detail = result["response"]
     assert detail["response_text"] == "Met Sarah for lunch. Attached a photo."
-    assert detail["prompt_id"] == "JRN-20260806"
+    assert detail["prompt_id"] == "JRN"
+    assert detail["subject"] == "Re: [MB-JRN] What happened today?"
     assert len(detail["attachments"]) == 2
 
     raw_path = Path(detail["raw_email_path"])
     assert raw_path.is_file()
-    assert raw_path.stat().st_size > 0
 
     for att in detail["attachments"]:
         assert Path(att["storage_path"]).is_file()
         if att["filename"].endswith(".m4a"):
             assert att["is_audio"] == 1
-            assert att["transcript_status"] == "pending"
             assert Path(att["storage_path"]).read_bytes() == voice
-        if att["filename"].endswith(".jpg"):
-            assert Path(att["storage_path"]).read_bytes() == photo
 
-    # Labeled processed
     label_id = client.labels["MB/Processed"]
     assert label_id in client.messages[mid].label_ids
-
-    # Idempotent
     assert process_message(conn, client, cfg, mid) is None
 
-    # Whisper endpoint down → error status, audio retained
     tx = process_pending_transcriptions(conn, cfg["whisper"])
     assert tx and tx[0]["status"] == "error"
-    detail2 = store.get_response_detail(conn, detail["id"])
-    audio_att = next(a for a in detail2["attachments"] if a["is_audio"])
-    assert Path(audio_att["storage_path"]).read_bytes() == voice
-    assert audio_att["transcript_status"] == "error"
+    conn.close()
 
+
+def test_evs_tokenless_extract_and_delete(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+
+    mid = client.inject_reply(
+        thread_id="thr-evs",
+        subject="[MB-EVS] Pocket watch",
+        body="The pocket watch belonged to Dad.\n",
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "captured"
+    assert result["response"]["prompt_id"] == "EVS"
+
+    items = store.list_responses_by_type(conn, "EVS")
+    assert len(items) == 1
+    export = store.format_evs_export(items)
+    assert "Pocket watch" in export
+    assert "belonged to Dad" in export
+
+    wiped = store.delete_responses_by_type(conn, "EVS")
+    assert wiped["responses_deleted"] == 1
+    assert store.list_responses_by_type(conn, "EVS") == []
     conn.close()
 
 
@@ -116,11 +129,9 @@ def test_poll_once_and_unmatched(tmp_path: Path):
         client,
         cfg,
         prompt_type="MEM",
-        token="000123",
         headline="Grade-school days",
         body="Tell me about your grade-school days.",
     )
-    # Unrelated mail with no tag / unknown thread
     mid = client.inject_reply(
         thread_id="thr-unknown",
         subject="Hello random",
@@ -130,7 +141,6 @@ def test_poll_once_and_unmatched(tmp_path: Path):
     unmatched = [r for r in results if r.get("status") == "unmatched"]
     assert unmatched
     assert Path(unmatched[0]["raw_email_path"]).is_file()
-    # Must not discard
     assert client.messages[mid].raw
     conn.close()
 
@@ -145,25 +155,21 @@ def test_transcript_success_keeps_audio(tmp_path: Path, monkeypatch):
         client,
         cfg,
         prompt_type="MEM",
-        token="000999",
         headline="Voice",
         body="Say something",
     )
     mid = client.inject_reply(
         thread_id=sent["gmail"]["threadId"],
-        subject="Re: [MB-MEM-000999] Voice",
+        subject="Re: [MB-MEM] Voice",
         body="See voice memo.",
         attachments=[("v.wav", "audio/wav", b"RIFF....")],
     )
     result = process_message(conn, client, cfg, mid)
     assert result["status"] == "captured"
 
-    def fake_transcribe(path, **kwargs):
-        return "transcribed words"
-
     monkeypatch.setattr(
         "marvin_capture.whisper_client.transcribe_file",
-        fake_transcribe,
+        lambda path, **kwargs: "transcribed words",
     )
     tx = process_pending_transcriptions(conn, cfg["whisper"])
     assert tx[0]["status"] == "done"

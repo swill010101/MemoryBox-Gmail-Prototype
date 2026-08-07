@@ -18,8 +18,12 @@ from marvin_capture.service import get_gmail_client, send_daily_journal_if_due, 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--journal", action="store_true", help="Send today's journal prompt")
-    parser.add_argument("--type", default="MEM", help="Prompt type e.g. MEM, JRN")
-    parser.add_argument("--token", default=None, help="Token e.g. 000123")
+    parser.add_argument("--type", default="MEM", help="Prompt type e.g. MEM, JRN, EVS")
+    parser.add_argument(
+        "--token",
+        default="",
+        help="Optional legacy token (prefer tokenless [MB-TYPE] subjects)",
+    )
     parser.add_argument("--headline", default="")
     parser.add_argument("--body", default="Tell me more.")
     parser.add_argument("--to", default=None)
@@ -37,14 +41,12 @@ def main() -> int:
         if args.journal:
             result = send_daily_journal_if_due(conn, client, cfg, force=True)
         else:
-            if not args.token:
-                parser.error("--token required unless --journal")
             result = send_prompt(
                 conn,
                 client,
                 cfg,
                 prompt_type=args.type,
-                token=args.token,
+                token=args.token or "",
                 headline=args.headline or args.body.split("\n", 1)[0][:80],
                 body=args.body,
                 to=args.to,

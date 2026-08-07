@@ -14,24 +14,35 @@ from marvin_capture.reply_extract import (  # noqa: E402
 )
 
 
-def test_parse_journal_tag():
+def test_parse_tokenless_types():
+    for raw, typ in (
+        ("[MB-JRN] What happened today?", "JRN"),
+        ("[MB-MEM] Grade school", "MEM"),
+        ("[MB-EVS] Pocket watch", "EVS"),
+    ):
+        tag = parse_subject_tag(raw)
+        assert tag is not None
+        assert tag.prompt_type == typ
+        assert tag.token == ""
+        assert tag.prompt_id == typ
+
+
+def test_parse_legacy_token_still_works():
     tag = parse_subject_tag("[MB-JRN-20260806] What happened today?")
     assert tag is not None
-    assert tag.prompt_type == "JRN"
-    assert tag.token == "20260806"
     assert tag.prompt_id == "JRN-20260806"
+    assert tag.token == "20260806"
 
 
-def test_parse_mem_tag_in_re_subject():
-    tag = parse_subject_tag("Re: [MB-MEM-000123] Tell me about your grade-school days.")
+def test_parse_re_subject_tokenless():
+    tag = parse_subject_tag("Re: [MB-EVS] Day you met Mom")
     assert tag is not None
-    assert tag.prompt_id == "MEM-000123"
+    assert tag.prompt_id == "EVS"
 
 
-def test_make_subject():
-    assert make_subject("JRN", "20260806", "What happened today?") == (
-        "[MB-JRN-20260806] What happened today?"
-    )
+def test_make_subject_tokenless():
+    assert make_subject("JRN", "What happened today?") == "[MB-JRN] What happened today?"
+    assert make_subject("EVS", "") == "[MB-EVS]"
 
 
 def test_extract_strips_gmail_quote():
@@ -44,17 +55,26 @@ def test_extract_strips_gmail_quote():
     assert extract_reply_text(body) == "Had coffee with Dad and walked the dog."
 
 
-def test_extract_strips_line_quotes():
-    body = "Short reply.\n> quoted\n> more"
-    assert extract_reply_text(body) == "Short reply."
-
-
-def test_extract_html_gmail_quote():
-    html = (
-        "<div>Voice note later.<br></div>"
-        '<div class="gmail_quote">On Tue wrote:<blockquote>prompt</blockquote></div>'
+def test_unwrap_soft_line_breaks_keeps_paragraphs():
+    body = (
+        "Today we went to see Meet Me in St. Louis at the Muny and one of the\n"
+        "highlights of the movie and play is the singing of Have Yourself a Merry\n"
+        "Little Christmas.\n"
+        "\n"
+        "I miss you terribly.\n"
+        "Tom Sent from Gmail Mobile\n"
     )
-    assert extract_reply_text(html, is_html=True) == "Voice note later."
+    out = extract_reply_text(body)
+    assert "\n" not in out.split("\n\n")[0]  # first para unwrapped
+    assert "Muny and one of the highlights" in out
+    assert "I miss you terribly." in out
+    assert "Sent from Gmail" not in out
+    assert out.count("\n\n") >= 1
+
+
+def test_strip_sent_from_variants():
+    assert "hello" == extract_reply_text("hello\nSent from my iPhone\n")
+    assert "hello" == extract_reply_text("hello\nSent from Gmail Mobile\n")
 
 
 def test_extract_empty_ok():

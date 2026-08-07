@@ -7,6 +7,9 @@
   const btnReview = document.getElementById("btn-review");
   const btnUnreview = document.getElementById("btn-unreview");
   const btnRefresh = document.getElementById("btn-refresh");
+  const btnEvsExtract = document.getElementById("btn-evs-extract");
+  const btnEvsRemove = document.getElementById("btn-evs-remove");
+  const batchStatus = document.getElementById("batch-status");
 
   let view = "inbox";
   let selectedId = null;
@@ -30,6 +33,10 @@
     }
   }
 
+  function listLabel(item) {
+    return item.subject || item.prompt_subject || item.prompt_id || "Response";
+  }
+
   async function loadList() {
     const reviewed = view === "reviewed";
     const data = await fetchJSON(`/api/responses?reviewed=${reviewed}`);
@@ -38,6 +45,7 @@
 
     if (!data.responses.length) {
       emptyEl.classList.remove("hidden");
+      emptyEl.textContent = "Nothing here yet.";
       return;
     }
     emptyEl.classList.add("hidden");
@@ -49,8 +57,8 @@
       btn.dataset.id = String(item.id);
       if (item.id === selectedId) btn.classList.add("selected");
       btn.innerHTML = `
-        <span class="item-subject">${escapeHtml(item.prompt_subject || item.prompt_id)}</span>
-        <span class="item-meta">${escapeHtml(formatDate(item.received_date))} · ${escapeHtml(item.prompt_id)}</span>
+        <span class="item-subject">${escapeHtml(listLabel(item))}</span>
+        <span class="item-meta">${escapeHtml(formatDate(item.received_date))} · ${escapeHtml(item.prompt_type || item.prompt_id)}</span>
       `;
       btn.addEventListener("click", () => selectResponse(item.id));
       li.appendChild(btn);
@@ -74,9 +82,10 @@
     detailBody.classList.remove("hidden");
 
     document.getElementById("d-meta").textContent =
-      `${detail.prompt_id} · received ${formatDate(detail.received_date)}` +
+      `${detail.prompt_type || detail.prompt_id} · received ${formatDate(detail.received_date)}` +
       (detail.reviewed ? " · reviewed" : "");
-    document.getElementById("d-prompt-subject").textContent = detail.prompt_subject || "";
+    document.getElementById("d-prompt-subject").textContent =
+      detail.subject || detail.prompt_subject || "";
     document.getElementById("d-prompt-body").textContent = detail.prompt_body || "";
     document.getElementById("d-reply").textContent =
       detail.response_text || "(no text body — see attachments)";
@@ -138,6 +147,50 @@
     await loadList();
   }
 
+  async function extractEvs() {
+    const suggested = `evs_export_${new Date().toISOString().slice(0, 10)}.txt`;
+    const filename = window.prompt("Save EVS export as filename:", suggested);
+    if (!filename) return;
+    batchStatus.textContent = "Extracting…";
+    const res = await fetch("/api/evs/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename }),
+    });
+    if (!res.ok) {
+      batchStatus.textContent = `Extract failed: ${await res.text()}`;
+      return;
+    }
+    const blob = await res.blob();
+    const disp = res.headers.get("Content-Disposition") || "";
+    const match = /filename=\"([^\"]+)\"/.exec(disp);
+    const outName = match ? match[1] : filename;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = outName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    batchStatus.textContent = `Downloaded ${outName}`;
+  }
+
+  async function removeEvs() {
+    const ok = window.confirm(
+      "Remove ALL EVS responses from the database and delete their linked files on disk?\n\nDo this after Extract. JRN/MEM are not affected."
+    );
+    if (!ok) return;
+    batchStatus.textContent = "Removing…";
+    const data = await fetchJSON("/api/evs/remove", { method: "POST" });
+    batchStatus.textContent =
+      `Removed ${data.responses_deleted} EVS · ${data.files_removed} files`;
+    selectedId = null;
+    placeholder.classList.remove("hidden");
+    detailBody.classList.add("hidden");
+    await loadList();
+  }
+
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", async () => {
       document.querySelectorAll(".tab").forEach((t) => {
@@ -157,6 +210,12 @@
   btnReview.addEventListener("click", () => setReviewed(true));
   btnUnreview.addEventListener("click", () => setReviewed(false));
   btnRefresh.addEventListener("click", () => loadList());
+  btnEvsExtract.addEventListener("click", () => extractEvs().catch((e) => {
+    batchStatus.textContent = e.message;
+  }));
+  btnEvsRemove.addEventListener("click", () => removeEvs().catch((e) => {
+    batchStatus.textContent = e.message;
+  }));
 
   loadList().catch((err) => {
     emptyEl.classList.remove("hidden");

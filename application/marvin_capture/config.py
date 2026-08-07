@@ -39,7 +39,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "hour": 18,
             "minute": 0,
             "timezone": "local",
-            "subject_template": "[MB-JRN-{date}] What happened today?",
+            "subject_template": "[MB-JRN] What happened today?",
             "body": (
                 "What happened today?\n\n"
                 "Reply naturally. Attach photos, documents, or voice memos if you want.\n"

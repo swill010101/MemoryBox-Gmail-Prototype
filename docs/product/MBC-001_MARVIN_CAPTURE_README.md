@@ -4,17 +4,22 @@ Proof-of-concept email capture loop for MemoryBox.
 
 **Immutable principle:** Marvin Capture must never lose information in an attempt to be intelligent. The original email, attachments, and reply are the authoritative record.
 
-## What it does
+## Subject keys (minimum)
 
-1. Sends scheduled / ad-hoc prompts with subject tags like `[MB-JRN-20260806]`
-2. Polls Gmail for replies
-3. Preserves raw `.eml` + every attachment byte-for-byte
-4. Extracts only Tom’s newly written text (additive)
-5. Queues audio for Whisper transcription (audio retained)
-6. Labels messages `MB/Processed`
-7. Serves a local Inbox / Reviewed page
+```text
+[MB-JRN] optional headline
+[MB-MEM] optional headline
+[MB-EVS] optional headline
+```
 
-## Windows setup (PowerShell)
+No token/date in the subject is required. Send/receive timestamps are stored on each record. Legacy `[MB-JRN-YYYYMMDD]` still matches.
+
+## EVS batch (review UI)
+
+1. **Extract EVS…** — downloads all EVS responses as a `.txt` (you choose the filename)
+2. **Remove all EVS** — deletes EVS rows and their linked files (after extract); JRN/MEM untouched
+
+## Setup
 
 Run these from the **repo root** (`C:\memorybox`), not from `C:\Users\tomwi`.
 

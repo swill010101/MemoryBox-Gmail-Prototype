@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,9 +33,9 @@ def send_prompt(
     cfg: dict[str, Any],
     *,
     prompt_type: str,
-    token: str,
     headline: str,
     body: str,
+    token: str = "",
     to: str | None = None,
 ) -> dict[str, Any]:
     to_addr = to or cfg["gmail"].get("user_email")
@@ -45,14 +45,15 @@ def send_prompt(
         else:
             raise ValueError("gmail.user_email (or to=) is required to send a prompt")
 
-    subject = make_subject(prompt_type, token, headline)
-    prompt_id = f"{prompt_type.upper()}-{token}"
+    prompt_type = prompt_type.upper()
+    subject = make_subject(prompt_type, headline, token=token)
+    prompt_id = f"{prompt_type}-{token}" if token else prompt_type
 
     result = client.send_message(to=to_addr, subject=subject, body=body)
     row = store.insert_prompt(
         conn,
         prompt_id=prompt_id,
-        prompt_type=prompt_type.upper(),
+        prompt_type=prompt_type,
         subject=subject,
         body=body,
         sent_date=store.utc_now_iso(),
@@ -77,11 +78,8 @@ def send_daily_journal_if_due(
 
     now = now or datetime.now()
     today = now.date()
-    token = today.strftime("%Y%m%d")
-    prompt_id = f"JRN-{token}"
 
-    existing = store.get_prompt(conn, prompt_id)
-    if existing and existing.get("gmail_message_id") and not force:
+    if not force and store.journal_sent_on_date(conn, today):
         return None
 
     if not force:
@@ -92,10 +90,10 @@ def send_daily_journal_if_due(
 
     subject_template = journal.get(
         "subject_template",
-        "[MB-JRN-{date}] What happened today?",
+        "[MB-JRN] What happened today?",
     )
-    # subject_template may already include the tag; extract headline after tag if present
-    rendered = subject_template.replace("{date}", token)
+    # Support legacy {date} in templates but do not require a token
+    rendered = subject_template.replace("{date}", today.strftime("%Y%m%d"))
     tag = parse_subject_tag(rendered)
     headline = rendered
     if tag:
@@ -109,9 +107,9 @@ def send_daily_journal_if_due(
         client,
         cfg,
         prompt_type="JRN",
-        token=token,
         headline=headline,
         body=body,
+        token="",
     )
 
 
@@ -121,7 +119,16 @@ def _resolve_prompt(conn: Any, subject: str, thread_id: str) -> dict[str, Any] |
         prompt = store.get_prompt(conn, tag.prompt_id)
         if prompt:
             return prompt
-        # Auto-register unknown tagged prompt so we never drop the reply
+        # Tokenless preferred: [MB-EVS] → id EVS. Legacy tokenized id may miss
+        # the canonical TYPE row — try type lookup.
+        if tag.token:
+            by_type = store.get_prompt(conn, tag.prompt_type)
+            if by_type:
+                return by_type
+            by_type = store.find_prompt_by_type(conn, tag.prompt_type)
+            if by_type:
+                return by_type
+        # Auto-register so we never drop the reply
         return store.insert_prompt(
             conn,
             prompt_id=tag.prompt_id,
@@ -153,7 +160,6 @@ def process_message(
     msg = parse_raw_email(raw)
     subject = message_subject(msg) or meta.get("subject") or ""
 
-    # Skip our own outbound prompts (same subject, already in prompt table by message id)
     prompt_by_out = conn.execute(
         "SELECT id FROM prompt WHERE gmail_message_id = ?",
         (message_id,),
@@ -166,7 +172,6 @@ def process_message(
     att_root = Path(cfg["attachment_storage"])
 
     if not prompt:
-        # Never discard: hold unmatched raw email for inspection
         hold = raw_dir / "unmatched"
         path = save_raw_email(raw, hold, message_id)
         log.warning("unmatched reply saved to %s (subject=%r)", path, subject)
@@ -191,6 +196,7 @@ def process_message(
         raw_email_path=str(raw_path),
         gmail_message_id=message_id,
         gmail_thread_id=thread_id,
+        subject=subject,
     )
 
     for att in saved_atts:
@@ -215,6 +221,26 @@ def process_message(
         len(saved_atts),
     )
     return {"status": "captured", "response": detail}
+
+
+def reextract_all_responses(conn: Any) -> int:
+    """Re-derive response_text from preserved raw .eml (additive cleanup)."""
+    rows = conn.execute(
+        "SELECT id, raw_email_path FROM response WHERE raw_email_path IS NOT NULL"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        path = Path(row["raw_email_path"])
+        if not path.is_file():
+            continue
+        try:
+            msg = parse_raw_email(path.read_bytes())
+            text = derive_reply_text(msg)
+            store.update_response_text(conn, row["id"], text)
+            updated += 1
+        except Exception:  # noqa: BLE001
+            log.exception("reextract failed for response %s", row["id"])
+    return updated
 
 
 def poll_once(
