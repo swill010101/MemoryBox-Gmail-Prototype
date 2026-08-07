@@ -55,21 +55,38 @@ try:
 except Exception:  # noqa: BLE001
     log.exception("startup reextract skipped")
 
-# Humanize old ad-hoc prompt placeholders
+# Humanize old ad-hoc prompt placeholders (all ad-hoc types)
 try:
-    cur = _db.execute(
-        """
-        UPDATE prompt SET body = ?
-        WHERE body LIKE '%original outbound not in DB%'
-          AND type = 'JRN'
-        """,
-        ("(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",),
-    )
-    if cur.rowcount:
-        _db.commit()
-        log.info("updated %s ad-hoc JRN prompt placeholder(s)", cur.rowcount)
+    for ptype, body in (
+        ("JRN", "(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)"),
+        ("EVS", "(Ad-hoc EVS — you emailed this in; Marvin did not send an outbound prompt.)"),
+        ("MEM", "(Ad-hoc memory note — not a bank question; Marvin did not send an outbound prompt.)"),
+    ):
+        cur = _db.execute(
+            """
+            UPDATE prompt SET body = ?
+            WHERE type = ?
+              AND (
+                body LIKE '%original outbound not in DB%'
+                OR body LIKE '%prompt inferred from reply subject%'
+              )
+            """,
+            (body, ptype),
+        )
+        if cur.rowcount:
+            log.info("updated %s ad-hoc %s prompt placeholder(s)", cur.rowcount, ptype)
+    _db.commit()
 except Exception:  # noqa: BLE001
     log.exception("adhoc prompt cleanup skipped")
+
+# Clear Inbox clutter from identical double-captures (keep raw + both rows)
+try:
+    n_dup = store.auto_review_duplicate_bodies(_db)
+    if n_dup:
+        _db.commit()
+        log.info("auto-reviewed %s duplicate response body(ies)", n_dup)
+except Exception:  # noqa: BLE001
+    log.exception("duplicate body cleanup skipped")
 
 
 if STATIC_DIR.is_dir():

@@ -427,6 +427,61 @@ def mark_reviewed(conn: sqlite3.Connection, response_id: int, reviewed: bool = T
     return get_response_detail(conn, response_id)
 
 
+def find_response_by_normalized_text(
+    conn: sqlite3.Connection,
+    *,
+    prompt_id: str,
+    normalized_text: str,
+) -> dict[str, Any] | None:
+    """Return first response whose collapsed text matches (Python-side normalize)."""
+    if not normalized_text:
+        return None
+    rows = conn.execute(
+        """
+        SELECT id, response_text FROM response
+        WHERE prompt_id = ? AND length(trim(response_text)) > 0
+        ORDER BY id ASC
+        """,
+        (prompt_id,),
+    ).fetchall()
+    # Import locally to keep db free of reply_extract cycles at module load
+    from .reply_extract import normalize_for_dedupe
+
+    for row in rows:
+        if normalize_for_dedupe(row["response_text"]) == normalized_text:
+            return dict(row)
+    return None
+
+
+def auto_review_duplicate_bodies(conn: sqlite3.Connection) -> int:
+    """Mark newer unreviewed rows reviewed when an older same-body twin exists.
+
+    Keeps raw email + both DB rows (additive). Clears Inbox clutter for
+    accidental double-captures of the same journal/MEM body.
+    """
+    from .reply_extract import normalize_for_dedupe
+
+    rows = conn.execute(
+        """
+        SELECT id, prompt_id, response_text, reviewed
+        FROM response
+        WHERE length(trim(response_text)) > 0
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    seen: dict[tuple[str, str], int] = {}
+    marked = 0
+    for row in rows:
+        key = (row["prompt_id"], normalize_for_dedupe(row["response_text"]))
+        if key not in seen:
+            seen[key] = row["id"]
+            continue
+        if not row["reviewed"]:
+            mark_reviewed(conn, row["id"], reviewed=True)
+            marked += 1
+    return marked
+
+
 def list_pending_transcriptions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """

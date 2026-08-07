@@ -108,7 +108,9 @@
     document.getElementById("d-prompt-subject").textContent =
       detail.subject || detail.prompt_subject || "";
     let promptBody = detail.prompt_body || "";
-    if (promptBody.includes("Ad-hoc journal") || promptBody.includes("original outbound not in DB") || promptBody.includes("Ad-hoc")) {
+    if (promptBody.includes("Ad-hoc journal") || promptBody.includes("Ad-hoc EVS") ||
+        promptBody.includes("Ad-hoc memory") || promptBody.includes("Ad-hoc capture") ||
+        promptBody.includes("original outbound not in DB") || promptBody.includes("Ad-hoc")) {
       // Keep clarifying copy; already humanized in new captures
     }
     document.getElementById("d-prompt-body").textContent = promptBody;

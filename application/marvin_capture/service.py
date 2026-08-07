@@ -16,7 +16,7 @@ from .mail_store import (
     save_attachments,
     save_raw_email,
 )
-from .reply_extract import make_subject, parse_subject_tag
+from .reply_extract import make_subject, normalize_for_dedupe, parse_subject_tag
 
 log = logging.getLogger("marvin.capture")
 
@@ -180,7 +180,36 @@ def process_message(
         (message_id,),
     ).fetchone()
     if prompt_by_out:
+        # Label Marvin's own outbound so poll queries stop resurfacing it.
+        if apply_label:
+            label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+            label_id = client.ensure_label(label_name)
+            client.apply_label(message_id, label_id)
         return None
+
+    labels = {str(x) for x in (meta.get("labelIds") or [])}
+    # Sent-only twin after the inbox copy was already captured (self-send duplicate).
+    if "SENT" in labels and "INBOX" not in labels:
+        prior = conn.execute(
+            "SELECT id FROM response WHERE gmail_thread_id = ? LIMIT 1",
+            (thread_id,),
+        ).fetchone()
+        if prior:
+            if apply_label:
+                label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+                label_id = client.ensure_label(label_name)
+                client.apply_label(message_id, label_id)
+            log.info(
+                "skip sent-only duplicate on thread %s (response %s); message %s",
+                thread_id,
+                prior["id"],
+                message_id,
+            )
+            return {
+                "status": "sent_only_skipped",
+                "existing_response_id": prior["id"],
+                "gmail_message_id": message_id,
+            }
 
     prompt = _resolve_prompt(conn, subject, thread_id)
     raw_dir = Path(cfg["raw_email_storage"])
@@ -201,16 +230,12 @@ def process_message(
     raw_path = save_raw_email(raw, raw_dir / prompt_id, message_id)
     reply_text = derive_reply_text(msg)
 
-    # Soft dedupe: same prompt + identical non-empty body already stored
-    if reply_text.strip():
-        existing = conn.execute(
-            """
-            SELECT id FROM response
-            WHERE prompt_id = ? AND response_text = ?
-            LIMIT 1
-            """,
-            (prompt_id, reply_text),
-        ).fetchone()
+    # Soft dedupe: same prompt + identical body (whitespace-insensitive)
+    norm = normalize_for_dedupe(reply_text)
+    if norm:
+        existing = store.find_response_by_normalized_text(
+            conn, prompt_id=prompt_id, normalized_text=norm
+        )
         if existing:
             if apply_label:
                 label_name = cfg["gmail"].get("processed_label") or "MB/Processed"

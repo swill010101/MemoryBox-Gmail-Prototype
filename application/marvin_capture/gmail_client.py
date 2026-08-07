@@ -78,7 +78,14 @@ class FakeGmailClient:
         mime["Subject"] = subject
         mime["Message-ID"] = f"<{mid}@local.test>"
         raw = mime.as_bytes()
-        self.messages[mid] = FakeMessage(id=mid, thread_id=tid, subject=subject, raw=raw)
+        # Outbound looks like Gmail Sent (not Inbox) — mirrors live Marvin sends
+        self.messages[mid] = FakeMessage(
+            id=mid,
+            thread_id=tid,
+            subject=subject,
+            raw=raw,
+            label_ids=["SENT"],
+        )
         self.sent.append({"id": mid, "threadId": tid, "to": to, "subject": subject})
         return {"id": mid, "threadId": tid}
 
@@ -90,6 +97,7 @@ class FakeGmailClient:
         body: str,
         attachments: list[tuple[str, str, bytes]] | None = None,
         from_addr: str = "tom@local.test",
+        label_ids: list[str] | None = None,
     ) -> str:
         mid = self._next_id("msg")
         if attachments:
@@ -111,7 +119,10 @@ class FakeGmailClient:
         mime["Subject"] = subject
         mime["Message-ID"] = f"<{mid}@local.test>"
         raw = mime.as_bytes()
-        self.messages[mid] = FakeMessage(id=mid, thread_id=thread_id, subject=subject, raw=raw)
+        labels = list(label_ids) if label_ids is not None else ["INBOX", "UNREAD"]
+        self.messages[mid] = FakeMessage(
+            id=mid, thread_id=thread_id, subject=subject, raw=raw, label_ids=labels
+        )
         return mid
 
     def list_unread_or_unprocessed(
@@ -224,11 +235,17 @@ class LiveGmailClient:
     ) -> list[dict[str, Any]]:
         # Nested Gmail labels use hyphens in search: MB/Processed → mb-processed
         label_query = processed_label.replace("/", "-")
+        # Exclude sent-only copies (self-send / IMAP "save sent" duplicates).
+        # Keep inbox + archived replies; skip pure Sent that never landed in Inbox.
+        not_sent_only = "-{in:sent -in:inbox}"
         queries = [
             # Tagged Marvin mail still in inbox
             f'in:inbox -label:{label_query} (subject:[MB- OR subject:"[MB-")',
-            # Self-replies / archived threads: search anywhere recent
-            f'in:anywhere newer_than:7d -label:{label_query} (subject:[MB- OR subject:"[MB-")',
+            # Self-replies / archived threads: search anywhere recent, not sent-only
+            (
+                f"in:anywhere newer_than:7d -label:{label_query} "
+                f'(subject:[MB- OR subject:"[MB-") {not_sent_only}'
+            ),
             # Broad inbox fallback
             f"in:inbox -label:{label_query}",
         ]

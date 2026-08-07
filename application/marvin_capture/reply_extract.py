@@ -90,6 +90,11 @@ def html_to_text(html: str) -> str:
     return text
 
 
+def normalize_for_dedupe(text: str) -> str:
+    """Collapse whitespace so soft-wrap / resend variants compare equal."""
+    return re.sub(r"\s+", " ", (text or "").strip()).casefold()
+
+
 def unwrap_soft_line_breaks(text: str) -> str:
     """Join Gmail soft-wraps; keep blank-line paragraph breaks.
 

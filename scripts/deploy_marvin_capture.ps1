@@ -148,7 +148,20 @@ function Start-ServiceInstance {
 
     $owners = @(Get-PortOwnerPid $Port)
     if ($owners.Count -gt 0) {
-        throw "port $Port busy (PID $($owners -join ', ')). Run -Action stop first."
+        Write-Info "port $Port still busy (PID $($owners -join ', ')) — forcing stop"
+        foreach ($procId in $owners) {
+            try {
+                Stop-Process -Id $procId -Force -ErrorAction Stop
+                Write-Info "force-stopped PID $procId"
+            } catch {
+                Write-Info "could not force-stop PID $procId : $_"
+            }
+        }
+        Start-Sleep -Seconds 2
+        $left = @(Get-PortOwnerPid $Port)
+        if ($left.Count -gt 0) {
+            throw "port $Port busy (PID $($left -join ', ')). Run -Action stop, then: taskkill /PID <pid> /F"
+        }
     }
 
     Write-Info "starting: $Python $AppScript --poll"
@@ -161,7 +174,17 @@ function Start-ServiceInstance {
         -WindowStyle Hidden
 
     $proc.Id | Set-Content -Path $PidFile -Encoding ascii
-    Start-Sleep -Seconds 3
+
+    $listenPid = $null
+    for ($i = 0; $i -lt 10; $i++) {
+        Start-Sleep -Seconds 1
+        if ($proc.HasExited) { break }
+        $owners = @(Get-PortOwnerPid $Port)
+        if ($owners.Count -gt 0) {
+            $listenPid = $owners[0]
+            break
+        }
+    }
 
     if ($proc.HasExited) {
         Write-Info "process exited early - last err log:"
@@ -169,14 +192,20 @@ function Start-ServiceInstance {
         throw "marvin-capture failed to stay up (exit $($proc.ExitCode))"
     }
 
-    $owners = @(Get-PortOwnerPid $Port)
-    if ($owners.Count -eq 0) {
+    if (-not $listenPid) {
         Write-Info "WARNING: process PID $($proc.Id) running but port $Port not listening yet"
         Write-Info "check logs: $LogFile / $ErrFile"
     } else {
         # Prefer the listener PID (uvicorn child may differ from Start-Process id)
-        $listenPid = $owners[0]
         $listenPid | Set-Content -Path $PidFile -Encoding ascii
+        $owners = @(Get-PortOwnerPid $Port)
+        $strangers = @($owners | Where-Object { $_ -ne $listenPid -and $_ -ne $proc.Id })
+        if ($strangers.Count -gt 0) {
+            Write-Info "ERROR: extra process(es) on port $Port : $($strangers -join ', ')"
+            Write-Info "killing start PID $($proc.Id) and refusing UP (old server still serving)"
+            try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
+            throw "port $Port contested by PID(s) $($strangers -join ', '). Kill them, then restart."
+        }
         if ($listenPid -ne $proc.Id) {
             Write-Info "note: Start-Process PID $($proc.Id); listener PID $listenPid (pid file updated)"
         }

@@ -178,3 +178,80 @@ def test_transcript_success_keeps_audio(tmp_path: Path, monkeypatch):
     assert att["transcript"] == "transcribed words"
     assert Path(att["storage_path"]).read_bytes() == b"RIFF...."
     conn.close()
+
+
+def test_adhoc_jrn_soft_dedupe_and_sent_only(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+
+    body = "Grandkids went home to TX. Sports starting back up."
+    mid1 = client.inject_reply(
+        thread_id="thr-jrn-1",
+        subject="[MB-JRN]",
+        body=body,
+        label_ids=["INBOX", "SENT"],
+    )
+    r1 = process_message(conn, client, cfg, mid1)
+    assert r1["status"] == "captured"
+    assert "Ad-hoc journal" in r1["response"]["prompt_body"]
+
+    # Whitespace / wrap variant of the same journal — second Gmail id
+    mid2 = client.inject_reply(
+        thread_id="thr-jrn-1",
+        subject="[MB-JRN]",
+        body="Grandkids went home to TX.\nSports starting back up.",
+        label_ids=["INBOX", "SENT"],
+    )
+    r2 = process_message(conn, client, cfg, mid2)
+    assert r2["status"] == "duplicate_skipped"
+    assert Path(r2["raw_email_path"]).is_file()
+
+    inbox = store.list_responses(conn, reviewed=False)
+    assert len(inbox) == 1
+
+    # Sent-only twin after inbox capture
+    mid3 = client.inject_reply(
+        thread_id="thr-jrn-1",
+        subject="[MB-JRN]",
+        body=body + " extra should not matter for sent-only skip",
+        label_ids=["SENT"],
+    )
+    r3 = process_message(conn, client, cfg, mid3)
+    assert r3["status"] == "sent_only_skipped"
+    assert len(store.list_responses(conn, reviewed=False)) == 1
+    conn.close()
+
+
+def test_auto_review_duplicate_bodies(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    conn = store.init_db(cfg["sqlite_path"])
+    store.insert_prompt(
+        conn,
+        prompt_id="JRN",
+        prompt_type="JRN",
+        subject="[MB-JRN]",
+        body="(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text="Same day note.",
+        raw_email_path=str(tmp_path / "a.eml"),
+        gmail_message_id="m1",
+        gmail_thread_id="t1",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text="Same   day\nnote.",
+        raw_email_path=str(tmp_path / "b.eml"),
+        gmail_message_id="m2",
+        gmail_thread_id="t1",
+    )
+    n = store.auto_review_duplicate_bodies(conn)
+    assert n == 1
+    rows = store.list_responses(conn, reviewed=False)
+    assert len(rows) == 1
+    assert rows[0]["gmail_message_id"] == "m1"
+    conn.close()
