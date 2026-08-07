@@ -1,25 +1,26 @@
-# Marvin Capture — stop / start / restart (Windows PoC)
+# Marvin Capture - stop / start / restart (Windows PoC)
 #
 # Usage (from C:\memorybox):
 #   .\scripts\deploy_marvin_capture.ps1              # restart (default)
 #   .\scripts\deploy_marvin_capture.ps1 -Action status
 #   .\scripts\deploy_marvin_capture.ps1 -Action stop
 #   .\scripts\deploy_marvin_capture.ps1 -Action start
-#   .\scripts\deploy_marvin_capture.ps1 -Action restart -Pull
+#   .\scripts\deploy_marvin_capture.ps1 -Action restart
+#   .\scripts\deploy_marvin_capture.ps1 -Action restart -Pull:$false
 #
-# Default ports (PoC — vanity names later):
-#   marvin-capture  8790
-#   hvrt            8788   (stub only in this script)
-#   ask             8787   (reserved)
-#   mbd-demonstrator 8780  (reserved)
+# Default ports (PoC - vanity names later):
+#   marvin-capture   8790
+#   hvrt             8788   (stub only in this script)
+#   ask              8787   (reserved)
+#   mbd-demonstrator 8780   (reserved)
 
 [CmdletBinding()]
 param(
     [ValidateSet("status", "stop", "start", "restart")]
     [string]$Action = "restart",
 
-    # Cursor-controlled: this deploy needs the PR branch + latest commits
-    [switch]$Pull = $true,
+    # Cursor-controlled: this deploy pulls the PR branch by default
+    [bool]$Pull = $true,
 
     [string]$Branch = "cursor/marvin-capture-v01-3344",
     [string]$RepoRoot = ""
@@ -120,7 +121,7 @@ function Stop-ServiceInstance {
 
 function Update-Repo {
     if (-not $Pull) {
-        Write-Info "skip git pull (-Pull:`$false)"
+        Write-Info "skip git pull"
         return
     }
     Push-Location $RepoRoot
@@ -139,7 +140,7 @@ function Start-ServiceInstance {
         throw "venv python not found: $Python  (create with: python -m venv .venv)"
     }
     if (-not (Test-Path $AppScript)) {
-        throw "missing $AppScript — are you on branch $Branch?"
+        throw "missing $AppScript - are you on branch $Branch?"
     }
 
     $logsDir = Join-Path $RepoRoot "logs"
@@ -163,7 +164,7 @@ function Start-ServiceInstance {
     Start-Sleep -Seconds 2
 
     if ($proc.HasExited) {
-        Write-Info "process exited early — last err log:"
+        Write-Info "process exited early - last err log:"
         if (Test-Path $ErrFile) { Get-Content $ErrFile -Tail 40 }
         throw "marvin-capture failed to stay up (exit $($proc.ExitCode))"
     }
@@ -173,7 +174,7 @@ function Start-ServiceInstance {
         Write-Info "WARNING: process PID $($proc.Id) running but port $Port not listening yet"
         Write-Info "check logs: $LogFile / $ErrFile"
     } else {
-        Write-Info "UP — PID $($proc.Id) listening on http://127.0.0.1:$Port/"
+        Write-Info "UP - PID $($proc.Id) listening on http://127.0.0.1:$Port/"
     }
     Write-Info "logs: $LogFile"
 }
