@@ -117,6 +117,13 @@ def send_daily_journal_if_due(
     )
 
 
+ADHOC_PROMPT_BODY = {
+    "JRN": "(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",
+    "EVS": "(Ad-hoc EVS — you emailed this in; Marvin did not send an outbound prompt.)",
+    "MEM": "(Ad-hoc memory note — not a bank question; Marvin did not send an outbound prompt.)",
+}
+
+
 def _resolve_prompt(conn: Any, subject: str, thread_id: str) -> dict[str, Any] | None:
     tag = parse_subject_tag(subject)
     if tag:
@@ -132,13 +139,17 @@ def _resolve_prompt(conn: Any, subject: str, thread_id: str) -> dict[str, Any] |
             by_type = store.find_prompt_by_type(conn, tag.prompt_type)
             if by_type:
                 return by_type
-        # Auto-register so we never drop the reply
+        # Auto-register so we never drop the mail (ad-hoc capture)
+        body = ADHOC_PROMPT_BODY.get(
+            tag.prompt_type,
+            "(Ad-hoc capture — no Marvin outbound prompt for this tag.)",
+        )
         return store.insert_prompt(
             conn,
             prompt_id=tag.prompt_id,
             prompt_type=tag.prompt_type,
             subject=subject,
-            body="(prompt inferred from reply subject; original outbound not in DB)",
+            body=body,
             sent_date=None,
             gmail_thread_id=thread_id,
         )
@@ -189,6 +200,35 @@ def process_message(
     prompt_id = prompt["id"]
     raw_path = save_raw_email(raw, raw_dir / prompt_id, message_id)
     reply_text = derive_reply_text(msg)
+
+    # Soft dedupe: same prompt + identical non-empty body already stored
+    if reply_text.strip():
+        existing = conn.execute(
+            """
+            SELECT id FROM response
+            WHERE prompt_id = ? AND response_text = ?
+            LIMIT 1
+            """,
+            (prompt_id, reply_text),
+        ).fetchone()
+        if existing:
+            if apply_label:
+                label_name = cfg["gmail"].get("processed_label") or "MB/Processed"
+                label_id = client.ensure_label(label_name)
+                client.apply_label(message_id, label_id)
+            log.info(
+                "duplicate body skipped for prompt %s (existing response %s); raw kept at %s",
+                prompt_id,
+                existing["id"],
+                raw_path,
+            )
+            return {
+                "status": "duplicate_skipped",
+                "existing_response_id": existing["id"],
+                "raw_email_path": str(raw_path),
+                "gmail_message_id": message_id,
+            }
+
     attachments = extract_attachments(msg)
     att_dir = att_root / prompt_id / message_id
     saved_atts = save_attachments(attachments, att_dir)

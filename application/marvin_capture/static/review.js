@@ -52,6 +52,9 @@
   }
 
   function listLabel(item) {
+    const snippet = (item.response_text || "").trim().replace(/\s+/g, " ");
+    const short = snippet.length > 72 ? snippet.slice(0, 69) + "…" : snippet;
+    if (short) return short;
     return item.subject || item.prompt_subject || item.prompt_id || "Response";
   }
 
@@ -104,7 +107,11 @@
       (detail.reviewed ? " · reviewed" : "");
     document.getElementById("d-prompt-subject").textContent =
       detail.subject || detail.prompt_subject || "";
-    document.getElementById("d-prompt-body").textContent = detail.prompt_body || "";
+    let promptBody = detail.prompt_body || "";
+    if (promptBody.includes("Ad-hoc journal") || promptBody.includes("original outbound not in DB") || promptBody.includes("Ad-hoc")) {
+      // Keep clarifying copy; already humanized in new captures
+    }
+    document.getElementById("d-prompt-body").textContent = promptBody;
     document.getElementById("d-reply").textContent =
       detail.response_text || "(no text body — see attachments)";
 

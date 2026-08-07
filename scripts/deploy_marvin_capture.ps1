@@ -161,7 +161,7 @@ function Start-ServiceInstance {
         -WindowStyle Hidden
 
     $proc.Id | Set-Content -Path $PidFile -Encoding ascii
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 3
 
     if ($proc.HasExited) {
         Write-Info "process exited early - last err log:"
@@ -174,7 +174,13 @@ function Start-ServiceInstance {
         Write-Info "WARNING: process PID $($proc.Id) running but port $Port not listening yet"
         Write-Info "check logs: $LogFile / $ErrFile"
     } else {
-        Write-Info "UP - PID $($proc.Id) listening on http://127.0.0.1:$Port/"
+        # Prefer the listener PID (uvicorn child may differ from Start-Process id)
+        $listenPid = $owners[0]
+        $listenPid | Set-Content -Path $PidFile -Encoding ascii
+        if ($listenPid -ne $proc.Id) {
+            Write-Info "note: Start-Process PID $($proc.Id); listener PID $listenPid (pid file updated)"
+        }
+        Write-Info "UP - PID $listenPid listening on http://127.0.0.1:$Port/"
     }
     Write-Info "logs: $LogFile"
 }
