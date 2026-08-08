@@ -428,3 +428,45 @@ def test_auto_review_jrn_time_window(tmp_path: Path):
     assert store.auto_review_duplicate_bodies(conn) == 1
     assert len(store.list_responses(conn, reviewed=False)) == 1
     conn.close()
+
+
+def test_auto_review_keeps_new_jrn_reply_on_same_thread(tmp_path: Path):
+    """Replying on yesterday's [MB-JRN] thread is a new journal, not a dupe."""
+    cfg = _cfg(tmp_path)
+    conn = store.init_db(cfg["sqlite_path"])
+    store.insert_prompt(
+        conn,
+        prompt_id="JRN",
+        prompt_type="JRN",
+        subject="[MB-JRN]",
+        body="(Ad-hoc journal)",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=(
+            "Today, the grandkids and Laura went home to TX. They have school "
+            "coming up and sports starting back up again."
+        ),
+        raw_email_path=str(tmp_path / "a.eml"),
+        gmail_message_id="old",
+        gmail_thread_id="thr-jrn-shared",
+        received_date="2026-08-07T14:50:47",
+    )
+    store.insert_response(
+        conn,
+        prompt_id="JRN",
+        response_text=(
+            "Today I got up, and the doors in the hall were open. That told me "
+            "that the house was quiet after the grandkids left. On the MemoryBox "
+            "front, I completed the first pass of the business plan."
+        ),
+        raw_email_path=str(tmp_path / "b.eml"),
+        gmail_message_id="new",
+        gmail_thread_id="thr-jrn-shared",
+        received_date="2026-08-08T06:10:42",
+    )
+    assert store.auto_review_duplicate_bodies(conn) == 0
+    inbox = store.list_responses(conn, reviewed=False)
+    assert len(inbox) == 2
+    conn.close()

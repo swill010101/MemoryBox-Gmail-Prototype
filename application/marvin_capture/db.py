@@ -550,10 +550,12 @@ def auto_review_duplicate_bodies(
     Match rules (same prompt_id):
       1. Exact normalized body
       2. High similarity / containment on normalized body
-      3. Same gmail_thread_id
-      4. Ad-hoc canonical ids (JRN/EVS/MEM): received within the time window
+      3. Ad-hoc canonical ids (JRN/EVS/MEM): within time window AND
+         (empty body or >=50% similar)
 
-    Empty bodies still participate in (3) and (4).
+    Same Gmail thread alone is NOT a duplicate — Tom often replies on the
+    existing [MB-JRN] thread for a new day's journal.
+
     Keeps raw email + both DB rows (additive).
     """
     import difflib
@@ -591,14 +593,6 @@ def auto_review_duplicate_bodies(
 
         for prev in prior:
             prev_norm = prev["norm"]
-            # Same Gmail thread → almost always a twin capture
-            if (
-                row["gmail_thread_id"]
-                and prev["thread"]
-                and row["gmail_thread_id"] == prev["thread"]
-            ):
-                is_dupe = True
-                break
 
             if norm and prev_norm:
                 if prev_norm == norm:
