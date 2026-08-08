@@ -13,6 +13,8 @@ from email import encoders
 from pathlib import Path
 from typing import Any, Protocol
 
+from .plus_address import build_poll_query
+
 
 class GmailClient(Protocol):
     def send_message(
@@ -22,12 +24,14 @@ class GmailClient(Protocol):
         subject: str,
         body: str,
         thread_id: str | None = None,
+        reply_to: str | None = None,
     ) -> dict[str, str]: ...
 
     def list_unread_or_unprocessed(
         self,
         *,
         processed_label: str,
+        user_email: str = "",
         query_extra: str = "",
     ) -> list[dict[str, Any]]: ...
 
@@ -39,6 +43,8 @@ class GmailClient(Protocol):
 
     def apply_label(self, message_id: str, label_id: str) -> None: ...
 
+    def trash_message(self, message_id: str) -> None: ...
+
 
 @dataclass
 class FakeMessage:
@@ -47,15 +53,21 @@ class FakeMessage:
     subject: str
     raw: bytes
     label_ids: list[str] = field(default_factory=lambda: ["INBOX", "UNREAD"])
+    to_addr: str = ""
+    delivered_to: str = ""
+    reply_to: str = ""
 
 
 class FakeGmailClient:
     """In-memory Gmail stand-in for tests and local dry-runs."""
 
+    TRASH_LABEL = "TRASH"
+
     def __init__(self) -> None:
         self.messages: dict[str, FakeMessage] = {}
         self.labels: dict[str, str] = {}
         self.sent: list[dict[str, Any]] = []
+        self.trashed: list[str] = []
         self._seq = 0
 
     def _next_id(self, prefix: str) -> str:
@@ -69,6 +81,7 @@ class FakeGmailClient:
         subject: str,
         body: str,
         thread_id: str | None = None,
+        reply_to: str | None = None,
     ) -> dict[str, str]:
         mid = self._next_id("msg")
         tid = thread_id or self._next_id("thr")
@@ -76,17 +89,28 @@ class FakeGmailClient:
         mime["To"] = to
         mime["From"] = "marvin@local.test"
         mime["Subject"] = subject
+        if reply_to:
+            mime["Reply-To"] = reply_to
         mime["Message-ID"] = f"<{mid}@local.test>"
         raw = mime.as_bytes()
-        # Outbound looks like Gmail Sent (not Inbox) — mirrors live Marvin sends
         self.messages[mid] = FakeMessage(
             id=mid,
             thread_id=tid,
             subject=subject,
             raw=raw,
             label_ids=["SENT"],
+            to_addr=to,
+            reply_to=reply_to or "",
         )
-        self.sent.append({"id": mid, "threadId": tid, "to": to, "subject": subject})
+        self.sent.append(
+            {
+                "id": mid,
+                "threadId": tid,
+                "to": to,
+                "subject": subject,
+                "reply_to": reply_to,
+            }
+        )
         return {"id": mid, "threadId": tid}
 
     def inject_reply(
@@ -95,6 +119,8 @@ class FakeGmailClient:
         thread_id: str,
         subject: str,
         body: str,
+        to_addr: str = "marvin@local.test",
+        delivered_to: str | None = None,
         attachments: list[tuple[str, str, bytes]] | None = None,
         from_addr: str = "tom@local.test",
         label_ids: list[str] | None = None,
@@ -114,14 +140,22 @@ class FakeGmailClient:
                 mime.attach(part)
         else:
             mime = email.mime.text.MIMEText(body, "plain", "utf-8")
-        mime["To"] = "marvin@local.test"
+        mime["To"] = to_addr
+        if delivered_to:
+            mime["Delivered-To"] = delivered_to
         mime["From"] = from_addr
         mime["Subject"] = subject
         mime["Message-ID"] = f"<{mid}@local.test>"
         raw = mime.as_bytes()
         labels = list(label_ids) if label_ids is not None else ["INBOX", "UNREAD"]
         self.messages[mid] = FakeMessage(
-            id=mid, thread_id=thread_id, subject=subject, raw=raw, label_ids=labels
+            id=mid,
+            thread_id=thread_id,
+            subject=subject,
+            raw=raw,
+            label_ids=labels,
+            to_addr=to_addr,
+            delivered_to=delivered_to or to_addr,
         )
         return mid
 
@@ -129,14 +163,25 @@ class FakeGmailClient:
         self,
         *,
         processed_label: str,
+        user_email: str = "",
         query_extra: str = "",
     ) -> list[dict[str, Any]]:
         label_id = self.labels.get(processed_label)
         out = []
         for msg in self.messages.values():
+            if self.TRASH_LABEL in msg.label_ids:
+                continue
             if label_id and label_id in msg.label_ids:
                 continue
-            # skip outbound-only messages from marvin if desired — include all unmatched
+            if user_email:
+                from .plus_address import extract_plus_routing
+
+                headers = {
+                    "to": msg.to_addr,
+                    "delivered-to": msg.delivered_to or msg.to_addr,
+                }
+                if not extract_plus_routing(headers, user_email=user_email)[0]:
+                    continue
             out.append({"id": msg.id, "threadId": msg.thread_id})
         return out
 
@@ -145,11 +190,21 @@ class FakeGmailClient:
 
     def get_message_metadata(self, message_id: str) -> dict[str, Any]:
         msg = self.messages[message_id]
+        headers = {
+            "subject": msg.subject,
+            "to": msg.to_addr,
+            "delivered-to": msg.delivered_to or msg.to_addr,
+        }
+        if msg.reply_to:
+            headers["reply-to"] = msg.reply_to
         return {
             "id": msg.id,
             "threadId": msg.thread_id,
             "labelIds": list(msg.label_ids),
             "subject": msg.subject,
+            "to": msg.to_addr,
+            "delivered-to": msg.delivered_to or msg.to_addr,
+            "headers": headers,
         }
 
     def ensure_label(self, name: str) -> str:
@@ -161,6 +216,14 @@ class FakeGmailClient:
         msg = self.messages[message_id]
         if label_id not in msg.label_ids:
             msg.label_ids.append(label_id)
+
+    def trash_message(self, message_id: str) -> None:
+        msg = self.messages[message_id]
+        if self.TRASH_LABEL not in msg.label_ids:
+            msg.label_ids.append(self.TRASH_LABEL)
+        if "INBOX" in msg.label_ids:
+            msg.label_ids.remove("INBOX")
+        self.trashed.append(message_id)
 
 
 def build_live_gmail_client(cfg: dict[str, Any]) -> Any:
@@ -211,10 +274,13 @@ class LiveGmailClient:
         subject: str,
         body: str,
         thread_id: str | None = None,
+        reply_to: str | None = None,
     ) -> dict[str, str]:
         mime = email.mime.text.MIMEText(body, "plain", "utf-8")
         mime["To"] = to
         mime["Subject"] = subject
+        if reply_to:
+            mime["Reply-To"] = reply_to
         raw = base64.urlsafe_b64encode(mime.as_bytes()).decode("utf-8")
         payload: dict[str, Any] = {"raw": raw}
         if thread_id:
@@ -231,44 +297,28 @@ class LiveGmailClient:
         self,
         *,
         processed_label: str,
+        user_email: str = "",
         query_extra: str = "",
     ) -> list[dict[str, Any]]:
-        # Nested Gmail labels use hyphens in search: MB/Processed → mb-processed
-        label_query = processed_label.replace("/", "-")
-        # Exclude sent-only copies (self-send / IMAP "save sent" duplicates).
-        # Keep inbox + archived replies; skip pure Sent that never landed in Inbox.
-        not_sent_only = "-{in:sent -in:inbox}"
-        queries = [
-            # Tagged Marvin mail still in inbox
-            f'in:inbox -label:{label_query} (subject:[MB- OR subject:"[MB-")',
-            # Self-replies / archived threads: search anywhere recent, not sent-only
-            (
-                f"in:anywhere newer_than:7d -label:{label_query} "
-                f'(subject:[MB- OR subject:"[MB-") {not_sent_only}'
-            ),
-            # Broad inbox fallback
-            f"in:inbox -label:{label_query}",
-        ]
+        if not user_email:
+            raise ValueError("user_email is required for plus-address poll queries")
+        q = build_poll_query(user_email, processed_label=processed_label)
+        if query_extra:
+            q = f"{q} {query_extra}"
         seen: set[str] = set()
         messages: list[dict[str, Any]] = []
-        for q in queries:
-            if query_extra:
-                q = f"{q} {query_extra}"
-            result = (
-                self.service.users()
-                .messages()
-                .list(userId="me", q=q, maxResults=50)
-                .execute()
-            )
-            for m in result.get("messages") or []:
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                seen.add(mid)
-                messages.append(m)
-            # Prefer early precise hits; still accumulate fallbacks
-            if messages and q.startswith("in:anywhere"):
-                break
+        result = (
+            self.service.users()
+            .messages()
+            .list(userId="me", q=q, maxResults=50)
+            .execute()
+        )
+        for m in result.get("messages") or []:
+            mid = m["id"]
+            if mid in seen:
+                continue
+            seen.add(mid)
+            messages.append(m)
         return messages
 
     def get_message_raw(self, message_id: str) -> bytes:
@@ -288,7 +338,16 @@ class LiveGmailClient:
                 userId="me",
                 id=message_id,
                 format="metadata",
-                metadataHeaders=["Subject", "From", "To", "Date", "Message-ID"],
+                metadataHeaders=[
+                    "Subject",
+                    "From",
+                    "To",
+                    "Delivered-To",
+                    "X-Original-To",
+                    "Reply-To",
+                    "Date",
+                    "Message-ID",
+                ],
             )
             .execute()
         )
@@ -302,6 +361,8 @@ class LiveGmailClient:
             "labelIds": result.get("labelIds") or [],
             "subject": headers.get("subject", ""),
             "from": headers.get("from", ""),
+            "to": headers.get("to", ""),
+            "delivered-to": headers.get("delivered-to", ""),
             "headers": headers,
         }
 
@@ -335,3 +396,6 @@ class LiveGmailClient:
             id=message_id,
             body={"addLabelIds": [label_id]},
         ).execute()
+
+    def trash_message(self, message_id: str) -> None:
+        self.service.users().messages().trash(userId="me", id=message_id).execute()

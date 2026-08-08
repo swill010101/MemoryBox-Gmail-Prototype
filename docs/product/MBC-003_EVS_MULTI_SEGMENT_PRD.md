@@ -1,6 +1,6 @@
 # MBC-003 — EVS multi-segment capture
 
-**Status:** Approved for implement · 2026-08-07  
+**Status:** Retired · superseded by MBC-004 (2026-08-08)  
 **ID:** MBC-003  
 **Owner:** Tom Will  
 **Depends on:** MBC-001 (Marvin Capture)

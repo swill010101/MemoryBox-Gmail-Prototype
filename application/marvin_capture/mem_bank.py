@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db as store
+from .plus_address import build_plus_address
 from .service import send_prompt
 
 log = logging.getLogger("marvin.mem_bank")
@@ -202,7 +203,9 @@ def send_mem_question(
     qid = int(question["id"])
     text = question["text"]
     bank = cfg.get("mem_bank") or {}
-    to = bank.get("to") or cfg.get("gmail", {}).get("user_email")
+    user_email = cfg.get("gmail", {}).get("user_email") or bank.get("to") or ""
+    to = user_email
+    reply_to = build_plus_address(user_email, "MEM") if user_email else None
     body = (
         f"{text}\n\n"
         "Reply to this email with your answer. "
@@ -218,6 +221,7 @@ def send_mem_question(
         headline=text if len(text) <= 120 else text[:117] + "...",
         body=body,
         to=to,
+        reply_to=reply_to,
     )
     sent_at = (now or datetime.now()).replace(microsecond=0).isoformat()
     store.log_mem_send(
@@ -234,15 +238,17 @@ def send_mem_question(
 
 def send_completion_email(conn: Any, client: Any, cfg: dict[str, Any], total: int) -> None:
     bank = cfg.get("mem_bank") or {}
-    to = bank.get("to") or cfg.get("gmail", {}).get("user_email")
-    subject = "[MB-MEM] Interview complete"
+    user_email = cfg.get("gmail", {}).get("user_email") or bank.get("to") or ""
+    to = user_email
+    reply_to = build_plus_address(user_email, "MEM") if user_email else None
+    subject = "Interview complete"
     body = (
         f"Interview complete — {total} questions answered.\n\n"
         "You can export the full set from the Marvin Capture review UI "
         "(Extract MEM).\n"
     )
     # Use type MEM with no numeric token — completion notice, not a bank question
-    client.send_message(to=to, subject=subject, body=body)
+    client.send_message(to=to, subject=subject, body=body, reply_to=reply_to)
     store.set_mem_bank_state(conn, completion_email_sent=1, completed_at=store.utc_now_iso())
     log.info("MEM bank completion email sent (%s questions)", total)
 

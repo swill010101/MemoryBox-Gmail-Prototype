@@ -77,6 +77,25 @@ html, body {
   border-radius: 3px;
 }
 
+.address-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.address-table th,
+.address-table td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.address-table th {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 .keys-note {
   width: 100%;
   font-size: 0.8rem !important;

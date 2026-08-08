@@ -22,21 +22,15 @@
     </nav>
   </header>
 
-  <section class="keys-bar" aria-label="Subject keys">
-    <p><strong>Subject keys</strong> (minimum tag; headline optional):
-      <code>[MB-JRN]</code> journal (ad-hoc) ·
-      <code>[MB-MEM-n]</code> memory bank ·
-      <code>[MB-MEM]</code> ad-hoc mem ·
-      <code>[MB-EVS]</code> EVS (<code>. Stop.</code> splits)
-    </p>
-    <p class="keys-note">MEM bank: bare ids <code>[MB-MEM-1]</code>…. When sends are ON, first email is <strong>tomorrow 01:00</strong>, then <strong>every other day</strong>. Unanswered get one resend after 7 days.</p>
-  </section>
-
-  <section class="batch-bar" aria-label="EVS batch actions">
-    <span class="batch-label">EVS batch</span>
-    <button type="button" id="btn-evs-extract" class="primary">Extract EVS…</button>
-    <button type="button" id="btn-evs-remove" class="danger">Remove all EVS</button>
-    <span id="batch-status" class="batch-status" aria-live="polite"></span>
+  <section class="keys-bar" aria-label="Capture addresses">
+    <p><strong>Capture addresses</strong> — send or reply to these Gmail plus-addresses:</p>
+    <table id="address-table" class="address-table">
+      <thead>
+        <tr><th>Address</th><th>Destination</th><th>Notes</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="keys-note">After capture, Marvin moves the message to Gmail Trash. MEM bank: when sends are ON, first email is <strong>tomorrow 01:00</strong>, then <strong>every other day</strong>. Unanswered get one resend after 7 days.</p>
   </section>
 
   <section class="batch-bar" aria-label="MEM bank actions">
@@ -99,7 +93,7 @@
           <div class="prose" id="d-transcripts"></div>
         </section>
 
-        <p class="evidence-note">Original email preserved on disk. Extraction and transcripts are additive — they never replace the source. EVS Remove deletes DB rows and linked files for that batch only.</p>
+        <p class="evidence-note">Original email preserved on disk. Extraction and transcripts are additive — they never replace the source. After verified capture, Gmail copies are moved to Trash.</p>
       </article>
     </section>
   </main>

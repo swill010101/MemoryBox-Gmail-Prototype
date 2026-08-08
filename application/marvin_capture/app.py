@@ -7,16 +7,14 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import re
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "application"))
@@ -37,6 +35,7 @@ from marvin_capture.service import (  # noqa: E402
     send_daily_journal_if_due,
     send_prompt,
 )
+from marvin_capture.plus_address import capture_addresses  # noqa: E402
 from marvin_capture.whisper_client import process_pending_transcriptions  # noqa: E402
 
 log = logging.getLogger("marvin.app")
@@ -55,29 +54,37 @@ try:
 except Exception:  # noqa: BLE001
     log.exception("startup reextract skipped")
 
-# Humanize old ad-hoc prompt placeholders (all ad-hoc types)
+# Humanize old ad-hoc JRN prompt placeholders
 try:
-    for ptype, body in (
-        ("JRN", "(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)"),
-        ("EVS", "(Ad-hoc EVS — you emailed this in; Marvin did not send an outbound prompt.)"),
-        ("MEM", "(Ad-hoc memory note — not a bank question; Marvin did not send an outbound prompt.)"),
-    ):
-        cur = _db.execute(
-            """
-            UPDATE prompt SET body = ?
-            WHERE type = ?
-              AND (
-                body LIKE '%original outbound not in DB%'
-                OR body LIKE '%prompt inferred from reply subject%'
-              )
-            """,
-            (body, ptype),
-        )
-        if cur.rowcount:
-            log.info("updated %s ad-hoc %s prompt placeholder(s)", cur.rowcount, ptype)
+    cur = _db.execute(
+        """
+        UPDATE prompt SET body = ?
+        WHERE type = 'JRN'
+          AND (
+            body LIKE '%original outbound not in DB%'
+            OR body LIKE '%prompt inferred from reply subject%'
+          )
+        """,
+        ("(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",),
+    )
+    if cur.rowcount:
+        log.info("updated %s ad-hoc JRN prompt placeholder(s)", cur.rowcount)
     _db.commit()
 except Exception:  # noqa: BLE001
     log.exception("adhoc prompt cleanup skipped")
+
+# MBC-004: wipe any remaining EVS data on startup
+try:
+    wiped = store.delete_responses_by_type(_db, "EVS")
+    if wiped["responses_deleted"] or wiped["prompts_deleted"]:
+        _db.commit()
+        log.info(
+            "startup EVS wipe: %s responses, %s prompts",
+            wiped["responses_deleted"],
+            wiped["prompts_deleted"],
+        )
+except Exception:  # noqa: BLE001
+    log.exception("startup EVS wipe skipped")
 
 # Clear Inbox clutter from identical double-captures (keep raw + both rows)
 try:
@@ -105,18 +112,6 @@ class ReviewIn(BaseModel):
     reviewed: bool = True
 
 
-class EvsExtractIn(BaseModel):
-    filename: str = Field(default="evs_export.txt", min_length=1, max_length=180)
-
-
-def _safe_download_name(name: str) -> str:
-    name = Path(name).name.strip() or "evs_export.txt"
-    name = re.sub(r"[^\w.\- ()[\]]+", "_", name)
-    if not name.lower().endswith(".txt"):
-        name += ".txt"
-    return name[:180]
-
-
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {
@@ -127,7 +122,7 @@ def health() -> dict[str, Any]:
         "attachment_storage": _cfg["attachment_storage"],
         "whisper_endpoint": _cfg["whisper"].get("endpoint"),
         "principle": "never lose information in an attempt to be intelligent",
-        "subject_keys": ["[MB-JRN]", "[MB-MEM]", "[MB-EVS]"],
+        "capture_addresses": capture_addresses(_cfg),
     }
 
 
@@ -139,11 +134,7 @@ def api_config() -> dict[str, Any]:
         "whisper_endpoint": _cfg["whisper"].get("endpoint"),
         "schedule": _cfg.get("schedule"),
         "user_email_set": bool(_cfg["gmail"].get("user_email")),
-        "subject_keys": {
-            "JRN": "[MB-JRN] optional headline",
-            "MEM": "[MB-MEM] optional headline",
-            "EVS": "[MB-EVS] optional headline",
-        },
+        "capture_addresses": capture_addresses(_cfg),
     }
 
 
@@ -250,27 +241,6 @@ def api_send_journal(force: bool = True, fake: bool = False) -> dict[str, Any]:
     result = send_daily_journal_if_due(_db, client, _cfg, force=force)
     _db.commit()
     return {"ok": True, "sent": result}
-
-
-@app.post("/api/evs/extract")
-def api_evs_extract(body: EvsExtractIn) -> Response:
-    items = store.list_responses_by_type(_db, "EVS")
-    text = store.format_evs_export(items)
-    filename = _safe_download_name(body.filename)
-    return Response(
-        content=text.encode("utf-8"),
-        media_type="text/plain; charset=utf-8",
-        headers={
-            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
-        },
-    )
-
-
-@app.post("/api/evs/remove")
-def api_evs_remove() -> dict[str, Any]:
-    result = store.delete_responses_by_type(_db, "EVS")
-    _db.commit()
-    return {"ok": True, **result}
 
 
 @app.post("/api/mem/extract")

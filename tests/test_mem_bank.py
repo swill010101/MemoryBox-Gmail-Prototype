@@ -16,6 +16,7 @@ from marvin_capture.mem_bank import (  # noqa: E402
     tick_mem_bank,
     validate_questions_file,
 )
+from marvin_capture.plus_address import build_plus_address  # noqa: E402
 from marvin_capture.service import process_message  # noqa: E402
 from marvin_capture.whisper_client import process_pending_transcriptions  # noqa: E402
 
@@ -86,10 +87,13 @@ def test_every_other_day_resend_once_and_complete(tmp_path: Path):
 
     for qid, body in ((1, "Answer one"), (2, "Answer two")):
         last = store.last_mem_send(conn, qid)
+        mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
         mid = client.inject_reply(
             thread_id=last["gmail_thread_id"],
-            subject=f"Re: [MB-MEM-{qid}] Q",
+            subject="Re: Q",
             body=body,
+            to_addr=mem_addr,
+            delivered_to=mem_addr,
         )
         assert process_message(conn, client, cfg, mid)["status"] == "captured"
 
@@ -97,6 +101,19 @@ def test_every_other_day_resend_once_and_complete(tmp_path: Path):
     assert any(a.get("kind") == "complete" for a in r5.get("actions") or [])
     exported = export_mem_bank(conn, cfg)
     assert exported["count"] == 2
+    conn.close()
+
+
+def test_mem_send_uses_reply_to_plus_address(tmp_path: Path):
+    questions = [{"id": 1, "text": "Q one?"}]
+    cfg = _cfg(tmp_path, questions)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    store.arm_mem_sends(conn, enabled=True, now=datetime(2026, 8, 9, 12, 0))
+    tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 1, 5))
+    assert client.sent
+    assert client.sent[0]["to"] == "swill01@gmail.com"
+    assert client.sent[0]["reply_to"] == "swill01+MEM@gmail.com"
     conn.close()
 
 
@@ -138,10 +155,13 @@ def test_voice_only_promotes_whisper_to_answer(tmp_path: Path, monkeypatch):
     store.set_mem_bank_state(conn, sends_enabled=1, next_initial_date="2026-08-10")
     tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 1, 5), force=True)
     last = store.last_mem_send(conn, 1)
+    mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
     mid = client.inject_reply(
         thread_id=last["gmail_thread_id"],
-        subject="Re: [MB-MEM-1] Speak",
+        subject="Re: Speak",
         body="",
+        to_addr=mem_addr,
+        delivered_to=mem_addr,
         attachments=[("note.m4a", "audio/mp4", b"audio")],
     )
     result = process_message(conn, client, cfg, mid)

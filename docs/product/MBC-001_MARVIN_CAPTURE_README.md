@@ -4,14 +4,21 @@ Proof-of-concept email capture loop for MemoryBox.
 
 **Immutable principle:** Marvin Capture must never lose information in an attempt to be intelligent. The original email, attachments, and reply are the authoritative record.
 
-## Subject keys (minimum)
+## Plus-address capture (MBC-004)
 
-```text
-[MB-JRN] optional headline          # journal (ad-hoc when MEM bank on)
-[MB-MEM-n] question text…           # memory bank (bare id, e.g. [MB-MEM-1])
-[MB-MEM] optional headline          # ad-hoc memory drop
-[MB-EVS] optional headline          # EVS
-```
+Inbound mail is routed by **Gmail plus-address**, not subject tags. After verified capture, Marvin moves that Gmail message to **Trash** (single message, not the whole thread).
+
+| Address | Destination |
+|---------|-------------|
+| `you+journal@…` | Journal (JRN) — compose or reply |
+| `you+jrn@…` | Journal (JRN) — same |
+| `you+MEM@…` | Memory bank answers — **reply only** to Marvin's MEM question |
+
+(`you` = local-part of `gmail.user_email` in config.)
+
+- Mail with only old `[MB-…]` subject and **no** accepted plus-address → **unmatched** (not captured).  
+- MEM questions are sent to plain `you@…` with `Reply-To: you+MEM@…`.  
+- EVS (MBC-003) is **retired** — see `MBC-004_PLUS_ADDRESS_TRASH_RETIRE_EVS_PRD.md`.
 
 ## MEM question bank (MBC-002)
 
@@ -21,19 +28,6 @@ Proof-of-concept email capture loop for MemoryBox.
 4. **Extract MEM** in the review UI writes `exports/mem_bank/mem_batch_…/` (combined + per-Q files + attachments)
 
 See `docs/product/MBC-002_MEM_QUESTION_BANK_PRD.md`.
-
-## EVS batch (review UI) — MBC-003
-
-Subject `[MB-EVS]` marks the body as EVS payload. Multiple EVSs in one email are split on:
-
-`…end of sentence. Stop. Next sentence…`
-
-(any casing of `Stop`; optional `Stop.` / `Stop!`). Trailing `Stop` with nothing after is ignored. Each segment is its own inbox row / export block (`=== EVS n ===`). Attachments are ignored for EVS (voice-only empty body still Whispers once, then splits).
-
-1. **Extract EVS…** — downloads all EVS segments as a `.txt`
-2. **Remove all EVS** — deletes EVS rows and linked files (after extract); JRN/MEM untouched
-
-See `docs/product/MBC-003_EVS_MULTI_SEGMENT_PRD.md`.
 
 ## Setup
 

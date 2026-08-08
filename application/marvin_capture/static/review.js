@@ -7,14 +7,12 @@
   const btnReview = document.getElementById("btn-review");
   const btnUnreview = document.getElementById("btn-unreview");
   const btnRefresh = document.getElementById("btn-refresh");
-  const btnEvsExtract = document.getElementById("btn-evs-extract");
-  const btnEvsRemove = document.getElementById("btn-evs-remove");
-  const batchStatus = document.getElementById("batch-status");
   const btnMemExtract = document.getElementById("btn-mem-extract");
   const btnMemOpenQuestions = document.getElementById("btn-mem-open-questions");
   const btnMemValidate = document.getElementById("btn-mem-validate");
   const btnMemSends = document.getElementById("btn-mem-sends");
   const memStatus = document.getElementById("mem-status");
+  const addressTableBody = document.querySelector("#address-table tbody");
   let memSendsOn = false;
 
   function renderMemSendsButton() {
@@ -27,6 +25,22 @@
     memSendsOn = Boolean(data.enabled);
     renderMemSendsButton();
     return data;
+  }
+
+  async function loadCaptureAddresses() {
+    const data = await fetchJSON("/api/config");
+    const rows = data.capture_addresses || [];
+    addressTableBody.innerHTML = "";
+    for (const row of rows) {
+      if ((row.destination || "").includes("plain inbox")) continue;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><code>${escapeHtml(row.address)}</code></td>
+        <td>${escapeHtml(row.destination)}</td>
+        <td>${escapeHtml(row.notes || "")}</td>
+      `;
+      addressTableBody.appendChild(tr);
+    }
   }
 
   let view = "inbox";
@@ -54,11 +68,6 @@
   function listLabel(item) {
     const snippet = (item.response_text || "").trim().replace(/\s+/g, " ");
     const short = snippet.length > 72 ? snippet.slice(0, 69) + "…" : snippet;
-    if ((item.prompt_type || "").toUpperCase() === "EVS") {
-      const seg = String(item.segment_index || 1).padStart(2, "0");
-      if (short) return `EVS-${seg}: ${short}`;
-      return `EVS-${seg}`;
-    }
     if (short) return short;
     return item.subject || item.prompt_subject || item.prompt_id || "Response";
   }
@@ -68,10 +77,6 @@
     const data = await fetchJSON(`/api/responses?reviewed=${reviewed}`);
     listEl.innerHTML = "";
     listTitle.textContent = reviewed ? "Reviewed" : "Inbox";
-
-    if (!reviewed && data.duplicates_collapsed) {
-      batchStatus.textContent = `Collapsed ${data.duplicates_collapsed} duplicate(s) → Reviewed.`;
-    }
 
     if (!data.responses.length) {
       emptyEl.classList.remove("hidden");
@@ -111,37 +116,22 @@
     placeholder.classList.add("hidden");
     detailBody.classList.remove("hidden");
 
-    const seg =
-      (detail.prompt_type || "").toUpperCase() === "EVS"
-        ? ` · segment ${String(detail.segment_index || 1).padStart(2, "0")}`
-        : "";
     document.getElementById("d-meta").textContent =
-      `${detail.prompt_type || detail.prompt_id}${seg} · received ${formatDate(detail.received_date)}` +
+      `${detail.prompt_type || detail.prompt_id} · received ${formatDate(detail.received_date)}` +
       (detail.reviewed ? " · reviewed" : "");
     document.getElementById("d-prompt-subject").textContent =
       detail.subject || detail.prompt_subject || "";
-    let promptBody = detail.prompt_body || "";
-    if (promptBody.includes("Ad-hoc journal") || promptBody.includes("Ad-hoc EVS") ||
-        promptBody.includes("Ad-hoc memory") || promptBody.includes("Ad-hoc capture") ||
-        promptBody.includes("original outbound not in DB") || promptBody.includes("Ad-hoc")) {
-      // Keep clarifying copy; already humanized in new captures
-    }
-    document.getElementById("d-prompt-body").textContent = promptBody;
+    document.getElementById("d-prompt-body").textContent = detail.prompt_body || "";
     document.getElementById("d-reply").textContent =
       detail.response_text || "(no text body — see attachments)";
 
     const attList = document.getElementById("d-attachments");
     const noAtt = document.getElementById("d-no-attachments");
     attList.innerHTML = "";
-    // MBC-003: EVS ignores attachments in the review UI
-    const atts =
-      (detail.prompt_type || "").toUpperCase() === "EVS" ? [] : detail.attachments || [];
+    const atts = detail.attachments || [];
     if (!atts.length) {
       noAtt.classList.remove("hidden");
-      noAtt.textContent =
-        (detail.prompt_type || "").toUpperCase() === "EVS"
-          ? "EVS ignores attachments (text / Whisper only)."
-          : "No attachments.";
+      noAtt.textContent = "No attachments.";
     } else {
       noAtt.classList.add("hidden");
       for (const a of atts) {
@@ -193,50 +183,6 @@
     await loadList();
   }
 
-  async function extractEvs() {
-    const suggested = `evs_export_${new Date().toISOString().slice(0, 10)}.txt`;
-    const filename = window.prompt("Save EVS export as filename:", suggested);
-    if (!filename) return;
-    batchStatus.textContent = "Extracting…";
-    const res = await fetch("/api/evs/extract", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename }),
-    });
-    if (!res.ok) {
-      batchStatus.textContent = `Extract failed: ${await res.text()}`;
-      return;
-    }
-    const blob = await res.blob();
-    const disp = res.headers.get("Content-Disposition") || "";
-    const match = /filename=\"([^\"]+)\"/.exec(disp);
-    const outName = match ? match[1] : filename;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = outName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    batchStatus.textContent = `Downloaded ${outName}`;
-  }
-
-  async function removeEvs() {
-    const ok = window.confirm(
-      "Remove ALL EVS responses from the database and delete their linked files on disk?\n\nDo this after Extract. JRN/MEM are not affected."
-    );
-    if (!ok) return;
-    batchStatus.textContent = "Removing…";
-    const data = await fetchJSON("/api/evs/remove", { method: "POST" });
-    batchStatus.textContent =
-      `Removed ${data.responses_deleted} EVS · ${data.files_removed} files`;
-    selectedId = null;
-    placeholder.classList.remove("hidden");
-    detailBody.classList.add("hidden");
-    await loadList();
-  }
-
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", async () => {
       document.querySelectorAll(".tab").forEach((t) => {
@@ -256,12 +202,6 @@
   btnReview.addEventListener("click", () => setReviewed(true));
   btnUnreview.addEventListener("click", () => setReviewed(false));
   btnRefresh.addEventListener("click", () => loadList());
-  btnEvsExtract.addEventListener("click", () => extractEvs().catch((e) => {
-    batchStatus.textContent = e.message;
-  }));
-  btnEvsRemove.addEventListener("click", () => removeEvs().catch((e) => {
-    batchStatus.textContent = e.message;
-  }));
   btnMemExtract.addEventListener("click", () => {
     memStatus.textContent = "Exporting…";
     fetchJSON("/api/mem/extract", { method: "POST" })
@@ -320,6 +260,8 @@
   refreshMemStatus().catch(() => {
     btnMemSends.textContent = "MEM sends: ?";
   });
+
+  loadCaptureAddresses().catch(() => {});
 
   loadList().catch((err) => {
     emptyEl.classList.remove("hidden");

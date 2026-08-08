@@ -18,7 +18,7 @@ from marvin_capture.service import get_gmail_client, send_daily_journal_if_due, 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--journal", action="store_true", help="Send today's journal prompt")
-    parser.add_argument("--type", default="MEM", help="Prompt type e.g. MEM, JRN, EVS")
+    parser.add_argument("--type", default="MEM", help="Prompt type e.g. MEM, JRN")
     parser.add_argument(
         "--token",
         default="",

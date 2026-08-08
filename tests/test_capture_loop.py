@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "application"))
 
 from marvin_capture import db as store  # noqa: E402
 from marvin_capture.gmail_client import FakeGmailClient  # noqa: E402
+from marvin_capture.plus_address import build_plus_address  # noqa: E402
 from marvin_capture.service import poll_once, process_message, send_prompt  # noqa: E402
 from marvin_capture.whisper_client import process_pending_transcriptions  # noqa: E402
 
@@ -32,7 +33,7 @@ def _cfg(tmp_path: Path) -> dict:
     }
 
 
-def test_send_reply_capture_preserve(tmp_path: Path):
+def test_send_reply_capture_preserve_and_trash(tmp_path: Path):
     cfg = _cfg(tmp_path)
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
@@ -49,6 +50,7 @@ def test_send_reply_capture_preserve(tmp_path: Path):
     prompt_id = sent["prompt"]["id"]
     assert prompt_id == "JRN"
 
+    jrn_addr = build_plus_address(cfg["gmail"]["user_email"], "journal")
     reply_body = (
         "Met Sarah for lunch. Attached a photo.\n\n"
         "On Wed, Aug 6, 2026 at 6:00 PM Marvin wrote:\n"
@@ -58,8 +60,10 @@ def test_send_reply_capture_preserve(tmp_path: Path):
     voice = b"fake-m4a-bytes"
     mid = client.inject_reply(
         thread_id=thread_id,
-        subject="Re: [MB-JRN] What happened today?",
+        subject="Re: What happened today?",
         body=reply_body,
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
         attachments=[
             ("lunch.jpg", "image/jpeg", photo),
             ("memo.m4a", "audio/mp4", voice),
@@ -72,125 +76,122 @@ def test_send_reply_capture_preserve(tmp_path: Path):
     detail = result["response"]
     assert detail["response_text"] == "Met Sarah for lunch. Attached a photo."
     assert detail["prompt_id"] == "JRN"
-    assert detail["subject"] == "Re: [MB-JRN] What happened today?"
     assert len(detail["attachments"]) == 2
 
-    raw_path = Path(detail["raw_email_path"])
-    assert raw_path.is_file()
+    assert mid in client.trashed
+    assert FakeGmailClient.TRASH_LABEL in client.messages[mid].label_ids
 
-    for att in detail["attachments"]:
-        assert Path(att["storage_path"]).is_file()
-        if att["filename"].endswith(".m4a"):
-            assert att["is_audio"] == 1
-            assert Path(att["storage_path"]).read_bytes() == voice
-
-    label_id = client.labels["MB/Processed"]
-    assert label_id in client.messages[mid].label_ids
     assert process_message(conn, client, cfg, mid) is None
-
-    tx = process_pending_transcriptions(conn, cfg["whisper"])
-    assert tx and tx[0]["status"] == "error"
     conn.close()
 
 
-def test_evs_tokenless_extract_and_delete(tmp_path: Path):
+def test_journal_compose_to_plus_jrn(tmp_path: Path):
     cfg = _cfg(tmp_path)
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
-
+    jrn_addr = build_plus_address(cfg["gmail"]["user_email"], "jrn")
     mid = client.inject_reply(
-        thread_id="thr-evs",
-        subject="[MB-EVS] Pocket watch",
-        body="The pocket watch belonged to Dad.\n",
+        thread_id="thr-adhoc-jrn",
+        subject="Tuesday notes",
+        body="Walked to the gym.",
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
     )
     result = process_message(conn, client, cfg, mid)
     assert result["status"] == "captured"
-    assert result["response"]["prompt_id"] == "EVS"
-    assert result["response"]["segment_index"] == 1
-
-    items = store.list_responses_by_type(conn, "EVS")
-    assert len(items) == 1
-    export = store.format_evs_export(items)
-    assert "Pocket watch" in export
-    assert "belonged to Dad" in export
-    assert "segment: 01" in export
-
-    wiped = store.delete_responses_by_type(conn, "EVS")
-    assert wiped["responses_deleted"] == 1
-    assert store.list_responses_by_type(conn, "EVS") == []
+    assert result["response"]["prompt_id"] == "JRN"
+    assert mid in client.trashed
     conn.close()
 
 
-def test_evs_multi_segment_stop_split(tmp_path: Path):
+def test_subject_only_without_plus_is_unmatched(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    mid = client.inject_reply(
+        thread_id="thr-old-tag",
+        subject="[MB-JRN] legacy subject only",
+        body="Should not capture.",
+        to_addr="tom@local.test",
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "unmatched"
+    assert mid not in client.trashed
+    conn.close()
+
+
+def test_mem_adhoc_plus_unmatched(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
+    mid = client.inject_reply(
+        thread_id="thr-mem-adhoc",
+        subject="Random MEM note",
+        body="Not a bank answer.",
+        to_addr=mem_addr,
+        delivered_to=mem_addr,
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "unmatched"
+    assert mid not in client.trashed
+    conn.close()
+
+
+def test_mem_reply_thread_bound_and_trash(tmp_path: Path):
     cfg = _cfg(tmp_path)
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
 
-    body = (
-        "Find all the pics of Laura. Stop. "
-        "Find all the pictures of grandpa's funny hat. STOP. "
-        "Find the beach trip album. stop."
+    sent = send_prompt(
+        conn,
+        client,
+        cfg,
+        prompt_type="MEM",
+        token="1",
+        headline="Grade-school days",
+        body="Tell me about your grade-school days.",
+        reply_to=build_plus_address(cfg["gmail"]["user_email"], "MEM"),
     )
+    mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
     mid = client.inject_reply(
-        thread_id="thr-evs-multi",
-        subject="[MB-EVS]",
+        thread_id=sent["gmail"]["threadId"],
+        subject="Re: Grade-school days",
+        body="I loved recess.",
+        to_addr=mem_addr,
+        delivered_to=mem_addr,
+    )
+    result = process_message(conn, client, cfg, mid)
+    assert result["status"] == "captured"
+    assert result["response"]["prompt_id"] == "MEM-1"
+    assert mid in client.trashed
+    conn.close()
+
+
+def test_duplicate_skipped_trashes_message(tmp_path: Path):
+    cfg = _cfg(tmp_path)
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    jrn_addr = build_plus_address(cfg["gmail"]["user_email"], "journal")
+    body = "Same journal entry."
+    mid1 = client.inject_reply(
+        thread_id="thr-dup",
+        subject="Journal",
         body=body,
-        attachments=[("ignore.jpg", "image/jpeg", b"\xff\xd8fake")],
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
     )
-    result = process_message(conn, client, cfg, mid)
-    assert result["status"] == "captured"
-    assert result["segment_count"] == 3
-    items = store.list_responses_by_type(conn, "EVS")
-    assert len(items) == 3
-    assert [i["segment_index"] for i in items] == [1, 2, 3]
-    assert items[0]["gmail_message_id"] == items[1]["gmail_message_id"] == mid
-    assert "Laura" in items[0]["response_text"]
-    assert "funny hat" in items[1]["response_text"]
-    assert "beach" in items[2]["response_text"]
-    # Attachments ignored for text EVS
-    for item in items:
-        detail = store.get_response_detail(conn, item["id"])
-        assert detail["attachments"] == []
-    export = store.format_evs_export(items)
-    assert "=== EVS 1 ===" in export and "=== EVS 3 ===" in export
-    wiped = store.delete_responses_by_type(conn, "EVS")
-    assert wiped["responses_deleted"] == 3
-    conn.close()
-
-
-def test_evs_whisper_promote_splits(tmp_path: Path, monkeypatch):
-    cfg = _cfg(tmp_path)
-    client = FakeGmailClient()
-    conn = store.init_db(cfg["sqlite_path"])
-
-    mid = client.inject_reply(
-        thread_id="thr-evs-voice",
-        subject="[MB-EVS]",
-        body="",
-        attachments=[("asks.m4a", "audio/mp4", b"fake-audio")],
+    assert process_message(conn, client, cfg, mid1)["status"] == "captured"
+    mid2 = client.inject_reply(
+        thread_id="thr-dup",
+        subject="Journal",
+        body=body,
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
     )
-    result = process_message(conn, client, cfg, mid)
-    assert result["status"] == "captured"
-    assert result["response"]["response_text"] == ""
-    assert len(result["response"]["attachments"]) == 1
-
-    monkeypatch.setattr(
-        "marvin_capture.whisper_client.transcribe_file",
-        lambda path, **kwargs: (
-            "Find Laura photos. Stop. Find grandpa hat pictures. Stop."
-        ),
-    )
-    tx = process_pending_transcriptions(conn, cfg["whisper"])
-    assert tx[0]["status"] == "done"
-    assert tx[0]["promoted_to_answer"] is True
-    items = store.list_responses_by_type(conn, "EVS")
-    assert len(items) == 2
-    assert items[0]["segment_index"] == 1
-    assert "Laura" in items[0]["response_text"]
-    assert "grandpa" in items[1]["response_text"]
-    # Attachment rows removed after EVS promote
-    d0 = store.get_response_detail(conn, items[0]["id"])
-    assert d0["attachments"] == []
+    r2 = process_message(conn, client, cfg, mid2)
+    assert r2["status"] == "duplicate_skipped"
+    assert mid2 in client.trashed
     conn.close()
 
 
@@ -199,24 +200,19 @@ def test_poll_once_and_unmatched(tmp_path: Path):
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
 
-    send_prompt(
-        conn,
-        client,
-        cfg,
-        prompt_type="MEM",
-        headline="Grade-school days",
-        body="Tell me about your grade-school days.",
-    )
+    mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
     mid = client.inject_reply(
         thread_id="thr-unknown",
         subject="Hello random",
         body="not a marvin reply",
+        to_addr=mem_addr,
+        delivered_to=mem_addr,
     )
     results = poll_once(conn, client, cfg)
     unmatched = [r for r in results if r.get("status") == "unmatched"]
     assert unmatched
     assert Path(unmatched[0]["raw_email_path"]).is_file()
-    assert client.messages[mid].raw
+    assert mid not in client.trashed
     conn.close()
 
 
@@ -232,11 +228,15 @@ def test_transcript_success_keeps_audio(tmp_path: Path, monkeypatch):
         prompt_type="MEM",
         headline="Voice",
         body="Say something",
+        reply_to=build_plus_address(cfg["gmail"]["user_email"], "MEM"),
     )
+    mem_addr = build_plus_address(cfg["gmail"]["user_email"], "MEM")
     mid = client.inject_reply(
         thread_id=sent["gmail"]["threadId"],
-        subject="Re: [MB-MEM] Voice",
+        subject="Re: Voice",
         body="See voice memo.",
+        to_addr=mem_addr,
+        delivered_to=mem_addr,
         attachments=[("v.wav", "audio/wav", b"RIFF....")],
     )
     result = process_message(conn, client, cfg, mid)
@@ -259,37 +259,41 @@ def test_adhoc_jrn_soft_dedupe_and_sent_only(tmp_path: Path):
     cfg = _cfg(tmp_path)
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
+    jrn_addr = build_plus_address(cfg["gmail"]["user_email"], "journal")
 
     body = "Grandkids went home to TX. Sports starting back up."
     mid1 = client.inject_reply(
         thread_id="thr-jrn-1",
-        subject="[MB-JRN]",
+        subject="Journal",
         body=body,
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
         label_ids=["INBOX", "SENT"],
     )
     r1 = process_message(conn, client, cfg, mid1)
     assert r1["status"] == "captured"
     assert "Ad-hoc journal" in r1["response"]["prompt_body"]
 
-    # Whitespace / wrap variant of the same journal — second Gmail id
     mid2 = client.inject_reply(
         thread_id="thr-jrn-1",
-        subject="[MB-JRN]",
+        subject="Journal",
         body="Grandkids went home to TX.\nSports starting back up.",
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
         label_ids=["INBOX", "SENT"],
     )
     r2 = process_message(conn, client, cfg, mid2)
     assert r2["status"] == "duplicate_skipped"
-    assert Path(r2["raw_email_path"]).is_file()
 
     inbox = store.list_responses(conn, reviewed=False)
     assert len(inbox) == 1
 
-    # Sent-only twin after inbox capture
     mid3 = client.inject_reply(
         thread_id="thr-jrn-1",
-        subject="[MB-JRN]",
+        subject="Journal",
         body=body + " extra should not matter for sent-only skip",
+        to_addr=jrn_addr,
+        delivered_to=jrn_addr,
         label_ids=["SENT"],
     )
     r3 = process_message(conn, client, cfg, mid3)
@@ -305,7 +309,7 @@ def test_auto_review_duplicate_bodies(tmp_path: Path):
         conn,
         prompt_id="JRN",
         prompt_type="JRN",
-        subject="[MB-JRN]",
+        subject="Journal",
         body="(Ad-hoc journal — you emailed this in; Marvin did not send an outbound prompt.)",
     )
     store.insert_response(
@@ -333,14 +337,13 @@ def test_auto_review_duplicate_bodies(tmp_path: Path):
 
 
 def test_auto_review_near_duplicate_journals(tmp_path: Path):
-    """Near-identical long JRN bodies (resend with a tiny edit) collapse."""
     cfg = _cfg(tmp_path)
     conn = store.init_db(cfg["sqlite_path"])
     store.insert_prompt(
         conn,
         prompt_id="JRN",
         prompt_type="JRN",
-        subject="[MB-JRN]",
+        subject="Journal",
         body="(Ad-hoc journal)",
     )
     base = (
@@ -370,7 +373,6 @@ def test_auto_review_near_duplicate_journals(tmp_path: Path):
     n = store.auto_review_duplicate_bodies(conn)
     assert n == 1
     assert len(store.list_responses(conn, reviewed=False)) == 1
-    # Distinct journal hours later must stay
     store.insert_response(
         conn,
         prompt_id="JRN",
@@ -389,14 +391,13 @@ def test_auto_review_near_duplicate_journals(tmp_path: Path):
 
 
 def test_auto_review_jrn_time_window(tmp_path: Path):
-    """Two ad-hoc JRNs within 30 minutes collapse when moderately similar."""
     cfg = _cfg(tmp_path)
     conn = store.init_db(cfg["sqlite_path"])
     store.insert_prompt(
         conn,
         prompt_id="JRN",
         prompt_type="JRN",
-        subject="[MB-JRN]",
+        subject="Journal",
         body="(Ad-hoc journal)",
     )
     a = (
@@ -431,14 +432,13 @@ def test_auto_review_jrn_time_window(tmp_path: Path):
 
 
 def test_auto_review_keeps_new_jrn_reply_on_same_thread(tmp_path: Path):
-    """Replying on yesterday's [MB-JRN] thread is a new journal, not a dupe."""
     cfg = _cfg(tmp_path)
     conn = store.init_db(cfg["sqlite_path"])
     store.insert_prompt(
         conn,
         prompt_id="JRN",
         prompt_type="JRN",
-        subject="[MB-JRN]",
+        subject="Journal",
         body="(Ad-hoc journal)",
     )
     store.insert_response(

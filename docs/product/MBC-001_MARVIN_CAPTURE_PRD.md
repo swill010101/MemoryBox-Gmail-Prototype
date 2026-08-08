@@ -158,5 +158,5 @@ Tom presses Reply. No special formatting required. May attach images, PDF, DOCX,
 
 Automatic tagging, Ollama summarization, MemoryBox ingestion, relationship suggestions, weekly interviews, multi-user, public API.
 
-**EVS multi-segment** is specified in `MBC-003_EVS_MULTI_SEGMENT_PRD.md` (implemented alongside this PoC).
+**EVS multi-segment (MBC-003) is retired** — see `MBC-004_PLUS_ADDRESS_TRASH_RETIRE_EVS_PRD.md`. Plus-address capture (MBC-004) supersedes subject-tag routing.
 
