@@ -12,7 +12,7 @@ Record one section per increment. Do not wait until end of P1.
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 5 only (locked definition)  
 **Acceptance:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — **ACCEPTED** (FlightSim `prove-story --flightsim` + owner Story UX)  
-**Next:** Increment 5A Journal — **BUILD AUTHORIZED**; owner FlightSim gate I5A-OWNER open. Do not begin Guided Capture / Increment 6 without authorization.
+**Next:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md) — **REVIEW ONLY**; do not begin I6 / Guided Capture / Inc 7 without authorization.
 
 ### Build-lock decisions
 
@@ -32,7 +32,8 @@ Record one section per increment. Do not wait until end of P1.
 **Authorization:** Build Increment 5A only  
 **Definition:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md)  
 **Acceptance:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED** (`prove-journal --flightsim` + owner typed/voice UX)  
-**Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask — **PASSED**
+**Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask — **PASSED**  
+**Next:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md) — **REVIEW ONLY**; do not begin I6 / Guided Capture / Inc 7 without authorization.
 
 ### Build-lock decisions
 
