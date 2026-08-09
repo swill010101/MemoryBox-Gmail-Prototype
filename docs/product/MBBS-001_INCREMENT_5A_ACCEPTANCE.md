@@ -1,44 +1,39 @@
-# MBBS-001 Increment 5A — Acceptance (desktop harness green; FlightSim owner gate open)
+# MBBS-001 Increment 5A — Acceptance
 
-**Status:** Desktop prove **PASS** · Owner FlightSim gate **OPEN** (I5A-OWNER)  
+**Status:** **ACCEPTED** (FlightSim owner gate + `prove-journal --flightsim`)  
 **Date:** 2026-08-09  
 **Definition:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md)
 
-## Owner gate (required for FlightSim accept)
+## Owner gate (I5A-OWNER) — PASSED
 
-Tom can open the FlightSim Journal client, create **one typed** and **one spoken** entry without developer intervention, save both, and subsequently retrieve them through MemoryBox Ask.
+Tom opened the FlightSim Journal client, created **one typed** and **one spoken** entry without developer intervention, saved both, and retrieved them through MemoryBox Ask.
 
-## Desktop harness
+| Item | Opaque id |
+|------|-----------|
+| Owner typed Journal | `248fc736-faff-46e7-9bba-b98226594202` |
+| Owner voice Journal | `0416280d-a3f9-465b-aeec-80206d5c9b55` |
+
+Voice path: browser mic device picker → Record → STT draft → review → explicit Save (`channel=voice` + `audio_uri`).
+
+## FlightSim prove
 
 ```text
-python -m memorybox migrate
-python -m memorybox prove-journal
-# ok: true (I5A-A…P synthetic; opaque ids only)
-python -m memorybox prove-story   # remains green under increment 5A health
-python -m memorybox health        # increment=5A, journal_versions present
+python -m memorybox prove-journal --flightsim
+# ok: true
+# i5a_j_owner_typed / i5a_j_owner_voice / i5a_owner_ask_retrieve green
+# MEMORYBOX_P1_RUNTIME_HOST=1
 ```
 
 ## Shipped surface
 
 | Surface | Path |
 |---------|------|
-| Journal UI | `/journal/ui` |
-| Capture/STT draft | `POST /capture/transcribe` (no Journal persist) |
-| Journal API | `POST/GET /journal`, versions |
-| Ask Journal | `want_journal` + Journal attribution; intent → `/journal/ui` |
-| Prove | `python -m memorybox prove-journal [--flightsim]` |
-
-## FlightSim owner prove (after UX saves)
-
-```powershell
-$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
-$env:MEMORYBOX_I5A_OWNER_TYPED_JOURNAL_ID = "<typed-uuid>"
-$env:MEMORYBOX_I5A_OWNER_VOICE_JOURNAL_ID = "<spoken-uuid>"
-python -m memorybox prove-journal --flightsim
-```
-
-STT: install `faster-whisper` (or set `MEMORYBOX_WHISPER_ENDPOINT`) and `pip install python-multipart`. Prefer `MEMORYBOX_STT_PROVIDER=faster_whisper` on FlightSim when Whisper is local.
+| Journal UI | `/journal/ui` (mic picker + live level) |
+| Capture/STT | `POST /capture/transcribe` (Whisper behind provider) |
+| Journal API | `/journal` + versions |
+| Ask Journal | direct PG + Journal attribution; intent → capture |
+| Prove | `prove-journal [--flightsim]` |
 
 ## Stop
 
-Do not start Guided Capture / Increment 6 without authorization.
+Do **not** begin Guided Capture / EF-11 / Increment 6 without explicit authorization.

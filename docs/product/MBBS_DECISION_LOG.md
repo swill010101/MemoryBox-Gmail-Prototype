@@ -31,8 +31,8 @@ Record one section per increment. Do not wait until end of P1.
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 5A only  
 **Definition:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — desktop harness PASS; **I5A-OWNER FlightSim gate open**  
-**Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask
+**Acceptance:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED** (`prove-journal --flightsim` + owner typed/voice UX)  
+**Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask — **PASSED**
 
 ### Build-lock decisions
 

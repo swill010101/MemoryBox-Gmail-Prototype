@@ -1,8 +1,8 @@
 # MBBS-001 Increment 5A — Definition (build authorized)
 
-**Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 5A only*)  
+**Status:** **ACCEPTED** (see [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md))  
 **Date:** 2026-08-09  
-**Owner acceptance gate:** Tom can open the FlightSim Journal client, create **one typed** and **one spoken** entry **without developer intervention**, save both, and subsequently retrieve them through MemoryBox Ask.  
+**Owner acceptance gate:** Tom can open the FlightSim Journal client, create **one typed** and **one spoken** entry **without developer intervention**, save both, and subsequently retrieve them through MemoryBox Ask. — **PASSED**  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 5A  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
