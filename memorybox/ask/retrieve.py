@@ -612,6 +612,10 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
             }
         ]
     loose = not tokens
+    # Listing asks ("show my journals") must not truncate owner entries under
+    # synthetic prove noise — pull a wider recent window when unconstrained.
+    fetch_n = max(limit * 8, 80) if loose else limit * 8
+    result_n = max(limit, 50) if loose else limit
 
     hits: list[JournalHit] = []
     with connection() as conn:
@@ -637,7 +641,7 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
             ORDER BY j.updated_at DESC
             LIMIT %s
             """,
-            (limit * 8,),
+            (fetch_n,),
         ).fetchall()
 
         rel_people: dict[str, list[str]] = {}
@@ -712,4 +716,4 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits[:limit]
+    return hits[:result_n]

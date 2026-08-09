@@ -329,16 +329,21 @@ def prove_increment_5a(*, flightsim: bool = False) -> dict[str, Any]:
                 problems,
                 detail="set MEMORYBOX_I5A_OWNER_VOICE_JOURNAL_ID after /journal/ui spoken Save",
             )
-        # Ask retrieve owner entries
+        # Ask retrieve owner entries (listing window must include both owner IDs)
         if typed_env and voice_env:
             ask_owner = orch.ask("show my journals")
             oids = {h.get("journal_id") for h in ask_owner.journal_hits}
+            missing = [
+                label
+                for label, jid in (("typed", typed_env), ("voice", voice_env))
+                if jid not in oids
+            ]
             _check(
                 "i5a_owner_ask_retrieve",
-                typed_env in oids and voice_env in oids,
+                not missing,
                 checks,
                 problems,
-                detail=f"hits={len(oids)}",
+                detail=f"hits={len(oids)} missing={missing or 'none'}",
             )
 
     _check("i5a_k_synthetic_opaque", True, checks, problems, detail="synthetic ids only in meta")
