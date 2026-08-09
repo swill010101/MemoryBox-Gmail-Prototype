@@ -421,9 +421,10 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increment 5 — ACCEPTED** (FlightSim `prove-story --flightsim` + owner Story).  
-2. **Do not begin Increment 5A (Journal) / 6** until Tom explicitly authorizes.  
-3. SMS remains deferred — keep on P1 roadmap.  
-4. Ask-language edge cases from normal use → defect/EVS backlog (unless fundamental trust failure).
+1. **Increment 5 — ACCEPTED.**  
+2. **Increment 5A definition** — [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md) is **REVIEW ONLY** (Journal / EF-12).  
+3. **Do not begin Increment 5A / 6** until Tom explicitly authorizes.  
+4. SMS remains deferred — keep on P1 roadmap.  
+5. Ask-language edge cases from normal use → defect/EVS backlog (unless fundamental trust failure).
 
 **Unauthorized increments must not start.**
