@@ -90,10 +90,13 @@
       </select>
 
       <p class="muted">Voice: Record → Stop → STT draft fills Body (not saved until you click Save Journal).</p>
+      <p id="micHint" class="warn" style="display:none"></p>
       <button id="recBtn" type="button" class="secondary">Record</button>
       <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
       <span id="recStatus" class="muted">Idle</span>
-      <p class="muted">Audio id: <code id="audioId">(none)</code> · Draft only until Save</p>
+      <label for="audioFile" style="margin-top:0.75rem">Or upload a spoken audio file (webm/wav/mp3) when browser mic is blocked</label>
+      <input id="audioFile" type="file" accept="audio/*,.webm,.wav,.mp3,.m4a" />
+      <p class="muted">Audio id: <code id="audioId">(none)</code> · Draft only until Save · voice Save needs audio id</p>
 
       <button id="saveBtn" type="button">Save Journal</button>
       <p>Last saved Journal ID: <code id="lastId">(none yet)</code></p>
@@ -133,6 +136,11 @@
     function show(data) {
       out.textContent = JSON.stringify(data, null, 2);
     }
+    function setRecStatus(text, isWarn) {
+      const el = document.getElementById("recStatus");
+      el.textContent = text;
+      el.className = isWarn ? "warn" : "muted";
+    }
     function rememberId(id) {
       if (!id) return;
       document.getElementById("lastId").textContent = id;
@@ -147,9 +155,44 @@
       if (!r.ok) throw data;
       return data;
     }
+    async function transcribeBlob(blob, filename) {
+      setRecStatus("Transcribing…", false);
+      const fd = new FormData();
+      fd.append("file", blob, filename || "journal-clip.webm");
+      const data = await j("/capture/transcribe", { method: "POST", body: fd });
+      const draft = data.draft || data;
+      lastAudioId = draft.audio_id || null;
+      lastAudioUri = draft.audio_uri || null;
+      document.getElementById("audioId").textContent = lastAudioId || "(none)";
+      if (draft.text) {
+        document.getElementById("body").value = draft.text;
+      }
+      setRecStatus("Draft ready — review, then Save", false);
+      show(data);
+      return data;
+    }
+
+    // Browsers block mic on plain http://host (non-localhost). Surface that early.
+    (function micProbe() {
+      const hint = document.getElementById("micHint");
+      const secure = window.isSecureContext;
+      const hasMd = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!secure || !hasMd) {
+        hint.style.display = "block";
+        hint.textContent =
+          "Browser mic is unavailable on this URL (needs localhost or HTTPS). " +
+          "Use Record on FlightSim at http://127.0.0.1:8790/journal/ui, or upload an audio file below.";
+        setRecStatus("Mic blocked on this origin — use upload or localhost", true);
+      }
+    })();
 
     document.getElementById("recBtn").onclick = async () => {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            "navigator.mediaDevices unavailable (insecure non-localhost origin). Use audio upload or open http://127.0.0.1:8790/journal/ui on FlightSim."
+          );
+        }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         chunks = [];
         mediaRecorder = new MediaRecorder(stream);
@@ -157,31 +200,23 @@
         mediaRecorder.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
           const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-          document.getElementById("recStatus").textContent = "Transcribing…";
           try {
-            const fd = new FormData();
-            fd.append("file", blob, "journal-clip.webm");
-            const data = await j("/capture/transcribe", { method: "POST", body: fd });
-            const draft = data.draft || data;
-            lastAudioId = draft.audio_id || null;
-            lastAudioUri = draft.audio_uri || null;
-            document.getElementById("audioId").textContent = lastAudioId || "(none)";
-            if (draft.text) {
-              document.getElementById("body").value = draft.text;
-            }
-            document.getElementById("recStatus").textContent = "Draft ready — review, then Save";
-            show(data);
+            await transcribeBlob(blob, "journal-clip.webm");
           } catch (err) {
-            document.getElementById("recStatus").textContent = "STT failed";
+            setRecStatus("STT failed — see Result", true);
             show(err);
           }
         };
         mediaRecorder.start();
         document.getElementById("recBtn").disabled = true;
         document.getElementById("stopBtn").disabled = false;
-        document.getElementById("recStatus").textContent = "Recording…";
+        setRecStatus("Recording…", false);
       } catch (err) {
-        show({ detail: String(err), hint: "Microphone permission required for spoken Journal" });
+        setRecStatus("Mic failed — see Result / use upload", true);
+        show({
+          detail: String(err && err.message ? err.message : err),
+          hint: "Remote http://flightsim often blocks mic. Prefer localhost on FlightSim, or upload audio file.",
+        });
       }
     };
 
@@ -189,6 +224,17 @@
       if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
       document.getElementById("recBtn").disabled = false;
       document.getElementById("stopBtn").disabled = true;
+    };
+
+    document.getElementById("audioFile").onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        await transcribeBlob(file, file.name || "upload.webm");
+      } catch (err) {
+        setRecStatus("Upload/STT failed — see Result", true);
+        show(err);
+      }
     };
 
     document.getElementById("saveBtn").onclick = async () => {
@@ -217,11 +263,12 @@
           body: JSON.stringify(payload),
         });
         const id = data && data.journal && data.journal.id;
+        const wasVoice = Boolean(payload.audio_uri);
         rememberId(id);
         lastAudioUri = null;
         lastAudioId = null;
         document.getElementById("audioId").textContent = "(none)";
-        document.getElementById("recStatus").textContent = "Saved";
+        setRecStatus(wasVoice ? "Saved (voice)" : "Saved (typed)", false);
         show(data);
       } catch (err) {
         show(err);
