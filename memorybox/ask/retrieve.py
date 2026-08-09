@@ -173,6 +173,9 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
                 "email",
                 "christmas",
                 "grandpa",
+                "tell",
+                "know",
+                "about",
             }
         ]
         for r in rows:
@@ -236,6 +239,7 @@ def search_evidence_qdrant(
             return [], status
         result = client.query_points(collection_name=name, query=vec, limit=limit)
         points = result.points if hasattr(result, "points") else result
+        hits: list[EvidenceHit] = []
         distinctive = [
             t
             for t in re.findall(r"[A-Za-z0-9']{4,}", plan.original_ask)
@@ -284,6 +288,9 @@ def search_evidence_qdrant(
                     "with",
                     "christmas",
                     "grandpa",
+                    "tell",
+                    "know",
+                    "about",
                 }
             ]
         for p in points:

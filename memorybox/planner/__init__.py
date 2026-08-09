@@ -30,6 +30,28 @@ BROAD_VISUAL_RE = re.compile(
     r"(?i)\b(pictures?|images?|snapshots?|gallery|album|visuals?)\b"
 )
 SHOW_ME_RE = re.compile(r"(?i)\bshow\s+me\b")
+EXPLORATORY_RE = re.compile(
+    r"(?i)\b(?:"
+    r"what\s+do\s+(?:you|i|we)\s+know\s+about|"
+    r"tell\s+me\s+about|"
+    r"what\s+do\s+(?:i|we)\s+have\s+(?:about|from|on)"
+    r")\b"
+)
+SAID_ABOUT_RE = re.compile(
+    r"(?i)\b(?:"
+    r"what\s+did\b[\w\s,'-]{0,40}\bsay\b|"
+    r"\bsaid\s+about\b|"
+    r"\btell\s+me\s+what\b[\w\s,'-]{0,40}\bsaid\b"
+    r")\b"
+)
+ABOUT_SUBJECT_RE = re.compile(
+    r"(?i)\b(?:(?:what\s+do\s+(?:you|i|we)\s+know\s+about)|(?:tell\s+me\s+about)|"
+    r"(?:what\s+do\s+(?:i|we)\s+have\s+(?:about|on))|\babout)\s+"
+    r"(?:(?:our|my|the|a|an)\s+)?"
+    r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
+    r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)"
+    r"(?!\s+trip\b)"
+)
 EMAIL_RE = re.compile(
     r"(?i)\b(emails?|e-mails?|mail|messages?|inbox|correspondence|wrote|signed\s+off)\b"
 )
@@ -91,6 +113,10 @@ PERSON_OF_RE = re.compile(
 PERSON_EMAIL_FROM_RE = re.compile(
     r"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+"
     r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+)
+PERSON_SAID_RE = re.compile(
+    r"(?i)\bwhat\s+did\s+"
+    r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)\s+say\b"
 )
 PERSON_POSSESSIVE_RE = re.compile(r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b")
 SHOW_ME_PERSON_RE = re.compile(
@@ -267,6 +293,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         PERSON_POSSESSIVE_RE,
         SHOW_ME_PERSON_RE,
         PERSON_EMAIL_FROM_RE,
+        PERSON_SAID_RE,
     ]
     if want_email:
         # "from <Name>" in an email ask is a person, never a place
@@ -410,27 +437,69 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     u_events = _extract_events(q)
     u_t0, u_t1 = _extract_years(q)
 
-    # "about our X trip" / know about → not visual by default
     about_trip = bool(PLACE_TRIP_RE.search(q) or TRIP_TO_RE.search(q) or re.search(r"(?i)\btrip\b", q))
+    exploratory = bool(EXPLORATORY_RE.search(q))
+    said_about = bool(SAID_ABOUT_RE.search(q))
+    # Explicit modality narrowing always wins over exploratory multimodal.
+    narrowed_comms = bool(want_email or want_relationship or said_about)
+    narrowed_visual = bool(STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q) or BROAD_VISUAL_RE.search(q))
 
     visual_scope, vnotes = _resolve_visual_scope(
         q,
-        want_email=want_email,
+        want_email=want_email or said_about,
         want_cal=want_cal,
         want_relationship=want_relationship,
         people=u_people,
     )
     notes.extend(vnotes)
-    # Informational "what do you know about … trip" is Evidence/search, not photo dump
-    if re.search(r"(?i)\b(know|tell\s+me|about)\b", q) and about_trip and visual_scope == "none":
-        want_email = True
-        want_cal = True
-        notes.append("about_trip_uses_evidence_modalities")
+
+    # Bare "tell me about <Subject>" / "know about <Subject>" (not "... trip")
+    if exploratory and not u_people and not u_places and not u_trips and not u_events:
+        for m in ABOUT_SUBJECT_RE.finditer(q):
+            ent = _clean_entity(m.group(1))
+            if not ent:
+                continue
+            if ent.lower() in {e.lower() for e in KNOWN_EVENT_WORDS}:
+                u_events.append(ent)
+            else:
+                # Family-archive default: bare proper noun after about → person slot;
+                # Immich text search still receives the token via person_names.
+                u_people.append(ent)
+            notes.append("exploratory_about_subject")
+            break
 
     want_still = visual_scope in ("broad", "still_only")
     want_video = visual_scope in ("broad", "video_only")
     want_visual = want_still or want_video
     want_photo = want_still
+
+    # Exploratory / know-about: always multimodal across I4-available modalities.
+    # Not photo-fallback — stills + email/calendar even when communications hit.
+    if (
+        exploratory
+        and not narrowed_comms
+        and not narrowed_visual
+        and visual_scope == "none"
+        and not SHOW_ME_RE.search(q)
+    ):
+        want_email = True
+        want_cal = True
+        visual_scope = "broad"
+        want_still = True
+        want_video = True
+        want_visual = True
+        want_photo = True
+        notes.append("exploratory_multimodal_i4")
+
+    if said_about and not narrowed_visual:
+        want_email = True
+        want_cal = True
+        visual_scope = "none"
+        want_still = False
+        want_video = False
+        want_visual = False
+        want_photo = False
+        notes.append("said_about_communication_focus")
 
     show_me = bool(SHOW_ME_RE.search(q))
     # "show me <person>" (or show me + session person) → broad visual when no
@@ -442,6 +511,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         and not want_cal
         and not want_relationship
         and not about_trip
+        and not exploratory
     ):
         if not u_people and ctx.person_names:
             u_people = list(ctx.person_names)

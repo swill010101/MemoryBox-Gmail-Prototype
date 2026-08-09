@@ -184,7 +184,13 @@ def _build_answer(
             + "."
         )
     parts.append("Factual claims are limited to the citations listed.")
-    return "evidence_backed", " ".join(parts), statements, citations, None
+    if photos and evidence:
+        kind = "mixed"
+    elif photos and not evidence:
+        kind = "photo_backed"
+    else:
+        kind = "evidence_backed"
+    return kind, " ".join(parts), statements, citations, None
 
 
 class AskOrchestrator:

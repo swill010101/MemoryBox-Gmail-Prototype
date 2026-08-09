@@ -23,6 +23,8 @@ Record one section per increment. Do not wait until end of P1.
 | `i4_context_semantics_AH` regression | Catch failure pattern + unseen variation without demo hardcoding |
 | In-package Immich HTTP client | FlightSim had no `application/api`; earn-in under `memorybox/providers/photo/` |
 | Immich env URL hardening | Mangled `IMMICH_BASE_URL=` pastes caused urllib scheme errors on FlightSim |
+| Exploratory / know-about = always multimodal (I4 modalities) | “Know about / tell me about / what do I have about” explores subject across Immich stills + email/calendar — not comms-only and not photo-fallback; explicit narrowing still wins |
+| `i4_exploratory_multimodal` regression | Photo-only / evidence-only / both / neither / narrowed communication with unseen subjects |
 
 ### Decisions discovered during build
 

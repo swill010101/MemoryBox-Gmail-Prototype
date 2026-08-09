@@ -1,6 +1,6 @@
 # MBBS-001 Increment 4 — Definition (for review)
 
-**Status:** **CORRECTIVE REOPEN — desktop prove PASS; awaiting FlightSim re-prove**  
+**Status:** **CORRECTIVE REOPEN — desktop prove PASS (exploratory multimodal); awaiting FlightSim re-prove + manual re-test**  
 **Date:** 2026-08-09  
 **Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · corrective [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md)  
 **Build:** Corrective planner/context fix authorized; no Increment 5.
@@ -48,6 +48,27 @@ MemoryBox Ask must be **intent-oriented**. The owner should not need to understa
 2. **Do not hard-code “pictures” as permanently equivalent to PhotoProvider-only retrieval.** Broad visual wording maps to a `visual_scope=broad` plan (stills + video intent).  
 3. **Increment 4:** Do **not** add video/HVRT processing. I4 returns visual modalities **currently available** (still/PhotoProvider). The planner/retrieval **contract** (`visual_scope`, `want_visual` / `want_still` / `want_video`) must allow later video providers to satisfy the same owner NL without a new Ask architecture.  
 4. Explicit video-only asks in I4 disclose that video modality is not wired yet — **never invent** video results.
+
+---
+
+## 0.1b Exploratory / know-about intent (corrective lock)
+
+Broad exploratory asks mean: **explore what MemoryBox knows about that subject across all applicable currently available modalities** — not communications-only, and **not** photos-as-fallback.
+
+| Owner language (illustrative) | Intended meaning |
+|-------------------------------|------------------|
+| “What do you know about our \<Trip\> trip?” / “Tell me about our \<Trip\> trip.” / “What do we have from our \<Trip\> trip?” | Multimodal explore: stills + email/calendar Evidence (+ later modalities when wired) |
+| “Tell me about \<Person\>.” / “What do you know about \<Event\>?” / “What do I have about \<Place/Event/Trip\>?” | Same exploratory multimodal treatment for the named subject |
+
+**Normative rules:**
+
+1. Exploratory / know-about / tell-me-about / what-do-I-have-about is **always multimodal** for I4-available providers (Immich stills + communication + calendar Evidence). Do **not** wait for communications to return zero.  
+2. **Explicit narrowing still wins:** emails-only, photos-only, videos-only, “what did \<Person\> say…” stay modality-focused.  
+3. Results may present available modalities together so the owner can drill down with follow-ups.  
+4. Generalized intent only — **no** hard-coded demo people/places/trips/events/IDs.  
+5. I4 uses only modalities already available — **no** HVRT/video build, Story, Journal, SMS, or Increment 5.
+
+Regression: `i4_exploratory_multimodal` (photo-only → photo-backed; evidence-only → evidence-backed; both → multimodal; neither → insufficient; narrowed communication stays communication-focused).
 
 ---
 

@@ -193,6 +193,189 @@ def _context_semantics_regression() -> tuple[bool, str]:
     return True, "A-H regression + unseen Rivermark/Sam variation"
 
 
+class _ScriptedPhotoProvider:
+    """Test-only photo provider: empty or fixed hits (no family content)."""
+
+    provider_key = "scripted_photo"
+
+    def __init__(self, *, assets: list | None = None) -> None:
+        from memorybox.providers.photo.dto import PhotoAssetDto
+
+        self._assets = list(assets or [])
+        if self._assets and not isinstance(self._assets[0], PhotoAssetDto):
+            raise TypeError("assets must be PhotoAssetDto list")
+
+    def health(self):
+        from memorybox.providers.base import ProviderHealth
+
+        return ProviderHealth(provider_key=self.provider_key, ok=True, detail="scripted")
+
+    def list_people(self, *, query: str | None = None, limit: int = 50):
+        return []
+
+    def search_assets(self, query):
+        return list(self._assets)[: query.limit]
+
+    def get_asset(self, external_asset_id: str):
+        for a in self._assets:
+            if a.external_id == external_asset_id:
+                return a
+        return None
+
+    def fetch_preview(self, external_asset_id: str):
+        from memorybox.providers.base import ProviderError
+        from memorybox.providers.photo.dto import PhotoBytesDto
+
+        if not self.get_asset(external_asset_id):
+            raise ProviderError(f"unknown asset {external_asset_id}")
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=external_asset_id,
+            content_type="image/jpeg",
+            data=b"\xff\xd8\xfffake",
+        )
+
+
+def _exploratory_multimodal_regression() -> tuple[bool, str]:
+    """Broad exploratory = multimodal; narrowing wins; unseen subjects."""
+    from memorybox.providers.llm.fake import FakeLlmProvider
+    from memorybox.providers.photo.dto import PhotoAssetDto
+
+    asset = PhotoAssetDto(
+        provider_key="scripted_photo",
+        external_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        original_filename="fixture.jpg",
+        people=(),
+    )
+    llm = FakeLlmProvider()
+
+    # Planner contract: exploratory multimodal vs narrowed
+    ctx = AskContext.empty()
+    p_trip = plan_ask("What do you know about our Northland trip?", ctx)
+    if not (
+        p_trip.want_still
+        and p_trip.want_communication
+        and p_trip.want_calendar
+        and p_trip.visual_scope == "broad"
+        and "exploratory_multimodal_i4" in p_trip.notes
+    ):
+        return False, f"exploratory trip not multimodal: {p_trip.to_dict()}"
+
+    p_tell = plan_ask("Tell me about our Rivermark trip.", ctx)
+    if not (p_tell.want_still and p_tell.want_communication):
+        return False, f"tell-me trip not multimodal: {p_tell.to_dict()}"
+
+    p_person = plan_ask("Tell me about Morgan.", ctx)
+    if "Morgan" not in p_person.person_names or not p_person.want_still:
+        return False, f"tell-me person failed: {p_person.to_dict()}"
+
+    p_email = plan_ask("What emails do I have about Northland?", ctx)
+    if p_email.want_still or not p_email.want_communication:
+        return False, f"narrowed email leaked visual: {p_email.to_dict()}"
+
+    p_photos = plan_ask("Show me photos from Northland.", ctx)
+    if p_photos.visual_scope != "still_only" or p_photos.want_communication:
+        return False, f"narrowed photos scope wrong: {p_photos.to_dict()}"
+
+    p_said = plan_ask("What did Morgan say about Northland?", ctx)
+    if p_said.want_still or not p_said.want_communication:
+        return False, f"said-about must stay communication: {p_said.to_dict()}"
+    if "Morgan" not in p_said.person_names:
+        return False, f"said-about missing person: {p_said.to_dict()}"
+
+    # Result matrix with scripted photo + real Evidence path (opaque)
+    # 1) photos only — constraint place has no Evidence; photo provider returns hit
+    orch_photo = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=_ScriptedPhotoProvider(assets=[asset]),
+        llm=llm,
+    )
+    r_photo = orch_photo.ask(
+        "What do you know about our Northland trip?", session_id="exp1"
+    )
+    if r_photo.answer_kind == "insufficient" or len(r_photo.photo_hits) < 1:
+        return False, (
+            f"photos-only expected photo-backed, got kind={r_photo.answer_kind} "
+            f"photos={len(r_photo.photo_hits)} evidence={len(r_photo.evidence_hits)}"
+        )
+    if len(r_photo.evidence_hits) != 0 and r_photo.answer_kind not in (
+        "photo_backed",
+        "mixed",
+        "evidence_backed",
+    ):
+        return False, f"unexpected kind for photo path: {r_photo.answer_kind}"
+    if len(r_photo.evidence_hits) == 0 and r_photo.answer_kind not in (
+        "photo_backed",
+        "evidence_backed",
+        "mixed",
+    ):
+        return False, f"photos-only kind={r_photo.answer_kind}"
+
+    # 2) evidence only — Christmas synthetic Evidence; empty photo provider
+    orch_ev = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=_ScriptedPhotoProvider(assets=[]),
+        llm=llm,
+    )
+    r_ev = orch_ev.ask("Tell me about Christmas.", session_id="exp2")
+    if len(r_ev.evidence_hits) < 1 or len(r_ev.photo_hits) != 0:
+        return False, (
+            f"evidence-only failed: kind={r_ev.answer_kind} "
+            f"evidence={len(r_ev.evidence_hits)} photos={len(r_ev.photo_hits)}"
+        )
+    if r_ev.answer_kind not in ("evidence_backed", "mixed"):
+        return False, f"evidence-only kind={r_ev.answer_kind}"
+    if not r_ev.plan.get("want_still"):
+        return False, "exploratory Christmas must still request stills (even if empty)"
+
+    # 3) both — Christmas Evidence + scripted photo hit
+    orch_both = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=_ScriptedPhotoProvider(assets=[asset]),
+        llm=llm,
+    )
+    r_both = orch_both.ask("What do you know about Christmas?", session_id="exp3")
+    if len(r_both.evidence_hits) < 1 or len(r_both.photo_hits) < 1:
+        return False, (
+            f"both failed: evidence={len(r_both.evidence_hits)} photos={len(r_both.photo_hits)}"
+        )
+    if r_both.answer_kind != "mixed":
+        return False, f"both expected mixed multimodal, got {r_both.answer_kind}"
+
+    # 4) neither — empty photo + nonsense subject
+    orch_none = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=_ScriptedPhotoProvider(assets=[]),
+        llm=llm,
+    )
+    r_none = orch_none.ask(
+        "What do you know about our ZorpaxQuay trip?", session_id="exp4"
+    )
+    if r_none.answer_kind != "insufficient":
+        return False, f"neither expected insufficient, got {r_none.answer_kind}"
+
+    # 5) narrowed communication remains communication-focused (no still request)
+    orch_n = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=_ScriptedPhotoProvider(assets=[asset]),
+        llm=llm,
+    )
+    r_n = orch_n.ask("What emails do I have about Christmas?", session_id="exp5")
+    if r_n.plan.get("want_still"):
+        return False, "narrowed emails must not request stills"
+    if not r_n.plan.get("want_communication"):
+        return False, "narrowed emails must want communication"
+    if len(r_n.photo_hits) != 0:
+        return False, "narrowed emails must not return photo hits"
+
+    # Unseen variation subjects (different from Northland/Christmas matrix above)
+    p_unseen = plan_ask("What do we have from our Harborwick trip?", ctx)
+    if not (p_unseen.want_still and p_unseen.want_communication and "Harborwick" in p_unseen.place_names):
+        return False, f"unseen Harborwick exploratory failed: {p_unseen.to_dict()}"
+
+    return True, "exploratory multimodal matrix + Harborwick variation"
+
+
 def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
     """Demonstrate I4-A…I4-K.
 
@@ -294,9 +477,11 @@ def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
     gen_ok, gen_detail = _planner_generalized()
     sem_ok, sem_detail = _intent_oriented_visual_semantics()
     ctx_ok, ctx_detail = _context_semantics_regression()
+    exp_ok, exp_detail = _exploratory_multimodal_regression()
     _check("i4_k_generalized_ask", gen_ok and follow_ok, checks, problems, gen_detail)
     _check("i4_intent_oriented_visual", sem_ok, checks, problems, sem_detail)
     _check("i4_context_semantics_AH", ctx_ok, checks, problems, ctx_detail)
+    _check("i4_exploratory_multimodal", exp_ok, checks, problems, exp_detail)
 
     # --- I4-E / I4-F: clear + change + breadcrumb ---
     ctx_before = conv.get_context(sid_k)
@@ -412,7 +597,7 @@ def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
             pr = AskOrchestrator(store=InMemoryContextStore(), photo=photo_live, llm=llm)
             photo_ask = pr.ask("Show me pictures", session_id=None)
             photo_path_ok = (
-                photo_ask.answer_kind in ("evidence_backed", "insufficient", "mixed")
+                photo_ask.answer_kind in ("evidence_backed", "insufficient", "mixed", "photo_backed")
                 and not (photo_ask.provider_status.get("photo_search") or {}).get(
                     "unavailable"
                 )

@@ -2,8 +2,8 @@
 
 **Status:** **CORRECTIVE FIX COMPLETE — DESKTOP PROVE PASS; FLIGHTSIM RE-PROVE REQUIRED**  
 **Date:** 2026-08-09  
-**Scope:** Targeted planner/context defect correction only (rules A–H). **No Increment 5.**  
-**Prior acceptance:** Reopened after manual owner testing exposed semantic context failures.
+**Scope:** Planner/context defects (rules A–H) + exploratory/know-about multimodal intent + show-me person photo path. **No Increment 5.**  
+**Prior acceptance:** Reopened after manual owner testing; remains reopened until FlightSim + manual re-test pass.
 
 ---
 
@@ -11,9 +11,10 @@
 
 | Gate | Result |
 |------|--------|
-| Corrective implementation (planner typed slots, supersede, refs, ambiguity, constrained retrieval) | **COMPLETE** |
-| Desktop `prove-ask` including `i4_context_semantics_AH` | **PASS** (`ok: true`) |
-| FlightSim full `prove-ask --flightsim` re-run | **PENDING operator** (same remoting limit) |
+| Corrective implementation (A–H + exploratory multimodal + show-me person) | **COMPLETE** |
+| Desktop `prove-ask` including `i4_context_semantics_AH` + `i4_exploratory_multimodal` | **PASS** (pending this push) |
+| FlightSim full `prove-ask --flightsim` re-run | **PENDING operator** |
+| Manual Ask re-test (trip know-about → Immich + Evidence) | **PENDING operator** |
 
 I4 remains the authorized increment. **Do not begin Increment 5.**
 
@@ -28,16 +29,17 @@ I4 remains the authorized increment. **Do not begin Increment 5.**
 | 3 | “around then” unconstrained / unrelated hits | Resolve “then” (E) + constraint filter (G) |
 | 4 | “other trip” silent unrelated hit | Clarification / ambiguity (F) |
 | 5 | Displayed context ≠ retrieval | plan_slots + constraints on response (H); context update from plan only |
+| 6 | `show me <person>` used email/calendar only | Broad visual when no explicit media word; case-insensitive person extract |
+| 7 | “What do you know about our \<Trip\> trip?” skipped Immich despite photos existing | Exploratory/know-about = always multimodal across I4 modalities (not photo-fallback) |
 
 ---
 
-## New acceptance check
+## New acceptance checks
 
 | ID | Result (desktop) | Detail |
 |----|------------------|--------|
-| **i4_context_semantics_AH** | PASS | Generalized Northland/Morgan + unseen Rivermark/Sam; no Alaska/Peggy/Christmas in planner |
-
-Prior I4-A…K / intent-oriented visual / Immich-unavailable / no-false-memory gates remain in the suite.
+| **i4_context_semantics_AH** | PASS | Generalized Northland/Morgan + unseen Rivermark/Sam |
+| **i4_exploratory_multimodal** | PASS | Photo-only / evidence-only / both / neither / narrowed emails + Harborwick variation |
 
 ---
 
@@ -45,12 +47,19 @@ Prior I4-A…K / intent-oriented visual / Immich-unavailable / no-false-memory g
 
 ```powershell
 cd C:\MemoryBox
-git pull origin cursor/marvin-capture-v01-3344
+git fetch
+git checkout cursor/marvin-capture-v01-3344
+git pull
+# Restart Ask if running:
+python -m memorybox serve
+# Acceptance:
 $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
 python -m memorybox prove-ask --flightsim
 ```
 
-Expect `"ok": true` including `i4_context_semantics_AH`. Paste opaque JSON into § below when done.
+Manual smoke: Clear context → `What do you know about our Alaska trip?` → expect visual/still/photo **and** communication/calendar in Effective retrieval; Immich hits when photos exist.
+
+Expect `"ok": true` including `i4_exploratory_multimodal`. Paste opaque JSON into § below when done.
 
 ### FlightSim corrective final
 
@@ -63,6 +72,6 @@ Expect `"ok": true` including `i4_context_semantics_AH`. Paste opaque JSON into 
 
 ## Stop
 
-- Corrective code + desktop prove complete.  
+- Corrective code + desktop prove complete after push.  
 - **No Increment 5** / Story / Journal / SMS / HVRT / polish.  
-- Full I4 re-acceptance after FlightSim `"ok": true`.
+- Full I4 re-acceptance after FlightSim `"ok": true` + manual trip ask.
