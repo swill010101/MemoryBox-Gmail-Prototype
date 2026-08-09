@@ -22,32 +22,66 @@ class ImmichHttpClient:
                 f"Missing {env_path}. Copy config/immich.env.example and set IMMICH_API_KEY."
             )
         vals = self._load_env(env_path)
-        key = vals.get("IMMICH_API_KEY") or ""
+        key = vals.get("IMMICH_API_KEY") or vals.get("immich_api_key") or ""
         if not key or key.startswith("REPLACE_"):
             raise ImmichAuthError("IMMICH_API_KEY is missing or still a placeholder.")
-        raw = (vals.get("IMMICH_BASE_URL") or vals.get("IMMICH_URL") or "").rstrip("/")
-        if not raw:
-            raise ImmichAuthError("IMMICH_BASE_URL / IMMICH_URL is missing.")
-        if raw.endswith("/api"):
-            self.ui_root = raw[:-4]
-            self.api_base = raw
-        else:
-            self.ui_root = raw
-            self.api_base = raw + "/api"
+        raw = (
+            vals.get("IMMICH_BASE_URL")
+            or vals.get("IMMICH_URL")
+            or vals.get("immich_base_url")
+            or vals.get("immich_url")
+            or ""
+        )
+        self.ui_root, self.api_base = self._normalize_base_url(raw)
         self._key = key
-        thumbs = (vals.get("IMMICH_THUMBS_PATH") or "").strip()
+        thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
 
     @staticmethod
     def _load_env(path: Path) -> dict[str, str]:
         out: dict[str, str] = {}
-        for line in path.read_text(encoding="utf-8").splitlines():
+        text = path.read_text(encoding="utf-8-sig")  # strip BOM if present
+        for line in text.splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            out[k.strip()] = v.strip().strip('"').strip("'")
+            key = k.strip()
+            val = v.strip().strip('"').strip("'")
+            # Tolerate accidental KEY=KEY=value pastes
+            prefix = key + "="
+            while val.lower().startswith(prefix.lower()):
+                val = val[len(prefix) :].strip().strip('"').strip("'")
+            if key:
+                out[key] = val
+                out[key.upper()] = val  # case-insensitive lookup
         return out
+
+    @staticmethod
+    def _normalize_base_url(raw: str) -> tuple[str, str]:
+        """Return (ui_root, api_base). Raises ImmichAuthError on bad values."""
+        url = (raw or "").strip().strip('"').strip("'")
+        # Common paste mistakes
+        for junk in (
+            "IMMICH_BASE_URL=",
+            "IMMICH_URL=",
+            "immich_base_url=",
+            "immich_url=",
+        ):
+            if url.lower().startswith(junk.lower()):
+                url = url[len(junk) :].strip()
+        url = url.rstrip("/")
+        if not url:
+            raise ImmichAuthError("IMMICH_BASE_URL / IMMICH_URL is empty.")
+        lower = url.lower()
+        if not (lower.startswith("http://") or lower.startswith("https://")):
+            raise ImmichAuthError(
+                "IMMICH_BASE_URL must start with http:// or https:// "
+                f"(got {url[:48]!r}). Check config/immich.env formatting."
+            )
+        if url.endswith("/api"):
+            return url[:-4], url
+        return url, url + "/api"
 
     def _request(
         self,

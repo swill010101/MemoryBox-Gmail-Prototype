@@ -22,10 +22,21 @@
 # Should NOT print "unavailable"
 $env:MEMORYBOX_PHOTO_PROVIDER  # blank or immich
 Test-Path .\config\immich.env
-# If missing: copy from example and fill API URL/key (gitignored)
-# Copy-Item .\config\immich.env.example .\config\immich.env
-Get-Content .\config\immich.env | Select-String -Pattern '^IMMICH_' 
-# (confirm values locally; do not paste secrets into chat/docs)
+Get-Content .\config\immich.env
+```
+
+`config/immich.env` must look like this (two lines minimum; **no** spaces around `=`; URL must include `http://` or `https://`):
+
+```text
+IMMICH_BASE_URL=http://MEDIA_HOST:2283/api
+IMMICH_API_KEY=your_real_api_key_here
+```
+
+Bad (causes the `immich_base_url=http` error):
+
+```text
+IMMICH_BASE_URL=immich_base_url=http://...
+IMMICH_BASE_URL = http://...
 ```
 
 ## Commands (on P1 runtime host console)
