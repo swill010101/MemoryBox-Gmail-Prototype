@@ -11,7 +11,8 @@
 **Increment 1:** Authorized and **accepted** (synthetic persistence gate) — see [MBBS-001_INCREMENT_1_ACCEPTANCE.md](MBBS-001_INCREMENT_1_ACCEPTANCE.md) · tag `increment-1-accepted`.  
 **Increment 2:** Authorized and **accepted** — see [MBBS-001_INCREMENT_2_ACCEPTANCE.md](MBBS-001_INCREMENT_2_ACCEPTANCE.md).  
 **Increment 3:** Authorized and **accepted** — [definition](MBBS-001_INCREMENT_3_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_3_ACCEPTANCE.md).  
-**FlightSim I1–I3 checkpoint:** **PASSED** — [MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md](MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md). **Increment 4+:** not started. SMS deferred (see I3 §4.1).
+**FlightSim I1–I3 checkpoint:** **PASSED** — [MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md](MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md).  
+**Media-Server Sources checkpoint:** **PASSED** — [MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md](MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md). **Increment 4+:** not started. SMS deferred (staged under Sources only).
 
 
 ### Revision note (v0.3)

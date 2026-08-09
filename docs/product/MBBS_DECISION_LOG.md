@@ -48,6 +48,22 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
+## Cross-cutting — Media-Server Sources checkpoint (2026-08-09)
+
+**Authorization:** Establish `\\media-server\photos\MemoryBox\Sources`; copy/verify email/calendar/SMS; FlightSim path config; small ingest; originals unchanged  
+**Status:** **PASSED** — [MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md](MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md)
+
+| Item | Outcome |
+|------|---------|
+| Sources tree | email / calendar(+ics) / sms + MANIFEST |
+| Copy verify | SHA256 match for mbox, calendar zip, SMS CSV |
+| Archive mbox after robocopy | UNCHANGED |
+| Ingest from Sources | email+calendar limit 5 ok; files unchanged |
+| SMS | Staged only — ingest still deferred |
+| Next | Increment 4 **not** authorized |
+
+---
+
 ## Cross-cutting — FlightSim I1–I3 deployment checkpoint (2026-08-09)
 
 **Authorization:** Deploy accepted I1–I3 to P1 runtime host; real-data smoke; no Increment 4  
