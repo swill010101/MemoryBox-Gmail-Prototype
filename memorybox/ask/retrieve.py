@@ -75,10 +75,20 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         return []
 
     terms: list[str] = []
+    # Rule G: prefer explicit retrieval constraints when present
+    for name in plan.retrieval_constraints or ():
+        terms.append(name)
     for name in plan.person_names:
         terms.append(name)
     for name in plan.place_names:
         terms.append(name)
+    for name in plan.trip_labels:
+        terms.append(name)
+    for name in plan.event_labels:
+        if name.lower().startswith("trip:"):
+            terms.append(name.split(":", 1)[1])
+        else:
+            terms.append(name)
     # tokens from original ask (drop tiny words)
     for tok in re.findall(r"[A-Za-z0-9']{3,}", plan.original_ask):
         if tok.lower() not in {
@@ -185,7 +195,28 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
             )
         scored.sort(key=lambda h: h.score, reverse=True)
         hits = scored[:limit]
+    if plan.retrieval_constraints:
+        hits = filter_hits_by_constraints(hits, plan.retrieval_constraints)
     return hits
+
+
+def filter_hits_by_constraints(
+    hits: list[EvidenceHit], constraints: tuple[str, ...] | list[str]
+) -> list[EvidenceHit]:
+    """Rule G: keep hits that match at least one resolved context constraint.
+
+    If no hit matches, return empty (insufficient) rather than unconstrained
+    vector/keyword leftovers.
+    """
+    cons = [c for c in constraints if c and len(c) >= 2]
+    if not cons:
+        return hits
+    kept: list[EvidenceHit] = []
+    for h in hits:
+        blob = f"{h.summary} {h.excerpt}".lower()
+        if any(c.lower() in blob for c in cons):
+            kept.append(h)
+    return kept
 
 
 def search_evidence_qdrant(
@@ -236,21 +267,25 @@ def search_evidence_qdrant(
                 "did",
             }
         ]
-        required = [
-            m.group(0)
-            for m in re.finditer(r"\b[A-Z][A-Za-z]{2,}\b", plan.original_ask or "")
-            if m.group(0).lower()
-            not in {
-                "show",
-                "what",
-                "just",
-                "only",
-                "from",
-                "with",
-                "christmas",
-                "grandpa",
-            }
-        ]
+        if plan.retrieval_constraints:
+            # Rule G: constraints outrank bare ask tokens for semantic neighbors
+            required = list(plan.retrieval_constraints)
+        else:
+            required = [
+                m.group(0)
+                for m in re.finditer(r"\b[A-Z][A-Za-z]{2,}\b", plan.original_ask or "")
+                if m.group(0).lower()
+                not in {
+                    "show",
+                    "what",
+                    "just",
+                    "only",
+                    "from",
+                    "with",
+                    "christmas",
+                    "grandpa",
+                }
+            ]
         for p in points:
             payload = p.payload or {}
             kind = str(payload.get("evidence_kind") or "")
@@ -287,7 +322,11 @@ def search_evidence_qdrant(
                 )
             )
         status["ok"] = True
-        status["detail"] = f"hits={len(hits)}"
+        if plan.retrieval_constraints:
+            hits = filter_hits_by_constraints(hits, plan.retrieval_constraints)
+            status["detail"] = f"hits={len(hits)}_constrained"
+        else:
+            status["detail"] = f"hits={len(hits)}"
         return hits, status
     except Exception as exc:  # noqa: BLE001
         status["detail"] = str(exc)

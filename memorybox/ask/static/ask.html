@@ -127,15 +127,25 @@
         w.textContent = "Photo provider unavailable (not “no photos”).";
         ans.appendChild(w);
       }
-      if (data.missing_disclosure) {
+      if (kind === "clarification" || data.missing_disclosure) {
         const m = document.createElement("p");
         m.className = "warn";
-        m.textContent = data.missing_disclosure;
+        m.textContent = data.missing_disclosure || data.answer_text || "";
         ans.appendChild(m);
       }
-      const p = document.createElement("p");
-      p.textContent = data.answer_text || "";
-      ans.appendChild(p);
+      if (kind !== "clarification") {
+        const p = document.createElement("p");
+        p.textContent = data.answer_text || "";
+        ans.appendChild(p);
+      }
+      // Rule H: show effective plan slots when present
+      const slots = (data.context && data.context.plan_slots) || null;
+      if (slots) {
+        const s = document.createElement("p");
+        s.className = "muted";
+        s.textContent = "Effective retrieval: " + JSON.stringify(slots);
+        ans.appendChild(s);
+      }
 
       const results = document.getElementById("results");
       const ev = data.evidence_hits || [];

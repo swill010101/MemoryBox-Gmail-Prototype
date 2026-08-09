@@ -13,7 +13,7 @@
 **Increment 3:** Authorized and **accepted** — [definition](MBBS-001_INCREMENT_3_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_3_ACCEPTANCE.md).  
 **FlightSim I1–I3 checkpoint:** **PASSED** — [MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md](MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md).  
 **Media-Server Sources checkpoint:** **PASSED** — [MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md](MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md).  
-**Increment 4:** Authorized and **accepted** — [definition](MBBS-001_INCREMENT_4_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_4_ACCEPTANCE.md). SMS deferred (staged under Sources only).
+**Increment 4:** **CORRECTIVE reopen** — [definition](MBBS-001_INCREMENT_4_DEFINITION.md) §0.2 · [corrective acceptance](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md) (desktop PASS; FlightSim re-prove pending). Prior tag `increment-4-accepted` retained historically. SMS deferred.
 
 
 ### Revision note (v0.3)
@@ -421,9 +421,8 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increments 1–4 accepted** (I4 on FlightSim).  
-2. **Do not begin Increment 5** until Tom explicitly authorizes *Build Increment 5 only*.  
-3. SMS remains deferred — keep on P1 roadmap.  
-4. When authorized: implement **only** the authorized increment, demonstrate acceptance, update decision log / specs, then stop.
+1. **Increment 4 corrective** — desktop prove PASS; **FlightSim re-prove** required ([corrective report](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md)).  
+2. **Do not begin Increment 5** until Tom explicitly authorizes after I4 corrective acceptance on FlightSim.  
+3. SMS remains deferred — keep on P1 roadmap.
 
 **Unauthorized increments must not start.**

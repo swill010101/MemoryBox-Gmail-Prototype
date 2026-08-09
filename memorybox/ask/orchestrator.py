@@ -6,7 +6,13 @@ from typing import Any
 
 from memorybox.ask import retrieve as R
 from memorybox.ask.deps import build_llm, build_photo, provider_snapshot
-from memorybox.context import AskContext, ContextPatch, ContextStore, apply_patch, default_context_store
+from memorybox.context import (
+    AskContext,
+    ContextPatch,
+    ContextStore,
+    apply_patch,
+    default_context_store,
+)
 from memorybox.planner import QueryPlan, plan_ask
 from memorybox.providers.llm.protocol import LlmProvider
 from memorybox.providers.photo.protocol import PhotoProvider
@@ -49,23 +55,18 @@ class AskResult:
 def _update_context_from_plan(
     ctx: AskContext, plan: QueryPlan, evidence_ids: list[str], photo_ids: list[str]
 ) -> AskContext:
-    people = plan.person_names or ctx.person_names
-    places = plan.place_names or ctx.place_names
-    events = plan.event_labels or ctx.event_labels
-    modalities = plan.modalities or ctx.modalities_active
+    """Rule H: persisted context mirrors effective plan slots (not stale merge)."""
     selection = tuple(evidence_ids[:12] + photo_ids[:12])
     patch = ContextPatch(
-        person_names=people,
-        place_names=places,
-        event_labels=events,
+        person_names=plan.person_names,
+        place_names=plan.place_names,
+        event_labels=plan.event_labels,
         result_selection=selection,
-        modalities_active=modalities,
+        modalities_active=plan.modalities,
         last_ask=plan.original_ask,
+        time_start=plan.time_start,
+        time_end=plan.time_end,
     )
-    if plan.time_start is not None:
-        patch.time_start = plan.time_start
-    if plan.time_end is not None:
-        patch.time_end = plan.time_end
     return apply_patch(ctx, patch)
 
 
@@ -75,12 +76,14 @@ def _build_answer(
     photos: list[R.PhotoHit],
     photo_status: dict[str, Any],
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
-    """Compose answer without inventing family facts.
-
-    Returns: answer_kind, answer_text, statements, citations, missing_disclosure
-    """
     citations: list[dict[str, Any]] = []
     statements: list[dict[str, Any]] = []
+
+    if plan.requires_clarification:
+        msg = plan.ambiguity_message or (
+            "Ambiguous ask: please clarify before MemoryBox retrieves Evidence."
+        )
+        return "clarification", msg, [], [], msg
 
     for h in evidence:
         citations.append(
@@ -126,67 +129,62 @@ def _build_answer(
         )
 
     photo_unavail = bool(
-        (plan.want_still or plan.want_photo)
-        and photo_status.get("unavailable")
+        (plan.want_still or plan.want_photo) and photo_status.get("unavailable")
     )
     video_only_no_provider = bool(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
     if video_only_no_provider:
-        kind = "insufficient"
         missing = (
             "Video modality is not available in this Increment 4 runtime "
-            "(no video/HVRT provider wired). MemoryBox will not invent video results. "
-            "Broad visual asks will include video when that modality is added later."
+            "(no video/HVRT provider wired). MemoryBox will not invent video results."
         )
-        return kind, missing, statements, citations, missing
+        return "insufficient", missing, statements, citations, missing
 
     if photo_unavail and not evidence:
-        kind = "provider_unavailable"
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
             "No other Evidence modalities returned hits for this ask."
         )
-        return kind, text, statements, citations, None
+        return "provider_unavailable", text, statements, citations, None
 
     if photo_unavail and evidence:
-        kind = "mixed"
         text = (
             "Photo provider is unavailable (not 'no photos'). "
             f"Found {len(evidence)} Evidence hit(s) from email/calendar. "
             "Family-history claims below are limited to cited Evidence."
         )
-        return kind, text, statements, citations, None
+        return "mixed", text, statements, citations, None
 
     if plan.want_photo and not photos and not evidence and photo_status.get("ok"):
-        kind = "insufficient"
         missing = (
             "Insufficient Evidence: no matching photos or email/calendar Evidence "
             "were found for this ask. MemoryBox will not invent a family fact."
         )
-        text = missing
-        return kind, text, statements, citations, missing
+        return "insufficient", missing, statements, citations, missing
 
     if not evidence and not photos:
-        kind = "insufficient"
         missing = (
             "Insufficient Evidence for this ask. Available archive Evidence does not "
             "support a factual family-history answer. MemoryBox will not invent one."
         )
-        return kind, text if False else missing, statements, citations, missing
+        return "insufficient", missing, statements, citations, missing
 
-    # Evidence-backed
-    kind = "evidence_backed"
     parts = []
     if photos:
         parts.append(f"Found {len(photos)} photo hit(s) via the photo provider.")
     if evidence:
         parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
+    if plan.retrieval_constraints:
+        parts.append(
+            "Retrieval used context constraints: "
+            + ", ".join(plan.retrieval_constraints)
+            + "."
+        )
     parts.append("Factual claims are limited to the citations listed.")
-    text = " ".join(parts)
-    return kind, text, statements, citations, None
+    return "evidence_backed", " ".join(parts), statements, citations, None
 
 
 class AskOrchestrator:
@@ -207,27 +205,32 @@ class AskOrchestrator:
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
-        if plan.want_communication or plan.want_calendar:
-            pg_hits = R.search_evidence_pg(plan)
-            qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
-            evidence = R.merge_evidence_hits(pg_hits, qd_hits)
-
         photos: list[R.PhotoHit] = []
         photo_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
-        if plan.want_still or plan.want_photo:
-            photos, photo_status = R.search_photos(plan, self.photo)
 
-        # I4: video intent recorded on plan; no video provider retrieval yet.
-        if plan.want_video and plan.visual_scope in ("broad", "video_only"):
-            photo_status = dict(photo_status)
-            photo_status.setdefault(
-                "video_modality",
-                {
-                    "requested": True,
-                    "available_in_i4": False,
-                    "detail": "video/HVRT not wired in Increment 4; broad visual contract reserved",
-                },
-            )
+        if not plan.requires_clarification:
+            if plan.want_communication or plan.want_calendar:
+                pg_hits = R.search_evidence_pg(plan)
+                qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
+                evidence = R.merge_evidence_hits(pg_hits, qd_hits)
+                # Rule G: when constraints exist, drop hits that match none
+                if plan.retrieval_constraints:
+                    evidence = R.filter_hits_by_constraints(
+                        evidence, plan.retrieval_constraints
+                    )
+            if plan.want_still or plan.want_photo:
+                photos, photo_status = R.search_photos(plan, self.photo)
+
+            if plan.want_video and plan.visual_scope in ("broad", "video_only"):
+                photo_status = dict(photo_status)
+                photo_status.setdefault(
+                    "video_modality",
+                    {
+                        "requested": True,
+                        "available_in_i4": False,
+                        "detail": "video/HVRT not wired in Increment 4",
+                    },
+                )
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(
             plan, evidence, photos, photo_status
@@ -239,24 +242,18 @@ class AskOrchestrator:
             [h.evidence_id for h in evidence],
             [p.external_id for p in photos],
         )
-        # If photo unavailable and no hits, still record modality intent in context
-        if (plan.want_visual or plan.want_photo) and not any(
-            m in new_ctx.modalities_active for m in ("visual", "photo", "still")
-        ):
-            extra = ["visual"]
-            if plan.want_still or plan.want_photo:
-                extra.extend(["still", "photo"])
-            if plan.want_video:
-                extra.append("video")
-            new_ctx = apply_patch(
-                new_ctx,
-                ContextPatch(
-                    modalities_active=tuple(
-                        dict.fromkeys([*new_ctx.modalities_active, *extra])
-                    )
-                ),
-            )
         new_ctx = self.store.save(new_ctx)
+
+        # Rule H: expose effective retrieval context on the response context dict
+        ctx_dict = new_ctx.to_dict()
+        ctx_dict["effective_retrieval_constraints"] = list(plan.retrieval_constraints)
+        ctx_dict["plan_slots"] = {
+            "person": list(plan.person_names),
+            "place": list(plan.place_names),
+            "trip": list(plan.trip_labels),
+            "event": [e for e in plan.event_labels if not e.lower().startswith("trip:")],
+            "modality": list(plan.modalities),
+        }
 
         providers = provider_snapshot(self.photo, self.llm)
         providers["qdrant"] = qdrant_status
@@ -266,7 +263,7 @@ class AskOrchestrator:
             session_id=new_ctx.session_id,
             ask=text,
             plan=plan.to_dict(),
-            context=new_ctx.to_dict(),
+            context=ctx_dict,
             answer_kind=answer_kind,
             answer_text=answer_text,
             statements=statements,

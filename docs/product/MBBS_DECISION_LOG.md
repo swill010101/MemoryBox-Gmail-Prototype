@@ -11,8 +11,18 @@ Record one section per increment. Do not wait until end of P1.
 
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 4 only (locked definition)  
-**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) — **ACCEPTED** (FlightSim `prove-ask --flightsim` ok)  
+**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · corrective [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md) — **CORRECTIVE; desktop PASS; FlightSim re-prove pending**  
 **Next increment:** Not started (requires explicit authorization)
+
+### Corrective decisions (same day, post manual test)
+
+| Decision | Rationale |
+|----------|-----------|
+| Reopen I4 for planner/context only | Manual defects A–H; not a new increment |
+| Typed slots + supersede + reference resolution + ambiguity | Prevent person→place contamination and silent wrong retrieval |
+| `i4_context_semantics_AH` regression | Catch failure pattern + unseen variation without demo hardcoding |
+| In-package Immich HTTP client | FlightSim had no `application/api`; earn-in under `memorybox/providers/photo/` |
+| Immich env URL hardening | Mangled `IMMICH_BASE_URL=` pastes caused urllib scheme errors on FlightSim |
 
 ### Decisions discovered during build
 

@@ -88,6 +88,110 @@ def _intent_oriented_visual_semantics() -> tuple[bool, str]:
     return True, "intent-oriented visual semantics ok"
 
 
+def _context_semantics_regression() -> tuple[bool, str]:
+    """Manual-failure pattern (generalized entities) — rules A–H."""
+    from memorybox.ask.orchestrator import AskOrchestrator
+    from memorybox.providers.llm.fake import FakeLlmProvider
+
+    store = InMemoryContextStore()
+    orch = AskOrchestrator(
+        store=store, photo=FakePhotoProvider(), llm=FakeLlmProvider()
+    )
+
+    # Seed incompatible holiday context (must be superseded by new trip)
+    store.patch(
+        "sem1",
+        ContextPatch(
+            person_names=("River",),
+            place_names=(),
+            event_labels=("Solstice",),
+            modalities_active=("communication",),
+        ),
+    )
+
+    r1 = orch.ask("What do you know about our Northland trip?", session_id="sem1")
+    places1 = r1.context.get("place_names") or []
+    events1 = r1.context.get("event_labels") or []
+    trips1 = [e for e in events1 if str(e).lower().startswith("trip:")]
+    people1 = r1.context.get("person_names") or []
+    if "Northland" not in places1 and "Northland" not in (r1.plan.get("trip_labels") or []):
+        return False, f"r1 missing Northland place/trip: {r1.context}"
+    if any(str(e) == "Solstice" for e in events1):
+        return False, f"r1 did not supersede Solstice: {events1}"
+    if "River" in places1 or any("River" in str(t) for t in trips1):
+        return False, f"r1 person leaked into place/trip: {r1.context}"
+    # person may remain (compatible) — River OK in people only
+    if "River" in places1:
+        return False, "typed slot failure"
+
+    r2 = orch.ask("What emails do I have from Morgan?", session_id="sem1")
+    people2 = r2.context.get("person_names") or []
+    places2 = r2.context.get("place_names") or []
+    if "Morgan" not in people2:
+        return False, f"r2 missing person Morgan: {people2}"
+    if "Morgan" in places2:
+        return False, f"r2 email-from person became place: {places2}"
+    if r2.plan.get("want_communication") is not True:
+        return False, "r2 should want communication"
+
+    r3 = orch.ask("What was happening around then?", session_id="sem1")
+    if not r3.plan.get("reference_resolved") and not r3.plan.get("requires_clarification"):
+        # Should resolve then against Northland trip context
+        return False, f"r3 then not resolved: {r3.plan.get('notes')}"
+    cons = r3.plan.get("retrieval_constraints") or []
+    if cons and not any("Northland" in str(c) or "Morgan" in str(c) for c in cons):
+        # constraints should include trip/place and/or person
+        if not any("Northland" in str(c) for c in cons):
+            return False, f"r3 constraints missing trip context: {cons}"
+    # Must not silently return unconstrained junk when constraints exist and nothing matches
+    if r3.answer_kind == "evidence_backed" and cons:
+        slots = (r3.context.get("plan_slots") or {}).get("place") or []
+        if "Northland" not in slots and "Northland" not in (r3.context.get("place_names") or []):
+            return False, f"r3 H mismatch display vs plan: {r3.context.get('plan_slots')}"
+
+    r4 = orch.ask("No, I meant the other trip.", session_id="sem1")
+    if r4.answer_kind != "clarification" and not r4.plan.get("requires_clarification"):
+        return False, f"r4 must disclose ambiguity, got {r4.answer_kind}"
+    if r4.inventing:
+        return False, "r4 inventing"
+
+    # Unseen variation — different entities
+    store2 = InMemoryContextStore()
+    orch2 = AskOrchestrator(
+        store=store2, photo=FakePhotoProvider(), llm=FakeLlmProvider()
+    )
+    store2.patch(
+        "sem2",
+        ContextPatch(event_labels=("Equinox",), modalities_active=("communication",)),
+    )
+    v1 = orch2.ask("Tell me about our Rivermark trip.", session_id="sem2")
+    if any(str(e) == "Equinox" for e in (v1.context.get("event_labels") or [])):
+        return False, "unseen variation failed to supersede Equinox"
+    if "Rivermark" not in (v1.context.get("place_names") or []) and "Rivermark" not in (
+        v1.plan.get("trip_labels") or []
+    ):
+        return False, f"unseen variation missing Rivermark: {v1.context}"
+    v2 = orch2.ask("What emails do I have from Sam?", session_id="sem2")
+    if "Sam" in (v2.context.get("place_names") or []):
+        return False, "unseen variation Sam as place"
+    v3 = orch2.ask("No, I meant the other trip.", session_id="sem2")
+    if not v3.plan.get("requires_clarification"):
+        return False, "unseen variation other-trip must clarify"
+
+    # Hard-code scan
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "planner" / "__init__.py"
+    text = src.read_text(encoding="utf-8")
+    for banned in ("Alaska", "Peggy", "Northland trip?"):
+        # Northland appears in this test file only; planner must not contain Alaska/Peggy
+        pass
+    if "Alaska" in text or "Peggy" in text:
+        return False, "planner hard-codes demo entities"
+
+    return True, "A-H regression + unseen Rivermark/Sam variation"
+
+
 def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
     """Demonstrate I4-A…I4-K.
 
@@ -188,8 +292,10 @@ def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
 
     gen_ok, gen_detail = _planner_generalized()
     sem_ok, sem_detail = _intent_oriented_visual_semantics()
+    ctx_ok, ctx_detail = _context_semantics_regression()
     _check("i4_k_generalized_ask", gen_ok and follow_ok, checks, problems, gen_detail)
     _check("i4_intent_oriented_visual", sem_ok, checks, problems, sem_detail)
+    _check("i4_context_semantics_AH", ctx_ok, checks, problems, ctx_detail)
 
     # --- I4-E / I4-F: clear + change + breadcrumb ---
     ctx_before = conv.get_context(sid_k)

@@ -36,8 +36,16 @@ class AskContext:
             crumbs.append({"kind": "person", "value": ", ".join(self.person_names)})
         if self.place_names:
             crumbs.append({"kind": "place", "value": ", ".join(self.place_names)})
-        if self.event_labels:
-            crumbs.append({"kind": "event", "value": ", ".join(self.event_labels)})
+        trips = [
+            e.split(":", 1)[1] if ":" in e else e
+            for e in self.event_labels
+            if e.lower().startswith("trip:")
+        ]
+        events = [e for e in self.event_labels if not e.lower().startswith("trip:")]
+        if events:
+            crumbs.append({"kind": "event", "value": ", ".join(events)})
+        if trips:
+            crumbs.append({"kind": "trip", "value": ", ".join(trips)})
         if self.time_start or self.time_end:
             crumbs.append(
                 {

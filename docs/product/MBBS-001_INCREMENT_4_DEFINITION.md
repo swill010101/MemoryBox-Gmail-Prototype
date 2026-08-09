@@ -1,12 +1,9 @@
 # MBBS-001 Increment 4 — Definition (for review)
 
-**Status:** **ACCEPTED** (FlightSim final prove `ok: true`, 2026-08-09)  
+**Status:** **CORRECTIVE REOPEN — desktop prove PASS; awaiting FlightSim re-prove**  
 **Date:** 2026-08-09  
-**Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 4  
-**Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md) (**D1–D7**)  
-**Depends on:** Increments 1–3 **accepted**; FlightSim I1–I3 checkpoint **passed**; Media-Server Sources checkpoint **passed**  
-**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md)  
-**Build:** Authorized, implemented, and **accepted** on P1 runtime host.
+**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · corrective [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md)  
+**Build:** Corrective planner/context fix authorized; no Increment 5.
 
 ---
 
@@ -51,6 +48,25 @@ MemoryBox Ask must be **intent-oriented**. The owner should not need to understa
 2. **Do not hard-code “pictures” as permanently equivalent to PhotoProvider-only retrieval.** Broad visual wording maps to a `visual_scope=broad` plan (stills + video intent).  
 3. **Increment 4:** Do **not** add video/HVRT processing. I4 returns visual modalities **currently available** (still/PhotoProvider). The planner/retrieval **contract** (`visual_scope`, `want_visual` / `want_still` / `want_video`) must allow later video providers to satisfy the same owner NL without a new Ask architecture.  
 4. Explicit video-only asks in I4 disclose that video modality is not wired yet — **never invent** video results.
+
+---
+
+## 0.2 Context / planner semantic rules (corrective lock)
+
+Manual owner testing exposed context contamination. These rules are **normative** for I4 Ask:
+
+| ID | Rule |
+|----|------|
+| **A** | **Current utterance > inherited context.** Explicit entities/dates/places/events/trips/people/modalities/constraints in the current utterance always outrank session context. |
+| **B** | **Inherit only missing slots.** Session context fills omissions; it must not overwrite or contaminate explicit utterance information. |
+| **C** | **Typed context slots.** Person, Place, Event, Trip, Date/Time, Selection, Modality are distinct. A Person must not populate Place/Trip/Event. |
+| **D** | **Supersede incompatible context.** Explicit subject change (e.g. new trip vs prior holiday event) clears/replaces incompatible prior event/trip/place. |
+| **E** | **Resolve references before retrieval.** “then,” “there,” “that trip,” “those,” “the other trip” resolve against session context before retrieval. |
+| **F** | **Ambiguity must be disclosed.** If “the other trip” cannot be uniquely resolved, ask for clarification — never silently pick unrelated Evidence. |
+| **G** | **Context-constrained retrieval.** Resolved temporal/event/trip constraints apply before/alongside semantic retrieval; vector similarity alone must not override active context. |
+| **H** | **Displayed context = effective retrieval context.** Breadcrumb / plan_slots must match constraints actually used. |
+
+Regression coverage: acceptance check `i4_context_semantics_AH` (generalized entities + unseen variation). No hard-coded Alaska/Peggy/Christmas in planner.
 
 ---
 
