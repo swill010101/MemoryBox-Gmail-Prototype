@@ -1,13 +1,14 @@
-# MBBS-001 Increment 5A — Definition (locked for final review)
+# MBBS-001 Increment 5A — Definition (build authorized)
 
-**Status:** **LOCKED — FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
+**Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 5A only*)  
 **Date:** 2026-08-09  
+**Owner acceptance gate:** Tom can open the FlightSim Journal client, create **one typed** and **one spoken** entry **without developer intervention**, save both, and subsequently retrieve them through MemoryBox Ask.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 5A  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
 **Depends on:** Increment 1 · Increment 4 Ask (accepted) · Increment 5 Story (accepted — patterns earn-in only; **Journal ≠ Story**)  
 **Prior:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — **ACCEPTED**  
-**Authorization gate:** Do **not** implement until Tom explicitly authorizes *Build Increment 5A only*.
+**Authorization:** *Build Increment 5A only* — authorized.
 
 ---
 
@@ -63,6 +64,7 @@ Final acceptance on **FlightSim**.
 | ID | Criterion | Proof |
 |----|-----------|-------|
 | **I5A-A** | Typed Journal create / explicit Save | Harness |
+| **I5A-OWNER** | FlightSim owner path (no developer intervention) | Tom opens Journal client → saves **one typed** + **one spoken** entry → retrieves both via Ask |
 | **I5A-B** | Voice: preserve audio → STT → review/edit → explicit Save | Harness + FlightSim; opaque audio id; no Journal persist before Save |
 | **I5A-C** | Immutable edit/version history | Edit+Save → v2; v1 unchanged/retrievable |
 | **I5A-D** | Author SoT on `author_person_id` | Every entry NOT NULL author; API/Ask expose author; **no** authored_by dual-write |
@@ -250,8 +252,6 @@ I1 `recorded_at` alone is insufficient. **Locked fields:**
 
 ## 11. Authorization gate
 
-**Status: LOCKED FOR FINAL REVIEW — NOT AUTHORIZED TO BUILD.**
+**Status: BUILD AUTHORIZED** (*Build Increment 5A only*).
 
-Do **not** write 5A product code, migrations, Capture/STT wiring, Journal UX, or Ask Journal modality until Tom explicitly says **Build Increment 5A only**.
-
-Unauthorized increments must not start.
+Owner gate **I5A-OWNER** is mandatory for FlightSim acceptance. Do **not** begin 5A polish beyond scope, EF-11, or Increment 6 without explicit authorization.

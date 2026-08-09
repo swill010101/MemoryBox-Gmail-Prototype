@@ -564,7 +564,12 @@ def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
     from memorybox.app import health
 
     h = health()
-    _check("i4_i_health", bool(h.get("ok")) and int(h.get("increment") or 0) >= 4, checks, problems)
+    inc = h.get("increment")
+    inc_ok = bool(h.get("ok")) and (
+        (isinstance(inc, (int, float)) and float(inc) >= 4)
+        or str(inc).upper().startswith(("4", "5"))
+    )
+    _check("i4_i_health", inc_ok, checks, problems)
 
     # --- Photo path when Immich available (required for P1-runtime final photo acceptance) ---
     photo_health = photo_live.health()

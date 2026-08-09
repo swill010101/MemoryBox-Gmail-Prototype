@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Journal</title>
+  <style>
+    :root { --bg:#eef2ef; --ink:#1a221c; --line:#b7c4ba; --accent:#1f5a45; --panel:#f7faf7; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(165deg, #d9e6df 0%, #eef2ef 50%, #e4ebe6 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #4d5a52; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, textarea, select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    textarea { min-height: 120px; }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #5c675f; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+    code { font-size: 0.8rem; }
+    #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
+    #recStatus { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Journal</h1>
+    <p class="sub">
+      Thin capture shell (Increment 5A) — type or speak, review transcript, explicit Save.
+      Distinct from Story. <a href="/ask/ui">Ask</a> · <a href="/story/ui">Story</a>
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Capture</h2>
+      <label for="author">Author display name</label>
+      <input id="author" value="Tom" placeholder="e.g. Tom" />
+      <label for="title">Title (optional)</label>
+      <input id="title" placeholder="optional title" />
+      <label for="body">Body (typed or STT draft — edit before Save)</label>
+      <textarea id="body" placeholder="Type here, or speak then review…"></textarea>
+
+      <div class="row">
+        <div>
+          <label for="dStart">Described start (YYYY-MM-DD)</label>
+          <input id="dStart" placeholder="leave blank if unknown" />
+        </div>
+        <div>
+          <label for="dEnd">Described end (YYYY-MM-DD)</label>
+          <input id="dEnd" placeholder="leave blank if unknown" />
+        </div>
+      </div>
+      <label for="precision">Described precision</label>
+      <select id="precision">
+        <option value="unknown">unknown</option>
+        <option value="day">day</option>
+        <option value="month">month</option>
+        <option value="year">year</option>
+        <option value="range">range</option>
+        <option value="approximate">approximate</option>
+      </select>
+
+      <p class="muted">Voice: Record → Stop → STT draft fills Body (not saved until you click Save Journal).</p>
+      <button id="recBtn" type="button" class="secondary">Record</button>
+      <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
+      <span id="recStatus" class="muted">Idle</span>
+      <p class="muted">Audio id: <code id="audioId">(none)</code> · Draft only until Save</p>
+
+      <button id="saveBtn" type="button">Save Journal</button>
+      <p>Last saved Journal ID: <code id="lastId">(none yet)</code></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Edit / Save new version</h2>
+      <label for="editId">Journal ID</label>
+      <input id="editId" placeholder="paste journal id" />
+      <label for="editBody">New body</label>
+      <textarea id="editBody"></textarea>
+      <button id="versionBtn" type="button">Save new version</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Retrieve</h2>
+      <label for="getId">Journal ID</label>
+      <input id="getId" placeholder="paste journal id" />
+      <label for="getVer">Version (blank = current)</label>
+      <input id="getVer" placeholder="e.g. 1" />
+      <button id="getBtn" type="button">Get</button>
+      <button class="secondary" id="listBtn" type="button">List journals</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
+      <pre id="out" class="muted">No action yet.</pre>
+    </section>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    let mediaRecorder = null;
+    let chunks = [];
+    let lastAudioUri = null;
+    let lastAudioId = null;
+
+    function show(data) {
+      out.textContent = JSON.stringify(data, null, 2);
+    }
+    function rememberId(id) {
+      if (!id) return;
+      document.getElementById("lastId").textContent = id;
+      document.getElementById("editId").value = id;
+      document.getElementById("getId").value = id;
+    }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON response (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    document.getElementById("recBtn").onclick = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+          document.getElementById("recStatus").textContent = "Transcribing…";
+          try {
+            const fd = new FormData();
+            fd.append("file", blob, "journal-clip.webm");
+            const data = await j("/capture/transcribe", { method: "POST", body: fd });
+            const draft = data.draft || data;
+            lastAudioId = draft.audio_id || null;
+            lastAudioUri = draft.audio_uri || null;
+            document.getElementById("audioId").textContent = lastAudioId || "(none)";
+            if (draft.text) {
+              document.getElementById("body").value = draft.text;
+            }
+            document.getElementById("recStatus").textContent = "Draft ready — review, then Save";
+            show(data);
+          } catch (err) {
+            document.getElementById("recStatus").textContent = "STT failed";
+            show(err);
+          }
+        };
+        mediaRecorder.start();
+        document.getElementById("recBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+        document.getElementById("recStatus").textContent = "Recording…";
+      } catch (err) {
+        show({ detail: String(err), hint: "Microphone permission required for spoken Journal" });
+      }
+    };
+
+    document.getElementById("stopBtn").onclick = () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      document.getElementById("recBtn").disabled = false;
+      document.getElementById("stopBtn").disabled = true;
+    };
+
+    document.getElementById("saveBtn").onclick = async () => {
+      try {
+        const bodyText = document.getElementById("body").value.trim();
+        if (!bodyText) {
+          show({ detail: "Body is required for Save Journal." });
+          return;
+        }
+        const precision = document.getElementById("precision").value;
+        const dStart = document.getElementById("dStart").value.trim();
+        const dEnd = document.getElementById("dEnd").value.trim();
+        const payload = {
+          title: document.getElementById("title").value,
+          body_text: bodyText,
+          author_display_name: document.getElementById("author").value.trim() || "Tom",
+          channel: lastAudioUri ? "voice" : "ui",
+          audio_uri: lastAudioUri,
+          described_start_date: dStart || null,
+          described_end_date: dEnd || null,
+          described_precision: precision,
+        };
+        const data = await j("/journal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const id = data && data.journal && data.journal.id;
+        rememberId(id);
+        lastAudioUri = null;
+        lastAudioId = null;
+        document.getElementById("audioId").textContent = "(none)";
+        document.getElementById("recStatus").textContent = "Saved";
+        show(data);
+      } catch (err) {
+        show(err);
+      }
+    };
+
+    document.getElementById("versionBtn").onclick = async () => {
+      try {
+        const id = document.getElementById("editId").value.trim();
+        const bodyText = document.getElementById("editBody").value.trim();
+        if (!id || !bodyText) {
+          show({ detail: "Journal ID and new body required" });
+          return;
+        }
+        const data = await j("/journal/" + encodeURIComponent(id) + "/versions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body_text: bodyText }),
+        });
+        show(data);
+      } catch (err) {
+        show(err);
+      }
+    };
+
+    document.getElementById("getBtn").onclick = async () => {
+      try {
+        const id = document.getElementById("getId").value.trim();
+        const ver = document.getElementById("getVer").value.trim();
+        let url = "/journal/" + encodeURIComponent(id);
+        if (ver) url += "?version=" + encodeURIComponent(ver);
+        show(await j(url));
+      } catch (err) {
+        show(err);
+      }
+    };
+
+    document.getElementById("listBtn").onclick = async () => {
+      try { show(await j("/journal")); }
+      catch (err) { show(err); }
+    };
+  </script>
+</body>
+</html>

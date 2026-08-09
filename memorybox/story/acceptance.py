@@ -208,9 +208,14 @@ def prove_increment_5(*, flightsim: bool = False) -> dict[str, Any]:
     from memorybox.app import health
 
     h = health()
+    inc = h.get("increment")
+    inc_ok = bool(h.get("ok")) and (
+        (isinstance(inc, (int, float)) and float(inc) >= 5)
+        or str(inc).upper().startswith("5")
+    )
     _check(
         "i5_k_health",
-        bool(h.get("ok")) and int(h.get("increment") or 0) >= 5,
+        inc_ok,
         checks,
         problems,
         detail=f"increment={h.get('increment')}",

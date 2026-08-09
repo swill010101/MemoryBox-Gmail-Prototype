@@ -1,4 +1,4 @@
-"""Thin Experience Orchestrator — Evidence First Ask (Increment 4+) + Story modality (I5)."""
+"""Thin Experience Orchestrator — Evidence First Ask + Story (I5) + Journal (I5A)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,6 +31,7 @@ class AskResult:
     evidence_hits: list[dict[str, Any]]
     photo_hits: list[dict[str, Any]]
     story_hits: list[dict[str, Any]]
+    journal_hits: list[dict[str, Any]]
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
@@ -48,6 +49,7 @@ class AskResult:
             "evidence_hits": self.evidence_hits,
             "photo_hits": self.photo_hits,
             "story_hits": self.story_hits,
+            "journal_hits": self.journal_hits,
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
@@ -60,9 +62,12 @@ def _update_context_from_plan(
     evidence_ids: list[str],
     photo_ids: list[str],
     story_ids: list[str],
+    journal_ids: list[str],
 ) -> AskContext:
     """Rule H: persisted context mirrors effective plan slots (not stale merge)."""
-    selection = tuple(evidence_ids[:8] + photo_ids[:8] + story_ids[:8])
+    selection = tuple(
+        evidence_ids[:8] + photo_ids[:8] + story_ids[:8] + journal_ids[:8]
+    )
     patch = ContextPatch(
         person_names=plan.person_names,
         place_names=plan.place_names,
@@ -81,10 +86,18 @@ def _build_answer(
     evidence: list[R.EvidenceHit],
     photos: list[R.PhotoHit],
     stories: list[R.StoryHit],
+    journals: list[R.JournalHit],
     photo_status: dict[str, Any],
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
     citations: list[dict[str, Any]] = []
     statements: list[dict[str, Any]] = []
+
+    if getattr(plan, "journal_capture_intent", False):
+        msg = (
+            "Journal capture is ready. Open /journal/ui to type or speak, review any "
+            "transcript draft, then explicitly Save. MemoryBox will not invent a Journal entry."
+        )
+        return "journal_capture", msg, [], [], None
 
     if plan.requires_clarification:
         msg = plan.ambiguity_message or (
@@ -110,6 +123,7 @@ def _build_answer(
                 "evidence_ids": [h.evidence_id],
                 "photo_external_ids": [],
                 "story_ids": [],
+                "journal_ids": [],
                 "provenance_kind": "archive_evidence",
             }
         )
@@ -137,6 +151,7 @@ def _build_answer(
                 "evidence_ids": [],
                 "photo_external_ids": [p.external_id],
                 "story_ids": [],
+                "journal_ids": [],
                 "provenance_kind": "archive_evidence",
             }
         )
@@ -161,8 +176,39 @@ def _build_answer(
                 "evidence_ids": [],
                 "photo_external_ids": [],
                 "story_ids": [s.story_id],
+                "journal_ids": [],
                 "provenance_kind": s.provenance_kind,
                 "attribution": s.attribution,
+            }
+        )
+
+    for j in journals:
+        citations.append(
+            {
+                "kind": "journal",
+                "journal_id": j.journal_id,
+                "version": j.version,
+                "title": j.title,
+                "author_person_id": j.author_person_id,
+                "author_display_name": j.author_display_name,
+                "captured_at": j.captured_at,
+                "described_start_date": j.described_start_date,
+                "described_end_date": j.described_end_date,
+                "described_precision": j.described_precision,
+                "provenance_kind": j.provenance_kind,
+                "attribution": j.attribution,
+            }
+        )
+        statements.append(
+            {
+                "text": f"{j.attribution}: {j.excerpt}",
+                "label": "Journal",
+                "evidence_ids": [],
+                "photo_external_ids": [],
+                "story_ids": [],
+                "journal_ids": [j.journal_id],
+                "provenance_kind": j.provenance_kind,
+                "attribution": j.attribution,
             }
         )
 
@@ -173,14 +219,14 @@ def _build_answer(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
-    if video_only_no_provider and not evidence and not stories:
+    if video_only_no_provider and not evidence and not stories and not journals:
         missing = (
             "Video modality is not available in this Increment 4 runtime "
             "(no video/HVRT provider wired). MemoryBox will not invent video results."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if photo_unavail and not evidence and not stories:
+    if photo_unavail and not evidence and not stories and not journals:
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
@@ -188,28 +234,31 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and (evidence or stories):
+    if photo_unavail and (evidence or stories or journals):
         text = (
             "Photo provider is unavailable (not 'no photos'). "
-            f"Found {len(evidence)} Evidence hit(s) and {len(stories)} Story hit(s). "
-            "Family-history claims below are limited to cited Evidence/Stories with provenance."
+            f"Found {len(evidence)} Evidence, {len(stories)} Story, "
+            f"{len(journals)} Journal hit(s). "
+            "Family-history claims below are limited to cited items with provenance."
         )
         return "mixed", text, statements, citations, None
 
     if (
-        (plan.want_photo or plan.want_still or getattr(plan, "want_story", False))
+        (plan.want_photo or plan.want_still or getattr(plan, "want_story", False)
+         or getattr(plan, "want_journal", False))
         and not photos
         and not evidence
         and not stories
+        and not journals
         and photo_status.get("ok", True)
     ):
         missing = (
-            "Insufficient Evidence: no matching photos, Stories, or email/calendar "
-            "Evidence were found for this ask. MemoryBox will not invent a family fact."
+            "Insufficient Evidence: no matching photos, Stories, Journals, or "
+            "email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if not evidence and not photos and not stories:
+    if not evidence and not photos and not stories and not journals:
         missing = (
             "Insufficient Evidence for this ask. Available archive Evidence does not "
             "support a factual family-history answer. MemoryBox will not invent one."
@@ -217,6 +266,11 @@ def _build_answer(
         return "insufficient", missing, statements, citations, missing
 
     parts = []
+    if journals:
+        parts.append(
+            f"Found {len(journals)} owner Journal entr(y/ies) "
+            "(provenance: owner journal — distinct from Story recollection)."
+        )
     if stories:
         parts.append(
             f"Found {len(stories)} owner Story recollection(s) "
@@ -233,9 +287,14 @@ def _build_answer(
             + "."
         )
     parts.append("Factual claims are limited to the citations listed.")
-    if stories and (photos or evidence):
+    modalities_hit = sum(
+        1 for x in (bool(journals), bool(stories), bool(photos), bool(evidence)) if x
+    )
+    if modalities_hit > 1:
         kind = "mixed"
-    elif stories and not photos and not evidence:
+    elif journals:
+        kind = "journal_backed"
+    elif stories:
         kind = "story_backed"
     elif photos and not evidence:
         kind = "photo_backed"
@@ -267,8 +326,9 @@ class AskOrchestrator:
         photos: list[R.PhotoHit] = []
         photo_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
         stories: list[R.StoryHit] = []
+        journals: list[R.JournalHit] = []
 
-        if not plan.requires_clarification:
+        if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
                 qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
@@ -282,6 +342,8 @@ class AskOrchestrator:
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)
+            if getattr(plan, "want_journal", False):
+                journals = R.search_journals(plan)
 
             if plan.want_video and plan.visual_scope in ("broad", "video_only"):
                 photo_status = dict(photo_status)
@@ -295,7 +357,7 @@ class AskOrchestrator:
                 )
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(
-            plan, evidence, photos, stories, photo_status
+            plan, evidence, photos, stories, journals, photo_status
         )
 
         new_ctx = _update_context_from_plan(
@@ -304,6 +366,7 @@ class AskOrchestrator:
             [h.evidence_id for h in evidence],
             [p.external_id for p in photos],
             [s.story_id for s in stories],
+            [j.journal_id for j in journals],
         )
         new_ctx = self.store.save(new_ctx)
 
@@ -324,6 +387,14 @@ class AskOrchestrator:
             "ok": True,
             "detail": f"hits={len(stories)}" if plan.want_story else "not_requested",
         }
+        providers["journal_search"] = {
+            "ok": True,
+            "detail": (
+                f"hits={len(journals)}"
+                if plan.want_journal
+                else ("capture_intent" if plan.journal_capture_intent else "not_requested")
+            ),
+        }
 
         return AskResult(
             session_id=new_ctx.session_id,
@@ -337,6 +408,7 @@ class AskOrchestrator:
             evidence_hits=[h.to_dict() for h in evidence],
             photo_hits=[p.to_dict() for p in photos],
             story_hits=[s.to_dict() for s in stories],
+            journal_hits=[j.to_dict() for j in journals],
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,

@@ -55,6 +55,13 @@ ABOUT_SUBJECT_RE = re.compile(
 EMAIL_RE = re.compile(
     r"(?i)\b(emails?|e-mails?|mail|messages?|inbox|correspondence|wrote|signed\s+off)\b"
 )
+JOURNAL_INTENT_RE = re.compile(
+    r"(?i)^\s*(?:i\s+(?:want|need)\s+to\s+journal|let\s+me\s+journal|"
+    r"start\s+(?:a\s+)?journal|journal\s+now|open\s+journal|^journal)\s*[.!]?\s*$"
+)
+JOURNAL_ASK_RE = re.compile(
+    r"(?i)\b(journals?|journal\s+entr(?:y|ies)|my\s+journal|what\s+did\s+i\s+journal)\b"
+)
 CALENDAR_RE = re.compile(
     r"(?i)\b(calendar|appointment|schedule|event|meeting|ics)\b"
 )
@@ -221,6 +228,8 @@ class QueryPlan:
     want_communication: bool
     want_calendar: bool
     want_story: bool = False
+    want_journal: bool = False
+    journal_capture_intent: bool = False
     visual_scope: VisualScope = "none"
     want_visual: bool = False
     want_still: bool = False
@@ -262,6 +271,8 @@ class QueryPlan:
             out.append("calendar_event")
         if self.want_story:
             out.append("story")
+        if self.want_journal:
+            out.append("journal")
         return tuple(out)
 
 
@@ -786,18 +797,39 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_story:
             notes.append("want_story_modality")
 
+    # Journal modality (I5A): capture intent OR retrieval (exploratory / journal ask)
+    journal_capture_intent = bool(JOURNAL_INTENT_RE.search(q))
+    want_journal = False
+    if journal_capture_intent:
+        notes.append("journal_capture_intent")
+    elif not requires_clarification:
+        if JOURNAL_ASK_RE.search(q):
+            want_journal = True
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+            want_journal = True
+        if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
+            want_journal = False
+        if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
+            want_journal = False
+        if said_about:
+            want_journal = False
+        if want_journal:
+            notes.append("want_journal_modality")
+
     return QueryPlan(
         original_ask=q,
-        effective_ask=effective,
+        effective_ask=effective if not journal_capture_intent else "journal_capture",
         is_followup=is_followup,
-        want_photo=want_photo,
-        want_communication=want_email and not requires_clarification,
-        want_calendar=want_cal and not requires_clarification,
-        want_story=want_story,
-        visual_scope=visual_scope if not requires_clarification else "none",
-        want_visual=want_visual and not requires_clarification,
-        want_still=want_still and not requires_clarification,
-        want_video=want_video and not requires_clarification,
+        want_photo=want_photo and not journal_capture_intent,
+        want_communication=want_email and not requires_clarification and not journal_capture_intent,
+        want_calendar=want_cal and not requires_clarification and not journal_capture_intent,
+        want_story=want_story and not journal_capture_intent,
+        want_journal=want_journal and not journal_capture_intent,
+        journal_capture_intent=journal_capture_intent,
+        visual_scope=visual_scope if not requires_clarification and not journal_capture_intent else "none",
+        want_visual=want_visual and not requires_clarification and not journal_capture_intent,
+        want_still=want_still and not requires_clarification and not journal_capture_intent,
+        want_video=want_video and not requires_clarification and not journal_capture_intent,
         person_names=tuple(people),
         place_names=tuple(places),
         event_labels=tuple(event_labels),

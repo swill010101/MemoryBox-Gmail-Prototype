@@ -68,6 +68,10 @@ application/**/build/
 .vscode/
 .idea/
 
+# Capture/STT local audio drafts
+.memorybox_capture/
+.memorybox_capture_fake/
+
 # Operating system
 Thumbs.db
 .DS_Store

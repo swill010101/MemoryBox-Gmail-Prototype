@@ -42,6 +42,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_I5_OWNER_STORY_ID after UX save)",
     )
+    p_prove5a = sub.add_parser("prove-journal", help="Increment 5A Journal acceptance prove")
+    p_prove5a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_I5A_OWNER_*_JOURNAL_ID after UX save)",
+    )
     p_serve = sub.add_parser("serve", help="Run uvicorn")
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
@@ -128,6 +134,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.story.acceptance import prove_increment_5
 
         payload = prove_increment_5(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-journal":
+        from memorybox.journal.acceptance import prove_increment_5a
+
+        payload = prove_increment_5a(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

@@ -558,3 +558,158 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             )
     hits.sort(key=lambda h: h.score, reverse=True)
     return hits[:limit]
+
+
+@dataclass
+class JournalHit:
+    journal_id: str
+    version: int
+    title: str | None
+    excerpt: str
+    author_person_id: str | None
+    author_display_name: str | None
+    captured_at: str | None
+    described_start_date: str | None
+    described_end_date: str | None
+    described_precision: str
+    provenance_kind: str
+    attribution: str
+    score: float = 1.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
+    """Retrieve current Journal versions via direct PG — no journal_passage required."""
+    if not getattr(plan, "want_journal", False):
+        return []
+    tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
+    if not tokens:
+        tokens = [
+            t
+            for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", plan.original_ask or "")
+            if t.lower()
+            not in {
+                "what",
+                "you",
+                "know",
+                "about",
+                "tell",
+                "have",
+                "from",
+                "our",
+                "the",
+                "trip",
+                "show",
+                "me",
+                "emails",
+                "photos",
+                "journal",
+                "journals",
+                "entry",
+                "entries",
+            }
+        ]
+    loose = not tokens
+
+    hits: list[JournalHit] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                j.id AS journal_id,
+                j.title,
+                j.author_person_id,
+                j.current_version,
+                j.captured_at,
+                j.described_start_date,
+                j.described_end_date,
+                j.described_precision,
+                jv.body_text,
+                jv.version,
+                p.display_name AS author_name
+            FROM journal_entries j
+            JOIN journal_versions jv
+              ON jv.journal_id = j.id AND jv.version = j.current_version
+            LEFT JOIN people p ON p.id = j.author_person_id
+            WHERE j.status = 'active'
+            ORDER BY j.updated_at DESC
+            LIMIT %s
+            """,
+            (limit * 8,),
+        ).fetchall()
+
+        rel_people: dict[str, list[str]] = {}
+        if rows:
+            ids = [r["journal_id"] for r in rows]
+            rrows = conn.execute(
+                """
+                SELECT r.from_id, p.display_name
+                FROM relationships r
+                JOIN people p ON p.id = r.to_id
+                WHERE r.from_type = 'journal'
+                  AND r.to_type = 'person'
+                  AND r.from_id = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+            for rr in rrows:
+                rel_people.setdefault(str(rr["from_id"]), []).append(
+                    rr["display_name"] or ""
+                )
+
+        for r in rows:
+            jid = str(r["journal_id"])
+            blob = " ".join(
+                [
+                    r["title"] or "",
+                    r["body_text"] or "",
+                    r["author_name"] or "",
+                    " ".join(rel_people.get(jid, [])),
+                    str(r.get("described_start_date") or ""),
+                    str(r.get("described_end_date") or ""),
+                ]
+            ).lower()
+            if loose:
+                match_n = 1
+            else:
+                match_n = sum(1 for t in tokens if t.lower() in blob)
+                if match_n == 0:
+                    continue
+            if plan.time_start or plan.time_end:
+                ds = str(r.get("described_start_date") or "")
+                de = str(r.get("described_end_date") or "")
+                if plan.time_start and de and de < plan.time_start[:10]:
+                    continue
+                if plan.time_end and ds and ds > plan.time_end[:10]:
+                    continue
+            author = r["author_name"] or "owner"
+            body = r["body_text"] or ""
+            excerpt = body[:200] + ("…" if len(body) > 200 else "")
+            prec = r.get("described_precision") or "unknown"
+            hits.append(
+                JournalHit(
+                    journal_id=jid,
+                    version=int(r["version"]),
+                    title=r["title"],
+                    excerpt=excerpt,
+                    author_person_id=str(r["author_person_id"])
+                    if r["author_person_id"]
+                    else None,
+                    author_display_name=r["author_name"],
+                    captured_at=str(r["captured_at"]) if r.get("captured_at") else None,
+                    described_start_date=str(r["described_start_date"])
+                    if r.get("described_start_date")
+                    else None,
+                    described_end_date=str(r["described_end_date"])
+                    if r.get("described_end_date")
+                    else None,
+                    described_precision=prec,
+                    provenance_kind="owner_journal",
+                    attribution=f"{author} journaled (Journal v{int(r['version'])})",
+                    score=float(match_n),
+                )
+            )
+    hits.sort(key=lambda h: h.score, reverse=True)
+    return hits[:limit]

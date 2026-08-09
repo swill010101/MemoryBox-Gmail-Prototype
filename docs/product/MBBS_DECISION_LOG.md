@@ -12,7 +12,7 @@ Record one section per increment. Do not wait until end of P1.
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 5 only (locked definition)  
 **Acceptance:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — **ACCEPTED** (FlightSim `prove-story --flightsim` + owner Story UX)  
-**Next:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md) — **REVIEW ONLY**; do not begin 5A/6 without authorization
+**Next:** Increment 5A Journal — **BUILD AUTHORIZED**; owner FlightSim gate I5A-OWNER open. Do not begin Guided Capture / Increment 6 without authorization.
 
 ### Build-lock decisions
 
@@ -23,6 +23,28 @@ Record one section per increment. Do not wait until end of P1.
 | STT / Journal out | Capture later; Journal = 5A |
 | I1 relationships for associations | No ad-hoc Story columns; domain gap none for I5 minimum |
 | Owner Story = provenance-bearing recollection | May save/retrieve without independent corroboration; Ask must attribute |
+
+---
+
+## Increment 5A — Journal + Capture/STT + Ask Journal
+
+**Date:** 2026-08-09  
+**Authorization:** Build Increment 5A only  
+**Definition:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — desktop harness PASS; **I5A-OWNER FlightSim gate open**  
+**Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask
+
+### Build-lock decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Journal ≠ Story | MBDM; separate tables/services/provenance |
+| `author_person_id` SoT only | No authored_by dual-write |
+| Immutable `journal_versions` | Parallel to Story versions |
+| Capture ≠ described temporal | `captured_at` + described dates + precision vocab |
+| Capture/STT reusable; Whisper behind provider | Journal must not import Whisper |
+| Ask = direct PG Journal query | No required journal_passage Evidence |
+| EVS-136 without fake Place links | Text/context/real relationships only |
 
 ---
 

@@ -127,13 +127,17 @@
         w.textContent = "Photo provider unavailable (not “no photos”).";
         ans.appendChild(w);
       }
-      if (kind === "clarification" || data.missing_disclosure) {
+      if (kind === "journal_capture") {
+        const p = document.createElement("p");
+        p.innerHTML = (data.answer_text || "") + ' <a href="/journal/ui"><b>Open Journal</b></a>';
+        ans.appendChild(p);
+      } else if (kind === "clarification" || data.missing_disclosure) {
         const m = document.createElement("p");
         m.className = "warn";
         m.textContent = data.missing_disclosure || data.answer_text || "";
         ans.appendChild(m);
       }
-      if (kind !== "clarification") {
+      if (kind !== "clarification" && kind !== "journal_capture") {
         const p = document.createElement("p");
         p.textContent = data.answer_text || "";
         ans.appendChild(p);
@@ -151,7 +155,8 @@
       const ev = data.evidence_hits || [];
       const ph = data.photo_hits || [];
       const st = data.story_hits || [];
-      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · kind=${kind}</p><ul>`;
+      const jn = data.journal_hits || [];
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · kind=${kind}</p><ul>`;
       ev.slice(0, 12).forEach(h => {
         html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
       });
@@ -160,6 +165,9 @@
       });
       st.slice(0, 12).forEach(h => {
         html += `<li>[story recollection] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
+      });
+      jn.slice(0, 12).forEach(h => {
+        html += `<li>[journal] <code>${h.journal_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
       });
       html += "</ul>";
       results.innerHTML = html;
@@ -175,6 +183,9 @@
           }
           if (c.kind === "story") {
             return `<li>Story <code>${c.story_id}</code> v${c.version} — ${c.attribution || "owner recollection"}</li>`;
+          }
+          if (c.kind === "journal") {
+            return `<li>Journal <code>${c.journal_id}</code> v${c.version} — ${c.attribution || "owner journal"}</li>`;
           }
           return `<li>Photo <code>${c.external_id}</code> (${c.provider_key}) [archive]</li>`;
         }).join("") + "</ul>";
