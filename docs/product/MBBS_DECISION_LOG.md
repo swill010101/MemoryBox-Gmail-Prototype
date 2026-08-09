@@ -48,6 +48,21 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
+## Cross-cutting — FlightSim I1–I3 deployment checkpoint (2026-08-09)
+
+**Authorization:** Deploy accepted I1–I3 to P1 runtime host; real-data smoke; no Increment 4  
+**Status:** **PASSED** — [MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md](MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md)
+
+| Item | Outcome |
+|------|---------|
+| Host | FlightSim (`tomwi`); Docker PG + Qdrant; Ollama local |
+| Synthetic proves | PASS |
+| Real email + calendar smoke | PASS (5+5 Evidence rows; IDs only in report) |
+| Qdrant | Derived; network URL; rebuild/retrieval PASS |
+| Next | Increment 4 **not** authorized |
+
+---
+
 ## Cross-cutting — D7 P1 deployment (2026-08-09; updated same day)
 
 **Authorization:** Owner lock (not tied to a single increment build)  
