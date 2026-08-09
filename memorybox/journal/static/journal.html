@@ -131,8 +131,8 @@
     const out = document.getElementById("out");
     let lastAudioUri = null;
     let lastAudioId = null;
-    // PCM capture (16 kHz mono WAV) — more reliable for Whisper than browser WebM
-    let pcmRec = null;
+    let activeRec = null;
+    let levelTimer = null;
 
     function show(data) {
       out.textContent = JSON.stringify(data, null, 2);
@@ -204,36 +204,11 @@
       return data;
     }
 
-    function encodeWavMono16(floatChunks, sampleRate) {
-      let total = 0;
-      for (const c of floatChunks) total += c.length;
-      const pcm = new Int16Array(total);
-      let off = 0;
-      for (const c of floatChunks) {
-        for (let i = 0; i < c.length; i++) {
-          let s = Math.max(-1, Math.min(1, c[i]));
-          pcm[off++] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
+    function stopLevelMeter() {
+      if (levelTimer) {
+        clearInterval(levelTimer);
+        levelTimer = null;
       }
-      const bytes = pcm.length * 2;
-      const buf = new ArrayBuffer(44 + bytes);
-      const view = new DataView(buf);
-      const writeStr = (o, str) => { for (let i = 0; i < str.length; i++) view.setUint8(o + i, str.charCodeAt(i)); };
-      writeStr(0, "RIFF");
-      view.setUint32(4, 36 + bytes, true);
-      writeStr(8, "WAVE");
-      writeStr(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeStr(36, "data");
-      view.setUint32(40, bytes, true);
-      new Uint8Array(buf, 44).set(new Uint8Array(pcm.buffer));
-      return new Blob([buf], { type: "audio/wav" });
     }
 
     // Browsers block mic on plain http://host (non-localhost). Surface that early.
@@ -257,6 +232,7 @@
             "navigator.mediaDevices unavailable (insecure non-localhost origin). Use audio upload or open http://127.0.0.1:8790/journal/ui on FlightSim."
           );
         }
+        // Prefer explicit device enumeration so the OS mic picker is meaningful
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -265,24 +241,89 @@
             autoGainControl: true,
           },
         });
+        const track = stream.getAudioTracks()[0];
+        const trackLabel = (track && track.label) || "unknown mic";
+
+        const chunks = [];
+        const mimeCandidates = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+        ];
+        let mime = "";
+        for (const m of mimeCandidates) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+            mime = m;
+            break;
+          }
+        }
+        const mediaRecorder = mime
+          ? new MediaRecorder(stream, { mimeType: mime })
+          : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size) chunks.push(e.data);
+        };
+
+        // Live level meter (proves the selected track is actually live)
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         const ctx = new AudioCtx();
+        await ctx.resume();
         const source = ctx.createMediaStreamSource(stream);
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
-        const chunks = [];
-        processor.onaudioprocess = (e) => {
-          const input = e.inputBuffer.getChannelData(0);
-          chunks.push(new Float32Array(input));
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        let peak = 0;
+        stopLevelMeter();
+        levelTimer = setInterval(() => {
+          analyser.getByteTimeDomainData(data);
+          let maxDev = 0;
+          for (let i = 0; i < data.length; i++) {
+            const dev = Math.abs(data[i] - 128);
+            if (dev > maxDev) maxDev = dev;
+          }
+          const pct = Math.round((maxDev / 128) * 100);
+          if (pct > peak) peak = pct;
+          setRecStatus(
+            "Recording… mic=\"" + trackLabel + "\" level=" + pct + "% (peak " + peak + "%). Speak now.",
+            pct < 2
+          );
+        }, 200);
+
+        mediaRecorder.onstop = async () => {
+          stopLevelMeter();
+          try { source.disconnect(); } catch (_) {}
+          try { await ctx.close(); } catch (_) {}
+          stream.getTracks().forEach((t) => t.stop());
+          const type = mediaRecorder.mimeType || mime || "audio/webm";
+          const blob = new Blob(chunks, { type: type });
+          if (peak < 2) {
+            setRecStatus(
+              "Mic level stayed ~0% — wrong input device (\"" + trackLabel + "\"). Pick the USB/headset mic and re-Record.",
+              true
+            );
+            show({
+              detail: "No mic signal during Record",
+              track: trackLabel,
+              peak_level_pct: peak,
+              blob_bytes: blob.size,
+            });
+            return;
+          }
+          const ext = type.indexOf("mp4") >= 0 ? "m4a" : "webm";
+          try {
+            await transcribeBlob(blob, "journal-clip." + ext);
+          } catch (err) {
+            setRecStatus("STT failed — see Result", true);
+            show(err);
+          }
         };
-        const mute = ctx.createGain();
-        mute.gain.value = 0;
-        source.connect(processor);
-        processor.connect(mute);
-        mute.connect(ctx.destination);
-        pcmRec = { stream, ctx, source, processor, mute, chunks, sampleRate: ctx.sampleRate };
+
+        activeRec = { mediaRecorder, stream, ctx };
+        mediaRecorder.start(250);
         document.getElementById("recBtn").disabled = true;
         document.getElementById("stopBtn").disabled = false;
-        setRecStatus("Recording… (PCM WAV @ " + ctx.sampleRate + " Hz)", false);
+        setRecStatus("Recording… mic=\"" + trackLabel + "\" — speak now", false);
       } catch (err) {
         setRecStatus("Mic failed — see Result / use upload", true);
         show({
@@ -292,46 +333,15 @@
       }
     };
 
-    document.getElementById("stopBtn").onclick = async () => {
+    document.getElementById("stopBtn").onclick = () => {
       document.getElementById("recBtn").disabled = false;
       document.getElementById("stopBtn").disabled = true;
-      if (!pcmRec) return;
-      const rec = pcmRec;
-      pcmRec = null;
-      try {
-        rec.processor.disconnect();
-        rec.source.disconnect();
-        rec.stream.getTracks().forEach((t) => t.stop());
-        await rec.ctx.close();
-      } catch (_) {}
-      // Resample to 16 kHz if needed (simple linear)
-      const targetRate = 16000;
-      let samples = rec.chunks;
-      let rate = rec.sampleRate;
-      if (rate !== targetRate && samples.length) {
-        let total = 0;
-        for (const c of samples) total += c.length;
-        const merged = new Float32Array(total);
-        let o = 0;
-        for (const c of samples) { merged.set(c, o); o += c.length; }
-        const newLen = Math.max(1, Math.round(merged.length * targetRate / rate));
-        const out = new Float32Array(newLen);
-        for (let i = 0; i < newLen; i++) {
-          const src = i * rate / targetRate;
-          const i0 = Math.floor(src);
-          const i1 = Math.min(merged.length - 1, i0 + 1);
-          const frac = src - i0;
-          out[i] = merged[i0] * (1 - frac) + merged[i1] * frac;
-        }
-        samples = [out];
-        rate = targetRate;
-      }
-      const blob = encodeWavMono16(samples, rate);
-      try {
-        await transcribeBlob(blob, "journal-clip.wav");
-      } catch (err) {
-        setRecStatus("STT failed — see Result", true);
-        show(err);
+      if (!activeRec) return;
+      const rec = activeRec;
+      activeRec = null;
+      if (rec.mediaRecorder && rec.mediaRecorder.state !== "inactive") {
+        try { rec.mediaRecorder.requestData(); } catch (_) {}
+        rec.mediaRecorder.stop();
       }
     };
 
