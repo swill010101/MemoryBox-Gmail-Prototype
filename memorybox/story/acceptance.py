@@ -216,25 +216,50 @@ def prove_increment_5(*, flightsim: bool = False) -> dict[str, Any]:
         detail=f"increment={h.get('increment')}",
     )
 
-    # FlightSim: require operator real Story marker (optional env) — do not fail desktop
+    # FlightSim: real owner Story via UX (opaque UUID only)
     if flightsim:
-        real_id = os.environ.get("MEMORYBOX_I5_OWNER_STORY_ID", "").strip()
-        if real_id:
-            real = get_story(real_id)
-            _check(
-                "i5_j_real_owner_story",
-                real is not None and real.current_version >= 1,
-                checks,
-                problems,
-                detail=f"owner_story_id={real_id} v={getattr(real, 'current_version', None)}",
-            )
-            meta["owner_story_id"] = real_id
-        else:
+        real_id = os.environ.get("MEMORYBOX_I5_OWNER_STORY_ID", "").strip().strip("<>")
+        placeholder = real_id.lower() in {
+            "",
+            "opaque-story-uuid",
+            "story-uuid",
+            "uuid",
+            "your-story-id",
+        }
+        if not real_id or placeholder:
             checks["i5_j_real_owner_story"] = {
                 "ok": True,
-                "detail": "pending_operator_ux_save — set MEMORYBOX_I5_OWNER_STORY_ID after UX save",
+                "detail": (
+                    "pending_operator_ux_save — after Save on /story/ui, set "
+                    "MEMORYBOX_I5_OWNER_STORY_ID to the opaque story UUID from the JSON result"
+                ),
             }
             meta["owner_story_pending"] = True
+        else:
+            try:
+                real = get_story(real_id)
+            except (ValueError, TypeError) as exc:
+                real = None
+                _check(
+                    "i5_j_real_owner_story",
+                    False,
+                    checks,
+                    problems,
+                    detail=f"invalid MEMORYBOX_I5_OWNER_STORY_ID ({exc})",
+                )
+            else:
+                _check(
+                    "i5_j_real_owner_story",
+                    real is not None and real.current_version >= 1,
+                    checks,
+                    problems,
+                    detail=(
+                        f"owner_story_id={real_id} "
+                        f"v={getattr(real, 'current_version', None)}"
+                    ),
+                )
+                if real is not None:
+                    meta["owner_story_id"] = real_id
 
     _check("i5_l_living_specs", True, checks, problems, "acceptance module present")
 
