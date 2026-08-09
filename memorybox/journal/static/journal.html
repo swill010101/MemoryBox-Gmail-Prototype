@@ -94,6 +94,7 @@
       <button id="recBtn" type="button" class="secondary">Record</button>
       <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
       <span id="recStatus" class="muted">Idle</span>
+      <p id="sttError" class="warn" style="display:none;white-space:pre-wrap"></p>
       <label for="audioFile" style="margin-top:0.75rem">Or upload a spoken audio file (webm/wav/mp3) when browser mic is blocked</label>
       <input id="audioFile" type="file" accept="audio/*,.webm,.wav,.mp3,.m4a" />
       <p class="muted">Audio id: <code id="audioId">(none)</code> · Draft only until Save · voice Save needs audio id</p>
@@ -174,7 +175,13 @@
           lastAudioId = audioFromErr.audio_id;
           lastAudioUri = audioFromErr.audio_uri || null;
           document.getElementById("audioId").textContent = lastAudioId;
-          setRecStatus("STT failed — audio kept; type Body then Save", true);
+          const msg = (detail && detail.message) ? detail.message : "STT failed";
+          setRecStatus("STT failed — fix Whisper (see error); do not Save without draft", true);
+          const errBox = document.getElementById("sttError");
+          if (errBox) {
+            errBox.style.display = "block";
+            errBox.textContent = msg;
+          }
           show(data);
           return data;
         }
@@ -187,6 +194,8 @@
       if (draft.text) {
         document.getElementById("body").value = draft.text;
       }
+      const errBox = document.getElementById("sttError");
+      if (errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
       setRecStatus("Draft ready — review, then Save", false);
       show(data);
       return data;

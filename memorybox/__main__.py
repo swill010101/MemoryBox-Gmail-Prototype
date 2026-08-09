@@ -48,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_I5A_OWNER_*_JOURNAL_ID after UX save)",
     )
+    p_stt = sub.add_parser(
+        "stt-check",
+        help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
+    )
+    p_stt.add_argument("--file", required=True, help="Path to webm/wav/mp3 clip")
     p_serve = sub.add_parser("serve", help="Run uvicorn")
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
@@ -141,6 +146,23 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.journal.acceptance import prove_increment_5a
 
         payload = prove_increment_5a(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "stt-check":
+        from pathlib import Path
+
+        from memorybox.providers.capture.faster_whisper import smoke_transcribe_file
+
+        path = Path(args.file)
+        if not path.is_file():
+            print(json.dumps({"ok": False, "error": f"file not found: {path}"}))
+            return 1
+        try:
+            payload = smoke_transcribe_file(path)
+        except Exception as exc:  # noqa: BLE001
+            print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+            return 1
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

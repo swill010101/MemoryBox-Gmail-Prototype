@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,92 +23,78 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 def _ffmpeg_bin() -> str | None:
-    return shutil.which("ffmpeg")
+    """Resolve ffmpeg even when the serve shell missed a refreshed PATH."""
+    which = shutil.which("ffmpeg")
+    if which:
+        return which
+    local = os.environ.get("LOCALAPPDATA") or ""
+    roots = [
+        Path(local) / "Microsoft" / "WinGet" / "Packages",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ffmpeg" / "bin",
+        Path(r"C:\ffmpeg\bin"),
+    ]
+    for root in roots:
+        if not root.exists():
+            continue
+        if root.is_file() and root.name.lower() == "ffmpeg.exe":
+            return str(root)
+        # WinGet Gyan.FFmpeg layout
+        for cand in root.glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe"):
+            return str(cand)
+        direct = root / "ffmpeg.exe"
+        if direct.is_file():
+            return str(direct)
+    return None
 
 
 def _to_wav_for_whisper(src: Path) -> Path:
     """Normalize browser WebM/Opus (etc.) to 16 kHz mono WAV for reliable decode."""
-    if src.suffix.lower() == ".wav":
+    if src.suffix.lower() == ".wav" and src.stat().st_size > 44:
         return src
     wav = src.with_suffix(".wav")
     if wav.is_file() and wav.stat().st_size > 44:
         return wav
 
     ffmpeg = _ffmpeg_bin()
-    if ffmpeg:
-        try:
-            subprocess.run(
-                [
-                    ffmpeg,
-                    "-y",
-                    "-i",
-                    str(src),
-                    "-ar",
-                    "16000",
-                    "-ac",
-                    "1",
-                    "-f",
-                    "wav",
-                    str(wav),
-                ],
-                check=True,
-                capture_output=True,
-                timeout=120,
-            )
-            if wav.is_file() and wav.stat().st_size > 44:
-                return wav
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-            pass
-
-    # Fallback: PyAV re-encode when ffmpeg CLI is missing
-    try:
-        import av
-        import numpy as np
-    except ImportError as exc:
+    if not ffmpeg:
         raise ProviderError(
-            f"Cannot decode {src.suffix} audio (install ffmpeg on PATH, or ensure PyAV works). "
-            f"Original file kept at {src}"
-        ) from exc
+            "ffmpeg not found on PATH (required to decode browser WebM). "
+            "Install Gyan.FFmpeg, open a NEW PowerShell, verify `ffmpeg -version`, restart serve."
+        )
 
     try:
-        container = av.open(str(src))
-        stream = next((s for s in container.streams if s.type == "audio"), None)
-        if stream is None:
-            raise ProviderError(f"No audio stream in {src.name}")
-        resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=16000)
-        frames_out: list[np.ndarray] = []
-        for frame in container.decode(stream):
-            for rf in resampler.resample(frame):
-                arr = rf.to_ndarray()
-                if arr.ndim > 1:
-                    arr = arr[0]
-                frames_out.append(arr.astype(np.int16, copy=False))
-        # flush
-        for rf in resampler.resample(None):
-            arr = rf.to_ndarray()
-            if arr.ndim > 1:
-                arr = arr[0]
-            frames_out.append(arr.astype(np.int16, copy=False))
-        container.close()
-        if not frames_out:
-            raise ProviderError(f"Decoded empty audio from {src.name}")
-        pcm = np.concatenate(frames_out)
-        # Write minimal WAV
-        import wave
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-y",
+                "-i",
+                str(src),
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(wav),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=120,
+            text=True,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ProviderError(f"ffmpeg timed out converting {src.name}") from exc
+    except OSError as exc:
+        raise ProviderError(f"ffmpeg failed to start ({ffmpeg}): {exc}") from exc
 
-        with wave.open(str(wav), "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16000)
-            wf.writeframes(pcm.tobytes())
-        return wav
-    except ProviderError:
-        raise
-    except Exception as exc:  # noqa: BLE001
+    if proc.returncode != 0 or not wav.is_file() or wav.stat().st_size <= 44:
+        err = (proc.stderr or proc.stdout or "").strip()
+        tail = err[-800:] if err else f"exit={proc.returncode}"
         raise ProviderError(
-            f"Audio decode failed for {src.name}: {exc}. "
-            "Install ffmpeg on PATH for browser WebM clips."
-        ) from exc
+            f"ffmpeg could not convert {src.name} → wav. {tail}"
+        )
+    return wav
 
 
 class FasterWhisperCaptureStt:
@@ -124,13 +111,16 @@ class FasterWhisperCaptureStt:
         compute_type: str | None = None,
         language: str | None = None,
     ) -> None:
+        # Windows HF downloads often fail without this (symlink privilege).
+        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
         base = _env("MEMORYBOX_CAPTURE_DIR")
         self._root = Path(base) if base else (root or Path.cwd() / ".memorybox_capture")
         self._root.mkdir(parents=True, exist_ok=True)
-        self._model_size = model_size or _env("MEMORYBOX_WHISPER_MODEL", "base") or "base"
-        self._device = device or _env("MEMORYBOX_WHISPER_DEVICE", "auto") or "auto"
-        self._compute = compute_type or _env("MEMORYBOX_WHISPER_COMPUTE", "default") or "default"
-        self._language = language or _env("MEMORYBOX_WHISPER_LANGUAGE")
+        # tiny = reliable first FlightSim accept; override with MEMORYBOX_WHISPER_MODEL
+        self._model_size = model_size or _env("MEMORYBOX_WHISPER_MODEL", "tiny") or "tiny"
+        self._device = device or _env("MEMORYBOX_WHISPER_DEVICE", "cpu") or "cpu"
+        self._compute = compute_type or _env("MEMORYBOX_WHISPER_COMPUTE", "int8") or "int8"
+        self._language = language or _env("MEMORYBOX_WHISPER_LANGUAGE", "en") or "en"
         self._index: dict[str, Path] = {}
 
     def health(self) -> ProviderHealth:
@@ -145,12 +135,12 @@ class FasterWhisperCaptureStt:
         ff = _ffmpeg_bin()
         return ProviderHealth(
             provider_key=self.provider_key,
-            ok=True,
+            ok=bool(ff),
             detail=(
                 f"faster_whisper model={self._model_size} device={self._device} "
-                f"ffmpeg={'yes' if ff else 'no'}"
+                f"compute={self._compute} ffmpeg={ff or 'MISSING'}"
             ),
-            meta={"ffmpeg": bool(ff)},
+            meta={"ffmpeg": ff, "model": self._model_size},
         )
 
     def preserve_audio(
@@ -162,6 +152,10 @@ class FasterWhisperCaptureStt:
     ) -> AudioHandle:
         if not data:
             raise ProviderError("empty audio payload")
+        if len(data) < 256:
+            raise ProviderError(
+                f"audio payload too small ({len(data)} bytes) — record longer before Stop"
+            )
         audio_id = str(uuid4())
         ext = Path(filename or "clip.webm").suffix or ".webm"
         path = self._root / f"{audio_id}{ext}"
@@ -179,13 +173,20 @@ class FasterWhisperCaptureStt:
         if path and path.is_file():
             return path
         matches = list(self._root.glob(f"{audio_id}.*"))
-        # Prefer original over derived .wav
-        originals = [p for p in matches if p.suffix.lower() != ".wav"]
+        originals = [
+            p
+            for p in matches
+            if p.suffix.lower() not in {".wav", ".txt", ".json"}
+        ]
         if originals:
+            self._index[audio_id] = originals[0]
             return originals[0]
         if matches:
+            self._index[audio_id] = matches[0]
             return matches[0]
-        raise ProviderError(f"audio_id not found: {audio_id}")
+        raise ProviderError(
+            f"audio_id not found under {self._root}: {audio_id}"
+        )
 
     def _get_model(self, device: str, compute: str):
         key = (self._model_size, device, compute)
@@ -196,24 +197,23 @@ class FasterWhisperCaptureStt:
 
         model_dir = self._root / "whisper-models"
         model_dir.mkdir(parents=True, exist_ok=True)
-        model = WhisperModel(
-            self._model_size,
-            device=device,
-            compute_type=compute,
-            download_root=str(model_dir),
-        )
+        try:
+            model = WhisperModel(
+                self._model_size,
+                device=device,
+                compute_type=compute,
+                download_root=str(model_dir),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(
+                f"Whisper model load failed ({self._model_size}/{device}/{compute}): {exc}. "
+                "On Windows set HF_HUB_DISABLE_SYMLINKS=1 (already attempted). "
+                "Check network access to Hugging Face for first download."
+            ) from exc
         _MODEL_CACHE[key] = model
         return model
 
-    def transcribe(self, audio_id: str) -> TranscriptDraft:
-        path = self._resolve_path(audio_id)
-        try:
-            from faster_whisper import WhisperModel  # noqa: F401
-        except ImportError as exc:
-            raise ProviderUnavailable(
-                "faster-whisper not installed. pip install faster-whisper"
-            ) from exc
-
+    def _transcribe_wav(self, wav_path: Path, *, vad_filter: bool) -> tuple[str, str | None]:
         device = self._device
         compute = self._compute
         if device == "auto":
@@ -226,41 +226,66 @@ class FasterWhisperCaptureStt:
         if compute == "default":
             compute = "float16" if device == "cuda" else "int8"
 
-        wav_path = _to_wav_for_whisper(path)
+        model = self._get_model(device, compute)
+        segments_iter, info = model.transcribe(
+            str(wav_path),
+            language=self._language,
+            vad_filter=vad_filter,
+        )
+        texts: list[str] = []
+        for seg in segments_iter:
+            t = (seg.text or "").strip()
+            if t:
+                texts.append(t)
+        text = " ".join(texts).strip()
+        lang = getattr(info, "language", None) or self._language
+        return text, str(lang) if lang else None
+
+    def transcribe(self, audio_id: str) -> TranscriptDraft:
+        path = self._resolve_path(audio_id)
         try:
-            model = self._get_model(device, compute)
-        except Exception as exc:  # noqa: BLE001
-            raise ProviderError(
-                f"Whisper model load failed ({self._model_size}/{device}/{compute}): {exc}"
+            import faster_whisper  # noqa: F401
+        except ImportError as exc:
+            raise ProviderUnavailable(
+                "faster-whisper not installed. pip install faster-whisper"
             ) from exc
 
+        wav_path = _to_wav_for_whisper(path)
+        # Sanity: wav must have duration
         try:
-            segments_iter, info = model.transcribe(
-                str(wav_path),
-                language=self._language or "en",
-                vad_filter=True,
+            with wave.open(str(wav_path), "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate() or 16000
+                duration = frames / float(rate)
+        except wave.Error as exc:
+            raise ProviderError(f"Invalid WAV after convert: {exc}") from exc
+        if duration < 0.35:
+            raise ProviderError(
+                f"Audio too short after convert ({duration:.2f}s). "
+                "Record 2–5 seconds of clear speech, then Stop."
             )
-            texts: list[str] = []
-            for seg in segments_iter:
-                t = (seg.text or "").strip()
-                if t:
-                    texts.append(t)
-            text = " ".join(texts).strip()
+
+        try:
+            text, lang = self._transcribe_wav(wav_path, vad_filter=True)
+            if not text:
+                text, lang = self._transcribe_wav(wav_path, vad_filter=False)
+        except ProviderError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(f"Whisper transcribe failed: {exc}") from exc
 
         if not text:
             raise ProviderError(
-                "STT produced empty transcript (speak longer, or check mic levels). "
+                f"STT produced empty transcript ({duration:.1f}s audio). "
+                "Speak louder/longer; check mic levels. "
                 f"Audio preserved as {audio_id}"
             )
-        lang = getattr(info, "language", None) or self._language
         return TranscriptDraft(
             audio_id=audio_id,
             audio_uri=path.resolve().as_uri(),
             text=text,
             provider_key=self.provider_key,
-            language=str(lang) if lang else None,
+            language=lang,
             status="draft",
         )
 
@@ -273,3 +298,19 @@ class FasterWhisperCaptureStt:
     ) -> TranscriptDraft:
         handle = self.preserve_audio(data, filename=filename, content_type=content_type)
         return self.transcribe(handle.audio_id)
+
+
+def smoke_transcribe_file(path: Path) -> dict:
+    """CLI helper — opaque status only (includes transcript length, not body by default)."""
+    stt = FasterWhisperCaptureStt()
+    data = path.read_bytes()
+    draft = stt.preserve_and_transcribe(data, filename=path.name)
+    return {
+        "ok": True,
+        "provider": stt.provider_key,
+        "health": stt.health().__dict__,
+        "audio_id": draft.audio_id,
+        "text_len": len(draft.text or ""),
+        "text_preview": (draft.text or "")[:120],
+        "language": draft.language,
+    }
