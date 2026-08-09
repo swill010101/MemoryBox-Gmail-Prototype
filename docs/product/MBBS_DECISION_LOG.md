@@ -7,6 +7,57 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
+## Increment 4 — Ask + Query Planner + basic contextual follow-up
+
+**Date:** 2026-08-09  
+**Authorization:** Build Increment 4 only (locked definition)  
+**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) — **BUILT; desktop prove PASS; FlightSim final PENDING**  
+**Next increment:** Not started (requires I4 fully accepted + explicit authorization)
+
+### Decisions discovered during build
+
+| Decision | Rationale |
+|----------|-----------|
+| Template/structured answers from Evidence + provider hits (no free-form invention) | Evidence First / No False Memories; LLM optional via LlmProvider only |
+| In-memory `ContextStore` protocol | I4 session; clean contract for later persistence |
+| `MEMORYBOX_PHOTO_PROVIDER=unavailable` + harness `UnavailablePhotoProvider` for I4-G | Deliberate degradation without taking family Immich offline |
+| `MEMORYBOX_P1_RUNTIME_HOST=1` required with `--flightsim` | Prevents desktop from claiming P1-runtime final acceptance |
+| Proper-noun lexical constraints on Evidence retrieval | Stops weak keyword/semantic hits from “answering” nonsense asks |
+| Thin static Ask shell | Locked: functional only, no polish |
+| **Intent-oriented visual semantics** | Broad “show me / pictures / images” → `visual_scope=broad` (stills+video intent); “photos” may narrow to stills; “videos” → video only; “show me” ≠ media type. I4 executes available stills only; **no HVRT/video build**. Contract fields enable later video without NL/architecture change |
+
+### Change-impact check
+
+| Layer | Impact? |
+|-------|---------|
+| EVS | 005/006 exercised (shaped asks) |
+| UX | Thin Ask shell + breadcrumb / clear-change |
+| Domain | Session context contract only (no new SoT tables) |
+| Experience Flow | EF-01, EF-02 basic, EF-04 thin |
+| Architecture | Planner + orchestrator + providers |
+| Build Spec | Inc 4 built; final accept pending FlightSim |
+| Locked decisions | D2/D3/D6/D7 aligned |
+
+### Specs changed
+
+| Spec | Change |
+|------|--------|
+| I4 definition | Status → built / awaiting FlightSim final; **§0.1 intent-oriented visual semantics locked** |
+| This log | Inc 4 section + visual semantic rule |
+| MBBS-001 | Inc 4 status |
+| Ops | FlightSim I4 acceptance runbook |
+| Planner | `visual_scope` / want_still / want_video contract |
+
+### Intentional tech debt
+
+| Item | Why acceptable |
+|------|----------------|
+| Process-session context only | Locked for I4; protocol ready for persistence |
+| Heuristic planner (regex) v0 | Sufficient for EF-02 basic; not multi-agent |
+| POC Immich client earn-in behind PhotoProvider | Matches Inc 2 pattern |
+
+---
+
 ## Increment 3 — Email + Calendar → Evidence + derived Qdrant
 
 **Date:** 2026-08-09  

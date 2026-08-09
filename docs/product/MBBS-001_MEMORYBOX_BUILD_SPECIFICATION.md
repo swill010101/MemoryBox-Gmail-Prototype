@@ -12,7 +12,8 @@
 **Increment 2:** Authorized and **accepted** — see [MBBS-001_INCREMENT_2_ACCEPTANCE.md](MBBS-001_INCREMENT_2_ACCEPTANCE.md).  
 **Increment 3:** Authorized and **accepted** — [definition](MBBS-001_INCREMENT_3_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_3_ACCEPTANCE.md).  
 **FlightSim I1–I3 checkpoint:** **PASSED** — [MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md](MBBS-001_FLIGHTSIM_I1_I3_CHECKPOINT.md).  
-**Media-Server Sources checkpoint:** **PASSED** — [MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md](MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md). **Increment 4+:** not started. SMS deferred (staged under Sources only).
+**Media-Server Sources checkpoint:** **PASSED** — [MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md](MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md).  
+**Increment 4:** **BUILT** — [definition](MBBS-001_INCREMENT_4_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_4_ACCEPTANCE.md) (desktop prove PASS; **FlightSim final PENDING**). SMS deferred (staged under Sources only).
 
 
 ### Revision note (v0.3)
@@ -420,9 +421,10 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increments 1–3 accepted.**  
-2. **Do not begin Increment 4** until Tom explicitly authorizes *Build Increment 4 only*.  
-3. SMS remains deferred per I3 acceptance — keep on P1 roadmap.  
-4. When authorized: implement **only** Increment 4, demonstrate acceptance, update decision log / specs, then stop.
+1. **Increment 4 built**; desktop prove **PASS**.  
+2. **Complete FlightSim final acceptance** — [FLIGHTSIM_I4_ACCEPTANCE_RUNBOOK.md](../ops/FLIGHTSIM_I4_ACCEPTANCE_RUNBOOK.md) / `scripts/flightsim_accept_i4.ps1`.  
+3. Mark I4 **ACCEPTED** only after FlightSim `"ok": true`.  
+4. **Do not begin Increment 5** until Tom explicitly authorizes *Build Increment 5 only* after I4 acceptance.  
+5. SMS remains deferred — keep on P1 roadmap.
 
 **Unauthorized increments must not start.**

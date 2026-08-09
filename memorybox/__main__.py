@@ -27,6 +27,15 @@ def main(argv: list[str] | None = None) -> int:
     p_cal.add_argument("--limit", type=int, default=None)
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
+    p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
+    p_ask.add_argument("text", help="Ask text")
+    p_ask.add_argument("--session", default=None)
+    p_prove4 = sub.add_parser("prove-ask", help="Increment 4 acceptance prove")
+    p_prove4.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (requires Immich + configured env)",
+    )
     p_serve = sub.add_parser("serve", help="Run uvicorn")
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
@@ -92,6 +101,20 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.acceptance import prove_increment_3
 
         payload = prove_increment_3()
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "ask":
+        from memorybox.ask.orchestrator import AskOrchestrator
+
+        result = AskOrchestrator().ask(args.text, session_id=args.session)
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
+
+    if args.cmd == "prove-ask":
+        from memorybox.ask.acceptance import prove_increment_4
+
+        payload = prove_increment_4(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

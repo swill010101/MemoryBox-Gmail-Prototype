@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Ask</title>
+  <style>
+    :root {
+      --bg: #f3f0e8;
+      --ink: #1c1a16;
+      --line: #c9c2b4;
+      --accent: #2f5d50;
+      --warn: #8a3b12;
+      --panel: #fffcf6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; letter-spacing: 0.02em; }
+    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
+    .bar { display: flex; gap: 0.5rem; }
+    #askInput {
+      flex: 1;
+      padding: 0.7rem 0.8rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font-size: 1rem;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.65rem 0.9rem;
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    #breadcrumb {
+      margin: 0.85rem 0;
+      padding: 0.55rem 0.7rem;
+      border: 1px dashed var(--line);
+      background: rgba(255,252,246,0.7);
+      min-height: 2.2rem;
+      font-size: 0.9rem;
+    }
+    #breadcrumb:empty::before { content: "Context: (none)"; color: #7a766c; }
+    .crumb { display: inline-block; margin-right: 0.6rem; }
+    .crumb b { font-weight: 600; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    section h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .muted { color: #6a655c; font-size: 0.85rem; }
+    ul { margin: 0.25rem 0; padding-left: 1.2rem; }
+    code { font-size: 0.8rem; }
+    #sessionId { font-size: 0.75rem; color: #6a655c; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Ask</h1>
+    <p class="sub">Thin functional shell (Increment 4) — Evidence-backed answers; no visual polish.</p>
+    <div class="bar">
+      <input id="askInput" type="text" placeholder="Ask about your archive…" autocomplete="off" />
+      <button id="askBtn" type="button">Ask</button>
+    </div>
+    <div id="breadcrumb" aria-live="polite"></div>
+    <div class="row">
+      <button class="secondary" id="clearBtn" type="button">Clear context</button>
+      <button class="secondary" id="changeBtn" type="button">Change context…</button>
+      <span id="sessionId"></span>
+    </div>
+    <section>
+      <h2>Answer</h2>
+      <div id="answer" class="muted">Submit an ask to see results.</div>
+    </section>
+    <section>
+      <h2>Results</h2>
+      <div id="results" class="muted">—</div>
+    </section>
+    <section>
+      <h2>Evidence / citations</h2>
+      <div id="citations" class="muted">—</div>
+    </section>
+    <section>
+      <h2>Provider status</h2>
+      <pre id="providers" class="muted" style="white-space:pre-wrap;margin:0;">—</pre>
+    </section>
+  </main>
+  <script>
+    let sessionId = localStorage.getItem("mb_ask_session") || "";
+
+    function renderBreadcrumb(ctx) {
+      const el = document.getElementById("breadcrumb");
+      el.innerHTML = "";
+      const crumbs = (ctx && ctx.breadcrumb) || [];
+      if (!crumbs.length) return;
+      crumbs.forEach(c => {
+        const span = document.createElement("span");
+        span.className = "crumb";
+        span.innerHTML = `<b>${c.kind}</b>: ${c.value}`;
+        el.appendChild(span);
+      });
+    }
+
+    function renderResult(data) {
+      sessionId = data.session_id;
+      localStorage.setItem("mb_ask_session", sessionId);
+      document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
+      renderBreadcrumb(data.context);
+      const ans = document.getElementById("answer");
+      const kind = data.answer_kind || "";
+      ans.innerHTML = "";
+      if (kind === "provider_unavailable" || (data.provider_status && data.provider_status.photo_search && data.provider_status.photo_search.unavailable)) {
+        const w = document.createElement("p");
+        w.className = "warn";
+        w.textContent = "Photo provider unavailable (not “no photos”).";
+        ans.appendChild(w);
+      }
+      if (data.missing_disclosure) {
+        const m = document.createElement("p");
+        m.className = "warn";
+        m.textContent = data.missing_disclosure;
+        ans.appendChild(m);
+      }
+      const p = document.createElement("p");
+      p.textContent = data.answer_text || "";
+      ans.appendChild(p);
+
+      const results = document.getElementById("results");
+      const ev = data.evidence_hits || [];
+      const ph = data.photo_hits || [];
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · kind=${kind}</p><ul>`;
+      ev.slice(0, 12).forEach(h => {
+        html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
+      });
+      ph.slice(0, 12).forEach(h => {
+        html += `<li>[photo] <code>${h.external_id}</code></li>`;
+      });
+      html += "</ul>";
+      results.innerHTML = html;
+
+      const cit = document.getElementById("citations");
+      const citations = data.citations || [];
+      if (!citations.length) {
+        cit.textContent = "No citations (system status / insufficient disclosure only).";
+      } else {
+        cit.innerHTML = "<ul>" + citations.map(c => {
+          if (c.kind === "evidence") {
+            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind})</li>`;
+          }
+          return `<li>Photo <code>${c.external_id}</code> (${c.provider_key})</li>`;
+        }).join("") + "</ul>";
+      }
+      document.getElementById("providers").textContent = JSON.stringify(data.provider_status || {}, null, 2);
+    }
+
+    async function doAsk() {
+      const text = document.getElementById("askInput").value.trim();
+      if (!text) return;
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ask: text, session_id: sessionId || null }),
+      });
+      const data = await res.json();
+      renderResult(data);
+    }
+
+    async function clearContext() {
+      if (!sessionId) return;
+      const res = await fetch(`/ask/context/${sessionId}`, { method: "DELETE" });
+      const data = await res.json();
+      renderBreadcrumb(data.context);
+      document.getElementById("answer").textContent = "Context cleared.";
+    }
+
+    async function changeContext() {
+      if (!sessionId) {
+        alert("Ask once first to create a session.");
+        return;
+      }
+      const person = prompt("Set person names (comma-separated), or leave blank to clear people:", "");
+      if (person === null) return;
+      const place = prompt("Set place names (comma-separated), or leave blank to clear places:", "");
+      if (place === null) return;
+      const body = {
+        person_names: person.split(",").map(s => s.trim()).filter(Boolean),
+        place_names: place.split(",").map(s => s.trim()).filter(Boolean),
+      };
+      const res = await fetch(`/ask/context/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      renderBreadcrumb(data.context);
+    }
+
+    document.getElementById("askBtn").addEventListener("click", doAsk);
+    document.getElementById("askInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doAsk();
+    });
+    document.getElementById("clearBtn").addEventListener("click", clearContext);
+    document.getElementById("changeBtn").addEventListener("click", changeContext);
+
+    (async () => {
+      if (!sessionId) return;
+      try {
+        const res = await fetch(`/ask/context/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          renderBreadcrumb(data.context);
+          document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
+        }
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>
