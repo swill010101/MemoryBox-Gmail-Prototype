@@ -660,12 +660,27 @@ def set_mem_bank_state(
     return get_mem_bank_state(conn)
 
 
-def arm_mem_sends(conn: sqlite3.Connection, *, enabled: bool, now: datetime | None = None) -> dict[str, Any]:
-    """Turn sends on/off. When turning on, first new question is tomorrow."""
+def arm_mem_sends(
+    conn: sqlite3.Connection,
+    *,
+    enabled: bool,
+    now: datetime | None = None,
+    hour: int = 1,
+    minute: int = 0,
+) -> dict[str, Any]:
+    """Turn sends on/off. When turning on, arm the next local send slot (hour:minute).
+
+    If still before today's send time, first send is today; otherwise tomorrow.
+    """
     now = now or datetime.now()
     if enabled:
-        tomorrow = (now.date() + timedelta(days=1)).isoformat()
-        return set_mem_bank_state(conn, sends_enabled=1, next_initial_date=tomorrow)
+        if (now.hour, now.minute) < (int(hour), int(minute)):
+            first = now.date()
+        else:
+            first = now.date() + timedelta(days=1)
+        return set_mem_bank_state(
+            conn, sends_enabled=1, next_initial_date=first.isoformat()
+        )
     return set_mem_bank_state(conn, sends_enabled=0)
 
 

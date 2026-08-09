@@ -30,12 +30,13 @@
       </thead>
       <tbody></tbody>
     </table>
-    <p class="keys-note">After capture, Marvin moves the message to Gmail Trash. MEM bank: when sends are ON, first email is <strong>tomorrow 01:00</strong>, then <strong>every other day</strong>. Unanswered get one resend after 7 days.</p>
+    <p class="keys-note">After capture, Marvin moves the message to Gmail Trash. MEM bank: when sends are ON, the next question goes out at the next <strong>01:00 local</strong> slot (PC clock), then every other day. Use <strong>Send next now</strong> to test. Unanswered get one resend after 7 days.</p>
   </section>
 
   <section class="batch-bar" aria-label="MEM bank actions">
     <span class="batch-label">MEM bank</span>
     <button type="button" id="btn-mem-sends" class="ghost" aria-pressed="false">MEM sends: …</button>
+    <button type="button" id="btn-mem-send-now" class="ghost">Send next now</button>
     <button type="button" id="btn-mem-open-questions" class="ghost">Open questions JSON</button>
     <button type="button" id="btn-mem-validate" class="ghost">Validate questions</button>
     <button type="button" id="btn-mem-extract" class="primary">Extract MEM</button>

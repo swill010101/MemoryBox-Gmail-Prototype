@@ -270,19 +270,29 @@ def api_mem_status() -> dict[str, Any]:
     state = store.get_mem_bank_state(_db)
     qpath = bank.get("questions_file")
     sends_on = store.mem_sends_are_enabled(_db, _cfg)
+    hour = int(bank.get("hour", 1))
+    minute = int(bank.get("minute", 0))
     return {
         "enabled": sends_on,
         "config_enabled": bool(bank.get("enabled")),
         "sends_enabled": state.get("sends_enabled"),
         "next_initial_date": state.get("next_initial_date"),
+        "last_tick_date": state.get("last_tick_date"),
         "questions_file": qpath,
         "questions_file_exists": bool(qpath and Path(qpath).is_file()),
-        "hour": bank.get("hour"),
-        "minute": bank.get("minute"),
+        "hour": hour,
+        "minute": minute,
         "interval_days": bank.get("interval_days", 2),
         "resend_after_days": bank.get("resend_after_days", 7),
         "state": state,
         "id_rule": "Questions must be numbered contiguously 1..N",
+        "hint": (
+            f"Next new question: {state.get('next_initial_date') or '—'} "
+            f"at {hour:02d}:{minute:02d} local (PC clock). "
+            f"Worker must be running with --poll."
+            if sends_on
+            else "MEM sends are OFF."
+        ),
     }
 
 
@@ -290,17 +300,26 @@ def api_mem_status() -> dict[str, Any]:
 def api_mem_sends(body: MemSendsIn) -> dict[str, Any]:
     """Turn MEM question-bank email sends on or off (persisted).
 
-    When turned ON, the first new question is scheduled for tomorrow at 01:00.
+    When turned ON, arms the next local send slot (today if still before hour:minute,
+    otherwise tomorrow).
     """
-    state = store.arm_mem_sends(_db, enabled=body.enabled)
+    bank = _cfg.get("mem_bank") or {}
+    hour = int(bank.get("hour", 1))
+    minute = int(bank.get("minute", 0))
+    state = store.arm_mem_sends(
+        _db, enabled=body.enabled, hour=hour, minute=minute
+    )
     _db.commit()
+    when = state.get("next_initial_date")
     return {
         "ok": True,
         "enabled": bool(body.enabled),
-        "next_initial_date": state.get("next_initial_date"),
+        "next_initial_date": when,
         "state": state,
         "hint": (
-            f"First new question on {state.get('next_initial_date')} at 01:00; then every other day."
+            f"Armed. First new question on {when} at {hour:02d}:{minute:02d} local "
+            f"(PC clock), then every {bank.get('interval_days', 2)} day(s). "
+            f"Marvin Capture must stay running (deploy --poll). Use Send next now to test."
             if body.enabled
             else "MEM question emails paused."
         ),

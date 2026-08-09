@@ -58,8 +58,16 @@ def test_every_other_day_resend_once_and_complete(tmp_path: Path):
     client = FakeGmailClient()
     conn = store.init_db(cfg["sqlite_path"])
 
-    # Turn on Aug 9 → first send tomorrow Aug 10
-    store.arm_mem_sends(conn, enabled=True, now=datetime(2026, 8, 9, 12, 0))
+    # Turn on Aug 9 noon → first send tomorrow Aug 10 (already past 01:00)
+    store.arm_mem_sends(
+        conn, enabled=True, now=datetime(2026, 8, 9, 12, 0), hour=1, minute=0
+    )
+    assert store.get_mem_bank_state(conn)["next_initial_date"] == "2026-08-10"
+
+    # Turn on Aug 10 00:30 → still before 01:00 → first send today
+    store.arm_mem_sends(
+        conn, enabled=True, now=datetime(2026, 8, 10, 0, 30), hour=1, minute=0
+    )
     assert store.get_mem_bank_state(conn)["next_initial_date"] == "2026-08-10"
 
     # Aug 10 01:05 — Q1
@@ -146,6 +154,17 @@ def test_validate_questions_ok_and_gap(tmp_path: Path):
     report = validate_questions_file(bad)
     assert report["ok"] is False
     assert any("contiguous" in e or "missing" in e for e in report["errors"])
+
+
+def test_force_tick_sends_even_if_next_initial_in_future(tmp_path: Path):
+    cfg = _cfg(tmp_path, [{"id": 1, "text": "Force me?"}])
+    client = FakeGmailClient()
+    conn = store.init_db(cfg["sqlite_path"])
+    store.set_mem_bank_state(conn, sends_enabled=1, next_initial_date="2026-08-20")
+    r = tick_mem_bank(conn, client, cfg, now=datetime(2026, 8, 10, 15, 0), force=True)
+    assert any(a["kind"] == "initial" and a["question_id"] == 1 for a in r["actions"])
+    assert len(client.sent) >= 1
+    conn.close()
 
 
 def test_voice_only_promotes_whisper_to_answer(tmp_path: Path, monkeypatch):

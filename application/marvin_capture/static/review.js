@@ -11,6 +11,7 @@
   const btnMemOpenQuestions = document.getElementById("btn-mem-open-questions");
   const btnMemValidate = document.getElementById("btn-mem-validate");
   const btnMemSends = document.getElementById("btn-mem-sends");
+  const btnMemSendNow = document.getElementById("btn-mem-send-now");
   const memStatus = document.getElementById("mem-status");
   const addressTableBody = document.querySelector("#address-table tbody");
   let memSendsOn = false;
@@ -24,6 +25,11 @@
     const data = await fetchJSON("/api/mem/status");
     memSendsOn = Boolean(data.enabled);
     renderMemSendsButton();
+    if (data.hint) memStatus.textContent = data.hint;
+    if (data.enabled && data.questions_file_exists === false) {
+      memStatus.textContent =
+        "MEM sends ON but questions file missing — create config/mem_questions.json";
+    }
     return data;
   }
 
@@ -234,6 +240,30 @@
         memSendsOn = Boolean(data.enabled);
         renderMemSendsButton();
         memStatus.textContent = data.hint || (memSendsOn ? "MEM sends ON" : "MEM sends OFF");
+      })
+      .catch((e) => {
+        memStatus.textContent = e.message;
+      });
+  });
+  btnMemSendNow.addEventListener("click", () => {
+    memStatus.textContent = "Sending next MEM question…";
+    fetchJSON("/api/mem/tick?force=true", { method: "POST" })
+      .then((data) => {
+        const actions = data.actions || [];
+        if (data.skipped) {
+          memStatus.textContent = `Skipped: ${data.reason || "unknown"}`;
+        } else if (!actions.length) {
+          memStatus.textContent =
+            "Tick ran — no new question to send (all initials sent, or none due).";
+        } else {
+          const parts = actions.map((a) =>
+            a.kind === "initial" || a.kind === "resend"
+              ? `${a.kind} Q${a.question_id}`
+              : a.kind
+          );
+          memStatus.textContent = `Sent: ${parts.join(", ")}. Check Gmail (and spam).`;
+        }
+        return refreshMemStatus();
       })
       .catch((e) => {
         memStatus.textContent = e.message;

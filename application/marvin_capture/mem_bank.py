@@ -318,9 +318,13 @@ def tick_mem_bank(
     # 2) New question every interval_days, starting on next_initial_date (set when armed)
     next_initial = _parse_day(state.get("next_initial_date"))
     send_new = False
-    if force and next_initial is None:
+    if force:
+        # Manual/API force: send next unsent question now (catch-up / test)
         send_new = True
     elif next_initial is not None and today_d >= next_initial:
+        send_new = True
+    elif next_initial is None and store.mem_sends_are_enabled(conn, cfg):
+        # Armed in older builds without a date — treat as due today
         send_new = True
 
     if send_new:
