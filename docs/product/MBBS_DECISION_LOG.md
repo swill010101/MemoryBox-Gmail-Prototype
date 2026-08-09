@@ -7,6 +7,101 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
+## Increment 3 — Email + Calendar → Evidence + derived Qdrant
+
+**Date:** 2026-08-09  
+**Authorization:** Build Increment 3 only (final scope: email + calendar; SMS deferred)  
+**Acceptance:** [MBBS-001_INCREMENT_3_ACCEPTANCE.md](MBBS-001_INCREMENT_3_ACCEPTANCE.md) — **ACCEPTED**  
+**Next increment:** Not started (requires explicit authorization)
+
+### Decisions discovered during build
+
+| Decision | Rationale |
+|----------|-----------|
+| `evidence_kind=communication` for email; `calendar_event` for calendar | Owner lock — event-oriented kind ≠ communication |
+| No `communications` table | Locked; Source + Evidence + payload contracts |
+| SMS deferred with Inc 9 / later comms anchor | Final I3 scope |
+| Qdrant `:memory:` allowed for desktop prove via config | D7 — network URL on P1 runtime host |
+| Fake token-hash embeddings when Ollama unset | Deterministic I3-D retrieval without requiring live LLM |
+| Real smoke optional via `MEMORYBOX_SMOKE_*_URI` | Where practical; none available on this host at acceptance |
+| `MEMORYBOX_ALLOW_DEV_DEFAULTS` for desktop only | FlightSim must set explicit URLs |
+
+### Change-impact check
+
+| Layer | Impact? |
+|-------|---------|
+| EVS | No Ask yet |
+| UX | No |
+| Domain | Email/calendar Evidence payload conventions |
+| Experience Flow | EF-05/14 thin |
+| Architecture | Ingest + derived Qdrant; D7 |
+| Build Spec | Inc 3 accepted; SMS deferred noted |
+| Locked decisions | D2/D3/D7 aligned |
+
+### Specs changed
+
+| Spec | Change |
+|------|--------|
+| I3 definition | Final email+calendar scope |
+| MBBS-001 | Inc 3 accepted; SMS deferred |
+| This log | Inc 3 section |
+
+---
+
+## Cross-cutting — D7 P1 deployment (2026-08-09; updated same day)
+
+**Authorization:** Owner lock (not tied to a single increment build)  
+**Status:** **LOCKED** as [D7](../source/MB_LOCKED_DECISIONS_P1.md)
+
+| Decision | Detail |
+|----------|--------|
+| P1 runtime host | **FlightSim** — MemoryBox **application** + MemoryBox-owned services |
+| MB-owned on FlightSim | PostgreSQL, Qdrant, local Ollama/model service **where practical** |
+| Media host | **media-server** — Immich, Plex, photos, videos, related media storage/libraries |
+| Media access | Remote via **provider interfaces** + configured network endpoints |
+| P1 non-goal | Do **not** move or duplicate media libraries onto FlightSim |
+| Development | May continue on **dev box**; **Increment 3+** must deploy to FlightSim **without source-code changes** |
+| Config rule | No hard-coded FlightSim, media-server, localhost, drive letters, IPs, credentials, or dev-machine paths in application logic |
+| Git | Deployable app code only; exclude secrets, runtime data, DBs, caches, machine-specific config |
+
+**Specs updated:** Locked decisions, P1 engineering rules, MBBS §2.2 / non-goals, I3 definition §0/§8.  
+**Code debt noted:** Inc 1/2 localhost **dev defaults** remain; must not be required for FlightSim — clear for I3-G.  
+**Increment 3:** Still **awaiting authorization** after definition review.  
+
+---
+
+## Increment 2 — Provider interfaces + first adapters
+
+**Date:** 2026-08-09  
+**Authorization:** Contingent on I1 synthetic gate (owner authorized I2 after Grandpa fixture passed)  
+**Acceptance:** [MBBS-001_INCREMENT_2_ACCEPTANCE.md](MBBS-001_INCREMENT_2_ACCEPTANCE.md) — **ACCEPTED**  
+**Next increment:** Increment 3 authorized and accepted (2026-08-09)
+
+### Decisions discovered during build
+
+| Decision | Rationale |
+|----------|-----------|
+| Providers live under `memorybox/providers/` | Matches monolith package; Inc 1 package root |
+| Photo/LLM/Email protocols + frozen DTOs | Prevent Immich/Ollama shapes leaking into domain |
+| `PhotoPersonRef.external_id` only — no `person_id` field | Hardens “never Immich UUID as Person PK” |
+| Immich/Ollama adapters import POC clients via path earn-in | Reuse without promoting POC as architecture |
+| Mbox reader reimplemented in-package (no SQLite write) | Email-read → DTO only; ingest dual-write deferred to Inc 3 |
+| Offline Fake photo/LLM for `prove-providers` | Acceptance without requiring live Immich/Ollama |
+
+### Change-impact check (this increment)
+
+| Layer | Impact? |
+|-------|---------|
+| EVS | No |
+| UX | No |
+| Domain | Mapping pattern exercised via `provider_identities` only |
+| Experience Flow | No |
+| Architecture | Provider adapter layer realized per MBAA/MBBS |
+| Build Spec | Yes — Inc 2 status |
+| Locked decisions | Aligns with D2 POC-as-adapter |
+
+---
+
 ## Increment 1 — Monolith + PostgreSQL domain v0
 
 **Date:** 2026-08-09  

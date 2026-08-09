@@ -6,7 +6,7 @@
 
 These rules govern **every** P1 increment. They do not replace MBPS / MBEVS / MBUX / MBDM / MBEF / MBAA; they constrain how we implement and how we keep those documents truthful.
 
-**Conflict rule:** If a requested change conflicts with a locked decision (D1–D6) or a higher-authority controlled specification, **stop and flag** for owner resolution. Do not silently supersede a controlled specification in code.
+**Conflict rule:** If a requested change conflicts with a locked decision (**D1–D7**) or a higher-authority controlled specification, **stop and flag** for owner resolution. Do not silently supersede a controlled specification in code.
 
 ---
 
@@ -44,6 +44,7 @@ During P1 development, approved product decisions discovered through implementat
 | **No Shortcuts That Create Future Migration Debt** | Thin P1 is fine. Temporary designs that contradict MBDM/MBAA and knowingly need replacement are **not** — especially IDs, provenance, provider boundaries, PostgreSQL, and relationships. |
 | **Test the User Outcome** | Unit/integration tests matter; acceptance asks whether the user can complete the EVS / Experience Flow. |
 | **Don't Optimize Before Measuring** | Measure before caching, denormalization, concurrency, or architectural complexity. |
+| **Host-portable configuration (D7)** | **FlightSim** = P1 host for MemoryBox app + owned services (PostgreSQL, Qdrant, Ollama where practical). **media-server** = media host (Immich, Plex, photo/video libraries) — access remotely via providers; do not move/duplicate media libs to FlightSim in P1. Dev box OK for development; **Inc 3+ deployable to FlightSim with zero source changes**. Never hard-code FlightSim, media-server, localhost, drive letters, IPs, credentials, or machine paths in application logic — env/config only. Git = app code; exclude secrets/runtime data/DBs/caches/machine config. |
 
 ---
 
@@ -67,7 +68,7 @@ During P1 development, approved product decisions discovered through implementat
 4. **Experience Flow (MBEF-001)** — Do flow steps or completion conditions change?  
 5. **Architecture (MBAA-001)** — Do modules, providers, storage, or job boundaries change?  
 6. **Build Spec (MBBS-001)** — Do increments, acceptance, or sequencing change?  
-7. **Locked decisions** — Any conflict with D1–D6? If yes → **stop**.
+7. **Locked decisions** — Any conflict with **D1–D7**? If yes → **stop**.
 
 Propagate updates to every checked box **before** marking the increment accepted.
 

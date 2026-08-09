@@ -31,7 +31,7 @@ DOMAIN_V0_TABLES = (
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 1: skeleton + domain v0.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 3: email+calendar Evidence + derived index.",
 )
 
 
@@ -108,7 +108,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 1,
+        "increment": 3,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -122,7 +122,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 1,
+        "increment": 3,
         "version": __version__,
         "health": "/health",
     }

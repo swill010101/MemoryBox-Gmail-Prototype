@@ -1,0 +1,132 @@
+"""Shared ingest helpers: jobs + Source/Evidence writes (PostgreSQL only)."""
+from __future__ import annotations
+
+import json
+from typing import Any
+from uuid import UUID
+
+from memorybox.db import connection
+
+
+def start_job(job_kind: str, *, message: str = "", payload: dict | None = None) -> UUID:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO jobs (job_kind, status, message, payload_json, started_at)
+            VALUES (%s, 'running', %s, %s::jsonb, now())
+            RETURNING id
+            """,
+            (job_kind, message, json.dumps(payload or {})),
+        ).fetchone()
+        assert row is not None
+        return row["id"]
+
+
+def finish_job(
+    job_id: UUID,
+    *,
+    status: str,
+    message: str = "",
+    error_message: str | None = None,
+) -> None:
+    with connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = %s, message = %s, error_message = %s,
+                finished_at = now(), updated_at = now()
+            WHERE id = %s
+            """,
+            (status, message, error_message, job_id),
+        )
+
+
+def upsert_source(
+    *,
+    source_kind: str,
+    label: str,
+    uri: str,
+    metadata: dict[str, Any],
+) -> UUID:
+    with connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM sources WHERE uri = %s AND source_kind = %s LIMIT 1",
+            (uri, source_kind),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE sources
+                SET label = %s, metadata_json = %s::jsonb, updated_at = now()
+                WHERE id = %s
+                """,
+                (label, json.dumps(metadata), existing["id"]),
+            )
+            return existing["id"]
+        row = conn.execute(
+            """
+            INSERT INTO sources (
+                source_kind, label, uri, authoritative_original_mode, metadata_json
+            )
+            VALUES (%s, %s, %s, 'referenced', %s::jsonb)
+            RETURNING id
+            """,
+            (source_kind, label, uri, json.dumps(metadata)),
+        ).fetchone()
+        assert row is not None
+        return row["id"]
+
+
+def evidence_exists_by_hash(source_id: UUID, content_hash: str) -> UUID | None:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM evidence
+            WHERE source_id = %s AND payload_json->>'content_hash' = %s
+            LIMIT 1
+            """,
+            (source_id, content_hash),
+        ).fetchone()
+        return row["id"] if row else None
+
+
+def insert_evidence(
+    *,
+    evidence_kind: str,
+    source_id: UUID,
+    summary: str,
+    payload: dict[str, Any],
+) -> UUID:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO evidence (evidence_kind, source_id, summary, payload_json)
+            VALUES (%s, %s, %s, %s::jsonb)
+            RETURNING id
+            """,
+            (evidence_kind, source_id, summary, json.dumps(payload)),
+        ).fetchone()
+        assert row is not None
+        return row["id"]
+
+
+def list_indexable_evidence() -> list[dict[str, Any]]:
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json, source_id
+            FROM evidence
+            WHERE evidence_kind IN ('communication', 'calendar_event')
+            ORDER BY created_at
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_evidence(evidence_id: UUID) -> dict[str, Any] | None:
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT id, evidence_kind, summary, payload_json, source_id FROM evidence WHERE id = %s",
+            (evidence_id,),
+        ).fetchone()
+        return dict(row) if row else None

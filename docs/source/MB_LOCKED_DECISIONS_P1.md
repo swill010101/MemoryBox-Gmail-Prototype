@@ -15,6 +15,7 @@ These decisions govern [MBBS-001](../product/MBBS-001_MEMORYBOX_BUILD_SPECIFICAT
 | **D4** | HVRT runs as a **sibling background worker** behind the **Video Intelligence Provider** interface (same logical product; separate process) | **YES** — sibling worker |
 | **D5** | P1 EVS gate: communications + Immich photo Ask + Story voice versions + Review teach first; **EVS-014 remains P1** but is **sequenced later within P1** (after Person & Identity) | **YES** |
 | **D6** | P1 is **single-owner** (multi-user / family permissions deferred) | **YES** |
+| **D7** | **P1 deployment topology + portability:** (1) **FlightSim** is the defined P1 runtime host for the MemoryBox **application** and MemoryBox-owned runtime services — including **PostgreSQL**, **Qdrant**, and local **Ollama**/model service where practical. (2) **media-server** remains the **media host**; Immich, Plex, photos, videos, and related media libraries/storage stay on media-server — MemoryBox accesses them **remotely** via provider interfaces and configured network endpoints; **do not** move or duplicate media libraries onto FlightSim in P1. (3) Development may continue on the **dev box**, but **Increment 3+** must be **deployable to FlightSim without source-code changes**. (4) All host/service locations are **configuration-driven** — do not hard-code FlightSim, media-server, localhost, Windows drive letters, IP addresses, credentials, or development-machine paths into application logic. (5) **Git** = deployable app code only; secrets, runtime data, databases, caches, and machine-specific config excluded from Git | **YES** |
 
 ## MBBS-001 v0.2 founder revisions (2026-08-09)
 
@@ -35,3 +36,4 @@ Standing process/trust rules approved; see [MB_P1_ENGINEERING_RULES.md](MB_P1_EN
 - MBD-001 “keep existing POC databases” applies to the **demonstrator**, not the production app. Production follows MBAA + D2/D3.  
 - Do not push archive takeout/mbox or `hvrt/sample` media via git (see root `.gitignore` and [`../GIT_SYNC.md`](../GIT_SYNC.md)).  
 - Build **only** the owner-authorized MBBS increment; demonstrate acceptance; update living specs; then stop.  
+- **D7:** Same Git tree: develop on desktop; deploy to **FlightSim** (app + PG + Qdrant + Ollama where practical) by config only from Increment 3 onward. Media libraries stay on **media-server**; Immich/etc. reached via configured provider endpoints — never bake hostnames, IPs, drive letters, or credentials into application logic; never commit secrets or host-local paths as required product defaults.  

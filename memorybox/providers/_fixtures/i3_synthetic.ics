@@ -1,0 +1,24 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//MemoryBox//I3 Synthetic//EN
+BEGIN:VEVENT
+UID:i3-synthetic-event-001@memorybox.test
+DTSTAMP:20260809T120000Z
+DTSTART:20261225T180000Z
+DTEND:20261225T210000Z
+SUMMARY:I3 Synthetic Christmas Dinner
+LOCATION:Family Home
+DESCRIPTION:Synthetic calendar fixture for Increment 3 acceptance. Not real family data.
+ORGANIZER:MAILTO:organizer@example.com
+ATTENDEE:MAILTO:guest@example.com
+END:VEVENT
+BEGIN:VEVENT
+UID:i3-synthetic-event-002@memorybox.test
+DTSTAMP:20260809T120000Z
+DTSTART:20260704T140000Z
+DTEND:20260704T160000Z
+SUMMARY:I3 Synthetic Picnic
+LOCATION:Park
+DESCRIPTION:Second synthetic event for retrieval tests.
+END:VEVENT
+END:VCALENDAR

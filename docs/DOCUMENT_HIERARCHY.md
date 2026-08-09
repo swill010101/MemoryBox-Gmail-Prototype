@@ -29,7 +29,7 @@ Operational / runbooks
 | Layer | Document | Location | Answers | Does not |
 |-------|----------|----------|---------|----------|
 | **Controlled specs** | MBPS / MBEVS v0.8 / MBUX v0.2 / MBDM / MBEF / MBAA | [`source/`](source/README.md) | What to build and how it is structured | Implementation tasks |
-| **P1 decisions** | [MB_LOCKED_DECISIONS_P1](source/MB_LOCKED_DECISIONS_P1.md) | `docs/source/` | Locked D1–D6 | Open debate |
+| **P1 decisions** | [MB_LOCKED_DECISIONS_P1](source/MB_LOCKED_DECISIONS_P1.md) | `docs/source/` | Locked **D1–D7** | Open debate |
 | **P1 engineering rules** | [MB_P1_ENGINEERING_RULES](source/MB_P1_ENGINEERING_RULES.md) | `docs/source/` | Living specs, increment discipline, trust | Product EVS content |
 | **Build spec** | [MBBS-001](product/MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) | `docs/product/` | Increments, acceptance, reuse | Product philosophy rewrite |
 | **Decision log** | [MBBS_DECISION_LOG](product/MBBS_DECISION_LOG.md) | `docs/product/` | Per-increment decisions/deviations | Spec authority |

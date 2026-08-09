@@ -8,7 +8,10 @@
 **Decision log:** [`MBBS_DECISION_LOG.md`](MBBS_DECISION_LOG.md)
 
 **Build only the authorized increment.** Do not begin the next increment without explicit owner authorization.  
-**Increment 1:** Authorized and **accepted** (synthetic persistence gate) — see [MBBS-001_INCREMENT_1_ACCEPTANCE.md](MBBS-001_INCREMENT_1_ACCEPTANCE.md) · tag `increment-1-accepted`. **Increment 2:** authorized 2026-08-09.
+**Increment 1:** Authorized and **accepted** (synthetic persistence gate) — see [MBBS-001_INCREMENT_1_ACCEPTANCE.md](MBBS-001_INCREMENT_1_ACCEPTANCE.md) · tag `increment-1-accepted`.  
+**Increment 2:** Authorized and **accepted** — see [MBBS-001_INCREMENT_2_ACCEPTANCE.md](MBBS-001_INCREMENT_2_ACCEPTANCE.md).  
+**Increment 3:** Authorized and **accepted** — [definition](MBBS-001_INCREMENT_3_DEFINITION.md) · [acceptance](MBBS-001_INCREMENT_3_ACCEPTANCE.md). **Increment 4+:** not started. SMS deferred (see I3 §4.1).
+
 
 ### Revision note (v0.3)
 
@@ -53,7 +56,7 @@ Traceability (from MBAA-001):
 Supporting: Founder's Book, MBBC, MBX-A-*, MBD-001, feature PRDs.  
 On conflict with controlled specs: **flag**, do not silently choose.
 
-### 2.2 Locked decisions (D1–D6)
+### 2.2 Locked decisions (D1–D7)
 
 | ID | Lock |
 |----|------|
@@ -63,12 +66,15 @@ On conflict with controlled specs: **flag**, do not silently choose.
 | D4 | HVRT = **sibling background worker** behind Video Intelligence Provider |
 | D5 | P1-first EVS gate; **EVS-014 stays P1**, sequenced **later within P1** |
 | D6 | **Single-owner** P1 |
+| D7 | **FlightSim** = P1 app + MB-owned services (PG, Qdrant, Ollama where practical); **media-server** = media host (Immich/Plex/libraries) via remote providers; Inc 3+ deployable without source changes; config-only locations; Git = code only |
 
 ### 2.3 Non-goals
 
 - Do not become a photo manager, generic RAG app, genealogy app, chatbot, or Immich replacement.  
 - Do not preserve multi-SQLite federation as the product model.  
 - Do not push archive takeout/mbox or `hvrt/sample` media via git.  
+- Do not hard-code FlightSim, media-server, localhost, drive letters, IP addresses, credentials, or machine-specific paths into application logic (**D7**).  
+- Do not move or duplicate media libraries from media-server onto FlightSim as part of P1 (**D7**).  
 - Do not implement multi-user or tone dial in P1.  
 - Do not require beautiful comprehensive export of every Immich-referenced original in P1 — **do** require minimum viable export (Increment 12).
 
@@ -83,6 +89,7 @@ Full text: [`MB_P1_ENGINEERING_RULES.md`](../source/MB_P1_ENGINEERING_RULES.md).
 - POC must **earn** reuse; **no premature generalization**; **no migration-debt shortcuts** (IDs, provenance, providers, PostgreSQL, relationships).  
 - **Originals/provenance sacred**; **derived data rebuildable**; **no false memories**; **human teaching durable**; **provider failure visible**.  
 - **Don't optimize before measuring**; **test user outcomes**; maintain **decision/deviation log**; **keep the app runnable**.  
+- **Host-portable (D7)** — FlightSim hosts app + PG/Qdrant/Ollama; media-server hosts Immich/media; Inc 3+ config-only deploy; Git excludes secrets and runtime data.  
 - Working software gets a vote — **not** the final vote: fix specs deliberately when wrong.  
 
 ---
@@ -186,28 +193,29 @@ Sibling process:
 | **Decision log** | [MBBS_DECISION_LOG.md](MBBS_DECISION_LOG.md) § Increment 1 |
 | **Risk** | Over-modeling — keep v0 minimal |
 
-### Increment 2 — Provider interfaces + first adapters
+### Increment 2 — Provider interfaces + first adapters — **ACCEPTED**
 
 | Field | Content |
 |-------|---------|
 | **Objective** | Stable capability interfaces; Immich, LLM (Ollama), Email-read adapters → MemoryBox DTOs |
-| **Modules** | `providers/` + immich, llm, email adapters |
-| **Reuse** | `immich_client.py`, `ollama_client.py`, retrieve read paths |
+| **Modules** | `memorybox/providers/` + immich, llm, email adapters |
+| **Reuse** | `immich_client.py`, `ollama_client.py`, mbox parse helpers — behind adapters |
 | **Dependencies** | 1 |
-| **Acceptance** | Domain code never uses Immich UUID as Person PK; all calls via interfaces |
-| **Risk** | Leaky DTOs |
+| **Acceptance** | Domain code never uses Immich UUID as Person PK; all calls via interfaces — **demonstrated** ([report](MBBS-001_INCREMENT_2_ACCEPTANCE.md)) |
+| **Risk** | Leaky DTOs — mitigated via `external_id` / `provider_key` only on person refs |
 
-### Increment 3 — Communications → Evidence
+### Increment 3 — Communications → Evidence — **ACCEPTED** (email + calendar; SMS deferred)
 
 | Field | Content |
 |-------|---------|
-| **Objective** | Import email (SMS/calendar where practical) into Source/Communication/Evidence; Qdrant as **derived** index |
-| **Modules** | ingest jobs, Evidence writes, **index rebuild hooks** |
-| **Reuse** | import_mbox / messages / calendar / embed_to_qdrant scripts |
+| **Objective** | Import **email** and **calendar** into Source/Evidence; Qdrant as **derived** index; SMS deferred |
+| **Modules** | `memorybox/ingest/` + calendar provider; rebuild hooks |
+| **Reuse** | mbox/ICS parse earn-in; embed path behind LlmProvider |
 | **Dependencies** | 1–2 |
 | **Flows** | EF-05 thin; EF-14 thin |
-| **Acceptance** | Messages as MB Evidence with Source provenance; originals untouched; **derived index rebuildable from PG + sources** |
-| **Risk** | Dual-write to POC SQLite — avoid; POC DB is read source only |
+| **Acceptance** | Email + calendar Evidence with provenance; originals untouched; Qdrant rebuildable from PG — **demonstrated** ([report](MBBS-001_INCREMENT_3_ACCEPTANCE.md)) |
+| **Risk** | Dual-write to POC SQLite — avoided |
+| **Deferred** | **SMS** → later communications increment / Inc 9 (must not drop from P1 plan) |
 
 ### Increment 4 — Ask + Query Planner + basic contextual follow-up
 
@@ -410,8 +418,9 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increment 1 is accepted.** Standing P1 engineering rules are in force (v0.3).  
-2. **Do not begin Increment 2** until Tom explicitly authorizes it.  
-3. When authorized: implement **only** Increment 2 (provider interfaces), demonstrate its acceptance, update the decision log and any affected specs, then stop.
+1. **Increments 1–3 accepted.**  
+2. **Do not begin Increment 4** until Tom explicitly authorizes *Build Increment 4 only*.  
+3. SMS remains deferred per I3 acceptance — keep on P1 roadmap.  
+4. When authorized: implement **only** Increment 4, demonstrate acceptance, update decision log / specs, then stop.
 
 **Unauthorized increments must not start.**
