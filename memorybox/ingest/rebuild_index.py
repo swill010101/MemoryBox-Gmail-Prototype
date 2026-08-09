@@ -75,7 +75,7 @@ def _embed_text(payload: dict[str, Any], summary: str, kind: str) -> str:
 
 
 def _llm_embedder(cfg: Settings):
-    """Prefer Fake embedder for deterministic acceptance; Ollama when configured + reachable."""
+    """Use Ollama when configured and embed works; otherwise Fake (deterministic prove)."""
     if not cfg.ollama_base_url:
         return FakeLlmProvider()
     try:
@@ -87,6 +87,8 @@ def _llm_embedder(cfg: Settings):
             embed_model=cfg.ollama_embed_model,
         )
         if p.health().ok:
+            # Probe embed — tags OK is not enough (404 on missing model/API).
+            p.embed("embed probe", purpose="document")
             return p
     except Exception:  # noqa: BLE001
         pass

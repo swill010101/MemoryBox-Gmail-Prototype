@@ -7,6 +7,18 @@ import urllib.request
 from typing import Any
 
 
+def _post_json(url: str, payload: dict[str, Any], *, timeout: int) -> dict[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
 def ollama_embed(
     base_url: str, model: str, text: str, *, query: bool = False, timeout: int = 120
 ) -> list[float]:
@@ -15,19 +27,41 @@ def ollama_embed(
     prompt = "".join(ch if (ord(ch) >= 32 or ch in "\n\t") else " " for ch in prompt)[
         :5000
     ]
-    payload = json.dumps({"model": model, "prompt": prompt}).encode("utf-8")
-    req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/api/embeddings",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.load(resp)
-    emb = data.get("embedding")
-    if not emb:
+    base = base_url.rstrip("/")
+
+    # Newer Ollama: POST /api/embed  {"model","input"}
+    try:
+        data = _post_json(
+            f"{base}/api/embed",
+            {"model": model, "input": prompt},
+            timeout=timeout,
+        )
+        emb = data.get("embeddings") or data.get("embedding")
+        if isinstance(emb, list) and emb and isinstance(emb[0], list):
+            emb = emb[0]
+        if emb:
+            return list(emb)
+    except urllib.error.HTTPError as e:
+        if e.code not in (404, 405):
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"ollama embed HTTP {e.code}: {body[:400]}") from e
+    except Exception:
+        pass
+
+    # Older Ollama: POST /api/embeddings  {"model","prompt"}
+    try:
+        data = _post_json(
+            f"{base}/api/embeddings",
+            {"model": model, "prompt": prompt},
+            timeout=timeout,
+        )
+        emb = data.get("embedding")
+        if emb:
+            return list(emb)
         raise RuntimeError("empty embedding")
-    return emb
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ollama embeddings HTTP {e.code}: {body[:400]}") from e
 
 
 def ollama_chat(
@@ -51,15 +85,10 @@ def ollama_chat(
     }
     if format_json:
         payload["format"] = "json"
-    req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/api/chat",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.load(resp)
+        data = _post_json(
+            f"{base_url.rstrip('/')}/api/chat", payload, timeout=timeout
+        )
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"ollama chat HTTP {e.code}: {body[:400]}") from e
