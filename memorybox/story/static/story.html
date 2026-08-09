@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox Story</title>
   <style>
-    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; }
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; --warn:#8a3b12; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -43,44 +43,48 @@
       margin-bottom: 0.75rem;
     }
     .muted { color: #6a655c; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
     code { font-size: 0.8rem; }
-    ul { padding-left: 1.1rem; }
+    #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <main>
     <h1>MemoryBox Story</h1>
     <p class="sub">Thin functional shell (Increment 5) — explicit Save; versions immutable; no visual polish. <a href="/ask/ui">Ask</a></p>
+    <p class="muted">First save: fill <b>Title</b>, <b>Narrator name</b>, and <b>Body</b> only. Leave Evidence/Person UUID fields <b>blank</b>.</p>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Create / Save Story</h2>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Create / Save Story</h2>
       <label for="title">Title</label>
       <input id="title" placeholder="Story title" />
-      <label for="narrator">Narrator display name</label>
-      <input id="narrator" placeholder="e.g. Owner" />
+      <label for="narrator">Narrator display name (text, not a UUID)</label>
+      <input id="narrator" placeholder="e.g. Tom" />
       <label for="body">Body (owner recollection)</label>
       <textarea id="body" placeholder="Write the recollection…"></textarea>
-      <label for="evidenceId">Related Evidence ID (optional UUID)</label>
-      <input id="evidenceId" placeholder="evidence UUID" />
-      <label for="personId">Related Person ID (optional UUID; narrator also associates)</label>
-      <input id="personId" placeholder="person UUID" />
+      <label for="evidenceId">Related Evidence ID — optional UUID only (leave blank)</label>
+      <input id="evidenceId" placeholder="leave blank" autocomplete="off" />
+      <label for="personId">Related Person ID — optional UUID only (leave blank; narrator is enough)</label>
+      <input id="personId" placeholder="leave blank" autocomplete="off" />
       <button id="saveBtn" type="button">Save Story</button>
       <p class="muted">AI content cannot be auto-saved. Save is explicit owner action only.</p>
+      <p>Last saved Story ID: <code id="lastId">(none yet)</code></p>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Edit / Save new version</h2>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Edit / Save new version</h2>
+      <p class="muted">Requires the Story ID from a successful Save above.</p>
       <label for="editId">Story ID</label>
-      <input id="editId" />
+      <input id="editId" placeholder="paste story id from Save result" />
       <label for="editBody">New body</label>
       <textarea id="editBody"></textarea>
       <button id="versionBtn" type="button">Save new version</button>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Retrieve</h2>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Retrieve</h2>
       <label for="getId">Story ID</label>
-      <input id="getId" />
+      <input id="getId" placeholder="paste story id" />
       <label for="getVer">Version (blank = current)</label>
       <input id="getVer" placeholder="e.g. 1" />
       <button id="getBtn" type="button">Get</button>
@@ -88,59 +92,100 @@
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result (opaque-friendly)</h2>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
       <pre id="out" class="muted">No action yet.</pre>
     </section>
   </main>
   <script>
     const out = document.getElementById("out");
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
     function show(data) {
       out.textContent = JSON.stringify(data, null, 2);
     }
+    function rememberId(id) {
+      if (!id) return;
+      document.getElementById("lastId").textContent = id;
+      document.getElementById("editId").value = id;
+      document.getElementById("getId").value = id;
+    }
+    function optionalUuid(raw, label) {
+      const v = (raw || "").trim();
+      if (!v) return null;
+      if (!UUID_RE.test(v)) {
+        throw { detail: label + " must be a UUID or left blank. Got: " + v };
+      }
+      return v;
+    }
     async function j(url, opts) {
       const r = await fetch(url, opts);
-      const data = await r.json();
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON response (" + r.status + ")" }; }
       if (!r.ok) throw data;
       return data;
     }
+
     document.getElementById("saveBtn").onclick = async () => {
       try {
-        const body = {
+        const bodyText = document.getElementById("body").value.trim();
+        if (!bodyText) {
+          show({ detail: "Body is required for Save Story." });
+          return;
+        }
+        const evidence = optionalUuid(document.getElementById("evidenceId").value, "Evidence ID");
+        const person = optionalUuid(document.getElementById("personId").value, "Person ID");
+        const payload = {
           title: document.getElementById("title").value,
-          body_text: document.getElementById("body").value,
-          narrator_display_name: document.getElementById("narrator").value || null,
-          evidence_ids: document.getElementById("evidenceId").value
-            ? [document.getElementById("evidenceId").value.trim()]
-            : [],
-          person_ids: document.getElementById("personId").value
-            ? [document.getElementById("personId").value.trim()]
-            : [],
+          body_text: bodyText,
+          narrator_display_name: document.getElementById("narrator").value.trim() || null,
+          evidence_ids: evidence ? [evidence] : [],
+          person_ids: person ? [person] : [],
         };
-        show(await j("/story", {
+        const data = await j("/story", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }));
+          body: JSON.stringify(payload),
+        });
+        const id = data && data.story && data.story.id;
+        rememberId(id);
+        show(data);
       } catch (e) { show(e); }
     };
+
     document.getElementById("versionBtn").onclick = async () => {
       try {
         const id = document.getElementById("editId").value.trim();
+        if (!UUID_RE.test(id)) {
+          show({ detail: "Paste a valid Story ID from a successful Save first (section 1)." });
+          return;
+        }
+        const bodyText = document.getElementById("editBody").value.trim();
+        if (!bodyText) {
+          show({ detail: "New body is required." });
+          return;
+        }
         show(await j("/story/" + encodeURIComponent(id) + "/versions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body_text: document.getElementById("editBody").value }),
+          body: JSON.stringify({ body_text: bodyText }),
         }));
       } catch (e) { show(e); }
     };
+
     document.getElementById("getBtn").onclick = async () => {
       try {
         const id = document.getElementById("getId").value.trim();
+        if (!UUID_RE.test(id)) {
+          show({ detail: "Paste a valid Story ID first." });
+          return;
+        }
         const v = document.getElementById("getVer").value.trim();
         const q = v ? ("?version=" + encodeURIComponent(v)) : "";
         show(await j("/story/" + encodeURIComponent(id) + q));
       } catch (e) { show(e); }
     };
+
     document.getElementById("listBtn").onclick = async () => {
       try { show(await j("/story")); }
       catch (e) { show(e); }

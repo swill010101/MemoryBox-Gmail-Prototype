@@ -64,6 +64,35 @@ class StoryServiceError(Exception):
     pass
 
 
+def _parse_uuid(value: str, *, field: str) -> UUID:
+    raw = (value or "").strip()
+    if not raw:
+        raise StoryServiceError(f"{field} is required")
+    try:
+        return UUID(raw)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise StoryServiceError(
+            f"{field} must be a UUID (got {raw!r}). "
+            "For a first Save, leave optional Evidence/Person ID fields blank."
+        ) from exc
+
+
+def _optional_uuids(values: list[str] | None, *, field: str) -> list[UUID]:
+    out: list[UUID] = []
+    for v in values or []:
+        raw = (v or "").strip()
+        if not raw:
+            continue
+        try:
+            out.append(UUID(raw))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise StoryServiceError(
+                f"{field} entries must be UUIDs (got {raw!r}). "
+                "Leave blank on first Save if you do not have an Evidence/Person UUID."
+            ) from exc
+    return out
+
+
 def _iso(v: Any) -> str | None:
     if v is None:
         return None
@@ -202,10 +231,13 @@ def create_story(
         )
 
     narrator_id: UUID | None = None
-    if narrator_person_id:
-        narrator_id = UUID(narrator_person_id)
+    if narrator_person_id and str(narrator_person_id).strip():
+        narrator_id = _parse_uuid(str(narrator_person_id), field="narrator_person_id")
     elif narrator_display_name:
         narrator_id = ensure_person(narrator_display_name)
+
+    person_uuids = _optional_uuids(person_ids, field="person_ids")
+    evidence_uuids = _optional_uuids(evidence_ids, field="evidence_ids")
 
     story_id = uuid4()
     version_id = uuid4()
@@ -228,26 +260,26 @@ def create_story(
             """,
             (version_id, story_id, body, actor_key or "owner", note),
         )
-        for pid in person_ids or []:
+        for pid in person_uuids:
             _add_relationship(
                 conn,
                 kind=REL_ABOUT_PERSON,
                 story_id=story_id,
                 to_type="person",
-                to_id=UUID(pid),
+                to_id=pid,
                 label="Story about person",
             )
-        for eid in evidence_ids or []:
+        for eid in evidence_uuids:
             _add_relationship(
                 conn,
                 kind=REL_CITES_EVIDENCE,
                 story_id=story_id,
                 to_type="evidence",
-                to_id=UUID(eid),
+                to_id=eid,
                 label="Story cites evidence",
             )
         # Narrator also counts as person association when present
-        if narrator_id and str(narrator_id) not in (person_ids or []):
+        if narrator_id and all(pid != narrator_id for pid in person_uuids):
             _add_relationship(
                 conn,
                 kind=REL_ABOUT_PERSON,
@@ -281,7 +313,7 @@ def save_new_version(
         raise StoryServiceError(
             "AI-generated content cannot be persisted as owner Story evidence"
         )
-    sid = UUID(story_id)
+    sid = _parse_uuid(story_id, field="story_id")
     with connection() as conn:
         srow = conn.execute(
             "SELECT * FROM stories WHERE id = %s AND status = 'active'", (sid,)
@@ -326,7 +358,10 @@ def save_new_version(
 
 
 def get_story(story_id: str, *, version: int | None = None) -> StoryView | None:
-    sid = UUID(story_id)
+    try:
+        sid = _parse_uuid(story_id, field="story_id")
+    except StoryServiceError:
+        return None
     with connection() as conn:
         srow = conn.execute("SELECT * FROM stories WHERE id = %s", (sid,)).fetchone()
         if not srow:
@@ -373,7 +408,8 @@ def list_stories(*, limit: int = 50) -> list[dict[str, Any]]:
 
 
 def associate_person(story_id: str, person_id: str) -> StoryView:
-    sid, pid = UUID(story_id), UUID(person_id)
+    sid = _parse_uuid(story_id, field="story_id")
+    pid = _parse_uuid(person_id, field="person_id")
     with connection() as conn:
         exists = conn.execute(
             """
@@ -399,7 +435,8 @@ def associate_person(story_id: str, person_id: str) -> StoryView:
 
 
 def associate_evidence(story_id: str, evidence_id: str) -> StoryView:
-    sid, eid = UUID(story_id), UUID(evidence_id)
+    sid = _parse_uuid(story_id, field="story_id")
+    eid = _parse_uuid(evidence_id, field="evidence_id")
     with connection() as conn:
         exists = conn.execute(
             """
