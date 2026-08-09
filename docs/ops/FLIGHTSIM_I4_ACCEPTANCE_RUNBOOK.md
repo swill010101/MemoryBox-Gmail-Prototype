@@ -11,7 +11,8 @@
 3. **Immich required for final prove:**
    - `config/immich.env` on the host (gitignored) **or** `MEMORYBOX_IMMICH_ENV` pointing to it  
    - `IMMICH_BASE_URL` + `IMMICH_API_KEY` set (media-server Immich)  
-   - Do **not** leave `MEMORYBOX_PHOTO_PROVIDER=unavailable` set for final acceptance (that mode is only for I4-G harness / deliberate degradation)  
+   - Immich client is **in-package** (`memorybox.providers.photo`) — no `application/api` dependency  
+   - Do **not** leave `MEMORYBOX_PHOTO_PROVIDER=unavailable` set for final acceptance  
    - Prefer unset or `MEMORYBOX_PHOTO_PROVIDER=immich`  
 4. Existing PG email/calendar Evidence (from I3 checkpoint) preferred.
 

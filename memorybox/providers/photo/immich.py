@@ -1,12 +1,12 @@
-"""Immich PhotoProvider adapter — POC ImmichClient earn-in behind DTOs."""
+"""Immich PhotoProvider adapter — in-package HTTP client behind DTOs."""
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from memorybox.providers.base import ProviderError, ProviderHealth, ProviderUnavailable
+from memorybox.providers.photo._immich_http import ImmichAuthError, ImmichHttpClient
 from memorybox.providers.photo.dto import (
     PhotoAssetDto,
     PhotoBytesDto,
@@ -16,29 +16,17 @@ from memorybox.providers.photo.dto import (
 )
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
-def _load_immich_client_class():
-    api = _repo_root() / "application" / "api"
-    if str(api) not in sys.path:
-        sys.path.insert(0, str(api))
-    from immich_client import ImmichAuthError, ImmichClient  # type: ignore
-
-    return ImmichClient, ImmichAuthError
-
-
 class ImmichPhotoProvider:
-    """Wraps application.api ImmichClient; never exposes Immich ids as domain PKs."""
+    """Immich via config-driven HTTP client; Immich ids are external_id only."""
 
     provider_key = "immich"
 
     def __init__(self, env_path: Path | None = None) -> None:
-        ImmichClient, ImmichAuthError = _load_immich_client_class()
         self._AuthError = ImmichAuthError
+        if env_path is None:
+            raise ProviderUnavailable("Immich env_path is required via configuration")
         try:
-            self._client = ImmichClient(env_path=env_path)
+            self._client = ImmichHttpClient(env_path)
         except FileNotFoundError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         except ImmichAuthError as exc:
@@ -97,7 +85,7 @@ class ImmichPhotoProvider:
                 raw = self._client.search_by_person_ids(
                     list(query.person_external_ids), size=query.limit
                 )
-                items = raw if isinstance(raw, list) else (raw or {}).get("assets", {}).get("items", [])
+                items = raw if isinstance(raw, list) else []
             else:
                 body: dict[str, Any] = {"size": query.limit}
                 if query.taken_after:
