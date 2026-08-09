@@ -312,26 +312,55 @@ def change_context(session_id: str, body: ContextChangeRequest) -> dict[str, Any
 
 @app.post("/capture/transcribe")
 async def capture_transcribe(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Preserve audio + STT draft. Does not create a Journal entry."""
+    """Preserve audio + STT draft. Does not create a Journal entry.
+
+    Audio is always preserved first. If STT fails, returns 422 with audio handle
+    so the owner can type a body and still Save a voice Journal.
+    """
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="empty audio upload")
     stt = get_capture_stt()
+    filename = file.filename or "clip.webm"
     try:
-        draft = stt.preserve_and_transcribe(
-            data,
-            filename=file.filename or "clip.webm",
-            content_type=file.content_type,
+        handle = stt.preserve_audio(
+            data, filename=filename, content_type=file.content_type
         )
-    except ProviderUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"STT unavailable: {exc}. Typed Journal path still works.",
-        ) from exc
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    try:
+        draft = stt.transcribe(handle.audio_id)
+    except ProviderUnavailable as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"STT unavailable: {exc}. Typed Journal path still works.",
+                "audio": handle.to_dict(),
+                "persisted_as_journal": False,
+            },
+        ) from exc
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "audio": handle.to_dict(),
+                "persisted_as_journal": False,
+                "hint": "Audio preserved. Type/edit Body, then Save Journal (channel=voice).",
+            },
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "audio": handle.to_dict(),
+                "persisted_as_journal": False,
+            },
+        ) from exc
     return {
         "ok": True,
         "draft": draft.to_dict(),

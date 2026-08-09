@@ -156,10 +156,30 @@
       return data;
     }
     async function transcribeBlob(blob, filename) {
-      setRecStatus("Transcribing…", false);
+      if (!blob || !blob.size) {
+        throw { detail: "Empty recording (0 bytes). Hold Record a bit longer, then Stop." };
+      }
+      setRecStatus("Transcribing (first Whisper load can take a minute)…", false);
       const fd = new FormData();
       fd.append("file", blob, filename || "journal-clip.webm");
-      const data = await j("/capture/transcribe", { method: "POST", body: fd });
+      const r = await fetch("/capture/transcribe", { method: "POST", body: fd });
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON response (" + r.status + ")" }; }
+      // STT failure may still include preserved audio
+      const detail = data && data.detail;
+      const audioFromErr = detail && typeof detail === "object" ? detail.audio : null;
+      if (!r.ok) {
+        if (audioFromErr && audioFromErr.audio_id) {
+          lastAudioId = audioFromErr.audio_id;
+          lastAudioUri = audioFromErr.audio_uri || null;
+          document.getElementById("audioId").textContent = lastAudioId;
+          setRecStatus("STT failed — audio kept; type Body then Save", true);
+          show(data);
+          return data;
+        }
+        throw data;
+      }
       const draft = data.draft || data;
       lastAudioId = draft.audio_id || null;
       lastAudioUri = draft.audio_uri || null;
@@ -195,19 +215,33 @@
         }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         chunks = [];
-        mediaRecorder = new MediaRecorder(stream);
+        const mimeCandidates = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+        ];
+        let mime = "";
+        for (const m of mimeCandidates) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+            mime = m;
+            break;
+          }
+        }
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
         mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
         mediaRecorder.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
-          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+          const type = mediaRecorder.mimeType || mime || "audio/webm";
+          const blob = new Blob(chunks, { type: type });
+          const ext = type.indexOf("mp4") >= 0 ? "m4a" : "webm";
           try {
-            await transcribeBlob(blob, "journal-clip.webm");
+            await transcribeBlob(blob, "journal-clip." + ext);
           } catch (err) {
             setRecStatus("STT failed — see Result", true);
             show(err);
           }
         };
-        mediaRecorder.start();
+        mediaRecorder.start(250);
         document.getElementById("recBtn").disabled = true;
         document.getElementById("stopBtn").disabled = false;
         setRecStatus("Recording…", false);
@@ -221,7 +255,10 @@
     };
 
     document.getElementById("stopBtn").onclick = () => {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        try { mediaRecorder.requestData(); } catch (_) {}
+        mediaRecorder.stop();
+      }
       document.getElementById("recBtn").disabled = false;
       document.getElementById("stopBtn").disabled = true;
     };
