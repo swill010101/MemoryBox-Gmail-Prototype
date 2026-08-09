@@ -69,6 +69,7 @@ def _intent_oriented_visual_semantics() -> tuple[bool, str]:
         ("Show me pictures of Jordan", "broad", True, True),
         ("Show me images of Jordan", "broad", True, True),
         ("Show me Jordan", "broad", True, True),
+        ("show me jordan", "broad", True, True),  # lowercase owner typing
         ("Show me photos of Jordan", "still_only", True, False),
         ("Show me videos of Jordan", "video_only", False, True),
         ("Show me emails from Jordan", "none", False, False),

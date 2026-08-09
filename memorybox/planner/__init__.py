@@ -95,7 +95,8 @@ PERSON_EMAIL_FROM_RE = re.compile(
 PERSON_POSSESSIVE_RE = re.compile(r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b")
 SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
+    r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)\b"
 )
 
 # Places: geographic/locative — never "from <Person>" for email.
@@ -241,6 +242,9 @@ def _clean_entity(name: str) -> str | None:
         return None
     if len(n) < 2:
         return None
+    # Normalize casing for display / Immich name match (owner often types lowercase)
+    if n.islower() or n.isupper():
+        n = n.title()
     return n
 
 
@@ -428,6 +432,28 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     want_visual = want_still or want_video
     want_photo = want_still
 
+    show_me = bool(SHOW_ME_RE.search(q))
+    # "show me <person>" (or show me + session person) → broad visual when no
+    # explicit media word already set scope (photos→still_only, videos→video_only).
+    if (
+        show_me
+        and visual_scope == "none"
+        and not want_email
+        and not want_cal
+        and not want_relationship
+        and not about_trip
+    ):
+        if not u_people and ctx.person_names:
+            u_people = list(ctx.person_names)
+            notes.append("show_me_inherited_person_for_visual")
+        if u_people or ctx.person_names:
+            visual_scope = "broad"
+            want_still = True
+            want_video = True
+            want_visual = True
+            want_photo = True
+            notes.append("show_me_person_forces_broad_visual")
+
     ref_then = bool(AROUND_THEN_RE.search(q))
     ref_other_trip = bool(OTHER_TRIP_RE.search(q))
     ref_that_trip = bool(THAT_TRIP_RE.search(q))
@@ -488,31 +514,35 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
 
     if subject_changed:
         # D: do not inherit incompatible place/event/trip from prior subject
-        inherit = bool(u_people)  # may still inherit person if missing
-        if not people and ctx.person_names and not subject_changed:
-            people = list(ctx.person_names)
-        # Compatible: keep people from ctx if utterance didn't name a person
         if not people and ctx.person_names:
             people = list(ctx.person_names)
             inherit = True
             notes.append("inherit_person_only_after_subject_change")
-        # places/trips/events come ONLY from utterance when subject changed
         notes.append("rule_D_no_inherit_incompatible_place_event_trip")
-    elif should_inherit_missing or is_followup:
+    elif should_inherit_missing or is_followup or (show_me and not people and ctx.person_names):
         inherit = True
         notes.append("inherited_missing_slots_only")
         if not people:
             people = list(ctx.person_names)
-        if not places:
+        if not places and not show_me:
             places = list(ctx.place_names)
-        if not trips:
+        if not trips and not show_me:
             trips = list(ctx_trips)
-        if not events:
+        if not events and not show_me:
             events = list(ctx_events)
-        if t0 is None:
+        if t0 is None and not show_me:
             t0 = ctx.time_start
-        if t1 is None:
+        if t1 is None and not show_me:
             t1 = ctx.time_end
+    # show me + partial name: keep context people that contain the uttered token
+    if show_me and u_people and ctx.person_names:
+        merged = list(u_people)
+        for cp in ctx.person_names:
+            if any(u.lower() in cp.lower() or cp.lower() in u.lower() for u in u_people):
+                if cp not in merged:
+                    merged.append(cp)
+        people = merged
+        notes.append("show_me_merged_context_person_names")
 
     # Reference resolution (Rule E) — before retrieval
     reference_resolved = False
