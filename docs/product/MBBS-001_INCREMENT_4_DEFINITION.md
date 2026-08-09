@@ -1,9 +1,9 @@
 # MBBS-001 Increment 4 — Definition (for review)
 
-**Status:** **CORRECTIVE REOPEN — desktop prove PASS (exploratory multimodal); awaiting FlightSim re-prove + manual re-test**  
+**Status:** **ACCEPTED** (corrective reopen + owner manual validation included)  
 **Date:** 2026-08-09  
 **Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · corrective [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md)  
-**Build:** Corrective planner/context fix authorized; no Increment 5.
+**Build:** Complete. **No further I4 polish.** Do not begin Increment 5 without explicit authorization.
 
 ---
 

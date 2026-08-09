@@ -10,9 +10,10 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 4 — Ask + Query Planner + basic contextual follow-up
 
 **Date:** 2026-08-09  
-**Authorization:** Build Increment 4 only (locked definition)  
-**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · corrective [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md) — **CORRECTIVE; desktop PASS; FlightSim re-prove pending**  
-**Next increment:** Not started (requires explicit authorization)
+**Authorization:** Build Increment 4 only (locked definition); corrective reopen for planner/context + exploratory multimodal  
+**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) · [MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md) — **ACCEPTED** (corrective + owner manual validation)  
+**Next increment:** [MBBS-001_INCREMENT_5_DEFINITION.md](MBBS-001_INCREMENT_5_DEFINITION.md) — **REVIEW ONLY**; build requires explicit authorization  
+**Post-acceptance policy:** Further Ask-language edge cases → defects/EVS refinements in future increments unless fundamental trust/architecture failure. **No I4 polish.**
 
 ### Corrective decisions (same day, post manual test)
 

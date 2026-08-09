@@ -421,8 +421,10 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increment 4 corrective** — desktop prove PASS; **FlightSim re-prove** required ([corrective report](MBBS-001_INCREMENT_4_CORRECTIVE_ACCEPTANCE.md)).  
-2. **Do not begin Increment 5** until Tom explicitly authorizes after I4 corrective acceptance on FlightSim.  
-3. SMS remains deferred — keep on P1 roadmap.
+1. **Increment 4 — ACCEPTED** (corrective + owner manual validation). No further I4 polish.  
+2. **Increment 5 definition** — [MBBS-001_INCREMENT_5_DEFINITION.md](MBBS-001_INCREMENT_5_DEFINITION.md) is **REVIEW ONLY**.  
+3. **Do not begin Increment 5** until Tom explicitly authorizes *Build Increment 5 only*.  
+4. SMS remains deferred — keep on P1 roadmap.  
+5. Ask-language edge cases from normal use → defect/EVS backlog for future increments (unless fundamental trust failure).
 
 **Unauthorized increments must not start.**
