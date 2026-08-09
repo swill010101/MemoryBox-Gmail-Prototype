@@ -31,6 +31,8 @@ class TranscriptDraft:
     language: str | None = None
     confidence: float | None = None
     status: str = "draft"
+    duration_sec: float | None = None
+    rms: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

@@ -116,8 +116,8 @@ class FasterWhisperCaptureStt:
         base = _env("MEMORYBOX_CAPTURE_DIR")
         self._root = Path(base) if base else (root or Path.cwd() / ".memorybox_capture")
         self._root.mkdir(parents=True, exist_ok=True)
-        # tiny = reliable first FlightSim accept; override with MEMORYBOX_WHISPER_MODEL
-        self._model_size = model_size or _env("MEMORYBOX_WHISPER_MODEL", "tiny") or "tiny"
+        # base = better short-phrase accuracy than tiny; override with MEMORYBOX_WHISPER_MODEL
+        self._model_size = model_size or _env("MEMORYBOX_WHISPER_MODEL", "base") or "base"
         self._device = device or _env("MEMORYBOX_WHISPER_DEVICE", "cpu") or "cpu"
         self._compute = compute_type or _env("MEMORYBOX_WHISPER_COMPUTE", "int8") or "int8"
         self._language = language or _env("MEMORYBOX_WHISPER_LANGUAGE", "en") or "en"
@@ -213,6 +213,29 @@ class FasterWhisperCaptureStt:
         _MODEL_CACHE[key] = model
         return model
 
+    def _wav_stats(self, wav_path: Path) -> tuple[float, float]:
+        """Return (duration_sec, peak-normalized RMS 0..1)."""
+        import array
+        import math
+
+        with wave.open(str(wav_path), "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate() or 16000
+            duration = frames / float(rate)
+            raw = wf.readframes(frames)
+            width = wf.getsampwidth()
+        if width != 2 or not raw:
+            return duration, 0.0
+        samples = array.array("h")
+        samples.frombytes(raw)
+        if not samples:
+            return duration, 0.0
+        acc = 0.0
+        for s in samples:
+            acc += float(s) * float(s)
+        rms = math.sqrt(acc / len(samples)) / 32768.0
+        return duration, rms
+
     def _transcribe_wav(self, wav_path: Path, *, vad_filter: bool) -> tuple[str, str | None]:
         device = self._device
         compute = self._compute
@@ -231,6 +254,12 @@ class FasterWhisperCaptureStt:
             str(wav_path),
             language=self._language,
             vad_filter=vad_filter,
+            beam_size=5,
+            best_of=5,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            compression_ratio_threshold=2.4,
+            no_speech_threshold=0.5,
         )
         texts: list[str] = []
         for seg in segments_iter:
@@ -251,12 +280,8 @@ class FasterWhisperCaptureStt:
             ) from exc
 
         wav_path = _to_wav_for_whisper(path)
-        # Sanity: wav must have duration
         try:
-            with wave.open(str(wav_path), "rb") as wf:
-                frames = wf.getnframes()
-                rate = wf.getframerate() or 16000
-                duration = frames / float(rate)
+            duration, rms = self._wav_stats(wav_path)
         except wave.Error as exc:
             raise ProviderError(f"Invalid WAV after convert: {exc}") from exc
         if duration < 0.35:
@@ -264,20 +289,35 @@ class FasterWhisperCaptureStt:
                 f"Audio too short after convert ({duration:.2f}s). "
                 "Record 2–5 seconds of clear speech, then Stop."
             )
+        # Near-silent clips make Whisper hallucinate words like "You" / "Thank you."
+        if rms < 0.008:
+            raise ProviderError(
+                f"Recording is nearly silent (rms={rms:.4f}, {duration:.1f}s). "
+                "In the browser mic picker, choose the physical USB/headset mic "
+                "(not Stereo Mix / cable output), speak louder, then re-Record."
+            )
 
         try:
-            text, lang = self._transcribe_wav(wav_path, vad_filter=True)
+            text, lang = self._transcribe_wav(wav_path, vad_filter=False)
             if not text:
-                text, lang = self._transcribe_wav(wav_path, vad_filter=False)
+                text, lang = self._transcribe_wav(wav_path, vad_filter=True)
         except ProviderError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(f"Whisper transcribe failed: {exc}") from exc
 
+        words = [w for w in (text or "").split() if w]
         if not text:
             raise ProviderError(
-                f"STT produced empty transcript ({duration:.1f}s audio). "
-                "Speak louder/longer; check mic levels. "
+                f"STT produced empty transcript ({duration:.1f}s, rms={rms:.4f}). "
+                "Speak louder/longer; check mic input device. "
+                f"Audio preserved as {audio_id}"
+            )
+        if duration >= 2.0 and len(words) <= 2:
+            raise ProviderError(
+                f"STT draft too short for a {duration:.1f}s clip ({text!r}, rms={rms:.4f}). "
+                "Likely wrong/silent mic input or tiny-model hallucination. "
+                "Re-Record with the correct mic selected; use MEMORYBOX_WHISPER_MODEL=base. "
                 f"Audio preserved as {audio_id}"
             )
         return TranscriptDraft(
@@ -287,6 +327,8 @@ class FasterWhisperCaptureStt:
             provider_key=self.provider_key,
             language=lang,
             status="draft",
+            duration_sec=round(duration, 2),
+            rms=round(rms, 4),
         )
 
     def preserve_and_transcribe(
