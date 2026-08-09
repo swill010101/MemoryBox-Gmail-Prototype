@@ -1,6 +1,6 @@
-# MBBS-001 Increment 5A — Definition (for review)
+# MBBS-001 Increment 5A — Definition (locked for final review)
 
-**Status:** **REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
+**Status:** **LOCKED — FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
 **Date:** 2026-08-09  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 5A  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
@@ -11,45 +11,48 @@
 
 ---
 
-## 0. Locked review decisions
+## 0. Locked decisions (final)
 
 | Topic | Decision |
 |-------|----------|
 | Product slice | **Journal service + EF-12** + reusable **Capture/STT** + Ask Journal modality |
 | Journal vs Story | **Distinct types** — collapsing Journal into Story is **forbidden** (MBDM) |
-| Versioning | **Immutable Journal version history** (parallel in principle to Story). Edit + explicit Save → new version; priors retrievable; **no silent overwrite** of owner-authored text. Explicit schema migration required |
-| STT / voice | **IN 5A** — reusable P1 Capture/STT capability; Journal is first consumer |
+| Versioning | **Immutable Journal versions** (parallel in principle to Story). Edit + explicit Save → new version; priors retrievable; **no silent overwrite**. Explicit schema migration |
+| STT / voice | **IN 5A** — reusable Capture/STT; Journal is first P1 consumer |
+| STT provider (FlightSim) | **Existing/local Whisper** behind Capture/STT provider boundary — **replaceable/configurable**; **not** embedded in Journal code |
 | Voice flow | “I want to journal” → type **or** speak → if voice: **preserve original audio** → STT → **review/edit transcript** → **explicit Save** → Journal Entry |
-| No silent STT save | Raw transcription is **not** owner Journal truth until explicit Save |
-| Ask retrieval | **Direct PG Journal query** (parallel to Story). Do **not** materialize `journal_passage` Evidence merely because vocabulary exists; leave room for derived indexing later |
-| Associations | **Require** Journal ↔ **author/Person**. Do **not** require corroborating Evidence. Generalized `relationships` may link Place/Event/Evidence where useful — no ad-hoc columns |
-| Author | Every Journal Entry has a **known author Person** on the P1 single-owner path (see §5.3) |
-| Temporal | **Split** capture time vs described/effective date (see §5.4). Do not overload one field for both |
-| Guided Capture (EF-11) | **OUT** — no scheduled prompts, outbound email prompting, reply correlation, or MB-initiated journaling |
-| Intent | “I want to journal” / “Journal” / equivalents enter thin Journal capture **without** taxonomy navigation |
-| Acceptance reports | Opaque IDs/counts/status only — **never** Journal body / transcript text |
+| No silent STT save | Transcript remains **draft** until explicit owner Save |
+| Ask retrieval | **Direct PG Journal query** (parallel to Story). Do **not** materialize `journal_passage` Evidence as the required path |
+| Author (SoT) | **`journal_entries.author_person_id UUID NOT NULL REFERENCES people(id)` only** — **no** dual-write `authored_by` relationship for author |
+| About / other associations | Generalized `relationships` for people the Journal is **about**, Place/Event/Evidence — optional; **not** for authoritative author |
+| Evidence association | **Not required** — Journal is provenance-bearing |
+| Temporal | `captured_at` + `described_start_date` / `described_end_date` + `described_precision` (see §5.4). `created_at` = system insert. No full temporal algebra |
+| EVS-136 | Retrieve via text, explicit relationships, and Ask context — **do not** require artificial Place relationships for acceptance |
+| Guided Capture (EF-11) | **OUT** |
+| Intent | “I want to journal” / “Journal” / equivalents enter thin Journal capture without taxonomy navigation |
+| Acceptance | Synthetic + real FlightSim; opaque IDs/counts/status only |
+| Out | SMS, HVRT/video, Person teach/merge, multi-user, polish |
 
 ---
 
 ## 1. Problem / why now
 
-I5 delivered Stories. The owner still needs **owner-initiated Journal** (EF-12) with typed or spoken capture, immutable versions, clear authorship, and Ask retrieval — without Guided Capture and without treating Journal as Story.
+I5 delivered Stories. The owner still needs **owner-initiated Journal** (EF-12) with typed or spoken capture, immutable versions, single-source authorship, clear capture vs described time, and Ask retrieval — without Guided Capture and without treating Journal as Story.
 
 ---
 
 ## 2. Objective
 
-1. **Journal Service** — first-class Journal Entry, versioned, authored, temporally clear, Ask-retrievable.  
-2. **Reusable Capture/STT** — provider-shaped capability for voice → preserved audio → transcript; Journal is first P1 consumer; Story / Guided Capture / others reuse later.  
-3. **Thin Journal UX** + first-class journal intent entry.  
-4. Prove on **FlightSim** with synthetic + real owner Journal.
+1. **Journal Service** — versioned, authored (FK SoT), temporally clear, Ask-retrievable.  
+2. **Reusable Capture/STT** — Whisper adapter behind provider boundary for FlightSim; Journal first consumer.  
+3. **Thin Journal UX** + first-class journal intent.  
+4. Prove on **FlightSim** (synthetic + real owner Journal).
 
 | Field | Content |
 |-------|---------|
-| **Modules** | Journal Service; Capture/STT service (reusable); thin Journal UX; Ask Journal modality |
-| **Reuse** | I5 Save/version/Ask patterns (earn-in); I1 `journal_entries` + new version/temporal/author columns as locked |
-| **Flows** | **EF-12** (owner-initiated). **Not** EF-11 |
-| **Risk** | Journal≠Story; STT not Journal-only; no Guided Capture creep |
+| **Modules** | Journal Service; Capture/STT provider + Whisper adapter; thin Journal UX; Ask Journal modality |
+| **Flows** | **EF-12** only (**not** EF-11) |
+| **EVSs in** | **EVS-012**, **EVS-072**, **EVS-136** (see §8) |
 
 ---
 
@@ -59,21 +62,22 @@ Final acceptance on **FlightSim**.
 
 | ID | Criterion | Proof |
 |----|-----------|-------|
-| **I5A-A** | Typed Journal create / explicit Save | Synthetic + harness |
-| **I5A-B** | Voice path: preserve audio → STT → review/edit → explicit Save | Harness + FlightSim; audio artifact id opaque; no save before owner Save |
-| **I5A-C** | Immutable edit/version history | Edit+Save → v2; v1 body unchanged/retrievable |
-| **I5A-D** | Author provenance | Every entry has author Person; Ask/API expose author |
-| **I5A-E** | Capture time ≠ described/effective date | Create “about yesterday” today; both timestamps distinct and queryable |
-| **I5A-F** | Approximate/unknown described date supported | Save with unknown/approximate described date where appropriate |
-| **I5A-G** | Ask retrieves relevant Journal with **Journal** attribution | Exploratory Ask; provenance ≠ Story, ≠ silent archive fact |
-| **I5A-H** | No AI / STT auto-persist as Journal truth | Transcript draft only until Save; AI actor rejected if applicable |
-| **I5A-I** | First-class journal intent | “I want to journal” / “Journal” enters capture UX without taxonomy chrome |
-| **I5A-J** | Real owner Journal on FlightSim UX | Opaque id in prove |
-| **I5A-K** | Generalized synthetic subjects | Subjects ≠ real owner Journal content/ids in reports |
-| **I5A-L** | Prior I1–I5 proves remain runnable | health + prior prove commands still pass |
-| **I5A-M** | Capture/STT reusable boundary | STT behind capture/transcription API/module — not Whisper calls embedded only in Journal |
+| **I5A-A** | Typed Journal create / explicit Save | Harness |
+| **I5A-B** | Voice: preserve audio → STT → review/edit → explicit Save | Harness + FlightSim; opaque audio id; no Journal persist before Save |
+| **I5A-C** | Immutable edit/version history | Edit+Save → v2; v1 unchanged/retrievable |
+| **I5A-D** | Author SoT on `author_person_id` | Every entry NOT NULL author; API/Ask expose author; **no** authored_by dual-write |
+| **I5A-E** | Capture ≠ described range | “About yesterday” today: `captured_at` today, `described_start=end=yesterday` |
+| **I5A-F** | Range / month / year / approximate / unknown | Per §5.4 cases |
+| **I5A-G** | Ask retrieves Journal with Journal attribution | Provenance ≠ Story; ≠ silent archive fact |
+| **I5A-H** | No STT/AI auto-persist as Journal truth | Draft until Save |
+| **I5A-I** | First-class journal intent | Enters capture UX without taxonomy chrome |
+| **I5A-J** | Real owner Journal on FlightSim | Opaque id in prove |
+| **I5A-K** | Generalized synthetic subjects | Opaque; ≠ real owner content in reports |
+| **I5A-L** | I1–I5 proves remain runnable | health + prior prove commands |
+| **I5A-M** | Capture/STT reusable | Whisper only behind provider; Journal does not import Whisper directly |
 | **I5A-N** | Living specs | Decision log + acceptance report |
-| **I5A-O** | Named EVSs (below) demonstrated on single-owner P1 path | Opaque scenario pass/fail in report |
+| **I5A-O** | EVS-012 / 072 / 136 | Opaque pass on single-owner P1 path |
+| **I5A-P** | EVS-136 without artificial Place link | Relevant Journal found via text/context/optional real relationships — no forced Place row for the test |
 
 ---
 
@@ -81,196 +85,172 @@ Final acceptance on **FlightSim**.
 
 ### In
 
-- Immutable `journal_versions` (or equivalent) + explicit migration  
-- Author Person requirement (clean domain representation — §5.3)  
-- Temporal split: capture vs described/effective (§5.4)  
-- Typed Journal UX + voice Journal via reusable Capture/STT  
-- Preserve original audio (MediaObject/ref or version `audio_uri` + MB-managed bytes — config paths, D7)  
-- Direct PG Ask retrieval + Journal provenance labels  
-- First-class journal intent entry  
-- FlightSim acceptance (synthetic + real owner)  
+- Migration: `journal_versions`, `current_version`, `author_person_id`, temporal fields (§5)  
+- Typed + voice Journal via Capture/STT (Whisper adapter on FlightSim)  
+- Preserve original audio  
+- Direct PG Ask retrieval + Journal provenance  
+- First-class journal intent  
+- FlightSim synthetic + real owner acceptance  
 
 ### Out
 
 | Out | Notes |
 |-----|--------|
-| Guided Capture EF-11 | EVS-130–140 class; scheduled/outbound/MB-initiated prompts |
+| Guided Capture EF-11 | EVS-130–135, 137–140; scheduled/outbound/MB-initiated |
+| Dual-write author to `relationships` | Forbidden for authoritative author |
+| Required Evidence / artificial Place for EVS-136 | Forbidden as acceptance crutches |
+| `journal_passage` Evidence materialization as required path | Deferred |
 | Collapsing Journal into Story | Forbidden |
-| Materializing `journal_passage` Evidence as required path | Deferred until corpus/quality needs it |
-| Required Evidence association on Journal | Not required for save/retrieve |
-| SMS, HVRT/video, Person teach/merge, multi-user, polish | Later / out |
-| Story product changes | Out of 5A (Capture/STT may be *callable* by Story later without Story rebuild in 5A) |
+| SMS, HVRT, Person teach/merge, multi-user, polish | Out |
+| Full temporal algebra | Out |
 
 ---
 
-## 5. Domain inspection
+## 5. Domain (locked schema intent)
 
-### 5.1 Versioning — **gap → explicit migration**
+### 5.1 Versioning — explicit migration
 
-I1 has `journal_entries` only — **no** `journal_versions`.  
-**Locked:** add Story-parallel versioning via **explicit migration**, e.g.:
+I1 has no `journal_versions`. **Add:**
 
-- `journal_entries.current_version`  
-- `journal_versions (journal_id, version, body_text, audio_uri, transcript_text?, actor_key, note, created_at, …)`  
-- Edit + Save inserts next version; never UPDATE prior `body_text`
+- `journal_entries.current_version INTEGER NOT NULL`  
+- `journal_versions (id, journal_id, version, body_text, audio_uri, …, actor_key, note, created_at)` UNIQUE `(journal_id, version)`  
+- Edit + Save → insert next version; **never** UPDATE prior version body  
 
 ### 5.2 Associations
 
-| Need | Mechanism |
+| Fact | Mechanism |
 |------|-----------|
-| Author (required) | §5.3 |
-| Place / Event / Evidence (optional) | Generalized `relationships` (`from_type=journal`, appropriate `to_type` / `relationship_kind`) — no ad-hoc Journal columns |
-| Corroborating Evidence | **Not required** — Journal is itself provenance-bearing |
+| **Author (required, SoT)** | `journal_entries.author_person_id` only (§5.3) |
+| People the entry is **about** (optional) | `relationships` (e.g. `about_person`) — **not** author |
+| Place / Event / Evidence (optional) | `relationships` — no ad-hoc columns |
+| Corroborating Evidence | **Not required** |
 
-### 5.3 Author — representation
+### 5.3 Authorship — single source of truth
 
-| Existing | Assessment |
-|----------|------------|
-| `stories.narrator_person_id` | Story has first-class FK |
-| `journal_entries` | **No** author FK today |
-| `relationships` | Can express `authored_by`: `from_type=journal` → `to_type=person` |
+**Locked:**
 
-**Clean P1 choice (locked for review):**
+- Authoritative author = **`journal_entries.author_person_id UUID NOT NULL REFERENCES people(id)`**  
+- Parallel in principle to Story’s first-class `narrator_person_id`  
+- **Do not** also write an `authored_by` (or equivalent) `relationships` row for the author — avoids conflicting authorship records  
+- **Do not** store authoritative author only in `attributes_json`  
 
-1. **Required** `relationships` row `relationship_kind=authored_by` (or equivalent locked kind) journal→person on every Save — graph-native, matches I1 association policy.  
-2. **Plus** explicit column `journal_entries.author_person_id UUID NOT NULL REFERENCES people(id)` in the same 5A migration — **parallel to Story narrator FK**, query-friendly for Ask, prevents “authorship only in attributes_json.”
+Optional `relationships` may still associate **other** people the Journal discusses.
 
-This is an **intentional schema add**, not a workaround. If build discovers FK + relationship dual-write is unclean, **STOP** and report before inventing `attributes_json` authorship.
+P1 single-owner path: resolve/create owner Person; Journals set `author_person_id` to that Person unless UI supplies another known Person (still required NOT NULL).
 
-P1 single-owner path: resolve/create the owner Person once; all Journals author to that Person unless UI supplies another known Person (still required).
+### 5.4 Temporal model — range-capable P1
 
-### 5.4 Temporal semantics — **gap → explicit small migration**
+I1 `recorded_at` alone is insufficient. **Locked fields:**
 
-I1 `recorded_at` is a **single** timestamptz and is insufficient once capture time and described time must differ.
+| Field | Type | Role |
+|-------|------|------|
+| `created_at` | TIMESTAMPTZ | System row creation (existing) |
+| `captured_at` | TIMESTAMPTZ NOT NULL | When the owner captured/saved this journaling act |
+| `described_start_date` | DATE NULL | Start of period the entry is **about** |
+| `described_end_date` | DATE NULL | End of period the entry is **about** |
+| `described_precision` | TEXT NOT NULL (check) | Vocabulary below |
 
-| Concept | Meaning | Proposed P1 fields |
-|---------|---------|-------------------|
-| System created | Row insert | existing `created_at` |
-| **Captured** | When the owner captured/saved this journaling act | **`captured_at TIMESTAMPTZ NOT NULL`** (default now on Save; voice: time of accepted capture) |
-| **Described / effective** | What day/period the entry is *about* | **`described_date DATE NULL`** + **`described_precision TEXT`** with check ∈ (`day`,`month`,`year`,`approximate`,`unknown`) |
-| Legacy `recorded_at` | Ambiguous | **Do not use for both meanings.** Migration: stop writing dual-meaning into `recorded_at`; prefer new fields. Optionally backfill `described_date` from `recorded_at::date` where present, then treat `recorded_at` as deprecated |
+**`described_precision` vocabulary (locked):**  
+`day` | `month` | `year` | `range` | `approximate` | `unknown`
 
-**Supported cases:**
+**Case mapping:**
 
-| Case | `captured_at` | `described_date` / precision |
-|------|---------------|------------------------------|
-| Journal about today | now | today / `day` |
-| Created today about yesterday | now | yesterday / `day` |
-| About a prior date | now | that date / `day` |
-| Unknown when events occurred | now | NULL / `unknown` |
-| Approximate (e.g. “summer 2019”) | now | representative date or month-start / `approximate` or `month`/`year` |
+| Case | `captured_at` | `described_start_date` / `described_end_date` | `described_precision` |
+|------|---------------|-----------------------------------------------|------------------------|
+| About today | now | start=end=today | `day` |
+| About yesterday (created today) | now | start=end=yesterday | `day` |
+| Known prior date | now | start=end=that date | `day` |
+| Known range / trip | now | start and end of range | `range` |
+| Month / year | now | bounded representative range (e.g. month first–last; year Jan 1–Dec 31) | `month` or `year` |
+| Approximate period | now | approximate start/end where known | `approximate` |
+| Unknown | now | both NULL | `unknown` |
 
-**Out of 5A:** full temporal algebra, recurring periods, timezone policy beyond storing timestamptz + date in host-local/config convention.
+**Constraints (P1):** if either described date is non-NULL, both should be set (start ≤ end); if precision=`unknown`, both dates NULL.  
+
+**Legacy:** stop dual-use of `recorded_at`; optional backfill into described dates then deprecate writes to `recorded_at`.  
+
+**Out of 5A:** full temporal algebra, recurrence, rich timezone productization beyond timestamptz + dates.
 
 ---
 
 ## 6. Capture / STT (reusable)
 
-### 6.1 Required owner-initiated flow
+### 6.1 Owner-initiated flow
 
-1. Owner expresses journal intent (“I want to journal”, “Journal”, …) → thin Journal capture.  
-2. Owner **types** or **speaks**.  
-3. If voice: **preserve original audio** as first-class media (not discard after STT).  
-4. STT produces transcript **draft**.  
-5. Owner **reviews/edits** transcript (and described date, title, etc.).  
-6. **Explicit Save** → Journal Entry (+ version 1) with author + temporal fields.  
+1. Journal intent → thin Journal capture.  
+2. Type **or** speak.  
+3. Voice → **preserve original audio** → STT → transcript **draft**.  
+4. Owner review/edit (text + temporal fields).  
+5. **Explicit Save** → Journal Entry v1 (+ author + temporal).  
 
-No silent save of raw STT as Journal truth.
+### 6.2 Provider boundary (FlightSim)
 
-### 6.2 Reuse boundary
+- **Capture/STT protocol** in `memorybox` (replaceable).  
+- **FlightSim P1 acceptance adapter:** existing/local **Whisper** behind that boundary.  
+- Journal **must not** import or call Whisper directly.  
+- Config-only endpoint/model/paths (D7).  
+- Future Story / Guided Capture / others reuse the same capability.
 
-- Implement as **`memorybox` Capture/STT capability** (provider protocol + adapter, e.g. local Whisper/Ollama/http — config-only, D7).  
-- Journal calls the capability; **must not** bury one-off Whisper code only inside Journal modules.  
-- Future Story / Guided Capture / other experiences consume the same API.
+### 6.3 Failure
 
-### 6.3 Failure / disclosure
-
-- STT unavailable → disclose; typed path still works; do not invent transcript.  
+- STT down → disclose; typed path works; do not invent transcript.  
 - Audio preserve failure → do not claim voice Journal saved.
 
 ---
 
 ## 7. Ask integration
 
-- Direct query of current Journal versions + author + temporal + text/constraints (parallel to Story).  
-- Exploratory multimodal may include Journal with Story/Evidence/photos.  
-- Attribution: **Journal** / author Person / capture vs described dates as needed — never labeled as Story; never silent archive Evidence.  
-- Narrowed intents still win.  
-- No Journal silo.  
-- **Do not** require `journal_passage` Evidence rows for I5A.
+- Direct query of current Journal version + `author_person_id` + temporal + text/constraints.  
+- Exploratory multimodal may include Journal with other modalities.  
+- Attribution: **Journal** + author Person (+ temporal as needed).  
+- Narrowed intents still win; no Journal silo.  
+- No required `journal_passage` Evidence materialization.
 
 ---
 
-## 8. EVS scope (from MBEVS-001 v0.8)
+## 8. EVS scope (MBEVS-001 v0.8)
 
-Inspected authoritative workbook `docs/source/MBEVS-001_EVS_Catalog_v0.8.xlsx` (sheet **EVS Catalog**).
+### 8.1 In scope for 5A
 
-### 8.1 In scope for Increment 5A (single-owner P1)
+| EVS ID | Role in 5A |
+|--------|------------|
+| **EVS-012** | Voice → preserve → transcript → Save → edit next day with **immutable versions** (Journal) |
+| **EVS-072** | Ask: journal content by described date (“five years ago today”) |
+| **EVS-136** | Ask: journals in trip/place context via **text, existing Ask context, and any real relationships** — **not** via artificial Place links invented for the test |
 
-| EVS ID | Scenario (short) | Why in 5A |
-|--------|------------------|-----------|
-| **EVS-012** | Record → Archive Updated → Edit next day (voice note, transcript, versions; never silent overwrite) | Owner voice capture + preserve + transcript + **immutable version edit** pattern applied to **Journal** (taxonomy lists Guided & Journal Capture; Guided *prompting* remains out — this EVS’s capture/version proof is in) |
-| **EVS-072** | “What did I write in my journal? Five years ago today?” | Ask retrieves Journal by **described/effective** date semantics |
-| **EVS-136** | “Show me my journal entries from our Alaska trip.” | Ask retrieves Journals with place/trip context (**P1 portion** via text/associations; full inferred trip-boundary intelligence may remain partial — disclose gaps; do not invent) |
+### 8.2 Out (Guided Capture / EF-11)
 
-### 8.2 Explicitly OUT of 5A (Guided Capture / EF-11)
+**EVS-130, 131, 132, 133, 134, 135, 137, 138, 139, 140** — MemoryBox-initiated prompting / email journal prompts / question queues.
 
-| EVS ID | Why out |
-|--------|---------|
-| **EVS-130** | MB asks in-app; owner answers by voice — **MB-initiated** |
-| **EVS-131** | MB emails question; reply save — **MB-initiated** |
-| **EVS-132** | Channel preference for guided questions |
-| **EVS-133** | MB sends journal prompt “what I did today” — **MB-initiated** |
-| **EVS-134** | Journal **email** attachments to prompted entry |
-| **EVS-135** | Answer MB question with audio — guided |
-| **EVS-137** | “What did I say when MB asked…” — guided response retrieval |
-| **EVS-138** | Unanswered MB questions queue |
-| **EVS-139** | “Ask me another question” |
-| **EVS-140** | Evidence-aware generated question (P2) |
-
-**Distinction locked:**  
-5A = owner initiated (“I want to journal now”).  
-Guided Capture = MemoryBox initiated (“Tell me about your day / answer this question”).
-
-### 8.3 Related but not 5A primary gate
-
-Story-centric EVSs (e.g. EVS-025, 061, 173–180) remain Story/I5+ territory. Capsule/synthesis P2 items (EVS-071, 181, 182) out of 5A.
+**Distinction:** 5A = owner initiated (“I want to journal now”). Guided Capture = MB initiated.
 
 ---
 
 ## 9. Architecture notes
 
-- PG authoritative for Journal + versions.  
-- Capture/STT behind replaceable provider; audio stored as MB-managed original.  
-- D7 config-only hosts/paths/keys.  
-- Earn-in from I5; do not merge Journal into Story packages/tables.
+- PG authoritative for Journal + versions + author FK.  
+- Capture/STT replaceable; Whisper = FlightSim default adapter.  
+- D7 config-only.  
+- Earn-in from I5 patterns; never merge Journal into Story.
 
 ---
 
-## 10. Rough build plan (only after *Build Increment 5A only*)
+## 10. Build plan (only after *Build Increment 5A only*)
 
-1. Migration: `journal_versions`, `current_version`, `author_person_id`, `captured_at`, `described_date`, `described_precision`; deprecate dual-use `recorded_at`.  
-2. Capture/STT protocol + adapter + audio preserve.  
-3. Journal Service (typed + voice Save paths, versions, author, temporal).  
-4. Thin `/journal/ui` + journal intent entry.  
-5. Ask `want_journal` / retrieval + attribution.  
-6. `prove-journal` synthetic + FlightSim owner path; EVS-012/072/136 opaque checks.  
-7. Confirm I1–I5 proves still runnable.  
-8. Acceptance report; **stop** (no EF-11 / Inc 6 without auth).
-
----
-
-## 11. Remaining open items (non-blocking if defaults accepted)
-
-1. STT provider default on FlightSim (local Whisper vs remote) — config choice at build.  
-2. Exact `relationship_kind` string for author (`authored_by` vs `author`) — freeze at build lock.  
-3. EVS-136 depth: require explicit place relationship vs text match only for P1 prove.
+1. Migration: versions, `author_person_id`, `captured_at`, `described_start_date`, `described_end_date`, `described_precision`.  
+2. Capture/STT protocol + Whisper adapter + audio preserve.  
+3. Journal Service (typed/voice, versions, author SoT, temporal).  
+4. Thin `/journal/ui` + journal intent.  
+5. Ask Journal modality + attribution.  
+6. `prove-journal` + FlightSim owner path; EVS-012/072/136 (no fake Place for 136).  
+7. Confirm I1–I5 proves.  
+8. Acceptance report; **stop**.
 
 ---
 
-## 12. Authorization gate
+## 11. Authorization gate
 
-**Status: REVIEW ONLY.**
+**Status: LOCKED FOR FINAL REVIEW — NOT AUTHORIZED TO BUILD.**
 
 Do **not** write 5A product code, migrations, Capture/STT wiring, Journal UX, or Ask Journal modality until Tom explicitly says **Build Increment 5A only**.
 

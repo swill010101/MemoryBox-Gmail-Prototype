@@ -422,8 +422,8 @@ P1 application is done when:
 ## 10. Next action
 
 1. **Increment 5 — ACCEPTED.**  
-2. **Increment 5A definition** — [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md) is **REVIEW ONLY** (Journal + reusable Capture/STT; Guided Capture out; EVS-012/072/136 in).  
-3. **Do not begin Increment 5A / 6** until Tom explicitly authorizes.  
+2. **Increment 5A definition** — [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md) is **LOCKED for final review** (not authorized to build). Author SoT=`author_person_id` only; range temporal fields; Whisper behind Capture/STT; EVS-136 without artificial Place.  
+3. **Do not begin Increment 5A / 6** until Tom explicitly authorizes *Build Increment 5A only*.  
 4. SMS remains deferred — keep on P1 roadmap.  
 5. Ask-language edge cases from normal use → defect/EVS backlog (unless fundamental trust failure).
 
