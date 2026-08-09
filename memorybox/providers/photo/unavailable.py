@@ -11,27 +11,30 @@ from memorybox.providers.photo.dto import (
 
 
 class UnavailablePhotoProvider:
-    """Used when MEMORYBOX_PHOTO_PROVIDER=unavailable or for acceptance I4-G."""
+    """Used when MEMORYBOX_PHOTO_PROVIDER=unavailable or Immich cannot be configured."""
 
     provider_key = "unavailable_photo"
+
+    def __init__(self, detail: str = "photo provider deliberately unavailable") -> None:
+        self._detail = detail
 
     def health(self) -> ProviderHealth:
         return ProviderHealth(
             provider_key=self.provider_key,
             ok=False,
-            detail="photo provider deliberately unavailable",
+            detail=self._detail,
         )
 
     def list_people(
         self, *, query: str | None = None, limit: int = 50
     ) -> list[PhotoPersonRef]:
-        raise ProviderUnavailable("photo provider unavailable")
+        raise ProviderUnavailable(self._detail)
 
     def search_assets(self, query: PhotoSearchQuery) -> list[PhotoAssetDto]:
-        raise ProviderUnavailable("photo provider unavailable")
+        raise ProviderUnavailable(self._detail)
 
     def get_asset(self, external_asset_id: str) -> PhotoAssetDto | None:
-        raise ProviderUnavailable("photo provider unavailable")
+        raise ProviderUnavailable(self._detail)
 
     def fetch_preview(self, external_asset_id: str) -> PhotoBytesDto:
-        raise ProviderUnavailable("photo provider unavailable")
+        raise ProviderUnavailable(self._detail)

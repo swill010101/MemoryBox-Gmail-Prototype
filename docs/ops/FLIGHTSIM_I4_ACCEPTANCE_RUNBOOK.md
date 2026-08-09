@@ -8,8 +8,24 @@
 
 1. I4 code present on the P1 runtime host (`git pull` after push from desktop).  
 2. PostgreSQL + Qdrant + Ollama configured via env (no `MEMORYBOX_ALLOW_DEV_DEFAULTS`).  
-3. `config/immich.env` on the host pointing at media-server Immich (gitignored).  
+3. **Immich required for final prove:**
+   - `config/immich.env` on the host (gitignored) **or** `MEMORYBOX_IMMICH_ENV` pointing to it  
+   - `IMMICH_BASE_URL` + `IMMICH_API_KEY` set (media-server Immich)  
+   - Do **not** leave `MEMORYBOX_PHOTO_PROVIDER=unavailable` set for final acceptance (that mode is only for I4-G harness / deliberate degradation)  
+   - Prefer unset or `MEMORYBOX_PHOTO_PROVIDER=immich`  
 4. Existing PG email/calendar Evidence (from I3 checkpoint) preferred.
+
+### Quick Immich check (before prove)
+
+```powershell
+# Should NOT print "unavailable"
+$env:MEMORYBOX_PHOTO_PROVIDER  # blank or immich
+Test-Path .\config\immich.env
+# If missing: copy from example and fill API URL/key (gitignored)
+# Copy-Item .\config\immich.env.example .\config\immich.env
+Get-Content .\config\immich.env | Select-String -Pattern '^IMMICH_' 
+# (confirm values locally; do not paste secrets into chat/docs)
+```
 
 ## Commands (on P1 runtime host console)
 

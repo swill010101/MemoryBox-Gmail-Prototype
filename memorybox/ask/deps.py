@@ -48,7 +48,9 @@ def build_photo(cfg: Settings | None = None) -> PhotoProvider:
     cfg = cfg or settings
     mode = (_env("MEMORYBOX_PHOTO_PROVIDER") or "").lower()
     if mode == "unavailable":
-        return UnavailablePhotoProvider()
+        return UnavailablePhotoProvider(
+            "MEMORYBOX_PHOTO_PROVIDER=unavailable (deliberate I4-G mode)"
+        )
     if mode == "fake":
         return FakePhotoProvider()
 
@@ -65,16 +67,20 @@ def build_photo(cfg: Settings | None = None) -> PhotoProvider:
                 from memorybox.providers.photo.immich import ImmichPhotoProvider
 
                 return ImmichPhotoProvider(env_path=path)
-            except Exception:  # noqa: BLE001 — treat as unavailable, not empty
-                return UnavailablePhotoProvider()
+            except Exception as exc:  # noqa: BLE001 — treat as unavailable, not empty
+                return UnavailablePhotoProvider(
+                    f"Immich init failed ({path}): {exc}"
+                )
+        missing = f"missing Immich env file: {path}"
         if mode == "immich":
-            return UnavailablePhotoProvider()
-        # auto: no immich.env → fake for desktop prove
+            return UnavailablePhotoProvider(missing)
         if getattr(cfg, "allow_dev_defaults", False):
             return FakePhotoProvider()
-        return UnavailablePhotoProvider()
+        return UnavailablePhotoProvider(
+            f"{missing}; set MEMORYBOX_IMMICH_ENV or create config/immich.env"
+        )
 
-    return UnavailablePhotoProvider()
+    return UnavailablePhotoProvider(f"unknown MEMORYBOX_PHOTO_PROVIDER={mode!r}")
 
 
 def provider_snapshot(photo: PhotoProvider, llm: LlmProvider) -> dict[str, Any]:

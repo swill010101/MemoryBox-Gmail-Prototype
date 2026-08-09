@@ -57,15 +57,20 @@ ELSE_RE = re.compile(
 )
 YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 PERSON_WITH_RE = re.compile(
-    r"(?i)\b(?:with|of|featuring|including)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b"
+    r"(?i)\b(?:with|of|featuring|including)\s+"
+    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
 )
-PERSON_POSSESSIVE_RE = re.compile(r"(?i)\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s\b")
-# "Show me NAME" / "Show me NAME at …" — person as subject, not a media type.
+PERSON_POSSESSIVE_RE = re.compile(
+    r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b"
+)
+# "Show me NAME" — case-sensitive name token so "pictures" is never a person under (?i).
 SHOW_ME_PERSON_RE = re.compile(
-    r"(?i)\bshow\s+me\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b"
+    r"(?i)\bshow\s+me\s+"
+    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
 )
 PLACE_FROM_RE = re.compile(
-    r"(?i)\b(?:from|in|at|near|around)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b"
+    r"(?i)\b(?:from|in|at|near|around)\s+"
+    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
 )
 _ENTITY_STOP = frozenset(
     {
