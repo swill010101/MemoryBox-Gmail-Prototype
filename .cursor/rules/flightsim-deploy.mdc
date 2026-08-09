@@ -1,0 +1,41 @@
+---
+description: When deploy target is FlightSim, always commit+push and give FS run commands
+alwaysApply: true
+---
+
+# FlightSim deploy (desktop → FS)
+
+P1 runtime is **FlightSim**. Desktop Cursor is for edit/prove; **FlightSim** is where code is pulled and run.
+
+## When this applies
+
+If the change is meant to run / be tested / accepted on FlightSim (Ask UI, prove-ask, Immich, I4+, ops), treat deploy as FlightSim even if the user is chatting from the desktop machine.
+
+## Required agent behavior
+
+1. **Commit** the relevant fix files (do not wait to be asked again).
+2. **Push** to the tracking branch on `origin` (rebase/pull first if needed; never force-push unless Tom explicitly asks).
+3. **Pass along FlightSim deploy commands** in the same reply so Tom can run them on FS.
+
+Do **not** leave FlightSim-bound work only on the desktop working tree.
+
+## Default FS commands to include (adapt path/branch)
+
+```powershell
+cd <repo-root>
+git fetch
+git checkout cursor/marvin-capture-v01-3344
+git pull
+# Restart Ask if it is already running, then:
+python -m memorybox serve
+# Optional acceptance / smoke:
+# $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+# python -m memorybox prove-ask --flightsim
+```
+
+Point Tom at `docs/ops/FLIGHTSIM_I4_ACCEPTANCE_RUNBOOK.md` when the change is I4 acceptance-related.
+
+## Exceptions
+
+- Pure docs/planning with no runtime effect: commit/push optional unless Tom asks.
+- Secrets, `config/immich.env`, local WIP unrelated to the fix: do not commit.
