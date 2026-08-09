@@ -1,12 +1,12 @@
 # MBBS-001 Increment 4 — Definition (for review)
 
-**Status:** **BUILT — DESKTOP PROVE PASS; AWAITING P1-RUNTIME FINAL**  
+**Status:** **ACCEPTED** (FlightSim final prove `ok: true`, 2026-08-09)  
 **Date:** 2026-08-09  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 4  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md) (**D1–D7**)  
 **Depends on:** Increments 1–3 **accepted**; FlightSim I1–I3 checkpoint **passed**; Media-Server Sources checkpoint **passed**  
 **Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md)  
-**Build:** Authorized and implemented. Final FlightSim prove pending operator run ([runbook](../ops/FLIGHTSIM_I4_ACCEPTANCE_RUNBOOK.md)).
+**Build:** Authorized, implemented, and **accepted** on P1 runtime host.
 
 ---
 
@@ -235,6 +235,4 @@ memorybox/
 
 ## 11. Authorization gate
 
-Scope above is **locked** and **built**. Final acceptance requires FlightSim `prove-ask --flightsim`.
-
-- Do **not** begin Increment 5 until I4 is fully **ACCEPTED** on FlightSim and Tom authorizes the next increment.
+Increment 4 is **ACCEPTED**. Do **not** begin Increment 5 until Tom explicitly authorizes *Build Increment 5 only* (or the next authorized slice).

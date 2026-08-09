@@ -11,8 +11,8 @@ Record one section per increment. Do not wait until end of P1.
 
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 4 only (locked definition)  
-**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) — **BUILT; desktop prove PASS; FlightSim final PENDING**  
-**Next increment:** Not started (requires I4 fully accepted + explicit authorization)
+**Acceptance:** [MBBS-001_INCREMENT_4_ACCEPTANCE.md](MBBS-001_INCREMENT_4_ACCEPTANCE.md) — **ACCEPTED** (FlightSim `prove-ask --flightsim` ok)  
+**Next increment:** Not started (requires explicit authorization)
 
 ### Decisions discovered during build
 
@@ -35,8 +35,10 @@ Record one section per increment. Do not wait until end of P1.
 | Domain | Session context contract only (no new SoT tables) |
 | Experience Flow | EF-01, EF-02 basic, EF-04 thin |
 | Architecture | Planner + orchestrator + providers |
-| Build Spec | Inc 4 built; final accept pending FlightSim |
+| Build Spec | Inc 4 **accepted** on FlightSim |
 | Locked decisions | D2/D3/D6/D7 aligned |
+| In-package Immich HTTP client | FlightSim had no `application/api`; earn-in under `memorybox/providers/photo/` |
+| Immich env URL hardening | Mangled `IMMICH_BASE_URL=` pastes caused urllib scheme errors on FlightSim |
 
 ### Specs changed
 
