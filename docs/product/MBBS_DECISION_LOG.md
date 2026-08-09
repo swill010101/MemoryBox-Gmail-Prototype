@@ -7,6 +7,25 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
+## Increment 5 — Story service + first-class Ask modality
+
+**Date:** 2026-08-09  
+**Authorization:** Build Increment 5 only (locked definition)  
+**Acceptance:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — desktop PASS; FlightSim + owner Story UX pending  
+**Next:** Do not begin 5A/6 without authorization
+
+### Build-lock decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Story is first-class Ask modality (direct PG query) | No silo; no required story_passage materialization for I5 |
+| Ask blend = all applicable modalities + provenance labels | Matches I4 multimodal presentation |
+| STT / Journal out | Capture later; Journal = 5A |
+| I1 relationships for associations | No ad-hoc Story columns; domain gap none for I5 minimum |
+| Owner Story = provenance-bearing recollection | May save/retrieve without independent corroboration; Ask must attribute |
+
+---
+
 ## Increment 4 — Ask + Query Planner + basic contextual follow-up
 
 **Date:** 2026-08-09  

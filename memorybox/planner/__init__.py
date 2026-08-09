@@ -220,6 +220,7 @@ class QueryPlan:
     want_photo: bool
     want_communication: bool
     want_calendar: bool
+    want_story: bool = False
     visual_scope: VisualScope = "none"
     want_visual: bool = False
     want_still: bool = False
@@ -259,6 +260,8 @@ class QueryPlan:
             out.append("communication")
         if self.want_calendar:
             out.append("calendar_event")
+        if self.want_story:
+            out.append("story")
         return tuple(out)
 
 
@@ -769,6 +772,20 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if want_video and not want_still:
         notes.append("video_intent_no_i4_provider")
 
+    # Story modality (I5): exploratory + default archive asks; not email/photo/video-only or said-about
+    want_story = False
+    if not requires_clarification:
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+            want_story = True
+        if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
+            want_story = False
+        if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
+            want_story = False
+        if said_about:
+            want_story = False
+        if want_story:
+            notes.append("want_story_modality")
+
     return QueryPlan(
         original_ask=q,
         effective_ask=effective,
@@ -776,6 +793,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_photo=want_photo,
         want_communication=want_email and not requires_clarification,
         want_calendar=want_cal and not requires_clarification,
+        want_story=want_story,
         visual_scope=visual_scope if not requires_clarification else "none",
         want_visual=want_visual and not requires_clarification,
         want_still=want_still and not requires_clarification,

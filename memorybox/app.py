@@ -1,10 +1,10 @@
-"""FastAPI entry for MemoryBox monolith (Increment 4: Ask + health)."""
+"""FastAPI entry for MemoryBox monolith (Increment 5: Ask + Story)."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -14,6 +14,15 @@ from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.config import settings
 from memorybox.context import ContextPatch, default_context_store
 from memorybox.db import ping
+from memorybox.story import (
+    StoryServiceError,
+    associate_evidence,
+    associate_person,
+    create_story,
+    get_story,
+    list_stories,
+    save_new_version,
+)
 
 # Domain tables created by 001_domain_v0.sql — listed for health/inventory (no provider schemas).
 DOMAIN_V0_TABLES = (
@@ -34,11 +43,12 @@ DOMAIN_V0_TABLES = (
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
+STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.html"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 4: Evidence-backed Ask.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 5: Story + Ask.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -63,6 +73,22 @@ class ContextChangeRequest(BaseModel):
     time_start: str | None = None
     time_end: str | None = None
     clear_time: bool = False
+
+
+class StoryCreateRequest(BaseModel):
+    title: str | None = None
+    body_text: str = Field(..., min_length=1)
+    narrator_display_name: str | None = None
+    narrator_person_id: str | None = None
+    person_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class StoryVersionRequest(BaseModel):
+    body_text: str = Field(..., min_length=1)
+    title: str | None = None
+    note: str | None = None
 
 
 @app.get("/health")
@@ -137,7 +163,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 4,
+        "increment": 5,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -145,6 +171,7 @@ def health() -> dict[str, Any]:
         "host": settings.host,
         "port": settings.port,
         "ask": "/ask/ui",
+        "story": "/story/ui",
     }
 
 
@@ -152,11 +179,13 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 4,
+        "increment": 5,
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
         "ask": "POST /ask",
+        "story_ui": "/story/ui",
+        "story": "/story",
     }
 
 
@@ -165,6 +194,13 @@ def ask_ui() -> FileResponse:
     if not ASK_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Ask UI missing")
     return FileResponse(ASK_STATIC, media_type="text/html")
+
+
+@app.get("/story/ui")
+def story_ui() -> FileResponse:
+    if not STORY_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Story UI missing")
+    return FileResponse(STORY_STATIC, media_type="text/html")
 
 
 @app.post("/ask")
@@ -204,3 +240,71 @@ def change_context(session_id: str, body: ContextChangeRequest) -> dict[str, Any
             patch.time_end = body.time_end
     ctx = get_orchestrator().change_context(session_id, patch)
     return {"ok": True, "context": ctx.to_dict()}
+
+
+@app.get("/story")
+def story_list() -> dict[str, Any]:
+    return {"ok": True, "stories": list_stories()}
+
+
+@app.post("/story")
+def story_create(body: StoryCreateRequest) -> dict[str, Any]:
+    try:
+        view = create_story(
+            title=body.title,
+            body_text=body.body_text,
+            narrator_display_name=body.narrator_display_name,
+            narrator_person_id=body.narrator_person_id,
+            person_ids=body.person_ids,
+            evidence_ids=body.evidence_ids,
+            note=body.note,
+            actor_key="owner",
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/story/{story_id}")
+def story_get(
+    story_id: str, version: int | None = Query(default=None)
+) -> dict[str, Any]:
+    view = get_story(story_id, version=version)
+    if not view:
+        raise HTTPException(status_code=404, detail="story not found")
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/versions")
+def story_new_version(story_id: str, body: StoryVersionRequest) -> dict[str, Any]:
+    try:
+        view = save_new_version(
+            story_id,
+            body_text=body.body_text,
+            title=body.title,
+            note=body.note,
+            actor_key="owner",
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/persons/{person_id}")
+def story_add_person(story_id: str, person_id: str) -> dict[str, Any]:
+    try:
+        view = associate_person(story_id, person_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/evidence/{evidence_id}")
+def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
+    try:
+        view = associate_evidence(story_id, evidence_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}

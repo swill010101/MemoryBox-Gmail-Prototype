@@ -1,4 +1,4 @@
-"""Thin Experience Orchestrator — Evidence First Ask (Increment 4)."""
+"""Thin Experience Orchestrator — Evidence First Ask (Increment 4+) + Story modality (I5)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,6 +30,7 @@ class AskResult:
     citations: list[dict[str, Any]]
     evidence_hits: list[dict[str, Any]]
     photo_hits: list[dict[str, Any]]
+    story_hits: list[dict[str, Any]]
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
@@ -46,6 +47,7 @@ class AskResult:
             "citations": self.citations,
             "evidence_hits": self.evidence_hits,
             "photo_hits": self.photo_hits,
+            "story_hits": self.story_hits,
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
@@ -53,10 +55,14 @@ class AskResult:
 
 
 def _update_context_from_plan(
-    ctx: AskContext, plan: QueryPlan, evidence_ids: list[str], photo_ids: list[str]
+    ctx: AskContext,
+    plan: QueryPlan,
+    evidence_ids: list[str],
+    photo_ids: list[str],
+    story_ids: list[str],
 ) -> AskContext:
     """Rule H: persisted context mirrors effective plan slots (not stale merge)."""
-    selection = tuple(evidence_ids[:12] + photo_ids[:12])
+    selection = tuple(evidence_ids[:8] + photo_ids[:8] + story_ids[:8])
     patch = ContextPatch(
         person_names=plan.person_names,
         place_names=plan.place_names,
@@ -74,6 +80,7 @@ def _build_answer(
     plan: QueryPlan,
     evidence: list[R.EvidenceHit],
     photos: list[R.PhotoHit],
+    stories: list[R.StoryHit],
     photo_status: dict[str, Any],
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
     citations: list[dict[str, Any]] = []
@@ -93,6 +100,7 @@ def _build_answer(
                 "evidence_kind": h.evidence_kind,
                 "summary": h.summary,
                 "source": h.source,
+                "provenance_kind": "archive_evidence",
             }
         )
         statements.append(
@@ -101,6 +109,8 @@ def _build_answer(
                 "label": "Fact",
                 "evidence_ids": [h.evidence_id],
                 "photo_external_ids": [],
+                "story_ids": [],
+                "provenance_kind": "archive_evidence",
             }
         )
 
@@ -115,6 +125,7 @@ def _build_answer(
                 "location": p.location,
                 "thumb_url": p.thumb_url,
                 "web_url": p.web_url,
+                "provenance_kind": "archive_evidence",
             }
         )
         who = ", ".join(p.people) if p.people else "people not labeled"
@@ -125,6 +136,33 @@ def _build_answer(
                 "label": "Fact",
                 "evidence_ids": [],
                 "photo_external_ids": [p.external_id],
+                "story_ids": [],
+                "provenance_kind": "archive_evidence",
+            }
+        )
+
+    for s in stories:
+        citations.append(
+            {
+                "kind": "story",
+                "story_id": s.story_id,
+                "version": s.version,
+                "title": s.title,
+                "narrator_person_id": s.narrator_person_id,
+                "narrator_display_name": s.narrator_display_name,
+                "provenance_kind": s.provenance_kind,
+                "attribution": s.attribution,
+            }
+        )
+        statements.append(
+            {
+                "text": f"{s.attribution}: {s.excerpt}",
+                "label": "Recollection",
+                "evidence_ids": [],
+                "photo_external_ids": [],
+                "story_ids": [s.story_id],
+                "provenance_kind": s.provenance_kind,
+                "attribution": s.attribution,
             }
         )
 
@@ -135,14 +173,14 @@ def _build_answer(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
-    if video_only_no_provider:
+    if video_only_no_provider and not evidence and not stories:
         missing = (
             "Video modality is not available in this Increment 4 runtime "
             "(no video/HVRT provider wired). MemoryBox will not invent video results."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if photo_unavail and not evidence:
+    if photo_unavail and not evidence and not stories:
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
@@ -150,22 +188,28 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and evidence:
+    if photo_unavail and (evidence or stories):
         text = (
             "Photo provider is unavailable (not 'no photos'). "
-            f"Found {len(evidence)} Evidence hit(s) from email/calendar. "
-            "Family-history claims below are limited to cited Evidence."
+            f"Found {len(evidence)} Evidence hit(s) and {len(stories)} Story hit(s). "
+            "Family-history claims below are limited to cited Evidence/Stories with provenance."
         )
         return "mixed", text, statements, citations, None
 
-    if plan.want_photo and not photos and not evidence and photo_status.get("ok"):
+    if (
+        (plan.want_photo or plan.want_still or getattr(plan, "want_story", False))
+        and not photos
+        and not evidence
+        and not stories
+        and photo_status.get("ok", True)
+    ):
         missing = (
-            "Insufficient Evidence: no matching photos or email/calendar Evidence "
-            "were found for this ask. MemoryBox will not invent a family fact."
+            "Insufficient Evidence: no matching photos, Stories, or email/calendar "
+            "Evidence were found for this ask. MemoryBox will not invent a family fact."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if not evidence and not photos:
+    if not evidence and not photos and not stories:
         missing = (
             "Insufficient Evidence for this ask. Available archive Evidence does not "
             "support a factual family-history answer. MemoryBox will not invent one."
@@ -173,6 +217,11 @@ def _build_answer(
         return "insufficient", missing, statements, citations, missing
 
     parts = []
+    if stories:
+        parts.append(
+            f"Found {len(stories)} owner Story recollection(s) "
+            "(provenance: narrator testimony — not independently corroborated unless also cited)."
+        )
     if photos:
         parts.append(f"Found {len(photos)} photo hit(s) via the photo provider.")
     if evidence:
@@ -184,10 +233,14 @@ def _build_answer(
             + "."
         )
     parts.append("Factual claims are limited to the citations listed.")
-    if photos and evidence:
+    if stories and (photos or evidence):
         kind = "mixed"
+    elif stories and not photos and not evidence:
+        kind = "story_backed"
     elif photos and not evidence:
         kind = "photo_backed"
+    elif photos and evidence:
+        kind = "mixed"
     else:
         kind = "evidence_backed"
     return kind, " ".join(parts), statements, citations, None
@@ -213,19 +266,22 @@ class AskOrchestrator:
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
         photos: list[R.PhotoHit] = []
         photo_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
+        stories: list[R.StoryHit] = []
 
         if not plan.requires_clarification:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
                 qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
                 evidence = R.merge_evidence_hits(pg_hits, qd_hits)
-                # Rule G: when constraints exist, drop hits that match none
                 if plan.retrieval_constraints:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
             if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
+
+            if getattr(plan, "want_story", False):
+                stories = R.search_stories(plan)
 
             if plan.want_video and plan.visual_scope in ("broad", "video_only"):
                 photo_status = dict(photo_status)
@@ -239,7 +295,7 @@ class AskOrchestrator:
                 )
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(
-            plan, evidence, photos, photo_status
+            plan, evidence, photos, stories, photo_status
         )
 
         new_ctx = _update_context_from_plan(
@@ -247,10 +303,10 @@ class AskOrchestrator:
             plan,
             [h.evidence_id for h in evidence],
             [p.external_id for p in photos],
+            [s.story_id for s in stories],
         )
         new_ctx = self.store.save(new_ctx)
 
-        # Rule H: expose effective retrieval context on the response context dict
         ctx_dict = new_ctx.to_dict()
         ctx_dict["effective_retrieval_constraints"] = list(plan.retrieval_constraints)
         ctx_dict["plan_slots"] = {
@@ -264,6 +320,10 @@ class AskOrchestrator:
         providers = provider_snapshot(self.photo, self.llm)
         providers["qdrant"] = qdrant_status
         providers["photo_search"] = photo_status
+        providers["story_search"] = {
+            "ok": True,
+            "detail": f"hits={len(stories)}" if plan.want_story else "not_requested",
+        }
 
         return AskResult(
             session_id=new_ctx.session_id,
@@ -276,6 +336,7 @@ class AskOrchestrator:
             citations=citations,
             evidence_hits=[h.to_dict() for h in evidence],
             photo_hits=[p.to_dict() for p in photos],
+            story_hits=[s.to_dict() for s in stories],
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,

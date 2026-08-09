@@ -44,6 +44,22 @@ class PhotoHit:
         return asdict(self)
 
 
+@dataclass
+class StoryHit:
+    story_id: str
+    version: int
+    title: str | None
+    excerpt: str
+    narrator_person_id: str | None
+    narrator_display_name: str | None
+    provenance_kind: str
+    attribution: str
+    score: float = 1.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def _payload_dict(raw: Any) -> dict[str, Any]:
     if isinstance(raw, str):
         return json.loads(raw)
@@ -429,3 +445,116 @@ def search_photos(
         status["unavailable"] = True
         status["detail"] = str(exc)
         return [], status
+
+
+def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
+    """Retrieve current Story versions relevant to plan constraints / ask tokens.
+
+    Queries stories/story_versions (+ person relationships) directly — no silo,
+    no required story_passage Evidence materialization for I5.
+    """
+    if not getattr(plan, "want_story", False):
+        return []
+    tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
+    if not tokens:
+        tokens = [
+            t
+            for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", plan.original_ask or "")
+            if t.lower()
+            not in {
+                "what",
+                "you",
+                "know",
+                "about",
+                "tell",
+                "have",
+                "from",
+                "our",
+                "the",
+                "trip",
+                "show",
+                "me",
+                "emails",
+                "photos",
+            }
+        ]
+    if not tokens:
+        return []
+
+    hits: list[StoryHit] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                s.id AS story_id,
+                s.title,
+                s.narrator_person_id,
+                s.current_version,
+                sv.body_text,
+                sv.version,
+                p.display_name AS narrator_name
+            FROM stories s
+            JOIN story_versions sv
+              ON sv.story_id = s.id AND sv.version = s.current_version
+            LEFT JOIN people p ON p.id = s.narrator_person_id
+            WHERE s.status = 'active'
+            ORDER BY s.updated_at DESC
+            LIMIT %s
+            """,
+            (limit * 8,),
+        ).fetchall()
+
+        # Also gather person names linked via about_person
+        rel_people: dict[str, list[str]] = {}
+        if rows:
+            ids = [r["story_id"] for r in rows]
+            # psycopg handles list for ANY
+            rrows = conn.execute(
+                """
+                SELECT r.from_id, p.display_name
+                FROM relationships r
+                JOIN people p ON p.id = r.to_id
+                WHERE r.from_type = 'story'
+                  AND r.to_type = 'person'
+                  AND r.from_id = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+            for rr in rrows:
+                rel_people.setdefault(str(rr["from_id"]), []).append(
+                    rr["display_name"] or ""
+                )
+
+        for r in rows:
+            sid = str(r["story_id"])
+            blob = " ".join(
+                [
+                    r["title"] or "",
+                    r["body_text"] or "",
+                    r["narrator_name"] or "",
+                    " ".join(rel_people.get(sid, [])),
+                ]
+            ).lower()
+            match_n = sum(1 for t in tokens if t.lower() in blob)
+            if match_n == 0:
+                continue
+            narrator = r["narrator_name"] or "owner"
+            body = r["body_text"] or ""
+            excerpt = body[:200] + ("…" if len(body) > 200 else "")
+            hits.append(
+                StoryHit(
+                    story_id=sid,
+                    version=int(r["version"]),
+                    title=r["title"],
+                    excerpt=excerpt,
+                    narrator_person_id=str(r["narrator_person_id"])
+                    if r["narrator_person_id"]
+                    else None,
+                    narrator_display_name=r["narrator_name"],
+                    provenance_kind="owner_narrator_recollection",
+                    attribution=f"{narrator} recalled (Story v{int(r['version'])})",
+                    score=float(match_n),
+                )
+            )
+    hits.sort(key=lambda h: h.score, reverse=True)
+    return hits[:limit]

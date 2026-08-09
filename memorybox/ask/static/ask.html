@@ -150,12 +150,16 @@
       const results = document.getElementById("results");
       const ev = data.evidence_hits || [];
       const ph = data.photo_hits || [];
-      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · kind=${kind}</p><ul>`;
+      const st = data.story_hits || [];
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · kind=${kind}</p><ul>`;
       ev.slice(0, 12).forEach(h => {
         html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
       });
       ph.slice(0, 12).forEach(h => {
         html += `<li>[photo] <code>${h.external_id}</code></li>`;
+      });
+      st.slice(0, 12).forEach(h => {
+        html += `<li>[story recollection] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
       });
       html += "</ul>";
       results.innerHTML = html;
@@ -167,9 +171,12 @@
       } else {
         cit.innerHTML = "<ul>" + citations.map(c => {
           if (c.kind === "evidence") {
-            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind})</li>`;
+            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind}) [archive]</li>`;
           }
-          return `<li>Photo <code>${c.external_id}</code> (${c.provider_key})</li>`;
+          if (c.kind === "story") {
+            return `<li>Story <code>${c.story_id}</code> v${c.version} — ${c.attribution || "owner recollection"}</li>`;
+          }
+          return `<li>Photo <code>${c.external_id}</code> (${c.provider_key}) [archive]</li>`;
         }).join("") + "</ul>";
       }
       document.getElementById("providers").textContent = JSON.stringify(data.provider_status || {}, null, 2);

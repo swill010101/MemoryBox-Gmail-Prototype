@@ -421,10 +421,9 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increment 4 — ACCEPTED** (corrective + owner manual validation). No further I4 polish.  
-2. **Increment 5 definition** — [MBBS-001_INCREMENT_5_DEFINITION.md](MBBS-001_INCREMENT_5_DEFINITION.md) is **REVIEW ONLY**.  
-3. **Do not begin Increment 5** until Tom explicitly authorizes *Build Increment 5 only*.  
-4. SMS remains deferred — keep on P1 roadmap.  
-5. Ask-language edge cases from normal use → defect/EVS backlog for future increments (unless fundamental trust failure).
+1. **Increment 5** — desktop prove PASS; **FlightSim** `prove-story --flightsim` + ≥1 real owner Story via `/story/ui` required for final acceptance ([I5 acceptance](MBBS-001_INCREMENT_5_ACCEPTANCE.md)).  
+2. **Do not begin Increment 5A / 6** until Tom explicitly authorizes.  
+3. SMS remains deferred — keep on P1 roadmap.  
+4. Ask-language edge cases from normal use → defect/EVS backlog (unless fundamental trust failure).
 
 **Unauthorized increments must not start.**

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Story</title>
+  <style>
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, textarea {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    textarea { min-height: 140px; }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a655c; font-size: 0.85rem; }
+    code { font-size: 0.8rem; }
+    ul { padding-left: 1.1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Story</h1>
+    <p class="sub">Thin functional shell (Increment 5) — explicit Save; versions immutable; no visual polish. <a href="/ask/ui">Ask</a></p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Create / Save Story</h2>
+      <label for="title">Title</label>
+      <input id="title" placeholder="Story title" />
+      <label for="narrator">Narrator display name</label>
+      <input id="narrator" placeholder="e.g. Owner" />
+      <label for="body">Body (owner recollection)</label>
+      <textarea id="body" placeholder="Write the recollection…"></textarea>
+      <label for="evidenceId">Related Evidence ID (optional UUID)</label>
+      <input id="evidenceId" placeholder="evidence UUID" />
+      <label for="personId">Related Person ID (optional UUID; narrator also associates)</label>
+      <input id="personId" placeholder="person UUID" />
+      <button id="saveBtn" type="button">Save Story</button>
+      <p class="muted">AI content cannot be auto-saved. Save is explicit owner action only.</p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Edit / Save new version</h2>
+      <label for="editId">Story ID</label>
+      <input id="editId" />
+      <label for="editBody">New body</label>
+      <textarea id="editBody"></textarea>
+      <button id="versionBtn" type="button">Save new version</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Retrieve</h2>
+      <label for="getId">Story ID</label>
+      <input id="getId" />
+      <label for="getVer">Version (blank = current)</label>
+      <input id="getVer" placeholder="e.g. 1" />
+      <button id="getBtn" type="button">Get</button>
+      <button class="secondary" id="listBtn" type="button">List stories</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result (opaque-friendly)</h2>
+      <pre id="out" class="muted">No action yet.</pre>
+    </section>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    function show(data) {
+      out.textContent = JSON.stringify(data, null, 2);
+    }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      const data = await r.json();
+      if (!r.ok) throw data;
+      return data;
+    }
+    document.getElementById("saveBtn").onclick = async () => {
+      try {
+        const body = {
+          title: document.getElementById("title").value,
+          body_text: document.getElementById("body").value,
+          narrator_display_name: document.getElementById("narrator").value || null,
+          evidence_ids: document.getElementById("evidenceId").value
+            ? [document.getElementById("evidenceId").value.trim()]
+            : [],
+          person_ids: document.getElementById("personId").value
+            ? [document.getElementById("personId").value.trim()]
+            : [],
+        };
+        show(await j("/story", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { show(e); }
+    };
+    document.getElementById("versionBtn").onclick = async () => {
+      try {
+        const id = document.getElementById("editId").value.trim();
+        show(await j("/story/" + encodeURIComponent(id) + "/versions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body_text: document.getElementById("editBody").value }),
+        }));
+      } catch (e) { show(e); }
+    };
+    document.getElementById("getBtn").onclick = async () => {
+      try {
+        const id = document.getElementById("getId").value.trim();
+        const v = document.getElementById("getVer").value.trim();
+        const q = v ? ("?version=" + encodeURIComponent(v)) : "";
+        show(await j("/story/" + encodeURIComponent(id) + q));
+      } catch (e) { show(e); }
+    };
+    document.getElementById("listBtn").onclick = async () => {
+      try { show(await j("/story")); }
+      catch (e) { show(e); }
+    };
+  </script>
+</body>
+</html>
