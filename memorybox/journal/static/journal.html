@@ -91,6 +91,11 @@
 
       <p class="muted">Voice: Record → Stop → STT draft fills Body (not saved until you click Save Journal).</p>
       <p id="micHint" class="warn" style="display:none"></p>
+      <label for="micDevice">Microphone (browser may ignore Windows default — pick Logitech here)</label>
+      <select id="micDevice">
+        <option value="">Loading devices…</option>
+      </select>
+      <button id="refreshMicsBtn" type="button" class="secondary">Refresh mic list</button>
       <button id="recBtn" type="button" class="secondary">Record</button>
       <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
       <span id="recStatus" class="muted">Idle</span>
@@ -211,6 +216,46 @@
       }
     }
 
+    function preferMicId(devices) {
+      const saved = localStorage.getItem("mb_journal_mic_id") || "";
+      if (saved && devices.some((d) => d.deviceId === saved)) return saved;
+      const logi = devices.find((d) => /logi|c615|webcam|microphone/i.test(d.label || "")
+        && !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      if (logi) return logi.deviceId;
+      const notVb = devices.find((d) => !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      return (notVb && notVb.deviceId) || (devices[0] && devices[0].deviceId) || "";
+    }
+
+    async function refreshMicList() {
+      const sel = document.getElementById("micDevice");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        sel.innerHTML = "<option value=\"\">Mic enumeration unavailable</option>";
+        return;
+      }
+      // Need a permission grant once so labels are populated
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const inputs = all.filter((d) => d.kind === "audioinput");
+      sel.innerHTML = "";
+      if (!inputs.length) {
+        sel.innerHTML = "<option value=\"\">No audio inputs found</option>";
+        return;
+      }
+      const preferred = preferMicId(inputs);
+      inputs.forEach((d) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        const label = d.label || ("Microphone " + d.deviceId.slice(0, 8));
+        opt.textContent = label;
+        if (d.deviceId === preferred) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (preferred) localStorage.setItem("mb_journal_mic_id", preferred);
+    }
+
     // Browsers block mic on plain http://host (non-localhost). Surface that early.
     (function micProbe() {
       const hint = document.getElementById("micHint");
@@ -222,8 +267,17 @@
           "Browser mic is unavailable on this URL (needs localhost or HTTPS). " +
           "Use Record on FlightSim at http://127.0.0.1:8790/journal/ui, or upload an audio file below.";
         setRecStatus("Mic blocked on this origin — use upload or localhost", true);
+      } else {
+        refreshMicList().catch(() => {});
       }
     })();
+
+    document.getElementById("refreshMicsBtn").onclick = () => {
+      refreshMicList().catch((err) => show({ detail: String(err) }));
+    };
+    document.getElementById("micDevice").onchange = (ev) => {
+      if (ev.target.value) localStorage.setItem("mb_journal_mic_id", ev.target.value);
+    };
 
     document.getElementById("recBtn").onclick = async () => {
       try {
@@ -232,17 +286,23 @@
             "navigator.mediaDevices unavailable (insecure non-localhost origin). Use audio upload or open http://127.0.0.1:8790/journal/ui on FlightSim."
           );
         }
-        // Prefer explicit device enumeration so the OS mic picker is meaningful
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+        const deviceId = (document.getElementById("micDevice").value || "").trim();
+        const audioConstraint = {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        if (deviceId) audioConstraint.deviceId = { exact: deviceId };
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
         const track = stream.getAudioTracks()[0];
         const trackLabel = (track && track.label) || "unknown mic";
+        if (/voicemeeter|vb-audio|cable|stereo mix/i.test(trackLabel)) {
+          setRecStatus(
+            "Selected \"" + trackLabel + "\" is a virtual cable (often silent). Choose \"Microphone (Logi C615…)\" in the list above.",
+            true
+          );
+        }
 
         const chunks = [];
         const mimeCandidates = [
