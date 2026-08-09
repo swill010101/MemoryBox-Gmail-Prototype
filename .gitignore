@@ -34,6 +34,7 @@ hvrt/.venv/
 # Common large media (defense in depth)
 *.zip
 *.mbox
+!memorybox/providers/_fixtures/*.mbox
 *.mp4
 *.MP4
 *.mov
