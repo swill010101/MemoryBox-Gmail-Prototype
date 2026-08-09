@@ -1,9 +1,10 @@
 # MBBS-001 Increment 5 — Acceptance Report
 
-**Status:** **DESKTOP PROVE PASS — FLIGHTSIM FINAL + OWNER STORY UX PENDING**  
+**Status:** **ACCEPTED**  
 **Date:** 2026-08-09  
-**Definition:** [MBBS-001_INCREMENT_5_DEFINITION.md](MBBS-001_INCREMENT_5_DEFINITION.md) — **LOCKED / BUILD AUTHORIZED**  
+**Definition:** [MBBS-001_INCREMENT_5_DEFINITION.md](MBBS-001_INCREMENT_5_DEFINITION.md) — locked / built  
 **Authorization:** Build Increment 5 only  
+**Final acceptance host:** P1 runtime (FlightSim)
 
 ---
 
@@ -14,33 +15,50 @@
 | Story Service (create/version/retrieve/associations) | **COMPLETE** |
 | Ask Story modality + attribution | **COMPLETE** |
 | Thin Story UX (`/story/ui`) | **COMPLETE** |
-| Desktop `prove-story` | **PASS** (`ok: true`) |
-| FlightSim `prove-story --flightsim` + real owner Story | **PENDING operator** |
-| Final I5 acceptance | **PENDING FlightSim** |
+| Desktop `prove-story` | **PASS** |
+| FlightSim `prove-story --flightsim` | **PASS** (`ok: true`) |
+| Real owner-saved Story (UX) | **PASS** (opaque id present; v=1) |
 
+**Increment 5 is ACCEPTED.**  
 **Do not begin Increment 5A / 6** without explicit authorization.  
-**No Journal, STT, HVRT, polish in this increment.**
+**No Journal, STT, Guided Capture, SMS, HVRT/video, Person teach/merge, multi-user, or visual polish.**
 
 ---
 
-## Criteria map (desktop)
+## Criteria map
 
 | ID | Result | Opaque detail |
 |----|--------|---------------|
-| **I5-A** | PASS | create/save story_id present |
+| **I5-A** | PASS | create/save |
 | **I5-B** | PASS | edit → version 2; v1 retained |
 | **I5-C** | PASS | current + prior retrieve |
-| **I5-D** | PASS | narrator + person + evidence associations |
-| **I5-E** | PASS | recollection without corroborating Evidence |
-| **I5-F** | PASS | exploratory Ask retrieves Story |
-| **I5-G** | PASS | Story citation attribution / provenance |
+| **I5-D** | PASS | people=1 evidence=1 (+ narrator) |
+| **I5-E** | PASS | recollection without corroboration |
+| **I5-F** | PASS | Ask retrieves Story (`want_story=True`, story_hits present, kind=mixed) |
+| **I5-G** | PASS | Story citation provenance |
 | **I5-H** | PASS | AI actor persist rejected |
 | **I5-I** | PASS | Story naming |
-| **I5-J** | PASS (synthetic) | generalized tag; real owner Story pending FS |
+| **I5-J** | PASS | generalized synthetic subjects + real owner Story |
 | **I5-K** | PASS | health increment=5 |
 | **I5-L** | PASS | living specs |
 
-Reports contain **no** Story body text.
+No Story body text in this report.
+
+---
+
+## FlightSim final (opaque)
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-08-09 |
+| Command | `python -m memorybox prove-story --flightsim` |
+| Result | `"ok": true` |
+| Problems | none |
+| Synthetic story id | `43ed1e95-9808-4026-ba41-4b7abd470070` |
+| Synthetic tag | `Harborwick-3c6503c4` |
+| Owner story id | `3a51e7ba-7341-4823-b311-f485a161ccc6` (v=1) |
+| Health | increment=5 |
+| Ask path | `want_story=True`, `story_hits=4`, `kind=mixed` |
 
 ---
 
@@ -49,44 +67,13 @@ Reports contain **no** Story body text.
 | Area | Location |
 |------|----------|
 | Story Service | `memorybox/story/` |
-| Ask Story retrieval | `memorybox/ask/retrieve.py` `search_stories` |
-| Planner `want_story` | `memorybox/planner/` |
-| Orchestrator attribution | `memorybox/ask/orchestrator.py` |
+| Ask Story retrieval | `search_stories` + `want_story` |
 | Story UX | `GET /story/ui` |
-| CLI | `python -m memorybox prove-story` |
-
----
-
-## FlightSim final (operator)
-
-```powershell
-cd C:\MemoryBox
-git fetch
-git checkout cursor/marvin-capture-v01-3344
-git pull
-python -m memorybox serve
-# Open http://127.0.0.1:8790/story/ui — Save one real owner Story; copy opaque story id
-$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
-$env:MEMORYBOX_I5_OWNER_STORY_ID = "<opaque-story-uuid>"
-python -m memorybox prove-story --flightsim
-```
-
-Manual Ask: `What do you know about <subject from that Story>?` → expect Story recollection with attribution alongside other modalities.
-
-Paste opaque JSON (`ok`, check names, IDs/counts only) below when done.
-
-### FlightSim final
-
-| Field | Value |
-|-------|-------|
-| Date | _pending_ |
-| `prove-story --flightsim` | _pending_ |
-| Owner story id | _pending_ |
+| CLI | `prove-story` / `prove-story --flightsim` |
 
 ---
 
 ## Stop
 
-- Desktop I5 implementation + prove complete.  
-- Final acceptance after FlightSim prove + owner UX Story.  
-- **No 5A / Inc 6** without authorization.
+- Increment 5 **ACCEPTED**.  
+- **Do not** start 5A (Journal), Inc 6, or other later increments without explicit authorization.

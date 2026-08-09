@@ -11,7 +11,7 @@ Record one section per increment. Do not wait until end of P1.
 
 **Date:** 2026-08-09  
 **Authorization:** Build Increment 5 only (locked definition)  
-**Acceptance:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — desktop PASS; FlightSim + owner Story UX pending  
+**Acceptance:** [MBBS-001_INCREMENT_5_ACCEPTANCE.md](MBBS-001_INCREMENT_5_ACCEPTANCE.md) — **ACCEPTED** (FlightSim `prove-story --flightsim` + owner Story UX)  
 **Next:** Do not begin 5A/6 without authorization
 
 ### Build-lock decisions

@@ -421,8 +421,8 @@ P1 application is done when:
 
 ## 10. Next action
 
-1. **Increment 5** — desktop prove PASS; **FlightSim** `prove-story --flightsim` + ≥1 real owner Story via `/story/ui` required for final acceptance ([I5 acceptance](MBBS-001_INCREMENT_5_ACCEPTANCE.md)).  
-2. **Do not begin Increment 5A / 6** until Tom explicitly authorizes.  
+1. **Increment 5 — ACCEPTED** (FlightSim `prove-story --flightsim` + owner Story).  
+2. **Do not begin Increment 5A (Journal) / 6** until Tom explicitly authorizes.  
 3. SMS remains deferred — keep on P1 roadmap.  
 4. Ask-language edge cases from normal use → defect/EVS backlog (unless fundamental trust failure).
 
