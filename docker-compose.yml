@@ -1,0 +1,21 @@
+# MemoryBox local PostgreSQL (Increment 1)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: memorybox-pg
+    environment:
+      POSTGRES_USER: memorybox
+      POSTGRES_PASSWORD: memorybox
+      POSTGRES_DB: memorybox
+    ports:
+      - "5432:5432"
+    volumes:
+      - memorybox_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memorybox -d memorybox"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  memorybox_pg_data:
