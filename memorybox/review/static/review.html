@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Review</title>
+  <style>
+    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(165deg, #e4e8ef 0%, #f7f8fb 55%, #eef1f6 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a6170; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a7180; font-size: 0.85rem; }
+    video { width: 100%; max-height: 360px; background: #111; margin-top: 0.5rem; }
+    code { font-size: 0.8rem; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Review</h1>
+    <p class="sub">
+      Thin Review &amp; Learn (Increment 7) — open/play/scrub → face candidate → Teach via I6.
+      <a href="/ask/ui">Ask</a> · <a href="/people/ui">People</a> · <a href="/journal/ui">Journal</a>
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Video</h2>
+      <button class="secondary" id="refreshVideos" type="button">Refresh videos</button>
+      <label for="videoSel">Family video (from configured media-server path)</label>
+      <select id="videoSel"><option value="">(load videos)</option></select>
+      <video id="player" controls></video>
+      <p class="muted">Originals are read-only. Scrub to a face moment, then create a face candidate at playhead.</p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Face candidate → Teach / Confirm / Reject</h2>
+      <button id="addFace" type="button">Create face candidate at playhead</button>
+      <label for="faceSel">Face candidate</label>
+      <select id="faceSel"><option value="">(none yet)</option></select>
+      <label for="displayName">MB Person display name</label>
+      <input id="displayName" placeholder="e.g. Dan Will" />
+      <button id="teachBtn" type="button">Teach / Confirm face → MB Person</button>
+      <button class="secondary" id="rejectBtn" type="button">Reject pairing</button>
+      <p>Last taught Person ID: <code id="lastId">(none yet)</code></p>
+      <p id="archiveMsg" class="muted"></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
+      <pre id="out" class="muted">No action yet.</pre>
+    </section>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    const player = document.getElementById("player");
+    let lastFaceId = "";
+    let lastPersonId = "";
+    function show(data) { out.textContent = JSON.stringify(data, null, 2); }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    async function loadVideos() {
+      const data = await j("/review/videos");
+      const sel = document.getElementById("videoSel");
+      sel.innerHTML = "";
+      const videos = data.videos || [];
+      if (!videos.length) {
+        sel.innerHTML = "<option value=\"\">(no videos — set MEMORYBOX_VIDEO_MEDIA_ROOT on worker)</option>";
+        show(data);
+        return;
+      }
+      videos.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.external_id;
+        opt.textContent = (v.title || v.external_id) + (v.path_hint ? " — " + v.path_hint : "");
+        sel.appendChild(opt);
+      });
+      show({ ok: true, count: videos.length, provider_status: data.provider_status });
+      if (videos[0]) {
+        sel.value = videos[0].external_id;
+        onVideoChange();
+      }
+    }
+
+    function onVideoChange() {
+      const id = document.getElementById("videoSel").value;
+      if (!id) { player.removeAttribute("src"); return; }
+      player.src = "/review/media/" + encodeURIComponent(id);
+      loadFaces();
+    }
+
+    async function loadFaces() {
+      const vid = document.getElementById("videoSel").value;
+      const data = await j("/review/faces?video_external_id=" + encodeURIComponent(vid || ""));
+      const sel = document.getElementById("faceSel");
+      sel.innerHTML = "";
+      const faces = data.faces || [];
+      if (!faces.length) {
+        sel.innerHTML = "<option value=\"\">(no face candidates — create at playhead)</option>";
+        return;
+      }
+      faces.forEach((f) => {
+        const opt = document.createElement("option");
+        opt.value = f.external_id;
+        opt.dataset.provider = f.provider_key || "hvrt";
+        opt.textContent = (f.label || "face") + " — " + f.external_id;
+        sel.appendChild(opt);
+      });
+    }
+
+    document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
+    document.getElementById("videoSel").onchange = () => { try { onVideoChange(); } catch (e) { show(e); } };
+    document.getElementById("addFace").onclick = async () => {
+      try {
+        const video_external_id = document.getElementById("videoSel").value;
+        if (!video_external_id) { show({ detail: "Select a video first." }); return; }
+        const t_sec = player.currentTime || 0;
+        const data = await j("/review/faces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_external_id, t_sec }),
+        });
+        lastFaceId = data.face && data.face.external_id;
+        await loadFaces();
+        if (lastFaceId) document.getElementById("faceSel").value = lastFaceId;
+        show(data);
+      } catch (err) { show(err); }
+    };
+    document.getElementById("teachBtn").onclick = async () => {
+      try {
+        const external_id = document.getElementById("faceSel").value;
+        const display_name = document.getElementById("displayName").value.trim();
+        if (!external_id || !display_name) {
+          show({ detail: "Pick a face candidate and enter MB display name." });
+          return;
+        }
+        const data = await j("/people/teach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name,
+            provider_key: document.getElementById("faceSel").selectedOptions[0]?.dataset.provider || "hvrt",
+            external_id,
+            label: display_name,
+          }),
+        });
+        lastPersonId = data.person && data.person.id;
+        if (lastPersonId) document.getElementById("lastId").textContent = lastPersonId;
+        document.getElementById("archiveMsg").textContent = "Archive Updated";
+        show(data);
+      } catch (err) { show(err); }
+    };
+    document.getElementById("rejectBtn").onclick = async () => {
+      try {
+        const external_id = document.getElementById("faceSel").value;
+        const person_id = lastPersonId || document.getElementById("lastId").textContent;
+        if (!external_id || !person_id || person_id === "(none yet)") {
+          show({ detail: "Need face + person id (Teach first or paste)." });
+          return;
+        }
+        show(await j("/people/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id,
+            provider_key: document.getElementById("faceSel").selectedOptions[0]?.dataset.provider || "hvrt",
+            external_id,
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    loadVideos().catch(show);
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
-# MBBS-001 Increment 7 — Definition (final review — decisions locked)
+# MBBS-001 Increment 7 — Definition (build authorized)
 
-**Status:** **LOCKED FOR REVIEW** — decisions locked; **NOT BUILD AUTHORIZED**  
+**Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 7 only*)  
 **Date:** 2026-08-10  
 **Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Review** client **without developer intervention**, open/play/scrub **at least one real family video**, Teach / Confirm a **face** candidate to an MB Person via the **shared I6 Person & Identity** service, and then use Ask to retrieve a **person-linked video segment** for that MB Person when video modality is available. When the Video Intelligence worker is down, Ask/monolith remains up with **visible degradation** (not empty success, not process death). Synthetic harnesses prove provider/worker/review/Ask subchecks (including presence-span merging and identity survival across reprocess). A **second real family person is not required** on the owner gate.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 7  
@@ -9,7 +9,7 @@
 **Depends on:** Increment 2 (provider patterns) · Increment 4 Ask visual contract (`want_video` / `visual_scope`) · **Increment 6 Person & Identity (accepted)** · **D4** (HVRT sibling worker) · **D7** (media on media-server; config-driven hosts)  
 **Prior:** [MBBS-001_INCREMENT_6_ACCEPTANCE.md](MBBS-001_INCREMENT_6_ACCEPTANCE.md) — **ACCEPTED**  
 **Related ops (not I7):** [P1_REMOTE_BROWSER_MIC_HTTPS.md](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md) — remote-browser mic requires trusted HTTPS; deployment/ops workstream  
-**Authorization:** **NOT AUTHORIZED to build** — final review of locked definition only. Do **not** build until Tom says *Build Increment 7 only*.
+**Authorization:** *Build Increment 7 only* — authorized.
 
 ---
 
@@ -275,9 +275,9 @@ PostgreSQL (FlightSim): people / provider_identities / assertions
 
 ## 11. Authorization gate
 
-**Status: DECISIONS LOCKED — FINAL REVIEW ONLY — NOT BUILD AUTHORIZED.**
+**Status: BUILD AUTHORIZED** (*Build Increment 7 only*).
 
-Do **not** implement worker, Review UX, Ask video retrieval, or presence merging until Tom explicitly authorizes *Build Increment 7 only*.
+Owner gate **I7-OWNER** is mandatory for FlightSim acceptance. Do **not** begin Increment 8 / Guided Capture / polish beyond locked I7 scope without explicit authorization.
 
 ---
 

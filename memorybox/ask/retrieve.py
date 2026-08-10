@@ -49,6 +49,25 @@ class PhotoHit:
 
 
 @dataclass
+class VideoHit:
+    provider_key: str
+    external_id: str
+    video_external_id: str
+    start_sec: float
+    end_sec: float
+    face_external_id: str | None = None
+    label: str | None = None
+    play_url: str | None = None
+    identity_trust: str = "confirmed"
+    mb_person_id: str | None = None
+    mb_person_name: str | None = None
+    attribution: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class StoryHit:
     story_id: str
     version: int
@@ -543,6 +562,153 @@ def search_photos(
             status["disclosure"] = (
                 "Confirmed MB Person(s) exist without Immich mapping; "
                 "Immich name matches are unconfirmed candidates only."
+            )
+        return hits[:limit], status
+    except ProviderUnavailable as exc:
+        status["unavailable"] = True
+        status["detail"] = str(exc)
+        return [], status
+    except ProviderError as exc:
+        status["unavailable"] = True
+        status["detail"] = str(exc)
+        return [], status
+    except Exception as exc:  # noqa: BLE001
+        status["unavailable"] = True
+        status["detail"] = str(exc)
+        return [], status
+
+
+def search_videos(
+    plan: QueryPlan,
+    video: Any,
+    *,
+    limit: int = 24,
+) -> tuple[list[VideoHit], dict[str, Any]]:
+    """Search video presence spans via VideoIntelligenceProvider with I6 trust rules."""
+    from memorybox.person import (
+        find_confirmed_person_by_name,
+        list_provider_external_ids_for_person,
+    )
+    from memorybox.providers.video.dto import VideoSearchQuery
+
+    status: dict[str, Any] = {
+        "provider_key": getattr(video, "provider_key", "video"),
+        "ok": False,
+        "unavailable": False,
+        "detail": "",
+        "identity_mode": "none",
+    }
+    if not getattr(plan, "want_video", False):
+        status["ok"] = True
+        status["detail"] = "not_requested"
+        return [], status
+    try:
+        health = video.health()
+        if not health.ok:
+            status["unavailable"] = True
+            status["detail"] = health.detail or "video provider unhealthy"
+            return [], status
+
+        confirmed_ext: list[str] = []
+        confirmed_meta: list[dict[str, str]] = []
+        unmapped: list[str] = []
+        provider_key = getattr(video, "provider_key", "hvrt")
+        # Map fake_video → still look up hvrt? Fake uses face-alpha ids taught with hvrt in harness.
+        # Ask teach path uses provider_key from teach; for FakeVideoProvider teach with fake_video
+        # or hvrt. Harness will teach with provider_key matching face ids on fake.
+        lookup_keys = [provider_key]
+        if provider_key == "fake_video":
+            lookup_keys = ["fake_video", "hvrt"]
+
+        for name in plan.person_names:
+            person = find_confirmed_person_by_name(name)
+            if not person:
+                continue
+            ids: list[str] = []
+            for pk in lookup_keys:
+                ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            ids = list(dict.fromkeys(ids))
+            if ids:
+                for eid in ids:
+                    confirmed_ext.append(eid)
+                    confirmed_meta.append(
+                        {
+                            "external_id": eid,
+                            "person_id": person.id,
+                            "name": name,
+                        }
+                    )
+            else:
+                unmapped.append(name)
+
+        hits: list[VideoHit] = []
+        if confirmed_ext:
+            status["identity_mode"] = "confirmed_mapping"
+            q = VideoSearchQuery(
+                person_external_ids=tuple(dict.fromkeys(confirmed_ext)),
+                limit=limit,
+            )
+            segs = video.search_segments(q)
+            by_face = {m["external_id"]: m for m in confirmed_meta}
+            for s in segs:
+                meta = by_face.get(s.face_external_id or "") or (
+                    confirmed_meta[0] if confirmed_meta else {}
+                )
+                hits.append(
+                    VideoHit(
+                        provider_key=s.provider_key,
+                        external_id=s.external_id,
+                        video_external_id=s.video_external_id,
+                        start_sec=s.start_sec,
+                        end_sec=s.end_sec,
+                        face_external_id=s.face_external_id,
+                        label=s.label,
+                        play_url=s.play_url,
+                        identity_trust="confirmed",
+                        mb_person_id=meta.get("person_id"),
+                        mb_person_name=meta.get("name"),
+                        attribution=(
+                            f"MB Person {meta.get('name')} via confirmed video mapping"
+                            if meta.get("name")
+                            else "confirmed MB Person video mapping"
+                        ),
+                    )
+                )
+            status["ok"] = True
+            status["detail"] = f"confirmed_video_hits={len(hits)}"
+            return hits[:limit], status
+
+        status["identity_mode"] = (
+            "candidate_unmapped_person" if unmapped else "candidate_provider_name"
+        )
+        # Candidate: search by label text from person names (never silent confirm)
+        text = " ".join(plan.person_names) if plan.person_names else plan.original_ask
+        segs = video.search_segments(
+            VideoSearchQuery(text=text, limit=limit)
+        )
+        for s in segs:
+            hits.append(
+                VideoHit(
+                    provider_key=s.provider_key,
+                    external_id=s.external_id,
+                    video_external_id=s.video_external_id,
+                    start_sec=s.start_sec,
+                    end_sec=s.end_sec,
+                    face_external_id=s.face_external_id,
+                    label=s.label,
+                    play_url=s.play_url,
+                    identity_trust="candidate",
+                    attribution=(
+                        "unconfirmed video face candidate (not MB-confirmed identity)"
+                    ),
+                )
+            )
+        status["ok"] = True
+        status["detail"] = f"candidate_video_hits={len(hits)} unmapped={unmapped}"
+        if unmapped:
+            status["disclosure"] = (
+                "Confirmed MB Person(s) exist without video mapping; "
+                "video name matches are unconfirmed candidates only."
             )
         return hits[:limit], status
     except ProviderUnavailable as exc:

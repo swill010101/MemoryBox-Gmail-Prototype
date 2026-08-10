@@ -517,7 +517,16 @@ def bulk_confirm_provider_identities(
 
 
 def list_immich_external_ids_for_person(person_id: str) -> list[str]:
+    return list_provider_external_ids_for_person(person_id, PROVIDER_IMMICH)
+
+
+def list_provider_external_ids_for_person(
+    person_id: str, provider_key: str
+) -> list[str]:
     pid = _parse_uuid(person_id, field="person_id")
+    pk = (provider_key or "").strip()
+    if not pk:
+        raise PersonServiceError("provider_key required")
     with connection() as conn:
         rows = conn.execute(
             """
@@ -525,7 +534,7 @@ def list_immich_external_ids_for_person(person_id: str) -> list[str]:
             WHERE person_id = %s
               AND provider_key = %s
             """,
-            (pid, PROVIDER_IMMICH),
+            (pid, pk),
         ).fetchall()
         return [str(r["external_id"]) for r in rows]
 

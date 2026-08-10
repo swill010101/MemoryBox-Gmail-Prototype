@@ -79,14 +79,15 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
-## Increment 7 — Video Intelligence + Review & Learn (definition locked — final review)
+## Increment 7 — Video Intelligence + Review & Learn
 
 **Date:** 2026-08-10  
-**Authorization:** **NOT AUTHORIZED** — decisions locked for final review; **no build**  
+**Authorization:** **AUTHORIZED** (*Build Increment 7 only*) — shipped pending FlightSim owner gate  
 **Definition:** [MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_7_ACCEPTANCE.md](MBBS-001_INCREMENT_7_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
 **Owner gate (locked):** FlightSim thin Review — ≥1 real family video → face Teach/Confirm via I6 → Ask person-linked video segment; worker-down = degraded not dead; second real person not required
 
-### Locked decisions (pending *Build Increment 7 only*)
+### Locked decisions (build)
 
 | Decision | Rationale |
 |----------|-----------|

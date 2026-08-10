@@ -1,16 +1,16 @@
-"""FastAPI entry for MemoryBox monolith (Increment 6: Person & Identity + Ask/Story/Journal)."""
+"""FastAPI entry for MemoryBox monolith (Increment 7: Video + Review + Ask/Story/Journal/People)."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from memorybox import __version__
 from memorybox import migrate as migrate_mod
-from memorybox.ask.deps import build_photo
+from memorybox.ask.deps import build_photo, build_video
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.config import settings
 from memorybox.context import ContextPatch, default_context_store
@@ -70,11 +70,12 @@ ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
 STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.html"
 JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journal.html"
 PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
+REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 6: Person & Identity.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 7: Video Intelligence + Review.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -180,6 +181,12 @@ class RenameRequest(BaseModel):
     display_name: str = Field(..., min_length=2)
 
 
+class ReviewFaceRequest(BaseModel):
+    video_external_id: str = Field(..., min_length=1)
+    t_sec: float = 0.0
+    label: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     db: dict[str, Any]
@@ -264,7 +271,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 6,
+        "increment": 7,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -276,6 +283,7 @@ def health() -> dict[str, Any]:
         "story": "/story/ui",
         "journal": "/journal/ui",
         "people": "/people/ui",
+        "review": "/review/ui",
     }
 
 
@@ -283,7 +291,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 6,
+        "increment": 7,
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -294,6 +302,7 @@ def root() -> dict[str, Any]:
         "journal": "/journal",
         "people_ui": "/people/ui",
         "people": "/people",
+        "review_ui": "/review/ui",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -324,6 +333,13 @@ def people_ui() -> FileResponse:
     if not PEOPLE_STATIC.is_file():
         raise HTTPException(status_code=404, detail="People UI missing")
     return FileResponse(PEOPLE_STATIC, media_type="text/html")
+
+
+@app.get("/review/ui")
+def review_ui() -> FileResponse:
+    if not REVIEW_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Review UI missing")
+    return FileResponse(REVIEW_STATIC, media_type="text/html")
 
 
 @app.post("/ask")
@@ -681,3 +697,114 @@ def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
     except PersonServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+@app.get("/review/videos")
+def review_videos() -> dict[str, Any]:
+    video = build_video()
+    try:
+        h = video.health()
+        status = {"provider_key": h.provider_key, "ok": h.ok, "detail": h.detail}
+        if not h.ok:
+            return {"ok": False, "videos": [], "provider_status": status, "unavailable": True}
+        vids = video.list_videos(limit=200)
+        return {
+            "ok": True,
+            "videos": [
+                {
+                    "provider_key": v.provider_key,
+                    "external_id": v.external_id,
+                    "title": v.title,
+                    "path_hint": v.path_hint,
+                    "duration_sec": v.duration_sec,
+                }
+                for v in vids
+            ],
+            "provider_status": status,
+        }
+    except ProviderUnavailable as exc:
+        return {
+            "ok": False,
+            "videos": [],
+            "unavailable": True,
+            "provider_status": {"ok": False, "detail": str(exc)},
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/review/faces")
+def review_faces(video_external_id: str | None = None) -> dict[str, Any]:
+    video = build_video()
+    try:
+        faces = video.list_face_candidates(video_external_id=video_external_id, limit=200)
+        return {
+            "ok": True,
+            "faces": [
+                {
+                    "provider_key": f.provider_key,
+                    "external_id": f.external_id,
+                    "label": f.label,
+                    "video_external_id": f.video_external_id,
+                }
+                for f in faces
+            ],
+            "provider_key": getattr(video, "provider_key", None),
+        }
+    except ProviderUnavailable as exc:
+        return {"ok": False, "faces": [], "unavailable": True, "detail": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/review/faces")
+def review_create_face(body: ReviewFaceRequest) -> dict[str, Any]:
+    video = build_video()
+    create = getattr(video, "create_face_candidate", None)
+    if not callable(create):
+        raise HTTPException(
+            status_code=400,
+            detail="video provider cannot create face candidates",
+        )
+    try:
+        face = create(
+            video_external_id=body.video_external_id,
+            t_sec=body.t_sec,
+            label=body.label,
+        )
+    except ProviderUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "face": {
+            "provider_key": face.provider_key,
+            "external_id": face.external_id,
+            "label": face.label,
+            "video_external_id": face.video_external_id,
+        },
+        "archive_note": "derived_only",
+    }
+
+
+@app.get("/review/media/{video_external_id}")
+def review_media(video_external_id: str) -> Response:
+    """Proxy read-only media from sibling worker when configured."""
+    import urllib.request
+
+    import os
+
+    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(
+            status_code=404,
+            detail="media proxy requires MEMORYBOX_VIDEO_WORKER_URL",
+        )
+    url = f"{base}/media/{video_external_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            data = resp.read()
+            ctype = resp.headers.get("Content-Type") or "video/mp4"
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"media proxy failed: {exc}") from exc
+    return Response(content=data, media_type=ctype)

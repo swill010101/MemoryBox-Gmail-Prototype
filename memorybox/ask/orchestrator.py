@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from memorybox.ask import retrieve as R
-from memorybox.ask.deps import build_llm, build_photo, provider_snapshot
+from memorybox.ask.deps import build_llm, build_photo, build_video, provider_snapshot
 from memorybox.context import (
     AskContext,
     ContextPatch,
@@ -16,6 +16,7 @@ from memorybox.context import (
 from memorybox.planner import QueryPlan, plan_ask
 from memorybox.providers.llm.protocol import LlmProvider
 from memorybox.providers.photo.protocol import PhotoProvider
+from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
 
 @dataclass
@@ -32,6 +33,7 @@ class AskResult:
     photo_hits: list[dict[str, Any]]
     story_hits: list[dict[str, Any]]
     journal_hits: list[dict[str, Any]]
+    video_hits: list[dict[str, Any]]
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
@@ -50,6 +52,7 @@ class AskResult:
             "photo_hits": self.photo_hits,
             "story_hits": self.story_hits,
             "journal_hits": self.journal_hits,
+            "video_hits": self.video_hits,
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
@@ -88,9 +91,13 @@ def _build_answer(
     stories: list[R.StoryHit],
     journals: list[R.JournalHit],
     photo_status: dict[str, Any],
+    videos: list[R.VideoHit] | None = None,
+    video_status: dict[str, Any] | None = None,
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
     citations: list[dict[str, Any]] = []
     statements: list[dict[str, Any]] = []
+    videos = videos or []
+    video_status = video_status or {}
 
     if getattr(plan, "journal_capture_intent", False):
         msg = (
@@ -172,6 +179,50 @@ def _build_answer(
             }
         )
 
+    for v in videos:
+        trust = getattr(v, "identity_trust", "confirmed")
+        citations.append(
+            {
+                "kind": "video",
+                "provider_key": v.provider_key,
+                "external_id": v.external_id,
+                "video_external_id": v.video_external_id,
+                "start_sec": v.start_sec,
+                "end_sec": v.end_sec,
+                "face_external_id": v.face_external_id,
+                "label": v.label,
+                "play_url": v.play_url,
+                "identity_trust": trust,
+                "mb_person_id": v.mb_person_id,
+                "mb_person_name": v.mb_person_name,
+                "attribution": v.attribution,
+                "provenance_kind": (
+                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                ),
+            }
+        )
+        prefix = (
+            "Unconfirmed video face candidate — " if trust == "candidate" else ""
+        )
+        statements.append(
+            {
+                "text": (
+                    f"{prefix}Video segment {v.video_external_id} "
+                    f"[{v.start_sec:.1f}s–{v.end_sec:.1f}s]."
+                ),
+                "label": "Fact" if trust == "confirmed" else "Candidate",
+                "evidence_ids": [],
+                "photo_external_ids": [],
+                "video_external_ids": [v.external_id],
+                "story_ids": [],
+                "journal_ids": [],
+                "provenance_kind": (
+                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                ),
+                "attribution": v.attribution,
+            }
+        )
+
     for s in stories:
         citations.append(
             {
@@ -231,18 +282,20 @@ def _build_answer(
     photo_unavail = bool(
         (plan.want_still or plan.want_photo) and photo_status.get("unavailable")
     )
-    video_only_no_provider = bool(
+    video_unavail = bool(plan.want_video and video_status.get("unavailable"))
+    video_only = bool(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
-    if video_only_no_provider and not evidence and not stories and not journals:
-        missing = (
-            "Video modality is not available in this Increment 4 runtime "
-            "(no video/HVRT provider wired). MemoryBox will not invent video results."
+    if video_only and video_unavail and not evidence and not stories and not journals:
+        text = (
+            "Video intelligence provider is unavailable, so MemoryBox cannot search "
+            "video presence spans right now. This is not the same as finding no videos. "
+            "MemoryBox will not invent video results."
         )
-        return "insufficient", missing, statements, citations, missing
+        return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and not evidence and not stories and not journals:
+    if photo_unavail and not evidence and not stories and not journals and not videos:
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
@@ -250,31 +303,41 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and (evidence or stories or journals):
+    if photo_unavail and (evidence or stories or journals or videos):
         text = (
             "Photo provider is unavailable (not 'no photos'). "
             f"Found {len(evidence)} Evidence, {len(stories)} Story, "
-            f"{len(journals)} Journal hit(s). "
+            f"{len(journals)} Journal, {len(videos)} video hit(s). "
             "Family-history claims below are limited to cited items with provenance."
         )
         return "mixed", text, statements, citations, None
 
     if (
-        (plan.want_photo or plan.want_still or getattr(plan, "want_story", False)
+        (plan.want_photo or plan.want_still or plan.want_video
+         or getattr(plan, "want_story", False)
          or getattr(plan, "want_journal", False))
         and not photos
+        and not videos
         and not evidence
         and not stories
         and not journals
         and photo_status.get("ok", True)
+        and (not plan.want_video or video_status.get("ok", True))
+        and not video_unavail
     ):
         missing = (
-            "Insufficient Evidence: no matching photos, Stories, Journals, or "
+            "Insufficient Evidence: no matching photos, videos, Stories, Journals, or "
             "email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if not evidence and not photos and not stories and not journals:
+    if not evidence and not photos and not videos and not stories and not journals:
+        if video_unavail and plan.want_video:
+            text = (
+                "Video intelligence provider is unavailable (not 'no videos'). "
+                "No other modalities returned hits. MemoryBox will not invent results."
+            )
+            return "provider_unavailable", text, statements, citations, None
         missing = (
             "Insufficient Evidence for this ask. Available archive Evidence does not "
             "support a factual family-history answer. MemoryBox will not invent one."
@@ -292,6 +355,27 @@ def _build_answer(
             f"Found {len(stories)} owner Story recollection(s) "
             "(provenance: narrator testimony — not independently corroborated unless also cited)."
         )
+    if videos:
+        confirmed_n = sum(
+            1 for v in videos if getattr(v, "identity_trust", "confirmed") == "confirmed"
+        )
+        candidate_n = len(videos) - confirmed_n
+        if confirmed_n and not candidate_n:
+            parts.append(
+                f"Found {confirmed_n} video segment hit(s) via confirmed MB Person mapping."
+            )
+        elif candidate_n and not confirmed_n:
+            parts.append(
+                f"Found {candidate_n} unconfirmed video face-candidate hit(s) "
+                "(not MB-confirmed identity)."
+            )
+        else:
+            parts.append(
+                f"Found {confirmed_n} confirmed-mapping video hit(s) and "
+                f"{candidate_n} unconfirmed candidate hit(s)."
+            )
+        if video_status.get("disclosure"):
+            parts.append(str(video_status["disclosure"]))
     if photos:
         confirmed_n = sum(
             1 for p in photos if getattr(p, "identity_trust", "confirmed") == "confirmed"
@@ -323,7 +407,15 @@ def _build_answer(
         )
     parts.append("Factual claims are limited to the citations listed.")
     modalities_hit = sum(
-        1 for x in (bool(journals), bool(stories), bool(photos), bool(evidence)) if x
+        1
+        for x in (
+            bool(journals),
+            bool(stories),
+            bool(photos),
+            bool(videos),
+            bool(evidence),
+        )
+        if x
     )
     if modalities_hit > 1:
         kind = "mixed"
@@ -331,6 +423,8 @@ def _build_answer(
         kind = "journal_backed"
     elif stories:
         kind = "story_backed"
+    elif videos and not photos and not evidence:
+        kind = "video_backed"
     elif photos and not evidence:
         kind = "photo_backed"
     elif photos and evidence:
@@ -347,10 +441,12 @@ class AskOrchestrator:
         store: ContextStore | None = None,
         photo: PhotoProvider | None = None,
         llm: LlmProvider | None = None,
+        video: VideoIntelligenceProvider | None = None,
     ) -> None:
         self.store = store or default_context_store
         self.photo = photo if photo is not None else build_photo()
         self.llm = llm if llm is not None else build_llm()
+        self.video = video if video is not None else build_video()
 
     def ask(self, text: str, *, session_id: str | None = None) -> AskResult:
         ctx = self.store.get_or_create(session_id)
@@ -360,6 +456,8 @@ class AskOrchestrator:
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
         photos: list[R.PhotoHit] = []
         photo_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
+        videos: list[R.VideoHit] = []
+        video_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
         stories: list[R.StoryHit] = []
         journals: list[R.JournalHit] = []
 
@@ -380,26 +478,25 @@ class AskOrchestrator:
             if getattr(plan, "want_journal", False):
                 journals = R.search_journals(plan)
 
-            if plan.want_video and plan.visual_scope in ("broad", "video_only"):
-                photo_status = dict(photo_status)
-                photo_status.setdefault(
-                    "video_modality",
-                    {
-                        "requested": True,
-                        "available_in_i4": False,
-                        "detail": "video/HVRT not wired in Increment 4",
-                    },
-                )
+            if plan.want_video:
+                videos, video_status = R.search_videos(plan, self.video)
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(
-            plan, evidence, photos, stories, journals, photo_status
+            plan,
+            evidence,
+            photos,
+            stories,
+            journals,
+            photo_status,
+            videos=videos,
+            video_status=video_status,
         )
 
         new_ctx = _update_context_from_plan(
             ctx,
             plan,
             [h.evidence_id for h in evidence],
-            [p.external_id for p in photos],
+            [p.external_id for p in photos] + [v.external_id for v in videos],
             [s.story_id for s in stories],
             [j.journal_id for j in journals],
         )
@@ -415,9 +512,10 @@ class AskOrchestrator:
             "modality": list(plan.modalities),
         }
 
-        providers = provider_snapshot(self.photo, self.llm)
+        providers = provider_snapshot(self.photo, self.llm, self.video)
         providers["qdrant"] = qdrant_status
         providers["photo_search"] = photo_status
+        providers["video_search"] = video_status
         providers["story_search"] = {
             "ok": True,
             "detail": f"hits={len(stories)}" if plan.want_story else "not_requested",
@@ -444,6 +542,7 @@ class AskOrchestrator:
             photo_hits=[p.to_dict() for p in photos],
             story_hits=[s.to_dict() for s in stories],
             journal_hits=[j.to_dict() for j in journals],
+            video_hits=[v.to_dict() for v in videos],
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,

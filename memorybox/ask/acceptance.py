@@ -571,7 +571,7 @@ def prove_increment_4(*, flightsim: bool = False) -> dict[str, Any]:
     inc = h.get("increment")
     inc_ok = bool(h.get("ok")) and (
         (isinstance(inc, (int, float)) and float(inc) >= 4)
-        or str(inc).upper().startswith(("4", "5", "6"))
+        or str(inc).upper().startswith(("4", "5", "6", "7"))
     )
     _check("i4_i_health", inc_ok, checks, problems)
 
