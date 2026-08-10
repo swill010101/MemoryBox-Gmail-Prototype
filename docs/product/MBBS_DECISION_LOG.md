@@ -33,7 +33,8 @@ Record one section per increment. Do not wait until end of P1.
 **Definition:** [MBBS-001_INCREMENT_5A_DEFINITION.md](MBBS-001_INCREMENT_5A_DEFINITION.md)  
 **Acceptance:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED** (`prove-journal --flightsim` + owner typed/voice UX)  
 **Owner gate:** Typed + spoken Journal via `/journal/ui` without developer intervention; retrieve both via Ask — **PASSED**  
-**Next:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md) — **REVIEW ONLY**; do not begin I6 / Guided Capture / Inc 7 without authorization.
+**Next:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md) — **FINAL REVIEW ONLY**; do not begin I6 without authorization.  
+**Ops note (5A discovery, not I6):** [P1_REMOTE_BROWSER_MIC_HTTPS.md](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md) — remote-browser mic requires trusted HTTPS.
 
 ### Build-lock decisions
 
@@ -46,6 +47,28 @@ Record one section per increment. Do not wait until end of P1.
 | Capture/STT reusable; Whisper behind provider | Journal must not import Whisper |
 | Ask = direct PG Journal query | No required journal_passage Evidence |
 | EVS-136 without fake Place links | Text/context/real relationships only |
+| Remote mic HTTPS | Browser secure-context; ops/deploy — not product I6 |
+
+---
+
+## Increment 6 — Person & Identity + teach (definition under review)
+
+**Date:** 2026-08-10  
+**Authorization:** **NOT AUTHORIZED** — definition final review only  
+**Definition:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md)  
+**Owner gate (proposed/locked in definition):** Thin Person UI on FlightSim — teach one real Immich identity → Ask photos via confirmed mapping
+
+### Locked refinements (pending build auth)
+
+| Decision | Rationale |
+|----------|-----------|
+| MB Person + owner teaching durable; Immich external_id not promised immortal | Remap new cluster ids; keep prior mapping provenance |
+| Confirmed mapping authoritative; Immich name match = candidate only | Never silent confirm; unmapped confirmed Person → candidates disclosed |
+| Negatives = X is not Y; consulted forever for that pair; X may map to Z | Prevent silent re-bind |
+| Merge non-destructive + history for future reversal | `merged_away` + `merged_into_id`; no Unmerge UX in I6 |
+| Central Person resolver; no post-I6 ad-hoc `ensure_person` | Stop duplicate minting |
+| Basic display-name correction IN; rich Person UX OUT | Thin slice |
+| Email/phone, Immich write-back, HVRT, EVS-014, auto-merge OUT | Scope lock |
 
 ---
 

@@ -1,58 +1,64 @@
-# MBBS-001 Increment 6 — Definition (review only — not authorized to build)
+# MBBS-001 Increment 6 — Definition (final review only — not authorized to build)
 
-**Status:** **LOCKED FOR REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
-**Date:** 2026-08-09  
-**Proposed owner acceptance gate:** Tom can teach MemoryBox that a provider face/person is a named Person, confirm or reject a candidate mapping, and (when needed) merge two MB Persons — then Ask photo retrieval for that Person uses the MB identity mapping — **without developer intervention** on FlightSim.  
+**Status:** **LOCKED — FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
+**Date:** 2026-08-10  
+**Owner acceptance gate (locked):** On FlightSim, Tom can use the thin Person UI **without developer intervention** to select **one real Immich provider identity**, teach/confirm its MB Person identity, and then use Ask to retrieve photos for that MB Person **through the confirmed provider mapping**. Synthetic harnesses may prove reject, negatives, bulk confirm, and merge.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 6  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
-**Depends on:** Increment 1 (Person / ProviderIdentity / Assertion schema) · Increment 2 (PhotoProvider; Immich IDs as `external_id` only) · Increment 4 Ask (accepted; photo-by-name path exists but is **not** yet MB-Person-authoritative)  
+**Depends on:** Increment 1 (Person / ProviderIdentity / Assertion schema) · Increment 2 (PhotoProvider; Immich IDs as `external_id` only) · Increment 4 Ask (accepted) · Increment 5 / 5A (Story/Journal must **stop** ad-hoc Person creation after I6 — see §6)  
 **Prior:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED**  
+**Related ops (not I6):** [P1_REMOTE_BROWSER_MIC_HTTPS.md](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md) — remote-browser mic requires trusted HTTPS; deployment/ops workstream  
 **Authorization gate:** Do **not** implement until Tom explicitly authorizes *Build Increment 6 only*.
 
 ---
 
-## 0. Proposed locked decisions (for Tom to confirm)
+## 0. Locked decisions (final)
 
-| Topic | Proposed decision |
-|-------|-------------------|
-| Product slice | **Person & Identity Service** + owner **teach / confirm / reject / merge (thin)** + Ask photo resolution via MB Person → `provider_identities` |
-| Flows | **EF-07 / EF-08 thin** only — not full Review & Learn (Inc 7), not EVS-014 cross-provider video (Inc 10) |
-| MB Person PK | Always MemoryBox `people.id` UUID — **never** Immich/HVRT UUID as Person PK (I2 lock stands) |
-| Provider mapping | `provider_identities` is the SoT for provider face/person ↔ MB Person |
-| Teach authority | Owner teach/confirm = `authority='owner'` durable knowledge; survives Immich reprocess |
-| Negatives | Rejected mappings / “not this person” retained (`assertions` rejected and/or identity rows tombstoned — see §5); must not silently reappear as auto-confirm |
-| Merge | **Owner-led merge** before any ranked auto-candidate loops; merge preserves provenance; loser `status='merged_away'` + `merged_into_id` |
-| Ask earn-in | Photo Ask for a named person **prefers** MB Person → Immich `external_id` mapping; Immich display-name string match remains fallback only when no mapping exists |
-| Reindex | Thin: invalidate/refresh derived lookup used by Ask photo path; **not** full library rebuild productization |
-| UX | Thin functional Person/Identity client (parallel to Story/Journal shells) — **no** visual polish |
-| Out | HVRT/video teach (Inc 7), EVS-014 full (Inc 10), Guided Capture, SMS, multi-user, polish, auto-merge without owner |
+| Topic | Decision |
+|-------|----------|
+| Product slice | **Central Person & Identity Service** + owner **teach / confirm / reject / merge (thin)** + basic **display-name correction** + Ask photo resolution via confirmed MB mapping |
+| Flows | **EF-07 / EF-08 thin** only — not Review & Learn (Inc 7), not EVS-014 full (Inc 10) |
+| MB Person durability | MemoryBox Person identity and **owner teaching** are durable knowledge |
+| Provider external ID durability | Do **not** claim Immich `external_id` / cluster IDs necessarily survive Immich reprocessing. If Immich later emits a **new** cluster/external identity, owner (or later tooling) may **map it to the existing MB Person** while **preserving prior mapping provenance** |
+| Mapping SoT | Confirmed MB Person → `provider_identities` is **authoritative** for photo identity resolution |
+| Fallback trust | Immich **display-name** matching is **candidate/fallback evidence only**. It must **never** silently become a confirmed MB identity. If a confirmed MB Person exists but **lacks** an Immich mapping, provider-name matches must appear as **unconfirmed candidates**, not as normal confirmed Person results |
+| Negatives | Rejection durably means **“provider identity X is not MB Person Y”**. Future automatic/candidate resolution **must consult** negatives so the rejected pairing does not silently reappear. Rejection must **not** prevent X from later mapping to a **different** Person |
+| Merge | Owner-led, **non-destructive**. `merged_away` + `merged_into_id` appropriate. Do **not** rewrite historical assertions so the original referenced Person becomes unknowable. Preserve enough merge history for **future logical reversal**; Unmerge UX **not** required in I6 |
+| Central resolution | I6 is the **common** Person/Identity service. Story/Journal/`ensure_person` **must not** continue independently creating duplicate Persons via raw name matching after I6. Callers **reuse** the shared resolver or **stop and report** an integration gap |
+| Name correction | **Minimal** owner correction of an MB Person’s canonical/display name is **IN**. Full Person CRUD, aliases, family-tree, rich Person UX = **OUT** |
+| Immich write-back | **OUT** — MB owns Person; Immich remains provider |
+| Email/phone identity productization | **OUT** of I6 |
+| Auto-merge / ranked loops without owner | **OUT** |
+| HVRT/video Review, EVS-014 full, multi-user, polish | **OUT** |
+| Remote-browser mic HTTPS | **OUT of I6** — recorded as separate P1 ops requirement (5A discovery) |
+| Acceptance | Synthetic + real FlightSim; opaque IDs/counts/status only |
 
 ---
 
 ## 1. Problem / why now
 
-Ask can find photos by **provider display-name string match**, and Story/Journal already attach People by ad-hoc `ensure_person` name lookup. That is not durable identity:
+Ask can find photos by Immich display-name string match, and Story/Journal create People via ad-hoc name lookup. That is not durable identity:
 
-- Immich renames / face cluster churn can break Ask.  
+- Immich renames / face-cluster churn can break Ask and create silent false confidence.  
 - Owner teaching (“that face is Peggy”) is not a first-class MB Person assertion.  
-- Duplicate `people` rows accumulate without a merge path.  
-- EVS-022 / EVS-023 and later EVS-014 require **MemoryBox-owned Person** with mapped provider identities.
+- Duplicate `people` rows accumulate without merge or shared resolution.  
+- EVS-022 / EVS-023 (and later EVS-014) require MemoryBox-owned Person with mapped provider identities.
 
-Increment 6 productizes Person & Identity **thinly** so owner teaching sticks and Ask photo retrieval can use MB mappings — without pulling Review/HVRT or full cross-provider Person (Inc 10).
+Increment 6 productizes a **central** Person & Identity service so owner teaching sticks, Ask uses confirmed mappings with honest fallbacks, and other modules stop minting duplicate Persons.
 
 ---
 
 ## 2. Objective
 
-1. **Person & Identity Service** — create/confirm Person; map/unmap Immich (and future HVRT) identities; reject/negative; owner-led merge.  
-2. **Durable owner teach** — EF-07/EF-08 thin; “Archive Updated” feedback allowed (quiet).  
-3. **Ask earn-in** — named-person photo asks resolve through MB Person mappings when present.  
-4. **FlightSim prove** — synthetic + real owner teach against Immich people.
+1. **Person & Identity Service** — teach/confirm/reject/merge; basic display-name correction; durable negatives; mapping provenance.  
+2. **Central Person resolution** — shared API used by Ask, Story, Journal, and future callers.  
+3. **Ask earn-in** — photo-by-person prefers confirmed mappings; candidates never silently promoted.  
+4. **FlightSim prove** — owner teach one real Immich identity → Ask via mapping; harness covers reject/negatives/bulk/merge.
 
 | Field | Content |
 |-------|---------|
-| **Modules** | Person & Identity Service; provider identity map APIs; thin Person UX; Ask photo resolution via mapping; reindex/refresh trigger thin |
+| **Modules** | Person & Identity Service; provider identity map; thin Person UX; Ask photo resolution; thin reindex/refresh; shared Person resolver |
 | **Flows** | **EF-07**, **EF-08 thin** |
 | **EVSs in** | **EVS-022**, **EVS-023**; improves **EVS-001 / 028-class** photo-by-person |
 
@@ -60,23 +66,26 @@ Increment 6 productizes Person & Identity **thinly** so owner teaching sticks an
 
 ## 3. Success criteria (acceptance)
 
-Final acceptance on **FlightSim**.
+Final acceptance on **FlightSim** for I6-OWNER; harness for the rest.
 
 | ID | Criterion | Proof |
 |----|-----------|-------|
 | **I6-A** | Create / confirm MB Person (owner authority) | Harness |
-| **I6-B** | Map Immich person/face `external_id` → MB Person via `provider_identities` | Harness; PK ≠ Immich UUID |
-| **I6-C** | Owner teach “that person is \<Name\>” (EVS-022 thin) | Harness + FlightSim opaque ids |
+| **I6-B** | Map Immich provider identity `external_id` → MB Person via `provider_identities`; `people.id` ≠ Immich UUID | Harness |
+| **I6-C** | Owner teach “that person is \<Name\>” (EVS-022 thin) | Harness |
 | **I6-D** | Bulk confirm selected provider identities → one Person (EVS-023 thin) | Harness |
-| **I6-E** | Reject / negative retained; not auto-reconfirmed | Harness |
-| **I6-F** | Owner-led merge: loser `merged_away`; mappings + provenance preserved | Harness |
-| **I6-G** | Ask photo-by-person uses MB mapping when present | Harness + FlightSim |
-| **I6-H** | No Immich UUID as `people.id` | Prove invariant (I2 continues) |
-| **I6-OWNER** | FlightSim owner path (no developer intervention) | Tom teaches one real Immich person → confirms mapping → Ask retrieves photos for that Person name |
-| **I6-I** | Provider failure visible (Immich down ≠ “no person”) | Harness / FlightSim status |
-| **I6-J** | Generalized synthetic subjects (opaque in reports) | Harness |
-| **I6-K** | I1–I5A proves remain runnable | health + prior prove commands |
-| **I6-L** | Living specs | Decision log + acceptance report |
+| **I6-E** | Negative “X is not Y” retained; consulted by candidate resolution; X may still map to Z≠Y | Harness |
+| **I6-F** | Owner merge non-destructive: `merged_away` + `merged_into_id`; historical assertion subjects remain knowable; merge history supports future logical reversal | Harness |
+| **I6-G** | Ask photo-by-person uses **confirmed** MB→provider mapping when present | Harness + FlightSim |
+| **I6-H** | Immich display-name hits never silently become confirmed MB identity; if confirmed Person lacks Immich mapping, name matches shown as **unconfirmed candidates** | Harness |
+| **I6-I** | Basic owner correction of Person display/canonical name | Harness |
+| **I6-J** | Shared Person resolver: Story/Journal (and other callers) do not independently `ensure_person` by raw name after I6 — reuse service or report gap | Harness / integration check |
+| **I6-K** | Remap: new Immich external identity can be mapped to existing MB Person without erasing prior mapping provenance | Harness |
+| **I6-OWNER** | FlightSim thin Person UI: select one real Immich identity → teach/confirm → Ask retrieves photos via confirmed mapping — **no developer intervention** | Tom on FlightSim |
+| **I6-L** | Provider failure visible (Immich down ≠ “no person” / empty success) | Harness / FlightSim status |
+| **I6-M** | Generalized synthetic subjects (opaque in reports) | Harness |
+| **I6-N** | I1–I5A proves remain runnable | health + prior prove commands |
+| **I6-O** | Living specs | Decision log + acceptance report |
 
 ---
 
@@ -84,143 +93,158 @@ Final acceptance on **FlightSim**.
 
 ### In
 
-- Person & Identity Service over existing `people` / `provider_identities` / `assertions` (extend only if gaps proven)  
+- Central Person & Identity Service over `people` / `provider_identities` / `assertions` (+ minimal migration if gaps proven)  
 - Owner teach / confirm / reject for Immich person identities (`provider_key='immich'`)  
-- Thin bulk confirm (selected set → one Person) for EVS-023  
-- Owner-led merge (two MB Persons)  
-- Ask photo resolution: Person name → MB Person → `provider_identities.external_id` → PhotoProvider  
-- Thin `/people/ui` (or equivalent) + minimal API  
-- `prove-person` (name TBD) synthetic + `--flightsim` owner path  
-- Quiet “Archive Updated” after successful teach (optional but preferred)
+- Thin bulk confirm (selected set → one Person) for EVS-023 — harness may prove; owner FlightSim gate does not require bulk  
+- Owner-led merge with non-destructive provenance + merge history for future reversal  
+- Durable negatives consulted by candidate/auto resolution  
+- Remap new Immich external IDs onto existing MB Person while preserving prior mapping provenance  
+- Minimal display/canonical name correction  
+- Shared Person resolution API; migrate Story/Journal off independent `ensure_person` name minting (or hard-fail with gap report)  
+- Ask photo resolution per §7  
+- Thin `/people/ui` + minimal API  
+- `prove-person` synthetic + `--flightsim` owner path  
+- Quiet “Archive Updated” after successful teach (preferred)
 
 ### Out
 
 | Out | Notes |
 |-----|--------|
+| Email/phone identity productization | Locked **OUT** of I6 |
+| Immich write-back of identity as SoT | Locked **OUT** |
 | HVRT / video Review & Learn | Increment 7 |
-| EVS-014 full (teach in video → Immich+video Ask) | Increment 10 |
-| Auto-merge / ranked candidate loops without owner | Forbidden in I6 |
-| Writing identity back into Immich as SoT | MB owns Person; Immich remains provider |
+| EVS-014 full cross-provider identity | Increment 10 |
+| Auto-merge / ranked candidate loops without owner | Forbidden |
+| Full Person CRUD, aliases, family-tree, rich Person UX | Later |
 | Guided Capture, SMS, multi-user, polish | Out |
-| Full relationship graph / eras / family tree UX | Out |
-| Email/phone identity productization beyond schema allowlist | Optional thin later; not required for I6 acceptance unless Tom expands |
+| Remote-browser mic HTTPS termination | **Ops/deploy workstream** — not I6 ([ops note](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md)) |
 
 ---
 
-## 5. Domain intent (schema — mostly exists)
+## 5. Domain intent
 
-I1 already has:
+I1 already has `people`, `provider_identities`, `assertions` (incl. rejected).
 
-- `people` (`status`: unresolved \| confirmed \| merged_away; `merged_into_id`)  
-- `provider_identities` UNIQUE `(provider_key, identity_kind, external_id)`  
-- `assertions` with `authority` / `status` including **rejected**
+### 5.1 Teach / confirm / remap
 
-### 5.1 Teach / confirm
+- Confirm Person → `people.status='confirmed'`; owner-authority teaching recorded.  
+- Map Immich identity → `provider_identities.person_id = people.id`.  
+- **Never** set `people.id` from Immich UUID.  
+- If Immich later presents a **new** `external_id` for the same human, allow mapping that new id to the **existing** MB Person; **retain** prior identity rows / provenance (do not pretend the old external id “was never mapped”).
 
-- Confirm Person → `people.status='confirmed'`, owner-authority assertion recorded.  
-- Map Immich identity → `provider_identities.person_id = people.id` (`identity_kind` e.g. `external_person` or `face` as used by provider).  
-- **Never** set `people.id` from Immich UUID.
+### 5.2 Negatives (locked)
 
-### 5.2 Negatives
+- Rejection = durable fact: **provider identity X is not MB Person Y**.  
+- Candidate / automatic resolution **must read** this negative and must not re-propose X→Y as a silent confirmed bind.  
+- X may later be confirmed as Person Z (Z ≠ Y).  
+- Persistence may use rejected assertions and/or an explicit negative identity row — implementation choice under this semantic lock.
 
-- Owner “not this person” → retain as rejected assertion and/or clear `person_id` with durable negative marker so re-ingest cannot silently re-bind the same external_id as confirmed without owner action.  
-- Exact persistence shape (assertion-only vs identity tombstone) — **open question** if both are needed; default proposal: **rejected assertion + do not auto-attach**.
-
-### 5.3 Merge
+### 5.3 Merge (locked)
 
 - Owner selects survivor + loser.  
-- Loser → `merged_away` + `merged_into_id=survivor`.  
-- Move/repoint `provider_identities` and relevant relationships/assertions to survivor **without deleting provenance history**.  
-- No silent merge from similarity scores in I6.
+- Loser → `status='merged_away'`, `merged_into_id=survivor`.  
+- Non-destructive: do **not** rewrite historical assertions so the original subject Person becomes unknowable (keep loser row as historical referent; survivors get current mappings).  
+- Preserve merge history sufficient for **future logical Unmerge** (Unmerge UX **not** in I6).  
+- Current `provider_identities` for the loser are associated with the survivor for forward resolution, without erasing that they previously attached to the loser.  
+- No silent similarity-based merge in I6.
 
-### 5.4 Reindex (thin)
+### 5.4 Name correction (locked thin)
 
-- After teach/merge/reject: refresh in-process / derived lookup used by Ask photo resolution.  
-- Full Qdrant/comms rebuild **not** required for I6 acceptance.
+- Owner may correct `display_name` (canonical label for Ask/UI).  
+- No aliases table, no rich profile editor in I6.
 
----
+### 5.5 Reindex (thin)
 
-## 6. Ask integration (earn-in, not Inc 10)
-
-Today (`search_photos`): Immich `list_people(query=name)` string match → `person_external_ids`.
-
-**I6 change:**
-
-1. Resolve ask person name → MB `people` (confirmed preferred).  
-2. Load `provider_identities` for `provider_key='immich'`.  
-3. Search PhotoProvider with those `external_id`s.  
-4. If no MB mapping: existing Immich name fallback (disclose weaker provenance if useful).  
-5. Citations/attribution should show **MB Person** when mapping was used.
-
-Do **not** require video hits or HVRT for I6.
+- After teach/merge/reject/rename: refresh lookup used by Ask photo resolution.  
+- Full Qdrant/comms rebuild not required for I6 acceptance.
 
 ---
 
-## 7. UX (thin)
+## 6. Central Person resolution (locked)
 
-- `/people/ui` (name TBD): list/search MB Persons; list Immich people (via provider); Teach / Confirm / Reject / Merge actions.  
-- First-class intents optional: “Who is this?” deferred to Review (Inc 7); I6 may use explicit teach from listed Immich person → name.  
-- No taxonomy chrome; no polish.
+After I6 ships:
+
+1. **One** Person & Identity service is the SoT for resolve-or-create / teach / map / reject / merge / rename.  
+2. Story, Journal, and any other module that today calls ad-hoc `ensure_person` by raw display-name **must** call the shared resolver (or equivalent service API).  
+3. If a caller cannot be wired in the same increment, implementation must **stop and report** an integration gap — not leave a second Person minting path live.  
+4. Goal: stop duplicate Persons from independent name matching.
 
 ---
 
-## 8. EVS scope (MBEVS-001 v0.8)
+## 7. Ask integration (earn-in, not Inc 10)
 
-### 8.1 In scope for I6
+**Authoritative path (confirmed mapping present):**
+
+1. Resolve ask person name → confirmed MB Person (via shared resolver).  
+2. Load confirmed Immich `provider_identities` for that Person.  
+3. PhotoProvider search by those `external_id`s.  
+4. Citations/attribution show **MB Person** + mapping provenance.
+
+**Fallback / candidate path (locked trust rules):**
+
+- Immich display-name matching is **never** sufficient to create or silently confirm an MB identity.  
+- If a **confirmed** MB Person exists for the asked name but has **no** Immich mapping: any Immich name-similar hits must be labeled **unconfirmed candidates** (not presented as normal confirmed Person photo results).  
+- If **no** confirmed MB Person exists: Immich name matches may appear only as candidates / provider-labeled hits with clear non-confirmed provenance — still must not mint confirmed MB Person automatically.
+
+Provider down → visible failure status (not empty success).
+
+No video/HVRT required for I6.
+
+---
+
+## 8. UX (thin)
+
+- `/people/ui`: list/search MB Persons; list Immich provider people; select one identity → Teach/Confirm; Reject; Merge; edit display name.  
+- Owner FlightSim gate uses this UI only (no developer SQL/API babysitting).  
+- No taxonomy chrome; no polish; no full Immich album browser required for acceptance (selected Immich people list is enough for EVS-023 harness).
+
+---
+
+## 9. EVS scope (MBEVS-001 v0.8)
+
+### 9.1 In
 
 | EVS ID | Role in I6 |
 |--------|------------|
-| **EVS-022** | “That person is Peggy.” — owner confirmation → high-authority identity; no silent overwrite of conflicts |
-| **EVS-023** | “These pictures are all Peggy.” — bulk confirm selected provider identities / face cluster members → one MB Person |
-| **EVS-001 / 028-class** | Improved: photo-by-person Ask uses MB mapping when taught |
+| **EVS-022** | “That person is Peggy.” — owner confirmation; durable; no silent overwrite |
+| **EVS-023** | “These pictures are all Peggy.” — bulk confirm selected provider identities → one MB Person (harness) |
+| **EVS-001 / 028-class** | Improved via confirmed mapping; candidates disclosed when mapping absent |
 
-### 8.2 Out (later)
+### 9.2 Out (later)
 
-| EVS / slice | Increment |
-|-------------|-----------|
-| EVS-014, richer EVS-009 | 10 |
-| Video teach / Review loop | 7 |
+| Slice | Increment |
+|-------|-----------|
+| EVS-014, richer multi-provider | 10 |
+| Video teach / Review | 7 |
 | Guided Capture identity prompts | 11 |
 
 ---
 
-## 9. Architecture notes
+## 10. Architecture notes
 
-- PG authoritative for Person + mappings + owner assertions.  
-- Immich remains remote PhotoProvider (D7); IDs only as `external_id`.  
-- Human teaching durable across provider reprocessing (engineering rules).  
-- Provider failure visible — never “empty people list” as success when Immich is down.  
-- Earn-in from I2 `provider_identities` prove pattern and I4 Ask photo path.
-
----
-
-## 10. Build plan (only after *Build Increment 6 only*)
-
-1. Person & Identity Service (teach/confirm/reject/merge) over existing tables + any minimal migration.  
-2. API + thin `/people/ui`.  
-3. Ask photo resolution via MB Person mapping.  
-4. `prove-person` harness + FlightSim owner teach path (EVS-022/023 opaque).  
-5. Confirm I1–I5A proves.  
-6. Acceptance report; **stop**.
+- PG authoritative for Person, mappings, negatives, merge history, owner assertions.  
+- Immich remote PhotoProvider (D7); IDs only as `external_id`.  
+- Durable = **MB Person + owner teaching + mapping provenance**, not a promise that Immich cluster IDs are immortal.  
+- Earn-in from I2 `provider_identities` and I4 Ask photo path; replace trust model per §7.
 
 ---
 
-## 11. Open questions for Tom
+## 11. Build plan (only after *Build Increment 6 only*)
 
-1. **Owner gate wording** — confirm or rewrite the proposed I6-OWNER sentence above.  
-2. **UX entry** — is `/people/ui` enough, or must teach also be reachable from Ask (“Archive Updated” after teach)?  
-3. **Negatives persistence** — assertion-only OK, or require explicit identity blocklist row?  
-4. **Bulk EVS-023** — confirm “selected Immich people / face ids in UI” is enough (not full Immich album browser).  
-5. **Email/phone identities** — in or out of I6 acceptance? Proposal: **out** unless you expand.  
-6. **Immich write-back** — confirm **out** (MB mapping only).  
-7. **Merge conflicts** — if two confirmed Persons both mapped to different Immich ids, survivor keeps both mappings unless owner rejects — OK?
+1. Person & Identity Service (teach/confirm/reject/merge/rename/remap) + negatives semantics.  
+2. Shared Person resolver; migrate Story/Journal off ad-hoc `ensure_person` (or gap-fail).  
+3. Thin `/people/ui` + API.  
+4. Ask photo resolution with confirmed vs candidate trust rules.  
+5. `prove-person` harness (reject/negatives/bulk/merge) + FlightSim I6-OWNER.  
+6. Confirm I1–I5A proves.  
+7. Acceptance report; **stop**.
 
 ---
 
 ## 12. Authorization gate
 
-**Status: NOT AUTHORIZED TO BUILD.**
+**Status: FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD.**
 
-Do **not** write I6 product code, migrations, Ask photo rewiring, or Person UX until Tom explicitly says **Build Increment 6 only**.
+Do **not** write I6 product code, migrations, Ask photo rewiring, Person UX, or Story/Journal Person-resolver migration until Tom explicitly says **Build Increment 6 only**.
 
-Unauthorized increments must not start. Guided Capture / Inc 7+ remain out.
+Unauthorized increments must not start.
