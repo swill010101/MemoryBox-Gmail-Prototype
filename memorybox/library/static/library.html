@@ -127,7 +127,7 @@
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Person filter (required)</h2>
       <p class="muted">Resolves via I6 Person service. Teach stays in People / Review.</p>
-      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <button class="secondary" id="btnRefreshPeople" type="button">Refresh people</button>
       <p id="peopleStatus" class="muted"></p>
       <label for="personSel">MB Person</label>
       <select id="personSel"><option value="">(select a person)</option></select>
@@ -218,7 +218,7 @@
       try { return JSON.stringify(err); } catch { return String(err); }
     }
 
-    async function refreshPeople() {
+    async function loadPersonOptions() {
       if (peopleStatusEl) {
         peopleStatusEl.textContent = "Loading people…";
         peopleStatusEl.className = "muted";
@@ -437,8 +437,8 @@
       }
     }
 
-    document.getElementById("refreshPeople").onclick = () => refreshPeople().catch((e) => {
-      statusEl.textContent = String(e);
+    document.getElementById("btnRefreshPeople").onclick = () => loadPersonOptions().catch((e) => {
+      statusEl.textContent = errText(e);
     });
     document.getElementById("loadBtn").onclick = () => {
       nextCursor = null;
@@ -446,7 +446,7 @@
     };
     moreBtn.onclick = () => load(false);
     document.getElementById("viewSel").onchange = renderCards;
-    refreshPeople().catch((e) => { statusEl.textContent = String(e); });
+    loadPersonOptions().catch((e) => { statusEl.textContent = errText(e); });
   </script>
 </body>
 </html>
