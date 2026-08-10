@@ -1,4 +1,4 @@
-"""FastAPI entry for MemoryBox monolith (Increment 5A: Ask + Story + Journal)."""
+"""FastAPI entry for MemoryBox monolith (Increment 6: Person & Identity + Ask/Story/Journal)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from memorybox import __version__
 from memorybox import migrate as migrate_mod
+from memorybox.ask.deps import build_photo
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.config import settings
 from memorybox.context import ContextPatch, default_context_store
@@ -20,6 +21,17 @@ from memorybox.journal import (
     get_journal,
     list_journals,
     save_new_version,
+)
+from memorybox.person import (
+    PersonServiceError,
+    bulk_confirm_provider_identities,
+    get_person,
+    list_people,
+    map_provider_identity,
+    merge_people,
+    reject_mapping,
+    rename_person,
+    teach_provider_person,
 )
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.capture import build_capture_stt
@@ -41,6 +53,8 @@ DOMAIN_V0_TABLES = (
     "evidence",
     "people",
     "provider_identities",
+    "identity_negatives",
+    "person_merges",
     "assertions",
     "assertion_evidence",
     "relationships",
@@ -55,11 +69,12 @@ DOMAIN_V0_TABLES = (
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
 STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.html"
 JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journal.html"
+PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 5A: Journal + Capture/STT + Ask.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 6: Person & Identity.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -133,6 +148,36 @@ class JournalVersionRequest(BaseModel):
     described_end_date: str | None = None
     described_precision: str | None = None
     note: str | None = None
+
+
+class TeachRequest(BaseModel):
+    display_name: str = Field(..., min_length=2)
+    provider_key: str = "immich"
+    external_id: str = Field(..., min_length=1)
+    label: str | None = None
+
+
+class BulkTeachRequest(BaseModel):
+    display_name: str = Field(..., min_length=2)
+    provider_key: str = "immich"
+    external_ids: list[str] = Field(default_factory=list)
+
+
+class RejectRequest(BaseModel):
+    person_id: str
+    provider_key: str = "immich"
+    external_id: str
+    note: str | None = None
+
+
+class MergeRequest(BaseModel):
+    survivor_person_id: str
+    loser_person_id: str
+    note: str | None = None
+
+
+class RenameRequest(BaseModel):
+    display_name: str = Field(..., min_length=2)
 
 
 @app.get("/health")
@@ -219,7 +264,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": "5A",
+        "increment": 6,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -230,6 +275,7 @@ def health() -> dict[str, Any]:
         "ask": "/ask/ui",
         "story": "/story/ui",
         "journal": "/journal/ui",
+        "people": "/people/ui",
     }
 
 
@@ -237,7 +283,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": "5A",
+        "increment": 6,
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -246,6 +292,8 @@ def root() -> dict[str, Any]:
         "story": "/story",
         "journal_ui": "/journal/ui",
         "journal": "/journal",
+        "people_ui": "/people/ui",
+        "people": "/people",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -269,6 +317,13 @@ def journal_ui() -> FileResponse:
     if not JOURNAL_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Journal UI missing")
     return FileResponse(JOURNAL_STATIC, media_type="text/html")
+
+
+@app.get("/people/ui")
+def people_ui() -> FileResponse:
+    if not PEOPLE_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="People UI missing")
+    return FileResponse(PEOPLE_STATIC, media_type="text/html")
 
 
 @app.post("/ask")
@@ -494,3 +549,135 @@ def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/people")
+def people_list() -> dict[str, Any]:
+    return {"ok": True, "people": list_people()}
+
+
+@app.get("/people/provider/immich")
+def people_immich_list() -> dict[str, Any]:
+    photo = build_photo()
+    status: dict[str, Any]
+    try:
+        h = photo.health()
+        status = {
+            "provider_key": h.provider_key,
+            "ok": h.ok,
+            "detail": h.detail,
+        }
+        if not h.ok:
+            return {
+                "ok": False,
+                "people": [],
+                "provider_status": status,
+                "unavailable": True,
+            }
+        refs = photo.list_people(limit=200)
+        return {
+            "ok": True,
+            "people": [
+                {
+                    "provider_key": r.provider_key,
+                    "external_id": r.external_id,
+                    "display_name": r.display_name,
+                }
+                for r in refs
+            ],
+            "provider_status": status,
+        }
+    except ProviderUnavailable as exc:
+        return {
+            "ok": False,
+            "people": [],
+            "unavailable": True,
+            "provider_status": {"ok": False, "detail": str(exc)},
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/people/{person_id}")
+def people_get(person_id: str) -> dict[str, Any]:
+    view = get_person(person_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="person not found")
+    return {"ok": True, "person": view.to_dict()}
+
+
+@app.post("/people/teach")
+def people_teach(body: TeachRequest) -> dict[str, Any]:
+    try:
+        view = teach_provider_person(
+            display_name=body.display_name,
+            provider_key=body.provider_key,
+            external_id=body.external_id,
+            label=body.label,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+
+@app.post("/people/bulk-teach")
+def people_bulk_teach(body: BulkTeachRequest) -> dict[str, Any]:
+    try:
+        view = bulk_confirm_provider_identities(
+            display_name=body.display_name,
+            provider_key=body.provider_key,
+            external_ids=body.external_ids,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+
+@app.post("/people/reject")
+def people_reject(body: RejectRequest) -> dict[str, Any]:
+    try:
+        result = reject_mapping(
+            person_id=body.person_id,
+            provider_key=body.provider_key,
+            external_id=body.external_id,
+            note=body.note,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/people/merge")
+def people_merge(body: MergeRequest) -> dict[str, Any]:
+    try:
+        view = merge_people(
+            survivor_person_id=body.survivor_person_id,
+            loser_person_id=body.loser_person_id,
+            note=body.note,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+
+@app.post("/people/{person_id}/name")
+def people_rename(person_id: str, body: RenameRequest) -> dict[str, Any]:
+    try:
+        view = rename_person(person_id, body.display_name)
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict()}
+
+
+@app.post("/people/{person_id}/map")
+def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
+    try:
+        view = map_provider_identity(
+            person_id=person_id,
+            provider_key=body.provider_key,
+            external_id=body.external_id,
+            label=body.label or body.display_name,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True}

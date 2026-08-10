@@ -102,33 +102,10 @@ def _iso(v: Any) -> str | None:
 
 
 def ensure_person(display_name: str) -> UUID:
-    """Find or create a Person by display_name (I5 thin; not full Person productization)."""
-    name = (display_name or "").strip()
-    if len(name) < 2:
-        raise StoryServiceError("narrator/person display_name required")
-    with connection() as conn:
-        row = conn.execute(
-            """
-            SELECT id FROM people
-            WHERE lower(display_name) = lower(%s)
-              AND status IN ('unresolved', 'confirmed')
-            ORDER BY created_at ASC
-            LIMIT 1
-            """,
-            (name,),
-        ).fetchone()
-        if row:
-            return UUID(str(row["id"]))
-        pid = uuid4()
-        conn.execute(
-            """
-            INSERT INTO people (id, display_name, status)
-            VALUES (%s, %s, 'confirmed')
-            """,
-            (pid, name),
-        )
-        return pid
+    """Deprecated local mint — delegates to central Person & Identity (I6)."""
+    from memorybox.person import resolve_person_by_name
 
+    return UUID(resolve_person_by_name(display_name, create_if_missing=True).person_id)
 
 def _load_associations(conn, story_id: UUID) -> tuple[list[str], list[str]]:
     rows = conn.execute(

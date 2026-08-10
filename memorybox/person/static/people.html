@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox People</title>
+  <style>
+    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(165deg, #e4e8ef 0%, #f7f8fb 55%, #eef1f6 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a6170; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, select, textarea {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a7180; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+    code { font-size: 0.8rem; }
+    #lastId { font-family: ui-monospace, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox People</h1>
+    <p class="sub">
+      Thin Person &amp; Identity (Increment 6) — teach Immich identity → MB Person → Ask photos.
+      <a href="/ask/ui">Ask</a> · <a href="/journal/ui">Journal</a> · <a href="/story/ui">Story</a>
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Teach / Confirm (owner path)</h2>
+      <p class="muted">Select one Immich provider person, enter the MB display name, Teach. Then Ask for photos of that name.</p>
+      <button class="secondary" id="refreshImmich" type="button">Refresh Immich people</button>
+      <label for="immichPerson">Immich provider identity</label>
+      <select id="immichPerson"><option value="">(load Immich people)</option></select>
+      <label for="displayName">MB Person display name</label>
+      <input id="displayName" placeholder="e.g. Peggy" />
+      <button id="teachBtn" type="button">Teach / Confirm mapping</button>
+      <p>Last taught Person ID: <code id="lastId">(none yet)</code></p>
+      <p id="archiveMsg" class="muted"></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. MB People</h2>
+      <button class="secondary" id="listPeople" type="button">List people</button>
+      <label for="renameId">Person ID</label>
+      <input id="renameId" placeholder="paste person id" />
+      <label for="renameName">Correct display name</label>
+      <input id="renameName" placeholder="new display name" />
+      <button id="renameBtn" type="button">Save name</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Reject / Merge (harness-friendly)</h2>
+      <div class="row">
+        <div>
+          <label for="rejectPerson">Reject: MB Person ID</label>
+          <input id="rejectPerson" />
+          <label for="rejectExt">Immich external id</label>
+          <input id="rejectExt" />
+          <button id="rejectBtn" type="button">Reject pairing</button>
+        </div>
+        <div>
+          <label for="survivor">Merge survivor Person ID</label>
+          <input id="survivor" />
+          <label for="loser">Merge loser Person ID</label>
+          <input id="loser" />
+          <button id="mergeBtn" type="button">Merge</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
+      <pre id="out" class="muted">No action yet.</pre>
+    </section>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    function show(data) { out.textContent = JSON.stringify(data, null, 2); }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    async function loadImmich() {
+      const data = await j("/people/provider/immich");
+      const sel = document.getElementById("immichPerson");
+      sel.innerHTML = "";
+      const people = data.people || [];
+      if (!people.length) {
+        sel.innerHTML = "<option value=\"\">(no Immich people — check provider)</option>";
+        show(data);
+        return;
+      }
+      people.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.external_id;
+        opt.textContent = (p.display_name || "(unnamed)") + " — " + p.external_id;
+        sel.appendChild(opt);
+      });
+      show({ ok: true, count: people.length, provider_status: data.provider_status });
+    }
+
+    document.getElementById("refreshImmich").onclick = () => loadImmich().catch(show);
+    document.getElementById("teachBtn").onclick = async () => {
+      try {
+        const external_id = document.getElementById("immichPerson").value;
+        const display_name = document.getElementById("displayName").value.trim();
+        if (!external_id || !display_name) {
+          show({ detail: "Pick an Immich person and enter a display name." });
+          return;
+        }
+        const data = await j("/people/teach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name,
+            provider_key: "immich",
+            external_id,
+            label: display_name,
+          }),
+        });
+        const id = data.person && data.person.id;
+        if (id) {
+          document.getElementById("lastId").textContent = id;
+          document.getElementById("renameId").value = id;
+        }
+        document.getElementById("archiveMsg").textContent = "Archive Updated";
+        show(data);
+      } catch (err) { show(err); }
+    };
+
+    document.getElementById("listPeople").onclick = async () => {
+      try { show(await j("/people")); } catch (err) { show(err); }
+    };
+
+    document.getElementById("renameBtn").onclick = async () => {
+      try {
+        const id = document.getElementById("renameId").value.trim();
+        const display_name = document.getElementById("renameName").value.trim();
+        show(await j("/people/" + encodeURIComponent(id) + "/name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    document.getElementById("rejectBtn").onclick = async () => {
+      try {
+        show(await j("/people/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: document.getElementById("rejectPerson").value.trim(),
+            provider_key: "immich",
+            external_id: document.getElementById("rejectExt").value.trim(),
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    document.getElementById("mergeBtn").onclick = async () => {
+      try {
+        show(await j("/people/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            survivor_person_id: document.getElementById("survivor").value.trim(),
+            loser_person_id: document.getElementById("loser").value.trim(),
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    loadImmich().catch(show);
+  </script>
+</body>
+</html>

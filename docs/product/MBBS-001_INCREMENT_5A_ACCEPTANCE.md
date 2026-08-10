@@ -36,4 +36,4 @@ python -m memorybox prove-journal --flightsim
 
 ## Stop
 
-Do **not** begin Guided Capture / EF-11 / Increment 6 without explicit authorization.
+Do **not** begin Guided Capture / EF-11 / Increment 7 without explicit authorization. Increment 6 is separately authorized.

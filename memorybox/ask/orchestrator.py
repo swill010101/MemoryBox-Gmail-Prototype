@@ -139,20 +139,36 @@ def _build_answer(
                 "location": p.location,
                 "thumb_url": p.thumb_url,
                 "web_url": p.web_url,
-                "provenance_kind": "archive_evidence",
+                "identity_trust": getattr(p, "identity_trust", "confirmed"),
+                "mb_person_id": getattr(p, "mb_person_id", None),
+                "mb_person_name": getattr(p, "mb_person_name", None),
+                "attribution": getattr(p, "attribution", None),
+                "provenance_kind": (
+                    "archive_evidence"
+                    if getattr(p, "identity_trust", "confirmed") == "confirmed"
+                    else "provider_candidate"
+                ),
             }
         )
         who = ", ".join(p.people) if p.people else "people not labeled"
         where = p.location or "location not labeled"
+        trust = getattr(p, "identity_trust", "confirmed")
+        label = "Fact" if trust == "confirmed" else "Candidate"
+        prefix = ""
+        if trust == "candidate":
+            prefix = "Unconfirmed Immich name candidate — "
         statements.append(
             {
-                "text": f"Photo asset from provider ({who}; {where}).",
-                "label": "Fact",
+                "text": f"{prefix}Photo asset from provider ({who}; {where}).",
+                "label": label,
                 "evidence_ids": [],
                 "photo_external_ids": [p.external_id],
                 "story_ids": [],
                 "journal_ids": [],
-                "provenance_kind": "archive_evidence",
+                "provenance_kind": (
+                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                ),
+                "attribution": getattr(p, "attribution", None),
             }
         )
 
@@ -277,7 +293,26 @@ def _build_answer(
             "(provenance: narrator testimony — not independently corroborated unless also cited)."
         )
     if photos:
-        parts.append(f"Found {len(photos)} photo hit(s) via the photo provider.")
+        confirmed_n = sum(
+            1 for p in photos if getattr(p, "identity_trust", "confirmed") == "confirmed"
+        )
+        candidate_n = len(photos) - confirmed_n
+        if confirmed_n and not candidate_n:
+            parts.append(
+                f"Found {confirmed_n} photo hit(s) via confirmed MB Person→Immich mapping."
+            )
+        elif candidate_n and not confirmed_n:
+            parts.append(
+                f"Found {candidate_n} unconfirmed Immich name-candidate photo hit(s) "
+                "(not MB-confirmed identity)."
+            )
+        else:
+            parts.append(
+                f"Found {confirmed_n} confirmed-mapping photo hit(s) and "
+                f"{candidate_n} unconfirmed candidate hit(s)."
+            )
+        if photo_status.get("disclosure"):
+            parts.append(str(photo_status["disclosure"]))
     if evidence:
         parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
     if plan.retrieval_constraints:

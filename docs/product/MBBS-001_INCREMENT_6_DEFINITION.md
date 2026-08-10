@@ -1,6 +1,6 @@
-# MBBS-001 Increment 6 — Definition (final review only — not authorized to build)
+# MBBS-001 Increment 6 — Definition (build authorized)
 
-**Status:** **LOCKED — FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD**  
+**Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 6 only*)  
 **Date:** 2026-08-10  
 **Owner acceptance gate (locked):** On FlightSim, Tom can use the thin Person UI **without developer intervention** to select **one real Immich provider identity**, teach/confirm its MB Person identity, and then use Ask to retrieve photos for that MB Person **through the confirmed provider mapping**. Synthetic harnesses may prove reject, negatives, bulk confirm, and merge.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 6  
@@ -9,7 +9,7 @@
 **Depends on:** Increment 1 (Person / ProviderIdentity / Assertion schema) · Increment 2 (PhotoProvider; Immich IDs as `external_id` only) · Increment 4 Ask (accepted) · Increment 5 / 5A (Story/Journal must **stop** ad-hoc Person creation after I6 — see §6)  
 **Prior:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED**  
 **Related ops (not I6):** [P1_REMOTE_BROWSER_MIC_HTTPS.md](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md) — remote-browser mic requires trusted HTTPS; deployment/ops workstream  
-**Authorization gate:** Do **not** implement until Tom explicitly authorizes *Build Increment 6 only*.
+**Authorization:** *Build Increment 6 only* — authorized.
 
 ---
 
@@ -243,8 +243,6 @@ No video/HVRT required for I6.
 
 ## 12. Authorization gate
 
-**Status: FINAL REVIEW ONLY — NOT AUTHORIZED TO BUILD.**
+**Status: BUILD AUTHORIZED** (*Build Increment 6 only*).
 
-Do **not** write I6 product code, migrations, Ask photo rewiring, Person UX, or Story/Journal Person-resolver migration until Tom explicitly says **Build Increment 6 only**.
-
-Unauthorized increments must not start.
+Owner gate **I6-OWNER** is mandatory for FlightSim acceptance. Do **not** begin Increment 7 / Guided Capture / polish beyond locked I6 scope without explicit authorization.

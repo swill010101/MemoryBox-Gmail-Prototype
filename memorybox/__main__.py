@@ -48,6 +48,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_I5A_OWNER_*_JOURNAL_ID after UX save)",
     )
+    p_prove6 = sub.add_parser("prove-person", help="Increment 6 Person & Identity acceptance prove")
+    p_prove6.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Final P1-runtime-host acceptance "
+            "(set MEMORYBOX_I6_OWNER_PERSON_ID after /people/ui Teach)"
+        ),
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -146,6 +155,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.journal.acceptance import prove_increment_5a
 
         payload = prove_increment_5a(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-person":
+        from memorybox.person.acceptance import prove_increment_6
+
+        payload = prove_increment_6(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

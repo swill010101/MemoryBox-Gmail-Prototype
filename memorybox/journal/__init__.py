@@ -139,31 +139,15 @@ def _parse_date(value: str | date | None, *, field: str) -> date | None:
 
 
 def ensure_person(display_name: str) -> UUID:
-    name = (display_name or "").strip()
-    if len(name) < 2:
-        raise JournalServiceError("author display_name required")
-    with connection() as conn:
-        row = conn.execute(
-            """
-            SELECT id FROM people
-            WHERE lower(display_name) = lower(%s)
-              AND status IN ('unresolved', 'confirmed')
-            ORDER BY created_at ASC
-            LIMIT 1
-            """,
-            (name,),
-        ).fetchone()
-        if row:
-            return UUID(str(row["id"]))
-        pid = uuid4()
-        conn.execute(
-            """
-            INSERT INTO people (id, display_name, status)
-            VALUES (%s, %s, 'confirmed')
-            """,
-            (pid, name),
+    """Deprecated local mint — delegates to central Person & Identity (I6)."""
+    from memorybox.person import PersonServiceError, resolve_person_by_name
+
+    try:
+        return UUID(
+            resolve_person_by_name(display_name, create_if_missing=True).person_id
         )
-        return pid
+    except PersonServiceError as exc:
+        raise JournalServiceError(str(exc)) from exc
 
 
 def _load_associations(conn, journal_id: UUID) -> tuple[list[str], list[str]]:

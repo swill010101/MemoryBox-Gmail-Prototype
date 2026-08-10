@@ -51,24 +51,26 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
-## Increment 6 — Person & Identity + teach (definition under review)
+## Increment 6 — Person & Identity + teach
 
 **Date:** 2026-08-10  
-**Authorization:** **NOT AUTHORIZED** — definition final review only  
+**Authorization:** **AUTHORIZED** (*Build Increment 6 only*) — shipped pending FlightSim owner gate  
 **Definition:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md)  
-**Owner gate (proposed/locked in definition):** Thin Person UI on FlightSim — teach one real Immich identity → Ask photos via confirmed mapping
+**Acceptance:** [MBBS-001_INCREMENT_6_ACCEPTANCE.md](MBBS-001_INCREMENT_6_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
+**Owner gate:** Thin Person UI on FlightSim — teach one real Immich identity → Ask photos via confirmed mapping
 
-### Locked refinements (pending build auth)
+### Locked decisions (build)
 
 | Decision | Rationale |
 |----------|-----------|
 | MB Person + owner teaching durable; Immich external_id not promised immortal | Remap new cluster ids; keep prior mapping provenance |
 | Confirmed mapping authoritative; Immich name match = candidate only | Never silent confirm; unmapped confirmed Person → candidates disclosed |
-| Negatives = X is not Y; consulted forever for that pair; X may map to Z | Prevent silent re-bind |
-| Merge non-destructive + history for future reversal | `merged_away` + `merged_into_id`; no Unmerge UX in I6 |
-| Central Person resolver; no post-I6 ad-hoc `ensure_person` | Stop duplicate minting |
+| Negatives = X is not Y; consulted by map + Ask candidate resolution; X may map to Z | Prevent silent re-bind |
+| Merge non-destructive + history for future reversal | `merged_away` + `merged_into_id`; `person_merges.snapshot_json`; no Unmerge UX in I6 |
+| Central Person resolver; Story/Journal `ensure_person` delegates | Stop duplicate minting |
 | Basic display-name correction IN; rich Person UX OUT | Thin slice |
 | Email/phone, Immich write-back, HVRT, EVS-014, auto-merge OUT | Scope lock |
+| `prove-person` + `/people/ui` | Opaque harness + owner teach path |
 
 ---
 

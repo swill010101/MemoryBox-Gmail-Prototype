@@ -39,6 +39,10 @@ class PhotoHit:
     thumb_url: str | None
     web_url: str | None
     score: float = 1.0
+    identity_trust: str = "confirmed"  # confirmed | candidate
+    mb_person_id: str | None = None
+    mb_person_name: str | None = None
+    attribution: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -370,12 +374,23 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 def search_photos(
     plan: QueryPlan, photo: PhotoProvider, *, limit: int = 24
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
-    """Search photos via PhotoProvider. Provider failure → status, not empty success."""
+    """Search photos via PhotoProvider with I6 Person trust rules.
+
+    Confirmed MB Person → provider_identities is authoritative.
+    Immich display-name matches are candidate/fallback only and never silently
+    become confirmed MB identity.
+    """
+    from memorybox.person import (
+        find_confirmed_person_by_name,
+        list_immich_external_ids_for_person,
+    )
+
     status: dict[str, Any] = {
         "provider_key": getattr(photo, "provider_key", "photo"),
         "ok": False,
         "unavailable": False,
         "detail": "",
+        "identity_mode": "none",
     }
     if not plan.want_still and not plan.want_photo:
         status["ok"] = True
@@ -388,51 +403,148 @@ def search_photos(
             status["detail"] = health.detail or "photo provider unhealthy"
             return [], status
 
+        confirmed_ext: list[str] = []
+        confirmed_meta: list[dict[str, str]] = []
+        mapped_names: list[str] = []
+        unmapped_confirmed_names: list[str] = []
+
+        for name in plan.person_names:
+            person = find_confirmed_person_by_name(name)
+            if person:
+                ids = list_immich_external_ids_for_person(person.id)
+                if ids:
+                    mapped_names.append(name)
+                    for eid in ids:
+                        confirmed_ext.append(eid)
+                        confirmed_meta.append(
+                            {
+                                "external_id": eid,
+                                "person_id": person.id,
+                                "name": name,
+                            }
+                        )
+                else:
+                    unmapped_confirmed_names.append(name)
+
+        hits: list[PhotoHit] = []
+
+        def _asset_to_hit(
+            a: PhotoAssetDto,
+            *,
+            trust: str,
+            person_id: str | None = None,
+            person_name: str | None = None,
+        ) -> PhotoHit:
+            loc = None
+            if a.location:
+                parts = [a.location.city, a.location.state, a.location.country]
+                loc = ", ".join(p for p in parts if p)
+            if trust == "confirmed":
+                attrib = (
+                    f"MB Person {person_name} via confirmed Immich mapping"
+                    if person_name
+                    else "confirmed MB Person mapping"
+                )
+            else:
+                attrib = (
+                    "unconfirmed Immich name candidate (not MB-confirmed identity)"
+                )
+            return PhotoHit(
+                provider_key=a.provider_key,
+                external_id=a.external_id,
+                taken_at=a.taken_at.isoformat() if a.taken_at else None,
+                people=[p.display_name for p in a.people if p.display_name],
+                location=loc,
+                thumb_url=a.thumb_url,
+                web_url=a.web_url,
+                identity_trust=trust,
+                mb_person_id=person_id,
+                mb_person_name=person_name,
+                attribution=attrib,
+            )
+
+        if confirmed_ext:
+            status["identity_mode"] = "confirmed_mapping"
+            query = PhotoSearchQuery(
+                person_external_ids=tuple(dict.fromkeys(confirmed_ext)),
+                limit=limit,
+            )
+            assets = photo.search_assets(query)
+            by_person_ext = {m["external_id"]: m for m in confirmed_meta}
+            for a in assets:
+                meta: dict[str, str] = {}
+                for pref in a.people or ():
+                    hit_meta = by_person_ext.get(pref.external_id)
+                    if hit_meta:
+                        meta = hit_meta
+                        break
+                if not meta and confirmed_meta:
+                    meta = confirmed_meta[0]
+                hits.append(
+                    _asset_to_hit(
+                        a,
+                        trust="confirmed",
+                        person_id=meta.get("person_id"),
+                        person_name=meta.get("name"),
+                    )
+                )
+            status["ok"] = True
+            status["detail"] = (
+                f"confirmed_hits={len(hits)} mapped_names={mapped_names}"
+            )
+            return hits[:limit], status
+
+        status["identity_mode"] = (
+            "candidate_unmapped_person"
+            if unmapped_confirmed_names
+            else "candidate_provider_name"
+        )
+        from memorybox.person import is_negative
+
         person_ext: list[str] = []
         for name in plan.person_names:
+            confirmed = find_confirmed_person_by_name(name)
             refs = photo.list_people(query=name, limit=5)
             for r in refs:
-                if r.display_name and name.lower() in r.display_name.lower():
-                    person_ext.append(r.external_id)
-                elif not plan.place_names:
-                    # still accept close name matches from provider
-                    if r.display_name and r.display_name.lower().startswith(name.lower()[:3]):
-                        person_ext.append(r.external_id)
+                name_hit = bool(
+                    r.display_name
+                    and (
+                        name.lower() in r.display_name.lower()
+                        or r.display_name.lower().startswith(name.lower()[:3])
+                    )
+                )
+                if not name_hit:
+                    continue
+                # I6-E: do not silently re-surface rejected X→Y pairings as candidates
+                if confirmed and is_negative(
+                    provider_key="immich",
+                    external_id=r.external_id,
+                    person_id=confirmed.id,
+                ):
+                    continue
+                person_ext.append(r.external_id)
 
         text_bits = list(plan.place_names) + list(plan.person_names)
         text = " ".join(text_bits) if text_bits else (plan.original_ask or None)
-
         query = PhotoSearchQuery(
             person_external_ids=tuple(dict.fromkeys(person_ext)),
             text=text,
             limit=limit,
         )
-        assets: list[PhotoAssetDto] = photo.search_assets(query)
-        hits: list[PhotoHit] = []
+        assets = photo.search_assets(query)
         for a in assets:
-            loc = None
-            if a.location:
-                parts = [a.location.city, a.location.state, a.location.country]
-                loc = ", ".join(p for p in parts if p)
-            # Optional place filter when provider returns location
-            if plan.place_names and loc:
-                if not any(p.lower() in loc.lower() for p in plan.place_names):
-                    # keep if text search already applied; soft filter
-                    pass
-            hits.append(
-                PhotoHit(
-                    provider_key=a.provider_key,
-                    external_id=a.external_id,
-                    taken_at=a.taken_at.isoformat() if a.taken_at else None,
-                    people=[p.display_name for p in a.people if p.display_name],
-                    location=loc,
-                    thumb_url=a.thumb_url,
-                    web_url=a.web_url,
-                )
-            )
+            hits.append(_asset_to_hit(a, trust="candidate"))
         status["ok"] = True
-        status["detail"] = f"hits={len(hits)}"
-        return hits, status
+        status["detail"] = (
+            f"candidate_hits={len(hits)} "
+            f"unmapped_confirmed={unmapped_confirmed_names or []}"
+        )
+        if unmapped_confirmed_names:
+            status["disclosure"] = (
+                "Confirmed MB Person(s) exist without Immich mapping; "
+                "Immich name matches are unconfirmed candidates only."
+            )
+        return hits[:limit], status
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
