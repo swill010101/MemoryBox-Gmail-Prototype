@@ -109,27 +109,26 @@ THERE_RE = re.compile(r"(?i)\b(?:there|from\s+there|at\s+that\s+place)\b")
 YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 
 # Typed person extractors (not places).
+# Name capture is case-insensitive — owners often type "dan will"; _clean_entity title-cases.
+_PERSON_NAME = r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)"
 PERSON_WITH_RE = re.compile(
-    r"(?i)\b(?:with|featuring|including)\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    rf"(?i)\b(?:with|featuring|including)\s+{_PERSON_NAME}\b"
 )
 PERSON_OF_RE = re.compile(
-    r"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
 )
 PERSON_EMAIL_FROM_RE = re.compile(
-    r"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    rf"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+{_PERSON_NAME}\b"
 )
 PERSON_SAID_RE = re.compile(
-    r"(?i)\bwhat\s+did\s+"
-    r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)\s+say\b"
+    rf"(?i)\bwhat\s+did\s+{_PERSON_NAME}\s+say\b"
 )
 PERSON_POSSESSIVE_RE = re.compile(r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b")
 SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
-    r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)\b"
+    rf"{_PERSON_NAME}\b"
 )
 
 # Places: geographic/locative — never "from <Person>" for email.
@@ -312,9 +311,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     if want_email:
         # "from <Name>" in an email ask is a person, never a place
         patterns.append(
-            re.compile(
-                r"(?i)\bfrom\s+(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
-            )
+            re.compile(rf"(?i)\bfrom\s+{_PERSON_NAME}\b")
         )
     for rx in patterns:
         for m in rx.finditer(text or ""):

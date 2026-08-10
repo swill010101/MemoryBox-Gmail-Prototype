@@ -83,6 +83,10 @@ def _intent_oriented_visual_semantics() -> tuple[bool, str]:
             )
         if scope == "none" and not p.want_communication:
             return False, f"{ask!r} expected communication"
+    # Owner typing: lowercase multi-word after "pictures of" must still extract person
+    p_lc = plan_ask("show me pictures of dan will", ctx)
+    if "Dan Will" not in p_lc.person_names:
+        return False, f"lowercase pictures-of person → {p_lc.person_names}"
     p_pic = plan_ask("Show me pictures of Jordan", ctx)
     if not p_pic.want_video:
         return False, "pictures/images broad visual must request video modality on contract"
