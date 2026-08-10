@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from memorybox import __version__
@@ -185,6 +185,13 @@ class ReviewFaceRequest(BaseModel):
     video_external_id: str = Field(..., min_length=1)
     t_sec: float = 0.0
     label: str | None = None
+    bbox: dict[str, Any] | None = None
+
+
+class ReviewFaceBoxRequest(BaseModel):
+    bbox: dict[str, Any]
+    label: str | None = None
+    crop_jpeg_base64: str | None = None
 
 
 @app.get("/health")
@@ -737,17 +744,42 @@ def review_faces(video_external_id: str | None = None) -> dict[str, Any]:
     video = build_video()
     try:
         faces = video.list_face_candidates(video_external_id=video_external_id, limit=200)
+        # Enrich from worker when available (bbox/boxed)
+        enriched = []
+        for f in faces:
+            row = {
+                "provider_key": f.provider_key,
+                "external_id": f.external_id,
+                "label": f.label,
+                "video_external_id": f.video_external_id,
+                "boxed": False,
+            }
+            enriched.append(row)
+        worker_faces = _worker_list_faces(video_external_id)
+        by_id = {r["external_id"]: r for r in worker_faces}
+        for row in enriched:
+            w = by_id.get(row["external_id"])
+            if w:
+                row["boxed"] = bool(w.get("boxed") or w.get("bbox"))
+                row["bbox"] = w.get("bbox")
+        # Include worker-only faces not yet on provider list
+        seen = {r["external_id"] for r in enriched}
+        for w in worker_faces:
+            if w["external_id"] in seen:
+                continue
+            enriched.append(
+                {
+                    "provider_key": "hvrt",
+                    "external_id": w["external_id"],
+                    "label": w.get("label"),
+                    "video_external_id": w.get("video_external_id"),
+                    "boxed": bool(w.get("boxed") or w.get("bbox")),
+                    "bbox": w.get("bbox"),
+                }
+            )
         return {
             "ok": True,
-            "faces": [
-                {
-                    "provider_key": f.provider_key,
-                    "external_id": f.external_id,
-                    "label": f.label,
-                    "video_external_id": f.video_external_id,
-                }
-                for f in faces
-            ],
+            "faces": enriched,
             "provider_key": getattr(video, "provider_key", None),
         }
     except ProviderUnavailable as exc:
@@ -771,6 +803,20 @@ def review_create_face(body: ReviewFaceRequest) -> dict[str, Any]:
             t_sec=body.t_sec,
             label=body.label,
         )
+        # If HTTP worker, also PATCH bbox when provided via worker URL
+        if body.bbox is not None:
+            patch = _worker_patch_face(
+                face.external_id,
+                bbox=body.bbox,
+                label=body.label,
+            )
+            if patch.get("face"):
+                return {
+                    "ok": True,
+                    "face": patch["face"],
+                    "archive_note": "derived_only",
+                    "needs_box": not bool(patch["face"].get("boxed")),
+                }
     except ProviderUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ProviderError as exc:
@@ -782,17 +828,104 @@ def review_create_face(body: ReviewFaceRequest) -> dict[str, Any]:
             "external_id": face.external_id,
             "label": face.label,
             "video_external_id": face.video_external_id,
+            "boxed": False,
         },
         "archive_note": "derived_only",
+        "needs_box": True,
     }
 
 
-@app.get("/review/media/{video_external_id}")
-def review_media(video_external_id: str) -> Response:
-    """Proxy read-only media from sibling worker when configured."""
+@app.patch("/review/faces/{face_external_id}")
+def review_box_face(face_external_id: str, body: ReviewFaceBoxRequest) -> dict[str, Any]:
+    """Save rubber-band face box onto a derived face candidate (POC-style)."""
+    result = _worker_patch_face(
+        face_external_id,
+        bbox=body.bbox,
+        label=body.label,
+        crop_jpeg_base64=body.crop_jpeg_base64,
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=400, detail=result.get("detail") or "box save failed"
+        )
+    return result
+
+
+def _worker_list_faces(video_external_id: str | None) -> list[dict[str, Any]]:
+    import json
+    import os
+    import urllib.parse
     import urllib.request
 
+    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
+    if not base:
+        return []
+    q = "limit=200"
+    if video_external_id:
+        q += f"&video_external_id={urllib.parse.quote(video_external_id)}"
+    try:
+        with urllib.request.urlopen(f"{base}/faces?{q}", timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return list(data.get("faces") or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _worker_patch_face(
+    face_external_id: str,
+    *,
+    bbox: dict[str, Any] | None = None,
+    label: str | None = None,
+    crop_jpeg_base64: str | None = None,
+) -> dict[str, Any]:
+    import json
     import os
+    import urllib.error
+    import urllib.request
+
+    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
+    if not base:
+        # Fake provider path: stash bbox in-process is not durable; report needs worker
+        return {
+            "ok": True,
+            "face": {
+                "external_id": face_external_id,
+                "bbox": bbox,
+                "boxed": bool(bbox),
+                "label": label,
+            },
+            "detail": "bbox accepted (no worker URL — not persisted to derived store)",
+        }
+    payload: dict[str, Any] = {}
+    if bbox is not None:
+        payload["bbox"] = bbox
+    if label is not None:
+        payload["label"] = label
+    if crop_jpeg_base64:
+        payload["crop_jpeg_base64"] = crop_jpeg_base64
+    raw = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}/faces/{face_external_id}",
+        data=raw,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="PATCH",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return {"ok": False, "detail": f"HTTP {exc.code}: {detail}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)}
+
+
+@app.get("/review/media/{video_external_id}")
+def review_media(video_external_id: str, request: Request) -> Response:
+    """Proxy read-only media from sibling worker with Range support for scrubbing."""
+    import os
+    import urllib.error
+    import urllib.request
 
     base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
     if not base:
@@ -801,10 +934,45 @@ def review_media(video_external_id: str) -> Response:
             detail="media proxy requires MEMORYBOX_VIDEO_WORKER_URL",
         )
     url = f"{base}/media/{video_external_id}"
+    headers: dict[str, str] = {}
+    range_header = request.headers.get("range")
+    if range_header:
+        headers["Range"] = range_header
+    req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-            ctype = resp.headers.get("Content-Type") or "video/mp4"
+        resp = urllib.request.urlopen(req, timeout=120)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 416:
+            raise HTTPException(status_code=416, detail="Invalid range") from exc
+        raise HTTPException(
+            status_code=502, detail=f"media proxy failed: {exc.code}"
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"media proxy failed: {exc}") from exc
-    return Response(content=data, media_type=ctype)
+
+    status = getattr(resp, "status", 200) or 200
+    ctype = resp.headers.get("Content-Type") or "video/mp4"
+    out_headers: dict[str, str] = {
+        "Accept-Ranges": resp.headers.get("Accept-Ranges") or "bytes",
+    }
+    if resp.headers.get("Content-Range"):
+        out_headers["Content-Range"] = resp.headers["Content-Range"]
+    if resp.headers.get("Content-Length"):
+        out_headers["Content-Length"] = resp.headers["Content-Length"]
+
+    def _iter():
+        try:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            resp.close()
+
+    return StreamingResponse(
+        _iter(),
+        status_code=status,
+        media_type=ctype,
+        headers=out_headers,
+    )

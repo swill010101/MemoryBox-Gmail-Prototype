@@ -200,8 +200,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Range")
+        self.send_header("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length")
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
@@ -247,6 +248,9 @@ class Handler(BaseHTTPRequestHandler):
                         "external_id": fid,
                         "label": meta.get("label"),
                         "video_external_id": meta.get("video_external_id"),
+                        "bbox": meta.get("bbox"),
+                        "boxed": bool(meta.get("bbox")),
+                        "created_at_t_sec": meta.get("created_at_t_sec"),
                     }
                 )
             self._json(200, {"ok": True, "faces": out[:limit]})
@@ -279,17 +283,109 @@ class Handler(BaseHTTPRequestHandler):
             if not file_path or not file_path.is_file():
                 self._json(404, {"ok": False, "detail": "media not found"})
                 return
-            # Stream read-only
-            ctype = mimetypes.guess_type(str(file_path))[0] or "video/mp4"
-            data = file_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(data)
+            self._serve_media_file(file_path)
             return
 
+        self._json(404, {"ok": False, "detail": "not found"})
+
+    def _serve_media_file(self, file_path: Path) -> None:
+        """Read-only byte serve with Accept-Ranges / 206 Partial Content (scrubbing)."""
+        ctype = mimetypes.guess_type(str(file_path))[0] or "video/mp4"
+        file_size = file_path.stat().st_size
+        range_header = self.headers.get("Range") or self.headers.get("range")
+        if not range_header:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length")
+            self.end_headers()
+            with file_path.open("rb") as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            return
+
+        units, _, rng = range_header.partition("=")
+        if units.strip().lower() != "bytes":
+            self.send_error(416, "Only bytes ranges supported")
+            return
+        start_s, _, end_s = rng.partition("-")
+        try:
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else file_size - 1
+        except ValueError:
+            self.send_error(416, "Invalid range")
+            return
+        start = max(0, start)
+        end = min(end, file_size - 1)
+        if start > end:
+            self.send_error(416, "Invalid range")
+            return
+        length = end - start + 1
+        self.send_response(206)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length")
+        self.end_headers()
+        with file_path.open("rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = f.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                self.wfile.write(chunk)
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path = parsed.path
+        body = self._read_json()
+        if path.startswith("/faces/"):
+            face_id = path[len("/faces/") :]
+            data = _load_derived()
+            faces = data.setdefault("faces", {})
+            if face_id not in faces:
+                self._json(404, {"ok": False, "detail": "face not found"})
+                return
+            bbox = body.get("bbox")
+            if bbox is not None:
+                faces[face_id]["bbox"] = bbox
+            if body.get("label") is not None:
+                faces[face_id]["label"] = body.get("label")
+            if body.get("crop_jpeg_base64"):
+                # Optional derived crop preview — not original video mutation
+                crop_dir = _derived_dir() / "crops"
+                crop_dir.mkdir(parents=True, exist_ok=True)
+                import base64
+
+                raw = str(body["crop_jpeg_base64"]).split(",", 1)[-1]
+                crop_path = crop_dir / f"{face_id}.jpg"
+                crop_path.write_bytes(base64.b64decode(raw))
+                faces[face_id]["crop_path"] = str(crop_path.name)
+            _save_derived(data)
+            meta = faces[face_id]
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "face": {
+                        "external_id": face_id,
+                        "label": meta.get("label"),
+                        "video_external_id": meta.get("video_external_id"),
+                        "bbox": meta.get("bbox"),
+                        "boxed": bool(meta.get("bbox")),
+                    },
+                },
+            )
+            return
         self._json(404, {"ok": False, "detail": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -322,6 +418,7 @@ class Handler(BaseHTTPRequestHandler):
             video_id = str(body.get("video_external_id") or "").strip()
             t_sec = float(body.get("t_sec") or 0)
             label = body.get("label")
+            bbox = body.get("bbox")
             if not video_id:
                 self._json(400, {"ok": False, "detail": "video_external_id required"})
                 return
@@ -332,6 +429,7 @@ class Handler(BaseHTTPRequestHandler):
                 "video_external_id": video_id,
                 "label": label,
                 "created_at_t_sec": t_sec,
+                "bbox": bbox,
             }
             dets = data.setdefault("detections", [])
             dets.append(
@@ -352,8 +450,11 @@ class Handler(BaseHTTPRequestHandler):
                         "external_id": face_id,
                         "label": label,
                         "video_external_id": video_id,
+                        "bbox": bbox,
+                        "boxed": bool(bbox),
                     },
                     "archive_note": "derived_only",
+                    "needs_box": not bool(bbox),
                 },
             )
             return
