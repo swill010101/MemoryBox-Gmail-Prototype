@@ -1,6 +1,6 @@
 # MBBS-001 Increment 8 — Definition (final review — decisions locked)
 
-**Status:** **LOCKED FOR FINAL REVIEW** — decisions locked; **NOT BUILD AUTHORIZED**  
+**Status:** **BUILD AUTHORIZED / SHIPPED** — awaiting FlightSim owner gate ([acceptance](MBBS-001_INCREMENT_8_ACCEPTANCE.md))  
 **Date:** 2026-08-10  
 **Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Library** client **without developer intervention**, use **Timeline-first** browse (Gallery as alternate view of the **same** cards), apply a **required Person filter** resolved via the I6/I7 Person service, browse across **≥3 real modalities** meeting the locked mix rules (§3), open thin evidence-first card detail (including **date provenance**), use **Open in Review** on video cards when available, and keep undated items in an explicit **Undated** state — without inventing dates or re-implementing Teach inside Library. Synthetic harnesses prove unified API, pagination/bounds, date semantics, person filter, provider-down degrade, and undated behavior.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 8  
@@ -8,7 +8,7 @@
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
 **Depends on:** Increment 3 (email/calendar Evidence) · Increment 4 Ask · Increment 5 / 5A (Story / Journal temporal) · Increment 6 Person · **Increment 7 Video / Review (ACCEPTED)** · D7  
 **Prior:** [MBBS-001_INCREMENT_7_ACCEPTANCE.md](MBBS-001_INCREMENT_7_ACCEPTANCE.md) — **ACCEPTED**  
-**Authorization:** *Do not build Increment 8 until Tom explicitly authorizes: Build Increment 8 only.*
+**Authorization:** *Build Increment 8 only* — **shipped; owner gate pending**.
 
 ---
 
@@ -265,22 +265,22 @@ Demonstrator Library = mine for UX ideas only — not P1 SoT.
 
 ## 11. Authorization gate
 
-**Status: NOT BUILD AUTHORIZED.**
+**Status: BUILD AUTHORIZED / SHIPPED** — awaiting FlightSim **I8-OWNER** ([acceptance](MBBS-001_INCREMENT_8_ACCEPTANCE.md)).
 
-Decisions are **locked for final review**. Do **not** begin Increment 8 implementation until Tom explicitly authorizes: *Build Increment 8 only*.
+Do **not** begin Increment 9 / 10 / Guided Capture / Export without new authorization.
 
 ---
 
 ## 12. Stop line
 
-Wait for build authorization. Do **not** begin Increment 9 / 10 / Guided Capture / Export from this document alone.
+After owner acceptance: do **not** begin Increment 9 / 10 / Guided Capture / Export without new authorization.
 
 ---
 
-## 13. Residual open items (non-blocking for definition lock)
+## 13. Residual open items (non-blocking)
 
-None required to lock this definition. Optional later (not I8 blockers): exact cursor pagination scheme; P1 default page size; Gallery density.
+Optional later: exact cursor pagination scheme polish; P1 default page size; Gallery density.
 
 ---
 
-*End of Increment 8 definition — locked for final review. No build.*
+*End of Increment 8 definition — shipped pending FlightSim owner gate.*

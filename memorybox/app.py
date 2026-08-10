@@ -1,4 +1,4 @@
-"""FastAPI entry for MemoryBox monolith (Increment 7: Video + Review + Ask/Story/Journal/People)."""
+"""FastAPI entry for MemoryBox monolith (Increment 8: Library + Video/Review/Ask/Story/Journal/People)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,6 +22,7 @@ from memorybox.journal import (
     list_journals,
     save_new_version,
 )
+from memorybox.library import LibraryServiceError, get_library_card, list_library_cards
 from memorybox.person import (
     PersonServiceError,
     bulk_confirm_provider_identities,
@@ -71,11 +72,12 @@ STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.htm
 JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journal.html"
 PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
+LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 7: Video Intelligence + Review.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 8: Library / Timeline.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -278,7 +280,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 7,
+        "increment": 8,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -291,6 +293,7 @@ def health() -> dict[str, Any]:
         "journal": "/journal/ui",
         "people": "/people/ui",
         "review": "/review/ui",
+        "library": "/library/ui",
     }
 
 
@@ -298,7 +301,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 7,
+        "increment": 8,
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -310,6 +313,8 @@ def root() -> dict[str, Any]:
         "people_ui": "/people/ui",
         "people": "/people",
         "review_ui": "/review/ui",
+        "library_ui": "/library/ui",
+        "library_cards": "GET /library/cards",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -347,6 +352,62 @@ def review_ui() -> FileResponse:
     if not REVIEW_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Review UI missing")
     return FileResponse(REVIEW_STATIC, media_type="text/html")
+
+
+@app.get("/library/ui")
+def library_ui() -> FileResponse:
+    if not LIBRARY_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Library UI missing")
+    return FileResponse(LIBRARY_STATIC, media_type="text/html")
+
+
+@app.get("/library/cards")
+def library_cards(
+    person_id: str = Query(..., min_length=1),
+    bucket: str = Query("timeline"),
+    modalities: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    cursor: str | None = Query(None),
+    limit: int = Query(24, ge=1, le=50),
+) -> dict[str, Any]:
+    """Unified Library read API — Person filter required; Timeline/Gallery same cards."""
+    mods = None
+    if modalities:
+        mods = [m.strip() for m in modalities.split(",") if m.strip()]
+    try:
+        return list_library_cards(
+            person_id=person_id,
+            modalities=mods,
+            bucket=bucket,
+            date_from=date_from,
+            date_to=date_to,
+            cursor=cursor,
+            limit=limit,
+            photo=build_photo(),
+            video=build_video(),
+        )
+    except LibraryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/library/cards/{card_id:path}")
+def library_card_detail(
+    card_id: str,
+    person_id: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    try:
+        card = get_library_card(
+            card_id,
+            person_id=person_id,
+            photo=build_photo(),
+            video=build_video(),
+        )
+    except LibraryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not card:
+        raise HTTPException(status_code=404, detail="card not found")
+    return {"ok": True, "card": card.to_dict()}
 
 
 @app.post("/ask")
@@ -575,8 +636,8 @@ def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
 
 
 @app.get("/people")
-def people_list() -> dict[str, Any]:
-    return {"ok": True, "people": list_people()}
+def people_list(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
+    return {"ok": True, "people": list_people(limit=limit)}
 
 
 @app.get("/people/provider/immich")

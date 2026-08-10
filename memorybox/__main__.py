@@ -66,6 +66,15 @@ def main(argv: list[str] | None = None) -> int:
             "(set MEMORYBOX_I7_OWNER_PERSON_ID after /review/ui Teach)"
         ),
     )
+    p_prove8 = sub.add_parser("prove-library", help="Increment 8 Library / Timeline acceptance prove")
+    p_prove8.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Final P1-runtime-host acceptance "
+            "(set MEMORYBOX_I8_OWNER_PERSON_ID after /library/ui Person filter)"
+        ),
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -178,6 +187,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.review.acceptance import prove_increment_7
 
         payload = prove_increment_7(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-library":
+        from memorybox.library.acceptance import prove_increment_8
+
+        payload = prove_increment_8(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

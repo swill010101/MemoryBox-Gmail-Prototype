@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Library</title>
+  <style>
+    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(165deg, #e4e8ef 0%, #f7f8fb 55%, #eef1f6 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a6170; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.45rem 0 0.2rem; }
+    select, input {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.5rem 0.8rem;
+      cursor: pointer;
+      margin-right: 0.35rem;
+      margin-top: 0.45rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a7180; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.55rem; }
+    @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+    .card {
+      border: 1px solid var(--line);
+      padding: 0.7rem;
+      margin-bottom: 0.5rem;
+      background: #fff;
+      cursor: pointer;
+    }
+    .card:hover { border-color: var(--accent); }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.5rem;
+    }
+    .gallery .card { margin: 0; min-height: 110px; }
+    .meta { font-size: 0.8rem; color: #5a6170; }
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      border: 1px solid var(--line);
+      padding: 0.1rem 0.35rem;
+      margin-right: 0.25rem;
+    }
+    #detail pre {
+      white-space: pre-wrap;
+      font-size: 0.78rem;
+      background: #eef1f6;
+      padding: 0.6rem;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Library</h1>
+    <p class="sub">
+      Timeline-first browse (Increment 8) — Person filter required · same API for Gallery.
+      <a href="/ask/ui">Ask</a> ·
+      <a href="/review/ui">Review</a> ·
+      <a href="/people/ui">People</a> ·
+      <a href="/journal/ui">Journal</a>
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Person filter (required)</h2>
+      <p class="muted">Resolves via I6 Person service. Teach stays in People / Review.</p>
+      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <label for="personSel">MB Person</label>
+      <select id="personSel"><option value="">(select a person)</option></select>
+      <div class="row">
+        <div>
+          <label for="modalitySel">Modality</label>
+          <select id="modalitySel">
+            <option value="">all</option>
+            <option value="photo">photo</option>
+            <option value="video">video</option>
+            <option value="email">email</option>
+            <option value="calendar">calendar</option>
+            <option value="story">story</option>
+            <option value="journal">journal</option>
+          </select>
+        </div>
+        <div>
+          <label for="bucketSel">Bucket</label>
+          <select id="bucketSel">
+            <option value="timeline">Timeline (dated)</option>
+            <option value="undated">Undated</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div>
+          <label for="viewSel">View</label>
+          <select id="viewSel">
+            <option value="timeline">Timeline (default)</option>
+            <option value="gallery">Gallery (same cards)</option>
+          </select>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button id="loadBtn" type="button">Load Library</button>
+        <button class="secondary" id="moreBtn" type="button" disabled>More</button>
+      </div>
+      <p id="status" class="muted"></p>
+      <p id="degrade" class="warn" hidden></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Cards</h2>
+      <div id="list"></div>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Card detail</h2>
+      <p class="muted">Thin evidence-first detail — not a full inspector.</p>
+      <div id="detail"><p class="muted">Select a card.</p></div>
+    </section>
+  </main>
+  <script>
+    const listEl = document.getElementById("list");
+    const detailEl = document.getElementById("detail");
+    const statusEl = document.getElementById("status");
+    const degradeEl = document.getElementById("degrade");
+    const moreBtn = document.getElementById("moreBtn");
+    let nextCursor = null;
+    let cards = [];
+
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    async function refreshPeople() {
+      const data = await j("/people?limit=200");
+      const sel = document.getElementById("personSel");
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">(select a person)</option>';
+      (data.people || []).forEach((p) => {
+        const o = document.createElement("option");
+        o.value = p.id;
+        o.textContent = (p.display_name || "(unnamed)") + " · " + p.status;
+        sel.appendChild(o);
+      });
+      if (keep) sel.value = keep;
+      const q = new URLSearchParams(location.search).get("person_id");
+      if (q && !sel.value) sel.value = q;
+    }
+
+    function renderCards() {
+      const view = document.getElementById("viewSel").value;
+      listEl.className = view === "gallery" ? "gallery" : "";
+      listEl.innerHTML = "";
+      if (!cards.length) {
+        listEl.innerHTML = '<p class="muted">No cards for this filter/bucket.</p>';
+        return;
+      }
+      cards.forEach((c) => {
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML =
+          '<span class="pill">' + (c.modality || "") + '</span>' +
+          (c.undated ? '<span class="pill">undated</span>' : '') +
+          (c.identity_trust ? '<span class="pill">' + c.identity_trust + '</span>' : '') +
+          '<div><strong>' + (c.title || "(untitled)") + '</strong></div>' +
+          '<div class="meta">' +
+            (c.undated ? "Undated" : ("Browse: " + (c.browse_date || ""))) +
+            " · " + (c.date_provenance || "") +
+          '</div>' +
+          (c.summary ? '<div class="meta">' + c.summary + '</div>' : '');
+        div.onclick = () => showDetail(c);
+        listEl.appendChild(div);
+      });
+    }
+
+    function showDetail(c) {
+      const links = c.deep_links || {};
+      let linkHtml = "";
+      if (links.review) {
+        linkHtml += '<p><a href="' + links.review + '">Open in Review</a></p>';
+      }
+      if (links.people) {
+        linkHtml += '<p><a href="' + links.people + '">Open People</a></p>';
+      }
+      if (links.ask) {
+        linkHtml += '<p><a href="' + links.ask + '">Open Ask</a></p>';
+      }
+      if (links.journal) {
+        linkHtml += '<p><a href="' + links.journal + '">Open Journal</a></p>';
+      }
+      if (links.story) {
+        linkHtml += '<p><a href="' + links.story + '">Open Story</a></p>';
+      }
+      detailEl.innerHTML =
+        "<p><strong>" + (c.title || "") + "</strong></p>" +
+        '<p class="meta">modality=' + c.modality +
+        " · trust=" + (c.identity_trust || "n/a") +
+        " · date_provenance=" + (c.date_provenance || "") +
+        (c.capture_at ? " · capture_at=" + c.capture_at : "") +
+        "</p>" +
+        linkHtml +
+        "<pre>" + JSON.stringify(c, null, 2) + "</pre>";
+    }
+
+    function providerDegrade(ps) {
+      const bits = [];
+      Object.keys(ps || {}).forEach((k) => {
+        const row = ps[k] || {};
+        if (row.unavailable) bits.push(k + ": " + (row.detail || "unavailable"));
+      });
+      if (bits.length) {
+        degradeEl.hidden = false;
+        degradeEl.textContent = "Provider degrade — " + bits.join("; ");
+      } else {
+        degradeEl.hidden = true;
+        degradeEl.textContent = "";
+      }
+    }
+
+    async function load(reset) {
+      const person_id = document.getElementById("personSel").value;
+      if (!person_id) {
+        statusEl.textContent = "Select an MB Person first (required).";
+        return;
+      }
+      const bucket = document.getElementById("bucketSel").value;
+      const modality = document.getElementById("modalitySel").value;
+      const params = new URLSearchParams({
+        person_id,
+        bucket,
+        limit: "24",
+      });
+      if (modality) params.set("modalities", modality);
+      if (!reset && nextCursor) params.set("cursor", nextCursor);
+      statusEl.textContent = "Loading…";
+      try {
+        const data = await j("/library/cards?" + params.toString());
+        if (reset) cards = data.cards || [];
+        else cards = cards.concat(data.cards || []);
+        nextCursor = data.next_cursor || null;
+        moreBtn.disabled = !nextCursor;
+        statusEl.textContent =
+          "person=" + (data.person_display_name || person_id) +
+          " · cards=" + cards.length +
+          " · modalities=" + (data.modalities_present || []).join(",") +
+          " · view=same API";
+        providerDegrade(data.provider_status || {});
+        renderCards();
+      } catch (err) {
+        statusEl.textContent = (err && err.detail) ? JSON.stringify(err.detail) : String(err);
+      }
+    }
+
+    document.getElementById("refreshPeople").onclick = () => refreshPeople().catch((e) => {
+      statusEl.textContent = String(e);
+    });
+    document.getElementById("loadBtn").onclick = () => {
+      nextCursor = null;
+      load(true);
+    };
+    moreBtn.onclick = () => load(false);
+    document.getElementById("viewSel").onchange = renderCards;
+    refreshPeople().catch((e) => { statusEl.textContent = String(e); });
+  </script>
+</body>
+</html>

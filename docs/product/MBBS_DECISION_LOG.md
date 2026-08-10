@@ -108,15 +108,15 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
-## Increment 8 — Library / Gallery / Timeline (EF-03) — definition only
+## Increment 8 — Library / Gallery / Timeline (EF-03)
 
 **Date:** 2026-08-10  
-**Authorization:** **NOT AUTHORIZED** — definition **locked for final review**; no build  
+**Authorization:** **AUTHORIZED** (*Build Increment 8 only*) — shipped pending FlightSim owner gate  
 **Definition:** [MBBS-001_INCREMENT_8_DEFINITION.md](MBBS-001_INCREMENT_8_DEFINITION.md)  
-**Acceptance:** *(none until build authorized and owner gate passes)*  
+**Acceptance:** [MBBS-001_INCREMENT_8_ACCEPTANCE.md](MBBS-001_INCREMENT_8_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
 **Owner gate (locked):** FlightSim Timeline-first Library + required Person filter (I6) + ≥3 modalities (visual + narrative/comms + other); undated explicit; video Open in Review; no invented dates; bounded/paginated reads
 
-### Locked decisions (final review)
+### Locked decisions (build)
 
 | Decision | Rationale |
 |----------|-----------|
@@ -130,6 +130,14 @@ Record one section per increment. Do not wait until end of P1.
 | Owner ≥3 modalities: visual + narrative/comms + other; calendar optional | Practical FlightSim gate |
 | SMS ingest / EVS-014 / Artifacts / Guided Capture / Export / Settings / Immich write-back OUT | Scope lock |
 | `prove-library` + I1–I7 proves remain runnable | Operator simplicity |
+
+### Shipped surface
+
+| Surface | Path |
+|---------|------|
+| Library UI | `/library/ui` |
+| API | `GET /library/cards` |
+| Prove | `prove-library [--flightsim]` |
 
 ---
 

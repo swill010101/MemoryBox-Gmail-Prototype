@@ -1,6 +1,8 @@
 """In-memory PhotoProvider for Increment 2 acceptance (no Immich required)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from memorybox.providers.base import ProviderError, ProviderHealth
 from memorybox.providers.photo.dto import (
     PhotoAssetDto,
@@ -34,6 +36,7 @@ class FakePhotoProvider:
                 provider_key=self.provider_key,
                 external_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 original_filename="grandpa_christmas.jpg",
+                taken_at=datetime(2019, 12, 25, 15, 0, tzinfo=timezone.utc),
                 people=(self._people[0],),
             )
         ]
