@@ -18,7 +18,7 @@
     h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
     .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
     label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       padding: 0.55rem 0.7rem;
       border: 1px solid var(--line);
@@ -51,24 +51,46 @@
 <body>
   <main>
     <h1>MemoryBox Story</h1>
-    <p class="sub">Thin functional shell (Increment 5) — explicit Save; versions immutable; no visual polish. <a href="/ask/ui">Ask</a></p>
-    <p class="muted">First save: fill <b>Title</b>, <b>Narrator name</b>, and <b>Body</b> only. Leave Evidence/Person UUID fields <b>blank</b>.</p>
+    <p class="sub">
+      Thin Story shell — explicit Save; versions immutable.
+      <a href="/library/ui">Library</a> ·
+      <a href="/ask/ui">Ask</a> ·
+      <a href="/people/ui">People</a>
+    </p>
+    <p class="warn">
+      Narrator (who wrote it) ≠ About person (who Library filters on).
+      For “stories about Eugene” while you are the narrator: set <b>About person</b> to Eugene Will.
+    </p>
 
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Create / Save Story</h2>
+      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <p id="peopleStatus" class="muted"></p>
       <label for="title">Title</label>
       <input id="title" placeholder="Story title" />
-      <label for="narrator">Narrator display name (text, not a UUID)</label>
+      <label for="narrator">Narrator display name (who wrote it — e.g. Tom)</label>
       <input id="narrator" placeholder="e.g. Tom" />
+      <label for="aboutPerson">About person (MB Person Library filter — required for subject browse)</label>
+      <select id="aboutPerson"><option value="">(optional — pick subject for Library)</option></select>
       <label for="body">Body (owner recollection)</label>
       <textarea id="body" placeholder="Write the recollection…"></textarea>
       <label for="evidenceId">Related Evidence ID — optional UUID only (leave blank)</label>
       <input id="evidenceId" placeholder="leave blank" autocomplete="off" />
-      <label for="personId">Related Person ID — optional UUID only (leave blank; narrator is enough)</label>
-      <input id="personId" placeholder="leave blank" autocomplete="off" />
       <button id="saveBtn" type="button">Save Story</button>
       <p class="muted">AI content cannot be auto-saved. Save is explicit owner action only.</p>
       <p>Last saved Story ID: <code id="lastId">(none yet)</code></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1b. Fix existing Story → About person</h2>
+      <p class="muted">
+        Use this if you already saved stories under yourself as narrator but meant them about someone else.
+      </p>
+      <label for="assocStoryId">Story ID</label>
+      <input id="assocStoryId" placeholder="paste story id" />
+      <label for="assocPerson">About person</label>
+      <select id="assocPerson"><option value="">(select person)</option></select>
+      <button id="assocBtn" type="button">Associate About person</button>
     </section>
 
     <section>
@@ -98,6 +120,7 @@
   </main>
   <script>
     const out = document.getElementById("out");
+    const peopleStatus = document.getElementById("peopleStatus");
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
     function show(data) {
@@ -108,6 +131,7 @@
       document.getElementById("lastId").textContent = id;
       document.getElementById("editId").value = id;
       document.getElementById("getId").value = id;
+      document.getElementById("assocStoryId").value = id;
     }
     function optionalUuid(raw, label) {
       const v = (raw || "").trim();
@@ -126,6 +150,55 @@
       return data;
     }
 
+    function fillPersonSelect(sel, rows, placeholder) {
+      const keep = sel.value;
+      sel.innerHTML = "";
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = placeholder;
+      sel.appendChild(ph);
+      rows.forEach((p) => {
+        const o = document.createElement("option");
+        o.value = p.id || "";
+        o.textContent =
+          (p.display_name || "(unnamed)") +
+          " · " +
+          (p.status || "?") +
+          (p.id ? " · " + String(p.id).slice(0, 8) : "");
+        sel.appendChild(o);
+      });
+      if (keep) sel.value = keep;
+    }
+
+    async function loadPeople() {
+      peopleStatus.textContent = "Loading people…";
+      try {
+        let data;
+        try {
+          data = await j("/library/person-options?limit=200");
+        } catch (_) {
+          data = await j("/people?limit=200");
+        }
+        const rows = Array.isArray(data.people) ? data.people : [];
+        fillPersonSelect(
+          document.getElementById("aboutPerson"),
+          rows,
+          "(optional — pick subject for Library)"
+        );
+        fillPersonSelect(
+          document.getElementById("assocPerson"),
+          rows,
+          "(select person)"
+        );
+        peopleStatus.textContent = "Loaded " + rows.length + " people.";
+      } catch (e) {
+        peopleStatus.className = "warn";
+        peopleStatus.textContent = "People load failed: " + JSON.stringify(e);
+      }
+    }
+
+    document.getElementById("refreshPeople").onclick = () => loadPeople();
+
     document.getElementById("saveBtn").onclick = async () => {
       try {
         const bodyText = document.getElementById("body").value.trim();
@@ -134,14 +207,20 @@
           return;
         }
         const evidence = optionalUuid(document.getElementById("evidenceId").value, "Evidence ID");
-        const person = optionalUuid(document.getElementById("personId").value, "Person ID");
+        const about = document.getElementById("aboutPerson").value.trim();
         const payload = {
           title: document.getElementById("title").value,
           body_text: bodyText,
           narrator_display_name: document.getElementById("narrator").value.trim() || null,
           evidence_ids: evidence ? [evidence] : [],
-          person_ids: person ? [person] : [],
+          person_ids: about ? [about] : [],
         };
+        if (!about) {
+          show({
+            detail:
+              "Warning: no About person selected. Library will only show this under the narrator Person, not the subject. Saving anyway…",
+          });
+        }
         const data = await j("/story", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -150,6 +229,25 @@
         const id = data && data.story && data.story.id;
         rememberId(id);
         show(data);
+      } catch (e) { show(e); }
+    };
+
+    document.getElementById("assocBtn").onclick = async () => {
+      try {
+        const sid = document.getElementById("assocStoryId").value.trim();
+        const pid = document.getElementById("assocPerson").value.trim();
+        if (!UUID_RE.test(sid)) {
+          show({ detail: "Paste a valid Story ID." });
+          return;
+        }
+        if (!pid) {
+          show({ detail: "Select an About person." });
+          return;
+        }
+        show(await j(
+          "/story/" + encodeURIComponent(sid) + "/persons/" + encodeURIComponent(pid),
+          { method: "POST" }
+        ));
       } catch (e) { show(e); }
     };
 
@@ -177,11 +275,11 @@
       try {
         const id = document.getElementById("getId").value.trim();
         if (!UUID_RE.test(id)) {
-          show({ detail: "Paste a valid Story ID first." });
+          show({ detail: "Paste a valid Story ID." });
           return;
         }
-        const v = document.getElementById("getVer").value.trim();
-        const q = v ? ("?version=" + encodeURIComponent(v)) : "";
+        const ver = document.getElementById("getVer").value.trim();
+        const q = ver ? ("?version=" + encodeURIComponent(ver)) : "";
         show(await j("/story/" + encodeURIComponent(id) + q));
       } catch (e) { show(e); }
     };
@@ -190,6 +288,8 @@
       try { show(await j("/story")); }
       catch (e) { show(e); }
     };
+
+    loadPeople();
   </script>
 </body>
 </html>
