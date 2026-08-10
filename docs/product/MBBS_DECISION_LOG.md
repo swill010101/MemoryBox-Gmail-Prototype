@@ -111,22 +111,25 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 8 — Library / Gallery / Timeline (EF-03) — definition only
 
 **Date:** 2026-08-10  
-**Authorization:** **NOT AUTHORIZED** — definition for review only  
+**Authorization:** **NOT AUTHORIZED** — definition **locked for final review**; no build  
 **Definition:** [MBBS-001_INCREMENT_8_DEFINITION.md](MBBS-001_INCREMENT_8_DEFINITION.md)  
 **Acceptance:** *(none until build authorized and owner gate passes)*  
-**Owner gate (proposed):** FlightSim thin Library/Timeline — browse ≥3 live modalities without a full Ask question (EVS-015 thin); provider-down = degraded not dead
+**Owner gate (locked):** FlightSim Timeline-first Library + required Person filter (I6) + ≥3 modalities (visual + narrative/comms + other); undated explicit; video Open in Review; no invented dates; bounded/paginated reads
 
-### Proposed locked decisions (pending Tom review)
+### Locked decisions (final review)
 
 | Decision | Rationale |
 |----------|-----------|
-| One Library/Timeline surface; Gallery = view of same cards | Avoid UX scope creep (MBBS risk) |
-| Unified read API over PG + photo/video providers | No second evidence SoT |
-| Reuse I6/I7 identity trust labels | No silent confirm in browse |
-| SMS earn-in only if Evidence exists | I3 SMS staged; not I8 blocker |
-| Teach stays in People/Review; Library links only | Scope lock |
-| EVS-014 / Artifacts / Guided Capture / Export OUT | Later increments |
-| `prove-library` primary prove command | Operator simplicity |
+| Timeline-first default; Gallery = same-API alternate view | Browse without Ask; no photo-first second product |
+| Required Person filter via I6/I7; no Library teach | Canonical identity; teach stays People/Review |
+| Defensible browse date + provenance + undated; no invented dates | Honest chronology across modalities |
+| Journal: I5A described/effective preferred; capture separate | Temporal earn-in |
+| Paginated/bounded; no full Immich/HVRT corpus fetch | Performance; no provider mirror |
+| Thin card detail + date source + trust + deep-links | Evidence First without inspector/graph |
+| Video → Open in Review when available | No Review duplication |
+| Owner ≥3 modalities: visual + narrative/comms + other; calendar optional | Practical FlightSim gate |
+| SMS ingest / EVS-014 / Artifacts / Guided Capture / Export / Settings / Immich write-back OUT | Scope lock |
+| `prove-library` + I1–I7 proves remain runnable | Operator simplicity |
 
 ---
 
