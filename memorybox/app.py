@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from html import escape as html_escape
+
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from memorybox import __version__
@@ -355,14 +357,47 @@ def review_ui() -> FileResponse:
 
 
 @app.get("/library/ui")
-def library_ui() -> FileResponse:
+def library_ui() -> HTMLResponse:
+    """Library UI with MB Person options embedded (no client fetch required)."""
     if not LIBRARY_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Library UI missing")
-    # Avoid stale cached HTML (dropdown JS) after pulls.
-    return FileResponse(
-        LIBRARY_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0"},
+    html = LIBRARY_STATIC.read_text(encoding="utf-8")
+    people_err: str | None = None
+    try:
+        rows = list_people(limit=200)
+    except Exception as exc:  # noqa: BLE001
+        rows = []
+        people_err = str(exc)
+    options = ['<option value="">(select a person)</option>']
+    for p in rows:
+        pid = html_escape(str(p.get("id") or ""))
+        name = p.get("display_name") or "(unnamed)"
+        st = p.get("status") or "?"
+        label_raw = f"{name} · {st}" + (f" · {pid[:8]}" if pid else "")
+        label = html_escape(label_raw)
+        options.append(f'<option value="{pid}">{label}</option>')
+    html = html.replace(
+        '<select id="personSel"><option value="">(select a person)</option></select>',
+        "<select id=\"personSel\">" + "".join(options) + "</select>",
+        1,
+    )
+    if people_err:
+        status = f"People embed failed: {people_err}"
+        status_cls = "warn"
+    elif not rows:
+        status = "No MB People in database (embed)."
+        status_cls = "warn"
+    else:
+        status = f"Loaded {len(rows)} people (embedded; video worker not required)."
+        status_cls = "muted"
+    html = html.replace(
+        '<p id="peopleStatus" class="muted"></p>',
+        f'<p id="peopleStatus" class="{status_cls}">{html_escape(status)}</p>',
+        1,
+    )
+    return HTMLResponse(
+        content=html,
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
 
 

@@ -446,7 +446,11 @@
     };
     moreBtn.onclick = () => load(false);
     document.getElementById("viewSel").onchange = renderCards;
-    loadPersonOptions().catch((e) => { statusEl.textContent = errText(e); });
+    // Options are SSR-embedded in /library/ui; only fetch if embed left the placeholder alone.
+    const personSelInit = document.getElementById("personSel");
+    if (!personSelInit || personSelInit.options.length <= 1) {
+      loadPersonOptions().catch((e) => { statusEl.textContent = errText(e); });
+    }
   </script>
 </body>
 </html>
