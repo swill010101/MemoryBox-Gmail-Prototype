@@ -54,12 +54,12 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 6 — Person & Identity + teach
 
 **Date:** 2026-08-10  
-**Authorization:** **AUTHORIZED** (*Build Increment 6 only*) — shipped pending FlightSim owner gate  
+**Authorization:** **ACCEPTED**  
 **Definition:** [MBBS-001_INCREMENT_6_DEFINITION.md](MBBS-001_INCREMENT_6_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_6_ACCEPTANCE.md](MBBS-001_INCREMENT_6_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
-**Owner gate:** Thin Person UI on FlightSim — teach one real Immich identity → Ask photos via confirmed mapping
+**Acceptance:** [MBBS-001_INCREMENT_6_ACCEPTANCE.md](MBBS-001_INCREMENT_6_ACCEPTANCE.md) — **ACCEPTED**  
+**Owner gate:** Thin Person UI on FlightSim — teach one real Immich identity → Ask photos via confirmed mapping — **PASSED** (`4d1e8857-40f1-4d7a-b3db-20aae5e4f0fe`)
 
-### Locked decisions (build)
+### Locked decisions (as built)
 
 | Decision | Rationale |
 |----------|-----------|
@@ -71,6 +71,30 @@ Record one section per increment. Do not wait until end of P1.
 | Basic display-name correction IN; rich Person UX OUT | Thin slice |
 | Email/phone, Immich write-back, HVRT, EVS-014, auto-merge OUT | Scope lock |
 | `prove-person` + `/people/ui` | Opaque harness + owner teach path |
+| Lowercase Ask person-of extraction | Owner typing; Title Case not required after pictures/photos of |
+
+### Next
+
+[MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md) — **REVIEW ONLY**; build requires explicit authorization.
+
+---
+
+## Increment 7 — Video Intelligence + Review & Learn (definition under review)
+
+**Date:** 2026-08-10  
+**Authorization:** **NOT AUTHORIZED** — definition for review only; **no build**  
+**Definition:** [MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md)  
+**Owner gate (proposed):** Thin Review on FlightSim — teach on one video segment via I6 Person → Ask video hit when modality available; worker-down = degraded not dead
+
+### Proposed locks (pending Tom sign-off)
+
+| Decision | Rationale |
+|----------|-----------|
+| HVRT = sibling worker behind VideoIntelligenceProvider (D4) | Monolith never embeds HVRT schemas/process |
+| Review teach writes MB assertions / I6 Person mappings | Durable teaching; no silent AI overwrite |
+| Ask video uses provider; down → visible degrade | I4 contract earn-in; provider failure visible |
+| EVS-003 / 007 thin person-linked video; full EVS-014 OUT | Inc 10 owns cross-provider face enroll loop |
+| Media libraries stay on media-server (D7) | Config-driven remote access |
 
 ---
 

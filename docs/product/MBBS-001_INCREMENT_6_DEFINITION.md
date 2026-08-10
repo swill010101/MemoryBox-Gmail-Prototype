@@ -1,15 +1,15 @@
-# MBBS-001 Increment 6 — Definition (build authorized)
+# MBBS-001 Increment 6 — Definition
 
-**Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 6 only*)  
+**Status:** **ACCEPTED** (see [MBBS-001_INCREMENT_6_ACCEPTANCE.md](MBBS-001_INCREMENT_6_ACCEPTANCE.md))  
 **Date:** 2026-08-10  
-**Owner acceptance gate (locked):** On FlightSim, Tom can use the thin Person UI **without developer intervention** to select **one real Immich provider identity**, teach/confirm its MB Person identity, and then use Ask to retrieve photos for that MB Person **through the confirmed provider mapping**. Synthetic harnesses may prove reject, negatives, bulk confirm, and merge.  
+**Owner acceptance gate (locked):** On FlightSim, Tom can use the thin Person UI **without developer intervention** to select **one real Immich provider identity**, teach/confirm its MB Person identity, and then use Ask to retrieve photos for that MB Person **through the confirmed provider mapping**. Synthetic harnesses may prove reject, negatives, bulk confirm, and merge. — **PASSED**  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 6  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
 **Depends on:** Increment 1 (Person / ProviderIdentity / Assertion schema) · Increment 2 (PhotoProvider; Immich IDs as `external_id` only) · Increment 4 Ask (accepted) · Increment 5 / 5A (Story/Journal must **stop** ad-hoc Person creation after I6 — see §6)  
 **Prior:** [MBBS-001_INCREMENT_5A_ACCEPTANCE.md](MBBS-001_INCREMENT_5A_ACCEPTANCE.md) — **ACCEPTED**  
 **Related ops (not I6):** [P1_REMOTE_BROWSER_MIC_HTTPS.md](../ops/P1_REMOTE_BROWSER_MIC_HTTPS.md) — remote-browser mic requires trusted HTTPS; deployment/ops workstream  
-**Authorization:** *Build Increment 6 only* — authorized.
+**Authorization:** *Build Increment 6 only* — **complete / accepted**.
 
 ---
 
@@ -243,6 +243,6 @@ No video/HVRT required for I6.
 
 ## 12. Authorization gate
 
-**Status: BUILD AUTHORIZED** (*Build Increment 6 only*).
+**Status: ACCEPTED.**
 
-Owner gate **I6-OWNER** is mandatory for FlightSim acceptance. Do **not** begin Increment 7 / Guided Capture / polish beyond locked I6 scope without explicit authorization.
+Do **not** begin Increment 7 / Guided Capture / polish beyond locked I6 scope without explicit authorization.
