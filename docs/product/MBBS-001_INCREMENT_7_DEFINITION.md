@@ -294,22 +294,22 @@ PostgreSQL (FlightSim): people / provider_identities / assertions
 
 ## 11. Authorization gate
 
-**Status: BUILD AUTHORIZED** (*Build Increment 7 only*).
+**Status: ACCEPTED** — see [MBBS-001_INCREMENT_7_ACCEPTANCE.md](MBBS-001_INCREMENT_7_ACCEPTANCE.md).
 
-Owner gate **I7-OWNER** is mandatory for FlightSim acceptance. Do **not** begin Increment 8 / Guided Capture / polish beyond locked I7 scope without explicit authorization.
+Do **not** begin Increment 8 / Guided Capture / polish beyond locked I7 scope without explicit authorization.
 
 ---
 
 ## 12. Stop line
 
-After any future I7 acceptance: do **not** begin Increment 8 / 10 / Guided Capture without new authorization. Do **not** fold remote HTTPS into I7.
+Do **not** begin Increment 8 / 10 / Guided Capture without new authorization. Do **not** fold remote HTTPS into I7.
 
 ---
 
 ## 13. Residual open items (non-blocking for definition lock)
 
-None required to lock this definition. Optional later: choose exact P1 default seconds for presence-gap tolerance at build time (document in acceptance).
+None required for I7 acceptance. Laughing/speech-emotion remains deferred.
 
 ---
 
-*End of Increment 7 definition — locked decisions for final review. No build.*
+*End of Increment 7 definition — ACCEPTED.*
