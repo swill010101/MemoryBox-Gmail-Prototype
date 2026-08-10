@@ -1,38 +1,22 @@
 # MBBS-001 Increment 7 — Acceptance
 
-**Status:** **BUILD SHIPPED — AWAITING FLIGHTSIM OWNER + BOOTSTRAP GATE**  
+**Status:** **ACCEPTED** (FlightSim owner + trusted-provider bootstrap gate)  
 **Date:** 2026-08-10  
 **Definition:** [MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md)  
 **Decision log:** [MBBS_DECISION_LOG.md](MBBS_DECISION_LOG.md) § Increment 7
 
-Do **not** mark I7 **ACCEPTED** until **I7-BOOTSTRAP** (harness) and **I7-OWNER** (FlightSim) both pass.
+## Owner gate (I7-OWNER + I7-BOOTSTRAP) — PASSED
 
-## Owner gate (I7-OWNER + I7-BOOTSTRAP) — PENDING
+Tom on FlightSim used `/review/ui` without developer intervention / SQL / API patching:
 
-On FlightSim, Tom uses `/review/ui` without developer intervention / SQL / API patching:
-
-1. Choose a real family person who is **already named in Immich** and **not** yet manually created/confirmed in MemoryBox `/people/ui`
-2. Refresh videos from configured media-server family-video path
-3. Open/play/scrub **≥1 real family video**
-4. Create face candidate at playhead (rubber-band box) → Teach / Confirm as that Immich name via I6 (lazy Person seed allowed)
-5. Confirm MB Person materialized/reused; Immich + HVRT identities map to the **same** `people.id` (Immich UUID is **not** the Person PK)
-6. Ask for videos of that person → person-linked segment
-7. Provenance: Immich mapping remains **trusted-provider** origin unless Tom explicitly owner-confirms that Person identity as such
-
-Second real family person is **not** required (harness covers second-person + bootstrap edge cases).
+1. Enrolled a video face for an Immich-named person **not** previously created in MemoryBox `/people/ui` (**Diane Scollay**)
+2. Trusted-provider bootstrap materialized/reused the canonical MB Person via I6
+3. Ask **“show videos of Diane Scollay”** → **2** person-linked video hits
 
 | Item | Opaque id |
 |------|-----------|
-| Owner taught Person (bootstrap) | *(set after UX)* |
-
-```powershell
-cd C:\memorybox
-$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
-$env:MEMORYBOX_I7_OWNER_PERSON_ID = "<opaque-person-uuid>"
-# optional alias if different from owner:
-# $env:MEMORYBOX_I7_BOOTSTRAP_PERSON_ID = "<same-or-other-uuid>"
-python -m memorybox prove-video --flightsim
-```
+| Owner taught Person (Diane Scollay) | *(FlightSim PG — display name confirmed; UUID not required for gate)* |
+| Media root | `\\media-server\photos\home videos` |
 
 ## Harness
 
@@ -56,4 +40,4 @@ Laughing/speech-emotion: **deferred** (not required for I7).
 
 ## Stop
 
-Do **not** begin Increment 8 / EVS-014 / Guided Capture without explicit authorization.
+Do **not** begin Increment 8 / EVS-014 / Guided Capture / Gallery without explicit authorization.

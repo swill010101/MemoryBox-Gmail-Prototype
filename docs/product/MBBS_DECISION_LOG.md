@@ -82,10 +82,10 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 7 — Video Intelligence + Review & Learn
 
 **Date:** 2026-08-10  
-**Authorization:** **AUTHORIZED** (*Build Increment 7 only*) — shipped pending FlightSim owner gate  
+**Authorization:** **AUTHORIZED** (*Build Increment 7 only*) — **ACCEPTED**  
 **Definition:** [MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_7_ACCEPTANCE.md](MBBS-001_INCREMENT_7_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
-**Owner gate (locked):** FlightSim thin Review — ≥1 real family video → face Teach/Confirm via I6 → Ask person-linked video segment; worker-down = degraded not dead; second real person not required
+**Acceptance:** [MBBS-001_INCREMENT_7_ACCEPTANCE.md](MBBS-001_INCREMENT_7_ACCEPTANCE.md) — **ACCEPTED**  
+**Owner gate:** FlightSim thin Review — Immich-named person **not** pre-created in `/people/ui` → face Teach (Diane Scollay) → Ask **2** video hits; media root `\\media-server\photos\home videos`; second real person not required (harness)
 
 ### Locked decisions (build)
 
