@@ -105,9 +105,10 @@
         <canvas id="overlay"></canvas>
       </div>
       <p id="videoNote" class="muted">Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.</p>
+      <button class="secondary" id="browserProxyBtn" type="button">Make browser-playable (H.264)</button>
       <p id="codecNote" class="warn" hidden>
         Video frame not decoding in this browser (audio-only / blank picture is often HEVC/H.265).
-        Prefer an H.264/AAC copy for Review, or use a Chrome build with HEVC support. Scrubbing still needs a buffered Range-capable stream.
+        Click <strong>Make browser-playable (H.264)</strong> — same fix as the HVRT POC (ffmpeg derived copy; originals untouched).
       </p>
     </section>
 
@@ -151,6 +152,10 @@
     let drawing = false;
     let box = null; // canvas coords
     let faceMeta = {}; // id -> {boxed, provider}
+    let usingBrowserProxy = false;
+    let proxyTimer = null;
+    const readyProxyIds = new Set();
+    const browserProxyBtn = document.getElementById("browserProxyBtn");
 
     function show(data) { out.textContent = JSON.stringify(data, null, 2); }
     async function j(url, opts) {
@@ -315,13 +320,98 @@
       }
     }
 
+    function mediaUrl(id, proxy) {
+      const base = "/review/media/" + encodeURIComponent(id);
+      return proxy ? base + "?proxy=1" : base;
+    }
+
+    function playVideo(id, { proxy = false, keepTime = true } = {}) {
+      const t = keepTime ? (player.currentTime || 0) : 0;
+      usingBrowserProxy = !!proxy;
+      const onMeta = () => {
+        try { if (t > 0) player.currentTime = t; } catch (e) {}
+        player.removeEventListener("loadedmetadata", onMeta);
+        syncOverlaySize();
+        if (player.videoWidth) codecNote.hidden = true;
+      };
+      player.addEventListener("loadedmetadata", onMeta);
+      player.src = mediaUrl(id, proxy);
+      player.load();
+      if (proxy) {
+        browserProxyBtn.textContent = "Using browser-playable copy";
+        document.getElementById("videoNote").textContent =
+          "Playing H.264 browser copy (source may be HEVC). Originals untouched.";
+      } else {
+        browserProxyBtn.textContent = "Make browser-playable (H.264)";
+      }
+      browserProxyBtn.disabled = false;
+      browserProxyBtn.hidden = false;
+    }
+
+    async function ensureBrowserProxy({ auto = false } = {}) {
+      const id = document.getElementById("videoSel").value;
+      if (!id) return;
+      browserProxyBtn.hidden = false;
+      browserProxyBtn.disabled = true;
+      document.getElementById("videoNote").textContent = auto
+        ? "Chrome has no video frames (often HEVC). Building H.264 browser copy with ffmpeg…"
+        : "Building H.264 browser copy with ffmpeg…";
+      const start = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy", {
+        method: "POST",
+      });
+      show(start);
+      if (start.status === "ready") {
+        readyProxyIds.add(id);
+        playVideo(id, { proxy: true });
+        return;
+      }
+      if (proxyTimer) clearInterval(proxyTimer);
+      proxyTimer = setInterval(async () => {
+        try {
+          const st = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy");
+          browserProxyBtn.textContent =
+            st.status === "running" || st.status === "queued"
+              ? `Converting… ${Math.round(st.progress_pct || 0)}%`
+              : "Make browser-playable (H.264)";
+          document.getElementById("videoNote").textContent = st.message || "";
+          if (st.status === "ready") {
+            clearInterval(proxyTimer); proxyTimer = null;
+            readyProxyIds.add(id);
+            playVideo(id, { proxy: true });
+            show(st);
+          } else if (st.status === "error") {
+            clearInterval(proxyTimer); proxyTimer = null;
+            browserProxyBtn.disabled = false;
+            codecNote.hidden = false;
+            show(st);
+          }
+        } catch (err) {
+          clearInterval(proxyTimer); proxyTimer = null;
+          browserProxyBtn.disabled = false;
+          show(err);
+        }
+      }, 1500);
+    }
+
     function onVideoChange() {
       const id = document.getElementById("videoSel").value;
       exitBoxMode("Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.");
       codecNote.hidden = true;
+      usingBrowserProxy = false;
+      if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
       if (!id) { player.removeAttribute("src"); return; }
-      player.src = "/review/media/" + encodeURIComponent(id);
-      player.load();
+      if (readyProxyIds.has(id)) playVideo(id, { proxy: true, keepTime: false });
+      else {
+        playVideo(id, { proxy: false, keepTime: false });
+        // If Chrome can't decode frames, auto-kick H.264 proxy (HVRT POC behavior)
+        setTimeout(() => {
+          const cur = document.getElementById("videoSel").value;
+          if (cur === id && !(player.videoWidth && player.videoHeight)) {
+            codecNote.hidden = false;
+            ensureBrowserProxy({ auto: true }).catch(show);
+          }
+        }, 1400);
+      }
       loadFaces();
     }
 
@@ -354,6 +444,7 @@
 
     document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
     document.getElementById("videoSel").onchange = () => { try { onVideoChange(); } catch (e) { show(e); } };
+    browserProxyBtn.onclick = () => ensureBrowserProxy({ auto: false }).catch(show);
     document.getElementById("faceSel").onchange = () => {
       lastFaceId = document.getElementById("faceSel").value;
       refreshTeachEnabled();
@@ -361,11 +452,12 @@
 
     player.addEventListener("loadedmetadata", () => {
       syncOverlaySize();
-      if (!player.videoWidth) codecNote.hidden = false;
+      if (!player.videoWidth && !usingBrowserProxy) codecNote.hidden = false;
+      if (player.videoWidth) codecNote.hidden = true;
     });
     player.addEventListener("playing", () => {
-      if (!player.videoWidth) codecNote.hidden = false;
-      else codecNote.hidden = true;
+      if (!player.videoWidth && !usingBrowserProxy) codecNote.hidden = false;
+      else if (player.videoWidth) codecNote.hidden = true;
     });
     window.addEventListener("resize", () => { if (boxMode) { syncOverlaySize(); drawBox(); } });
 

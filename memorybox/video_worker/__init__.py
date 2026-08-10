@@ -24,8 +24,18 @@ from memorybox.providers.video.merge import (
     RawDetection,
     merge_presence_spans,
 )
+from memorybox.video_worker.browser_proxy import BrowserProxyManager
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
+
+_proxies: BrowserProxyManager | None = None
+
+
+def _proxies_mgr() -> BrowserProxyManager:
+    global _proxies
+    if _proxies is None:
+        _proxies = BrowserProxyManager(_derived_dir())
+    return _proxies
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -279,11 +289,34 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/media/"):
             vid = path[len("/media/") :]
-            file_path = _resolve_video_path(vid)
+            # strip query already parsed — path is only path component
+            use_proxy = (qs.get("proxy") or ["0"])[0] in ("1", "true", "yes")
+            source = _resolve_video_path(vid)
+            if use_proxy:
+                file_path = _proxies_mgr().proxy_path(vid)
+                if not file_path.is_file():
+                    self._json(
+                        404,
+                        {
+                            "ok": False,
+                            "detail": "Browser proxy not ready — POST /videos/{id}/browser-proxy first",
+                        },
+                    )
+                    return
+            else:
+                file_path = source
             if not file_path or not file_path.is_file():
                 self._json(404, {"ok": False, "detail": "media not found"})
                 return
             self._serve_media_file(file_path)
+            return
+
+        if path.startswith("/videos/") and path.endswith("/browser-proxy"):
+            # GET /videos/{id}/browser-proxy
+            mid = path[len("/videos/") : -len("/browser-proxy")]
+            source = _resolve_video_path(mid)
+            st = _proxies_mgr().status(mid, source if source and source.is_file() else None)
+            self._json(200, st)
             return
 
         self._json(404, {"ok": False, "detail": "not found"})
@@ -392,6 +425,20 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_json()
+
+        if path.startswith("/videos/") and path.endswith("/browser-proxy"):
+            mid = path[len("/videos/") : -len("/browser-proxy")]
+            source = _resolve_video_path(mid)
+            if not source or not source.is_file():
+                self._json(404, {"ok": False, "detail": f"missing source for {mid}"})
+                return
+            try:
+                st = _proxies_mgr().start(mid, source)
+            except FileNotFoundError as exc:
+                self._json(404, {"ok": False, "detail": str(exc)})
+                return
+            self._json(200, st)
+            return
 
         if path == "/search":
             wanted = set(body.get("person_external_ids") or [])

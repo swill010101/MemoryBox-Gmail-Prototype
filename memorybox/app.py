@@ -920,8 +920,48 @@ def _worker_patch_face(
         return {"ok": False, "detail": str(exc)}
 
 
+@app.post("/review/videos/{video_external_id}/browser-proxy")
+def review_start_browser_proxy(video_external_id: str) -> dict[str, Any]:
+    """Transcode source → H.264/AAC (HVRT POC fix for HEVC blank frames)."""
+    return _worker_browser_proxy(video_external_id, method="POST")
+
+
+@app.get("/review/videos/{video_external_id}/browser-proxy")
+def review_browser_proxy_status(video_external_id: str) -> dict[str, Any]:
+    return _worker_browser_proxy(video_external_id, method="GET")
+
+
+def _worker_browser_proxy(video_external_id: str, *, method: str) -> dict[str, Any]:
+    import json
+    import os
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(
+            status_code=503,
+            detail="MEMORYBOX_VIDEO_WORKER_URL required for browser-playable proxy",
+        )
+    url = f"{base}/videos/{urllib.parse.quote(video_external_id)}/browser-proxy"
+    req = urllib.request.Request(url, method=method, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=exc.code, detail=detail) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/review/media/{video_external_id}")
-def review_media(video_external_id: str, request: Request) -> Response:
+def review_media(
+    video_external_id: str,
+    request: Request,
+    proxy: int = Query(0),
+) -> Response:
     """Proxy read-only media from sibling worker with Range support for scrubbing."""
     import os
     import urllib.error
@@ -934,6 +974,8 @@ def review_media(video_external_id: str, request: Request) -> Response:
             detail="media proxy requires MEMORYBOX_VIDEO_WORKER_URL",
         )
     url = f"{base}/media/{video_external_id}"
+    if int(proxy) == 1:
+        url += "?proxy=1"
     headers: dict[str, str] = {}
     range_header = request.headers.get("range")
     if range_header:
