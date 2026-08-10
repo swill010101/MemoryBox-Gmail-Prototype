@@ -358,7 +358,28 @@ def review_ui() -> FileResponse:
 def library_ui() -> FileResponse:
     if not LIBRARY_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Library UI missing")
-    return FileResponse(LIBRARY_STATIC, media_type="text/html")
+    # Avoid stale cached HTML (dropdown JS) after pulls.
+    return FileResponse(
+        LIBRARY_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/library/person-options")
+def library_person_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
+    """MB Person options for Library filter — same I6 list as GET /people.
+
+    Separate path so browser extensions that block `/people` do not empty the dropdown.
+    """
+    try:
+        rows = list_people(limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"library person-options failed (check MEMORYBOX_DATABASE_URL): {exc}",
+        ) from exc
+    return {"ok": True, "count": len(rows), "people": rows}
 
 
 @app.get("/library/cards")

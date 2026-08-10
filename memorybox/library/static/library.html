@@ -219,16 +219,30 @@
     }
 
     async function refreshPeople() {
-      peopleStatusEl.textContent = "Loading people…";
-      peopleStatusEl.className = "muted";
+      if (peopleStatusEl) {
+        peopleStatusEl.textContent = "Loading people…";
+        peopleStatusEl.className = "muted";
+      }
       try {
         let data;
-        try {
-          data = await j("/people?limit=200");
-        } catch (firstErr) {
-          // Fallback without query (older serve / proxy quirks)
-          data = await j("/people");
+        // Prefer /library/person-options (not blocked like /people by some extensions).
+        const urls = [
+          "/library/person-options?limit=200",
+          "/people?limit=200",
+          "/people",
+        ];
+        let lastErr = null;
+        data = null;
+        for (const url of urls) {
+          try {
+            data = await j(url);
+            lastErr = null;
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
         }
+        if (!data) throw lastErr || { detail: "all people endpoints failed" };
         const rows = Array.isArray(data.people) ? data.people : [];
         const sel = document.getElementById("personSel");
         const keep = sel.value;
@@ -253,18 +267,22 @@
         const q = new URLSearchParams(location.search).get("person_id");
         if (q && !sel.value) sel.value = q;
         if (!rows.length) {
-          peopleStatusEl.className = "warn";
-          peopleStatusEl.textContent =
-            "No MB People from GET /people. Restart serve with the same MEMORYBOX_DATABASE_URL " +
-            "you used when Library worked (Rick George / Diane Scollay). " +
-            "Quick check: Invoke-RestMethod http://127.0.0.1:8790/people";
-        } else {
+          if (peopleStatusEl) {
+            peopleStatusEl.className = "warn";
+            peopleStatusEl.textContent =
+              "No MB People returned. Serve DB may be wrong. " +
+              "Quick check: Invoke-RestMethod http://127.0.0.1:8790/library/person-options";
+          }
+        } else if (peopleStatusEl) {
           peopleStatusEl.className = "muted";
-          peopleStatusEl.textContent = "Loaded " + rows.length + " people from /people.";
+          peopleStatusEl.textContent =
+            "Loaded " + rows.length + " people (video worker not required for this list).";
         }
       } catch (err) {
-        peopleStatusEl.className = "warn";
-        peopleStatusEl.textContent = "People load failed: " + errText(err);
+        if (peopleStatusEl) {
+          peopleStatusEl.className = "warn";
+          peopleStatusEl.textContent = "People load failed: " + errText(err);
+        }
         throw err;
       }
     }
