@@ -150,9 +150,9 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 9 — Artifact thin + import jobs (EF-05/06)
 
 **Date:** 2026-08-10  
-**Authorization:** **FINAL REVIEW** — decisions locked; awaiting *Build Increment 9 only*  
+**Authorization:** **AUTHORIZED / SHIPPED** (*Build Increment 9 only*) — FlightSim **I9-OWNER** pending  
 **Definition:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md)  
-**Acceptance:** *(pending build)*  
+**Acceptance:** [MBBS-001_INCREMENT_9_ACCEPTANCE.md](MBBS-001_INCREMENT_9_ACCEPTANCE.md)  
 **Owner gate (locked):** Real physical keepsake (pocket-watch pattern preferred, ≥2 reps); MB-managed upload to media-server; Library `artifact` modality **without requiring Person**; optional Story (incl. I5A voice earn-in); Ask by Artifact meaning; unresolved context honest
 
 ### Locked decisions (final review)
@@ -170,9 +170,16 @@ Record one section per increment. Do not wait until end of P1.
 | Ask by Artifact identity/metadata/relationships | Filename ≠ meaning |
 | SMS OUT (stay on P1 backlog); EVS-014 / Guided Capture / Export / recipe ontology OUT | Scope lock |
 
-**Stop:** Do not begin I9 code until Tom authorizes *Build Increment 9 only*.
+### Shipped (code)
 
-**Next after I9:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**); then Increment 10 (EVS-014).
+- Migration `004_artifact_i9.sql`; Artifact service + `/artifact/ui` + APIs  
+- `MEMORYBOX_ARTIFACT_MEDIA_ROOT`; integrity hash; no silent overwrite  
+- Library Person-optional `modalities=artifact`; Ask `artifact_hits`  
+- `prove-artifact`; health `increment: 9`
+
+**Stop:** Do not begin **9A** / **10** without Tom authorizing *Build Increment 9A only* / *Build Increment 10 only*.
+
+**Next after I9 owner accept:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**); then Increment 10 (EVS-014).
 
 ---
 

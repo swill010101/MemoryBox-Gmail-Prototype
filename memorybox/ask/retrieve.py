@@ -1091,3 +1091,18 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
             )
     hits.sort(key=lambda h: h.score, reverse=True)
     return hits[:result_n]
+
+def search_artifacts(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
+    """Thin I9 Ask earn-in: Artifact identity/metadata, not filename-as-meaning."""
+    if not getattr(plan, "want_artifact", False):
+        return []
+    from memorybox.artifact import search_artifacts_for_ask
+
+    q = (plan.original_ask or "").strip()
+    # Prefer constraint tokens / entity slots when present
+    bits = list(plan.retrieval_constraints or ())
+    bits.extend(plan.person_names or ())
+    bits.extend(getattr(plan, "place_names", ()) or ())
+    if bits:
+        q = " ".join([q] + [str(b) for b in bits if b])
+    return search_artifacts_for_ask(q, limit=limit)

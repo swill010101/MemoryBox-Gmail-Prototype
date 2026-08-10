@@ -1,0 +1,64 @@
+# MBBS-001 Increment 9 — Acceptance
+
+**Status:** **SHIPPED / harness ready** — awaiting FlightSim **I9-OWNER** gate  
+**Date:** 2026-08-10  
+**Definition:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md)  
+**Decision log:** [MBBS_DECISION_LOG.md](MBBS_DECISION_LOG.md) § Increment 9
+
+## Harness
+
+```text
+# Desktop / FlightSim (set MEMORYBOX_ARTIFACT_MEDIA_ROOT on FS to media-server path)
+python -m memorybox migrate
+python -m memorybox prove-artifact
+# ok: true — multi-rep, hash, metadata revision no byte-dup, evidence-ref,
+#            Library without Person, Person narrows, Ask search, health=9
+```
+
+FlightSim owner prove (after creating a real keepsake in `/artifact/ui`):
+
+```powershell
+cd C:\memorybox
+$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+$env:MEMORYBOX_ARTIFACT_MEDIA_ROOT = '\\media-server\photos\memorybox_artifacts'  # ops path — confirm
+$env:MEMORYBOX_I9_OWNER_ARTIFACT_ID = "<opaque-artifact-uuid>"
+python -m memorybox prove-artifact --flightsim
+```
+
+## Owner gate (I9-OWNER) — pending Tom
+
+On FlightSim without developer/SQL intervention:
+
+1. Create Artifact (+ kind) at `/artifact/ui`
+2. Upload ≥1 representation (prefer ≥2) to durable media-server root
+3. Label (+ optional description)
+4. Associate Person if known (optional)
+5. Optionally Save Story + link (typed and/or STT draft → explicit Save)
+6. Library: modality=`artifact`, **no Person required** (Bucket All/Undated)
+7. Open/view representation(s)
+8. Ask retrieves by Artifact identity/metadata
+9. Provenance / unresolved context honest
+
+## Shipped surface
+
+| Surface | Path |
+|---------|------|
+| Artifact UI | `/artifact/ui` |
+| Artifact API | `GET/POST /artifact`, upload `/artifact/{id}/representations`, bytes, associations |
+| Library | `GET /library/cards?modalities=artifact` (person_id optional) |
+| Ask | `want_artifact` + `artifact_hits` |
+| Prove | `prove-artifact [--flightsim]` |
+| Health | `increment: 9` |
+
+## Env
+
+| Var | Role |
+|-----|------|
+| `MEMORYBOX_ARTIFACT_MEDIA_ROOT` | Durable SoT for MB-managed representation originals (media-server; **required** on FlightSim) |
+| `MEMORYBOX_ALLOW_DEV_DEFAULTS` | Desktop/prove temp root only — never FlightSim archive SoT |
+| `MEMORYBOX_I9_OWNER_ARTIFACT_ID` | Optional FlightSim prove pointer |
+
+## Stop
+
+Do **not** begin Increment **9A** / **10** / Guided Capture / Export / SMS under this ship.  
+Next review: [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md).

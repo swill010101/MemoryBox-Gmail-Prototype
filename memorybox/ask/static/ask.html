@@ -156,7 +156,8 @@
       const ph = data.photo_hits || [];
       const st = data.story_hits || [];
       const jn = data.journal_hits || [];
-      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · kind=${kind}</p><ul>`;
+      const ar = data.artifact_hits || [];
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · artifacts=${ar.length} · kind=${kind}</p><ul>`;
       ev.slice(0, 12).forEach(h => {
         html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
       });
@@ -168,6 +169,9 @@
       });
       jn.slice(0, 12).forEach(h => {
         html += `<li>[journal] <code>${h.journal_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
+      });
+      ar.slice(0, 12).forEach(h => {
+        html += `<li>[artifact] <code>${h.artifact_id}</code> — ${h.label || ""} (${h.kind || ""})</li>`;
       });
       html += "</ul>";
       results.innerHTML = html;

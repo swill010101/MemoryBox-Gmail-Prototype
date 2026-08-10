@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Artifact</title>
+  <style>
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, textarea, select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    textarea { min-height: 90px; }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a655c; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .reps { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .reps img { max-width: 140px; max-height: 140px; border: 1px solid var(--line); background: #fff; }
+    code, #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Artifact</h1>
+    <p class="sub">
+      One Artifact → many representations (pocket-watch pattern). MB-managed uploads preserve originals.
+      <a href="/library/ui?modalities=artifact&amp;bucket=all">Library (artifacts)</a> ·
+      <a href="/story/ui">Story</a> ·
+      <a href="/ask/ui">Ask</a>
+    </p>
+    <p class="warn">
+      Artifact ≠ file. Upload front/back as representations of one Artifact.
+      Unresolved Person/Place/Event stay explicit — never invented.
+      Voice testimony: Capture/STT via Story path, then Save + link here.
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Create Artifact</h2>
+      <div class="row">
+        <div>
+          <label for="kind">Kind</label>
+          <select id="kind">
+            <option value="keepsake_object">keepsake / object</option>
+            <option value="letter">letter</option>
+            <option value="document">document</option>
+            <option value="recipe_card">recipe card</option>
+            <option value="clipping">clipping</option>
+            <option value="photograph_of_object">photograph of object</option>
+            <option value="other">other</option>
+          </select>
+        </div>
+        <div>
+          <label for="label">Label</label>
+          <input id="label" placeholder="e.g. Grandpa’s pocket watch" />
+        </div>
+      </div>
+      <label for="description">Description (optional — not testimony)</label>
+      <textarea id="description" placeholder="Short description of the object…"></textarea>
+      <button id="createBtn" type="button">Create Artifact</button>
+      <p class="muted">Current id: <span id="lastId">(none)</span></p>
+      <p id="status" class="muted"></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Add representation(s)</h2>
+      <label for="repFile">File (MB-managed upload)</label>
+      <input id="repFile" type="file" accept="image/*,application/pdf,.pdf" />
+      <label for="repLabel">Representation label (front / back / engraving)</label>
+      <input id="repLabel" placeholder="front" />
+      <button id="uploadBtn" type="button">Upload representation</button>
+      <div id="reps" class="reps"></div>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Optional associations</h2>
+      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <label for="personSel">Associate Person (optional)</label>
+      <select id="personSel"><option value="">(none)</option></select>
+      <button id="assocPersonBtn" type="button">Associate Person</button>
+      <label for="storyBody">Why it matters — Save as Story (typed; or paste STT draft)</label>
+      <input id="storyTitle" placeholder="Story title (optional)" />
+      <textarea id="storyBody" placeholder="Owner recollection…"></textarea>
+      <input id="narrator" placeholder="Narrator display name" />
+      <button id="storyBtn" type="button">Save Story + link Artifact</button>
+      <p class="muted">Reuse Capture/STT from Journal/Story surfaces for voice; Save is always explicit.</p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">4. Provenance</h2>
+      <pre id="detail" class="muted" style="white-space:pre-wrap;margin:0"></pre>
+    </section>
+  </main>
+  <script>
+    let currentId = null;
+
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function errText(err) {
+      if (!err) return "unknown error";
+      if (typeof err === "string") return err;
+      return err.message || String(err);
+    }
+    async function j(url, opts) {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data.detail;
+        throw new Error(typeof d === "string" ? d : (res.status + " " + res.statusText));
+      }
+      return data;
+    }
+    function setStatus(msg, warn) {
+      const el = document.getElementById("status");
+      el.className = warn ? "warn" : "muted";
+      el.textContent = msg;
+    }
+    function renderArtifact(a) {
+      if (!a) return;
+      currentId = a.id;
+      document.getElementById("lastId").textContent = a.id;
+      document.getElementById("detail").textContent = JSON.stringify(a, null, 2);
+      const reps = document.getElementById("reps");
+      reps.innerHTML = "";
+      (a.representations || []).forEach((r) => {
+        const wrap = document.createElement("div");
+        if (r.download_url && (r.mime_type || "").startsWith("image/")) {
+          wrap.innerHTML =
+            '<div class="muted">' + esc(r.label || r.original_filename || r.id) + "</div>" +
+            '<a href="' + esc(r.download_url) + '" target="_blank" rel="noopener">' +
+            '<img alt="" src="' + esc(r.download_url) + '" /></a>';
+        } else {
+          wrap.innerHTML =
+            '<div class="muted">' + esc(r.representation_kind) + " · " +
+            esc(r.label || r.evidence_id || r.id) + "</div>";
+        }
+        reps.appendChild(wrap);
+      });
+    }
+    async function loadArtifact(id) {
+      const data = await j("/artifact/" + encodeURIComponent(id));
+      renderArtifact(data.artifact);
+    }
+    async function loadPeople() {
+      const data = await j("/library/person-options?limit=200");
+      const sel = document.getElementById("personSel");
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">(none)</option>';
+      (data.people || []).forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = (p.display_name || "(unnamed)") + " · " + (p.status || "");
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    }
+
+    document.getElementById("createBtn").onclick = async () => {
+      try {
+        const body = {
+          kind: document.getElementById("kind").value,
+          label: document.getElementById("label").value,
+          description: document.getElementById("description").value || null,
+        };
+        const data = await j("/artifact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        renderArtifact(data.artifact);
+        setStatus("Created Artifact " + data.artifact.id);
+        history.replaceState(null, "", "/artifact/ui?id=" + encodeURIComponent(data.artifact.id));
+      } catch (e) {
+        setStatus("Create failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("uploadBtn").onclick = async () => {
+      if (!currentId) {
+        setStatus("Create or open an Artifact first.", true);
+        return;
+      }
+      const fileEl = document.getElementById("repFile");
+      if (!fileEl.files || !fileEl.files[0]) {
+        setStatus("Choose a file first.", true);
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append("file", fileEl.files[0]);
+        const lab = document.getElementById("repLabel").value;
+        if (lab) fd.append("label", lab);
+        const res = await fetch("/artifact/" + encodeURIComponent(currentId) + "/representations", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        renderArtifact(data.artifact);
+        setStatus("Uploaded representation (" + (data.artifact.representations || []).length + " total)");
+        fileEl.value = "";
+      } catch (e) {
+        setStatus("Upload failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("assocPersonBtn").onclick = async () => {
+      if (!currentId) return setStatus("No Artifact selected.", true);
+      const pid = document.getElementById("personSel").value;
+      if (!pid) return setStatus("Select a Person.", true);
+      try {
+        const data = await j(
+          "/artifact/" + encodeURIComponent(currentId) + "/persons/" + encodeURIComponent(pid),
+          { method: "POST" }
+        );
+        renderArtifact(data.artifact);
+        setStatus("Associated Person");
+      } catch (e) {
+        setStatus("Associate failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("storyBtn").onclick = async () => {
+      if (!currentId) return setStatus("No Artifact selected.", true);
+      const body_text = document.getElementById("storyBody").value.trim();
+      if (!body_text) return setStatus("Story body required.", true);
+      try {
+        const data = await j("/artifact/" + encodeURIComponent(currentId) + "/story", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: document.getElementById("storyTitle").value || null,
+            body_text,
+            narrator_display_name: document.getElementById("narrator").value || null,
+          }),
+        });
+        renderArtifact(data.artifact);
+        setStatus("Story saved and linked: " + ((data.story && data.story.id) || ""));
+      } catch (e) {
+        setStatus("Story save failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("refreshPeople").onclick = () =>
+      loadPeople().catch((e) => setStatus(errText(e), true));
+
+    const boot = new URLSearchParams(location.search).get("id");
+    loadPeople().catch(() => {});
+    if (boot) {
+      loadArtifact(boot).catch((e) => setStatus("Load failed: " + errText(e), true));
+    }
+  </script>
+</body>
+</html>

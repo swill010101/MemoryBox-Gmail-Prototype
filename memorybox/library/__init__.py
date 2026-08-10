@@ -1,6 +1,7 @@
-"""Library read API — unified evidence cards (Increment 8).
+"""Library read API — unified evidence cards (Increment 8 + I9 Artifact).
 
-Browse without Ask. Person filter required via I6. Defensible dates + undated.
+Browse without Ask. Person filter required for Person-centric browse (I6/I8).
+Artifact modality may be browsed with no Person (I9). Defensible dates + undated.
 Paginated/bounded — never pull full Immich/HVRT corpora for first page.
 """
 from __future__ import annotations
@@ -598,9 +599,61 @@ def _videos_for_person(
         return []
 
 
+def _artifacts(*, person_id: UUID | None, limit: int) -> list[LibraryCard]:
+    """First-class Artifact cards (I9). Person filter optional — narrows only."""
+    from memorybox.artifact import list_artifacts
+
+    views = list_artifacts(
+        limit=limit,
+        person_id=str(person_id) if person_id else None,
+    )
+    out: list[LibraryCard] = []
+    for a in views:
+        thumb = None
+        for r in a.representations:
+            if r.representation_kind == "mb_managed" and r.download_url:
+                thumb = r.download_url
+                break
+        unresolved = a.unresolved_context or {}
+        out.append(
+            LibraryCard(
+                card_id=f"artifact:{a.id}",
+                modality="artifact",
+                title=a.label,
+                summary=(
+                    f"{a.kind.replace('_', ' ')} · "
+                    f"{len(a.representations)} representation(s)"
+                ),
+                browse_date=None,
+                date_provenance="undated",
+                undated=True,
+                identity_trust=None,
+                person_ids=list(a.person_ids),
+                person_names=[],
+                domain_id=a.id,
+                deep_links={
+                    "artifact": f"/artifact/ui?id={a.id}",
+                },
+                provenance={
+                    "kind": "artifact",
+                    "artifact_kind": a.kind,
+                    "representation_count": len(a.representations),
+                    "current_metadata_revision": a.current_metadata_revision,
+                    "unresolved_context": unresolved,
+                    "thumb_url": thumb,
+                    "note": (
+                        "Artifact identity/metadata — representations are not "
+                        "separate Artifacts; unresolved Place/Event/Person not invented"
+                    ),
+                },
+            )
+        )
+    return out
+
+
 def list_library_cards(
     *,
-    person_id: str,
+    person_id: str | None = None,
     modalities: list[str] | None = None,
     bucket: str = "timeline",
     date_from: str | None = None,
@@ -610,14 +663,21 @@ def list_library_cards(
     photo: Any | None = None,
     video: Any | None = None,
 ) -> dict[str, Any]:
-    """Paginated Library cards for a required MB Person.
+    """Paginated Library cards.
+
+    Person is required for Person-centric modalities (I8). Artifact-only browse
+    may omit person_id (I9) — Person filter narrows Artifacts when present.
 
     bucket: timeline (dated only) | undated | all
     """
-    pid = _parse_uuid(person_id, field_name="person_id")
-    person = get_person(str(pid))
-    if not person or person.status == "merged_away":
-        raise LibraryServiceError("person not found")
+    pid_raw = (person_id or "").strip()
+    person = None
+    pid: UUID | None = None
+    if pid_raw:
+        pid = _parse_uuid(pid_raw, field_name="person_id")
+        person = get_person(str(pid))
+        if not person or person.status == "merged_away":
+            raise LibraryServiceError("person not found")
 
     lim = max(1, min(int(limit or DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
     offset = _decode_cursor(cursor)
@@ -630,6 +690,15 @@ def list_library_cards(
         wanted = {m.strip().lower() for m in modalities if (m or "").strip()}
         if not wanted:
             wanted = None
+
+    if pid is None:
+        # I9: Person-optional Artifact browse only (one card model; no second Gallery).
+        if wanted is None:
+            wanted = {"artifact"}
+        elif wanted != {"artifact"}:
+            raise LibraryServiceError(
+                "person_id is required unless modalities=artifact"
+            )
 
     df = None
     dt = None
@@ -659,40 +728,47 @@ def list_library_cards(
     def _want(mod: str) -> bool:
         return wanted is None or mod in wanted
 
-    if _want("story"):
-        cards.extend(_stories_for_person(pid, limit=fetch_n))
-    if _want("journal"):
-        cards.extend(_journals_for_person(pid, limit=fetch_n))
-    if _want("email"):
-        cards.extend(
-            _email_for_person(pid, person.display_name, limit=fetch_n)
-        )
-    if _want("calendar"):
-        cards.extend(
-            _calendar_for_person(pid, person.display_name, limit=fetch_n)
-        )
-    if _want("photo"):
-        cards.extend(
-            _photos_for_person(
-                person,
-                photo=photo,
-                limit=fetch_n,
-                date_from=df,
-                date_to=dt,
-                status=provider_status,
+    if pid is not None and person is not None:
+        if _want("story"):
+            cards.extend(_stories_for_person(pid, limit=fetch_n))
+        if _want("journal"):
+            cards.extend(_journals_for_person(pid, limit=fetch_n))
+        if _want("email"):
+            cards.extend(
+                _email_for_person(pid, person.display_name, limit=fetch_n)
             )
-        )
-    if _want("video"):
-        cards.extend(
-            _videos_for_person(
-                person, video=video, limit=fetch_n, status=provider_status
+        if _want("calendar"):
+            cards.extend(
+                _calendar_for_person(pid, person.display_name, limit=fetch_n)
             )
-        )
+        if _want("photo"):
+            cards.extend(
+                _photos_for_person(
+                    person,
+                    photo=photo,
+                    limit=fetch_n,
+                    date_from=df,
+                    date_to=dt,
+                    status=provider_status,
+                )
+            )
+        if _want("video"):
+            cards.extend(
+                _videos_for_person(
+                    person, video=video, limit=fetch_n, status=provider_status
+                )
+            )
 
-    # Attach display name
-    for c in cards:
-        if person.display_name and person.display_name not in c.person_names:
-            c.person_names = list(dict.fromkeys([*c.person_names, person.display_name]))
+    if _want("artifact"):
+        cards.extend(_artifacts(person_id=pid, limit=fetch_n))
+
+    # Attach display name when Person filter is active
+    if person is not None:
+        for c in cards:
+            if person.display_name and person.display_name not in c.person_names:
+                c.person_names = list(
+                    dict.fromkeys([*c.person_names, person.display_name])
+                )
 
     if bucket_norm == "timeline":
         cards = [c for c in cards if not c.undated and c.browse_date]
@@ -736,8 +812,8 @@ def list_library_cards(
     modalities_present = sorted({c.modality for c in cards})
     return {
         "ok": True,
-        "person_id": person.id,
-        "person_display_name": person.display_name,
+        "person_id": person.id if person else None,
+        "person_display_name": person.display_name if person else None,
         "bucket": bucket_norm,
         "cards": [c.to_dict() for c in page],
         "count": len(page),
@@ -752,16 +828,18 @@ def list_library_cards(
 def get_library_card(
     card_id: str,
     *,
-    person_id: str,
+    person_id: str | None = None,
     photo: Any | None = None,
     video: Any | None = None,
 ) -> LibraryCard | None:
-    """Thin detail: re-list bounded page and find card (sufficient for I8)."""
+    """Thin detail: re-list bounded page and find card (sufficient for I8/I9)."""
     raw = (card_id or "").strip()
     if not raw:
         raise LibraryServiceError("card_id required")
+    mods = ["artifact"] if raw.startswith("artifact:") and not (person_id or "").strip() else None
     result = list_library_cards(
         person_id=person_id,
+        modalities=mods,
         bucket="all",
         limit=MAX_PAGE_SIZE,
         photo=photo,
@@ -775,6 +853,7 @@ def get_library_card(
     while cursor:
         result = list_library_cards(
             person_id=person_id,
+            modalities=mods,
             bucket="all",
             limit=MAX_PAGE_SIZE,
             cursor=cursor,

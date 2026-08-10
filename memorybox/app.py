@@ -1,10 +1,10 @@
-"""FastAPI entry for MemoryBox monolith (Increment 8: Library + Video/Review/Ask/Story/Journal/People)."""
+"""FastAPI entry for MemoryBox monolith (Increment 9: Artifact + Library/Ask earn-in)."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from html import escape as html_escape
 
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
@@ -12,6 +12,20 @@ from pydantic import BaseModel, Field
 
 from memorybox import __version__
 from memorybox import migrate as migrate_mod
+from memorybox.artifact import (
+    ARTIFACT_KINDS,
+    ArtifactServiceError,
+    add_evidence_ref_representation,
+    add_mb_managed_representation,
+    associate_person as artifact_associate_person,
+    associate_story as artifact_associate_story,
+    create_artifact,
+    create_story_for_artifact,
+    get_artifact,
+    list_artifacts,
+    read_representation_bytes,
+    revise_metadata,
+)
 from memorybox.ask.deps import build_photo, build_video
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.config import settings
@@ -67,6 +81,9 @@ DOMAIN_V0_TABLES = (
     "journal_versions",
     "jobs",
     "processing_states",
+    "artifacts",
+    "artifact_metadata_revisions",
+    "artifact_representations",
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
@@ -75,11 +92,12 @@ JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journ
 PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
+ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 8: Library / Timeline.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 9: Artifact.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -198,6 +216,31 @@ class ReviewFaceBoxRequest(BaseModel):
     crop_jpeg_base64: str | None = None
 
 
+class ArtifactCreateRequest(BaseModel):
+    kind: str = Field(..., min_length=1)
+    label: str = Field(..., min_length=1)
+    description: str | None = None
+    person_ids: list[str] = Field(default_factory=list)
+
+
+class ArtifactReviseRequest(BaseModel):
+    kind: str | None = None
+    label: str | None = None
+    description: str | None = None
+    note: str | None = None
+
+
+class ArtifactEvidenceRefRequest(BaseModel):
+    evidence_id: str = Field(..., min_length=1)
+    label: str | None = None
+
+
+class ArtifactStoryCreateRequest(BaseModel):
+    title: str | None = None
+    body_text: str = Field(..., min_length=1)
+    narrator_display_name: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     db: dict[str, Any]
@@ -282,7 +325,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 8,
+        "increment": 9,
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -296,6 +339,7 @@ def health() -> dict[str, Any]:
         "people": "/people/ui",
         "review": "/review/ui",
         "library": "/library/ui",
+        "artifact": "/artifact/ui",
     }
 
 
@@ -303,7 +347,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 8,
+        "increment": 9,
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -317,6 +361,8 @@ def root() -> dict[str, Any]:
         "review_ui": "/review/ui",
         "library_ui": "/library/ui",
         "library_cards": "GET /library/cards",
+        "artifact_ui": "/artifact/ui",
+        "artifact": "/artifact",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -401,6 +447,13 @@ def library_ui() -> HTMLResponse:
     )
 
 
+@app.get("/artifact/ui")
+def artifact_ui() -> FileResponse:
+    if not ARTIFACT_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Artifact UI missing")
+    return FileResponse(ARTIFACT_STATIC, media_type="text/html")
+
+
 @app.get("/library/person-options")
 def library_person_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
     """MB Person options for Library filter — same I6 list as GET /people.
@@ -419,7 +472,7 @@ def library_person_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, A
 
 @app.get("/library/cards")
 def library_cards(
-    person_id: str = Query(..., min_length=1),
+    person_id: str | None = Query(None),
     bucket: str = Query("timeline"),
     modalities: str | None = Query(None),
     date_from: str | None = Query(None),
@@ -427,7 +480,11 @@ def library_cards(
     cursor: str | None = Query(None),
     limit: int = Query(24, ge=1, le=50),
 ) -> dict[str, Any]:
-    """Unified Library read API — Person filter required; Timeline/Gallery same cards."""
+    """Unified Library read API.
+
+    Person filter required for Person-centric browse (I8).
+    Artifact-only browse may omit person_id (I9).
+    """
     mods = None
     if modalities:
         mods = [m.strip() for m in modalities.split(",") if m.strip()]
@@ -450,7 +507,7 @@ def library_cards(
 @app.get("/library/cards/{card_id:path}")
 def library_card_detail(
     card_id: str,
-    person_id: str = Query(..., min_length=1),
+    person_id: str | None = Query(None),
 ) -> dict[str, Any]:
     try:
         card = get_library_card(
@@ -749,6 +806,144 @@ def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/artifact")
+def artifact_list(
+    limit: int = Query(50, ge=1, le=200),
+    kind: str | None = Query(None),
+    person_id: str | None = Query(None),
+    q: str | None = Query(None),
+) -> dict[str, Any]:
+    try:
+        rows = list_artifacts(limit=limit, kind=kind, person_id=person_id, query=q)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "kinds": list(ARTIFACT_KINDS),
+        "artifacts": [a.to_dict() for a in rows],
+    }
+
+
+@app.post("/artifact")
+def artifact_create(body: ArtifactCreateRequest) -> dict[str, Any]:
+    try:
+        view = create_artifact(
+            kind=body.kind,
+            label=body.label,
+            description=body.description,
+            person_ids=body.person_ids,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.get("/artifact/{artifact_id}")
+def artifact_get(artifact_id: str) -> dict[str, Any]:
+    view = get_artifact(artifact_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/revise")
+def artifact_revise(artifact_id: str, body: ArtifactReviseRequest) -> dict[str, Any]:
+    try:
+        view = revise_metadata(
+            artifact_id,
+            kind=body.kind,
+            label=body.label,
+            description=body.description,
+            note=body.note,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/representations")
+async def artifact_add_representation(
+    artifact_id: str,
+    file: UploadFile = File(...),
+    label: str | None = Form(None),
+) -> dict[str, Any]:
+    data = await file.read()
+    try:
+        view = add_mb_managed_representation(
+            artifact_id,
+            data=data,
+            filename=file.filename,
+            content_type=file.content_type,
+            label=label,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/evidence-ref")
+def artifact_add_evidence_ref(
+    artifact_id: str, body: ArtifactEvidenceRefRequest
+) -> dict[str, Any]:
+    try:
+        view = add_evidence_ref_representation(
+            artifact_id, evidence_id=body.evidence_id, label=body.label
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.get("/artifact/{artifact_id}/representations/{representation_id}/bytes")
+def artifact_representation_bytes(
+    artifact_id: str, representation_id: str
+) -> Response:
+    try:
+        data, mime, name = read_representation_bytes(artifact_id, representation_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    safe = name.replace('"', "")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'inline; filename="{safe}"'},
+    )
+
+
+@app.post("/artifact/{artifact_id}/persons/{person_id}")
+def artifact_add_person(artifact_id: str, person_id: str) -> dict[str, Any]:
+    try:
+        view = artifact_associate_person(artifact_id, person_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/stories/{story_id}")
+def artifact_add_story(artifact_id: str, story_id: str) -> dict[str, Any]:
+    try:
+        view = artifact_associate_story(artifact_id, story_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/story")
+def artifact_create_story(
+    artifact_id: str, body: ArtifactStoryCreateRequest
+) -> dict[str, Any]:
+    try:
+        linked = create_story_for_artifact(
+            artifact_id,
+            title=body.title,
+            body_text=body.body_text,
+            narrator_display_name=body.narrator_display_name,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **linked}
 
 
 @app.get("/people")

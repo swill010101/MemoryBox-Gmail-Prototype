@@ -62,6 +62,13 @@ JOURNAL_INTENT_RE = re.compile(
 JOURNAL_ASK_RE = re.compile(
     r"(?i)\b(journals?|journal\s+entr(?:y|ies)|my\s+journal|what\s+did\s+i\s+journal)\b"
 )
+ARTIFACT_ASK_RE = re.compile(
+    r"(?i)\b("
+    r"artifacts?|keepsakes?|heirloom|heirlooms|"
+    r"pocket\s*watch(?:es)?|recipe\s*cards?|clippings?|"
+    r"belong(?:ed|s)?\s+to"
+    r")\b"
+)
 CALENDAR_RE = re.compile(
     r"(?i)\b(calendar|appointment|schedule|event|meeting|ics)\b"
 )
@@ -228,6 +235,7 @@ class QueryPlan:
     want_calendar: bool
     want_story: bool = False
     want_journal: bool = False
+    want_artifact: bool = False
     journal_capture_intent: bool = False
     visual_scope: VisualScope = "none"
     want_visual: bool = False
@@ -272,6 +280,8 @@ class QueryPlan:
             out.append("story")
         if self.want_journal:
             out.append("journal")
+        if self.want_artifact:
+            out.append("artifact")
         return tuple(out)
 
 
@@ -813,6 +823,22 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_journal:
             notes.append("want_journal_modality")
 
+    # Artifact modality (I9): explicit artifact/keepsake asks + exploratory archive
+    want_artifact = False
+    if not requires_clarification and not journal_capture_intent:
+        if ARTIFACT_ASK_RE.search(q):
+            want_artifact = True
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+            want_artifact = True
+        if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
+            want_artifact = False
+        if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
+            want_artifact = False
+        if said_about:
+            want_artifact = False
+        if want_artifact:
+            notes.append("want_artifact_modality")
+
     return QueryPlan(
         original_ask=q,
         effective_ask=effective if not journal_capture_intent else "journal_capture",
@@ -822,6 +848,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_calendar=want_cal and not requires_clarification and not journal_capture_intent,
         want_story=want_story and not journal_capture_intent,
         want_journal=want_journal and not journal_capture_intent,
+        want_artifact=want_artifact and not journal_capture_intent,
         journal_capture_intent=journal_capture_intent,
         visual_scope=visual_scope if not requires_clarification and not journal_capture_intent else "none",
         want_visual=want_visual and not requires_clarification and not journal_capture_intent,

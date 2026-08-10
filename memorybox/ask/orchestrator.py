@@ -34,6 +34,7 @@ class AskResult:
     story_hits: list[dict[str, Any]]
     journal_hits: list[dict[str, Any]]
     video_hits: list[dict[str, Any]]
+    artifact_hits: list[dict[str, Any]]
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
@@ -53,6 +54,7 @@ class AskResult:
             "story_hits": self.story_hits,
             "journal_hits": self.journal_hits,
             "video_hits": self.video_hits,
+            "artifact_hits": self.artifact_hits,
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
@@ -93,11 +95,13 @@ def _build_answer(
     photo_status: dict[str, Any],
     videos: list[R.VideoHit] | None = None,
     video_status: dict[str, Any] | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
     citations: list[dict[str, Any]] = []
     statements: list[dict[str, Any]] = []
     videos = videos or []
     video_status = video_status or {}
+    artifacts = artifacts or []
 
     if getattr(plan, "journal_capture_intent", False):
         msg = (
@@ -318,6 +322,39 @@ def _build_answer(
             }
         )
 
+    for a in artifacts:
+        aid = a.get("artifact_id")
+        label = a.get("label") or "Artifact"
+        kind = a.get("kind") or "artifact"
+        citations.append(
+            {
+                "kind": "artifact",
+                "artifact_id": aid,
+                "artifact_kind": kind,
+                "label": label,
+                "deep_link": a.get("deep_link"),
+                "provenance_kind": "artifact_identity",
+                "attribution": f"Artifact “{label}” ({kind})",
+            }
+        )
+        statements.append(
+            {
+                "text": (
+                    f"Artifact “{label}” ({kind.replace('_', ' ')}) — "
+                    f"{a.get('representation_count') or 0} representation(s). "
+                    "Matched by Artifact identity/metadata, not filename-as-meaning."
+                ),
+                "label": "Artifact",
+                "evidence_ids": [],
+                "photo_external_ids": [],
+                "story_ids": list(a.get("story_ids") or []),
+                "journal_ids": [],
+                "artifact_ids": [aid] if aid else [],
+                "provenance_kind": "artifact_identity",
+                "attribution": f"Artifact “{label}”",
+            }
+        )
+
     photo_unavail = bool(
         (plan.want_still or plan.want_photo) and photo_status.get("unavailable")
     )
@@ -326,7 +363,7 @@ def _build_answer(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
-    if video_only and video_unavail and not evidence and not stories and not journals:
+    if video_only and video_unavail and not evidence and not stories and not journals and not artifacts:
         text = (
             "Video intelligence provider is unavailable, so MemoryBox cannot search "
             "video presence spans right now. This is not the same as finding no videos. "
@@ -334,7 +371,7 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and not evidence and not stories and not journals and not videos:
+    if photo_unavail and not evidence and not stories and not journals and not videos and not artifacts:
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
@@ -342,11 +379,12 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and (evidence or stories or journals or videos):
+    if photo_unavail and (evidence or stories or journals or videos or artifacts):
         text = (
             "Photo provider is unavailable (not 'no photos'). "
             f"Found {len(evidence)} Evidence, {len(stories)} Story, "
-            f"{len(journals)} Journal, {len(videos)} video hit(s). "
+            f"{len(journals)} Journal, {len(videos)} video, "
+            f"{len(artifacts)} Artifact hit(s). "
             "Family-history claims below are limited to cited items with provenance."
         )
         return "mixed", text, statements, citations, None
@@ -354,23 +392,26 @@ def _build_answer(
     if (
         (plan.want_photo or plan.want_still or plan.want_video
          or getattr(plan, "want_story", False)
-         or getattr(plan, "want_journal", False))
+         or getattr(plan, "want_journal", False)
+         or getattr(plan, "want_artifact", False))
         and not photos
         and not videos
         and not evidence
         and not stories
         and not journals
+        and not artifacts
         and photo_status.get("ok", True)
         and (not plan.want_video or video_status.get("ok", True))
         and not video_unavail
     ):
         missing = (
-            "Insufficient Evidence: no matching photos, videos, Stories, Journals, or "
-            "email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact."
+            "Insufficient Evidence: no matching photos, videos, Stories, Journals, "
+            "Artifacts, or email/calendar Evidence were found for this ask. "
+            "MemoryBox will not invent a family fact."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if not evidence and not photos and not videos and not stories and not journals:
+    if not evidence and not photos and not videos and not stories and not journals and not artifacts:
         if video_unavail and plan.want_video:
             text = (
                 "Video intelligence provider is unavailable (not 'no videos'). "
@@ -384,6 +425,11 @@ def _build_answer(
         return "insufficient", missing, statements, citations, missing
 
     parts = []
+    if artifacts:
+        parts.append(
+            f"Found {len(artifacts)} Artifact hit(s) "
+            "(matched by identity/metadata/relationships — not filename-as-meaning)."
+        )
     if journals:
         parts.append(
             f"Found {len(journals)} owner Journal entr(y/ies) "
@@ -472,11 +518,14 @@ def _build_answer(
             bool(photos),
             bool(videos),
             bool(evidence),
+            bool(artifacts),
         )
         if x
     )
     if modalities_hit > 1:
         kind = "mixed"
+    elif artifacts:
+        kind = "artifact_backed"
     elif journals:
         kind = "journal_backed"
     elif stories:
@@ -518,6 +567,7 @@ class AskOrchestrator:
         video_status: dict[str, Any] = {"ok": True, "detail": "not_requested"}
         stories: list[R.StoryHit] = []
         journals: list[R.JournalHit] = []
+        artifacts: list[dict[str, Any]] = []
 
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
@@ -535,6 +585,8 @@ class AskOrchestrator:
                 stories = R.search_stories(plan)
             if getattr(plan, "want_journal", False):
                 journals = R.search_journals(plan)
+            if getattr(plan, "want_artifact", False):
+                artifacts = R.search_artifacts(plan)
 
             if plan.want_video:
                 videos, video_status = R.search_videos(
@@ -550,6 +602,7 @@ class AskOrchestrator:
             photo_status,
             videos=videos,
             video_status=video_status,
+            artifacts=artifacts,
         )
 
         new_ctx = _update_context_from_plan(
@@ -588,6 +641,12 @@ class AskOrchestrator:
                 else ("capture_intent" if plan.journal_capture_intent else "not_requested")
             ),
         }
+        providers["artifact_search"] = {
+            "ok": True,
+            "detail": (
+                f"hits={len(artifacts)}" if plan.want_artifact else "not_requested"
+            ),
+        }
 
         return AskResult(
             session_id=new_ctx.session_id,
@@ -603,6 +662,7 @@ class AskOrchestrator:
             story_hits=[s.to_dict() for s in stories],
             journal_hits=[j.to_dict() for j in journals],
             video_hits=[v.to_dict() for v in videos],
+            artifact_hits=list(artifacts),
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,

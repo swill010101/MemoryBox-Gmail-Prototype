@@ -1,6 +1,6 @@
 # MBBS-001 Increment 9 — Definition (final review — decisions locked; not build-authorized)
 
-**Status:** **FINAL REVIEW** — decisions locked from owner answers; awaiting explicit *Build Increment 9 only*  
+**Status:** **AUTHORIZED / SHIPPED** — harness + surfaces; FlightSim I9-OWNER pending  
 **Date:** 2026-08-10  
 **Owner acceptance gate (locked):** On FlightSim, Tom can create a **first-class Artifact** for a **real physical family keepsake** (pocket-watch pattern preferred: **≥2** MB-managed representation images where practical) **without developer intervention** — upload/preserve representation(s) on **media-server durable storage**, label + basic **kind**, optional description, **Person association optional** (not required for Library visibility), optionally capture/associate a **Story** (“why it matters”) via earned-in I5/I5A Capture/STT + explicit Save, browse the Artifact as a first-class **Library `artifact` modality card even with no Person**, open/view representation(s), retrieve via Ask by Artifact identity/metadata (not filename-as-meaning), inspect honest provenance, and leave unresolved Place/Event/Person context **explicit**. Synthetic harnesses prove multi-representation, metadata revision without byte duplication, unresolved-context honesty, Library-without-Person, and failure degrade.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 9  
@@ -8,8 +8,9 @@
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
 **Depends on:** Increment 1 (domain) · Increment 5 / 5A (Story + Capture/STT patterns) · Increment 6 Person · **Increment 8 Library (ACCEPTED)** · Ask (I4)  
 **Prior:** [MBBS-001_INCREMENT_8_ACCEPTANCE.md](MBBS-001_INCREMENT_8_ACCEPTANCE.md) — **ACCEPTED**  
+**Acceptance:** [MBBS-001_INCREMENT_9_ACCEPTANCE.md](MBBS-001_INCREMENT_9_ACCEPTANCE.md)  
 **Next after acceptance:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile (**REVIEW ONLY**)  
-**Authorization:** *Do not build* until Tom authorizes *Build Increment 9 only*.
+**Authorization:** *Build Increment 9 only* — **authorized**; 9A/10 not authorized.
 
 ---
 
@@ -243,9 +244,8 @@ Residual for build-time only:
 
 ## 11. Authorization gate
 
-**Status: FINAL REVIEW — decisions locked. No implementation yet.**
+**Status: AUTHORIZED / SHIPPED** (*Build Increment 9 only*).  
 
-Reply with **Build Increment 9 only** to authorize code.  
 Do **not** begin Increment 9A / 10 / Guided Capture / Export under this authorization.
 
 ---
@@ -256,4 +256,4 @@ After I9 acceptance: **Increment 9A** (Person Profile) is next review/build trac
 
 ---
 
-*End of Increment 9 definition — final review; do not build until authorized.*
+*End of Increment 9 definition — authorized and shipped; owner gate on FlightSim.*

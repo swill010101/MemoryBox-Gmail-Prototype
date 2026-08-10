@@ -149,7 +149,7 @@
       <p class="muted">Resolves via I6 Person service. Teach stays in People / Review.</p>
       <button class="secondary" id="btnRefreshPeople" type="button">Refresh people</button>
       <p id="peopleStatus" class="muted"></p>
-      <label for="personSel">MB Person</label>
+      <label for="personSel">MB Person (optional for artifact-only)</label>
       <select id="personSel"><option value="">(select a person)</option></select>
       <div class="row">
         <div>
@@ -162,6 +162,7 @@
             <option value="calendar">calendar</option>
             <option value="story">story</option>
             <option value="journal">journal</option>
+            <option value="artifact">artifact</option>
           </select>
         </div>
         <div>
@@ -314,7 +315,7 @@
 
     function thumbHtml(c, cls) {
       const url = thumbUrl(c);
-      if (url && (c.modality === "photo" || c.modality === "video")) {
+      if (url && (c.modality === "photo" || c.modality === "video" || c.modality === "artifact")) {
         return (
           '<img class="' + cls + '" alt="" loading="lazy" src="' + esc(url) + '" ' +
           'onerror="this.style.display=\'none\'; this.nextElementSibling && (this.nextElementSibling.hidden=false);" />' +
@@ -323,10 +324,10 @@
           "</div>"
         );
       }
-      if (c.modality === "photo" || c.modality === "video") {
+      if (c.modality === "photo" || c.modality === "video" || c.modality === "artifact") {
         return (
           '<div class="' + cls + ' missing">' +
-          (c.modality === "video" ? "video segment" : "photo") +
+          (c.modality === "video" ? "video segment" : c.modality) +
           "</div>"
         );
       }
@@ -423,6 +424,10 @@
         linkHtml += '<li><a href="' + esc(links.story) + '">Story</a></li>';
         hasLink = true;
       }
+      if (links.artifact) {
+        linkHtml += '<li><a href="' + esc(links.artifact) + '">Open Artifact</a></li>';
+        hasLink = true;
+      }
       if (prov.web_url) {
         linkHtml += '<li><a href="' + esc(prov.web_url) + '" target="_blank" rel="noopener">Provider web</a></li>';
         hasLink = true;
@@ -479,18 +484,24 @@
 
     async function loadLibraryCards(reset) {
       const person_id = document.getElementById("personSel").value;
-      if (!person_id) {
-        statusEl.textContent = "Select an MB Person first (required).";
-        return;
-      }
       const bucket = document.getElementById("bucketSel").value;
       const modality = document.getElementById("modalitySel").value;
+      if (!person_id && modality !== "artifact") {
+        statusEl.textContent =
+          "Select an MB Person, or set Modality to artifact (Person not required).";
+        return;
+      }
       const params = new URLSearchParams({
-        person_id,
         bucket,
         limit: "24",
       });
+      if (person_id) params.set("person_id", person_id);
       if (modality) params.set("modalities", modality);
+      if (!person_id && modality === "artifact" && bucket === "timeline") {
+        // Artifacts are undated — avoid empty Timeline surprise
+        params.set("bucket", "all");
+        document.getElementById("bucketSel").value = "all";
+      }
       if (!reset && nextCursor) params.set("cursor", nextCursor);
       statusEl.textContent = "Loading… (photos/email can take a few seconds; video degrades if worker is down)";
       try {
@@ -505,7 +516,9 @@
         nextCursor = data.next_cursor || null;
         moreBtn.disabled = !nextCursor;
         statusEl.textContent =
-          "person=" + (data.person_display_name || person_id) +
+          (data.person_display_name
+            ? ("person=" + data.person_display_name)
+            : "person=(none — artifact browse)") +
           " · cards=" + cards.length +
           " · modalities=" + (data.modalities_present || []).join(",") +
           " · view=same API";
@@ -520,6 +533,15 @@
           degradeEl.textContent =
             "Video segments are Undated by design (no calendar date yet). " +
             "Switch Bucket to Undated or All, then Load Library again.";
+        }
+        if (
+          !cards.length &&
+          modality === "artifact" &&
+          (bucket === "timeline" || document.getElementById("bucketSel").value === "timeline")
+        ) {
+          degradeEl.hidden = false;
+          degradeEl.textContent =
+            "Artifacts are Undated by default. Use Bucket Undated or All.";
         }
         renderCards();
         persistPlace(selectedId ? { card_id: selectedId } : null);
@@ -555,15 +577,16 @@
     // Restore place from query (return from Review / bookmark).
     const boot = new URLSearchParams(location.search);
     const bootPerson = boot.get("person_id");
+    const bootMod = boot.get("modalities");
+    if (boot.get("bucket")) document.getElementById("bucketSel").value = boot.get("bucket");
+    if (boot.get("view")) document.getElementById("viewSel").value = boot.get("view");
+    if (bootMod) document.getElementById("modalitySel").value = bootMod;
     if (bootPerson && personSelInit) {
       personSelInit.value = bootPerson;
-      if (boot.get("bucket")) document.getElementById("bucketSel").value = boot.get("bucket");
-      if (boot.get("view")) document.getElementById("viewSel").value = boot.get("view");
-      if (boot.get("modalities")) document.getElementById("modalitySel").value = boot.get("modalities");
-      if (personSelInit.value) {
-        nextCursor = null;
-        loadLibraryCards(true);
-      }
+    }
+    if ((personSelInit && personSelInit.value) || bootMod === "artifact") {
+      nextCursor = null;
+      loadLibraryCards(true);
     }
   </script>
 </body>
