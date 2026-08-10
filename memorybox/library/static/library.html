@@ -374,7 +374,7 @@
           : "") +
         "</p>" +
         linkHtml +
-        "<p class="muted">Raw card (evidence-first)</p>" +
+        '<p class="muted">Raw card (evidence-first)</p>' +
         "<pre>" + esc(JSON.stringify(c, null, 2)) + "</pre>";
 
       detailPane.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -398,7 +398,7 @@
       }
     }
 
-    async function load(reset) {
+    async function loadLibraryCards(reset) {
       const person_id = document.getElementById("personSel").value;
       if (!person_id) {
         statusEl.textContent = "Select an MB Person first (required).";
@@ -413,7 +413,7 @@
       });
       if (modality) params.set("modalities", modality);
       if (!reset && nextCursor) params.set("cursor", nextCursor);
-      statusEl.textContent = "Loading…";
+      statusEl.textContent = "Loading… (photos/email can take a few seconds; video degrades if worker is down)";
       try {
         const data = await j("/library/cards?" + params.toString());
         if (reset) {
@@ -433,7 +433,7 @@
         providerDegrade(data.provider_status || {});
         renderCards();
       } catch (err) {
-        statusEl.textContent = (err && err.detail) ? JSON.stringify(err.detail) : String(err);
+        statusEl.textContent = "Load failed: " + errText(err);
       }
     }
 
@@ -442,9 +442,9 @@
     });
     document.getElementById("loadBtn").onclick = () => {
       nextCursor = null;
-      load(true);
+      loadLibraryCards(true);
     };
-    moreBtn.onclick = () => load(false);
+    moreBtn.onclick = () => loadLibraryCards(false);
     document.getElementById("viewSel").onchange = renderCards;
     // Options are SSR-embedded in /library/ui; only fetch if embed left the placeholder alone.
     const personSelInit = document.getElementById("personSel");

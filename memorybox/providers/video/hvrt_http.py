@@ -31,7 +31,14 @@ class HvrtHttpVideoProvider:
         self.base_url = raw
         self.timeout_sec = timeout_sec
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        *,
+        timeout_sec: float | None = None,
+    ) -> Any:
         url = f"{self.base_url}{path}"
         data = None
         headers = {"Accept": "application/json"}
@@ -39,8 +46,9 @@ class HvrtHttpVideoProvider:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        timeout = self.timeout_sec if timeout_sec is None else timeout_sec
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_sec) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
@@ -53,7 +61,8 @@ class HvrtHttpVideoProvider:
 
     def health(self) -> ProviderHealth:
         try:
-            data = self._request("GET", "/health")
+            # Short timeout so Library/Ask degrade fast when worker is down.
+            data = self._request("GET", "/health", timeout_sec=min(3.0, self.timeout_sec))
             ok = bool(data.get("ok"))
             return ProviderHealth(
                 provider_key=self.provider_key,
