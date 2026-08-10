@@ -39,7 +39,7 @@ class PhotoHit:
     thumb_url: str | None
     web_url: str | None
     score: float = 1.0
-    identity_trust: str = "confirmed"  # confirmed | candidate
+    identity_trust: str = "confirmed"  # confirmed | trusted_provider | candidate
     mb_person_id: str | None = None
     mb_person_name: str | None = None
     attribution: str | None = None
@@ -58,7 +58,7 @@ class VideoHit:
     face_external_id: str | None = None
     label: str | None = None
     play_url: str | None = None
-    identity_trust: str = "confirmed"
+    identity_trust: str = "confirmed"  # confirmed | trusted_provider | candidate
     mb_person_id: str | None = None
     mb_person_name: str | None = None
     attribution: str | None = None
@@ -393,15 +393,18 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 def search_photos(
     plan: QueryPlan, photo: PhotoProvider, *, limit: int = 24
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
-    """Search photos via PhotoProvider with I6 Person trust rules.
+    """Search photos via PhotoProvider with I6/I7 identity authority rules.
 
-    Confirmed MB Person → provider_identities is authoritative.
-    Immich display-name matches are candidate/fallback only and never silently
-    become confirmed MB identity.
+    Confirmed and trusted-provider-seeded MB Persons retrieve via provider_identities.
+    Unconfirmed Immich name matches remain candidates and never become confirmed.
     """
     from memorybox.person import (
+        AUTHORITY_TRUSTED_PROVIDER,
+        AmbiguousIdentityError,
+        find_ask_person_by_name,
         find_confirmed_person_by_name,
-        list_immich_external_ids_for_person,
+        is_negative,
+        list_provider_external_ids_for_person,
     )
 
     status: dict[str, Any] = {
@@ -422,28 +425,60 @@ def search_photos(
             status["detail"] = health.detail or "photo provider unhealthy"
             return [], status
 
-        confirmed_ext: list[str] = []
-        confirmed_meta: list[dict[str, str]] = []
+        photo_pk = getattr(photo, "provider_key", "immich") or "immich"
+        lookup_keys = [photo_pk]
+        if photo_pk == "fake_photo":
+            lookup_keys = ["fake_photo", "immich"]
+        elif photo_pk == "immich":
+            lookup_keys = ["immich", "fake_photo"]
+
+        mapped_ext: list[str] = []
+        mapped_meta: list[dict[str, str]] = []
         mapped_names: list[str] = []
-        unmapped_confirmed_names: list[str] = []
+        unmapped_resolvable_names: list[str] = []
+        ambiguous_names: list[str] = []
 
         for name in plan.person_names:
-            person = find_confirmed_person_by_name(name)
+            try:
+                person = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
+            except AmbiguousIdentityError as exc:
+                ambiguous_names.append(name)
+                status["disclosure"] = str(exc)
+                continue
             if person:
-                ids = list_immich_external_ids_for_person(person.id)
+                ids: list[str] = []
+                for pk in lookup_keys:
+                    ids.extend(list_provider_external_ids_for_person(person.id, pk))
+                ids = list(dict.fromkeys(ids))
                 if ids:
                     mapped_names.append(name)
+                    mapping_auth = person.identity_authority
+                    for m in person.provider_mappings:
+                        if (
+                            m.get("provider_key") in lookup_keys
+                            and m.get("external_id") in ids
+                        ):
+                            mapping_auth = (
+                                m.get("identity_authority") or person.identity_authority
+                            )
+                            break
+                    trust = (
+                        "trusted_provider"
+                        if mapping_auth == AUTHORITY_TRUSTED_PROVIDER
+                        else "confirmed"
+                    )
                     for eid in ids:
-                        confirmed_ext.append(eid)
-                        confirmed_meta.append(
+                        mapped_ext.append(eid)
+                        mapped_meta.append(
                             {
                                 "external_id": eid,
                                 "person_id": person.id,
                                 "name": name,
+                                "trust": trust,
                             }
                         )
                 else:
-                    unmapped_confirmed_names.append(name)
+                    unmapped_resolvable_names.append(name)
 
         hits: list[PhotoHit] = []
 
@@ -460,9 +495,16 @@ def search_photos(
                 loc = ", ".join(p for p in parts if p)
             if trust == "confirmed":
                 attrib = (
-                    f"MB Person {person_name} via confirmed Immich mapping"
+                    f"MB Person {person_name} via owner-confirmed Immich mapping"
                     if person_name
-                    else "confirmed MB Person mapping"
+                    else "owner-confirmed MB Person mapping"
+                )
+            elif trust == "trusted_provider":
+                attrib = (
+                    f"MB Person {person_name} via trusted Immich/provider identity "
+                    "(not owner-confirmed)"
+                    if person_name
+                    else "trusted-provider-seeded MB Person mapping (not owner-confirmed)"
                 )
             else:
                 attrib = (
@@ -482,14 +524,20 @@ def search_photos(
                 attribution=attrib,
             )
 
-        if confirmed_ext:
-            status["identity_mode"] = "confirmed_mapping"
+        if mapped_ext:
+            trusts = {m.get("trust") for m in mapped_meta}
+            if trusts == {"trusted_provider"}:
+                status["identity_mode"] = "trusted_provider_mapping"
+            elif "trusted_provider" in trusts:
+                status["identity_mode"] = "mixed_mapping"
+            else:
+                status["identity_mode"] = "confirmed_mapping"
             query = PhotoSearchQuery(
-                person_external_ids=tuple(dict.fromkeys(confirmed_ext)),
+                person_external_ids=tuple(dict.fromkeys(mapped_ext)),
                 limit=limit,
             )
             assets = photo.search_assets(query)
-            by_person_ext = {m["external_id"]: m for m in confirmed_meta}
+            by_person_ext = {m["external_id"]: m for m in mapped_meta}
             for a in assets:
                 meta: dict[str, str] = {}
                 for pref in a.people or ():
@@ -497,28 +545,37 @@ def search_photos(
                     if hit_meta:
                         meta = hit_meta
                         break
-                if not meta and confirmed_meta:
-                    meta = confirmed_meta[0]
+                if not meta and mapped_meta:
+                    meta = mapped_meta[0]
                 hits.append(
                     _asset_to_hit(
                         a,
-                        trust="confirmed",
+                        trust=meta.get("trust") or "confirmed",
                         person_id=meta.get("person_id"),
                         person_name=meta.get("name"),
                     )
                 )
             status["ok"] = True
             status["detail"] = (
-                f"confirmed_hits={len(hits)} mapped_names={mapped_names}"
+                f"mapped_hits={len(hits)} mapped_names={mapped_names}"
             )
+            if ambiguous_names:
+                status["disclosure"] = (
+                    (status.get("disclosure") or "")
+                    + f" Ambiguous identity for: {ambiguous_names}."
+                ).strip()
             return hits[:limit], status
 
         status["identity_mode"] = (
             "candidate_unmapped_person"
-            if unmapped_confirmed_names
+            if unmapped_resolvable_names
             else "candidate_provider_name"
         )
-        from memorybox.person import is_negative
+        if ambiguous_names:
+            status["identity_mode"] = "ambiguous_identity"
+            status["ok"] = True
+            status["detail"] = f"ambiguous={ambiguous_names}"
+            return [], status
 
         person_ext: list[str] = []
         for name in plan.person_names:
@@ -534,9 +591,8 @@ def search_photos(
                 )
                 if not name_hit:
                     continue
-                # I6-E: do not silently re-surface rejected X→Y pairings as candidates
                 if confirmed and is_negative(
-                    provider_key="immich",
+                    provider_key=photo_pk,
                     external_id=r.external_id,
                     person_id=confirmed.id,
                 ):
@@ -556,11 +612,11 @@ def search_photos(
         status["ok"] = True
         status["detail"] = (
             f"candidate_hits={len(hits)} "
-            f"unmapped_confirmed={unmapped_confirmed_names or []}"
+            f"unmapped_resolvable={unmapped_resolvable_names or []}"
         )
-        if unmapped_confirmed_names:
+        if unmapped_resolvable_names:
             status["disclosure"] = (
-                "Confirmed MB Person(s) exist without Immich mapping; "
+                "Resolvable MB Person(s) exist without Immich mapping; "
                 "Immich name matches are unconfirmed candidates only."
             )
         return hits[:limit], status
@@ -583,10 +639,13 @@ def search_videos(
     video: Any,
     *,
     limit: int = 24,
+    photo: Any | None = None,
 ) -> tuple[list[VideoHit], dict[str, Any]]:
-    """Search video presence spans via VideoIntelligenceProvider with I6 trust rules."""
+    """Search video presence spans with I6/I7 identity authority rules."""
     from memorybox.person import (
-        find_confirmed_person_by_name,
+        AUTHORITY_TRUSTED_PROVIDER,
+        AmbiguousIdentityError,
+        find_ask_person_by_name,
         list_provider_external_ids_for_person,
     )
     from memorybox.providers.video.dto import VideoSearchQuery
@@ -609,19 +668,30 @@ def search_videos(
             status["detail"] = health.detail or "video provider unhealthy"
             return [], status
 
-        confirmed_ext: list[str] = []
-        confirmed_meta: list[dict[str, str]] = []
+        mapped_ext: list[str] = []
+        mapped_meta: list[dict[str, str]] = []
         unmapped: list[str] = []
+        ambiguous_names: list[str] = []
         provider_key = getattr(video, "provider_key", "hvrt")
-        # Map fake_video → still look up hvrt? Fake uses face-alpha ids taught with hvrt in harness.
-        # Ask teach path uses provider_key from teach; for FakeVideoProvider teach with fake_video
-        # or hvrt. Harness will teach with provider_key matching face ids on fake.
         lookup_keys = [provider_key]
         if provider_key == "fake_video":
             lookup_keys = ["fake_video", "hvrt"]
 
+        if photo is None:
+            try:
+                from memorybox.ask.deps import build_photo
+
+                photo = build_photo()
+            except Exception:  # noqa: BLE001
+                photo = None
+
         for name in plan.person_names:
-            person = find_confirmed_person_by_name(name)
+            try:
+                person = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
+            except AmbiguousIdentityError as exc:
+                ambiguous_names.append(name)
+                status["disclosure"] = str(exc)
+                continue
             if not person:
                 continue
             ids: list[str] = []
@@ -630,30 +700,57 @@ def search_videos(
             ids = list(dict.fromkeys(ids))
             if ids:
                 for eid in ids:
-                    confirmed_ext.append(eid)
-                    confirmed_meta.append(
+                    trust = "confirmed"
+                    for m in person.provider_mappings:
+                        if m.get("external_id") == eid:
+                            if m.get("identity_authority") == AUTHORITY_TRUSTED_PROVIDER:
+                                trust = "trusted_provider"
+                            break
+                    mapped_ext.append(eid)
+                    mapped_meta.append(
                         {
                             "external_id": eid,
                             "person_id": person.id,
                             "name": name,
+                            "trust": trust,
                         }
                     )
             else:
                 unmapped.append(name)
 
         hits: list[VideoHit] = []
-        if confirmed_ext:
-            status["identity_mode"] = "confirmed_mapping"
+        if mapped_ext:
+            trusts = {m.get("trust") for m in mapped_meta}
+            if trusts == {"trusted_provider"}:
+                status["identity_mode"] = "trusted_provider_mapping"
+            elif "trusted_provider" in trusts:
+                status["identity_mode"] = "mixed_mapping"
+            else:
+                status["identity_mode"] = "confirmed_mapping"
             q = VideoSearchQuery(
-                person_external_ids=tuple(dict.fromkeys(confirmed_ext)),
+                person_external_ids=tuple(dict.fromkeys(mapped_ext)),
                 limit=limit,
             )
             segs = video.search_segments(q)
-            by_face = {m["external_id"]: m for m in confirmed_meta}
+            by_face = {m["external_id"]: m for m in mapped_meta}
             for s in segs:
                 meta = by_face.get(s.face_external_id or "") or (
-                    confirmed_meta[0] if confirmed_meta else {}
+                    mapped_meta[0] if mapped_meta else {}
                 )
+                trust = meta.get("trust") or "confirmed"
+                if trust == "trusted_provider":
+                    attrib = (
+                        f"MB Person {meta.get('name')} via trusted-provider video mapping "
+                        "(not owner-confirmed)"
+                        if meta.get("name")
+                        else "trusted-provider video mapping (not owner-confirmed)"
+                    )
+                else:
+                    attrib = (
+                        f"MB Person {meta.get('name')} via owner-confirmed video mapping"
+                        if meta.get("name")
+                        else "owner-confirmed MB Person video mapping"
+                    )
                 hits.append(
                     VideoHit(
                         provider_key=s.provider_key,
@@ -664,28 +761,27 @@ def search_videos(
                         face_external_id=s.face_external_id,
                         label=s.label,
                         play_url=s.play_url,
-                        identity_trust="confirmed",
+                        identity_trust=trust,
                         mb_person_id=meta.get("person_id"),
                         mb_person_name=meta.get("name"),
-                        attribution=(
-                            f"MB Person {meta.get('name')} via confirmed video mapping"
-                            if meta.get("name")
-                            else "confirmed MB Person video mapping"
-                        ),
+                        attribution=attrib,
                     )
                 )
             status["ok"] = True
-            status["detail"] = f"confirmed_video_hits={len(hits)}"
+            status["detail"] = f"mapped_video_hits={len(hits)}"
             return hits[:limit], status
+
+        if ambiguous_names:
+            status["identity_mode"] = "ambiguous_identity"
+            status["ok"] = True
+            status["detail"] = f"ambiguous={ambiguous_names}"
+            return [], status
 
         status["identity_mode"] = (
             "candidate_unmapped_person" if unmapped else "candidate_provider_name"
         )
-        # Candidate: search by label text from person names (never silent confirm)
         text = " ".join(plan.person_names) if plan.person_names else plan.original_ask
-        segs = video.search_segments(
-            VideoSearchQuery(text=text, limit=limit)
-        )
+        segs = video.search_segments(VideoSearchQuery(text=text, limit=limit))
         for s in segs:
             hits.append(
                 VideoHit(
@@ -707,8 +803,8 @@ def search_videos(
         status["detail"] = f"candidate_video_hits={len(hits)} unmapped={unmapped}"
         if unmapped:
             status["disclosure"] = (
-                "Confirmed MB Person(s) exist without video mapping; "
-                "video name matches are unconfirmed candidates only."
+                "Resolvable MB Person(s) exist without video provider mapping; "
+                "results are unconfirmed candidates only."
             )
         return hits[:limit], status
     except ProviderUnavailable as exc:

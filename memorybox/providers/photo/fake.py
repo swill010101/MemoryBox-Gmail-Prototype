@@ -13,7 +13,12 @@ from memorybox.providers.photo.dto import (
 class FakePhotoProvider:
     provider_key = "fake_photo"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        extra_people: list[PhotoPersonRef] | None = None,
+        extra_assets: list[PhotoAssetDto] | None = None,
+    ) -> None:
         # Immich-shaped UUID strings as *external* ids only
         self._people = [
             PhotoPersonRef(
@@ -22,6 +27,8 @@ class FakePhotoProvider:
                 display_name="Grandpa",
             )
         ]
+        if extra_people:
+            self._people.extend(extra_people)
         self._assets = [
             PhotoAssetDto(
                 provider_key=self.provider_key,
@@ -30,6 +37,19 @@ class FakePhotoProvider:
                 people=(self._people[0],),
             )
         ]
+        if extra_assets:
+            self._assets.extend(extra_assets)
+
+    def add_named_person(
+        self, *, external_id: str, display_name: str
+    ) -> PhotoPersonRef:
+        ref = PhotoPersonRef(
+            provider_key=self.provider_key,
+            external_id=external_id,
+            display_name=display_name,
+        )
+        self._people.append(ref)
+        return ref
 
     def health(self) -> ProviderHealth:
         return ProviderHealth(provider_key=self.provider_key, ok=True, detail="fake")

@@ -153,17 +153,27 @@ def _build_answer(
                 "provenance_kind": (
                     "archive_evidence"
                     if getattr(p, "identity_trust", "confirmed") == "confirmed"
-                    else "provider_candidate"
+                    else (
+                        "trusted_provider"
+                        if getattr(p, "identity_trust", "") == "trusted_provider"
+                        else "provider_candidate"
+                    )
                 ),
             }
         )
         who = ", ".join(p.people) if p.people else "people not labeled"
         where = p.location or "location not labeled"
         trust = getattr(p, "identity_trust", "confirmed")
-        label = "Fact" if trust == "confirmed" else "Candidate"
+        label = (
+            "Fact"
+            if trust == "confirmed"
+            else ("Trusted provider" if trust == "trusted_provider" else "Candidate")
+        )
         prefix = ""
         if trust == "candidate":
             prefix = "Unconfirmed Immich name candidate — "
+        elif trust == "trusted_provider":
+            prefix = "Trusted Immich/provider-seeded identity (not owner-confirmed) — "
         statements.append(
             {
                 "text": f"{prefix}Photo asset from provider ({who}; {where}).",
@@ -173,7 +183,13 @@ def _build_answer(
                 "story_ids": [],
                 "journal_ids": [],
                 "provenance_kind": (
-                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                    "archive_evidence"
+                    if trust == "confirmed"
+                    else (
+                        "trusted_provider"
+                        if trust == "trusted_provider"
+                        else "provider_candidate"
+                    )
                 ),
                 "attribution": getattr(p, "attribution", None),
             }
@@ -197,27 +213,50 @@ def _build_answer(
                 "mb_person_name": v.mb_person_name,
                 "attribution": v.attribution,
                 "provenance_kind": (
-                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                    "archive_evidence"
+                    if trust == "confirmed"
+                    else (
+                        "trusted_provider"
+                        if trust == "trusted_provider"
+                        else "provider_candidate"
+                    )
                 ),
             }
         )
-        prefix = (
-            "Unconfirmed video face candidate — " if trust == "candidate" else ""
-        )
+        if trust == "candidate":
+            prefix = "Unconfirmed video face candidate — "
+        elif trust == "trusted_provider":
+            prefix = "Trusted-provider-seeded identity (not owner-confirmed) — "
+        else:
+            prefix = ""
         statements.append(
             {
                 "text": (
                     f"{prefix}Video segment {v.video_external_id} "
                     f"[{v.start_sec:.1f}s–{v.end_sec:.1f}s]."
                 ),
-                "label": "Fact" if trust == "confirmed" else "Candidate",
+                "label": (
+                    "Fact"
+                    if trust == "confirmed"
+                    else (
+                        "Trusted provider"
+                        if trust == "trusted_provider"
+                        else "Candidate"
+                    )
+                ),
                 "evidence_ids": [],
                 "photo_external_ids": [],
                 "video_external_ids": [v.external_id],
                 "story_ids": [],
                 "journal_ids": [],
                 "provenance_kind": (
-                    "archive_evidence" if trust == "confirmed" else "provider_candidate"
+                    "archive_evidence"
+                    if trust == "confirmed"
+                    else (
+                        "trusted_provider"
+                        if trust == "trusted_provider"
+                        else "provider_candidate"
+                    )
                 ),
                 "attribution": v.attribution,
             }
@@ -359,41 +398,60 @@ def _build_answer(
         confirmed_n = sum(
             1 for v in videos if getattr(v, "identity_trust", "confirmed") == "confirmed"
         )
-        candidate_n = len(videos) - confirmed_n
-        if confirmed_n and not candidate_n:
-            parts.append(
-                f"Found {confirmed_n} video segment hit(s) via confirmed MB Person mapping."
+        trusted_n = sum(
+            1
+            for v in videos
+            if getattr(v, "identity_trust", "") == "trusted_provider"
+        )
+        candidate_n = len(videos) - confirmed_n - trusted_n
+        bits = []
+        if confirmed_n:
+            bits.append(
+                f"{confirmed_n} via owner-confirmed MB Person video mapping"
             )
-        elif candidate_n and not confirmed_n:
-            parts.append(
-                f"Found {candidate_n} unconfirmed video face-candidate hit(s) "
-                "(not MB-confirmed identity)."
+        if trusted_n:
+            bits.append(
+                f"{trusted_n} via trusted-provider-seeded MB Person "
+                "(not owner-confirmed)"
             )
-        else:
-            parts.append(
-                f"Found {confirmed_n} confirmed-mapping video hit(s) and "
-                f"{candidate_n} unconfirmed candidate hit(s)."
+        if candidate_n:
+            bits.append(
+                f"{candidate_n} unconfirmed video face-candidate "
+                "(not MB-confirmed identity)"
             )
+        if bits:
+            parts.append("Found video segment hit(s): " + "; ".join(bits) + ".")
         if video_status.get("disclosure"):
             parts.append(str(video_status["disclosure"]))
     if photos:
         confirmed_n = sum(
             1 for p in photos if getattr(p, "identity_trust", "confirmed") == "confirmed"
         )
-        candidate_n = len(photos) - confirmed_n
-        if confirmed_n and not candidate_n:
+        trusted_n = sum(
+            1
+            for p in photos
+            if getattr(p, "identity_trust", "") == "trusted_provider"
+        )
+        candidate_n = len(photos) - confirmed_n - trusted_n
+        if confirmed_n and not candidate_n and not trusted_n:
             parts.append(
-                f"Found {confirmed_n} photo hit(s) via confirmed MB Person→Immich mapping."
+                f"Found {confirmed_n} photo hit(s) via owner-confirmed MB Person→Immich mapping."
             )
-        elif candidate_n and not confirmed_n:
+        elif trusted_n and not confirmed_n and not candidate_n:
+            parts.append(
+                f"Found {trusted_n} photo hit(s) via trusted Immich/provider-seeded "
+                "MB Person (not owner-confirmed)."
+            )
+        elif candidate_n and not confirmed_n and not trusted_n:
             parts.append(
                 f"Found {candidate_n} unconfirmed Immich name-candidate photo hit(s) "
                 "(not MB-confirmed identity)."
             )
         else:
             parts.append(
-                f"Found {confirmed_n} confirmed-mapping photo hit(s) and "
-                f"{candidate_n} unconfirmed candidate hit(s)."
+                f"Found photo hit(s): {confirmed_n} owner-confirmed, "
+                f"{trusted_n} trusted-provider-seeded, "
+                f"{candidate_n} unconfirmed candidate."
             )
         if photo_status.get("disclosure"):
             parts.append(str(photo_status["disclosure"]))
@@ -479,7 +537,9 @@ class AskOrchestrator:
                 journals = R.search_journals(plan)
 
             if plan.want_video:
-                videos, video_status = R.search_videos(plan, self.video)
+                videos, video_status = R.search_videos(
+                    plan, self.video, photo=self.photo
+                )
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(
             plan,

@@ -2,7 +2,7 @@
 
 **Status:** **LOCKED — BUILD AUTHORIZED** (*Build Increment 7 only*)  
 **Date:** 2026-08-10  
-**Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Review** client **without developer intervention**, open/play/scrub **at least one real family video**, Teach / Confirm a **face** candidate to an MB Person via the **shared I6 Person & Identity** service, and then use Ask to retrieve a **person-linked video segment** for that MB Person when video modality is available. When the Video Intelligence worker is down, Ask/monolith remains up with **visible degradation** (not empty success, not process death). Synthetic harnesses prove provider/worker/review/Ask subchecks (including presence-span merging and identity survival across reprocess). A **second real family person is not required** on the owner gate.  
+**Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Review** client **without developer intervention**, open/play/scrub **at least one real family video**, Teach / Confirm a **face** candidate as an Immich-**named** person who was **not** first created in `/people/ui` — MemoryBox **lazily materializes/reuses** the canonical MB Person from the trusted Immich identity via the **shared I6 Person & Identity** service — and then use Ask to retrieve a **person-linked video segment**. Provenance must distinguish trusted-provider seed from owner-confirmed identity. When the Video Intelligence worker is down, Ask/monolith remains up with **visible degradation**. Synthetic harnesses prove provider/worker/review/Ask/bootstrap subchecks (including presence-span merging, identity survival, and no silent same-name merge). A **second real family person is not required** on the owner gate. **Do not mark I7 ACCEPTED until I7-BOOTSTRAP + I7-OWNER pass.**  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 7  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
@@ -28,7 +28,9 @@
 | Ask video | When planner `want_video` (or broad visual includes video), Ask queries VideoIntelligenceProvider. Hits cite video/segment provenance. Still PhotoProvider path unchanged |
 | Worker down | Monolith **degraded, not dead**. Visible provider status (Immich-down ≠ “no photos” rule applies to video). Video asks disclose unavailability |
 | Presence span merging | **IN** — worker/provider must merge nearby same-candidate detections into continuous presence spans via **configurable gap tolerance** (sensible P1 default; no Settings UI in I7; designed for later Settings exposure). See §5.5 |
-| Person identity | Review teach **reuses I6** resolver/teach/map. Do **not** mint a second Person path inside HVRT |
+| Person identity | Review teach **reuses I6** resolver/teach/map. Do **not** mint a second Person path inside HVRT. **Trusted Immich named identities may lazily seed a provisional MB Person** when needed (not bulk import; not owner-confirmed until owner confirms) |
+| Identity authority | **Owner-confirmed** > **trusted-provider** (e.g. named Immich) > **AI/inferred candidate**. Do not flatten. Owner correction overrides provider identity; rejected pairings retain I6 negatives |
+| Trusted-provider bootstrap | When Ask / Review teach needs a named Immich person and no clean MB mapping exists: resolve or **lazy-materialize** one canonical MB Person + `provider_identities`; never use Immich UUID as `people.id`; no silent same-name merge |
 | EVS-003 / 007 | **Person-linked video segment retrieve/play** is the I7 acceptance bar. **Laughing / speech-emotion detection is not required** for I7 unless existing HVRT reuse already provides it without research or material scope expansion — otherwise **explicitly deferred** |
 | Owner gate media | **At least one real family video** through FlightSim Review UI. Synthetic media for deterministic harness only |
 | Second person | **Not required** on FlightSim owner gate. Generalized second-person behavior proven in **synthetic harness** |
@@ -91,7 +93,8 @@ Final acceptance on **FlightSim** for I7-OWNER; harness for the rest via **`prov
 | **I7-H** | No HVRT/Immich native schemas as MB domain tables; originals not mutated | Health / inventory / policy check |
 | **I7-I** | Person teach from Review uses **shared I6 Person service** (no second mint path) | `prove-video` integration subcheck |
 | **I7-N** | **Presence span merging:** adjacent/nearby same-candidate detections merge within configured gap tolerance; a gap **exceeding** tolerance yields a **separate** span; changing/reprocessing derived spans **does not** overwrite owner-confirmed identity knowledge | `prove-video` span-merge + identity-survival subchecks |
-| **I7-OWNER** | FlightSim thin Review: **≥1 real family video** → face Teach/Confirm via I6 → Ask person-linked video segment — **no developer intervention**. Second real person **not** required | Tom on FlightSim |
+| **I7-BOOTSTRAP** | **Trusted-provider lazy Person bootstrap:** named Immich identity exists, no MB Person initially → resolve/seed provisional MB Person (provider provenance, not owner-confirmed) → Immich + HVRT map to same `people.id` (never provider UUID as PK) → Ask retrieves video; owner correction + negatives; no silent same-name merge | `prove-video` bootstrap subchecks + FlightSim |
+| **I7-OWNER** | FlightSim thin Review: Immich-**named** family person **not** pre-created in `/people/ui` → face Teach in real video → MB lazily materializes/reuses Person from trusted Immich → Ask retrieves video — **no developer intervention / SQL / API patching**. Second real person **not** required | Tom on FlightSim |
 | **I7-J** | Generalized synthetic subjects + **second-person** behavior in harness (opaque) | `prove-video` |
 | **I7-K** | I1–I6 proves remain runnable | health + prior prove commands |
 | **I7-L** | Living specs | Decision log + acceptance report |
@@ -118,6 +121,7 @@ Final acceptance on **FlightSim** for I7-OWNER; harness for the rest via **`prov
 
 | Out | Notes |
 |-----|--------|
+| Bulk Immich Person import | OUT — lazy materialization only |
 | Full EVS-014 cross-provider face enroll loop | **Increment 10** |
 | Library / Gallery / Timeline | **Increment 8** |
 | Immich write-back of identity | Locked OUT |
@@ -145,7 +149,21 @@ Final acceptance on **FlightSim** for I7-OWNER; harness for the rest via **`prov
 |-------|------|-----------|
 | **Original video file** | Preserved source media on media-server family-video library | **Preserved source** — untouched by I7 |
 | **HVRT detections, spans, transcripts, recognition candidates, etc.** | Derived / provider evidence | **Rebuildable**; may change on reprocess; **not** Person SoT |
-| **Owner-confirmed Person identity / teaching** | MB `people` / `provider_identities` / owner `assertions` in PostgreSQL | **Authoritative knowledge** — **must survive** worker reprocessing |
+| **Trusted-provider identity** (e.g. named Immich person) | Evidence that may **lazy-seed** a provisional MB Person + `provider_identities` | Usable for resolution/retrieval; **must not** be presented as owner-confirmed |
+| **Owner-confirmed Person identity / teaching** | MB `people` / `provider_identities` / owner `assertions` in PostgreSQL | **Strongest** — **must survive** worker reprocessing; overrides provider identity |
+
+AI/inferred candidates remain unconfirmed and must not silently become confirmed Person knowledge.
+
+### 5.0.1 Trusted-provider bootstrap (locked)
+
+Do **not** bulk-import Immich people. When Ask / Review teach / association needs a named Immich person:
+
+1. Resolve whether a matching canonical MB Person already exists (clean provider mapping preferred).  
+2. If none and a **unique exact-name** Immich identity exists → lazily create **provisional** MB Person (`status=unresolved`, `identity_authority=trusted_provider`) + Immich `provider_identities`.  
+3. Never use Immich UUID as `people.id`.  
+4. Display-name string match alone must **not** silently merge Persons; ambiguous cases require owner resolution.  
+5. Owner correction wins; I6 negatives prevent rejected pairings from silently reappearing.  
+6. All of the above via the **shared I6 Person service** — no second bootstrap path inside HVRT/I7.
 
 ### 5.1 VideoIntelligenceProvider
 
@@ -170,16 +188,17 @@ Provider IDs are **external_id only** (same rule as Immich). Never use HVRT UUID
 ### 5.3 Review teach (face-required)
 
 1. Owner opens/plays/scrubs a video or segment; views a **face** candidate.  
-2. Teach / Confirm “this is \<Name\>” → I6 `teach_provider_person` / map with video `provider_key` (e.g. `hvrt`).  
+2. Teach / Confirm “this is \<Name\>” → I6 `teach_provider_person` / map with video `provider_key` (e.g. `hvrt`), **after** trusted-provider resolve/seed when Immich already has that named identity. Owner does **not** need to pre-create the Person in `/people/ui`.  
 3. Reject → I6 negative semantics.  
-4. Assertions record owner authority + provenance JSON (segment/span id, time range, provider).  
+4. Assertions record authority + provenance JSON (segment/span id, time range, provider); Immich seed remains provider-originated even when video mapping is owner-taught.  
 5. Speaker/voice teach may earn in later only if already mature — **not** I7-OWNER blocker.
 
 ### 5.4 Ask
 
-- Still path: unchanged I6 trust rules.  
-- Video path: resolve confirmed MB Person → video `provider_identities` → search **merged** presence spans/segments; else candidates only with disclosure.  
-- Broad visual: may return stills + video; each citation labeled by modality + trust.
+- Still path: I6/I7 trust rules — owner-confirmed vs trusted-provider-seeded vs candidate attribution.  
+- Video path: resolve Ask Person (confirmed or trusted-provider, with lazy Immich seed when needed) → video `provider_identities` → search **merged** presence spans/segments; else candidates only with disclosure.  
+- Broad visual: may return stills + video; each citation labeled by modality + trust.  
+- Do **not** present provider-seeded identity as if the owner personally confirmed it.
 
 ### 5.5 Presence span merging (locked)
 

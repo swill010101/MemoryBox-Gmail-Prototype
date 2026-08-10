@@ -631,16 +631,35 @@ def people_get(person_id: str) -> dict[str, Any]:
 
 @app.post("/people/teach")
 def people_teach(body: TeachRequest) -> dict[str, Any]:
+    """I7 Review / I6 People teach — lazy Immich bootstrap via shared Person service."""
     try:
+        from memorybox.ask.deps import build_photo
+        from memorybox.person import AmbiguousIdentityError
+
         view = teach_provider_person(
             display_name=body.display_name,
             provider_key=body.provider_key,
             external_id=body.external_id,
             label=body.label,
+            photo=build_photo(),
         )
+    except AmbiguousIdentityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "ambiguous_identity",
+                "message": str(exc),
+                "resolution": "owner_required",
+            },
+        ) from exc
     except PersonServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+    return {
+        "ok": True,
+        "person": view.to_dict(),
+        "archive_updated": True,
+        "identity_authority": view.identity_authority,
+    }
 
 
 @app.post("/people/bulk-teach")

@@ -44,6 +44,9 @@ class FakeVideoProvider:
             ("video-synth-alpha", RawDetection("face-alpha-1", 100.0, 101.0, "AlphaFace")),
             ("video-synth-beta", RawDetection("face-beta-2", 2.0, 3.0, "BetaFace")),
             ("video-synth-beta", RawDetection("face-beta-2", 10.0, 11.0, "BetaFace")),
+            # Third face for trusted-provider bootstrap harness (I7)
+            ("video-synth-alpha", RawDetection("face-boot-3", 40.0, 41.0, "BootFace")),
+            ("video-synth-alpha", RawDetection("face-boot-3", 45.0, 46.0, "BootFace")),
         ]
 
     def health(self) -> ProviderHealth:
