@@ -49,7 +49,7 @@ python -m memorybox prove-video
 | Review UI | `/review/ui` |
 | Video worker | `python -m memorybox.video_worker` |
 | Prove | `prove-video [--flightsim]` |
-| Env | `MEMORYBOX_VIDEO_WORKER_URL`, `MEMORYBOX_VIDEO_MEDIA_ROOT`, `MEMORYBOX_VIDEO_PRESENCE_GAP_SEC` |
+| Env | `MEMORYBOX_VIDEO_WORKER_URL`, `MEMORYBOX_VIDEO_MEDIA_ROOT` (`\\media-server\photos\home videos`), `MEMORYBOX_VIDEO_PRESENCE_GAP_SEC` |
 | Bootstrap | I6 `resolve_or_seed_trusted_provider_person` / `teach_provider_person(photo=…)` — no HVRT-side Person mint |
 
 Laughing/speech-emotion: **deferred** (not required for I7).

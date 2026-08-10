@@ -22,11 +22,42 @@ Do **not** leave FlightSim-bound work only on the desktop working tree.
 ## Default FS commands to include (adapt path/branch)
 
 ```powershell
-cd <repo-root>
+cd C:\memorybox
 git fetch
 git checkout cursor/marvin-capture-v01-3344
 git pull
-# Restart Ask if it is already running, then:
+```
+
+### I7 video (Review / Ask video) — required env
+
+**Authoritative family-video root (FlightSim):** `\\media-server\photos\home videos`  
+Use **single-quoted** PowerShell so UNC backslashes are not eaten.
+
+**Terminal 1 — worker:**
+
+```powershell
+cd C:\memorybox
+$env:MEMORYBOX_VIDEO_MEDIA_ROOT = '\\media-server\photos\home videos'
+$env:MEMORYBOX_VIDEO_DERIVED_DIR = 'C:\memorybox_data\video_derived'
+$env:MEMORYBOX_VIDEO_PRESENCE_GAP_SEC = '60'
+$env:MEMORYBOX_VIDEO_WORKER_HOST = '127.0.0.1'
+$env:MEMORYBOX_VIDEO_WORKER_PORT = '8791'
+python -m memorybox.video_worker
+```
+
+**Terminal 2 — serve:**
+
+```powershell
+cd C:\memorybox
+$env:MEMORYBOX_VIDEO_WORKER_URL = 'http://127.0.0.1:8791'
+$env:MEMORYBOX_VIDEO_PROVIDER = 'hvrt'
+python -m memorybox serve
+```
+
+### Generic Ask restart (no video)
+
+```powershell
+cd C:\memorybox
 python -m memorybox serve
 # Optional acceptance / smoke:
 # $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
