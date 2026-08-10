@@ -150,23 +150,25 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 9 — Artifact thin + import jobs (EF-05/06)
 
 **Date:** 2026-08-10  
-**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9 only*  
+**Authorization:** **FINAL REVIEW** — decisions locked; awaiting *Build Increment 9 only*  
 **Definition:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md)  
 **Acceptance:** *(pending build)*  
-**Owner gate (proposed):** FlightSim first-class Artifact (label + representation) + thin about Person/Evidence (+ Story earn-in); unresolved context honest; Ask/Library earn-in; originals untouched
+**Owner gate (locked):** Real physical keepsake (pocket-watch pattern preferred, ≥2 reps); MB-managed upload to media-server; Library `artifact` modality **without requiring Person**; optional Story (incl. I5A voice earn-in); Ask by Artifact meaning; unresolved context honest
 
-### Proposed locked decisions (review)
+### Locked decisions (final review)
 
 | Decision | Rationale |
 |----------|-----------|
-| Artifact first-class domain entity | EVS-013; not Story subtype / Immich dump |
-| About-graph: Person, Evidence, Artifact | Domain truth; narrator ≠ subject |
-| Unresolved context allowed + disclosed | No invented Place/Event |
-| Thin import/register jobs | EF-05 continued; processing visible |
-| Ask cite + Library earn-in under Person filter | No second Library product |
-| SMS OUT of I9 (still on P1 backlog) | Supersedes vague Inc-3→9 SMS sequencing |
-| EVS-004/010 complete, EVS-014, Guided Capture, Export OUT | Scope lock |
-| `prove-artifact` | Operator simplicity |
+| Artifact ≠ Representation; 1 Artifact → N representations | EVS-013 / cigar-box; no per-file Artifact |
+| Small kind set (keepsake, letter, document, recipe card, clipping, photograph-of-object, other) | Browse/Ask without taxonomy project |
+| Owner gate = MB-managed upload; Evidence-ref also supported | Prove preserve, not only pointer |
+| Durable media-server storage + content hash; FlightSim ≠ archive SoT | D7; originals sacred |
+| Immutable representation bytes; immutable metadata revisions; no byte dup on edit | Parallel Story/Journal; inspect at build |
+| Library first-class `artifact` modality; Person **not** required for visibility | Fix Person-only about collapse |
+| Person filter narrows when associated | Keep I8 Person browse; one card model |
+| Optional voice → I5A Capture/STT → explicit Story Save → link | EVS-013; no Artifact-specific STT |
+| Ask by Artifact identity/metadata/relationships | Filename ≠ meaning |
+| SMS OUT (stay on P1 backlog); EVS-014 / Guided Capture / Export / recipe ontology OUT | Scope lock |
 
 **Stop:** Do not begin I9 code until Tom authorizes *Build Increment 9 only*.
 
