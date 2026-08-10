@@ -111,10 +111,10 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 8 — Library / Gallery / Timeline (EF-03)
 
 **Date:** 2026-08-10  
-**Authorization:** **AUTHORIZED** (*Build Increment 8 only*) — shipped pending FlightSim owner gate  
+**Authorization:** **AUTHORIZED** (*Build Increment 8 only*) — **ACCEPTED**  
 **Definition:** [MBBS-001_INCREMENT_8_DEFINITION.md](MBBS-001_INCREMENT_8_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_8_ACCEPTANCE.md](MBBS-001_INCREMENT_8_ACCEPTANCE.md) — **AWAITING FLIGHTSIM OWNER GATE**  
-**Owner gate (locked):** FlightSim Timeline-first Library + required Person filter (I6) + ≥3 modalities (visual + narrative/comms + other); undated explicit; video Open in Review; no invented dates; bounded/paginated reads
+**Acceptance:** [MBBS-001_INCREMENT_8_ACCEPTANCE.md](MBBS-001_INCREMENT_8_ACCEPTANCE.md) — **ACCEPTED**  
+**Owner gate (locked):** FlightSim Timeline-first Library + required Person filter (I6) + multi-modality browse; undated explicit; video Open in Review; proxied visual thumbs; no invented dates; bounded/paginated reads
 
 ### Locked decisions (build)
 
@@ -127,6 +127,9 @@ Record one section per increment. Do not wait until end of P1.
 | Paginated/bounded; no full Immich/HVRT corpus fetch | Performance; no provider mirror |
 | Thin card detail + date source + trust + deep-links | Evidence First without inspector/graph |
 | Video → Open in Review when available | No Review duplication |
+| Visual thumbs via MB media proxies (not raw Immich URLs) | Browser cannot use Immich API keys |
+| Video segments undated (Bucket Undated/All) | In-video time ≠ calendar date |
+| Narrator ≠ About subject (Story associations) | Library Person filter is subject-about |
 | Owner ≥3 modalities: visual + narrative/comms + other; calendar optional | Practical FlightSim gate |
 | SMS ingest / EVS-014 / Artifacts / Guided Capture / Export / Settings / Immich write-back OUT | Scope lock |
 | `prove-library` + I1–I7 proves remain runnable | Operator simplicity |
@@ -137,7 +140,35 @@ Record one section per increment. Do not wait until end of P1.
 |---------|------|
 | Library UI | `/library/ui` |
 | API | `GET /library/cards` |
+| Media | `/library/media/photo/...`, `/library/media/video-poster` |
 | Prove | `prove-library [--flightsim]` |
+
+**Next:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md) — **REVIEW ONLY**; do not begin I9 / Artifact build without authorization.
+
+---
+
+## Increment 9 — Artifact thin + import jobs (EF-05/06)
+
+**Date:** 2026-08-10  
+**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9 only*  
+**Definition:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md)  
+**Acceptance:** *(pending build)*  
+**Owner gate (proposed):** FlightSim first-class Artifact (label + representation) + thin about Person/Evidence (+ Story earn-in); unresolved context honest; Ask/Library earn-in; originals untouched
+
+### Proposed locked decisions (review)
+
+| Decision | Rationale |
+|----------|-----------|
+| Artifact first-class domain entity | EVS-013; not Story subtype / Immich dump |
+| About-graph: Person, Evidence, Artifact | Domain truth; narrator ≠ subject |
+| Unresolved context allowed + disclosed | No invented Place/Event |
+| Thin import/register jobs | EF-05 continued; processing visible |
+| Ask cite + Library earn-in under Person filter | No second Library product |
+| SMS OUT of I9 (still on P1 backlog) | Supersedes vague Inc-3→9 SMS sequencing |
+| EVS-004/010 complete, EVS-014, Guided Capture, Export OUT | Scope lock |
+| `prove-artifact` | Operator simplicity |
+
+**Stop:** Do not begin I9 code until Tom authorizes *Build Increment 9 only*.
 
 ---
 
