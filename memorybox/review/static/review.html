@@ -92,7 +92,8 @@
     <h1>MemoryBox Review</h1>
     <p class="sub">
       Thin Review &amp; Learn (Increment 7) — scrub → create candidate → <strong>box the face</strong> → Teach via I6.
-      <a href="/ask/ui">Ask</a> · <a href="/people/ui">People</a> · <a href="/journal/ui">Journal</a>
+      <a href="/ask/ui">Ask</a> · <a href="/library/ui" id="libraryNav">Library</a> · <a href="/people/ui">People</a> · <a href="/journal/ui">Journal</a>
+      <span id="libraryReturnWrap" hidden> · <a id="libraryReturn" href="/library/ui">← Back to Library place</a></span>
     </p>
 
     <section>
@@ -583,6 +584,29 @@
         }));
       } catch (err) { show(err); }
     };
+
+    // Library return place (I8: Open in Review → back without losing filter/card)
+    (function wireLibraryReturn() {
+      const q = new URLSearchParams(location.search);
+      const ret = q.get("return");
+      const wrap = document.getElementById("libraryReturnWrap");
+      const a = document.getElementById("libraryReturn");
+      const nav = document.getElementById("libraryNav");
+      if (ret && ret.indexOf("/library") === 0) {
+        if (a) a.href = ret;
+        if (wrap) wrap.hidden = false;
+        if (nav) nav.href = ret;
+      } else {
+        try {
+          const saved = sessionStorage.getItem("memorybox_library_place");
+          if (saved && saved.indexOf("/library") === 0) {
+            if (a) a.href = saved;
+            if (wrap) wrap.hidden = false;
+            if (nav) nav.href = saved;
+          }
+        } catch (_) { /* ignore */ }
+      }
+    })();
 
     loadVideos().catch(show);
   </script>

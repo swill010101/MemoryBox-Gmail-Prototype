@@ -33,6 +33,50 @@ class BrowserProxyManager:
     def proxy_path(self, video_external_id: str) -> Path:
         return self.proxy_dir / f"{_safe_key(video_external_id)}.mp4"
 
+    def poster_path(self, video_external_id: str, t_sec: float) -> Path:
+        posters = self.working_dir / "posters"
+        posters.mkdir(parents=True, exist_ok=True)
+        # Bucket to 0.1s so nearby seeks share a cached frame.
+        bucket = int(round(max(0.0, float(t_sec)) * 10))
+        return posters / f"{_safe_key(video_external_id)}_{bucket}.jpg"
+
+    def ensure_poster(
+        self, video_external_id: str, source: Path, t_sec: float
+    ) -> Path | None:
+        """Extract a single JPEG poster frame (derived only; originals untouched)."""
+        dest = self.poster_path(video_external_id, t_sec)
+        if dest.is_file() and dest.stat().st_size > 100:
+            return dest
+        ffmpeg = self._find_ffmpeg()
+        if not ffmpeg:
+            return None
+        if not source.is_file():
+            return None
+        t = max(0.0, float(t_sec))
+        cmd = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{t:.3f}",
+            "-i",
+            str(source),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            "-y",
+            str(dest),
+        ]
+        try:
+            subprocess.run(cmd, check=False, timeout=45, capture_output=True)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if dest.is_file() and dest.stat().st_size > 100:
+            return dest
+        return None
+
     def has_ready_proxy(self, video_external_id: str, source: Path) -> bool:
         dest = self.proxy_path(video_external_id)
         if not dest.is_file() or dest.stat().st_size < 1000:

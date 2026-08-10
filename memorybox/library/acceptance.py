@@ -194,8 +194,9 @@ def prove_increment_8(*, flightsim: bool = False) -> dict[str, Any]:
         detail=f"p1={len(ids1)} p2={len(ids2)} cursor={bool(cur)}",
     )
 
-    # Card detail fields + video Open in Review
+    # Card detail fields + video Open in Review + visual thumbs
     vcard = next((c for c in cards if c.get("modality") == "video"), None)
+    pcard = next((c for c in cards if c.get("modality") == "photo"), None)
     _check(
         "i8_h_card_detail_fields",
         bool(jcard)
@@ -205,6 +206,22 @@ def prove_increment_8(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="journal card shape",
+    )
+    _check(
+        "i8_h_photo_thumb_url",
+        bool(pcard)
+        and bool(((pcard.get("provenance") or {}).get("thumb_url") or "").startswith("/library/media/photo/")),
+        checks,
+        problems,
+        detail=f"photo_prov={(pcard or {}).get('provenance')}",
+    )
+    _check(
+        "i8_h_video_poster_url",
+        bool(vcard)
+        and "/library/media/video-poster" in str((vcard.get("provenance") or {}).get("thumb_url") or ""),
+        checks,
+        problems,
+        detail=f"video_prov={(vcard or {}).get('provenance')}",
     )
     _check(
         "i8_i_video_open_in_review",

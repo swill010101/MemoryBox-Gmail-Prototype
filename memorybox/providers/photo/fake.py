@@ -86,9 +86,14 @@ class FakePhotoProvider:
     def fetch_preview(self, external_asset_id: str) -> PhotoBytesDto:
         if not self.get_asset(external_asset_id):
             raise ProviderError(f"unknown asset {external_asset_id}")
+        # Minimal valid 1×1 PNG so Library <img> can render in harness.
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000a49444154789a63000100000500010d0a2db40000000049454e44ae426082"
+        )
         return PhotoBytesDto(
             provider_key=self.provider_key,
             external_id=external_asset_id,
-            content_type="image/jpeg",
-            data=b"\xff\xd8\xfffake",
+            content_type="image/png",
+            data=png,
         )

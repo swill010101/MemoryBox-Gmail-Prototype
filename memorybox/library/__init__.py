@@ -471,7 +471,9 @@ def _photos_for_person(
                     },
                     provenance={
                         "kind": "photo",
-                        "thumb_url": a.thumb_url,
+                        # Browser-loadable MemoryBox proxy (Immich URLs need API key).
+                        "thumb_url": f"/library/media/photo/{a.external_id}",
+                        "provider_thumb_url": a.thumb_url,
                         "web_url": a.web_url,
                     },
                 )
@@ -544,8 +546,13 @@ def _videos_for_person(
                 break
         out: list[LibraryCard] = []
         for s in segs:
+            t0 = float(s.start_sec or 0)
             # Segment times are in-video offsets, not calendar dates — undated
             # unless provider exposes a media date later.
+            poster = (
+                f"/library/media/video-poster"
+                f"?video={s.video_external_id}&t={t0:.3f}"
+            )
             out.append(
                 LibraryCard(
                     card_id=f"video:{s.provider_key}:{s.external_id}",
@@ -573,6 +580,7 @@ def _videos_for_person(
                         "start_sec": s.start_sec,
                         "end_sec": s.end_sec,
                         "face_external_id": s.face_external_id,
+                        "thumb_url": poster,
                         "note": (
                             "In-video span is not a calendar browse date — undated "
                             "until media date is known"

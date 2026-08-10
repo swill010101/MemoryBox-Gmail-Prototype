@@ -466,6 +466,66 @@ def library_card_detail(
     return {"ok": True, "card": card.to_dict()}
 
 
+@app.get("/library/media/photo/{external_id}")
+def library_photo_thumb(external_id: str) -> Response:
+    """Authenticated Immich (or fake) preview for Library cards — browser-safe."""
+    photo = build_photo()
+    try:
+        preview = photo.fetch_preview(external_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=404, detail=f"photo thumb unavailable: {exc}"
+        ) from exc
+    return Response(
+        content=preview.data,
+        media_type=preview.content_type or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@app.get("/library/media/video-poster")
+def library_video_poster(
+    video: str = Query(..., min_length=1),
+    t: float = Query(0.0),
+) -> Response:
+    """Poster frame for a video segment via the sibling video worker."""
+    import os
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(
+            status_code=503,
+            detail="MEMORYBOX_VIDEO_WORKER_URL required for video posters",
+        )
+    q = urllib.parse.urlencode(
+        {"video_external_id": video, "t": f"{max(0.0, float(t)):.3f}"}
+    )
+    url = f"{base}/poster?{q}"
+    try:
+        with urllib.request.urlopen(url, timeout=45) as resp:
+            data = resp.read()
+            ctype = resp.headers.get("Content-Type") or "image/jpeg"
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(
+            status_code=exc.code, detail=detail or "poster failed"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503, detail=f"video poster unavailable: {exc}"
+        ) from exc
+    if not data:
+        raise HTTPException(status_code=404, detail="empty poster")
+    return Response(
+        content=data,
+        media_type=ctype,
+        headers={"Cache-Control": "private, max-age=600"},
+    )
+
+
 @app.post("/ask")
 def ask_endpoint(body: AskRequest) -> dict[str, Any]:
     result = get_orchestrator().ask(body.ask, session_id=body.session_id)

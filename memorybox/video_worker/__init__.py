@@ -238,6 +238,39 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/poster":
+            vid = (qs.get("video_external_id") or [None])[0]
+            if not vid:
+                self._json(400, {"ok": False, "detail": "video_external_id required"})
+                return
+            try:
+                t_sec = float((qs.get("t") or ["0"])[0])
+            except ValueError:
+                t_sec = 0.0
+            source = _resolve_video_path(vid)
+            if not source or not source.is_file():
+                self._json(404, {"ok": False, "detail": "video not found"})
+                return
+            poster = _proxies_mgr().ensure_poster(vid, source, t_sec)
+            if not poster or not poster.is_file():
+                self._json(
+                    503,
+                    {
+                        "ok": False,
+                        "detail": "poster extract failed (ffmpeg missing or decode error)",
+                    },
+                )
+                return
+            data = poster.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if path == "/videos":
             limit = int((qs.get("limit") or ["100"])[0])
             videos = _scan_videos(limit=limit)

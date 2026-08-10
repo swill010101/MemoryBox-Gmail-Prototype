@@ -108,7 +108,27 @@
       display: block;
       margin: 0.5rem 0;
       background: #eef1f6;
+      object-fit: cover;
     }
+    .card-thumb {
+      width: 100%;
+      max-height: 140px;
+      object-fit: cover;
+      display: block;
+      margin: 0.35rem 0 0.45rem;
+      background: #eef1f6;
+      border: 1px solid var(--line);
+    }
+    .card-thumb.missing {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 72px;
+      max-height: 72px;
+      color: #6a7180;
+      font-size: 0.75rem;
+    }
+    .gallery .card-thumb { max-height: 120px; }
   </style>
 </head>
 <body>
@@ -287,6 +307,51 @@
       }
     }
 
+    function thumbUrl(c) {
+      const p = c.provenance || {};
+      return p.thumb_url || null;
+    }
+
+    function thumbHtml(c, cls) {
+      const url = thumbUrl(c);
+      if (url && (c.modality === "photo" || c.modality === "video")) {
+        return (
+          '<img class="' + cls + '" alt="" loading="lazy" src="' + esc(url) + '" ' +
+          'onerror="this.style.display=\'none\'; this.nextElementSibling && (this.nextElementSibling.hidden=false);" />' +
+          '<div class="' + cls + ' missing" hidden>' +
+          (c.modality === "video" ? "poster unavailable" : "thumb unavailable") +
+          "</div>"
+        );
+      }
+      if (c.modality === "photo" || c.modality === "video") {
+        return (
+          '<div class="' + cls + ' missing">' +
+          (c.modality === "video" ? "video segment" : "photo") +
+          "</div>"
+        );
+      }
+      return "";
+    }
+
+    function libraryReturnUrl(extra) {
+      const person_id = document.getElementById("personSel").value;
+      const bucket = document.getElementById("bucketSel").value;
+      const modality = document.getElementById("modalitySel").value;
+      const view = document.getElementById("viewSel").value;
+      const params = new URLSearchParams({ person_id: person_id || "", bucket, view });
+      if (modality) params.set("modalities", modality);
+      if (extra && extra.card_id) params.set("card", extra.card_id);
+      return "/library/ui?" + params.toString();
+    }
+
+    function persistPlace(extra) {
+      try {
+        const url = libraryReturnUrl(extra);
+        history.replaceState(null, "", url);
+        sessionStorage.setItem("memorybox_library_place", url);
+      } catch (_) { /* ignore */ }
+    }
+
     function renderCards() {
       const view = document.getElementById("viewSel").value;
       listEl.className = view === "gallery" ? "gallery" : "";
@@ -304,6 +369,7 @@
           '<span class="pill">' + esc(c.modality || "") + '</span>' +
           (c.undated ? '<span class="pill">undated</span>' : '') +
           (c.identity_trust ? '<span class="pill">' + esc(c.identity_trust) + '</span>' : '') +
+          thumbHtml(c, "card-thumb") +
           '<div><strong>' + esc(c.title || "(untitled)") + '</strong></div>' +
           '<div class="meta">' +
             (c.undated ? "Undated" : ("Browse: " + esc(c.browse_date || ""))) +
@@ -324,13 +390,21 @@
 
     function showDetail(c) {
       selectedId = c.card_id;
+      persistPlace({ card_id: c.card_id });
       renderCards();
       const links = c.deep_links || {};
       const prov = c.provenance || {};
+      const returnUrl = libraryReturnUrl({ card_id: c.card_id });
       let linkHtml = "<p><strong>Open</strong></p><ul>";
       let hasLink = false;
       if (links.review) {
-        linkHtml += '<li><a href="' + esc(links.review) + '">Open in Review</a></li>';
+        const rev =
+          links.review +
+          (links.review.indexOf("?") >= 0 ? "&" : "?") +
+          "return=" + encodeURIComponent(returnUrl);
+        linkHtml +=
+          '<li><a href="' + esc(rev) + '">Open in Review</a> ' +
+          '<span class="muted">(Library place kept via return link)</span></li>';
         hasLink = true;
       }
       if (links.people) {
@@ -356,22 +430,27 @@
       linkHtml += "</ul>";
       if (!hasLink) linkHtml = '<p class="muted">No deep-links for this card.</p>';
 
-      let thumb = "";
-      if (prov.thumb_url) {
-        thumb = '<img class="thumb" alt="" src="' + esc(prov.thumb_url) + '" />';
-      }
-
       detailEl.innerHTML =
         "<p><strong>" + esc(c.title || "") + "</strong></p>" +
-        thumb +
-        '<p class="meta">modality=' + esc(c.modality) +
-        "<br/>trust=" + esc(c.identity_trust || "n/a") +
-        "<br/>date_provenance=" + esc(c.date_provenance || "") +
-        (c.browse_date ? "<br/>browse_date=" + esc(c.browse_date) : "<br/>undated=true") +
-        (c.capture_at ? "<br/>capture_at=" + esc(c.capture_at) : "") +
-        (c.person_names && c.person_names.length
-          ? "<br/>people=" + esc(c.person_names.join(", "))
+        thumbHtml(c, "thumb") +
+        '<p class="meta">' +
+        "<strong>What</strong>: " + esc(c.modality || "") +
+        (c.summary ? " — " + esc(c.summary) : "") +
+        "<br/><strong>Date basis</strong>: " + esc(c.date_provenance || "undated") +
+        (c.browse_date ? " · browse=" + esc(c.browse_date) : " · undated") +
+        (c.browse_date_end ? " → " + esc(c.browse_date_end) : "") +
+        (c.date_precision ? " · precision=" + esc(c.date_precision) : "") +
+        (c.capture_at ? "<br/><strong>Capture</strong>: " + esc(c.capture_at) + " (separate from browse date)" : "") +
+        "<br/><strong>People</strong>: " +
+        esc((c.person_names && c.person_names.length) ? c.person_names.join(", ") : "(none listed)") +
+        "<br/><strong>Trust</strong>: " + esc(c.identity_trust || "n/a") +
+        (c.provider_key ? "<br/><strong>Source</strong>: " + esc(c.provider_key) : "") +
+        (c.external_id ? " / " + esc(c.external_id) : "") +
+        (prov.video_external_id
+          ? "<br/><strong>Video</strong>: " + esc(prov.video_external_id) +
+            " @ " + esc(String(prov.start_sec)) + "s–" + esc(String(prov.end_sec)) + "s"
           : "") +
+        (prov.note ? "<br/><span class=\"muted\">" + esc(prov.note) + "</span>" : "") +
         "</p>" +
         linkHtml +
         '<p class="muted">Raw card (evidence-first)</p>' +
@@ -432,6 +511,14 @@
           " · view=same API";
         providerDegrade(data.provider_status || {});
         renderCards();
+        persistPlace(selectedId ? { card_id: selectedId } : null);
+        if (reset) {
+          const wantCard = new URLSearchParams(location.search).get("card");
+          if (wantCard) {
+            const hit = cards.find((c) => c.card_id === wantCard);
+            if (hit) showDetail(hit);
+          }
+        }
       } catch (err) {
         statusEl.textContent = "Load failed: " + errText(err);
       }
@@ -445,11 +532,27 @@
       loadLibraryCards(true);
     };
     moreBtn.onclick = () => loadLibraryCards(false);
-    document.getElementById("viewSel").onchange = renderCards;
+    document.getElementById("viewSel").onchange = () => {
+      renderCards();
+      persistPlace(selectedId ? { card_id: selectedId } : null);
+    };
     // Options are SSR-embedded in /library/ui; only fetch if embed left the placeholder alone.
     const personSelInit = document.getElementById("personSel");
     if (!personSelInit || personSelInit.options.length <= 1) {
       loadPersonOptions().catch((e) => { statusEl.textContent = errText(e); });
+    }
+    // Restore place from query (return from Review / bookmark).
+    const boot = new URLSearchParams(location.search);
+    const bootPerson = boot.get("person_id");
+    if (bootPerson && personSelInit) {
+      personSelInit.value = bootPerson;
+      if (boot.get("bucket")) document.getElementById("bucketSel").value = boot.get("bucket");
+      if (boot.get("view")) document.getElementById("viewSel").value = boot.get("view");
+      if (boot.get("modalities")) document.getElementById("modalitySel").value = boot.get("modalities");
+      if (personSelInit.value) {
+        nextCursor = null;
+        loadLibraryCards(true);
+      }
     }
   </script>
 </body>
