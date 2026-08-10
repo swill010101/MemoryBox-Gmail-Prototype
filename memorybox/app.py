@@ -637,7 +637,14 @@ def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
 
 @app.get("/people")
 def people_list(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
-    return {"ok": True, "people": list_people(limit=limit)}
+    try:
+        rows = list_people(limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"people list failed (check MEMORYBOX_DATABASE_URL): {exc}",
+        ) from exc
+    return {"ok": True, "count": len(rows), "people": rows}
 
 
 @app.get("/people/provider/immich")

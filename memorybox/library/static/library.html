@@ -128,6 +128,7 @@
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Person filter (required)</h2>
       <p class="muted">Resolves via I6 Person service. Teach stays in People / Review.</p>
       <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <p id="peopleStatus" class="muted"></p>
       <label for="personSel">MB Person</label>
       <select id="personSel"><option value="">(select a person)</option></select>
       <div class="row">
@@ -206,20 +207,66 @@
       return data;
     }
 
+    const peopleStatusEl = document.getElementById("peopleStatus");
+
+    function errText(err) {
+      if (!err) return "unknown error";
+      if (typeof err === "string") return err;
+      if (err.detail) {
+        return typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+      }
+      try { return JSON.stringify(err); } catch { return String(err); }
+    }
+
     async function refreshPeople() {
-      const data = await j("/people?limit=200");
-      const sel = document.getElementById("personSel");
-      const keep = sel.value;
-      sel.innerHTML = '<option value="">(select a person)</option>';
-      (data.people || []).forEach((p) => {
-        const o = document.createElement("option");
-        o.value = p.id;
-        o.textContent = (p.display_name || "(unnamed)") + " · " + p.status;
-        sel.appendChild(o);
-      });
-      if (keep) sel.value = keep;
-      const q = new URLSearchParams(location.search).get("person_id");
-      if (q && !sel.value) sel.value = q;
+      peopleStatusEl.textContent = "Loading people…";
+      peopleStatusEl.className = "muted";
+      try {
+        let data;
+        try {
+          data = await j("/people?limit=200");
+        } catch (firstErr) {
+          // Fallback without query (older serve / proxy quirks)
+          data = await j("/people");
+        }
+        const rows = Array.isArray(data.people) ? data.people : [];
+        const sel = document.getElementById("personSel");
+        const keep = sel.value;
+        sel.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = rows.length
+          ? "(select a person)"
+          : "(no people returned)";
+        sel.appendChild(placeholder);
+        rows.forEach((p) => {
+          const o = document.createElement("option");
+          o.value = p.id || "";
+          o.textContent =
+            (p.display_name || "(unnamed)") +
+            " · " +
+            (p.status || "?") +
+            (p.id ? " · " + String(p.id).slice(0, 8) : "");
+          sel.appendChild(o);
+        });
+        if (keep) sel.value = keep;
+        const q = new URLSearchParams(location.search).get("person_id");
+        if (q && !sel.value) sel.value = q;
+        if (!rows.length) {
+          peopleStatusEl.className = "warn";
+          peopleStatusEl.textContent =
+            "No MB People from GET /people. Restart serve with the same MEMORYBOX_DATABASE_URL " +
+            "you used when Library worked (Rick George / Diane Scollay). " +
+            "Quick check: Invoke-RestMethod http://127.0.0.1:8790/people";
+        } else {
+          peopleStatusEl.className = "muted";
+          peopleStatusEl.textContent = "Loaded " + rows.length + " people from /people.";
+        }
+      } catch (err) {
+        peopleStatusEl.className = "warn";
+        peopleStatusEl.textContent = "People load failed: " + errText(err);
+        throw err;
+      }
     }
 
     function renderCards() {
