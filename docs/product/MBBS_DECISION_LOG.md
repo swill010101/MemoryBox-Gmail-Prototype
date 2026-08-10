@@ -170,6 +170,34 @@ Record one section per increment. Do not wait until end of P1.
 
 **Stop:** Do not begin I9 code until Tom authorizes *Build Increment 9 only*.
 
+**Next after I9:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**); then Increment 10 (EVS-014).
+
+---
+
+## Increment 9A — Person Profile, Facts & Relationships
+
+**Date:** 2026-08-10  
+**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9A only*  
+**Definition:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md)  
+**Roadmap:** After **I9 Artifact** · Before **I10 EVS-014**  
+**Acceptance:** *(pending build)*  
+**Owner gate (proposed):** FlightSim — Eugene Will = Tom’s father; Eugene birthdate 1927-06-11; Ask resolves “my father”; layered identity ≠ facts ≠ relationships ≠ life dates
+
+### Proposed locked decisions (review)
+
+| Decision | Rationale |
+|----------|-----------|
+| Layered model (identity / facts / relationships / life dates) | Do not flatten Person |
+| I6 remains identity SoT | No second Person PK path |
+| Owner-asserted kinship + provenance | EVS-084/087–089; no invented family tree |
+| Life dates as facts/events thin (birth, marriage, …) | EVS-085/086 |
+| Ask relational resolve (“my father”) | EVS-102/054 class |
+| EVS-014 OUT | Increment 10 |
+| Auto-genealogy / Immich write-back / multi-user OUT | Scope lock |
+| EVS audit vs MBEVS-001 v0.8 required in definition | Close missed assignments |
+
+**Stop:** No 9A code until Tom authorizes *Build Increment 9A only*.
+
 ---
 
 ## Increment 4 — Ask + Query Planner + basic contextual follow-up

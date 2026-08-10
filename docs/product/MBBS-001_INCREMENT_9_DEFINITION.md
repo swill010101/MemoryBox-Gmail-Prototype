@@ -196,13 +196,15 @@ Demonstrator `artifact_label` concepts = mine for ideas only — not P1 SoT.
 **Status: REVIEW ONLY.**
 
 Reply with **Build Increment 9 only** (and answers to §9 as needed) to authorize implementation.  
-Do **not** begin Increment 10 / Guided Capture / Export without separate authorization.
+Do **not** begin Increment 9A / 10 / Guided Capture / Export without separate authorization.
+
+**After I9:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**).
 
 ---
 
 ## 11. Stop line
 
-After review: no code until authorized. After acceptance: do **not** begin Increment 10+ without new authorization.
+After review: no code until authorized. After acceptance: do **not** begin Increment 9A / 10+ without new authorization.
 
 ---
 
