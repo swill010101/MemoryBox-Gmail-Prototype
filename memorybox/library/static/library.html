@@ -510,6 +510,17 @@
           " · modalities=" + (data.modalities_present || []).join(",") +
           " · view=same API";
         providerDegrade(data.provider_status || {});
+        // Video segments are undated (in-video time ≠ calendar). Timeline bucket hides them.
+        if (
+          !cards.length &&
+          modality === "video" &&
+          bucket === "timeline"
+        ) {
+          degradeEl.hidden = false;
+          degradeEl.textContent =
+            "Video segments are Undated by design (no calendar date yet). " +
+            "Switch Bucket to Undated or All, then Load Library again.";
+        }
         renderCards();
         persistPlace(selectedId ? { card_id: selectedId } : null);
         if (reset) {
