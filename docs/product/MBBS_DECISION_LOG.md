@@ -79,22 +79,28 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
-## Increment 7 — Video Intelligence + Review & Learn (definition under review)
+## Increment 7 — Video Intelligence + Review & Learn (definition locked — final review)
 
 **Date:** 2026-08-10  
-**Authorization:** **NOT AUTHORIZED** — definition for review only; **no build**  
+**Authorization:** **NOT AUTHORIZED** — decisions locked for final review; **no build**  
 **Definition:** [MBBS-001_INCREMENT_7_DEFINITION.md](MBBS-001_INCREMENT_7_DEFINITION.md)  
-**Owner gate (proposed):** Thin Review on FlightSim — teach on one video segment via I6 Person → Ask video hit when modality available; worker-down = degraded not dead
+**Owner gate (locked):** FlightSim thin Review — ≥1 real family video → face Teach/Confirm via I6 → Ask person-linked video segment; worker-down = degraded not dead; second real person not required
 
-### Proposed locks (pending Tom sign-off)
+### Locked decisions (pending *Build Increment 7 only*)
 
 | Decision | Rationale |
 |----------|-----------|
-| HVRT = sibling worker behind VideoIntelligenceProvider (D4) | Monolith never embeds HVRT schemas/process |
-| Review teach writes MB assertions / I6 Person mappings | Durable teaching; no silent AI overwrite |
-| Ask video uses provider; down → visible degrade | I4 contract earn-in; provider failure visible |
-| EVS-003 / 007 thin person-linked video; full EVS-014 OUT | Inc 10 owns cross-provider face enroll loop |
-| Media libraries stay on media-server (D7) | Config-driven remote access |
+| HVRT sibling worker behind VideoIntelligenceProvider (D4) | Monolith never embeds HVRT schemas/process |
+| P1 default worker host = FlightSim; location config-driven/portable | No FlightSim hard-code in product logic |
+| Authoritative video = media-server family-video filesystem; Plex/Immich not video SoT | LAN configured path; originals untouched |
+| Originals vs derived HVRT evidence vs MB owner teaching (PG) | Rebuildable detections; durable identity |
+| Face teach required for owner path; voice teach not blocker | Scope lock |
+| Presence span merging with configurable gap tolerance | Avoid one-second span flood; Settings UI later |
+| EVS-003/007 = person-linked retrieve/play; laughter deferred unless free earn-in | Thin acceptance |
+| `prove-video` single command with named subchecks | Operator simplicity |
+| Owner gate: real family video; second person harness-only | Practical FlightSim gate |
+| Remote mic HTTPS = ops, not I7 | Separate deploy requirement |
+| EVS-014, Gallery, Immich write-back, auto-confirm, Guided Capture, SMS, multi-user, polish OUT | Scope lock |
 
 ---
 
