@@ -34,6 +34,7 @@ from memorybox.config import settings
 from memorybox.context import ContextPatch, default_context_store
 from memorybox.db import ping
 from memorybox.export import ExportError, get_export_job, resolve_export_parent, start_export_job
+from memorybox.status import build_status_summary
 from memorybox.journal import (
     JournalServiceError,
     create_journal,
@@ -111,6 +112,7 @@ LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "libra
 ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
 GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "guided_capture.html"
 EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
+STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
 
 app = FastAPI(
     title="MemoryBox",
@@ -381,6 +383,7 @@ def health() -> dict[str, Any]:
         "artifact": "/artifact/ui",
         "guided_capture": "/guided-capture/ui",
         "export": "/export/ui",
+        "status": "/status/ui",
     }
 
 
@@ -408,6 +411,8 @@ def root() -> dict[str, Any]:
         "guided_capture": "/guided-capture",
         "export_ui": "/export/ui",
         "export": "/export",
+        "status_ui": "/status/ui",
+        "status": "/status/summary",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -539,15 +544,23 @@ def export_config() -> dict[str, Any]:
     raw = (os.environ.get("MEMORYBOX_EXPORT_DIR") or "").strip()
     allow_dev = bool(getattr(settings, "allow_dev_defaults", False))
     configured = bool(raw)
+    warning = None
     try:
         resolved = str(resolve_export_parent())
+        if raw and Path(raw).expanduser().resolve() != Path(resolved).resolve():
+            warning = (
+                f"Configured MEMORYBOX_EXPORT_DIR ({raw}) is not usable on this host; "
+                f"using {resolved}"
+            )
     except ExportError:
         resolved = None
     return {
         "export_dir_configured": configured,
-        "export_dir": raw or resolved,
+        "export_dir": resolved or raw,
+        "export_dir_env": raw or None,
         "allow_dev_defaults": allow_dev,
         "memorybox_export_format": 1,
+        "warning": warning,
     }
 
 
@@ -566,6 +579,25 @@ def export_job_status(job_id: str) -> dict[str, Any]:
         return get_export_job(job_id)
     except ExportError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/status/ui")
+def status_ui() -> FileResponse:
+    if not STATUS_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Status UI missing")
+    return FileResponse(
+        STATUS_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
+
+
+@app.get("/status/summary")
+def status_summary() -> dict[str, Any]:
+    try:
+        return build_status_summary()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"status summary failed: {exc}") from exc
 
 
 @app.get("/library/person-options")

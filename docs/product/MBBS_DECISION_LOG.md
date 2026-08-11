@@ -273,12 +273,12 @@ Record one section per increment. Do not wait until end of P1.
 
 ---
 
-## Increment 12 — MV Export (EF-16) — Built (owner acceptance pending)
+## Increment 12 — MV Export (EF-16) — ACCEPTED
 
 **Date:** 2026-08-11  
-**Authorization:** Tom: *you're approved to build*  
+**Authorization:** Tom: *you're approved to build* · Owner acceptance after FlightSim export  
 **Definition:** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**
+**Acceptance:** [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md) — **ACCEPTED**
 
 ### Locked decisions (shipped)
 
@@ -291,12 +291,33 @@ Record one section per increment. Do not wait until end of P1.
 | Response↔derived Story relationship without ambiguous duplication | Preserve promotion links |
 | SHA-256 required (originals min; preferably all packaged files) | Integrity of exit package |
 | Human-understandable external refs + INCLUDED vs EXTERNALLY_REFERENCED | Opaque IDs alone insufficient; no bulk Immich/HVRT copy |
-| Config/env destination only (`MEMORYBOX_EXPORT_DIR`) | D7 / no hard-coded host paths |
+| Config/env destination; default **`C:\memorybox_exports`** when unset / missing drive | D: suggestion was wrong on FlightSim; fall back when configured drive missing |
 | Thin async UI + visible failures; no job platform for I12 | MV exit, not ops product |
 | Import-back OUT of I12/P1; parked TASK-P1P2-003 | I12 proves export, not restore |
 
 **Prove:** `python -m memorybox prove-export` (+ `--flightsim`)  
-**UI:** `/export/ui` · **CLI:** `python -m memorybox export`
+**UI:** `/export/ui` · **CLI:** `python -m memorybox export`  
+**Next:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md) — thin Status
+
+---
+
+## Increment 12A — Thin Status (P1/P2 bridge)
+
+**Date:** 2026-08-11  
+**Authorization:** Tom: I12 accepted + define then implement Status  
+**Definition:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_12A_ACCEPTANCE.md](MBBS-001_INCREMENT_12A_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**  
+**UI:** `/status/ui` · **API:** `GET /status/summary`
+
+### Locked decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Thin tabbed Status; Archive Summary default | Owner orientation without P2 Dashboard |
+| Real counts only; unsupported → Not available / Not connected | No fake zeroes |
+| Source videos ≠ searchable moments | Required product distinction |
+| High-leverage tasks only when computable | Prefer one correction → many derived items |
+| Read surface over existing PG + bounded provider health | Status is not a second archive SoT |
 
 ---
 

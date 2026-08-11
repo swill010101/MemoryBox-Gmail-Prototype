@@ -83,14 +83,19 @@
   let jobId = null;
   let timer = null;
 
-  async function loadConfig() {
+    async function loadConfig() {
     const r = await fetch("/export/config");
     const j = await r.json();
     const el = document.getElementById("configHint");
-    if (j.export_dir_configured) {
-      el.textContent = "Configured MEMORYBOX_EXPORT_DIR: " + j.export_dir;
-    } else if (j.allow_dev_defaults) {
-      el.textContent = "Dev default destination: " + j.export_dir + " (set MEMORYBOX_EXPORT_DIR on FlightSim).";
+    const dest = document.getElementById("dest");
+    if (j.warning) {
+      el.innerHTML = "<span class='warn'>" + j.warning + "</span>";
+      if (!dest.value && j.export_dir) dest.value = j.export_dir;
+    } else if (j.export_dir_configured) {
+      el.textContent = "Configured MEMORYBOX_EXPORT_DIR → " + j.export_dir;
+    } else if (j.export_dir) {
+      el.textContent = "Default destination: " + j.export_dir + " (override with MEMORYBOX_EXPORT_DIR if needed).";
+      if (!dest.value) dest.placeholder = j.export_dir;
     } else {
       el.innerHTML = "<span class='warn'>MEMORYBOX_EXPORT_DIR is not set. Set it before exporting on FlightSim.</span>";
     }

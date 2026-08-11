@@ -7,7 +7,6 @@ import io
 import json
 import os
 import shutil
-import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -49,14 +48,34 @@ class ExportResult:
 
 
 def resolve_export_parent(explicit: str | Path | None = None) -> Path:
-    """Destination parent directory — config/env or owner-provided path (D7)."""
+    """Destination parent directory — config/env or owner-provided path (D7).
+
+    When MEMORYBOX_EXPORT_DIR is unset, use C:\\memorybox_exports on Windows
+    (or under ALLOW_DEV_DEFAULTS). If the configured path's drive/root is missing,
+    fall back to C:\\memorybox_exports so export does not target a non-existent volume.
+    """
     if explicit is not None and str(explicit).strip():
         return Path(str(explicit).strip()).expanduser()
     raw = (os.environ.get("MEMORYBOX_EXPORT_DIR") or "").strip()
+    conventional = Path("C:/memorybox_exports")
     if raw:
-        return Path(raw).expanduser()
-    if settings.allow_dev_defaults:
-        return Path(tempfile.gettempdir()) / "memorybox_exports"
+        p = Path(raw).expanduser()
+        # Drive letter that does not exist (e.g. D:\\ on a machine with only C:)
+        try:
+            anchor = p.anchor or str(p)
+            root = Path(anchor)
+            if root.exists() or (len(str(p)) >= 2 and p.drive and Path(p.drive + "/").exists()):
+                return p
+            # Path may be valid once created under an existing drive
+            if p.drive:
+                drive_root = Path(p.drive + "/")
+                if drive_root.exists():
+                    return p
+            return conventional
+        except OSError:
+            return conventional
+    if settings.allow_dev_defaults or os.name == "nt":
+        return conventional
     raise ExportError(
         "MEMORYBOX_EXPORT_DIR is required "
         "(or pass destination; or MEMORYBOX_ALLOW_DEV_DEFAULTS=1 for desktop prove only)"

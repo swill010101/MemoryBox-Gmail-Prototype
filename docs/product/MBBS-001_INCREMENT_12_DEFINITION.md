@@ -1,18 +1,18 @@
 # MBBS-001 Increment 12 — Minimum Viable Export (EF-16) — Final Definition
 
-**Status:** **BUILT — READY FOR OWNER ACCEPTANCE** (FlightSim I12-OWNER)  
-**Date:** 2026-08-11 (final definition locked; build authorized and shipped same day)  
-**Roadmap placement:** **After Increment 11 Guided Capture (ACCEPTED)** · **Likely last P1 ownership/exit increment**  
+**Status:** **ACCEPTED** (FlightSim owner 2026-08-11)  
+**Date:** 2026-08-11 (accepted)  
+**Roadmap placement:** **After Increment 11 Guided Capture (ACCEPTED)** · **Before Increment 12A (thin Status)**  
 **Owner acceptance gate (locked):** On FlightSim, **without SQL/dev intervention**, Tom starts export from the normal owner UI (`/export/ui`) and receives a **documented on-disk folder package** (`memorybox_export_format: 1`) containing: (1) MemoryBox-created knowledge including **retained version history** where the domain keeps it, (2) **first-class Guided Capture Responses** with enough campaign/question/respondent context to understand the testimony outside MemoryBox, (3) People/relationship/assertion tables (with retained history when available), (4) MemoryBox-**managed** original bytes MB stores, (5) human-readable **README**, (6) **MANIFEST** with **required SHA-256** integrity for packaged files, (7) **human-understandable external evidence references** (not opaque IDs alone) marked INCLUDED vs EXTERNALLY REFERENCED — **without** bulk-copying Immich/HVRT/Takeout libraries. Export of MB-local knowledge must succeed even if Immich/HVRT are unavailable. No subscription or vendor portal required.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 12  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx) (v0.8) — EF-16 / ownership exit (catalog bind at build)  
 **Depends on:** Domain knowledge from I1–I11 (Stories, Journals, People/relationships, Artifacts, Guided Capture Responses, Evidence refs as metadata)  
 **Prior:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **ACCEPTED**  
-**Acceptance:** [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**  
-**Next (after 12):** P1 closeout / P2 backlog only with new authorization — **no silent expansion**  
+**Acceptance:** [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md) — **ACCEPTED**  
+**Next (after 12):** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md) — thin Status (P1/P2 bridge)  
 **Later portability (parked):** Round-trip **import / restore** — [TASK-P1P2-003](MBBS_P1_P2_BACKLOG.md) — **OUT of I12/P1 acceptance**  
-**Authorization:** Build authorized 2026-08-11 (*you're approved to build*). Shipped; awaiting FlightSim owner gate.
+**Authorization:** Build authorized and **accepted** 2026-08-11. Default export destination: **`C:\memorybox_exports`** when unset or when configured drive is missing.
 
 **Product intent:** Ship a real **way out** — family ownership / no vendor lock-in. MemoryBox must not trap the family’s MB-created knowledge, retained revision history, Guided Capture testimony-in-context, or MB-managed originals by withholding export. I12 proves **exit/export**, not full backup-and-restore.
 
@@ -316,16 +316,14 @@ Keep **OUT**:
 
 ## 11. Authorization gate
 
-**Status: BUILT — READY FOR OWNER ACCEPTANCE.**
-
-Build was authorized 2026-08-11. Owner acceptance remains the FlightSim gate in [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md).
+**Status: ACCEPTED** (FlightSim owner 2026-08-11).
 
 ---
 
 ## 12. Stop line
 
-After I12 acceptance (when owner-accepted): treat P1 ownership/exit as satisfied for **MV Export**; further work (including import/restore portability) only with new authorization.
+P1 ownership/exit MV Export is accepted. Further work (Status I12A, import/restore portability) only with new authorization.
 
 ---
 
-*End of MBBS-001 Increment 12 — Minimum Viable Export (EF-16) — Final Definition. Built; owner acceptance pending.*
+*End of MBBS-001 Increment 12 — Minimum Viable Export (EF-16) — Final Definition. ACCEPTED.*
