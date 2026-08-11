@@ -25,11 +25,10 @@ Prerequisite: `$env:MEMORYBOX_OWNER_PERSON_ID` = canonical **Tom Will** `people.
 | 2 | Open **Eugene Will** profile | Identity / names / facts / contacts / relationships / life events / photo links show as distinct sections |
 | 3 | Save Eugene **birth date** `06-11-1927` (or calendar / `06111927`) | Fact shows as **06-11-1927** on profile |
 | 4 | Assert **Eugene is the father of** owner (Tom) | Relationship appears; inverse wording also shown |
-| 5 | Record **Eugene & Anne** marriage `09-25-1947` | Shared life event on both; one date |
-| 6 | Ask: **Who is my father?** | Answer names Eugene (domain resolve — not a string hack) |
-| 7 | Ask: **When was my father born?** | **06-11-1927** / 1927-06-11 birth fact |
-| 8 | Ask: **Show me pictures of my father.** | Resolves to Eugene, then existing photo path (empty OK if no Immich map) |
-| 9 | Optional: add/correct email or **10-digit** phone on profile contact cards | Contact appears; tap card to change |
+| 5 | Record **Eugene is the spouse of Anne** (and optional marriage date) | Spouse **relationship** exists — marriage date alone is not enough for Ask |
+| 6 | Ask: **Who is my father?** | Eugene |
+| 7 | Ask: **Who is my mother?** / pictures of my mother | **Anne** inferred as spouse of your father (no separate `mother_of` required) |
+| 8 | Ask: **When was my father born?** / pictures of my father | Birth fact / Eugene photos + Library link |
 
 ## Success criteria checklist (from definition §5)
 
