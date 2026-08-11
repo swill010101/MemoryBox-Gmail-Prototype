@@ -269,7 +269,34 @@ Record one section per increment. Do not wait until end of P1.
 
 **Prove:** `python -m memorybox prove-guided-capture` (+ `--flightsim`)  
 **Acceptance:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **ACCEPTED** (2026-08-11)  
-**Next:** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md) — MV Export (**REVIEW ONLY**; no build until authorized).
+**Next:** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md) — MV Export **Final Definition** (**REVIEW ONLY**; no build until authorized).
+
+---
+
+## Increment 12 — MV Export (EF-16) — Built (owner acceptance pending)
+
+**Date:** 2026-08-11  
+**Authorization:** Tom: *you're approved to build*  
+**Definition:** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_12_ACCEPTANCE.md](MBBS-001_INCREMENT_12_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**
+
+### Locked decisions (shipped)
+
+| Decision | Rationale |
+|----------|-----------|
+| Folder canonical; optional ZIP derivative | Open exit package; no proprietary archive |
+| `memorybox_export_format: 1` | Future layouts distinguishable |
+| Export retained Story/Journal (+ other) version history domain already keeps | Preserve family knowledge/provenance; do not invent history |
+| Guided Capture IN with full campaign/question/respondent context; Response first-class | Testimony understandable outside MB; not isolated text; not second Gmail archive |
+| Response↔derived Story relationship without ambiguous duplication | Preserve promotion links |
+| SHA-256 required (originals min; preferably all packaged files) | Integrity of exit package |
+| Human-understandable external refs + INCLUDED vs EXTERNALLY_REFERENCED | Opaque IDs alone insufficient; no bulk Immich/HVRT copy |
+| Config/env destination only (`MEMORYBOX_EXPORT_DIR`) | D7 / no hard-coded host paths |
+| Thin async UI + visible failures; no job platform for I12 | MV exit, not ops product |
+| Import-back OUT of I12/P1; parked TASK-P1P2-003 | I12 proves export, not restore |
+
+**Prove:** `python -m memorybox prove-export` (+ `--flightsim`)  
+**UI:** `/export/ui` · **CLI:** `python -m memorybox export`
 
 ---
 

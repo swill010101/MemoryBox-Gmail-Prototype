@@ -110,4 +110,16 @@ Families should enter **minimal facts** and get safe, disclosed inferences, e.g.
 
 ---
 
+## TASK-P1P2-003 — Export import-back / round-trip restore (portability)
+
+**Why parked:** Increment 12 (EF-16) proves **exit/export** only. Families need a way out now; full backup-and-restore is later portability work and must not expand I12/P1 acceptance.
+
+**Intent (when authorized):** Import a `memorybox_export_format` package (starting with format `1`) back into MemoryBox (or a documented successor path) preserving MB-created knowledge, retained version history, Guided Capture context, and MB-managed originals — without inventing Immich/HVRT library restore.
+
+**Explicitly OUT of:** I12 / P1 owner acceptance.
+
+**Trigger:** After I12 acceptance / P1 stop-line — open only as explicit *Build TASK-P1P2-003* (or a numbered portability slice). **Not** silent pull into I12.
+
+---
+
 *Add new TASK-P1P2-### sections below as they arise.*

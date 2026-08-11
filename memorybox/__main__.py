@@ -121,6 +121,29 @@ def main(argv: list[str] | None = None) -> int:
             "(MEMORYBOX_P1_RUNTIME_HOST=1; real Gmail via MEMORYBOX_GC_EMAIL_PROVIDER=marvin)"
         ),
     )
+    p_prove12 = sub.add_parser(
+        "prove-export",
+        help="Increment 12 Minimum Viable Export (EF-16) acceptance prove",
+    )
+    p_prove12.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (MEMORYBOX_P1_RUNTIME_HOST=1)",
+    )
+    p_export = sub.add_parser(
+        "export",
+        help="Build MV export package synchronously (format 1 folder)",
+    )
+    p_export.add_argument(
+        "--destination",
+        default=None,
+        help="Parent directory (default: MEMORYBOX_EXPORT_DIR)",
+    )
+    p_export.add_argument(
+        "--zip",
+        action="store_true",
+        help="Also write optional ZIP derivative of the folder",
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -272,6 +295,39 @@ def main(argv: list[str] | None = None) -> int:
         payload = prove_guided_capture(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-export":
+        from memorybox.export.acceptance import prove_export
+
+        payload = prove_export(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "export":
+        from memorybox.export.package import ExportError, build_export_package
+
+        try:
+            result = build_export_package(
+                destination_parent=args.destination,
+                make_zip=bool(args.zip),
+            )
+        except ExportError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+            return 1
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "export_root": str(result.export_root),
+                    "zip_path": str(result.zip_path) if result.zip_path else None,
+                    "created_at": result.created_at,
+                    "counts": result.counts,
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        return 0
 
     if args.cmd == "stt-check":
         from pathlib import Path

@@ -1,4 +1,4 @@
-"""FastAPI entry for MemoryBox monolith (Increment 11: Guided Capture)."""
+"""FastAPI entry for MemoryBox monolith (Increment 12: MV Export)."""
 from __future__ import annotations
 
 import os
@@ -33,6 +33,7 @@ from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.config import settings
 from memorybox.context import ContextPatch, default_context_store
 from memorybox.db import ping
+from memorybox.export import ExportError, get_export_job, resolve_export_parent, start_export_job
 from memorybox.journal import (
     JournalServiceError,
     create_journal,
@@ -109,6 +110,7 @@ REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
 ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
 GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "guided_capture.html"
+EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
 
 app = FastAPI(
     title="MemoryBox",
@@ -362,7 +364,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": "11",
+        "increment": "12",
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -378,6 +380,7 @@ def health() -> dict[str, Any]:
         "library": "/library/ui",
         "artifact": "/artifact/ui",
         "guided_capture": "/guided-capture/ui",
+        "export": "/export/ui",
     }
 
 
@@ -385,7 +388,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": "11",
+        "increment": "12",
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -403,6 +406,8 @@ def root() -> dict[str, Any]:
         "artifact": "/artifact",
         "guided_capture_ui": "/guided-capture/ui",
         "guided_capture": "/guided-capture",
+        "export_ui": "/export/ui",
+        "export": "/export",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -511,6 +516,56 @@ def guided_capture_ui() -> FileResponse:
         media_type="text/html",
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
+
+
+@app.get("/export/ui")
+def export_ui() -> FileResponse:
+    if not EXPORT_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Export UI missing")
+    return FileResponse(
+        EXPORT_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
+
+
+class ExportStartRequest(BaseModel):
+    destination: str | None = None
+    make_zip: bool = False
+
+
+@app.get("/export/config")
+def export_config() -> dict[str, Any]:
+    raw = (os.environ.get("MEMORYBOX_EXPORT_DIR") or "").strip()
+    allow_dev = bool(getattr(settings, "allow_dev_defaults", False))
+    configured = bool(raw)
+    try:
+        resolved = str(resolve_export_parent())
+    except ExportError:
+        resolved = None
+    return {
+        "export_dir_configured": configured,
+        "export_dir": raw or resolved,
+        "allow_dev_defaults": allow_dev,
+        "memorybox_export_format": 1,
+    }
+
+
+@app.post("/export/start")
+def export_start(body: ExportStartRequest) -> dict[str, Any]:
+    try:
+        resolve_export_parent(body.destination)
+        return start_export_job(destination=body.destination, make_zip=bool(body.make_zip))
+    except ExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/export/jobs/{job_id}")
+def export_job_status(job_id: str) -> dict[str, Any]:
+    try:
+        return get_export_job(job_id)
+    except ExportError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/library/person-options")
