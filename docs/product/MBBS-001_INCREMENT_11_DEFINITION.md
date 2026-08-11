@@ -1,7 +1,7 @@
 # MBBS-001 Increment 11 — Guided Capture (EF-11) — Final Definition
 
-**Status:** **BUILD AUTHORIZED — READY FOR OWNER ACCEPTANCE**  
-**Date:** 2026-08-11 (build authorized)  
+**Status:** **ACCEPTED** (FlightSim owner 2026-08-11)  
+**Date:** 2026-08-11 (accepted)  
 **Roadmap placement:** **After Increment 10 Cross-provider Person (ACCEPTED)** · **Before Increment 12 (MV Export)**  
 **Owner acceptance gate (locked):** On FlightSim, **without SQL/dev intervention**, Tom creates an outbound **Guided Capture campaign** for a **real recipient** (no MemoryBox account required), pastes/edits ≥3 questions, sets a **short practical cadence**, and starts. MemoryBox sends questions **on that cadence** (does **not** stall on unanswered priors). Recipient replies typed then voice; MB correlates; Tom sees **New responses**, reviews, sets **credibility**, marks reviewed; campaign **completes outbound** after the last active question is **sent** (or skipped); late replies still correlate.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) § Increment 11  
@@ -9,9 +9,9 @@
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx) (v0.8)  
 **Depends on:** I5 Story · **I5A Journal + Capture/STT** · I2 email Evidence foundations · Ask (I4) · I6 Person (optional link only) · I9A owner Person (campaign owner)  
 **Prior:** [MBBS-001_INCREMENT_10_ACCEPTANCE.md](MBBS-001_INCREMENT_10_ACCEPTANCE.md) — **ACCEPTED**  
-**Acceptance:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**  
-**Next (after 11):** Increment 12 — MV Export  
-**Authorization:** **Authorized** — Tom: *If there are no more questions or issues, you are approved to build i11* (2026-08-11).
+**Acceptance:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **ACCEPTED**  
+**Next (after 11):** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md) — MV Export (**REVIEW ONLY**)  
+**Authorization:** Build completed and **accepted** 2026-08-11. **Do not start Increment 12** until Tom authorizes.
 
 **Product intent:** Owner-configured **outbound interview campaigns** to a specific respondent (family, friend, neighbor, coworker, or other memory-holder — including non-MB users). Email is the **required** real end-to-end channel for owner acceptance. In-app owner self-prompt is **not** required for I11-OWNER.
 
@@ -372,16 +372,14 @@ No remaining product blockers for **final review sign-off** of this definition.
 
 ## 18. Authorization gate
 
-**Status: BUILD AUTHORIZED — shipped for owner acceptance.**
-
-Authorized by Tom (2026-08-11): *If there are no more questions or issues, you are approved to build i11*.
+**Status: ACCEPTED** (FlightSim owner 2026-08-11).
 
 ---
 
 ## 19. Stop line
 
-After I11 acceptance: **Increment 12** (MV Export) only with new authorization.
+After I11 acceptance: **Increment 12** (MV Export) only with new authorization — see [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md) (**REVIEW ONLY**).
 
 ---
 
-*End of MBBS-001 Increment 11 — Guided Capture (EF-11) — Final Definition. BUILD AUTHORIZED.*
+*End of MBBS-001 Increment 11 — Guided Capture (EF-11) — Final Definition. ACCEPTED.*

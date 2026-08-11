@@ -268,7 +268,8 @@ Record one section per increment. Do not wait until end of P1.
 | In-app self-prompt not required for I11-OWNER | Email campaign is the gate |
 
 **Prove:** `python -m memorybox prove-guided-capture` (+ `--flightsim`)  
-**Next:** Increment 12 — MV Export (**only after I11-OWNER**; new authorization).
+**Acceptance:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **ACCEPTED** (2026-08-11)  
+**Next:** [MBBS-001_INCREMENT_12_DEFINITION.md](MBBS-001_INCREMENT_12_DEFINITION.md) — MV Export (**REVIEW ONLY**; no build until authorized).
 
 ---
 
