@@ -190,27 +190,27 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 9A — Person Profile, Facts & Relationships
 
 **Date:** 2026-08-11  
-**Authorization:** **FINAL REVIEW** — decisions locked; awaiting *Build Increment 9A only*  
+**Authorization:** **BUILD COMPLETE** — harness green; FlightSim owner acceptance pending  
 **Definition:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_9A_ACCEPTANCE.md](MBBS-001_INCREMENT_9A_ACCEPTANCE.md)  
 **Roadmap:** After **I9 Artifact (ACCEPTED)** · Before **I10 EVS-014**  
-**Acceptance:** *(pending build)*  
-**Owner gate (locked):** Canonical `owner_person_id`; Eugene = father + birthdate 1927-06-11; shared Eugene↔Anne marriage/anniversary; Ask relational resolve (no string hacks); one relationship SoT + derived inverses; correction uncle→father; extend `/people/ui`
+**Owner gate:** `MEMORYBOX_OWNER_PERSON_ID`; Eugene father + birthdate; shared marriage; Ask relational resolve; `/people/ui` Profile
 
-### Locked decisions (final review)
+### Locked decisions (shipped)
 
 | Decision | Rationale |
 |----------|-----------|
-| Explicit `owner_person_id` for “my/me” relativity; never infer via display_name | Single-owner P1; no Tom-name search |
+| Explicit `MEMORYBOX_OWNER_PERSON_ID` for “my/me” relativity; never infer via display_name | Single-owner P1 |
 | One relationship assertion SoT; derive inverses in service | Prevent dual-row drift |
-| Multiple qualified parents/roles thin P1; disclose ambiguity | No one-father schema; no full genealogy |
-| Marriage/anniversary = shared life event both participants | EVS-086; not duplicated flat fields |
-| Layered facts / aliases / contacts / relationships / life events | Not person_facts junk drawer; contacts ≠ identity providers |
-| Extend `/people/ui` Profile; no second People product | Coherent owner surface |
-| Ask: owner → Relationship service → Person → existing retrieve | No `"my father"="Eugene Will"` |
+| Multiple qualified parents/roles thin P1; disclose ambiguity | No one-father schema |
+| Marriage/anniversary = shared life event both participants | EVS-086 |
+| Layered facts / aliases / contacts / relationships / life events | Not junk drawer |
+| Extend `/people/ui` Profile | Coherent owner surface |
+| Ask: owner → Relationship service → Person → existing retrieve | No string hacks |
 | Correction supersedes; prior provenance retained | Trust |
-| EVS-014 / tree viz / auto-genealogy / Immich write-back / multi-user / Places platform / universal lazy-teach / polish OUT | Scope lock |
+| EVS-014 / tree viz / auto-genealogy / Immich write-back / multi-user / Places / universal lazy-teach / polish OUT | Scope lock |
 
-**Stop:** Do not begin 9A code until Tom authorizes *Build Increment 9A only*.
+**Stop:** Do not begin Increment 10 until Tom authorizes.
 
 ---
 

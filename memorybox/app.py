@@ -85,6 +85,13 @@ DOMAIN_V0_TABLES = (
     "artifacts",
     "artifact_metadata_revisions",
     "artifact_representations",
+
+    "person_aliases",
+    "person_facts",
+    "person_contact_points",
+    "person_relationship_assertions",
+    "shared_life_events",
+    "shared_life_event_participants",
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
@@ -98,7 +105,7 @@ ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "art
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 9: Artifact.",
+    description="MemoryBox modular monolith (MBBS-001). Increment 9A: Person Profile.",
 )
 
 _orchestrator: AskOrchestrator | None = None
@@ -338,7 +345,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": 9,
+        "increment": "9A",
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -360,7 +367,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": 9,
+        "increment": "9A",
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -1000,6 +1007,13 @@ def people_list(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     return {"ok": True, "count": len(rows), "people": rows}
 
 
+@app.get("/people/owner")
+def people_owner() -> dict[str, Any]:
+    from memorybox.profile import owner_config_status
+
+    return {"ok": True, **owner_config_status()}
+
+
 @app.get("/people/provider/immich")
 def people_immich_list() -> dict[str, Any]:
     photo = build_photo()
@@ -1048,6 +1062,170 @@ def people_get(person_id: str) -> dict[str, Any]:
     if not view:
         raise HTTPException(status_code=404, detail="person not found")
     return {"ok": True, "person": view.to_dict()}
+
+
+@app.get("/people/{person_id}/profile")
+def people_profile(person_id: str) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, get_person_profile
+
+    try:
+        profile = get_person_profile(person_id)
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "profile": profile}
+
+
+class ProfileFactBody(BaseModel):
+    fact_kind: str
+    value_date: str | None = None
+    value_text: str | None = None
+    note: str | None = None
+
+
+class ProfileAliasBody(BaseModel):
+    alias_kind: str
+    alias_text: str
+    note: str | None = None
+
+
+class ProfileContactBody(BaseModel):
+    contact_kind: str
+    value_text: str
+    note: str | None = None
+
+
+class ProfileRelationshipBody(BaseModel):
+    from_person_id: str
+    to_person_id: str
+    role_kind: str
+    note: str | None = None
+
+
+class ProfileSupersedeRelBody(BaseModel):
+    from_person_id: str
+    to_person_id: str
+    role_kind: str
+    note: str | None = None
+
+
+class ProfileMarriageBody(BaseModel):
+    person_a_id: str
+    person_b_id: str
+    event_date: str | None = None
+    label: str | None = None
+    note: str | None = None
+
+
+@app.post("/people/{person_id}/facts")
+def people_add_fact(person_id: str, body: ProfileFactBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, add_fact
+
+    try:
+        fact = add_fact(
+            person_id,
+            fact_kind=body.fact_kind,
+            value_date=body.value_date,
+            value_text=body.value_text,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "fact": fact.to_dict()}
+
+
+@app.post("/people/{person_id}/aliases")
+def people_add_alias(person_id: str, body: ProfileAliasBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, add_alias
+
+    try:
+        alias = add_alias(
+            person_id,
+            alias_kind=body.alias_kind,
+            alias_text=body.alias_text,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "alias": alias.to_dict()}
+
+
+@app.post("/people/{person_id}/contacts")
+def people_add_contact(person_id: str, body: ProfileContactBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, add_contact
+
+    try:
+        contact = add_contact(
+            person_id,
+            contact_kind=body.contact_kind,
+            value_text=body.value_text,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "contact": contact.to_dict()}
+
+
+@app.post("/people/relationships")
+def people_assert_relationship(body: ProfileRelationshipBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, assert_relationship
+
+    try:
+        rel = assert_relationship(
+            from_person_id=body.from_person_id,
+            to_person_id=body.to_person_id,
+            role_kind=body.role_kind,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "relationship": rel.to_dict()}
+
+
+@app.post("/people/relationships/{assertion_id}/withdraw")
+def people_withdraw_relationship(assertion_id: str, note: str | None = None) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, withdraw_relationship
+
+    try:
+        rel = withdraw_relationship(assertion_id, note=note)
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "relationship": rel.to_dict()}
+
+
+@app.post("/people/relationships/{assertion_id}/supersede")
+def people_supersede_relationship(
+    assertion_id: str, body: ProfileSupersedeRelBody
+) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, supersede_relationship
+
+    try:
+        rel = supersede_relationship(
+            assertion_id,
+            from_person_id=body.from_person_id,
+            to_person_id=body.to_person_id,
+            role_kind=body.role_kind,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "relationship": rel.to_dict()}
+
+
+@app.post("/people/life-events/marriage")
+def people_create_marriage(body: ProfileMarriageBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, create_marriage_event
+
+    try:
+        ev = create_marriage_event(
+            person_a_id=body.person_a_id,
+            person_b_id=body.person_b_id,
+            event_date=body.event_date,
+            label=body.label,
+            note=body.note,
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "life_event": ev.to_dict()}
 
 
 @app.post("/people/teach")

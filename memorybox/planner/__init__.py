@@ -242,6 +242,8 @@ class QueryPlan:
     want_still: bool = False
     want_video: bool = False
     person_names: tuple[str, ...] = ()
+    person_ids: tuple[str, ...] = ()
+    """MB Person ids from relational resolve (I9A) — preferred over name lookup."""
     place_names: tuple[str, ...] = ()
     event_labels: tuple[str, ...] = ()
     trip_labels: tuple[str, ...] = ()
@@ -258,6 +260,9 @@ class QueryPlan:
     subject_changed: bool = False
     retrieval_constraints: tuple[str, ...] = ()
     """Opaque constraint tokens actually applied to retrieval (rule H)."""
+    # I9A profile-backed intents (who / birth / anniversary) — set by orchestrator
+    profile_intent: str | None = None
+    profile_answer: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

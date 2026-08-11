@@ -559,6 +559,59 @@ class AskOrchestrator:
         ctx = self.store.get_or_create(session_id)
         plan = plan_ask(text, ctx)
 
+        # I9A: owner → Relationship service → Person id (no display_name string hacks)
+        from dataclasses import replace
+
+        from memorybox.profile import resolve_relational_ask
+
+        rel = resolve_relational_ask(text)
+        if rel.intent != "none":
+            notes = list(plan.notes) + ["i9a_relational_resolve"]
+            if rel.ok and rel.person_id:
+                names = list(plan.person_names)
+                # Drop raw "my father" style tokens if planner extracted them as people
+                drop = {
+                    f"my {rel.role_phrase}" if rel.role_phrase else "",
+                    rel.role_phrase or "",
+                    "me",
+                    "myself",
+                }
+                names = [n for n in names if n.lower() not in drop and not n.lower().startswith("my ")]
+                if rel.display_name and rel.display_name not in names:
+                    names.append(rel.display_name)
+                plan = replace(
+                    plan,
+                    person_ids=(rel.person_id,),
+                    person_names=tuple(names),
+                    notes=tuple(notes),
+                    profile_intent=rel.intent,
+                    profile_answer=rel.to_dict(),
+                )
+                # Who / birth / anniversary: profile facts, not photo modality required
+                if rel.intent in ("who", "birth", "anniversary"):
+                    plan = replace(
+                        plan,
+                        want_photo=False,
+                        want_still=False,
+                        want_video=False,
+                        want_visual=False,
+                        visual_scope="none",
+                        want_communication=False,
+                        want_calendar=False,
+                        want_story=False,
+                        want_journal=False,
+                        want_artifact=False,
+                    )
+            elif not rel.ok:
+                plan = replace(
+                    plan,
+                    notes=tuple(notes),
+                    profile_intent=rel.intent,
+                    profile_answer=rel.to_dict(),
+                    requires_clarification=bool(rel.ambiguity),
+                    ambiguity_message=rel.ambiguity or rel.disclosure,
+                )
+
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
         photos: list[R.PhotoHit] = []
@@ -568,6 +621,110 @@ class AskOrchestrator:
         stories: list[R.StoryHit] = []
         journals: list[R.JournalHit] = []
         artifacts: list[dict[str, Any]] = []
+
+        # Profile-backed short-circuit (who / birth / anniversary)
+        if (
+            getattr(plan, "profile_intent", None) in ("who", "birth", "anniversary")
+            and getattr(plan, "profile_answer", None)
+            and (plan.profile_answer or {}).get("ok")
+        ):
+            ans = plan.profile_answer or {}
+            statements: list[dict[str, Any]] = []
+            citations: list[dict[str, Any]] = []
+            if plan.profile_intent == "who":
+                name = ans.get("display_name") or ans.get("person_id")
+                role = ans.get("role_phrase") or "relative"
+                text_out = f"Your {role} is {name}."
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Relationship",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                        "provenance_kind": "owner_relationship",
+                        "attribution": "Owner-asserted relationship",
+                        "person_id": ans.get("person_id"),
+                        "assertion_id": ans.get("assertion_id"),
+                    }
+                )
+            elif plan.profile_intent == "birth":
+                fact = ans.get("fact") or {}
+                name = ans.get("display_name") or "that person"
+                bd = fact.get("value_date") or fact.get("value_text")
+                text_out = f"{name} was born on {bd}."
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Person fact",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                        "provenance_kind": "owner_person_fact",
+                        "attribution": "Owner-asserted person fact",
+                        "person_id": ans.get("person_id"),
+                        "fact": fact,
+                    }
+                )
+            else:
+                ev = ans.get("life_event") or {}
+                bd = ev.get("event_date")
+                parts = ev.get("participants") or []
+                names = " and ".join(
+                    p.get("display_name") or p.get("person_id") for p in parts
+                )
+                text_out = (
+                    f"Anniversary / marriage date for {names}: {bd}."
+                    if bd
+                    else f"Marriage recorded for {names} (date not set)."
+                )
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Life event",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                        "provenance_kind": "owner_life_event",
+                        "attribution": "Owner-asserted shared life event",
+                        "life_event": ev,
+                    }
+                )
+            citations.append(
+                {
+                    "kind": "profile",
+                    "intent": plan.profile_intent,
+                    "person_id": ans.get("person_id"),
+                    "assertion_id": ans.get("assertion_id"),
+                    "provenance_kind": "owner_profile",
+                }
+            )
+            new_ctx = _update_context_from_plan(ctx, plan, [], [], [], [])
+            self.store.save(new_ctx)
+            providers = provider_snapshot(photo=self.photo, llm=self.llm, video=self.video)
+            providers["relational_resolve"] = ans
+            return AskResult(
+                session_id=new_ctx.session_id,
+                ask=text,
+                plan=plan.to_dict(),
+                context=new_ctx.to_dict(),
+                answer_kind="profile_backed",
+                answer_text=text_out,
+                statements=statements,
+                citations=citations,
+                evidence_hits=[],
+                photo_hits=[],
+                story_hits=[],
+                journal_hits=[],
+                video_hits=[],
+                artifact_hits=[],
+                missing_disclosure=None,
+                provider_status=providers,
+                inventing=False,
+            )
 
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
@@ -591,6 +748,21 @@ class AskOrchestrator:
             if plan.want_video:
                 videos, video_status = R.search_videos(
                     plan, self.video, photo=self.photo
+                )
+
+        # Disclose failed relational resolve when no other answer path
+        if (
+            getattr(plan, "profile_answer", None)
+            and not (plan.profile_answer or {}).get("ok")
+            and (plan.profile_answer or {}).get("disclosure")
+            and not plan.requires_clarification
+        ):
+            disc = (plan.profile_answer or {}).get("disclosure")
+            if not (photos or evidence or stories or journals or videos or artifacts):
+                plan = replace(
+                    plan,
+                    requires_clarification=True,
+                    ambiguity_message=disc,
                 )
 
         answer_kind, answer_text, statements, citations, missing = _build_answer(

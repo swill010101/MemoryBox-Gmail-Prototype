@@ -1,0 +1,78 @@
+"""Increment 9A — Person Profile, facts, contacts, relationships, life events."""
+from memorybox.profile.ask_resolve import (
+    RelationalAskResolve,
+    ensure_person_named,
+    get_person_profile,
+    resolve_relational_ask,
+)
+from memorybox.profile.facts import (
+    add_alias,
+    add_contact,
+    add_fact,
+    get_current_fact,
+    list_aliases,
+    list_contacts,
+    list_facts,
+    supersede_contact,
+)
+from memorybox.profile.life_events import (
+    create_marriage_event,
+    find_marriage_between,
+    get_life_event,
+    list_life_events_for_person,
+)
+from memorybox.profile.owner import (
+    ALLOWED_ROLES,
+    ASK_ROLE_ALIASES,
+    ENV_OWNER_PERSON_ID,
+    INVERSE_ROLE,
+    AmbiguousRelationshipError,
+    ProfileServiceError,
+    get_owner_person_id,
+    owner_config_status,
+    require_owner_person_id,
+)
+from memorybox.profile.relationships import (
+    assert_relationship,
+    list_relationship_assertions,
+    project_derived_edges,
+    resolve_one_relative,
+    resolve_relatives_for_person,
+    supersede_relationship,
+    withdraw_relationship,
+)
+
+__all__ = [
+    "ALLOWED_ROLES",
+    "ASK_ROLE_ALIASES",
+    "ENV_OWNER_PERSON_ID",
+    "INVERSE_ROLE",
+    "AmbiguousRelationshipError",
+    "ProfileServiceError",
+    "RelationalAskResolve",
+    "add_alias",
+    "add_contact",
+    "add_fact",
+    "assert_relationship",
+    "create_marriage_event",
+    "ensure_person_named",
+    "find_marriage_between",
+    "get_current_fact",
+    "get_life_event",
+    "get_owner_person_id",
+    "get_person_profile",
+    "list_aliases",
+    "list_contacts",
+    "list_facts",
+    "list_life_events_for_person",
+    "list_relationship_assertions",
+    "owner_config_status",
+    "project_derived_edges",
+    "require_owner_person_id",
+    "resolve_one_relative",
+    "resolve_relational_ask",
+    "resolve_relatives_for_person",
+    "supersede_contact",
+    "supersede_relationship",
+    "withdraw_relationship",
+]

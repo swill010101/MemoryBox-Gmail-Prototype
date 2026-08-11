@@ -1,16 +1,17 @@
 # MBBS-001 Increment 9A — Person Profile, Facts & Relationships — Definition (final review — decisions locked; not build-authorized)
 
-**Status:** **FINAL REVIEW** — decisions locked from owner answers; awaiting explicit *Build Increment 9A only*  
+**Status:** **BUILD COMPLETE** — harness green; awaiting FlightSim owner acceptance  
 **Date:** 2026-08-11  
 **Roadmap placement:** **After Increment 9 Artifact (ACCEPTED)** · **Before Increment 10 (EVS-014)**  
-**Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Person Profile** surface on **`/people/ui`** **without developer intervention**, with one **canonical owner Person** (`owner_person_id` → MB `people.id`) as the relativity anchor for “my … / me”. He can record **owner-authoritative facts** (e.g. Eugene Will birthdate **1927-06-11**) with provenance, record **family relationships** (e.g. **Eugene Will father_of owner**) as **one** provenance-bearing assertion with **derived inverse** semantics, record a **shared marriage/anniversary life event** for Eugene & Anne (EVS-086 class) associated with **both** participants, see identity / aliases / facts / contacts / relationships / life events distinctly (not one flat Person row), and use Ask so that **“Who is my father?”**, **“When was my father born?”**, and **“Show me pictures of my father.”** resolve via **owner → Relationship service → MB Person id → existing retrieve** — never via display-name string substitution. Correction must supersede a wrong relationship (e.g. uncle → father) while retaining prior provenance and stopping Ask from treating the withdrawn edge as current. Synthetic harnesses prove layered model, inverse resolution, qualified multi-parent support, shared marriage event, correction, ambiguity disclosure, and no silent overwrite.  
+**Owner acceptance gate (locked):** On FlightSim, Tom can open the thin **Person Profile** surface on **`/people/ui`** **without developer intervention**, with one **canonical owner Person** (`MEMORYBOX_OWNER_PERSON_ID` → MB `people.id`) as the relativity anchor for “my … / me”. He can record **owner-authoritative facts** (e.g. Eugene Will birthdate **1927-06-11**) with provenance, record **family relationships** (e.g. **Eugene Will father_of owner**) as **one** provenance-bearing assertion with **derived inverse** semantics, record a **shared marriage/anniversary life event** for Eugene & Anne (EVS-086 class) associated with **both** participants, see identity / aliases / facts / contacts / relationships / life events distinctly (not one flat Person row), and use Ask so that **“Who is my father?”**, **“When was my father born?”**, and **“Show me pictures of my father.”** resolve via **owner → Relationship service → MB Person id → existing retrieve** — never via display-name string substitution. Correction must supersede a wrong relationship (e.g. uncle → father) while retaining prior provenance and stopping Ask from treating the withdrawn edge as current. Synthetic harnesses prove layered model, inverse resolution, qualified multi-parent support, shared marriage event, correction, ambiguity disclosure, and no silent overwrite.  
 **Charter source:** [MBBS-001](MBBS-001_MEMORYBOX_BUILD_SPECIFICATION.md) · Living Specs  
 **Governed by:** [MB_P1_ENGINEERING_RULES.md](../source/MB_P1_ENGINEERING_RULES.md) · [MB_LOCKED_DECISIONS_P1.md](../source/MB_LOCKED_DECISIONS_P1.md)  
 **EVS catalog (authoritative):** [MBEVS-001_EVS_Catalog_v0.8.xlsx](../source/MBEVS-001_EVS_Catalog_v0.8.xlsx)  
 **Depends on:** **Increment 6 Person & Identity (ACCEPTED)** · Ask (I4) · Library (I8 ACCEPTED) · **Increment 9 Artifact (ACCEPTED)**  
 **Prior:** [MBBS-001_INCREMENT_9_ACCEPTANCE.md](MBBS-001_INCREMENT_9_ACCEPTANCE.md) — **ACCEPTED**  
+**Acceptance:** [MBBS-001_INCREMENT_9A_ACCEPTANCE.md](MBBS-001_INCREMENT_9A_ACCEPTANCE.md)  
 **Next (after 9A):** Increment 10 — EVS-014  
-**Authorization:** *Do not build* until Tom authorizes *Build Increment 9A only*.
+**Authorization:** Build authorized 2026-08-11. **Do not start Increment 10** until Tom authorizes.
 
 ---
 
@@ -243,9 +244,9 @@ Hosts unchanged: **FlightSim** = app + PostgreSQL; **media-server** = durable me
 
 ## 11. Authorization gate
 
-**Status: FINAL REVIEW — decisions locked. No implementation yet.**
+**Status: BUILD COMPLETE — awaiting FlightSim owner acceptance.**
 
-Reply with **Build Increment 9A only** to authorize code.  
+Harness: `python -m memorybox prove-person-profile` (green on desktop).  
 Do **not** begin Increment 10 / Guided Capture / Export / TASK-P1P2-001 under this authorization.
 
 ---

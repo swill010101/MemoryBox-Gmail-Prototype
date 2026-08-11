@@ -438,6 +438,50 @@ def search_photos(
         unmapped_resolvable_names: list[str] = []
         ambiguous_names: list[str] = []
 
+        # I9A: prefer MB Person ids from relational resolve (owner ? Relationship ? id)
+        from memorybox.person import get_person as _get_person_by_id
+
+        resolved_by_id: set[str] = set()
+        for pid in getattr(plan, "person_ids", ()) or ():
+            person = _get_person_by_id(pid)
+            if not person:
+                continue
+            resolved_by_id.add(person.id)
+            name = person.display_name or pid
+            ids: list[str] = []
+            for pk in lookup_keys:
+                ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            ids = list(dict.fromkeys(ids))
+            if ids:
+                mapped_names.append(name)
+                mapping_auth = person.identity_authority
+                for m in person.provider_mappings:
+                    if (
+                        m.get("provider_key") in lookup_keys
+                        and m.get("external_id") in ids
+                    ):
+                        mapping_auth = (
+                            m.get("identity_authority") or person.identity_authority
+                        )
+                        break
+                trust = (
+                    "trusted_provider"
+                    if mapping_auth == AUTHORITY_TRUSTED_PROVIDER
+                    else "confirmed"
+                )
+                for eid in ids:
+                    mapped_ext.append(eid)
+                    mapped_meta.append(
+                        {
+                            "external_id": eid,
+                            "person_id": person.id,
+                            "name": name,
+                            "trust": trust,
+                        }
+                    )
+            else:
+                unmapped_resolvable_names.append(name)
+
         for name in plan.person_names:
             try:
                 person = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
@@ -446,6 +490,8 @@ def search_photos(
                 status["disclosure"] = str(exc)
                 continue
             if person:
+                if person.id in resolved_by_id:
+                    continue
                 ids: list[str] = []
                 for pk in lookup_keys:
                     ids.extend(list_provider_external_ids_for_person(person.id, pk))
@@ -685,6 +731,38 @@ def search_videos(
             except Exception:  # noqa: BLE001
                 photo = None
 
+        from memorybox.person import get_person as _get_person_by_id
+
+        seen_pids: set[str] = set()
+        for pid in getattr(plan, "person_ids", ()) or ():
+            person = _get_person_by_id(pid)
+            if not person:
+                continue
+            seen_pids.add(person.id)
+            ids: list[str] = []
+            for pk in lookup_keys:
+                ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            ids = list(dict.fromkeys(ids))
+            if ids:
+                for eid in ids:
+                    trust = "confirmed"
+                    for m in person.provider_mappings:
+                        if m.get("external_id") == eid:
+                            if m.get("identity_authority") == AUTHORITY_TRUSTED_PROVIDER:
+                                trust = "trusted_provider"
+                            break
+                    mapped_ext.append(eid)
+                    mapped_meta.append(
+                        {
+                            "external_id": eid,
+                            "person_id": person.id,
+                            "name": person.display_name or pid,
+                            "trust": trust,
+                        }
+                    )
+            else:
+                unmapped.append(person.display_name or pid)
+
         for name in plan.person_names:
             try:
                 person = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
@@ -693,6 +771,8 @@ def search_videos(
                 status["disclosure"] = str(exc)
                 continue
             if not person:
+                continue
+            if person.id in seen_pids:
                 continue
             ids: list[str] = []
             for pk in lookup_keys:
@@ -824,7 +904,7 @@ def search_videos(
 def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
     """Retrieve current Story versions relevant to plan constraints / ask tokens.
 
-    Queries stories/story_versions (+ person relationships) directly — no silo,
+    Queries stories/story_versions (+ person relationships) directly ? no silo,
     no required story_passage Evidence materialization for I5.
     """
     if not getattr(plan, "want_story", False):
@@ -914,7 +994,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 continue
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or ""
-            excerpt = body[:200] + ("…" if len(body) > 200 else "")
+            excerpt = body[:200] + ("?" if len(body) > 200 else "")
             hits.append(
                 StoryHit(
                     story_id=sid,
@@ -955,7 +1035,7 @@ class JournalHit:
 
 
 def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
-    """Retrieve current Journal versions via direct PG — no journal_passage required."""
+    """Retrieve current Journal versions via direct PG ? no journal_passage required."""
     if not getattr(plan, "want_journal", False):
         return []
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
@@ -987,7 +1067,7 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
         ]
     loose = not tokens
     # Listing asks ("show my journals") must not truncate owner entries under
-    # synthetic prove noise — pull a wider recent window when unconstrained.
+    # synthetic prove noise ? pull a wider recent window when unconstrained.
     fetch_n = max(limit * 8, 80) if loose else limit * 8
     result_n = max(limit, 50) if loose else limit
 
@@ -1064,7 +1144,7 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
                     continue
             author = r["author_name"] or "owner"
             body = r["body_text"] or ""
-            excerpt = body[:200] + ("…" if len(body) > 200 else "")
+            excerpt = body[:200] + ("?" if len(body) > 200 else "")
             prec = r.get("described_precision") or "unknown"
             hits.append(
                 JournalHit(

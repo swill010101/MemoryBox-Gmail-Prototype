@@ -84,6 +84,18 @@ def main(argv: list[str] | None = None) -> int:
             "(set MEMORYBOX_ARTIFACT_MEDIA_ROOT; optional MEMORYBOX_I9_OWNER_ARTIFACT_ID)"
         ),
     )
+    p_prove9a = sub.add_parser(
+        "prove-person-profile",
+        help="Increment 9A Person Profile acceptance prove",
+    )
+    p_prove9a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Final P1-runtime-host acceptance "
+            "(set MEMORYBOX_P1_RUNTIME_HOST=1 and MEMORYBOX_OWNER_PERSON_ID)"
+        ),
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -210,6 +222,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.artifact.acceptance import run_prove_artifact
 
         payload = run_prove_artifact(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-person-profile":
+        from memorybox.profile.acceptance import run_prove_person_profile
+
+        payload = run_prove_person_profile(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

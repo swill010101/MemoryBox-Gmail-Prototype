@@ -53,9 +53,89 @@
   <main>
     <h1>MemoryBox People</h1>
     <p class="sub">
-      Thin Person &amp; Identity (Increment 6) — teach Immich identity → MB Person → Ask photos.
-      <a href="/ask/ui">Ask</a> · <a href="/journal/ui">Journal</a> · <a href="/story/ui">Story</a>
+      Person &amp; Identity (I6) + Profile facts/relationships (I9A).
+      Canonical owner: <code id="ownerStatus">(loading)</code>.
+      <a href="/ask/ui">Ask</a> · <a href="/journal/ui">Journal</a> · <a href="/story/ui">Story</a> · <a href="/library/ui">Library</a>
     </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">0. Person Profile (I9A)</h2>
+      <p class="muted">One MB Person — identity, aliases, facts, contacts, relationships, life events, provider mappings.</p>
+      <label for="profileId">Person ID</label>
+      <input id="profileId" placeholder="paste person id (or use List people)" />
+      <button id="loadProfile" type="button">Load profile</button>
+      <div class="row">
+        <div>
+          <label for="factKind">Add fact kind</label>
+          <select id="factKind">
+            <option value="birth_date">birth_date</option>
+            <option value="death_date">death_date</option>
+            <option value="note">note</option>
+          </select>
+          <label for="factDate">value_date (YYYY-MM-DD)</label>
+          <input id="factDate" placeholder="1927-06-11" />
+          <label for="factText">value_text (notes)</label>
+          <input id="factText" />
+          <button id="addFact" type="button">Add fact</button>
+        </div>
+        <div>
+          <label for="aliasKind">Alias kind</label>
+          <select id="aliasKind">
+            <option value="nickname">nickname</option>
+            <option value="alternate_name">alternate_name</option>
+          </select>
+          <label for="aliasText">Alias text</label>
+          <input id="aliasText" />
+          <button id="addAlias" type="button">Add alias</button>
+          <label for="contactKind">Contact kind</label>
+          <select id="contactKind">
+            <option value="email">email</option>
+            <option value="phone">phone</option>
+          </select>
+          <label for="contactText">Contact value</label>
+          <input id="contactText" />
+          <button id="addContact" type="button">Add contact</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:0.6rem">
+        <div>
+          <label for="relFrom">Relationship: from Person ID</label>
+          <input id="relFrom" placeholder="e.g. Eugene" />
+          <label for="relTo">to Person ID</label>
+          <input id="relTo" placeholder="e.g. owner" />
+          <label for="relRole">role_kind</label>
+          <select id="relRole">
+            <option value="father_of">father_of</option>
+            <option value="mother_of">mother_of</option>
+            <option value="parent_of">parent_of</option>
+            <option value="biological_parent_of">biological_parent_of</option>
+            <option value="adoptive_parent_of">adoptive_parent_of</option>
+            <option value="step_parent_of">step_parent_of</option>
+            <option value="child_of">child_of</option>
+            <option value="son_of">son_of</option>
+            <option value="daughter_of">daughter_of</option>
+            <option value="spouse_of">spouse_of</option>
+            <option value="partner_of">partner_of</option>
+            <option value="sibling_of">sibling_of</option>
+            <option value="grandparent_of">grandparent_of</option>
+            <option value="grandchild_of">grandchild_of</option>
+            <option value="uncle_of">uncle_of</option>
+            <option value="aunt_of">aunt_of</option>
+          </select>
+          <button id="addRel" type="button">Assert relationship (SoT)</button>
+        </div>
+        <div>
+          <label for="marA">Marriage: person A id</label>
+          <input id="marA" />
+          <label for="marB">person B id</label>
+          <input id="marB" />
+          <label for="marDate">event_date</label>
+          <input id="marDate" placeholder="1947-09-25" />
+          <button id="addMarriage" type="button">Record marriage / anniversary</button>
+        </div>
+      </div>
+      <pre id="profileOut" class="muted" style="max-height:22rem;overflow:auto">Load a Person to see profile layers.</pre>
+    </section>
 
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Teach / Confirm (owner path)</h2>
@@ -166,8 +246,107 @@
     };
 
     document.getElementById("listPeople").onclick = async () => {
-      try { show(await j("/people")); } catch (err) { show(err); }
+      try {
+        const data = await j("/people");
+        show(data);
+        const people = data.people || [];
+        if (people.length === 1) {
+          document.getElementById("profileId").value = people[0].id;
+        }
+      } catch (err) { show(err); }
     };
+
+    async function loadOwner() {
+      try {
+        const o = await j("/people/owner");
+        const el = document.getElementById("ownerStatus");
+        if (o.configured) {
+          el.textContent = (o.display_name || "") + " · " + o.owner_person_id;
+          document.getElementById("relTo").placeholder = o.owner_person_id;
+        } else {
+          el.textContent = "not set — export MEMORYBOX_OWNER_PERSON_ID=<people.id>";
+        }
+      } catch (err) {
+        document.getElementById("ownerStatus").textContent = "error";
+      }
+    }
+
+    document.getElementById("loadProfile").onclick = async () => {
+      try {
+        const id = document.getElementById("profileId").value.trim();
+        const data = await j("/people/" + encodeURIComponent(id) + "/profile");
+        document.getElementById("profileOut").textContent = JSON.stringify(data.profile, null, 2);
+        show(data);
+      } catch (err) { show(err); }
+    };
+    document.getElementById("addFact").onclick = async () => {
+      try {
+        const id = document.getElementById("profileId").value.trim();
+        const body = {
+          fact_kind: document.getElementById("factKind").value,
+          value_date: document.getElementById("factDate").value.trim() || null,
+          value_text: document.getElementById("factText").value.trim() || null,
+        };
+        show(await j("/people/" + encodeURIComponent(id) + "/facts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }));
+        document.getElementById("loadProfile").click();
+      } catch (err) { show(err); }
+    };
+    document.getElementById("addAlias").onclick = async () => {
+      try {
+        const id = document.getElementById("profileId").value.trim();
+        show(await j("/people/" + encodeURIComponent(id) + "/aliases", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            alias_kind: document.getElementById("aliasKind").value,
+            alias_text: document.getElementById("aliasText").value.trim(),
+          }),
+        }));
+        document.getElementById("loadProfile").click();
+      } catch (err) { show(err); }
+    };
+    document.getElementById("addContact").onclick = async () => {
+      try {
+        const id = document.getElementById("profileId").value.trim();
+        show(await j("/people/" + encodeURIComponent(id) + "/contacts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contact_kind: document.getElementById("contactKind").value,
+            value_text: document.getElementById("contactText").value.trim(),
+          }),
+        }));
+        document.getElementById("loadProfile").click();
+      } catch (err) { show(err); }
+    };
+    document.getElementById("addRel").onclick = async () => {
+      try {
+        show(await j("/people/relationships", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from_person_id: document.getElementById("relFrom").value.trim(),
+            to_person_id: document.getElementById("relTo").value.trim(),
+            role_kind: document.getElementById("relRole").value,
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+    document.getElementById("addMarriage").onclick = async () => {
+      try {
+        show(await j("/people/life-events/marriage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_a_id: document.getElementById("marA").value.trim(),
+            person_b_id: document.getElementById("marB").value.trim(),
+            event_date: document.getElementById("marDate").value.trim() || null,
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    loadOwner();
+    loadImmich().catch(show);
 
     document.getElementById("renameBtn").onclick = async () => {
       try {
@@ -207,8 +386,6 @@
         }));
       } catch (err) { show(err); }
     };
-
-    loadImmich().catch(show);
   </script>
 </body>
 </html>
