@@ -26,12 +26,13 @@ MemoryBox/Sources/
 ## FlightSim configuration
 
 ```powershell
+$env:MEMORYBOX_SOURCES_ROOT = "\\media-server\photos\MemoryBox\Sources"
 $env:MEMORYBOX_SMOKE_MBOX_URI = "\\media-server\photos\MemoryBox\Sources\email\All mail Including Spam and Trash-002.mbox"
 $env:MEMORYBOX_SMOKE_ICS_URI = "\\media-server\photos\MemoryBox\Sources\calendar\ics\swill01@gmail.com.ics"
 $env:MEMORYBOX_SMOKE_LIMIT = "5"
 ```
 
-Use `prepare_smoke_slices.py` only if you need a local working copy; prefer reading Sources with `--limit` / smoke limit.
+Status → Communications shows staged mbox / calendar / SMS from this root (vs PG Evidence ingest counts).
 
 Env template: [`config/memorybox_sources.env.example`](../../config/memorybox_sources.env.example)  
 Checkpoint: [`MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md`](../product/MBBS-001_MEDIA_SERVER_SOURCES_CHECKPOINT.md)

@@ -85,7 +85,7 @@ def _scalar_ts(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> str | None:
 
 
 def _immich_photo_total(client: Any) -> tuple[int | None, str]:
-    """Best-effort Immich library photo count without full asset pagination."""
+    """Best-effort Immich library photo/asset count without full pagination."""
     if client is None or not hasattr(client, "_request"):
         return None, "no Immich HTTP client"
     # Preferred: dedicated search statistics (accurate total)
@@ -111,7 +111,171 @@ def _immich_photo_total(client: Any) -> tuple[int | None, str]:
                     return int(photos["count"]), f"immich:GET {path}"
         except Exception:  # noqa: BLE001
             continue
+    # asset.read fallback: sum timeline bucket counts (no server.statistics needed)
+    for path in ("/timeline/buckets", "/timeline/buckets?size=MONTH"):
+        try:
+            status, data = client._request("GET", path)  # noqa: SLF001
+            if status != 200:
+                continue
+            rows = data if isinstance(data, list) else (data.get("buckets") if isinstance(data, dict) else None)
+            if not isinstance(rows, list) or not rows:
+                continue
+            total = 0
+            ok = False
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                c = row.get("count")
+                if isinstance(c, int):
+                    total += c
+                    ok = True
+            if ok:
+                return total, "immich:GET /timeline/buckets (sum of counts; asset.read)"
+        except Exception:  # noqa: BLE001
+            continue
     return None, "Immich count endpoints not available to this API key"
+
+
+def _sources_root() -> Any:
+    """Canonical staged Sources tree (media-server). Env preferred; known UNC probed."""
+    import os
+    from pathlib import Path
+
+    candidates: list[Path] = []
+    raw = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
+    if raw:
+        candidates.append(Path(raw))
+    # Documented canonical layout (ops MEDIA_SERVER_SOURCES.md)
+    candidates.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
+    candidates.append(Path(r"\\media-server\photos\memorybox\sources"))
+    for p in candidates:
+        try:
+            if p.is_dir():
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
+    """Inventory of staged originals on media-server (not PG Evidence)."""
+    import json
+    from pathlib import Path
+
+    root = _sources_root()
+    if root is None:
+        return [
+            _metric(
+                "staged_sources_root",
+                "Staged Sources root (media-server)",
+                state="unavailable",
+                source="MEMORYBOX_SOURCES_ROOT",
+                last_updated=calculated_at,
+                reason="Not available",
+                note=(
+                    "Set MEMORYBOX_SOURCES_ROOT to "
+                    r"\\media-server\photos\MemoryBox\Sources "
+                    "(email / calendar / sms staged there; PG Evidence may only have smoke ingest)"
+                ),
+            )
+        ]
+
+    out: list[dict[str, Any]] = [
+        _metric(
+            "staged_sources_root",
+            "Staged Sources root",
+            display=str(root),
+            state="available",
+            source="MEMORYBOX_SOURCES_ROOT|canonical UNC",
+            last_updated=calculated_at,
+            note="Authoritative originals for ingest (read-only) — see docs/ops/MEDIA_SERVER_SOURCES.md",
+        )
+    ]
+
+    manifest_path = Path(root) / "MANIFEST.json"
+    files: list[dict[str, Any]] = []
+    if manifest_path.is_file():
+        try:
+            raw = manifest_path.read_text(encoding="utf-8-sig")
+            data = json.loads(raw)
+            files = list(data.get("files") or [])
+        except Exception as exc:  # noqa: BLE001
+            out.append(
+                _metric(
+                    "staged_manifest",
+                    "Sources MANIFEST.json",
+                    state="partial",
+                    source=str(manifest_path),
+                    last_updated=calculated_at,
+                    reason=f"Unreadable: {exc}",
+                )
+            )
+
+    def _find(prefix: str) -> dict[str, Any] | None:
+        for f in files:
+            rel = str(f.get("relative") or "").replace("\\", "/")
+            if rel.lower().startswith(prefix.lower()):
+                return f
+        return None
+
+    email_f = _find("email/")
+    if email_f:
+        nbytes = int(email_f.get("bytes") or 0)
+        out.append(
+            _metric(
+                "staged_email_mbox",
+                "Staged Gmail mbox (media-server)",
+                display=f"{email_f.get('relative')} ({nbytes / (1024**3):.1f} GiB)",
+                state="available",
+                source=str(Path(root) / str(email_f.get("relative"))),
+                last_updated=calculated_at,
+                note=(
+                    "Full mailbox export is staged here. MemoryBox Evidence (PostgreSQL) only "
+                    "contains rows actually ingested (early checkpoint used --limit/smoke 5). "
+                    "Re-run full ingest-email against this path to load the archive into PG."
+                ),
+            )
+        )
+    else:
+        out.append(
+            _metric(
+                "staged_email_mbox",
+                "Staged Gmail mbox (media-server)",
+                state="unavailable",
+                source=str(Path(root) / "email"),
+                last_updated=calculated_at,
+                reason="Not found in MANIFEST / email/",
+            )
+        )
+
+    cal_f = _find("calendar/")
+    out.append(
+        _metric(
+            "staged_calendar",
+            "Staged calendar Takeout / ICS",
+            display=(cal_f or {}).get("relative") or "calendar/",
+            state="available" if (Path(root) / "calendar").is_dir() else "unavailable",
+            source=str(Path(root) / "calendar"),
+            last_updated=calculated_at,
+            note="Calendar originals staged; PG calendar_event count is separate (ingest result)",
+            reason=None if (Path(root) / "calendar").is_dir() else "Not available",
+        )
+    )
+
+    sms_f = _find("sms/")
+    out.append(
+        _metric(
+            "staged_sms",
+            "Staged SMS / iMessage export",
+            display=(sms_f or {}).get("relative") or "sms/",
+            state="available" if (Path(root) / "sms").is_dir() else "unavailable",
+            source=str(Path(root) / "sms"),
+            last_updated=calculated_at,
+            note="Staged for later ingest — SMS ingest still Not connected in P1",
+            reason=None if (Path(root) / "sms").is_dir() else "Not available",
+        )
+    )
+    return out
 
 
 def _count_media_root_videos() -> tuple[int | None, str]:
@@ -999,11 +1163,9 @@ def build_status_summary() -> dict[str, Any]:
                             source=f"{pg}:evidence.communication",
                             last_updated=calculated_at,
                             note=(
-                                "This is the MemoryBox Evidence row count — not a Gmail "
-                                "mailbox total. If a prior mbox ingest was ~94k messages but "
-                                "this shows far fewer, those messages are not present as "
-                                "communication Evidence in this database (re-ingest or check "
-                                "which DB/serve host was used)."
+                                "PG Evidence only. Full Gmail mbox (~18 GiB) is staged on "
+                                r"media-server Sources\email; early checkpoint ingested with "
+                                "smoke --limit 5 — see Communications tab for staged inventory."
                             ),
                         ),
                         (
@@ -1043,7 +1205,7 @@ def build_status_summary() -> dict[str, Any]:
                             source="sms:ingest",
                             last_updated=calculated_at,
                             reason="Not yet connected",
-                            note="P1 does not ingest SMS",
+                            note=r"Staged at \\media-server\photos\MemoryBox\Sources\sms — ingest deferred",
                         ),
                         _metric(
                             "artifact_documents",
@@ -1571,7 +1733,7 @@ def build_status_summary() -> dict[str, Any]:
             "title": "Communications",
             "sections": [
                 {
-                    "title": "Email",
+                    "title": "Email (MemoryBox Evidence vs staged Sources)",
                     "metrics": [
                         _metric(
                             "emails",
@@ -1581,10 +1743,12 @@ def build_status_summary() -> dict[str, Any]:
                             source=f"{pg}:evidence.communication",
                             last_updated=calculated_at,
                             note=(
-                                "PG Evidence count only. A historical ~94k Gmail/mbox ingest "
-                                "is not reflected here unless those rows exist in this database."
+                                "Only ingested Evidence rows. Early media-server checkpoint "
+                                "ingested with smoke --limit 5 — so a small PG count is expected "
+                                "even though the full Gmail mbox is staged on media-server."
                             ),
                         ),
+                        *_staged_sources_metrics(calculated_at),
                         _metric(
                             "email_correspondents",
                             "Recognized correspondents",
@@ -1669,11 +1833,14 @@ def build_status_summary() -> dict[str, Any]:
                     "metrics": [
                         _metric(
                             "sms",
-                            "SMS / Text Messages",
+                            "SMS / Text Messages (ingested)",
                             state="unavailable",
                             source="sms:ingest",
                             last_updated=calculated_at,
                             reason="Not yet connected",
+                            note=(
+                                "CSV is staged under Sources/sms — ingest still deferred in P1"
+                            ),
                         ),
                     ],
                 },
