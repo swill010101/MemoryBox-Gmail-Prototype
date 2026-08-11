@@ -183,34 +183,34 @@ Record one section per increment. Do not wait until end of P1.
 
 **Deferred (not I9):** Universal Immich lazy-teach — [TASK-P1P2-001](MBBS_P1_P2_BACKLOG.md).
 
-**Next:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile (**REVIEW ONLY**).
+**Next:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile (**FINAL REVIEW** — decisions locked; no build until authorized).
 
 ---
 
 ## Increment 9A — Person Profile, Facts & Relationships
 
-**Date:** 2026-08-11 (refreshed after I9 accept)  
-**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9A only* + §10 answers  
+**Date:** 2026-08-11  
+**Authorization:** **FINAL REVIEW** — decisions locked; awaiting *Build Increment 9A only*  
 **Definition:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md)  
 **Roadmap:** After **I9 Artifact (ACCEPTED)** · Before **I10 EVS-014**  
-**Acceptance:** *(pending build authorization)*  
-**Owner gate (proposed):** FlightSim — Eugene Will = Tom’s father; Eugene birthdate 1927-06-11; Ask resolves “my father”; layered identity ≠ facts ≠ relationships ≠ life dates
+**Acceptance:** *(pending build)*  
+**Owner gate (locked):** Canonical `owner_person_id`; Eugene = father + birthdate 1927-06-11; shared Eugene↔Anne marriage/anniversary; Ask relational resolve (no string hacks); one relationship SoT + derived inverses; correction uncle→father; extend `/people/ui`
 
-### Proposed locked decisions (review)
+### Locked decisions (final review)
 
 | Decision | Rationale |
 |----------|-----------|
-| Layered model (identity / facts / relationships / life dates) | Do not flatten Person |
-| I6 remains identity SoT | No second Person PK path |
-| Owner-asserted kinship + provenance | EVS-084/087–089; no invented family tree |
-| Life dates as facts/events thin (birth, marriage, …) | EVS-085/086 |
-| Ask relational resolve (“my father”) | EVS-102/054 class |
-| Profile Immich lazy-teach on pickers only | Earn-in I9; universalize = TASK-P1P2-001 |
-| EVS-014 OUT | Increment 10 |
-| Auto-genealogy / Immich write-back / multi-user OUT | Scope lock |
-| EVS audit vs MBEVS-001 v0.8 required in definition | Close missed assignments |
+| Explicit `owner_person_id` for “my/me” relativity; never infer via display_name | Single-owner P1; no Tom-name search |
+| One relationship assertion SoT; derive inverses in service | Prevent dual-row drift |
+| Multiple qualified parents/roles thin P1; disclose ambiguity | No one-father schema; no full genealogy |
+| Marriage/anniversary = shared life event both participants | EVS-086; not duplicated flat fields |
+| Layered facts / aliases / contacts / relationships / life events | Not person_facts junk drawer; contacts ≠ identity providers |
+| Extend `/people/ui` Profile; no second People product | Coherent owner surface |
+| Ask: owner → Relationship service → Person → existing retrieve | No `"my father"="Eugene Will"` |
+| Correction supersedes; prior provenance retained | Trust |
+| EVS-014 / tree viz / auto-genealogy / Immich write-back / multi-user / Places platform / universal lazy-teach / polish OUT | Scope lock |
 
-**Stop:** No 9A code until Tom authorizes *Build Increment 9A only*.
+**Stop:** Do not begin 9A code until Tom authorizes *Build Increment 9A only*.
 
 ---
 
