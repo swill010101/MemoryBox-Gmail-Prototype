@@ -149,11 +149,11 @@ Record one section per increment. Do not wait until end of P1.
 
 ## Increment 9 — Artifact thin + import jobs (EF-05/06)
 
-**Date:** 2026-08-10  
-**Authorization:** **AUTHORIZED / SHIPPED** (*Build Increment 9 only*) — FlightSim **I9-OWNER** pending  
+**Date:** 2026-08-10 · **Accepted:** 2026-08-11  
+**Authorization:** **AUTHORIZED / SHIPPED / ACCEPTED** (*Build Increment 9 only*)  
 **Definition:** [MBBS-001_INCREMENT_9_DEFINITION.md](MBBS-001_INCREMENT_9_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_9_ACCEPTANCE.md](MBBS-001_INCREMENT_9_ACCEPTANCE.md)  
-**Owner gate (locked):** Real physical keepsake (pocket-watch pattern preferred, ≥2 reps); MB-managed upload to media-server; Library `artifact` modality **without requiring Person**; optional Story (incl. I5A voice earn-in); Ask by Artifact meaning; unresolved context honest
+**Acceptance:** [MBBS-001_INCREMENT_9_ACCEPTANCE.md](MBBS-001_INCREMENT_9_ACCEPTANCE.md) — **ACCEPTED**  
+**Owner gate:** Real keepsake (**Dad's Picture of Mom**); MB-managed upload to `MemoryBox\Artifacts`; Library without Person; Immich lazy Person; in-app STT→Story; Ask/provenance
 
 ### Locked decisions (final review)
 
@@ -177,24 +177,23 @@ Record one section per increment. Do not wait until end of P1.
 - Migration `004_artifact_i9.sql`; Artifact service + `/artifact/ui` + APIs  
 - `MEMORYBOX_ARTIFACT_MEDIA_ROOT` (ops: `\\media-server\photos\MemoryBox\Artifacts`); integrity hash; no silent overwrite; no PG blobs  
 - Library Person-optional `modalities=artifact`; Ask `artifact_hits`  
+- Immich lazy-teach on Artifact Person/Narrator (local); linked Stories display; Story `?id=` deep-link  
 - `prove-artifact`; health `increment: 9`  
 - Ops: [FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md](../ops/FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md) · `config/artifact.env.example`
 
-**Stop:** Do not begin **9A** / **10** without Tom authorizing *Build Increment 9A only* / *Build Increment 10 only*.
+**Deferred (not I9):** Universal Immich lazy-teach — [TASK-P1P2-001](MBBS_P1_P2_BACKLOG.md).
 
-**Deferred (not I9):** Universal Immich lazy-teach on every Person picker — [TASK-P1P2-001](MBBS_P1_P2_BACKLOG.md) (P1→P2). Artifact got a local Immich associate fix; do not retrofit Story/Library/Journal/etc. under I9.
-
-**Next after I9 owner accept:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**); then Increment 10 (EVS-014).
+**Next:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile (**REVIEW ONLY**).
 
 ---
 
 ## Increment 9A — Person Profile, Facts & Relationships
 
-**Date:** 2026-08-10  
-**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9A only*  
+**Date:** 2026-08-11 (refreshed after I9 accept)  
+**Authorization:** **REVIEW ONLY** — awaiting *Build Increment 9A only* + §10 answers  
 **Definition:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md)  
-**Roadmap:** After **I9 Artifact** · Before **I10 EVS-014**  
-**Acceptance:** *(pending build)*  
+**Roadmap:** After **I9 Artifact (ACCEPTED)** · Before **I10 EVS-014**  
+**Acceptance:** *(pending build authorization)*  
 **Owner gate (proposed):** FlightSim — Eugene Will = Tom’s father; Eugene birthdate 1927-06-11; Ask resolves “my father”; layered identity ≠ facts ≠ relationships ≠ life dates
 
 ### Proposed locked decisions (review)
@@ -206,6 +205,7 @@ Record one section per increment. Do not wait until end of P1.
 | Owner-asserted kinship + provenance | EVS-084/087–089; no invented family tree |
 | Life dates as facts/events thin (birth, marriage, …) | EVS-085/086 |
 | Ask relational resolve (“my father”) | EVS-102/054 class |
+| Profile Immich lazy-teach on pickers only | Earn-in I9; universalize = TASK-P1P2-001 |
 | EVS-014 OUT | Increment 10 |
 | Auto-genealogy / Immich write-back / multi-user OUT | Scope lock |
 | EVS audit vs MBEVS-001 v0.8 required in definition | Close missed assignments |
