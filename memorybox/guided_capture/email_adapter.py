@@ -64,12 +64,29 @@ GC_OUTBOUND_MARKER = "— MemoryBox Guided Capture"
 GC_OUTBOUND_PLEASE_REPLY = "(Please reply to this email.)"
 
 
-def looks_like_gc_outbound_body(text: str | None) -> bool:
-    """True when body is our outbound question template, not a respondent reply."""
+def _is_pure_outbound_template(text: str) -> bool:
+    """True when text is essentially only our question email body."""
     t = (text or "").strip()
     if not t:
         return False
-    return GC_OUTBOUND_MARKER in t and GC_OUTBOUND_PLEASE_REPLY in t and len(t) < 4000
+    if GC_OUTBOUND_MARKER not in t or GC_OUTBOUND_PLEASE_REPLY not in t:
+        return False
+    # Real replies usually have content before the quoted "Hi Name," / marker.
+    m = re.search(r"(?m)^Hi .+,\s*$", t)
+    if m and m.start() > 15:
+        return False
+    if t.find(GC_OUTBOUND_MARKER) > 80:
+        return False
+    return bool(re.match(r"(?is)^Hi\s+", t)) or len(t) < 600
+
+
+def looks_like_gc_outbound_body(text: str | None) -> bool:
+    """True when body is our outbound question template, not a respondent reply.
+
+    Quoted originals inside a real reply still contain the marker — those must
+    NOT be treated as outbound echoes (that was skipping good Poll results).
+    """
+    return _is_pure_outbound_template((text or "").strip())
 
 
 def refine_gc_reply_text(text: str | None) -> str:
@@ -83,11 +100,16 @@ def refine_gc_reply_text(text: str | None) -> str:
         head = t[: m.start()].strip()
         if head:
             return head
+    # Gmail often leaves "On ... wrote:" — extract_reply_text usually cuts that;
+    # if marker remains mid-body, keep prefix when it's clearly a reply.
     idx = t.find(GC_OUTBOUND_MARKER)
     if idx > 20:
         head = t[:idx].strip()
-        # Strip trailing "Please reply..." fragments already handled; drop empty
-        if head and not looks_like_gc_outbound_body(head):
+        # Drop a trailing quoted "Hi Name," block if present
+        hm = re.search(r"\n\nHi [^\n]+,\s*$", head)
+        if hm:
+            head = head[: hm.start()].strip()
+        if head and not _is_pure_outbound_template(head):
             return head
     return t
 

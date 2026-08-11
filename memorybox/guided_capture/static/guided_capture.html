@@ -404,9 +404,13 @@
     };
     document.getElementById("btnPoll").onclick = async () => {
       const d = await api("/guided-capture/poll", { method: "POST", body: "{}" });
+      const skipped = d.skipped || [];
+      const reasons = skipped.slice(0, 3).map(s => s.reason).join(", ");
       status(
         `Poll created=${(d.created||[]).length} quarantined=${(d.quarantined||[]).length}` +
-        ` skipped=${(d.skipped||[]).length}`
+        ` skipped=${skipped.length}` +
+        (reasons ? ` (${reasons})` : "") +
+        ((d.duplicates||[]).length ? ` duplicates=${d.duplicates.length}` : "")
       );
       await refreshBadge();
       await loadResponses();

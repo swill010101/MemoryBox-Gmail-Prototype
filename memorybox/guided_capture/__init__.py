@@ -1085,26 +1085,30 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
 
     for item in items:
         mid = item.inbound_message_id
+        text = (item.extracted_text or "").strip()
         if mid and mid in known_outbound:
             skipped.append({"inbound_message_id": mid, "reason": "known_outbound_id"})
             adapter.mark_processed(mid)
+            continue
+        # Pure outbound template only — do not mark_processed (re-poll safe)
+        if (
+            (getattr(item, "skip_reason", None) == "outbound_echo"
+             or looks_like_gc_outbound_body(text))
+            and not item.has_audio
+        ):
+            skipped.append(
+                {
+                    "inbound_message_id": mid,
+                    "reason": getattr(item, "skip_reason", None) or "outbound_echo_body",
+                    "subject": item.subject,
+                }
+            )
             continue
         if getattr(item, "skip_reason", None):
             skipped.append(
                 {
                     "inbound_message_id": mid,
                     "reason": item.skip_reason,
-                    "subject": item.subject,
-                }
-            )
-            adapter.mark_processed(mid)
-            continue
-        text = (item.extracted_text or "").strip()
-        if looks_like_gc_outbound_body(text) and not item.has_audio:
-            skipped.append(
-                {
-                    "inbound_message_id": mid,
-                    "reason": "outbound_echo_body",
                     "subject": item.subject,
                 }
             )
