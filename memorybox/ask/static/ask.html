@@ -157,12 +157,34 @@
       const st = data.story_hits || [];
       const jn = data.journal_hits || [];
       const ar = data.artifact_hits || [];
-      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · artifacts=${ar.length} · kind=${kind}</p><ul>`;
+      const plan = data.plan || {};
+      const personIds = plan.person_ids || [];
+      const libPerson = personIds[0] || (ph[0] && ph[0].mb_person_id) || "";
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · artifacts=${ar.length} · kind=${kind}</p>`;
+      if (libPerson) {
+        html += `<p><a href="/library/ui?person_id=${encodeURIComponent(libPerson)}"><b>Open in Library</b></a> (same person filter — browse / confirm thumbnails there)</p>`;
+      }
+      if (ph.length) {
+        html += `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:0.5rem 0">`;
+        ph.slice(0, 12).forEach(h => {
+          const thumb = h.thumb_url || "";
+          const label = (h.mb_person_name || (h.people && h.people[0]) || h.external_id || "photo");
+          if (thumb) {
+            html += `<a href="/library/ui?person_id=${encodeURIComponent(h.mb_person_id || libPerson || "")}" title="${label}" style="display:block">` +
+              `<img src="${thumb}" alt="${label}" style="width:96px;height:96px;object-fit:cover;border:1px solid #c5c9d1;background:#fff" loading="lazy" />` +
+              `</a>`;
+          } else {
+            html += `<span class="muted" style="width:96px;height:96px;border:1px solid #c5c9d1;display:flex;align-items:center;justify-content:center;font-size:0.7rem">no thumb</span>`;
+          }
+        });
+        html += `</div>`;
+      }
+      html += `<ul>`;
       ev.slice(0, 12).forEach(h => {
         html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
       });
       ph.slice(0, 12).forEach(h => {
-        html += `<li>[photo] <code>${h.external_id}</code></li>`;
+        html += `<li>[photo] <code>${h.external_id || ""}</code>${h.mb_person_name ? (" — " + h.mb_person_name) : ""}</li>`;
       });
       st.slice(0, 12).forEach(h => {
         html += `<li>[story recollection] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
@@ -191,7 +213,25 @@
           if (c.kind === "journal") {
             return `<li>Journal <code>${c.journal_id}</code> v${c.version} — ${c.attribution || "owner journal"}</li>`;
           }
-          return `<li>Photo <code>${c.external_id}</code> (${c.provider_key}) [archive]</li>`;
+          if (c.kind === "profile") {
+            return `<li>Profile / relationship` +
+              (c.person_id ? ` <code>${c.person_id}</code>` : "") +
+              (c.intent ? ` (${c.intent})` : "") +
+              `</li>`;
+          }
+          if (c.kind === "photo") {
+            const t = c.thumb_url
+              ? ` <img src="${c.thumb_url}" alt="" style="width:48px;height:48px;object-fit:cover;vertical-align:middle;border:1px solid #c5c9d1" loading="lazy" />`
+              : "";
+            return `<li>Photo <code>${c.external_id || ""}</code> (${c.provider_key || ""})${t}</li>`;
+          }
+          if (c.kind === "video") {
+            return `<li>Video <code>${c.external_id || ""}</code></li>`;
+          }
+          if (c.kind === "artifact") {
+            return `<li>Artifact <code>${c.artifact_id || ""}</code> — ${c.label || ""}</li>`;
+          }
+          return `<li>${c.kind || "citation"} ${c.external_id || c.person_id || ""}</li>`;
         }).join("") + "</ul>";
       }
       document.getElementById("providers").textContent = JSON.stringify(data.provider_status || {}, null, 2);

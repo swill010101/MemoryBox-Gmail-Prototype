@@ -326,12 +326,26 @@ def resolve_relatives_for_person(
 
 
 def resolve_one_relative(person_id: str, *, role_phrase: str) -> DerivedEdge:
+    from memorybox.profile.owner import (
+        GENDERED_PARENT_PHRASES,
+        GENERIC_PARENT_ROLES,
+    )
+
     phrase = (role_phrase or "").strip().lower()
     roles = ASK_ROLE_ALIASES.get(phrase)
     if not roles:
         raise ProfileServiceError(f"unsupported relationship phrase: {role_phrase!r}")
     matches = resolve_relatives_for_person(person_id, asked_roles=roles)
     if not matches:
+        if phrase in GENDERED_PARENT_PHRASES:
+            generics = resolve_relatives_for_person(
+                person_id, asked_roles=GENERIC_PARENT_ROLES
+            )
+            if generics:
+                raise ProfileServiceError(
+                    f"A parent is recorded, but not labeled as {phrase}. "
+                    f"Save an explicit {phrase}_of relationship (not only parent_of / spouse)."
+                )
         raise ProfileServiceError(
             f"No current {phrase} relationship recorded for this person."
         )

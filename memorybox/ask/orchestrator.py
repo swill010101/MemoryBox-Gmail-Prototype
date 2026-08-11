@@ -568,21 +568,13 @@ class AskOrchestrator:
         if rel.intent != "none":
             notes = list(plan.notes) + ["i9a_relational_resolve"]
             if rel.ok and rel.person_id:
-                names = list(plan.person_names)
-                # Drop raw "my father" style tokens if planner extracted them as people
-                drop = {
-                    f"my {rel.role_phrase}" if rel.role_phrase else "",
-                    rel.role_phrase or "",
-                    "me",
-                    "myself",
-                }
-                names = [n for n in names if n.lower() not in drop and not n.lower().startswith("my ")]
-                if rel.display_name and rel.display_name not in names:
-                    names.append(rel.display_name)
+                # Replace context people entirely — never keep prior "father" in a
+                # follow-up "mother" / relational ask (that caused Eugene-as-mother).
+                names = (rel.display_name,) if rel.display_name else ()
                 plan = replace(
                     plan,
                     person_ids=(rel.person_id,),
-                    person_names=tuple(names),
+                    person_names=names,
                     notes=tuple(notes),
                     profile_intent=rel.intent,
                     profile_answer=rel.to_dict(),
@@ -603,13 +595,21 @@ class AskOrchestrator:
                         want_artifact=False,
                     )
             elif not rel.ok:
+                # Failed relational resolve: do not fall through to prior context person
                 plan = replace(
                     plan,
                     notes=tuple(notes),
                     profile_intent=rel.intent,
                     profile_answer=rel.to_dict(),
-                    requires_clarification=bool(rel.ambiguity),
+                    person_ids=(),
+                    person_names=(),
+                    requires_clarification=True,
                     ambiguity_message=rel.ambiguity or rel.disclosure,
+                    want_photo=False,
+                    want_still=False,
+                    want_video=False,
+                    want_visual=False,
+                    visual_scope="none",
                 )
 
         evidence: list[R.EvidenceHit] = []

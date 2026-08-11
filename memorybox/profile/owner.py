@@ -75,10 +75,12 @@ INVERSE_ROLE: dict[str, str] = {
 }
 
 ASK_ROLE_ALIASES: dict[str, frozenset[str]] = {
-    "father": frozenset({ROLE_FATHER_OF, ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
-    "dad": frozenset({ROLE_FATHER_OF, ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
-    "mother": frozenset({ROLE_MOTHER_OF, ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
-    "mom": frozenset({ROLE_MOTHER_OF, ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
+    # Gendered asks require gendered SoT roles — do NOT treat generic parent_of
+    # as father/mother (that made “my mother” return Eugene after father_of/parent_of).
+    "father": frozenset({ROLE_FATHER_OF}),
+    "dad": frozenset({ROLE_FATHER_OF}),
+    "mother": frozenset({ROLE_MOTHER_OF}),
+    "mom": frozenset({ROLE_MOTHER_OF}),
     "parent": frozenset(
         {
             ROLE_PARENT_OF,
@@ -106,6 +108,17 @@ ASK_ROLE_ALIASES: dict[str, frozenset[str]] = {
     "brother": frozenset({ROLE_SIBLING_OF}),
     "sister": frozenset({ROLE_SIBLING_OF}),
 }
+
+# When father/mother miss but a generic parent exists, disclose (do not invent gender).
+GENDERED_PARENT_PHRASES: frozenset[str] = frozenset({"father", "dad", "mother", "mom"})
+GENERIC_PARENT_ROLES: frozenset[str] = frozenset(
+    {
+        ROLE_PARENT_OF,
+        ROLE_BIOLOGICAL_PARENT_OF,
+        ROLE_ADOPTIVE_PARENT_OF,
+        ROLE_STEP_PARENT_OF,
+    }
+)
 
 FACT_KINDS = frozenset({"birth_date", "death_date", "note"})
 ALIAS_KINDS = frozenset({"nickname", "alternate_name"})

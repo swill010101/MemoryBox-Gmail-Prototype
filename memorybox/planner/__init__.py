@@ -314,6 +314,33 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 def _extract_people(text: str, *, want_email: bool) -> list[str]:
+    # Relational kinship words are resolved via Profile/Relationship service (I9A),
+    # never treated as display names ("mother" ≠ a Person named Mother).
+    kinship_stop = {
+        "father",
+        "dad",
+        "mother",
+        "mom",
+        "son",
+        "daughter",
+        "child",
+        "parent",
+        "grandfather",
+        "grandmother",
+        "grandparent",
+        "grandson",
+        "granddaughter",
+        "grandchild",
+        "uncle",
+        "aunt",
+        "spouse",
+        "partner",
+        "sibling",
+        "brother",
+        "sister",
+        "me",
+        "myself",
+    }
     found: list[str] = []
     patterns = [
         PERSON_WITH_RE,
@@ -331,7 +358,9 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     for rx in patterns:
         for m in rx.finditer(text or ""):
             ent = _clean_entity(m.group(1))
-            if ent and ent not in found:
+            if not ent or ent.lower() in kinship_stop:
+                continue
+            if ent not in found:
                 found.append(ent)
     return found
 
