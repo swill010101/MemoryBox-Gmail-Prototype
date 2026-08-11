@@ -353,11 +353,14 @@ class MarvinGmailGuidedEmailAdapter:
         """
         local, domain = self.user_email.split("@", 1)
         label_query = self._label.replace("/", "-")
+        # Inbox GC traffic. Do NOT use -in:sent: self-replies (and many Reply
+        # flows) carry both INBOX and SENT and would be invisible to Poll.
+        # Outbound echoes are filtered by known outbound ids + pure-template detect.
         q = (
-            f"in:inbox -in:sent -in:trash -label:{label_query} "
+            f"in:inbox -in:trash -label:{label_query} "
             f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
             f"deliveredto:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
-            f"subject:[MB-GC-)"
+            f"subject:[MB-GC- OR subject:Re: [MB-GC-)"
         )
         try:
             label_id = self.client.ensure_label(self._label)
@@ -374,7 +377,7 @@ class MarvinGmailGuidedEmailAdapter:
                     processed_label=self._label,
                     user_email=self.user_email,
                     query_extra=(
-                        f"in:inbox -in:sent "
+                        f"in:inbox "
                         f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR subject:[MB-GC-)"
                     ),
                 )

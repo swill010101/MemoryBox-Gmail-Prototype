@@ -1178,6 +1178,7 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         "quarantined": quarantined,
         "duplicates": duplicates,
         "skipped": skipped,
+        "examined": len(items),
     }
 
 

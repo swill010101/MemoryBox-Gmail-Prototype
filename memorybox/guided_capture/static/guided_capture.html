@@ -407,8 +407,8 @@
       const skipped = d.skipped || [];
       const reasons = skipped.slice(0, 3).map(s => s.reason).join(", ");
       status(
-        `Poll created=${(d.created||[]).length} quarantined=${(d.quarantined||[]).length}` +
-        ` skipped=${skipped.length}` +
+        `Poll examined=${d.examined ?? "?"} created=${(d.created||[]).length}` +
+        ` quarantined=${(d.quarantined||[]).length} skipped=${skipped.length}` +
         (reasons ? ` (${reasons})` : "") +
         ((d.duplicates||[]).length ? ` duplicates=${d.duplicates.length}` : "")
       );
