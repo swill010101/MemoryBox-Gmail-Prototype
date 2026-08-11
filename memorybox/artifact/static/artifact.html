@@ -114,7 +114,11 @@
         Immich names you already created appear under <b>Immich</b>. Associating teaches/maps that name into MemoryBox (same I6/I7 lazy pattern), then links the Artifact — no separate /people/ui step required.
       </p>
 
-      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Why it matters — Story (typed or in-app Capture/STT)</h3>
+      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Already linked to this Artifact</h3>
+      <p id="linkedPeople" class="muted">People: (load an Artifact)</p>
+      <div id="linkedStories"><p class="muted">Stories: (none loaded)</p></div>
+
+      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Add Story — why it matters (typed or in-app Capture/STT)</h3>
       <p class="muted">
         Uses the same MemoryBox <code>POST /capture/transcribe</code> path as Journal (I5A).
         Record or upload → STT fills the Story body as a <b>draft</b> → review/edit → explicit <b>Save Story + link Artifact</b>.
@@ -419,7 +423,11 @@
       if (labelEl) labelEl.value = a.label || "";
       const descEl = document.getElementById("description");
       if (descEl) descEl.value = a.description || "";
-      setStatus("Loaded Artifact " + a.id + " · " + (a.label || ""));
+      setStatus(
+        "Loaded Artifact " + a.id + " · " + (a.label || "") +
+        " · people=" + (a.person_ids || []).length +
+        " · stories=" + (a.story_ids || []).length
+      );
       const reps = document.getElementById("reps");
       reps.innerHTML = "";
       (a.representations || []).forEach((r) => {
@@ -436,7 +444,75 @@
         }
         reps.appendChild(wrap);
       });
+      // Linked people + stories are async (do not block paint)
+      renderLinkedAssociations(a).catch((e) => {
+        const box = document.getElementById("linkedStories");
+        if (box) {
+          box.innerHTML = '<p class="warn">Failed to load linked stories: ' + esc(errText(e)) + "</p>";
+        }
+      });
     }
+
+    async function renderLinkedAssociations(a) {
+      const peopleEl = document.getElementById("linkedPeople");
+      const storiesEl = document.getElementById("linkedStories");
+      const pids = a.person_ids || [];
+      const sids = a.story_ids || [];
+
+      if (!pids.length) {
+        peopleEl.textContent = "People: (none associated yet)";
+        peopleEl.className = "muted";
+      } else {
+        const names = [];
+        for (const pid of pids) {
+          try {
+            const data = await j("/people/" + encodeURIComponent(pid));
+            const p = data.person || {};
+            names.push((p.display_name || "(unnamed)") + " · " + (p.status || "") + " · " + pid.slice(0, 8));
+          } catch (_) {
+            names.push(pid);
+          }
+        }
+        peopleEl.innerHTML =
+          "<strong>People (" + names.length + "):</strong><ul style=\"margin:0.35rem 0 0;padding-left:1.2rem\">" +
+          names.map((n) => "<li>" + esc(n) + "</li>").join("") +
+          "</ul>";
+        peopleEl.className = "";
+      }
+
+      if (!sids.length) {
+        storiesEl.innerHTML = '<p class="muted">Stories: (none linked yet — use Record/Save below to add one)</p>';
+        return;
+      }
+
+      storiesEl.innerHTML = "<p><strong>Stories (" + sids.length + ")</strong> — already saved &amp; linked</p>";
+      const list = document.createElement("div");
+      for (const sid of sids) {
+        const card = document.createElement("div");
+        card.style.cssText = "border:1px solid var(--line);padding:0.55rem;margin:0.4rem 0;background:#fff";
+        try {
+          const data = await j("/story/" + encodeURIComponent(sid));
+          const s = data.story || {};
+          const body = (s.body_text || "").trim();
+          const excerpt = body.length > 280 ? body.slice(0, 280) + "…" : body;
+          card.innerHTML =
+            "<div><strong>" + esc(s.title || "(untitled Story)") + "</strong></div>" +
+            '<div class="muted">id=<code>' + esc(sid) + "</code>" +
+            (s.narrator_display_name ? (" · narrator=" + esc(s.narrator_display_name)) : "") +
+            (s.current_version != null ? (" · v" + esc(String(s.current_version))) : "") +
+            "</div>" +
+            '<div style="margin-top:0.35rem;white-space:pre-wrap">' + esc(excerpt || "(empty body)") + "</div>" +
+            '<div class="muted" style="margin-top:0.35rem"><a href="/story/ui">Open Story UI</a> · paste id above to edit versions</div>';
+        } catch (e) {
+          card.innerHTML =
+            '<div class="warn">Story <code>' + esc(sid) + "</code> — load failed: " +
+            esc(errText(e)) + "</div>";
+        }
+        list.appendChild(card);
+      }
+      storiesEl.appendChild(list);
+    }
+
     async function loadArtifact(id) {
       setStatus("Loading Artifact " + id + "…");
       const data = await j("/artifact/" + encodeURIComponent(id));
