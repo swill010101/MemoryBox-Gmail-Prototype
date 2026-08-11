@@ -47,6 +47,8 @@ class RelationalAskResolve:
     disclosure: str | None = None
     assertion_id: str | None = None
     derived_inverse_role: str | None = None
+    inferred: bool = False
+    inference_note: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -187,4 +189,6 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
         fact=fact_d,
         assertion_id=edge.assertion_id,
         derived_inverse_role=INVERSE_ROLE.get(edge.sot_role_kind),
+        inferred=bool(getattr(edge, "inferred", False)),
+        inference_note=getattr(edge, "inference_note", None),
     )

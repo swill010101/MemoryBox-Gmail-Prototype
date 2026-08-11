@@ -279,30 +279,31 @@ def run_prove_person_profile(*, flightsim: bool = False) -> dict[str, Any]:
             detail=f"kind={r_pix.answer_kind} person_ids={plan.get('person_ids')}",
         )
 
-        # Mother must NOT inherit father from context / generic parent_of
-        r_mom = orch.ask("Who is my mother?")
-        mom_ok = (
-            r_mom.answer_kind == "clarification"
-            or (
-                r_mom.answer_kind == "profile_backed"
-                and eugene_name not in (r_mom.answer_text or "")
-            )
+        # Mother via spouse of father (thin inference — no explicit mother_of required)
+        assert_relationship(
+            from_person_id=eugene_id,
+            to_person_id=anne_id,
+            role_kind="spouse_of",
+            provenance={"source": "owner", "note": "spouse for mother infer"},
         )
-        # After father ask, pictures of mother must not keep Eugene in person_names
+        r_mom = orch.ask("Who is my mother?")
+        mom_ans = (r_mom.plan or {}).get("profile_answer") or {}
+        mom_ok = (
+            r_mom.answer_kind == "profile_backed"
+            and mom_ans.get("person_id") == anne_id
+            and bool(mom_ans.get("inferred"))
+        )
         r_mom_pix = orch.ask("Show me pictures of my mother.")
         mom_pix_plan = r_mom_pix.plan or {}
-        mom_pix_ok = (
-            r_mom_pix.answer_kind == "clarification"
-            or eugene_id not in (mom_pix_plan.get("person_ids") or ())
-        ) and eugene_name not in (mom_pix_plan.get("person_names") or ())
+        mom_pix_ok = anne_id in (mom_pix_plan.get("person_ids") or ())
         _check(
-            "i9a_mother_not_father",
+            "i9a_mother_via_spouse",
             mom_ok and mom_pix_ok,
             checks,
             problems,
             detail=(
                 f"who={r_mom.answer_kind}:{r_mom.answer_text!r} "
-                f"pix={r_mom_pix.answer_kind} names={mom_pix_plan.get('person_names')}"
+                f"pix_ids={mom_pix_plan.get('person_ids')}"
             ),
         )
 

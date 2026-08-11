@@ -51,6 +51,8 @@ class DerivedEdge:
     from_display_name: str | None = None
     to_display_name: str | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
+    inferred: bool = False
+    inference_note: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -326,33 +328,107 @@ def resolve_relatives_for_person(
 
 
 def resolve_one_relative(person_id: str, *, role_phrase: str) -> DerivedEdge:
+    """Resolve a relative for person_id.
+
+    Direct SoT/derived edges win. Thin P1 inference (explicit owner ask):
+    - mother/mom ← spouse/partner of father (when no mother_of)
+    - father/dad ← spouse/partner of mother (when no father_of)
+    Does not build a full genealogy; discloses ambiguity.
+    """
     from memorybox.profile.owner import (
-        GENDERED_PARENT_PHRASES,
-        GENERIC_PARENT_ROLES,
+        ROLE_FATHER_OF,
+        ROLE_MOTHER_OF,
+        ROLE_PARTNER_OF,
+        ROLE_SPOUSE_OF,
     )
 
     phrase = (role_phrase or "").strip().lower()
     roles = ASK_ROLE_ALIASES.get(phrase)
     if not roles:
         raise ProfileServiceError(f"unsupported relationship phrase: {role_phrase!r}")
+
     matches = resolve_relatives_for_person(person_id, asked_roles=roles)
-    if not matches:
-        if phrase in GENDERED_PARENT_PHRASES:
-            generics = resolve_relatives_for_person(
-                person_id, asked_roles=GENERIC_PARENT_ROLES
+    if matches:
+        people = {m.from_person_id for m in matches}
+        if len(people) > 1:
+            raise AmbiguousRelationshipError(
+                f"Multiple current {phrase} relationships; clarify which person.",
+                candidates=[m.to_dict() for m in matches],
             )
-            if generics:
-                raise ProfileServiceError(
-                    f"A parent is recorded, but not labeled as {phrase}. "
-                    f"Save an explicit {phrase}_of relationship (not only parent_of / spouse)."
+        return matches[0]
+
+    # Thin spouse-of-parent inference (do not require entering every inverse)
+    spouse_roles = frozenset({ROLE_SPOUSE_OF, ROLE_PARTNER_OF})
+    if phrase in ("mother", "mom"):
+        anchors = resolve_relatives_for_person(
+            person_id, asked_roles=frozenset({ROLE_FATHER_OF})
+        )
+        anchor_label = "father"
+        inferred_role = ROLE_MOTHER_OF
+    elif phrase in ("father", "dad"):
+        anchors = resolve_relatives_for_person(
+            person_id, asked_roles=frozenset({ROLE_MOTHER_OF})
+        )
+        anchor_label = "mother"
+        inferred_role = ROLE_FATHER_OF
+    else:
+        anchors = []
+        anchor_label = ""
+        inferred_role = ""
+
+    if anchors:
+        inferred: list[DerivedEdge] = []
+        for anchor in anchors:
+            spouses = resolve_relatives_for_person(
+                anchor.from_person_id, asked_roles=spouse_roles
+            )
+            for sp in spouses:
+                if sp.from_person_id == person_id:
+                    continue  # not self
+                if sp.from_person_id == anchor.from_person_id:
+                    continue
+                note = (
+                    f"Inferred {phrase} as spouse/partner of your {anchor_label} "
+                    f"{anchor.from_display_name or anchor.from_person_id}"
                 )
+                inferred.append(
+                    DerivedEdge(
+                        assertion_id=sp.assertion_id,
+                        from_person_id=sp.from_person_id,
+                        to_person_id=person_id,
+                        role_kind=inferred_role,
+                        is_inverse_projection=True,
+                        sot_role_kind=sp.sot_role_kind,
+                        from_display_name=sp.from_display_name,
+                        to_display_name=None,
+                        provenance={
+                            **(sp.provenance or {}),
+                            "inferred_from": "spouse_of_parent",
+                            "anchor_person_id": anchor.from_person_id,
+                            "anchor_role": anchor_label,
+                        },
+                        inferred=True,
+                        inference_note=note,
+                    )
+                )
+        # Dedupe by inferred person
+        by_person: dict[str, DerivedEdge] = {}
+        for edge in inferred:
+            by_person[edge.from_person_id] = edge
+        uniq = list(by_person.values())
+        if len(uniq) == 1:
+            return uniq[0]
+        if len(uniq) > 1:
+            raise AmbiguousRelationshipError(
+                f"Multiple possible {phrase}s via spouse of your {anchor_label}; "
+                "clarify or record an explicit mother_of/father_of.",
+                candidates=[e.to_dict() for e in uniq],
+            )
         raise ProfileServiceError(
-            f"No current {phrase} relationship recorded for this person."
+            f"Your {anchor_label} is recorded, but no spouse/partner is linked to them, "
+            f"and no explicit {phrase}_of relationship exists."
         )
-    people = {m.from_person_id for m in matches}
-    if len(people) > 1:
-        raise AmbiguousRelationshipError(
-            f"Multiple current {phrase} relationships; clarify which person.",
-            candidates=[m.to_dict() for m in matches],
-        )
-    return matches[0]
+
+    raise ProfileServiceError(
+        f"No current {phrase} relationship recorded for this person."
+    )

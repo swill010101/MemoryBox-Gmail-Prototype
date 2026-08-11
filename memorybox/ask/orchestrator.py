@@ -635,6 +635,8 @@ class AskOrchestrator:
                 name = ans.get("display_name") or ans.get("person_id")
                 role = ans.get("role_phrase") or "relative"
                 text_out = f"Your {role} is {name}."
+                if ans.get("inferred") and ans.get("inference_note"):
+                    text_out = f"{text_out} ({ans['inference_note']}.)"
                 statements.append(
                     {
                         "text": text_out,
@@ -643,10 +645,18 @@ class AskOrchestrator:
                         "photo_external_ids": [],
                         "story_ids": [],
                         "journal_ids": [],
-                        "provenance_kind": "owner_relationship",
-                        "attribution": "Owner-asserted relationship",
+                        "provenance_kind": (
+                            "inferred_spouse_of_parent"
+                            if ans.get("inferred")
+                            else "owner_relationship"
+                        ),
+                        "attribution": (
+                            ans.get("inference_note")
+                            or "Owner-asserted relationship"
+                        ),
                         "person_id": ans.get("person_id"),
                         "assertion_id": ans.get("assertion_id"),
+                        "inferred": bool(ans.get("inferred")),
                     }
                 )
             elif plan.profile_intent == "birth":
