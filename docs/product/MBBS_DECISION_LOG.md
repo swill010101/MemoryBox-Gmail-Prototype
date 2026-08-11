@@ -163,6 +163,8 @@ Record one section per increment. Do not wait until end of P1.
 | Small kind set (keepsake, letter, document, recipe card, clipping, photograph-of-object, other) | Browse/Ask without taxonomy project |
 | Owner gate = MB-managed upload; Evidence-ref also supported | Prove preserve, not only pointer |
 | Durable media-server storage + content hash; FlightSim ≠ archive SoT | D7; originals sacred |
+| P1 Artifact original-media root = `\\media-server\photos\MemoryBox\Artifacts` via `MEMORYBOX_ARTIFACT_MEDIA_ROOT` only (no UNC in app code; ops may create folder) | Same MemoryBox durable tree as Sources; do not invent folder names |
+| PG on FlightSim = domain knowledge; binaries on media-server; no Artifact blobs in PG | Topology lock 2026-08-11 |
 | Immutable representation bytes; immutable metadata revisions; no byte dup on edit | Parallel Story/Journal; inspect at build |
 | Library first-class `artifact` modality; Person **not** required for visibility | Fix Person-only about collapse |
 | Person filter narrows when associated | Keep I8 Person browse; one card model |
@@ -173,9 +175,10 @@ Record one section per increment. Do not wait until end of P1.
 ### Shipped (code)
 
 - Migration `004_artifact_i9.sql`; Artifact service + `/artifact/ui` + APIs  
-- `MEMORYBOX_ARTIFACT_MEDIA_ROOT`; integrity hash; no silent overwrite  
+- `MEMORYBOX_ARTIFACT_MEDIA_ROOT` (ops: `\\media-server\photos\MemoryBox\Artifacts`); integrity hash; no silent overwrite; no PG blobs  
 - Library Person-optional `modalities=artifact`; Ask `artifact_hits`  
-- `prove-artifact`; health `increment: 9`
+- `prove-artifact`; health `increment: 9`  
+- Ops: [FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md](../ops/FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md) · `config/artifact.env.example`
 
 **Stop:** Do not begin **9A** / **10** without Tom authorizing *Build Increment 9A only* / *Build Increment 10 only*.
 

@@ -57,7 +57,13 @@ def _iso(v: Any) -> str | None:
 
 
 def artifact_media_root() -> Path:
-    """Durable SoT for MB-managed representation originals (D7 config-only)."""
+    """Durable SoT for MB-managed representation originals (D7 config-only).
+
+    FlightSim PostgreSQL holds Artifact domain knowledge and URI/hash refs.
+    Binary originals live on media-server under MEMORYBOX_ARTIFACT_MEDIA_ROOT
+    (P1 ops: MemoryBox\\Artifacts under the established photos\\MemoryBox tree —
+    see docs/ops/FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md). Never hard-code UNC here.
+    """
     raw = (os.environ.get("MEMORYBOX_ARTIFACT_MEDIA_ROOT") or "").strip()
     if raw:
         return Path(raw)
@@ -73,7 +79,8 @@ def artifact_media_root() -> Path:
         return p
     raise ArtifactServiceError(
         "MEMORYBOX_ARTIFACT_MEDIA_ROOT is required for MB-managed Artifact uploads "
-        "(media-server durable path; not FlightSim local disk as archive SoT)"
+        "(media-server durable path under MemoryBox tree; not FlightSim local disk "
+        "as archive SoT; see docs/ops/FLIGHTSIM_I9_ARTIFACT_RUNBOOK.md)"
     )
 
 

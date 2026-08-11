@@ -148,10 +148,12 @@ FlightSim (app / processing)
     └─ Ask earn-in (Artifact identity/metadata)
 
 media-server (durable SoT for MB-managed representation originals)
-    └─ configurable Artifact media root (D7 — no hard-coded host/paths in logic)
+    └─ MEMORYBOX_ARTIFACT_MEDIA_ROOT (D7 — no hard-coded UNC in logic)
+         P1 ops default under MemoryBox durable tree:
+         \\media-server\photos\MemoryBox\Artifacts
 ```
 
-**Story/Journal pattern to inspect at build:** `story_versions` / `journal_versions` = immutable body revisions; I9 mirrors for **metadata** while keeping **representation blobs** single-instance + hash.
+**Storage split (locked):** FlightSim PostgreSQL = Artifact domain knowledge (identity, labels/kinds, revisions, provenance, relationships, integrity hashes, representation records, URI refs). media-server = original uploaded bytes only — **not** PG blobs. App + PG stay on FlightSim.
 
 Demonstrator `artifact_label` = mine for ideas only — not P1 SoT.
 
