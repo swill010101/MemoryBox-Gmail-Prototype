@@ -55,7 +55,7 @@ On FlightSim without developer/SQL intervention:
 2. Upload ≥1 representation (prefer ≥2) to durable media-server root (above)
 3. Label (+ optional description) — PG metadata
 4. Associate Person if known (optional)
-5. Optionally Save Story + link (typed and/or STT draft → explicit Save)
+5. Optionally Save Story + link (in-app Capture/STT via `POST /capture/transcribe` → review draft → explicit Save; typed also OK)
 6. Library: modality=`artifact`, **no Person required** (Bucket All/Undated)
 7. Open/view representation(s)
 8. Ask retrieves by Artifact identity/metadata

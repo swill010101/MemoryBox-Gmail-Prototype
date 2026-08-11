@@ -113,12 +113,32 @@
       <p class="muted">
         Immich names you already created appear under <b>Immich</b>. Associating teaches/maps that name into MemoryBox (same I6/I7 lazy pattern), then links the Artifact — no separate /people/ui step required.
       </p>
-      <label for="storyBody">Why it matters — Save as Story (typed; or paste STT draft)</label>
+
+      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Why it matters — Story (typed or in-app Capture/STT)</h3>
+      <p class="muted">
+        Uses the same MemoryBox <code>POST /capture/transcribe</code> path as Journal (I5A).
+        Record or upload → STT fills the Story body as a <b>draft</b> → review/edit → explicit <b>Save Story + link Artifact</b>.
+        No paste-from-elsewhere path required.
+      </p>
+      <p id="micHint" class="warn" style="display:none"></p>
+      <label for="micDevice">Microphone</label>
+      <select id="micDevice"><option value="">Loading devices…</option></select>
+      <button id="refreshMicsBtn" type="button" class="secondary">Refresh mic list</button>
+      <button id="recBtn" type="button" class="secondary">Record</button>
+      <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
+      <span id="recStatus" class="muted">Idle</span>
+      <p id="sttError" class="warn" style="display:none;white-space:pre-wrap"></p>
+      <label for="audioFile" style="margin-top:0.5rem">Or upload spoken audio (webm/wav/mp3)</label>
+      <input id="audioFile" type="file" accept="audio/*,.webm,.wav,.mp3,.m4a" />
+      <p class="muted">Audio id: <code id="audioId">(none)</code> · draft only until Save Story</p>
+
+      <label for="storyTitle">Story title (optional)</label>
       <input id="storyTitle" placeholder="Story title (optional)" />
+      <label for="storyBody">Story body (STT draft lands here — edit before Save)</label>
       <textarea id="storyBody" placeholder="Owner recollection…"></textarea>
+      <label for="narrator">Narrator display name</label>
       <input id="narrator" placeholder="Narrator display name" />
       <button id="storyBtn" type="button">Save Story + link Artifact</button>
-      <p class="muted">Reuse Capture/STT from Journal/Story surfaces for voice; Save is always explicit.</p>
     </section>
 
     <section>
@@ -128,6 +148,9 @@
   </main>
   <script>
     let currentId = null;
+    let lastAudioId = null;
+    let activeRec = null;
+    let levelTimer = null;
 
     function esc(s) {
       return String(s || "").replace(/[&<>"']/g, (c) => ({
@@ -137,6 +160,12 @@
     function errText(err) {
       if (!err) return "unknown error";
       if (typeof err === "string") return err;
+      if (err.detail) {
+        if (typeof err.detail === "string") return err.detail;
+        if (typeof err.detail === "object") {
+          return err.detail.message || err.detail.error || JSON.stringify(err.detail);
+        }
+      }
       return err.message || String(err);
     }
     async function j(url, opts) {
@@ -157,6 +186,221 @@
       el.className = warn ? "warn" : "muted";
       el.textContent = msg;
     }
+    function setRecStatus(text, isWarn) {
+      const el = document.getElementById("recStatus");
+      el.textContent = text;
+      el.className = isWarn ? "warn" : "muted";
+    }
+    function stopLevelMeter() {
+      if (levelTimer) {
+        clearInterval(levelTimer);
+        levelTimer = null;
+      }
+    }
+
+    async function transcribeBlob(blob, filename) {
+      if (!blob || !blob.size) {
+        throw new Error("Empty recording (0 bytes). Hold Record a bit longer, then Stop.");
+      }
+      setRecStatus("Transcribing via MemoryBox Capture/STT…", false);
+      const fd = new FormData();
+      fd.append("file", blob, filename || "artifact-story.webm");
+      const r = await fetch("/capture/transcribe", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      const detail = data && data.detail;
+      const audioFromErr = detail && typeof detail === "object" ? detail.audio : null;
+      if (!r.ok) {
+        if (audioFromErr && audioFromErr.audio_id) {
+          lastAudioId = audioFromErr.audio_id;
+          document.getElementById("audioId").textContent = lastAudioId;
+          const msg = (detail && detail.message) ? detail.message : "STT failed";
+          setRecStatus("STT failed — draft not filled; fix Whisper then retry", true);
+          const errBox = document.getElementById("sttError");
+          errBox.style.display = "block";
+          errBox.textContent = msg;
+          throw new Error(msg);
+        }
+        throw new Error(typeof detail === "string" ? detail : (r.status + " STT failed"));
+      }
+      const draft = data.draft || data;
+      lastAudioId = draft.audio_id || null;
+      document.getElementById("audioId").textContent = lastAudioId || "(none)";
+      if (draft.text) {
+        document.getElementById("storyBody").value = draft.text;
+      }
+      const errBox = document.getElementById("sttError");
+      errBox.style.display = "none";
+      errBox.textContent = "";
+      const meta = [];
+      if (draft.duration_sec != null) meta.push(draft.duration_sec + "s");
+      if (draft.rms != null) meta.push("rms=" + draft.rms);
+      setRecStatus(
+        "STT draft in Story body — review, then Save Story" +
+          (meta.length ? " (" + meta.join(", ") + ")" : ""),
+        false
+      );
+      return data;
+    }
+
+    function preferMicId(devices) {
+      const saved = localStorage.getItem("mb_artifact_mic_id") || "";
+      if (saved && devices.some((d) => d.deviceId === saved)) return saved;
+      const logi = devices.find((d) => /logi|c615|webcam|microphone/i.test(d.label || "")
+        && !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      if (logi) return logi.deviceId;
+      const notVb = devices.find((d) => !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      return (notVb && notVb.deviceId) || (devices[0] && devices[0].deviceId) || "";
+    }
+
+    async function refreshMicList() {
+      const sel = document.getElementById("micDevice");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        sel.innerHTML = "<option value=\"\">Mic enumeration unavailable</option>";
+        return;
+      }
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const inputs = all.filter((d) => d.kind === "audioinput");
+      sel.innerHTML = "";
+      if (!inputs.length) {
+        sel.innerHTML = "<option value=\"\">No audio inputs found</option>";
+        return;
+      }
+      const preferred = preferMicId(inputs);
+      inputs.forEach((d) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ("Microphone " + d.deviceId.slice(0, 8));
+        if (d.deviceId === preferred) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (preferred) localStorage.setItem("mb_artifact_mic_id", preferred);
+    }
+
+    (function micProbe() {
+      const hint = document.getElementById("micHint");
+      const secure = window.isSecureContext;
+      const hasMd = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!secure || !hasMd) {
+        hint.style.display = "block";
+        hint.textContent =
+          "Browser mic needs localhost or HTTPS. On FlightSim use http://127.0.0.1:8790/artifact/ui, or upload an audio file below.";
+        setRecStatus("Mic blocked on this origin — use upload or localhost", true);
+      } else {
+        refreshMicList().catch(() => {});
+      }
+    })();
+
+    document.getElementById("refreshMicsBtn").onclick = () => {
+      refreshMicList().catch((e) => setRecStatus(errText(e), true));
+    };
+    document.getElementById("micDevice").onchange = (ev) => {
+      if (ev.target.value) localStorage.setItem("mb_artifact_mic_id", ev.target.value);
+    };
+
+    document.getElementById("recBtn").onclick = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Mic unavailable — use audio upload or open via http://127.0.0.1:8790/artifact/ui");
+        }
+        const deviceId = (document.getElementById("micDevice").value || "").trim();
+        const audioConstraint = {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        if (deviceId) audioConstraint.deviceId = { exact: deviceId };
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+        const track = stream.getAudioTracks()[0];
+        const trackLabel = (track && track.label) || "unknown mic";
+        const chunks = [];
+        const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+        let mime = "";
+        for (const m of mimeCandidates) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+            mime = m;
+            break;
+          }
+        }
+        const mediaRecorder = mime
+          ? new MediaRecorder(stream, { mimeType: mime })
+          : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size) chunks.push(e.data);
+        };
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        await ctx.resume();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        let peak = 0;
+        stopLevelMeter();
+        levelTimer = setInterval(() => {
+          analyser.getByteTimeDomainData(data);
+          let maxDev = 0;
+          for (let i = 0; i < data.length; i++) {
+            const dev = Math.abs(data[i] - 128);
+            if (dev > maxDev) maxDev = dev;
+          }
+          const pct = Math.round((maxDev / 128) * 100);
+          if (pct > peak) peak = pct;
+          setRecStatus(
+            "Recording… mic=\"" + trackLabel + "\" level=" + pct + "% (peak " + peak + "%). Speak now.",
+            pct < 2
+          );
+        }, 200);
+
+        mediaRecorder.onstop = async () => {
+          stopLevelMeter();
+          try { source.disconnect(); } catch (_) {}
+          try { await ctx.close(); } catch (_) {}
+          stream.getTracks().forEach((t) => t.stop());
+          document.getElementById("recBtn").disabled = false;
+          document.getElementById("stopBtn").disabled = true;
+          activeRec = null;
+          const type = mediaRecorder.mimeType || mime || "audio/webm";
+          const blob = new Blob(chunks, { type: type });
+          const ext = type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+          try {
+            await transcribeBlob(blob, "artifact-story." + ext);
+          } catch (e) {
+            setRecStatus("STT failed: " + errText(e), true);
+          }
+        };
+
+        mediaRecorder.start(250);
+        activeRec = mediaRecorder;
+        document.getElementById("recBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+        setRecStatus("Recording… mic=\"" + trackLabel + "\"", false);
+      } catch (e) {
+        setRecStatus("Record failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("stopBtn").onclick = () => {
+      if (activeRec && activeRec.state !== "inactive") activeRec.stop();
+    };
+
+    document.getElementById("audioFile").onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        await transcribeBlob(file, file.name || "upload.webm");
+      } catch (e) {
+        setRecStatus("Upload STT failed: " + errText(e), true);
+      }
+      ev.target.value = "";
+    };
+
     function renderArtifact(a) {
       if (!a) return;
       currentId = a.id;
