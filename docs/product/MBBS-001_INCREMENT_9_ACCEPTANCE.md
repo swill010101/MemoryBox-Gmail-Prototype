@@ -84,4 +84,5 @@ On FlightSim without developer/SQL intervention:
 ## Stop
 
 Do **not** begin Increment **9A** / **10** / Guided Capture / Export / SMS. Continue **I9 testing only**.  
+**Deferred:** Universal Immich lazy-teach on all Person pickers — [TASK-P1P2-001](MBBS_P1_P2_BACKLOG.md) (between P1 and P2; not an I9 retrofit).  
 Next review (after I9 accept): [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md).

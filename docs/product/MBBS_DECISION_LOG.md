@@ -182,6 +182,8 @@ Record one section per increment. Do not wait until end of P1.
 
 **Stop:** Do not begin **9A** / **10** without Tom authorizing *Build Increment 9A only* / *Build Increment 10 only*.
 
+**Deferred (not I9):** Universal Immich lazy-teach on every Person picker — [TASK-P1P2-001](MBBS_P1_P2_BACKLOG.md) (P1→P2). Artifact got a local Immich associate fix; do not retrofit Story/Library/Journal/etc. under I9.
+
 **Next after I9 owner accept:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md) — Person Profile, Facts & Relationships (**REVIEW ONLY**); then Increment 10 (EVS-014).
 
 ---
