@@ -333,6 +333,23 @@ def run_prove_person_profile(*, flightsim: bool = False) -> dict[str, Any]:
             ),
         )
 
+        # Guard: parent_of + marriage must NOT make the spouse “my father”
+        # (regression: Anne Will answered for both mother and father).
+        r_dad = orch.ask("Who is my father?")
+        dad_ans = (r_dad.plan or {}).get("profile_answer") or {}
+        dad_ok = (
+            r_dad.answer_kind == "profile_backed"
+            and dad_ans.get("person_id") == eugene_id
+            and not dad_ans.get("inferred")
+        )
+        _check(
+            "i9a_father_not_spouse_of_parent",
+            dad_ok,
+            checks,
+            problems,
+            detail=f"kind={r_dad.answer_kind} text={r_dad.answer_text!r} ans={dad_ans}",
+        )
+
         # I9A-K correction uncle → father
         uncle_name = _unique("I9A UncleX")
         uncle = resolve_person_by_name(uncle_name, create_if_missing=True, confirm=True)

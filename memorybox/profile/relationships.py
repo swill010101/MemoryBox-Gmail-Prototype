@@ -331,18 +331,18 @@ def resolve_one_relative(person_id: str, *, role_phrase: str) -> DerivedEdge:
     """Resolve a relative for person_id.
 
     Direct SoT/derived edges win. Thin P1 inference (explicit owner ask):
-    - mother/mom ← spouse/partner of father (or unique parent), including marriage
-      life-event co-participant when no spouse_of edge
-    - father/dad ← spouse/partner of mother (symmetric)
+    - mother/mom ← spouse/partner (or marriage co-participant) of father_of only
+    - father/dad ← spouse/partner (or marriage co-participant) of mother_of only
+    Never use generic parent_of as the inference anchor — that made Anne the
+    “father” when Eugene was only recorded as parent_of + marriage partner.
     Does not build a full genealogy; discloses ambiguity.
     """
     from memorybox.person import get_person
     from memorybox.profile.life_events import list_life_events_for_person
     from memorybox.profile.owner import (
-        ROLE_BIOLOGICAL_PARENT_OF,
+        GENERIC_PARENT_ROLES,
         ROLE_FATHER_OF,
         ROLE_MOTHER_OF,
-        ROLE_PARENT_OF,
         ROLE_PARTNER_OF,
         ROLE_SPOUSE_OF,
     )
@@ -362,11 +362,8 @@ def resolve_one_relative(person_id: str, *, role_phrase: str) -> DerivedEdge:
             )
         return matches[0]
 
-    # Thin spouse-of-parent inference
+    # Thin spouse-of-parent inference (gendered anchor only)
     spouse_roles = frozenset({ROLE_SPOUSE_OF, ROLE_PARTNER_OF})
-    parent_fallback = frozenset(
-        {ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF, ROLE_FATHER_OF, ROLE_MOTHER_OF}
-    )
 
     if phrase in ("mother", "mom"):
         anchors = resolve_relatives_for_person(
@@ -374,34 +371,39 @@ def resolve_one_relative(person_id: str, *, role_phrase: str) -> DerivedEdge:
         )
         anchor_label = "father"
         inferred_role = ROLE_MOTHER_OF
-        if not anchors:
-            # Allow parent_of / biological_parent_of as the "other parent" anchor
-            anchors = resolve_relatives_for_person(
-                person_id,
-                asked_roles=frozenset({ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
-            )
-            anchor_label = "parent"
     elif phrase in ("father", "dad"):
         anchors = resolve_relatives_for_person(
             person_id, asked_roles=frozenset({ROLE_MOTHER_OF})
         )
         anchor_label = "mother"
         inferred_role = ROLE_FATHER_OF
-        if not anchors:
-            anchors = resolve_relatives_for_person(
-                person_id,
-                asked_roles=frozenset({ROLE_PARENT_OF, ROLE_BIOLOGICAL_PARENT_OF}),
-            )
-            anchor_label = "parent"
     else:
         anchors = []
         anchor_label = ""
         inferred_role = ""
 
     if not anchors:
+        generics = resolve_relatives_for_person(
+            person_id, asked_roles=GENERIC_PARENT_ROLES
+        )
+        if generics and phrase in ("father", "dad", "mother", "mom"):
+            names = ", ".join(
+                sorted(
+                    {
+                        (g.from_display_name or g.from_person_id)
+                        for g in generics
+                    }
+                )
+            )
+            raise ProfileServiceError(
+                f"No current {phrase} relationship recorded. "
+                f"Parent(s) on file: {names}. "
+                f"Save “father of” / “mother of” (not only “parent of”) — "
+                f"then the other parent can be inferred from spouse/marriage."
+            )
         raise ProfileServiceError(
             f"No current {phrase} relationship recorded, and none can be inferred "
-            f"(need a father/mother/parent plus their spouse or marriage partner)."
+            f"(need a father_of or mother_of plus their spouse or marriage partner)."
         )
 
     # Multiple distinct anchors → do not guess which parent's spouse is mother/father
