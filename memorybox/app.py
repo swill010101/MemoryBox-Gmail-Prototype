@@ -1886,7 +1886,8 @@ class GcCampaignCreateBody(BaseModel):
     display_name: str
     email: str
     title: str | None = None
-    cadence_seconds: int = 86400
+    cadence_seconds: int | None = None
+    cadence_days: float | None = None
     start_at: str | None = None
     questions: list[str] = Field(default_factory=list)
     people_id: str | None = None
@@ -1905,6 +1906,22 @@ class GcTranscriptBody(BaseModel):
 
 class GcLinkPersonBody(BaseModel):
     people_id: str | None = None
+
+
+def _cadence_seconds_from_body(body: GcCampaignCreateBody) -> int:
+    if body.cadence_seconds is not None and int(body.cadence_seconds) >= 1:
+        return int(body.cadence_seconds)
+    days = body.cadence_days if body.cadence_days is not None else 7.0
+    if float(days) <= 0:
+        raise HTTPException(status_code=400, detail="cadence_days must be > 0")
+    return max(1, int(round(float(days) * 86400)))
+
+
+@app.get("/guided-capture/respondent-options")
+def gc_respondent_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
+    from memorybox.guided_capture import respondent_options
+
+    return {"options": respondent_options(limit=limit)}
 
 
 @app.get("/guided-capture/new-count")
@@ -1980,7 +1997,7 @@ def gc_create_campaign(body: GcCampaignCreateBody) -> dict[str, Any]:
             respondent_contact_id=contact["id"],
             title=body.title,
             owner_person_id=body.owner_person_id,
-            cadence_seconds=body.cadence_seconds,
+            cadence_seconds=_cadence_seconds_from_body(body),
             start_at=body.start_at,
             questions=body.questions,
         )
@@ -2129,7 +2146,7 @@ def gc_correct_tx(response_id: str, body: GcTranscriptBody) -> dict[str, Any]:
 @app.get("/guided-capture/responses/{response_id}/audio")
 def gc_audio(response_id: str) -> Response:
     from pathlib import Path
-    from urllib.parse import urlparse, unquote
+    from urllib.parse import unquote, urlparse
 
     from memorybox.guided_capture import GuidedCaptureError, get_response
 
@@ -2143,9 +2160,28 @@ def gc_audio(response_id: str) -> Response:
     parsed = urlparse(uri)
     if parsed.scheme != "file":
         raise HTTPException(status_code=400, detail="audio not local file")
-    path = Path(unquote(parsed.path))
-    if os.name == "nt" and str(path).startswith("/"):
-        path = Path(str(path)[1:])
+    raw = unquote(parsed.path or "")
+    # Windows file:///C:/path → urlparse path "/C:/path" (leading slash before drive)
+    if os.name == "nt":
+        if raw.startswith("/") and len(raw) >= 3 and raw[2] == ":":
+            raw = raw[1:]
+        elif parsed.netloc and len(parsed.netloc) >= 2 and parsed.netloc[1] == ":":
+            raw = f"{parsed.netloc}{raw}"
+    path = Path(raw)
     if not path.is_file():
-        raise HTTPException(status_code=404, detail="audio file missing")
-    return FileResponse(path)
+        raise HTTPException(
+            status_code=404,
+            detail=f"audio file missing on this host: {path}",
+        )
+    # Synthetic harness clips are tiny non-media bytes — still serve for download
+    media = "audio/webm"
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        media = "audio/wav"
+    elif suffix == ".mp3":
+        media = "audio/mpeg"
+    elif suffix in (".m4a", ".mp4"):
+        media = "audio/mp4"
+    elif suffix == ".ogg":
+        media = "audio/ogg"
+    return FileResponse(path, media_type=media)

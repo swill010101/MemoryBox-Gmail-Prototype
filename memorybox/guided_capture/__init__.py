@@ -185,7 +185,60 @@ def list_contacts(*, limit: int = 100) -> list[dict[str, Any]]:
     ]
 
 
-# --- Campaigns / Questions ----------------------------------------------------
+def respondent_options(*, limit: int = 200) -> list[dict[str, Any]]:
+    """MB People (with email if on profile) + prior GC contacts for campaign picker.
+
+    MB Person is optional — free-typed name+email always works. When an MB Person
+    is chosen and has a profile email, that email is preferred.
+    """
+    out: list[dict[str, Any]] = []
+    seen_email: set[str] = set()
+    try:
+        from memorybox.person import list_people
+        from memorybox.profile.facts import list_contacts as list_person_contacts
+
+        for p in list_people(limit=limit):
+            pid = str(p.get("id") or "")
+            name = (p.get("display_name") or "").strip() or "(unnamed)"
+            email = None
+            try:
+                for c in list_person_contacts(pid):
+                    if (c.contact_kind or "").lower() == "email" and c.value_text:
+                        email = c.value_text.strip()
+                        break
+            except Exception:
+                email = None
+            key = (email or "").lower()
+            out.append(
+                {
+                    "source": "mb_person",
+                    "people_id": pid,
+                    "display_name": name,
+                    "email": email,
+                    "label": f"{name}" + (f" · {email}" if email else " · (no email on profile)"),
+                }
+            )
+            if key:
+                seen_email.add(key)
+    except Exception:
+        pass
+    for c in list_contacts(limit=limit):
+        key = (c.get("email") or "").lower()
+        if key and key in seen_email:
+            continue
+        out.append(
+            {
+                "source": "gc_contact",
+                "people_id": c.get("people_id"),
+                "display_name": c.get("display_name"),
+                "email": c.get("email"),
+                "label": f"{c.get('display_name')} · {c.get('email')} (prior campaign)",
+            }
+        )
+        if key:
+            seen_email.add(key)
+    out.sort(key=lambda r: (r.get("display_name") or "").lower())
+    return out
 
 
 def create_campaign(
@@ -1371,6 +1424,7 @@ __all__ = [
     "get_contact",
     "link_contact_person",
     "list_contacts",
+    "respondent_options",
     "create_campaign",
     "get_campaign",
     "list_campaigns",
