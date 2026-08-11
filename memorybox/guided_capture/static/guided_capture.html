@@ -277,7 +277,10 @@
         <p class="muted">Campaign ${escapeHtml(r.campaign_title || "")} (${r.campaign_status}) · received ${r.received_at}</p>
         <label>Typed / extracted text</label>
         <textarea readonly>${escapeHtml(r.extracted_text || "")}</textarea>
-        <label>Transcript (correctable; audio immutable)</label>
+        ${(r.extracted_text || "").includes("MemoryBox Guided Capture") && (r.extracted_text || "").includes("Please reply")
+          ? `<div class="warn-box">This text looks like the <strong>outbound question email</strong>, not the respondent’s reply. Pull again after updating Guided Capture (Poll skips those), or open the real reply in Gmail and ensure it was sent as a Reply.</div>`
+          : ""}
+        <label>Transcript (voice STT only — typed replies use the box above)</label>
         <textarea id="txEdit">${escapeHtml(r.transcript_text || "")}</textarea>
         ${audioBlock}
         <p class="muted">STT: ${r.stt_status} · audio preserved: ${r.audio_uri ? "yes" : "no"}</p>
@@ -401,7 +404,10 @@
     };
     document.getElementById("btnPoll").onclick = async () => {
       const d = await api("/guided-capture/poll", { method: "POST", body: "{}" });
-      status(`Poll created=${(d.created||[]).length} quarantined=${(d.quarantined||[]).length}`);
+      status(
+        `Poll created=${(d.created||[]).length} quarantined=${(d.quarantined||[]).length}` +
+        ` skipped=${(d.skipped||[]).length}`
+      );
       await refreshBadge();
       await loadResponses();
     };

@@ -56,6 +56,41 @@ class InboundMailItem:
     audio_filename: str | None = None
     ambiguous: bool = False
     raw_headers: dict[str, str] = field(default_factory=dict)
+    skip_reason: str | None = None
+    in_reply_to: str | None = None
+
+
+GC_OUTBOUND_MARKER = "— MemoryBox Guided Capture"
+GC_OUTBOUND_PLEASE_REPLY = "(Please reply to this email.)"
+
+
+def looks_like_gc_outbound_body(text: str | None) -> bool:
+    """True when body is our outbound question template, not a respondent reply."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return GC_OUTBOUND_MARKER in t and GC_OUTBOUND_PLEASE_REPLY in t and len(t) < 4000
+
+
+def refine_gc_reply_text(text: str | None) -> str:
+    """Drop quoted outbound question template when a real reply precedes it."""
+    t = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not t or GC_OUTBOUND_MARKER not in t:
+        return t
+    # Common: reply text, then blank line, then "Hi Name," + question + marker
+    m = re.search(r"\n\nHi [^\n]+,\n\n", t)
+    if m and GC_OUTBOUND_MARKER in t[m.start() :]:
+        head = t[: m.start()].strip()
+        if head:
+            return head
+    idx = t.find(GC_OUTBOUND_MARKER)
+    if idx > 20:
+        head = t[:idx].strip()
+        # Strip trailing "Please reply..." fragments already handled; drop empty
+        if head and not looks_like_gc_outbound_body(head):
+            return head
+    return t
+
 
 
 class GuidedEmailAdapter(Protocol):
@@ -291,21 +326,19 @@ class MarvinGmailGuidedEmailAdapter:
     def poll_inbound(self) -> list[InboundMailItem]:
         """Poll the owner's Gmail inbox for Guided Capture replies.
 
-        Same mailbox as Sent/outbound — no separate MB inbox. Correlation via
-        plus-tag (user+gc-TOKEN@) and/or subject [MB-GC-TOKEN].
+        Exclude Sent / outbound echoes. Subject [MB-GC-] alone would otherwise
+        ingest the question email as a "response" (esp. send-to-self tests).
         """
         local, domain = self.user_email.split("@", 1)
         label_query = self._label.replace("/", "-")
-        # Owner inbox (and anywhere except trash/sent-only): GC plus-address OR subject token
         q = (
-            f"in:anywhere newer_than:30d -in:trash -label:{label_query} "
-            f"(to:{local}+{GC_PLUS_PREFIX}@{domain} OR "
-            f"to:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
+            f"in:inbox -in:sent -in:trash -label:{label_query} "
+            f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
+            f"deliveredto:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
             f"subject:[MB-GC-)"
         )
         try:
             label_id = self.client.ensure_label(self._label)
-            # Prefer direct Gmail list when available (bypass Marvin MEM/journal poll query)
             if hasattr(self.client, "service"):
                 result = (
                     self.client.service.users()
@@ -318,7 +351,10 @@ class MarvinGmailGuidedEmailAdapter:
                 msgs = self.client.list_unread_or_unprocessed(
                     processed_label=self._label,
                     user_email=self.user_email,
-                    query_extra=f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR subject:[MB-GC-)",
+                    query_extra=(
+                        f"in:inbox -in:sent "
+                        f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR subject:[MB-GC-)"
+                    ),
                 )
         except Exception:
             return []
@@ -334,10 +370,13 @@ class MarvinGmailGuidedEmailAdapter:
             msg = message_from_bytes(raw, policy=email_default)
             subject = str(msg.get("Subject") or "")
             from_addr = str(msg.get("From") or "")
+            in_reply_to = str(msg.get("In-Reply-To") or "") or None
             headers = {
                 "to": str(msg.get("To") or ""),
                 "delivered-to": str(msg.get("Delivered-To") or ""),
                 "x-original-to": str(msg.get("X-Original-To") or ""),
+                "from": from_addr,
+                "in-reply-to": in_reply_to or "",
             }
             token = extract_correlation_token(
                 subject=subject,
@@ -382,8 +421,15 @@ class MarvinGmailGuidedEmailAdapter:
                     payload = msg.get_payload(decode=True)
                     if isinstance(payload, bytes):
                         body = payload.decode("utf-8", errors="replace")
-            extracted = extract_reply_text(body or "", is_html=False)
+            extracted = refine_gc_reply_text(
+                extract_reply_text(body or "", is_html=False)
+            )
             uri = _preserve_bytes(raw, stem=mid, root=self._root)
+            skip_reason = None
+            if looks_like_gc_outbound_body(extracted) and not in_reply_to:
+                skip_reason = "outbound_echo"
+            elif looks_like_gc_outbound_body(extracted) and len(extracted.strip()) < 120:
+                skip_reason = "outbound_echo"
             out.append(
                 InboundMailItem(
                     inbound_message_id=mid,
@@ -398,6 +444,8 @@ class MarvinGmailGuidedEmailAdapter:
                     audio_filename=audio_filename,
                     ambiguous=token is None,
                     raw_headers=headers,
+                    skip_reason=skip_reason,
+                    in_reply_to=in_reply_to,
                 )
             )
             _ = label_id

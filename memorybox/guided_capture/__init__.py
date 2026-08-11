@@ -1064,35 +1064,75 @@ def record_inbound_response(
 
 def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
     """Poll email adapter; correlate by token; quarantine ambiguous."""
+    from memorybox.guided_capture.email_adapter import looks_like_gc_outbound_body
+
     adapter = adapter or get_email_adapter()
     items = adapter.poll_inbound()
     created: list[str] = []
     quarantined: list[dict[str, Any]] = []
     duplicates: list[str] = []
+    skipped: list[dict[str, Any]] = []
+
+    known_outbound: set[str] = set()
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT outbound_message_id FROM guided_capture_deliveries
+            WHERE outbound_message_id IS NOT NULL
+            """
+        ).fetchall()
+        known_outbound = {str(r["outbound_message_id"]) for r in rows if r["outbound_message_id"]}
+
     for item in items:
+        mid = item.inbound_message_id
+        if mid and mid in known_outbound:
+            skipped.append({"inbound_message_id": mid, "reason": "known_outbound_id"})
+            adapter.mark_processed(mid)
+            continue
+        if getattr(item, "skip_reason", None):
+            skipped.append(
+                {
+                    "inbound_message_id": mid,
+                    "reason": item.skip_reason,
+                    "subject": item.subject,
+                }
+            )
+            adapter.mark_processed(mid)
+            continue
+        text = (item.extracted_text or "").strip()
+        if looks_like_gc_outbound_body(text) and not item.has_audio:
+            skipped.append(
+                {
+                    "inbound_message_id": mid,
+                    "reason": "outbound_echo_body",
+                    "subject": item.subject,
+                }
+            )
+            adapter.mark_processed(mid)
+            continue
         if item.ambiguous or not item.correlation_token:
             quarantined.append(
                 {
-                    "inbound_message_id": item.inbound_message_id,
+                    "inbound_message_id": mid,
                     "subject": item.subject,
                     "reason": "ambiguous_correlation",
                 }
             )
-            adapter.mark_processed(item.inbound_message_id)
+            adapter.mark_processed(mid)
             continue
         with connection() as conn:
             existing = None
-            if item.inbound_message_id:
+            if mid:
                 existing = conn.execute(
                     """
                     SELECT id FROM guided_capture_responses
                     WHERE inbound_message_id = %s
                     """,
-                    (item.inbound_message_id,),
+                    (mid,),
                 ).fetchone()
             if existing:
                 duplicates.append(str(existing["id"]))
-                adapter.mark_processed(item.inbound_message_id)
+                adapter.mark_processed(mid)
                 continue
             d = conn.execute(
                 """
@@ -1104,12 +1144,12 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
             if not d:
                 quarantined.append(
                     {
-                        "inbound_message_id": item.inbound_message_id,
+                        "inbound_message_id": mid,
                         "token": item.correlation_token,
                         "reason": "unknown_token",
                     }
                 )
-                adapter.mark_processed(item.inbound_message_id)
+                adapter.mark_processed(mid)
                 continue
             camp_id = str(d["campaign_id"])
             q_id = str(d["question_id"])
@@ -1121,18 +1161,19 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
             delivery_id=did,
             channel=channel,
             extracted_text=item.extracted_text,
-            inbound_message_id=item.inbound_message_id,
+            inbound_message_id=mid,
             preserved_raw_uri=item.preserved_raw_uri,
             audio_bytes=item.audio_bytes,
             audio_filename=item.audio_filename,
         )
         created.append(resp["id"])
-        adapter.mark_processed(item.inbound_message_id)
+        adapter.mark_processed(mid)
     return {
         "ok": True,
         "created": created,
         "quarantined": quarantined,
         "duplicates": duplicates,
+        "skipped": skipped,
     }
 
 
