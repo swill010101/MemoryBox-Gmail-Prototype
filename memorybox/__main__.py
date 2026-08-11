@@ -109,6 +109,18 @@ def main(argv: list[str] | None = None) -> int:
             "MEMORYBOX_I10_OWNER_PERSON_ID after Review Immich+HVRT teach)"
         ),
     )
+    p_prove11 = sub.add_parser(
+        "prove-guided-capture",
+        help="Increment 11 Guided Capture (EF-11) acceptance prove",
+    )
+    p_prove11.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Final P1-runtime-host acceptance "
+            "(MEMORYBOX_P1_RUNTIME_HOST=1; real Gmail via MEMORYBOX_GC_EMAIL_PROVIDER=marvin)"
+        ),
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -251,6 +263,13 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         payload = prove_cross_provider_person(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-guided-capture":
+        from memorybox.guided_capture.acceptance import prove_guided_capture
+
+        payload = prove_guided_capture(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

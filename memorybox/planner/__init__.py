@@ -69,6 +69,12 @@ ARTIFACT_ASK_RE = re.compile(
     r"belong(?:ed|s)?\s+to"
     r")\b"
 )
+GUIDED_CAPTURE_ASK_RE = re.compile(
+    r"(?i)\b("
+    r"guided\s+capture|interview\s+campaign|campaign\s+response|"
+    r"what\s+did\s+\w+\s+say|said\s+about"
+    r")\b"
+)
 CALENDAR_RE = re.compile(
     r"(?i)\b(calendar|appointment|schedule|event|meeting|ics)\b"
 )
@@ -236,6 +242,7 @@ class QueryPlan:
     want_story: bool = False
     want_journal: bool = False
     want_artifact: bool = False
+    want_guided_capture: bool = False
     journal_capture_intent: bool = False
     visual_scope: VisualScope = "none"
     want_visual: bool = False
@@ -287,6 +294,8 @@ class QueryPlan:
             out.append("journal")
         if self.want_artifact:
             out.append("artifact")
+        if self.want_guided_capture:
+            out.append("guided_capture")
         return tuple(out)
 
 
@@ -873,6 +882,18 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_artifact:
             notes.append("want_artifact_modality")
 
+    # Guided Capture Responses (I11): said-about / interview testimony / exploratory
+    want_guided_capture = False
+    if not requires_clarification and not journal_capture_intent:
+        if said_about or GUIDED_CAPTURE_ASK_RE.search(q):
+            want_guided_capture = True
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+            want_guided_capture = True
+        if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
+            want_guided_capture = False
+        if want_guided_capture:
+            notes.append("want_guided_capture_modality")
+
     return QueryPlan(
         original_ask=q,
         effective_ask=effective if not journal_capture_intent else "journal_capture",
@@ -883,6 +904,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_story=want_story and not journal_capture_intent,
         want_journal=want_journal and not journal_capture_intent,
         want_artifact=want_artifact and not journal_capture_intent,
+        want_guided_capture=want_guided_capture and not journal_capture_intent,
         journal_capture_intent=journal_capture_intent,
         visual_scope=visual_scope if not requires_clarification and not journal_capture_intent else "none",
         want_visual=want_visual and not requires_clarification and not journal_capture_intent,

@@ -222,7 +222,7 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 10 — Cross-provider Person in Ask (EVS-014)
 
 **Date:** 2026-08-11  
-**Authorization:** **BUILD COMPLETE** — harness green; FlightSim owner acceptance pending  
+**Authorization:** **ACCEPTED** (FlightSim owner 2026-08-11)  
 **Definition:** [MBBS-001_INCREMENT_10_DEFINITION.md](MBBS-001_INCREMENT_10_DEFINITION.md)  
 **Acceptance:** [MBBS-001_INCREMENT_10_ACCEPTANCE.md](MBBS-001_INCREMENT_10_ACCEPTANCE.md)  
 **Roadmap:** After **I9A (ACCEPTED)** · Before **I11 Guided Capture**  
@@ -241,7 +241,34 @@ Record one section per increment. Do not wait until end of P1.
 | Kinship / lazy-teach / write-back / tree / multi-user / Capture / Export / polish OUT | Scope |
 
 **Prove:** `python -m memorybox prove-cross-provider-person` (+ `--flightsim`)  
-**Stop:** Do not begin Increment 11 until Tom authorizes.
+**Next:** [MBBS-001_INCREMENT_11_DEFINITION.md](MBBS-001_INCREMENT_11_DEFINITION.md) — Guided Capture — **BUILD AUTHORIZED / READY FOR OWNER ACCEPTANCE**.
+
+---
+
+## Increment 11 — Guided Capture (EF-11)
+
+**Date:** 2026-08-11  
+**Authorization:** Tom approved build I11 (*If there are no more questions or issues, you are approved to build i11*)  
+**Definition:** [MBBS-001_INCREMENT_11_DEFINITION.md](MBBS-001_INCREMENT_11_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_11_ACCEPTANCE.md](MBBS-001_INCREMENT_11_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE** (I11-OWNER pending FlightSim)
+
+### Locked decisions (shipped)
+
+| Decision | Rationale |
+|----------|-----------|
+| First-class Contact / Campaign / Question / Delivery / Response (not email-row flatten) | Domain gap vs Story/Journal/Evidence alone |
+| Time-driven cadence default; unanswered prior does not stall next send | Owner gate; `wait_for_response_before_next` reserved unused |
+| Outbound complete = all active questions sent or skipped — not all answered | Late replies still correlate |
+| No auto-mint Person from campaign email; optional explicit link only | People graph hygiene |
+| Email adapter reuses Marvin Gmail send/poll/correlation | Do not invent second email stack |
+| Send via owner’s configured Gmail (`userId=me`); retained in owner Sent; replies land in owner inbox and are polled/correlated | Owner-origin mail; no separate MB mailbox |
+| Voice → I5A Capture/STT only | No GC-specific Whisper |
+| Credibility enum on Response; display in Ask; no ranking yet | Trust later |
+| Response already citable in Ask without Story promotion | Knowledge semantics |
+| In-app self-prompt not required for I11-OWNER | Email campaign is the gate |
+
+**Prove:** `python -m memorybox prove-guided-capture` (+ `--flightsim`)  
+**Next:** Increment 12 — MV Export (**only after I11-OWNER**; new authorization).
 
 ---
 

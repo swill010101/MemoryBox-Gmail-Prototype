@@ -1,3 +1,3 @@
 """MemoryBox production application package (MBBS-001 Increment 1+)."""
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"

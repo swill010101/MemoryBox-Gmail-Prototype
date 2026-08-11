@@ -1,6 +1,7 @@
-"""FastAPI entry for MemoryBox monolith (Increment 9: Artifact + Library/Ask earn-in)."""
+"""FastAPI entry for MemoryBox monolith (Increment 11: Guided Capture)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,11 @@ DOMAIN_V0_TABLES = (
     "shared_life_events",
     "shared_life_event_participants",
     "memorybox_runtime_settings",
+    "guided_capture_contacts",
+    "guided_capture_campaigns",
+    "guided_capture_questions",
+    "guided_capture_deliveries",
+    "guided_capture_responses",
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
@@ -102,6 +108,7 @@ PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
 ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
+GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "guided_capture.html"
 
 app = FastAPI(
     title="MemoryBox",
@@ -355,7 +362,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": "10",
+        "increment": "11",
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -370,6 +377,7 @@ def health() -> dict[str, Any]:
         "review": "/review/ui",
         "library": "/library/ui",
         "artifact": "/artifact/ui",
+        "guided_capture": "/guided-capture/ui",
     }
 
 
@@ -377,7 +385,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": "10",
+        "increment": "11",
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -393,6 +401,8 @@ def root() -> dict[str, Any]:
         "library_cards": "GET /library/cards",
         "artifact_ui": "/artifact/ui",
         "artifact": "/artifact",
+        "guided_capture_ui": "/guided-capture/ui",
+        "guided_capture": "/guided-capture",
         "capture_transcribe": "POST /capture/transcribe",
     }
 
@@ -487,6 +497,17 @@ def artifact_ui() -> FileResponse:
         raise HTTPException(status_code=404, detail="Artifact UI missing")
     return FileResponse(
         ARTIFACT_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
+
+
+@app.get("/guided-capture/ui")
+def guided_capture_ui() -> FileResponse:
+    if not GC_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Guided Capture UI missing")
+    return FileResponse(
+        GC_STATIC,
         media_type="text/html",
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
@@ -1856,3 +1877,275 @@ def review_media(
         media_type=ctype,
         headers=out_headers,
     )
+
+
+# --- Increment 11 Guided Capture ------------------------------------------------
+
+
+class GcCampaignCreateBody(BaseModel):
+    display_name: str
+    email: str
+    title: str | None = None
+    cadence_seconds: int = 86400
+    start_at: str | None = None
+    questions: list[str] = Field(default_factory=list)
+    people_id: str | None = None
+    owner_person_id: str | None = None
+
+
+class GcCredibilityBody(BaseModel):
+    credibility: str
+    actor_key: str = "owner"
+
+
+class GcTranscriptBody(BaseModel):
+    text: str
+    actor_key: str = "owner"
+
+
+class GcLinkPersonBody(BaseModel):
+    people_id: str | None = None
+
+
+@app.get("/guided-capture/new-count")
+def gc_new_count() -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, new_response_count
+
+    try:
+        return {"count": new_response_count()}
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/guided-capture/starter-questions")
+def gc_starter_questions(limit: int = Query(12, ge=1, le=50)) -> dict[str, Any]:
+    from memorybox.guided_capture import starter_questions
+
+    return {"questions": starter_questions(limit=limit)}
+
+
+@app.get("/guided-capture/contacts")
+def gc_list_contacts(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
+    from memorybox.guided_capture import list_contacts
+
+    return {"contacts": list_contacts(limit=limit)}
+
+
+@app.post("/guided-capture/contacts")
+def gc_upsert_contact(body: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, upsert_contact
+
+    try:
+        return upsert_contact(
+            display_name=str(body.get("display_name") or ""),
+            email=str(body.get("email") or ""),
+            people_id=body.get("people_id"),
+        )
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/contacts/{contact_id}/link-person")
+def gc_link_person(contact_id: str, body: GcLinkPersonBody) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, link_contact_person
+
+    try:
+        return link_contact_person(contact_id, body.people_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/guided-capture/campaigns")
+def gc_list_campaigns(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+    from memorybox.guided_capture import list_campaigns
+
+    return {"campaigns": list_campaigns(limit=limit)}
+
+
+@app.post("/guided-capture/campaigns")
+def gc_create_campaign(body: GcCampaignCreateBody) -> dict[str, Any]:
+    from memorybox.guided_capture import (
+        GuidedCaptureError,
+        create_campaign,
+        upsert_contact,
+    )
+
+    try:
+        contact = upsert_contact(
+            display_name=body.display_name,
+            email=body.email,
+            people_id=body.people_id,
+        )
+        return create_campaign(
+            respondent_contact_id=contact["id"],
+            title=body.title,
+            owner_person_id=body.owner_person_id,
+            cadence_seconds=body.cadence_seconds,
+            start_at=body.start_at,
+            questions=body.questions,
+        )
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/guided-capture/campaigns/{campaign_id}")
+def gc_get_campaign(campaign_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, get_campaign
+
+    try:
+        return get_campaign(campaign_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/campaigns/{campaign_id}/start")
+def gc_start(campaign_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, start_campaign
+
+    try:
+        return start_campaign(campaign_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/campaigns/{campaign_id}/pause")
+def gc_pause(campaign_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, pause_campaign
+
+    try:
+        return pause_campaign(campaign_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/campaigns/{campaign_id}/resume")
+def gc_resume(campaign_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, resume_campaign
+
+    try:
+        return resume_campaign(campaign_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/campaigns/{campaign_id}/stop")
+def gc_stop(campaign_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, stop_campaign
+
+    try:
+        return stop_campaign(campaign_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/questions/{question_id}/skip")
+def gc_skip(question_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, skip_question
+
+    try:
+        return skip_question(question_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/tick")
+def gc_tick() -> dict[str, Any]:
+    from memorybox.guided_capture import tick_scheduler
+
+    return tick_scheduler()
+
+
+@app.post("/guided-capture/poll")
+def gc_poll() -> dict[str, Any]:
+    from memorybox.guided_capture import poll_and_ingest
+
+    return poll_and_ingest()
+
+
+@app.get("/guided-capture/responses")
+def gc_list_responses(
+    review_status: str | None = None,
+    campaign_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, list_responses
+
+    try:
+        return {
+            "responses": list_responses(
+                review_status=review_status,
+                campaign_id=campaign_id,
+                limit=limit,
+            )
+        }
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/guided-capture/responses/{response_id}")
+def gc_get_response(response_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, get_response
+
+    try:
+        return get_response(response_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/responses/{response_id}/credibility")
+def gc_set_cred(response_id: str, body: GcCredibilityBody) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, set_credibility
+
+    try:
+        return set_credibility(
+            response_id, body.credibility, actor_key=body.actor_key
+        )
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/responses/{response_id}/reviewed")
+def gc_mark_reviewed(response_id: str) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, mark_reviewed
+
+    try:
+        return mark_reviewed(response_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/guided-capture/responses/{response_id}/transcript")
+def gc_correct_tx(response_id: str, body: GcTranscriptBody) -> dict[str, Any]:
+    from memorybox.guided_capture import GuidedCaptureError, correct_transcript
+
+    try:
+        return correct_transcript(
+            response_id, body.text, actor_key=body.actor_key
+        )
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/guided-capture/responses/{response_id}/audio")
+def gc_audio(response_id: str) -> Response:
+    from pathlib import Path
+    from urllib.parse import urlparse, unquote
+
+    from memorybox.guided_capture import GuidedCaptureError, get_response
+
+    try:
+        r = get_response(response_id)
+    except GuidedCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    uri = r.get("audio_uri")
+    if not uri:
+        raise HTTPException(status_code=404, detail="no audio")
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        raise HTTPException(status_code=400, detail="audio not local file")
+    path = Path(unquote(parsed.path))
+    if os.name == "nt" and str(path).startswith("/"):
+        path = Path(str(path)[1:])
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="audio file missing")
+    return FileResponse(path)

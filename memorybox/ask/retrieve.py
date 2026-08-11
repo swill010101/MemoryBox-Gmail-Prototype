@@ -1203,3 +1203,16 @@ def search_artifacts(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]
     if bits:
         q = " ".join([q] + [str(b) for b in bits if b])
     return search_artifacts_for_ask(q, limit=limit)
+
+
+def search_guided_capture(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
+    """I11: cite Guided Capture Responses directly (no Story promotion required)."""
+    if not getattr(plan, "want_guided_capture", False):
+        return []
+    from memorybox.guided_capture import search_responses_for_ask
+
+    return search_responses_for_ask(
+        query=plan.original_ask or "",
+        person_names=tuple(plan.person_names or ()),
+        limit=limit,
+    )

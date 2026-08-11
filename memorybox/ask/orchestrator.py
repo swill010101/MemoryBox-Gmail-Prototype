@@ -35,6 +35,7 @@ class AskResult:
     journal_hits: list[dict[str, Any]]
     video_hits: list[dict[str, Any]]
     artifact_hits: list[dict[str, Any]]
+    guided_capture_hits: list[dict[str, Any]]
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
@@ -55,6 +56,7 @@ class AskResult:
             "journal_hits": self.journal_hits,
             "video_hits": self.video_hits,
             "artifact_hits": self.artifact_hits,
+            "guided_capture_hits": self.guided_capture_hits,
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
@@ -96,12 +98,14 @@ def _build_answer(
     videos: list[R.VideoHit] | None = None,
     video_status: dict[str, Any] | None = None,
     artifacts: list[dict[str, Any]] | None = None,
+    guided_capture: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], str | None]:
     citations: list[dict[str, Any]] = []
     statements: list[dict[str, Any]] = []
     videos = videos or []
     video_status = video_status or {}
     artifacts = artifacts or []
+    guided_capture = guided_capture or []
 
     if getattr(plan, "journal_capture_intent", False):
         msg = (
@@ -355,6 +359,38 @@ def _build_answer(
             }
         )
 
+    for g in guided_capture:
+        rid = g.get("response_id")
+        cred = g.get("credibility") or "not_rated"
+        citations.append(
+            {
+                "kind": "guided_capture",
+                "response_id": rid,
+                "respondent_name": g.get("respondent_name"),
+                "question_body": g.get("question_body"),
+                "campaign_title": g.get("campaign_title"),
+                "channel": g.get("channel"),
+                "credibility": cred,
+                "received_at": g.get("received_at"),
+                "provenance_kind": "guided_capture_response",
+                "attribution": g.get("attribution"),
+            }
+        )
+        statements.append(
+            {
+                "text": f"{g.get('attribution')}: {g.get('excerpt')}",
+                "label": "Guided Capture",
+                "evidence_ids": [],
+                "photo_external_ids": [],
+                "story_ids": [],
+                "journal_ids": [],
+                "guided_capture_ids": [rid] if rid else [],
+                "provenance_kind": "guided_capture_response",
+                "attribution": g.get("attribution"),
+                "credibility": cred,
+            }
+        )
+
     photo_unavail = bool(
         (plan.want_still or plan.want_photo) and photo_status.get("unavailable")
     )
@@ -363,7 +399,7 @@ def _build_answer(
         plan.want_video and not plan.want_still and plan.visual_scope == "video_only"
     )
 
-    if video_only and video_unavail and not evidence and not stories and not journals and not artifacts:
+    if video_only and video_unavail and not evidence and not stories and not journals and not artifacts and not guided_capture:
         text = (
             "Video intelligence provider is unavailable, so MemoryBox cannot search "
             "video presence spans right now. This is not the same as finding no videos. "
@@ -371,7 +407,7 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and not evidence and not stories and not journals and not videos and not artifacts:
+    if photo_unavail and not evidence and not stories and not journals and not videos and not artifacts and not guided_capture:
         text = (
             "Photo/still provider is unavailable, so MemoryBox cannot search the "
             "visual library right now. This is not the same as finding no photos. "
@@ -379,12 +415,12 @@ def _build_answer(
         )
         return "provider_unavailable", text, statements, citations, None
 
-    if photo_unavail and (evidence or stories or journals or videos or artifacts):
+    if photo_unavail and (evidence or stories or journals or videos or artifacts or guided_capture):
         text = (
             "Photo provider is unavailable (not 'no photos'). "
             f"Found {len(evidence)} Evidence, {len(stories)} Story, "
             f"{len(journals)} Journal, {len(videos)} video, "
-            f"{len(artifacts)} Artifact hit(s). "
+            f"{len(artifacts)} Artifact, {len(guided_capture)} Guided Capture hit(s). "
             "Family-history claims below are limited to cited items with provenance."
         )
         return "mixed", text, statements, citations, None
@@ -393,25 +429,28 @@ def _build_answer(
         (plan.want_photo or plan.want_still or plan.want_video
          or getattr(plan, "want_story", False)
          or getattr(plan, "want_journal", False)
-         or getattr(plan, "want_artifact", False))
+         or getattr(plan, "want_artifact", False)
+         or getattr(plan, "want_guided_capture", False))
         and not photos
         and not videos
         and not evidence
         and not stories
         and not journals
         and not artifacts
+        and not guided_capture
         and photo_status.get("ok", True)
         and (not plan.want_video or video_status.get("ok", True))
         and not video_unavail
     ):
         missing = (
             "Insufficient Evidence: no matching photos, videos, Stories, Journals, "
-            "Artifacts, or email/calendar Evidence were found for this ask. "
+            "Artifacts, Guided Capture Responses, or email/calendar Evidence were found "
+            "for this ask. "
             "MemoryBox will not invent a family fact."
         )
         return "insufficient", missing, statements, citations, missing
 
-    if not evidence and not photos and not videos and not stories and not journals and not artifacts:
+    if not evidence and not photos and not videos and not stories and not journals and not artifacts and not guided_capture:
         if video_unavail and plan.want_video:
             text = (
                 "Video intelligence provider is unavailable (not 'no videos'). "
@@ -425,6 +464,12 @@ def _build_answer(
         return "insufficient", missing, statements, citations, missing
 
     parts = []
+    if guided_capture:
+        parts.append(
+            f"Found {len(guided_capture)} Guided Capture Response(s) "
+            "(respondent testimony — citable without Story promotion; "
+            "credibility shown when set, not used for ranking in I11)."
+        )
     if artifacts:
         parts.append(
             f"Found {len(artifacts)} Artifact hit(s) "
@@ -519,11 +564,14 @@ def _build_answer(
             bool(videos),
             bool(evidence),
             bool(artifacts),
+            bool(guided_capture),
         )
         if x
     )
     if modalities_hit > 1:
         kind = "mixed"
+    elif guided_capture:
+        kind = "guided_capture_backed"
     elif artifacts:
         kind = "artifact_backed"
     elif journals:
@@ -593,6 +641,7 @@ class AskOrchestrator:
                         want_story=False,
                         want_journal=False,
                         want_artifact=False,
+                        want_guided_capture=False,
                     )
             elif not rel.ok:
                 # Failed relational resolve: do not fall through to prior context person
@@ -621,6 +670,7 @@ class AskOrchestrator:
         stories: list[R.StoryHit] = []
         journals: list[R.JournalHit] = []
         artifacts: list[dict[str, Any]] = []
+        guided_capture: list[dict[str, Any]] = []
 
         # Profile-backed short-circuit (who / birth / anniversary)
         if (
@@ -734,6 +784,7 @@ class AskOrchestrator:
                 journal_hits=[],
                 video_hits=[],
                 artifact_hits=[],
+                guided_capture_hits=[],
                 missing_disclosure=None,
                 provider_status=providers,
                 inventing=False,
@@ -757,6 +808,8 @@ class AskOrchestrator:
                 journals = R.search_journals(plan)
             if getattr(plan, "want_artifact", False):
                 artifacts = R.search_artifacts(plan)
+            if getattr(plan, "want_guided_capture", False):
+                guided_capture = R.search_guided_capture(plan)
 
             if plan.want_video:
                 videos, video_status = R.search_videos(
@@ -771,7 +824,7 @@ class AskOrchestrator:
             and not plan.requires_clarification
         ):
             disc = (plan.profile_answer or {}).get("disclosure")
-            if not (photos or evidence or stories or journals or videos or artifacts):
+            if not (photos or evidence or stories or journals or videos or artifacts or guided_capture):
                 plan = replace(
                     plan,
                     requires_clarification=True,
@@ -788,6 +841,7 @@ class AskOrchestrator:
             videos=videos,
             video_status=video_status,
             artifacts=artifacts,
+            guided_capture=guided_capture,
         )
 
         # I10: disclose cross-modality mapping gaps (Ask + Library share same Person X)
@@ -859,6 +913,14 @@ class AskOrchestrator:
                 f"hits={len(artifacts)}" if plan.want_artifact else "not_requested"
             ),
         }
+        providers["guided_capture_search"] = {
+            "ok": True,
+            "detail": (
+                f"hits={len(guided_capture)}"
+                if getattr(plan, "want_guided_capture", False)
+                else "not_requested"
+            ),
+        }
 
         return AskResult(
             session_id=new_ctx.session_id,
@@ -875,6 +937,7 @@ class AskOrchestrator:
             journal_hits=[j.to_dict() for j in journals],
             video_hits=[v.to_dict() for v in videos],
             artifact_hits=list(artifacts),
+            guided_capture_hits=list(guided_capture),
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,

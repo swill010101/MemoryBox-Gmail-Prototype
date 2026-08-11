@@ -1,0 +1,443 @@
+"""Guided Capture email adapter — Marvin Gmail lineage behind a Capture-channel interface.
+
+Do not invent a second email architecture. Harness uses FakeGuidedEmailAdapter;
+FlightSim uses Marvin live Gmail client when configured.
+"""
+from __future__ import annotations
+
+import os
+import re
+import secrets
+import sys
+from dataclasses import dataclass, field
+from email import message_from_bytes
+from email.policy import default as email_default
+from pathlib import Path
+from typing import Any, Protocol
+from uuid import uuid4
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+# Reuse Marvin reply extraction (derived text only; raw remains authoritative)
+from application.marvin_capture.plus_address import (
+    build_plus_address,
+    parse_plus_tag,
+)
+from application.marvin_capture.reply_extract import extract_reply_text, make_subject
+
+GC_PLUS_PREFIX = "gc-"
+SUBJECT_TOKEN_RE = re.compile(r"\[MB-GC-([A-Za-z0-9]+)\]", re.IGNORECASE)
+
+
+@dataclass
+class OutboundSendResult:
+    ok: bool
+    outbound_message_id: str | None = None
+    thread_id: str | None = None
+    preserved_raw_uri: str | None = None
+    fail_detail: str | None = None
+    reply_to: str | None = None
+
+
+@dataclass
+class InboundMailItem:
+    inbound_message_id: str
+    correlation_token: str | None
+    from_addr: str
+    subject: str
+    extracted_text: str
+    preserved_raw_uri: str
+    thread_id: str | None = None
+    has_audio: bool = False
+    audio_bytes: bytes | None = None
+    audio_filename: str | None = None
+    ambiguous: bool = False
+    raw_headers: dict[str, str] = field(default_factory=dict)
+
+
+class GuidedEmailAdapter(Protocol):
+    def send_question(
+        self,
+        *,
+        to_email: str,
+        respondent_name: str,
+        question_body: str,
+        correlation_token: str,
+        campaign_title: str | None = None,
+    ) -> OutboundSendResult: ...
+
+    def poll_inbound(self) -> list[InboundMailItem]: ...
+
+    def mark_processed(self, inbound_message_id: str) -> None: ...
+
+
+def new_correlation_token() -> str:
+    return secrets.token_hex(6)
+
+
+def extract_correlation_token(
+    *,
+    subject: str | None = None,
+    to_addrs: list[str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> str | None:
+    if subject:
+        m = SUBJECT_TOKEN_RE.search(subject)
+        if m:
+            return m.group(1).lower()
+    for addr in to_addrs or []:
+        tag = parse_plus_tag(addr)
+        if tag and tag.lower().startswith(GC_PLUS_PREFIX):
+            return tag[len(GC_PLUS_PREFIX) :].lower()
+    if headers:
+        for key in ("delivered-to", "x-original-to", "to", "Delivered-To", "To"):
+            raw = headers.get(key) or ""
+            for part in re.split(r",\s*", raw):
+                tag = parse_plus_tag(part.strip())
+                if tag and tag.lower().startswith(GC_PLUS_PREFIX):
+                    return tag[len(GC_PLUS_PREFIX) :].lower()
+    return None
+
+
+def _preserve_bytes(data: bytes, *, stem: str, root: Path) -> str:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{stem}.eml"
+    path.write_bytes(data)
+    return path.resolve().as_uri()
+
+
+class FakeGuidedEmailAdapter:
+    """In-memory outbound/inbound for prove-guided-capture (no live Gmail)."""
+
+    provider_key = "fake_guided_email"
+
+    def __init__(self, *, fail_next_send: bool = False, user_email: str = "owner@example.com") -> None:
+        self.user_email = user_email
+        self.sent: list[dict[str, Any]] = []
+        self.inbox: list[dict[str, Any]] = []
+        self.processed: set[str] = set()
+        self.fail_next_send = fail_next_send
+        self._root = Path.cwd() / ".memorybox_gc_fake_mail"
+        self._seq = 0
+
+    def _next_id(self, prefix: str) -> str:
+        self._seq += 1
+        return f"{prefix}{self._seq:04d}"
+
+    def send_question(
+        self,
+        *,
+        to_email: str,
+        respondent_name: str,
+        question_body: str,
+        correlation_token: str,
+        campaign_title: str | None = None,
+    ) -> OutboundSendResult:
+        if self.fail_next_send:
+            self.fail_next_send = False
+            return OutboundSendResult(ok=False, fail_detail="synthetic_send_failure")
+        reply_to = build_plus_address(self.user_email, f"{GC_PLUS_PREFIX}{correlation_token}")
+        subject = make_subject("GC", campaign_title or "MemoryBox question", correlation_token)
+        # Override Marvin default token placement — keep [MB-GC-token]
+        subject = f"[MB-GC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
+        body = (
+            f"Hi {respondent_name},\n\n"
+            f"{question_body}\n\n"
+            f"— MemoryBox Guided Capture\n"
+            f"(Reply to this message; keep the subject if possible.)\n"
+        )
+        mid = self._next_id("out")
+        tid = self._next_id("thr")
+        raw = f"Message-ID: {mid}\nTo: {to_email}\nReply-To: {reply_to}\nSubject: {subject}\n\n{body}".encode()
+        uri = _preserve_bytes(raw, stem=mid, root=self._root)
+        self.sent.append(
+            {
+                "id": mid,
+                "thread_id": tid,
+                "to": to_email,
+                "subject": subject,
+                "body": body,
+                "reply_to": reply_to,
+                "correlation_token": correlation_token,
+            }
+        )
+        return OutboundSendResult(
+            ok=True,
+            outbound_message_id=mid,
+            thread_id=tid,
+            preserved_raw_uri=uri,
+            reply_to=reply_to,
+        )
+
+    def inject_reply(
+        self,
+        *,
+        correlation_token: str | None,
+        from_addr: str,
+        text: str,
+        subject: str | None = None,
+        inbound_message_id: str | None = None,
+        audio_bytes: bytes | None = None,
+        audio_filename: str | None = None,
+        ambiguous: bool = False,
+    ) -> str:
+        mid = inbound_message_id or self._next_id("in")
+        subj = subject or (
+            f"[MB-GC-{correlation_token}] Re: MemoryBox question"
+            if correlation_token
+            else "Re: (no token)"
+        )
+        raw = f"From: {from_addr}\nSubject: {subj}\n\n{text}".encode()
+        uri = _preserve_bytes(raw, stem=mid, root=self._root)
+        self.inbox.append(
+            {
+                "id": mid,
+                "correlation_token": correlation_token,
+                "from_addr": from_addr,
+                "subject": subj,
+                "text": text,
+                "uri": uri,
+                "audio_bytes": audio_bytes,
+                "audio_filename": audio_filename,
+                "ambiguous": ambiguous,
+            }
+        )
+        return mid
+
+    def poll_inbound(self) -> list[InboundMailItem]:
+        out: list[InboundMailItem] = []
+        for item in self.inbox:
+            mid = item["id"]
+            if mid in self.processed:
+                continue
+            out.append(
+                InboundMailItem(
+                    inbound_message_id=mid,
+                    correlation_token=item.get("correlation_token"),
+                    from_addr=item["from_addr"],
+                    subject=item["subject"],
+                    extracted_text=item["text"],
+                    preserved_raw_uri=item["uri"],
+                    has_audio=bool(item.get("audio_bytes")),
+                    audio_bytes=item.get("audio_bytes"),
+                    audio_filename=item.get("audio_filename"),
+                    ambiguous=bool(item.get("ambiguous")),
+                )
+            )
+        return out
+
+    def mark_processed(self, inbound_message_id: str) -> None:
+        self.processed.add(inbound_message_id)
+
+
+class MarvinGmailGuidedEmailAdapter:
+    """Live Gmail via application.marvin_capture.gmail_client (FlightSim).
+
+    Sends as the authenticated owner (`userId=me`) so mail appears in the owner's
+    Gmail Sent. Polls the same account inbox for replies (plus-tag / [MB-GC-token]).
+    """
+
+    provider_key = "marvin_gmail"
+
+    def __init__(self, client: Any, *, user_email: str, preserve_root: Path | None = None) -> None:
+        self.client = client
+        self.user_email = user_email
+        self._root = preserve_root or Path(
+            os.environ.get("MEMORYBOX_GC_MAIL_DIR", str(Path.cwd() / ".memorybox_gc_mail"))
+        )
+        self._label = "MemoryBox/GC-Processed"
+
+    def send_question(
+        self,
+        *,
+        to_email: str,
+        respondent_name: str,
+        question_body: str,
+        correlation_token: str,
+        campaign_title: str | None = None,
+    ) -> OutboundSendResult:
+        reply_to = build_plus_address(self.user_email, f"{GC_PLUS_PREFIX}{correlation_token}")
+        subject = f"[MB-GC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
+        body = (
+            f"Hi {respondent_name},\n\n"
+            f"{question_body}\n\n"
+            f"— MemoryBox Guided Capture\n"
+            f"(Please reply to this email.)\n"
+        )
+        try:
+            result = self.client.send_message(
+                to=to_email,
+                subject=subject,
+                body=body,
+                reply_to=reply_to,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return OutboundSendResult(ok=False, fail_detail=str(exc))
+        mid = str(result.get("id") or "")
+        tid = str(result.get("threadId") or "") or None
+        raw = f"To: {to_email}\nReply-To: {reply_to}\nSubject: {subject}\n\n{body}".encode()
+        uri = _preserve_bytes(raw, stem=mid or str(uuid4()), root=self._root)
+        return OutboundSendResult(
+            ok=True,
+            outbound_message_id=mid or None,
+            thread_id=tid,
+            preserved_raw_uri=uri,
+            reply_to=reply_to,
+        )
+
+    def poll_inbound(self) -> list[InboundMailItem]:
+        """Poll the owner's Gmail inbox for Guided Capture replies.
+
+        Same mailbox as Sent/outbound — no separate MB inbox. Correlation via
+        plus-tag (user+gc-TOKEN@) and/or subject [MB-GC-TOKEN].
+        """
+        local, domain = self.user_email.split("@", 1)
+        label_query = self._label.replace("/", "-")
+        # Owner inbox (and anywhere except trash/sent-only): GC plus-address OR subject token
+        q = (
+            f"in:anywhere newer_than:30d -in:trash -label:{label_query} "
+            f"(to:{local}+{GC_PLUS_PREFIX}@{domain} OR "
+            f"to:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
+            f"subject:[MB-GC-)"
+        )
+        try:
+            label_id = self.client.ensure_label(self._label)
+            # Prefer direct Gmail list when available (bypass Marvin MEM/journal poll query)
+            if hasattr(self.client, "service"):
+                result = (
+                    self.client.service.users()
+                    .messages()
+                    .list(userId="me", q=q, maxResults=50)
+                    .execute()
+                )
+                msgs = result.get("messages") or []
+            else:
+                msgs = self.client.list_unread_or_unprocessed(
+                    processed_label=self._label,
+                    user_email=self.user_email,
+                    query_extra=f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR subject:[MB-GC-)",
+                )
+        except Exception:
+            return []
+        out: list[InboundMailItem] = []
+        for meta in msgs or []:
+            mid = str(meta.get("id") or "")
+            if not mid:
+                continue
+            try:
+                raw = self.client.get_message_raw(mid)
+            except Exception:
+                continue
+            msg = message_from_bytes(raw, policy=email_default)
+            subject = str(msg.get("Subject") or "")
+            from_addr = str(msg.get("From") or "")
+            headers = {
+                "to": str(msg.get("To") or ""),
+                "delivered-to": str(msg.get("Delivered-To") or ""),
+                "x-original-to": str(msg.get("X-Original-To") or ""),
+            }
+            token = extract_correlation_token(
+                subject=subject,
+                to_addrs=[headers["to"], headers["delivered-to"], headers["x-original-to"]],
+                headers=headers,
+            )
+            body = ""
+            audio_bytes = None
+            audio_filename = None
+            if msg.is_multipart():
+                for part in msg.walk():
+                    ctype = part.get_content_type()
+                    disp = str(part.get("Content-Disposition") or "")
+                    if ctype.startswith("audio/") or (
+                        "attachment" in disp
+                        and any(
+                            (part.get_filename() or "").lower().endswith(ext)
+                            for ext in (".webm", ".wav", ".mp3", ".m4a", ".ogg")
+                        )
+                    ):
+                        try:
+                            audio_bytes = part.get_payload(decode=True)
+                            audio_filename = part.get_filename() or "voice.webm"
+                        except Exception:
+                            pass
+                    elif ctype == "text/plain" and not body:
+                        try:
+                            body = part.get_content()
+                        except Exception:
+                            payload = part.get_payload(decode=True)
+                            if isinstance(payload, bytes):
+                                body = payload.decode("utf-8", errors="replace")
+                    elif ctype == "text/html" and not body:
+                        try:
+                            body = extract_reply_text(part.get_content(), is_html=True)
+                        except Exception:
+                            pass
+            else:
+                try:
+                    body = msg.get_content()
+                except Exception:
+                    payload = msg.get_payload(decode=True)
+                    if isinstance(payload, bytes):
+                        body = payload.decode("utf-8", errors="replace")
+            extracted = extract_reply_text(body or "", is_html=False)
+            uri = _preserve_bytes(raw, stem=mid, root=self._root)
+            out.append(
+                InboundMailItem(
+                    inbound_message_id=mid,
+                    correlation_token=token,
+                    from_addr=from_addr,
+                    subject=subject,
+                    extracted_text=extracted,
+                    preserved_raw_uri=uri,
+                    thread_id=str(meta.get("threadId") or "") or None,
+                    has_audio=bool(audio_bytes),
+                    audio_bytes=audio_bytes,
+                    audio_filename=audio_filename,
+                    ambiguous=token is None,
+                    raw_headers=headers,
+                )
+            )
+            _ = label_id
+        return out
+
+    def mark_processed(self, inbound_message_id: str) -> None:
+        try:
+            lid = self.client.ensure_label(self._label)
+            self.client.apply_label(inbound_message_id, lid)
+        except Exception:
+            pass
+
+
+_ADAPTER: GuidedEmailAdapter | None = None
+
+
+def set_email_adapter(adapter: GuidedEmailAdapter | None) -> None:
+    global _ADAPTER
+    _ADAPTER = adapter
+
+
+def get_email_adapter() -> GuidedEmailAdapter:
+    global _ADAPTER
+    if _ADAPTER is not None:
+        return _ADAPTER
+    mode = (os.environ.get("MEMORYBOX_GC_EMAIL_PROVIDER") or "auto").strip().lower()
+    if mode == "fake":
+        _ADAPTER = FakeGuidedEmailAdapter()
+        return _ADAPTER
+    # Try Marvin live config
+    try:
+        from application.marvin_capture.config import load_config
+        from application.marvin_capture.gmail_client import build_live_gmail_client
+
+        cfg = load_config()
+        user_email = (cfg.get("gmail") or {}).get("user_email") or ""
+        if user_email and mode in ("auto", "marvin", "gmail"):
+            client = build_live_gmail_client(cfg)
+            _ADAPTER = MarvinGmailGuidedEmailAdapter(client, user_email=user_email)
+            return _ADAPTER
+    except Exception:
+        pass
+    _ADAPTER = FakeGuidedEmailAdapter()
+    return _ADAPTER
