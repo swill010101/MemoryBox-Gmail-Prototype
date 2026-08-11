@@ -406,11 +406,14 @@
       const d = await api("/guided-capture/poll", { method: "POST", body: "{}" });
       const skipped = d.skipped || [];
       const reasons = skipped.slice(0, 3).map(s => s.reason).join(", ");
+      const dbg = d.debug || {};
       status(
         `Poll examined=${d.examined ?? "?"} created=${(d.created||[]).length}` +
         ` quarantined=${(d.quarantined||[]).length} skipped=${skipped.length}` +
         (reasons ? ` (${reasons})` : "") +
-        ((d.duplicates||[]).length ? ` duplicates=${d.duplicates.length}` : "")
+        ((d.duplicates||[]).length ? ` duplicates=${d.duplicates.length}` : "") +
+        (dbg.error ? ` ERROR=${dbg.error}` : "") +
+        (dbg.subjects && dbg.subjects.length ? ` subjects=${dbg.subjects.join(" | ")}` : "")
       );
       await refreshBadge();
       await loadResponses();

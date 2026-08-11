@@ -1172,6 +1172,7 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         )
         created.append(resp["id"])
         adapter.mark_processed(mid)
+    debug = getattr(adapter, "last_poll_debug", None) or {}
     return {
         "ok": True,
         "created": created,
@@ -1179,6 +1180,12 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         "duplicates": duplicates,
         "skipped": skipped,
         "examined": len(items),
+        "debug": {
+            "error": debug.get("error"),
+            "merged": debug.get("merged"),
+            "query_hits": debug.get("query_hits"),
+            "subjects": debug.get("subjects"),
+        },
     }
 
 

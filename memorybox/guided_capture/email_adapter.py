@@ -348,43 +348,62 @@ class MarvinGmailGuidedEmailAdapter:
     def poll_inbound(self) -> list[InboundMailItem]:
         """Poll the owner's Gmail inbox for Guided Capture replies.
 
-        Exclude Sent / outbound echoes. Subject [MB-GC-] alone would otherwise
-        ingest the question email as a "response" (esp. send-to-self tests).
+        Self-replies often have INBOX+SENT — do not use -in:sent.
+        Outbound echoes filtered by known outbound ids + pure-template detect.
         """
         local, domain = self.user_email.split("@", 1)
         label_query = self._label.replace("/", "-")
-        # Inbox GC traffic. Do NOT use -in:sent: self-replies (and many Reply
-        # flows) carry both INBOX and SENT and would be invisible to Poll.
-        # Outbound echoes are filtered by known outbound ids + pure-template detect.
-        q = (
-            f"in:inbox -in:trash -label:{label_query} "
-            f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
-            f"deliveredto:{local}+{GC_PLUS_PREFIX}*@{domain} OR "
-            f"subject:[MB-GC- OR subject:Re: [MB-GC-)"
-        )
+        # Several queries: Gmail is picky about [] and plus-address wildcards.
+        queries = [
+            (
+                f"in:inbox newer_than:14d -in:trash -label:{label_query} "
+                f"to:({local}+{GC_PLUS_PREFIX})"
+            ),
+            (
+                f"in:inbox newer_than:14d -in:trash -label:{label_query} "
+                f'subject:"[MB-GC-"'
+            ),
+            (
+                f"in:inbox newer_than:14d -in:trash -label:{label_query} "
+                f"deliveredto:({local}+{GC_PLUS_PREFIX})"
+            ),
+        ]
+        self.last_poll_debug: dict[str, Any] = {
+            "queries": queries,
+            "query_hits": {},
+            "error": None,
+        }
         try:
             label_id = self.client.ensure_label(self._label)
-            if hasattr(self.client, "service"):
+        except Exception as exc:  # noqa: BLE001
+            self.last_poll_debug["error"] = f"ensure_label: {exc}"
+            return []
+
+        seen: set[str] = set()
+        msgs: list[dict[str, Any]] = []
+        if not hasattr(self.client, "service"):
+            self.last_poll_debug["error"] = "gmail client has no service (not live)"
+            return []
+        for q in queries:
+            try:
                 result = (
                     self.client.service.users()
                     .messages()
                     .list(userId="me", q=q, maxResults=50)
                     .execute()
                 )
-                msgs = result.get("messages") or []
-            else:
-                msgs = self.client.list_unread_or_unprocessed(
-                    processed_label=self._label,
-                    user_email=self.user_email,
-                    query_extra=(
-                        f"in:inbox "
-                        f"(to:{local}+{GC_PLUS_PREFIX}*@{domain} OR subject:[MB-GC-)"
-                    ),
-                )
-        except Exception:
-            return []
+                batch = result.get("messages") or []
+                self.last_poll_debug["query_hits"][q] = len(batch)
+                for m in batch:
+                    mid = str(m.get("id") or "")
+                    if mid and mid not in seen:
+                        seen.add(mid)
+                        msgs.append(m)
+            except Exception as exc:  # noqa: BLE001
+                self.last_poll_debug["query_hits"][q] = f"error: {exc}"
+
         out: list[InboundMailItem] = []
-        for meta in msgs or []:
+        for meta in msgs:
             mid = str(meta.get("id") or "")
             if not mid:
                 continue
@@ -474,6 +493,8 @@ class MarvinGmailGuidedEmailAdapter:
                 )
             )
             _ = label_id
+        self.last_poll_debug["merged"] = len(msgs)
+        self.last_poll_debug["subjects"] = [i.subject for i in out[:8]]
         return out
 
     def mark_processed(self, inbound_message_id: str) -> None:
