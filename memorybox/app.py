@@ -1014,6 +1014,162 @@ def people_owner() -> dict[str, Any]:
     return {"ok": True, **owner_config_status()}
 
 
+@app.get("/people/picker-options")
+def people_picker_options(limit: int = Query(300, ge=1, le=1000)) -> dict[str, Any]:
+    """Unified person list for UI: one name once (MB preferred over Immich-only).
+
+    Each option is either an existing MB Person or an Immich identity that will be
+    taught into MB on use via POST /people/ensure.
+    """
+    from memorybox.ask.deps import build_photo
+    from memorybox.person import get_person
+    from urllib.parse import quote
+
+    mb_rows = list_people(limit=limit)
+    mapped_ext: set[str] = set()
+    by_name: dict[str, dict[str, Any]] = {}
+    options: list[dict[str, Any]] = []
+
+    for row in mb_rows:
+        pid = row["id"]
+        view = get_person(pid)
+        name = (row.get("display_name") or "").strip() or "(unnamed)"
+        key = name.lower()
+        immich_ids: list[str] = []
+        if view:
+            for m in view.provider_mappings or []:
+                if m.get("provider_key") == "immich" and m.get("external_id"):
+                    eid = str(m["external_id"])
+                    immich_ids.append(eid)
+                    mapped_ext.add(eid)
+        entry = {
+            "key": f"mb:{pid}",
+            "label": name,
+            "person_id": pid,
+            "display_name": name,
+            "source": "memorybox",
+            "status": row.get("status"),
+            "immich_external_ids": immich_ids,
+        }
+        # Prefer first MB for a name; later same-name MB still listed with disambiguation
+        if key in by_name and by_name[key].get("person_id") != pid:
+            entry["label"] = f"{name} (MB · {str(pid)[:8]}…)"
+            options.append(entry)
+        else:
+            by_name[key] = entry
+            options.append(entry)
+
+    immich_err: str | None = None
+    immich_count = 0
+    try:
+        photo = build_photo()
+        h = photo.health()
+        if not h.ok:
+            immich_err = h.detail or "Immich unavailable"
+        else:
+            refs = photo.list_people(limit=limit) or []
+            for r in refs:
+                eid = str(getattr(r, "external_id", "") or "").strip()
+                name = (getattr(r, "display_name", None) or "").strip()
+                if not eid or len(name) < 2:
+                    continue
+                immich_count += 1
+                if eid in mapped_ext:
+                    continue  # already represented via MB mapping
+                key = name.lower()
+                if key in by_name:
+                    continue  # same display name already in MB — show once
+                options.append(
+                    {
+                        "key": f"immich:{quote(eid, safe='')}:{quote(name, safe='')}",
+                        "label": name,
+                        "person_id": None,
+                        "display_name": name,
+                        "source": "immich",
+                        "external_id": eid,
+                        "status": "immich_only",
+                        "immich_external_ids": [eid],
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001
+        immich_err = str(exc)
+
+    options.sort(key=lambda o: str(o.get("label") or "").lower())
+    return {
+        "ok": True,
+        "count": len(options),
+        "options": options,
+        "immich_named_count": immich_count,
+        "immich_error": immich_err,
+    }
+
+
+class EnsurePersonBody(BaseModel):
+    """Resolve picker selection to an MB Person (lazy-teach Immich when needed)."""
+
+    person_id: str | None = None
+    provider_key: str = "immich"
+    external_id: str | None = None
+    display_name: str | None = None
+
+
+@app.post("/people/ensure")
+def people_ensure(body: EnsurePersonBody) -> dict[str, Any]:
+    from memorybox.ask.deps import build_photo
+    from memorybox.person import AmbiguousIdentityError
+
+    if body.person_id:
+        view = get_person(body.person_id)
+        if not view:
+            raise HTTPException(status_code=404, detail="person not found")
+        return {"ok": True, "created": False, "person": view.to_dict()}
+    ext = (body.external_id or "").strip()
+    name = (body.display_name or "").strip()
+    if not ext or len(name) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="person_id or (external_id + display_name) required",
+        )
+    try:
+        view = teach_provider_person(
+            display_name=name,
+            provider_key=body.provider_key or "immich",
+            external_id=ext,
+            label=name,
+            photo=build_photo(),
+        )
+    except AmbiguousIdentityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "ambiguous_identity",
+                "message": str(exc),
+                "resolution": "owner_required",
+            },
+        ) from exc
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "created": True, "person": view.to_dict()}
+
+
+class ContactSupersedeBody(BaseModel):
+    value_text: str = Field(..., min_length=2)
+    note: str | None = None
+
+
+@app.post("/people/contacts/{contact_id}/supersede")
+def people_supersede_contact(contact_id: str, body: ContactSupersedeBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, supersede_contact
+
+    try:
+        contact = supersede_contact(
+            contact_id, value_text=body.value_text, note=body.note
+        )
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "contact": contact.to_dict()}
+
+
 @app.get("/people/provider/immich")
 def people_immich_list() -> dict[str, Any]:
     photo = build_photo()

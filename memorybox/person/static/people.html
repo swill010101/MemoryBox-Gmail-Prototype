@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox People</title>
   <style>
-    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; }
+    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; --ok:#1d5c3a; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -14,179 +14,220 @@
       color: var(--ink);
       min-height: 100vh;
     }
-    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
-    .sub { color: #5a6170; font-size: 0.9rem; margin-bottom: 1rem; }
-    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 0.45rem; }
+    .sub { color: #5a6170; font-size: 0.92rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.88rem; margin: 0.55rem 0 0.2rem; font-weight: 600; }
     input, select, textarea {
       width: 100%;
-      padding: 0.55rem 0.7rem;
+      padding: 0.6rem 0.75rem;
       border: 1px solid var(--line);
-      background: var(--panel);
+      background: #fff;
       font: inherit;
     }
     button {
       border: 1px solid var(--accent);
       background: var(--accent);
       color: #fff;
-      padding: 0.55rem 0.85rem;
+      padding: 0.6rem 0.95rem;
       cursor: pointer;
       margin-right: 0.4rem;
-      margin-top: 0.5rem;
+      margin-top: 0.55rem;
+      font: inherit;
     }
-    button.secondary { background: transparent; color: var(--accent); }
+    button.secondary { background: #fff; color: var(--accent); }
     section {
       background: var(--panel);
       border: 1px solid var(--line);
-      padding: 0.85rem;
-      margin-bottom: 0.75rem;
+      padding: 1rem;
+      margin-bottom: 0.85rem;
     }
-    .muted { color: #6a7180; font-size: 0.85rem; }
+    .muted { color: #6a7180; font-size: 0.86rem; }
     .warn { color: var(--warn); font-weight: 600; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
-    code { font-size: 0.8rem; }
-    #lastId { font-family: ui-monospace, Consolas, monospace; }
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.12rem 0.45rem;
+      border: 1px solid var(--line);
+      margin-left: 0.35rem;
+      color: #5a6170;
+    }
+    .profile-block { margin: 0.65rem 0; padding: 0.55rem 0; border-top: 1px solid var(--line); }
+    .profile-block:first-of-type { border-top: 0; }
+    .profile-block h3 { font-size: 0.95rem; margin: 0 0 0.35rem; }
+    ul.clean { margin: 0.25rem 0 0; padding-left: 1.15rem; }
+    #statusLine { min-height: 1.2rem; margin-bottom: 0.5rem; }
+    details.tech { margin-top: 0.75rem; }
+    details.tech pre { max-height: 14rem; overflow: auto; font-size: 0.78rem; }
   </style>
 </head>
 <body>
   <main>
-    <h1>MemoryBox People</h1>
+    <h1>People</h1>
     <p class="sub">
-      Person &amp; Identity (I6) + Profile facts/relationships (I9A).
-      Canonical owner: <code id="ownerStatus">(loading)</code>.
-      <a href="/ask/ui">Ask</a> · <a href="/journal/ui">Journal</a> · <a href="/story/ui">Story</a> · <a href="/library/ui">Library</a>
+      Pick a person by name. MemoryBox and photo-library names appear together — each name once.
+      Choosing a photo-library-only name adds them to MemoryBox automatically.
+      Owner: <span id="ownerStatus">(loading)</span>
+      · <a href="/ask/ui">Ask</a> · <a href="/library/ui">Library</a> · <a href="/artifact/ui">Artifact</a>
     </p>
+    <p id="statusLine" class="muted"></p>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">0. Person Profile (I9A)</h2>
-      <p class="muted">One MB Person — identity, aliases, facts, contacts, relationships, life events, provider mappings.</p>
-      <label for="profileId">Person ID</label>
-      <input id="profileId" placeholder="paste person id (or use List people)" />
-      <button id="loadProfile" type="button">Load profile</button>
+      <h2>Who are you working on?</h2>
+      <p class="muted" id="pickerHint">Loading names…</p>
+      <label for="profileSel">Person</label>
+      <select id="profileSel"><option value="">(loading…)</option></select>
+      <button id="refreshPicker" class="secondary" type="button">Refresh names</button>
+      <button id="loadProfile" type="button">Open profile</button>
+      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open profile.</div>
+    </section>
+
+    <section>
+      <h2>Add or update details</h2>
+      <p class="muted">Uses the person selected above. Birth dates replace the previous birth date; emails and phones can be corrected.</p>
       <div class="row">
         <div>
-          <label for="factKind">Add fact kind</label>
+          <label for="factKind">What kind of fact?</label>
           <select id="factKind">
-            <option value="birth_date">birth_date</option>
-            <option value="death_date">death_date</option>
-            <option value="note">note</option>
+            <option value="birth_date">Birth date</option>
+            <option value="death_date">Death date</option>
+            <option value="note">Note</option>
           </select>
-          <label for="factDate">value_date (YYYY-MM-DD)</label>
+          <label for="factDate">Date (YYYY-MM-DD)</label>
           <input id="factDate" placeholder="1927-06-11" />
-          <label for="factText">value_text (notes)</label>
-          <input id="factText" />
-          <button id="addFact" type="button">Add fact</button>
+          <label for="factText">Note text (for notes)</label>
+          <input id="factText" placeholder="Optional note" />
+          <button id="addFact" type="button">Save fact</button>
         </div>
         <div>
-          <label for="aliasKind">Alias kind</label>
+          <label for="aliasKind">Nickname / other name</label>
           <select id="aliasKind">
-            <option value="nickname">nickname</option>
-            <option value="alternate_name">alternate_name</option>
+            <option value="nickname">Nickname</option>
+            <option value="alternate_name">Other name</option>
           </select>
-          <label for="aliasText">Alias text</label>
-          <input id="aliasText" />
-          <button id="addAlias" type="button">Add alias</button>
-          <label for="contactKind">Contact kind</label>
+          <label for="aliasText">Name</label>
+          <input id="aliasText" placeholder="e.g. Gene" />
+          <button id="addAlias" type="button">Save nickname</button>
+          <label for="contactKind">Contact</label>
           <select id="contactKind">
-            <option value="email">email</option>
-            <option value="phone">phone</option>
+            <option value="email">Email</option>
+            <option value="phone">Phone</option>
           </select>
-          <label for="contactText">Contact value</label>
-          <input id="contactText" />
+          <label for="contactText">Email or phone</label>
+          <input id="contactText" placeholder="name@example.com" />
           <button id="addContact" type="button">Add contact</button>
         </div>
       </div>
-      <div class="row" style="margin-top:0.6rem">
-        <div>
-          <label for="relFrom">Relationship: from Person ID</label>
-          <input id="relFrom" placeholder="e.g. Eugene" />
-          <label for="relTo">to Person ID</label>
-          <input id="relTo" placeholder="e.g. owner" />
-          <label for="relRole">role_kind</label>
-          <select id="relRole">
-            <option value="father_of">father_of</option>
-            <option value="mother_of">mother_of</option>
-            <option value="parent_of">parent_of</option>
-            <option value="biological_parent_of">biological_parent_of</option>
-            <option value="adoptive_parent_of">adoptive_parent_of</option>
-            <option value="step_parent_of">step_parent_of</option>
-            <option value="child_of">child_of</option>
-            <option value="son_of">son_of</option>
-            <option value="daughter_of">daughter_of</option>
-            <option value="spouse_of">spouse_of</option>
-            <option value="partner_of">partner_of</option>
-            <option value="sibling_of">sibling_of</option>
-            <option value="grandparent_of">grandparent_of</option>
-            <option value="grandchild_of">grandchild_of</option>
-            <option value="uncle_of">uncle_of</option>
-            <option value="aunt_of">aunt_of</option>
-          </select>
-          <button id="addRel" type="button">Assert relationship (SoT)</button>
-        </div>
-        <div>
-          <label for="marA">Marriage: person A id</label>
-          <input id="marA" />
-          <label for="marB">person B id</label>
-          <input id="marB" />
-          <label for="marDate">event_date</label>
-          <input id="marDate" placeholder="1947-09-25" />
-          <button id="addMarriage" type="button">Record marriage / anniversary</button>
-        </div>
+      <div id="contactFix" style="margin-top:0.75rem;display:none">
+        <label for="contactFixSel">Correct an existing contact</label>
+        <select id="contactFixSel"><option value="">(open a profile first)</option></select>
+        <label for="contactFixVal">New value</label>
+        <input id="contactFixVal" />
+        <button id="fixContact" type="button">Replace contact</button>
       </div>
-      <pre id="profileOut" class="muted" style="max-height:22rem;overflow:auto">Load a Person to see profile layers.</pre>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Teach / Confirm (owner path)</h2>
-      <p class="muted">Select one Immich provider person, enter the MB display name, Teach. Then Ask for photos of that name.</p>
-      <button class="secondary" id="refreshImmich" type="button">Refresh Immich people</button>
-      <label for="immichPerson">Immich provider identity</label>
-      <select id="immichPerson"><option value="">(load Immich people)</option></select>
-      <label for="displayName">MB Person display name</label>
-      <input id="displayName" placeholder="e.g. Peggy" />
-      <button id="teachBtn" type="button">Teach / Confirm mapping</button>
-      <p>Last taught Person ID: <code id="lastId">(none yet)</code></p>
-      <p id="archiveMsg" class="muted"></p>
+      <h2>Family relationship</h2>
+      <p class="muted">Example: Eugene <b>is the father of</b> Tom. One record — MemoryBox understands the reverse automatically.</p>
+      <label for="relFrom">This person…</label>
+      <select id="relFrom"><option value="">(choose)</option></select>
+      <label for="relRole">…is the…</label>
+      <select id="relRole">
+        <option value="father_of">father of</option>
+        <option value="mother_of">mother of</option>
+        <option value="parent_of">parent of</option>
+        <option value="biological_parent_of">biological parent of</option>
+        <option value="adoptive_parent_of">adoptive parent of</option>
+        <option value="step_parent_of">step-parent of</option>
+        <option value="child_of">child of</option>
+        <option value="son_of">son of</option>
+        <option value="daughter_of">daughter of</option>
+        <option value="spouse_of">spouse of</option>
+        <option value="partner_of">partner of</option>
+        <option value="sibling_of">sibling of</option>
+        <option value="grandparent_of">grandparent of</option>
+        <option value="grandchild_of">grandchild of</option>
+        <option value="uncle_of">uncle of</option>
+        <option value="aunt_of">aunt of</option>
+      </select>
+      <label for="relTo">…this person</label>
+      <select id="relTo"><option value="">(choose)</option></select>
+      <button id="addRel" type="button">Save relationship</button>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. MB People</h2>
-      <button class="secondary" id="listPeople" type="button">List people</button>
-      <label for="renameId">Person ID</label>
-      <input id="renameId" placeholder="paste person id" />
-      <label for="renameName">Correct display name</label>
-      <input id="renameName" placeholder="new display name" />
+      <h2>Marriage / anniversary</h2>
+      <p class="muted">One shared date for both people — not copied onto two separate profiles.</p>
+      <label for="marA">Person A</label>
+      <select id="marA"><option value="">(choose)</option></select>
+      <label for="marB">Person B</label>
+      <select id="marB"><option value="">(choose)</option></select>
+      <label for="marDate">Wedding / anniversary date</label>
+      <input id="marDate" placeholder="1947-09-25" />
+      <button id="addMarriage" type="button">Save marriage date</button>
+    </section>
+
+    <section>
+      <h2>Fix a name</h2>
+      <label for="renameSel">Person</label>
+      <select id="renameSel"><option value="">(choose)</option></select>
+      <label for="renameName">Correct spelling</label>
+      <input id="renameName" placeholder="Correct display name" />
       <button id="renameBtn" type="button">Save name</button>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Reject / Merge (harness-friendly)</h2>
-      <div class="row">
-        <div>
-          <label for="rejectPerson">Reject: MB Person ID</label>
-          <input id="rejectPerson" />
-          <label for="rejectExt">Immich external id</label>
-          <input id="rejectExt" />
-          <button id="rejectBtn" type="button">Reject pairing</button>
-        </div>
-        <div>
-          <label for="survivor">Merge survivor Person ID</label>
-          <input id="survivor" />
-          <label for="loser">Merge loser Person ID</label>
-          <input id="loser" />
-          <button id="mergeBtn" type="button">Merge</button>
-        </div>
-      </div>
+      <h2>Reject a wrong photo match</h2>
+      <p class="muted">If a photo-library face was linked to the wrong person, reject that pairing.</p>
+      <label for="rejectPersonSel">MemoryBox person</label>
+      <select id="rejectPersonSel"><option value="">(choose)</option></select>
+      <label for="rejectImmichSel">Photo-library face to reject</label>
+      <select id="rejectImmichSel"><option value="">(choose person first, or refresh)</option></select>
+      <button id="rejectBtn" type="button">Reject this match</button>
     </section>
 
     <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
-      <pre id="out" class="muted">No action yet.</pre>
+      <h2>Merge duplicate people</h2>
+      <p class="muted">Keep one person; fold the other into them. Use when the same person was enrolled twice.</p>
+      <label for="survivorSel">Keep this person</label>
+      <select id="survivorSel"><option value="">(choose)</option></select>
+      <label for="loserSel">Merge this duplicate away</label>
+      <select id="loserSel"><option value="">(choose)</option></select>
+      <button id="mergeBtn" type="button">Merge</button>
     </section>
+
+    <section>
+      <h2>Teach a photo face (optional)</h2>
+      <p class="muted">Usually picking a name above is enough. Use this only when you want to confirm a specific Immich face → MemoryBox person.</p>
+      <label for="immichPerson">Photo-library person</label>
+      <select id="immichPerson"><option value="">(loading…)</option></select>
+      <label for="displayName">Name in MemoryBox</label>
+      <input id="displayName" placeholder="Usually filled from the Immich name" />
+      <button id="teachBtn" type="button">Teach / confirm</button>
+    </section>
+
+    <details class="tech">
+      <summary class="muted">Technical detail (optional)</summary>
+      <pre id="out" class="muted">No action yet.</pre>
+    </details>
   </main>
   <script>
     const out = document.getElementById("out");
+    let pickerOptions = [];
+    let currentPersonId = null;
+    let currentProfile = null;
+    let ownerId = null;
+
+    function setStatus(msg, isWarn) {
+      const el = document.getElementById("statusLine");
+      el.textContent = msg || "";
+      el.className = isWarn ? "warn" : "muted";
+    }
     function show(data) { out.textContent = JSON.stringify(data, null, 2); }
     async function j(url, opts) {
       const r = await fetch(url, opts);
@@ -197,32 +238,476 @@
       return data;
     }
 
-    async function loadImmich() {
+    function fillSelect(sel, emptyLabel, opts, { mbOnly } = {}) {
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = emptyLabel;
+      sel.appendChild(none);
+      (opts || []).forEach((o) => {
+        if (mbOnly && o.source !== "memorybox") return;
+        const opt = document.createElement("option");
+        opt.value = o.key;
+        const tag = o.source === "immich" ? " · from photos" : "";
+        opt.textContent = o.label + tag;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    }
+
+    function fillAllPickers() {
+      const empty = "(choose a person)";
+      // Profile / relationships / marriage / rename: full unified list (Immich lazy-teach OK)
+      ["profileSel", "relFrom", "relTo", "marA", "marB", "renameSel"].forEach((id) => {
+        fillSelect(document.getElementById(id), empty, pickerOptions);
+      });
+      // Merge / reject person: MemoryBox people only (already in MB)
+      ["rejectPersonSel", "survivorSel", "loserSel"].forEach((id) => {
+        fillSelect(document.getElementById(id), empty, pickerOptions, { mbOnly: true });
+      });
+    }
+
+    async function loadPicker() {
+      setStatus("Loading names…");
+      const data = await j("/people/picker-options?limit=400");
+      pickerOptions = data.options || [];
+      fillAllPickers();
+      const hint = document.getElementById("pickerHint");
+      const nMb = pickerOptions.filter((o) => o.source === "memorybox").length;
+      const nIm = pickerOptions.filter((o) => o.source === "immich").length;
+      hint.textContent =
+        nMb + " in MemoryBox · " + nIm + " photo-library-only" +
+        (data.immich_error ? (" · Immich note: " + data.immich_error) : "") +
+        " · each name shown once";
+      hint.className = data.immich_error && !nIm ? "warn" : "muted";
+      setStatus("Names ready.", false);
+      show(data);
+      return data;
+    }
+
+    async function ensureFromKey(key) {
+      if (!key) throw { detail: "Choose a person from the list." };
+      if (key.startsWith("mb:")) {
+        const person_id = key.slice(3);
+        const data = await j("/people/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person_id }),
+        });
+        return data.person;
+      }
+      if (key.startsWith("immich:")) {
+        const rest = key.slice("immich:".length);
+        const i = rest.indexOf(":");
+        if (i < 0) throw { detail: "Invalid photo-library selection." };
+        const external_id = decodeURIComponent(rest.slice(0, i));
+        const display_name = decodeURIComponent(rest.slice(i + 1));
+        setStatus("Adding “" + display_name + "” to MemoryBox…");
+        const data = await j("/people/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider_key: "immich",
+            external_id,
+            display_name,
+          }),
+        });
+        // Refresh picker so this person is now MB
+        await loadPicker();
+        return data.person;
+      }
+      throw { detail: "Unknown person selection." };
+    }
+
+    function renderProfile(profile) {
+      const el = document.getElementById("profileView");
+      const idn = profile.identity || {};
+      const facts = profile.facts || [];
+      const aliases = profile.aliases || [];
+      const contacts = profile.contacts || [];
+      const rels = (profile.relationships && profile.relationships.assertions_sot) || [];
+      const derived = (profile.relationships && profile.relationships.derived_edges) || [];
+      const events = profile.life_events || [];
+      const maps = idn.provider_mappings || [];
+
+      let html = "<div class='profile-block'><h3>" +
+        esc(idn.display_name || "(unnamed)") +
+        (profile.is_canonical_owner ? " <span class='pill'>owner</span>" : "") +
+        "</h3><p class='muted'>Status: " + esc(idn.status || "") +
+        (idn.identity_authority ? (" · " + esc(idn.identity_authority)) : "") +
+        "</p></div>";
+
+      html += "<div class='profile-block'><h3>Names</h3>";
+      if (!aliases.length) html += "<p class='muted'>No nicknames yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        aliases.forEach((a) => {
+          html += "<li>" + esc(a.alias_kind) + ": <b>" + esc(a.alias_text) + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Facts</h3>";
+      if (!facts.length) html += "<p class='muted'>No birth/death/notes yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        facts.forEach((f) => {
+          const v = f.value_date || f.value_text || "";
+          html += "<li>" + esc(friendlyFact(f.fact_kind)) + ": <b>" + esc(v) + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Contacts</h3>";
+      if (!contacts.length) html += "<p class='muted'>No email/phone yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        contacts.forEach((c) => {
+          html += "<li>" + esc(c.contact_kind) + ": <b>" + esc(c.value_text) + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Relationships</h3>";
+      if (!rels.length) html += "<p class='muted'>No family links recorded yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        rels.forEach((r) => {
+          html += "<li>" + esc(r.from_display_name || r.from_person_id) +
+            " <b>" + esc(friendlyRole(r.role_kind)) + "</b> " +
+            esc(r.to_display_name || r.to_person_id) + "</li>";
+        });
+        html += "</ul>";
+        const inv = derived.filter((d) => d.is_inverse_projection);
+        if (inv.length) {
+          html += "<p class='muted' style='margin-top:0.4rem'>Also understood the other way:</p><ul class='clean'>";
+          inv.forEach((d) => {
+            html += "<li>" + esc(d.from_display_name || d.from_person_id) +
+              " " + esc(friendlyRole(d.role_kind)) + " " +
+              esc(d.to_display_name || d.to_person_id) + "</li>";
+          });
+          html += "</ul>";
+        }
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Marriage / anniversary</h3>";
+      if (!events.length) html += "<p class='muted'>None recorded.</p>";
+      else {
+        html += "<ul class='clean'>";
+        events.forEach((e) => {
+          const names = (e.participants || []).map((p) => p.display_name || p.person_id).join(" & ");
+          html += "<li>" + esc(names) + " — <b>" + esc(e.event_date || "date unknown") + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Photo-library links</h3>";
+      if (!maps.length) html += "<p class='muted'>No Immich faces linked yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        maps.forEach((m) => {
+          html += "<li>" + esc(m.provider_key || "") + " · " +
+            esc(m.label || m.external_id || "") + "</li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      el.innerHTML = html;
+      el.className = "";
+
+      // Contact correction dropdown
+      const fixWrap = document.getElementById("contactFix");
+      const fixSel = document.getElementById("contactFixSel");
+      fixSel.innerHTML = "";
+      if (contacts.length) {
+        fixWrap.style.display = "block";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = "(choose contact to correct)";
+        fixSel.appendChild(none);
+        contacts.forEach((c) => {
+          const opt = document.createElement("option");
+          opt.value = c.id;
+          opt.textContent = c.contact_kind + ": " + c.value_text;
+          fixSel.appendChild(opt);
+        });
+      } else {
+        fixWrap.style.display = "none";
+      }
+
+      // Reject Immich faces for this person
+      const rej = document.getElementById("rejectImmichSel");
+      rej.innerHTML = "";
+      const rNone = document.createElement("option");
+      rNone.value = "";
+      rNone.textContent = maps.length ? "(choose face to reject)" : "(no linked faces)";
+      rej.appendChild(rNone);
+      maps.forEach((m) => {
+        if ((m.provider_key || "") !== "immich") return;
+        const opt = document.createElement("option");
+        opt.value = m.external_id;
+        opt.textContent = (m.label || m.external_id || "") + "";
+        rej.appendChild(opt);
+      });
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+    function friendlyFact(k) {
+      return ({ birth_date: "Birth date", death_date: "Death date", note: "Note" })[k] || k;
+    }
+    function friendlyRole(k) {
+      return String(k || "").replace(/_/g, " ");
+    }
+
+    async function openProfileForKey(key) {
+      const person = await ensureFromKey(key);
+      currentPersonId = person.id;
+      const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
+      currentProfile = data.profile;
+      renderProfile(data.profile);
+      show(data);
+      setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
+      // Keep profile select on MB key after lazy teach
+      const mbKey = "mb:" + person.id;
+      const sel = document.getElementById("profileSel");
+      if (![...sel.options].some((o) => o.value === mbKey)) {
+        await loadPicker();
+      }
+      sel.value = mbKey;
+      document.getElementById("rejectPersonSel").value = mbKey;
+      return person;
+    }
+
+    document.getElementById("refreshPicker").onclick = () =>
+      loadPicker().catch((e) => { show(e); setStatus("Could not load names.", true); });
+
+    document.getElementById("loadProfile").onclick = async () => {
+      try {
+        await openProfileForKey(document.getElementById("profileSel").value);
+      } catch (err) { show(err); setStatus(err.detail || err.message || "Failed", true); }
+    };
+
+    document.getElementById("addFact").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        const body = {
+          fact_kind: document.getElementById("factKind").value,
+          value_date: document.getElementById("factDate").value.trim() || null,
+          value_text: document.getElementById("factText").value.trim() || null,
+        };
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/facts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }));
+        setStatus("Fact saved.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save fact.", true); }
+    };
+
+    document.getElementById("addAlias").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/aliases", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            alias_kind: document.getElementById("aliasKind").value,
+            alias_text: document.getElementById("aliasText").value.trim(),
+          }),
+        }));
+        setStatus("Nickname saved.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save nickname.", true); }
+    };
+
+    document.getElementById("addContact").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/contacts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contact_kind: document.getElementById("contactKind").value,
+            value_text: document.getElementById("contactText").value.trim(),
+          }),
+        }));
+        document.getElementById("contactText").value = "";
+        setStatus("Contact added — it should appear on the profile below.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not add contact.", true); }
+    };
+
+    document.getElementById("fixContact").onclick = async () => {
+      try {
+        const cid = document.getElementById("contactFixSel").value;
+        const val = document.getElementById("contactFixVal").value.trim();
+        if (!cid || !val) { setStatus("Choose a contact and enter the new value.", true); return; }
+        show(await j("/people/contacts/" + encodeURIComponent(cid) + "/supersede", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value_text: val, note: "owner correction" }),
+        }));
+        setStatus("Contact updated.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not update contact.", true); }
+    };
+
+    document.getElementById("addRel").onclick = async () => {
+      try {
+        const fromP = await ensureFromKey(document.getElementById("relFrom").value);
+        const toP = await ensureFromKey(document.getElementById("relTo").value);
+        const data = await j("/people/relationships", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from_person_id: fromP.id,
+            to_person_id: toP.id,
+            role_kind: document.getElementById("relRole").value,
+          }),
+        });
+        show(data);
+        setStatus(
+          "Saved: " + (fromP.display_name || "") + " is " +
+          friendlyRole(document.getElementById("relRole").value) + " " +
+          (toP.display_name || "") + ".",
+          false
+        );
+        if (currentPersonId) await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save relationship.", true); }
+    };
+
+    document.getElementById("addMarriage").onclick = async () => {
+      try {
+        const a = await ensureFromKey(document.getElementById("marA").value);
+        const b = await ensureFromKey(document.getElementById("marB").value);
+        const data = await j("/people/life-events/marriage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_a_id: a.id,
+            person_b_id: b.id,
+            event_date: document.getElementById("marDate").value.trim() || null,
+          }),
+        });
+        show(data);
+        setStatus("Marriage / anniversary saved for " + (a.display_name || "") + " & " + (b.display_name || "") + ".", false);
+        if (currentPersonId) await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save marriage.", true); }
+    };
+
+    document.getElementById("renameBtn").onclick = async () => {
+      try {
+        const person = await ensureFromKey(document.getElementById("renameSel").value);
+        const display_name = document.getElementById("renameName").value.trim();
+        show(await j("/people/" + encodeURIComponent(person.id) + "/name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name }),
+        }));
+        setStatus("Name updated.", false);
+        await loadPicker();
+      } catch (err) { show(err); setStatus(err.detail || "Could not rename.", true); }
+    };
+
+    document.getElementById("rejectBtn").onclick = async () => {
+      try {
+        const person = await ensureFromKey(document.getElementById("rejectPersonSel").value);
+        const external_id = document.getElementById("rejectImmichSel").value;
+        if (!external_id) { setStatus("Choose which photo face to reject.", true); return; }
+        show(await j("/people/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: person.id,
+            provider_key: "immich",
+            external_id,
+          }),
+        }));
+        setStatus("Rejected that photo match.", false);
+        await openProfileForKey("mb:" + person.id);
+      } catch (err) { show(err); setStatus(err.detail || "Reject failed.", true); }
+    };
+
+    document.getElementById("rejectPersonSel").onchange = async () => {
+      try {
+        const key = document.getElementById("rejectPersonSel").value;
+        if (!key) return;
+        const person = await ensureFromKey(key);
+        const view = await j("/people/" + encodeURIComponent(person.id));
+        const maps = (view.person && view.person.provider_mappings) || [];
+        const rej = document.getElementById("rejectImmichSel");
+        rej.innerHTML = "";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = maps.length ? "(choose face)" : "(no linked Immich faces)";
+        rej.appendChild(none);
+        maps.forEach((m) => {
+          if ((m.provider_key || "") !== "immich") return;
+          const opt = document.createElement("option");
+          opt.value = m.external_id;
+          opt.textContent = m.label || m.external_id;
+          rej.appendChild(opt);
+        });
+      } catch (err) { show(err); }
+    };
+
+    document.getElementById("mergeBtn").onclick = async () => {
+      try {
+        const survivor = await ensureFromKey(document.getElementById("survivorSel").value);
+        const loser = await ensureFromKey(document.getElementById("loserSel").value);
+        show(await j("/people/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            survivor_person_id: survivor.id,
+            loser_person_id: loser.id,
+          }),
+        }));
+        setStatus("Merged. Kept “" + (survivor.display_name || "") + "”.", false);
+        await loadPicker();
+      } catch (err) { show(err); setStatus(err.detail || "Merge failed.", true); }
+    };
+
+    async function loadImmichTeach() {
       const data = await j("/people/provider/immich");
       const sel = document.getElementById("immichPerson");
       sel.innerHTML = "";
       const people = data.people || [];
       if (!people.length) {
-        sel.innerHTML = "<option value=\"\">(no Immich people — check provider)</option>";
-        show(data);
+        sel.innerHTML = "<option value=\"\">(no Immich people)</option>";
         return;
       }
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "(choose)";
+      sel.appendChild(none);
       people.forEach((p) => {
         const opt = document.createElement("option");
         opt.value = p.external_id;
-        opt.textContent = (p.display_name || "(unnamed)") + " — " + p.external_id;
+        opt.dataset.name = p.display_name || "";
+        opt.textContent = (p.display_name || "(unnamed)");
         sel.appendChild(opt);
       });
-      show({ ok: true, count: people.length, provider_status: data.provider_status });
     }
-
-    document.getElementById("refreshImmich").onclick = () => loadImmich().catch(show);
+    document.getElementById("immichPerson").onchange = () => {
+      const sel = document.getElementById("immichPerson");
+      const opt = sel.options[sel.selectedIndex];
+      if (opt && opt.dataset.name) {
+        document.getElementById("displayName").value = opt.dataset.name;
+      }
+    };
     document.getElementById("teachBtn").onclick = async () => {
       try {
         const external_id = document.getElementById("immichPerson").value;
         const display_name = document.getElementById("displayName").value.trim();
         if (!external_id || !display_name) {
-          show({ detail: "Pick an Immich person and enter a display name." });
+          setStatus("Pick a photo person and a name.", true);
           return;
         }
         const data = await j("/people/teach", {
@@ -235,25 +720,14 @@
             label: display_name,
           }),
         });
-        const id = data.person && data.person.id;
-        if (id) {
-          document.getElementById("lastId").textContent = id;
-          document.getElementById("renameId").value = id;
-        }
-        document.getElementById("archiveMsg").textContent = "Archive Updated";
         show(data);
-      } catch (err) { show(err); }
-    };
-
-    document.getElementById("listPeople").onclick = async () => {
-      try {
-        const data = await j("/people");
-        show(data);
-        const people = data.people || [];
-        if (people.length === 1) {
-          document.getElementById("profileId").value = people[0].id;
+        setStatus("Taught “" + display_name + "”.", false);
+        await loadPicker();
+        if (data.person && data.person.id) {
+          document.getElementById("profileSel").value = "mb:" + data.person.id;
+          await openProfileForKey("mb:" + data.person.id);
         }
-      } catch (err) { show(err); }
+      } catch (err) { show(err); setStatus(err.detail || "Teach failed.", true); }
     };
 
     async function loadOwner() {
@@ -261,131 +735,21 @@
         const o = await j("/people/owner");
         const el = document.getElementById("ownerStatus");
         if (o.configured) {
-          el.textContent = (o.display_name || "") + " · " + o.owner_person_id;
-          document.getElementById("relTo").placeholder = o.owner_person_id;
+          ownerId = o.owner_person_id;
+          el.textContent = (o.display_name || "owner") + " ✓";
+          el.className = "ok";
         } else {
-          el.textContent = "not set — export MEMORYBOX_OWNER_PERSON_ID=<people.id>";
+          el.textContent = "not set (MEMORYBOX_OWNER_PERSON_ID)";
+          el.className = "warn";
         }
-      } catch (err) {
+      } catch (_) {
         document.getElementById("ownerStatus").textContent = "error";
       }
     }
 
-    document.getElementById("loadProfile").onclick = async () => {
-      try {
-        const id = document.getElementById("profileId").value.trim();
-        const data = await j("/people/" + encodeURIComponent(id) + "/profile");
-        document.getElementById("profileOut").textContent = JSON.stringify(data.profile, null, 2);
-        show(data);
-      } catch (err) { show(err); }
-    };
-    document.getElementById("addFact").onclick = async () => {
-      try {
-        const id = document.getElementById("profileId").value.trim();
-        const body = {
-          fact_kind: document.getElementById("factKind").value,
-          value_date: document.getElementById("factDate").value.trim() || null,
-          value_text: document.getElementById("factText").value.trim() || null,
-        };
-        show(await j("/people/" + encodeURIComponent(id) + "/facts", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }));
-        document.getElementById("loadProfile").click();
-      } catch (err) { show(err); }
-    };
-    document.getElementById("addAlias").onclick = async () => {
-      try {
-        const id = document.getElementById("profileId").value.trim();
-        show(await j("/people/" + encodeURIComponent(id) + "/aliases", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            alias_kind: document.getElementById("aliasKind").value,
-            alias_text: document.getElementById("aliasText").value.trim(),
-          }),
-        }));
-        document.getElementById("loadProfile").click();
-      } catch (err) { show(err); }
-    };
-    document.getElementById("addContact").onclick = async () => {
-      try {
-        const id = document.getElementById("profileId").value.trim();
-        show(await j("/people/" + encodeURIComponent(id) + "/contacts", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contact_kind: document.getElementById("contactKind").value,
-            value_text: document.getElementById("contactText").value.trim(),
-          }),
-        }));
-        document.getElementById("loadProfile").click();
-      } catch (err) { show(err); }
-    };
-    document.getElementById("addRel").onclick = async () => {
-      try {
-        show(await j("/people/relationships", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from_person_id: document.getElementById("relFrom").value.trim(),
-            to_person_id: document.getElementById("relTo").value.trim(),
-            role_kind: document.getElementById("relRole").value,
-          }),
-        }));
-      } catch (err) { show(err); }
-    };
-    document.getElementById("addMarriage").onclick = async () => {
-      try {
-        show(await j("/people/life-events/marriage", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            person_a_id: document.getElementById("marA").value.trim(),
-            person_b_id: document.getElementById("marB").value.trim(),
-            event_date: document.getElementById("marDate").value.trim() || null,
-          }),
-        }));
-      } catch (err) { show(err); }
-    };
-
     loadOwner();
-    loadImmich().catch(show);
-
-    document.getElementById("renameBtn").onclick = async () => {
-      try {
-        const id = document.getElementById("renameId").value.trim();
-        const display_name = document.getElementById("renameName").value.trim();
-        show(await j("/people/" + encodeURIComponent(id) + "/name", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ display_name }),
-        }));
-      } catch (err) { show(err); }
-    };
-
-    document.getElementById("rejectBtn").onclick = async () => {
-      try {
-        show(await j("/people/reject", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            person_id: document.getElementById("rejectPerson").value.trim(),
-            provider_key: "immich",
-            external_id: document.getElementById("rejectExt").value.trim(),
-          }),
-        }));
-      } catch (err) { show(err); }
-    };
-
-    document.getElementById("mergeBtn").onclick = async () => {
-      try {
-        show(await j("/people/merge", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            survivor_person_id: document.getElementById("survivor").value.trim(),
-            loser_person_id: document.getElementById("loser").value.trim(),
-          }),
-        }));
-      } catch (err) { show(err); }
-    };
+    loadPicker().catch((e) => { show(e); setStatus("Could not load people list.", true); });
+    loadImmichTeach().catch(show);
   </script>
 </body>
 </html>
