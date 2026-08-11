@@ -790,6 +790,33 @@ class AskOrchestrator:
             artifacts=artifacts,
         )
 
+        # I10: disclose cross-modality mapping gaps (Ask + Library share same Person X)
+        cross: list[str] = []
+        for st in (photo_status, video_status):
+            disc = (st or {}).get("disclosure")
+            if disc and disc not in cross:
+                cross.append(str(disc))
+        want_photo = bool(plan.want_still or plan.want_photo)
+        want_vid = bool(getattr(plan, "want_video", False))
+        if want_photo and want_vid:
+            p_mode = (photo_status or {}).get("identity_mode") or ""
+            v_mode = (video_status or {}).get("identity_mode") or ""
+            p_unmap = (photo_status or {}).get("unmapped_person_names") or []
+            v_unmap = (video_status or {}).get("unmapped_person_names") or []
+            if "mapping" in p_mode and v_unmap:
+                cross.append(
+                    "Same MB Person has Immich/photo mapping but no HVRT/video mapping "
+                    f"for {v_unmap} — attach the video face in Review to this Person."
+                )
+            if "mapping" in v_mode and p_unmap:
+                cross.append(
+                    "Same MB Person has HVRT/video mapping but no Immich/photo mapping "
+                    f"for {p_unmap}."
+                )
+        if cross:
+            extra = " ".join(cross)
+            missing = f"{missing} {extra}".strip() if missing else extra
+
         new_ctx = _update_context_from_plan(
             ctx,
             plan,

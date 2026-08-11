@@ -605,6 +605,13 @@ def search_photos(
             status["detail"] = (
                 f"mapped_hits={len(hits)} mapped_names={mapped_names}"
             )
+            status["mapped_person_names"] = list(mapped_names)
+            status["unmapped_person_names"] = list(unmapped_resolvable_names)
+            if unmapped_resolvable_names:
+                status["disclosure"] = (
+                    (status.get("disclosure") or "")
+                    + f" No Immich/photo provider mapping for: {unmapped_resolvable_names}."
+                ).strip()
             if ambiguous_names:
                 status["disclosure"] = (
                     (status.get("disclosure") or "")
@@ -849,6 +856,13 @@ def search_videos(
                 )
             status["ok"] = True
             status["detail"] = f"mapped_video_hits={len(hits)}"
+            status["unmapped_person_names"] = list(unmapped)
+            if unmapped:
+                status["disclosure"] = (
+                    f"No HVRT/video provider mapping for: {unmapped}. "
+                    "Teach/confirm the video face onto the same MB Person in Review "
+                    "(do not recreate the human in each provider)."
+                )
             return hits[:limit], status
 
         if ambiguous_names:

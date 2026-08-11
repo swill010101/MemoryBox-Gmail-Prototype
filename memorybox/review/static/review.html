@@ -126,9 +126,13 @@
       <label for="faceSel">Face candidate</label>
       <select id="faceSel"><option value="">(none yet)</option></select>
       <label for="displayName">MB Person display name</label>
-      <input id="displayName" placeholder="e.g. Dan Will" />
+      <input id="displayName" placeholder="e.g. Dan Will (or leave blank if attaching below)" />
+      <label for="attachPersonSel">Or attach face to existing MB Person (preferred for Immich-known people)</label>
+      <select id="attachPersonSel"><option value="">(optional — load people)</option></select>
+      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
       <button id="teachBtn" type="button" disabled>Teach / Confirm face → MB Person</button>
       <button class="secondary" id="rejectBtn" type="button">Reject pairing</button>
+      <p id="ambHint" class="warn" hidden></p>
       <p>Last taught Person ID: <code id="lastId">(none yet)</code></p>
       <p id="archiveMsg" class="muted"></p>
     </section>
@@ -538,31 +542,111 @@
       try {
         const external_id = document.getElementById("faceSel").value;
         const display_name = document.getElementById("displayName").value.trim();
+        const attachKey = document.getElementById("attachPersonSel").value;
         const meta = faceMeta[external_id] || {};
-        if (!external_id || !display_name) {
-          show({ detail: "Pick a face candidate and enter a display name." });
+        const ambHint = document.getElementById("ambHint");
+        if (ambHint) { ambHint.hidden = true; ambHint.textContent = ""; }
+        if (!external_id) {
+          show({ detail: "Pick a face candidate." });
           return;
         }
         if (!meta.boxed) {
           show({ detail: "Confirm a face box first — required when multiple faces may be in frame." });
           return;
         }
-        const data = await j("/people/teach", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            display_name,
-            provider_key: meta.provider || "hvrt",
-            external_id,
-            label: display_name,
-          }),
-        });
+        const provider_key = meta.provider || "hvrt";
+        let data;
+        if (attachKey && attachKey.startsWith("mb:")) {
+          // I10 cross-provider: map HVRT face onto existing Immich-linked Person
+          const person_id = attachKey.slice(3);
+          const label = display_name || (document.getElementById("attachPersonSel").selectedOptions[0] || {}).textContent || "face";
+          data = await j("/people/" + encodeURIComponent(person_id) + "/map", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              display_name: label,
+              provider_key,
+              external_id,
+              label,
+            }),
+          });
+        } else {
+          if (!display_name) {
+            show({ detail: "Enter a display name, or pick an existing MB Person to attach to." });
+            return;
+          }
+          try {
+            data = await j("/people/teach", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                display_name,
+                provider_key,
+                external_id,
+                label: display_name,
+              }),
+            });
+          } catch (err) {
+            const d = err && err.detail;
+            if (d && d.error === "ambiguous_identity") {
+              if (ambHint) {
+                ambHint.hidden = false;
+                ambHint.textContent =
+                  (d.message || "Ambiguous identity") +
+                  " — pick the correct MB Person above and Teach again (do not recreate per provider).";
+              }
+              // Prefer server candidates when they include person_id
+              const cands = (d.candidates || []).filter((c) => c.person_id);
+              if (cands.length) {
+                const sel = document.getElementById("attachPersonSel");
+                sel.innerHTML = "";
+                const none = document.createElement("option");
+                none.value = "";
+                none.textContent = "(choose existing Person)";
+                sel.appendChild(none);
+                cands.forEach((c) => {
+                  const opt = document.createElement("option");
+                  opt.value = "mb:" + c.person_id;
+                  opt.textContent = (c.display_name || c.person_id) +
+                    (c.provider_keys && c.provider_keys.length ? (" · " + c.provider_keys.join(",")) : "");
+                  sel.appendChild(opt);
+                });
+              } else {
+                await loadAttachPeople();
+              }
+            }
+            show(err);
+            return;
+          }
+        }
         lastPersonId = data.person && data.person.id;
         if (lastPersonId) document.getElementById("lastId").textContent = lastPersonId;
         document.getElementById("archiveMsg").textContent = "Archive Updated";
         show(data);
       } catch (err) { show(err); }
     };
+
+    async function loadAttachPeople() {
+      const sel = document.getElementById("attachPersonSel");
+      if (!sel) return;
+      const data = await j("/people/picker-options?limit=400");
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "(optional — attach to existing)";
+      sel.appendChild(none);
+      (data.options || []).forEach((o) => {
+        if (o.source !== "memorybox") return;
+        const opt = document.createElement("option");
+        opt.value = o.key;
+        opt.textContent = o.label;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    }
+    document.getElementById("refreshPeople").onclick = () => loadAttachPeople().catch(show);
+    loadAttachPeople().catch(() => {});
 
     document.getElementById("rejectBtn").onclick = async () => {
       try {

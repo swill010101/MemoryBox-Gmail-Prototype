@@ -35,6 +35,15 @@ class PersonServiceError(Exception):
 class AmbiguousIdentityError(PersonServiceError):
     """Same-name / multi-match cases that must not silently merge."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        candidates: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.candidates = candidates or []
+
 
 @dataclass
 class PersonView:
@@ -737,7 +746,16 @@ def resolve_or_seed_trusted_provider_person(
     if len(matches) > 1:
         raise AmbiguousIdentityError(
             f"ambiguous trusted-provider name {name!r}: "
-            f"{len(matches)} exact Immich/photo identities — owner resolution required"
+            f"{len(matches)} exact Immich/photo identities — owner resolution required",
+            candidates=[
+                {
+                    "provider_key": getattr(m, "provider_key", None)
+                    or getattr(photo, "provider_key", PROVIDER_IMMICH),
+                    "external_id": str(getattr(m, "external_id", "") or ""),
+                    "display_name": getattr(m, "display_name", name),
+                }
+                for m in matches
+            ],
         )
 
     ref = matches[0]
@@ -755,7 +773,23 @@ def resolve_or_seed_trusted_provider_person(
         # Do not equate Immich Peggy with an existing MB Peggy by display name alone.
         raise AmbiguousIdentityError(
             f"trusted provider identity {name!r} is unmapped, but MB Person(s) "
-            f"already use that display name — owner resolution required (no silent merge)"
+            f"already use that display name — owner resolution required (no silent merge). "
+            f"Map the provider identity onto the correct Person via /people/{{id}}/map.",
+            candidates=[
+                {
+                    "person_id": p.id,
+                    "display_name": p.display_name,
+                    "status": p.status,
+                    "provider_keys": sorted(
+                        {
+                            str(m.get("provider_key"))
+                            for m in (p.provider_mappings or [])
+                            if m.get("provider_key")
+                        }
+                    ),
+                }
+                for p in mb_same
+            ],
         )
 
     return seed_person_from_trusted_provider(
@@ -808,7 +842,22 @@ def resolve_person_for_identity_teach(
     if len(mb) > 1:
         raise AmbiguousIdentityError(
             f"ambiguous MB Person name {name!r}: {len(mb)} matches — "
-            "owner resolution required"
+            "owner resolution required",
+            candidates=[
+                {
+                    "person_id": p.id,
+                    "display_name": p.display_name,
+                    "status": p.status,
+                    "provider_keys": sorted(
+                        {
+                            str(m.get("provider_key"))
+                            for m in (p.provider_mappings or [])
+                            if m.get("provider_key")
+                        }
+                    ),
+                }
+                for p in mb
+            ],
         )
     if len(mb) == 1:
         person = mb[0]
@@ -862,9 +911,10 @@ def find_ask_person_by_name(
     for p in list_people_by_exact_name(name):
         if p.identity_authority == AUTHORITY_TRUSTED_PROVIDER:
             return p
-        # Unresolved with any photo-provider mapping is usable for retrieval
+        # Unresolved with any photo or video provider mapping is usable for retrieval
         if any(
-            m.get("provider_key") in {PROVIDER_IMMICH, "fake_photo", "immich"}
+            m.get("provider_key")
+            in {PROVIDER_IMMICH, "fake_photo", "immich", "hvrt", "fake_video"}
             for m in p.provider_mappings
         ):
             return p
@@ -876,6 +926,119 @@ def find_ask_person_by_name(
     except AmbiguousIdentityError:
         # Ask must disclose ambiguity rather than pick silently
         raise
+
+
+def reconcile_provider_identity(
+    *,
+    person_id: str,
+    provider_key: str,
+    new_external_id: str,
+    previous_external_id: str | None = None,
+    label: str | None = None,
+    identity_kind: str = KIND_EXTERNAL_PERSON,
+    actor_key: str = "owner",
+) -> PersonView:
+    """Attach a new provider external id to an existing MB Person after reprocess.
+
+    Durability rules (I10):
+    - Canonical MB Person knowledge survives (same people.id).
+    - Owner-confirmed assertions / mappings survive; new id is mapped onto that Person.
+    - Historical provider mapping provenance survives (previous row retained + marked).
+    - Provider external IDs/clusters are NOT assumed permanently stable.
+    Never silently mints a duplicate Person; never joins by display name alone.
+    """
+    new_ext = (new_external_id or "").strip()
+    if not new_ext:
+        raise PersonServiceError("new_external_id required")
+    view = map_provider_identity(
+        person_id=person_id,
+        provider_key=provider_key,
+        external_id=new_ext,
+        label=label,
+        identity_kind=identity_kind,
+        actor_key=actor_key,
+        confirm_person=True,
+        identity_authority=AUTHORITY_OWNER_CONFIRMED,
+        assertion_authority="owner",
+    )
+    prev = (previous_external_id or "").strip()
+    if prev and prev != new_ext:
+        pk = (provider_key or "").strip() or PROVIDER_IMMICH
+        pid = _parse_uuid(person_id, field="person_id")
+        patch = {
+            "superseded_by_external_id": new_ext,
+            "reprocess_reconcile": True,
+            "reconciled_by": actor_key or "owner",
+        }
+        with connection() as conn:
+            conn.execute(
+                """
+                UPDATE provider_identities
+                SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || %s::jsonb
+                WHERE provider_key = %s
+                  AND identity_kind = %s
+                  AND external_id = %s
+                  AND person_id = %s
+                """,
+                (json.dumps(patch), pk, identity_kind, prev, pid),
+            )
+            # Provenance assertion: reconcile event (owner knowledge retained)
+            conn.execute(
+                """
+                INSERT INTO assertions (
+                    id, assertion_kind, subject_type, subject_id,
+                    predicate, object_type, statement, confidence,
+                    authority, status, provenance_json
+                )
+                VALUES (
+                    %s, 'provider_identity_reconcile', 'person', %s,
+                    'reconciled_to', 'provider_identity', %s, 1.0,
+                    'owner', 'confirmed', %s::jsonb
+                )
+                """,
+                (
+                    uuid4(),
+                    pid,
+                    f"{pk}:{prev}→{new_ext}",
+                    json.dumps(
+                        {
+                            "provider_key": pk,
+                            "previous_external_id": prev,
+                            "new_external_id": new_ext,
+                            "actor_key": actor_key or "owner",
+                            "note": (
+                                "provider reprocess reconcile; "
+                                "external ids not assumed stable"
+                            ),
+                        }
+                    ),
+                ),
+            )
+        refreshed = get_person(person_id)
+        if refreshed:
+            return refreshed
+    return view
+
+
+def provider_mappings_projection(person_id: str) -> dict[str, Any]:
+    """Rebuildable projection of provider mappings for a Person (I10 indexes from PG)."""
+    view = get_person(person_id)
+    if not view:
+        raise PersonServiceError("person not found")
+    by_provider: dict[str, list[str]] = {}
+    for m in view.provider_mappings or []:
+        pk = str(m.get("provider_key") or "")
+        ext = str(m.get("external_id") or "")
+        if not pk or not ext:
+            continue
+        by_provider.setdefault(pk, []).append(ext)
+    return {
+        "person_id": view.id,
+        "display_name": view.display_name,
+        "by_provider": {k: list(dict.fromkeys(v)) for k, v in sorted(by_provider.items())},
+        "mappings": list(view.provider_mappings or []),
+        "rebuildable_from": "provider_identities + people (PostgreSQL)",
+    }
 
 
 def teach_provider_person(

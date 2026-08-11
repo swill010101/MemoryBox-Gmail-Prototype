@@ -190,17 +190,21 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 9A — Person Profile, Facts & Relationships
 
 **Date:** 2026-08-11  
-**Authorization:** **BUILD COMPLETE** — harness green; FlightSim owner acceptance pending  
+**Authorization:** **ACCEPTED** (FlightSim owner 2026-08-11)  
 **Definition:** [MBBS-001_INCREMENT_9A_DEFINITION.md](MBBS-001_INCREMENT_9A_DEFINITION.md)  
 **Acceptance:** [MBBS-001_INCREMENT_9A_ACCEPTANCE.md](MBBS-001_INCREMENT_9A_ACCEPTANCE.md)  
 **Roadmap:** After **I9 Artifact (ACCEPTED)** · Before **I10 EVS-014**  
-**Owner gate:** `MEMORYBOX_OWNER_PERSON_ID`; Eugene father + birthdate; shared marriage; Ask relational resolve; `/people/ui` Profile
+**Owner gate:** Owner Person (`MEMORYBOX_OWNER_PERSON_ID` and/or People “I am this person”); Eugene father + birthdate; shared marriage; Ask relational resolve; `/people/ui` Profile  
+
+**Deferred:** Full kinship inference (cousins, gendered resolve from `son_of`, etc.) — [TASK-P1P2-002](MBBS_P1_P2_BACKLOG.md).  
+
+**Next:** [MBBS-001_INCREMENT_10_DEFINITION.md](MBBS-001_INCREMENT_10_DEFINITION.md) — EVS-014 (**REVIEW ONLY**; no build until authorized).
 
 ### Locked decisions (shipped)
 
 | Decision | Rationale |
 |----------|-----------|
-| Explicit `MEMORYBOX_OWNER_PERSON_ID` for “my/me” relativity; never infer via display_name | Single-owner P1 |
+| Explicit owner Person for “my/me” relativity; never infer via display_name | Single-owner P1 |
 | One relationship assertion SoT; derive inverses in service | Prevent dual-row drift |
 | Multiple qualified parents/roles thin P1; disclose ambiguity | No one-father schema |
 | Marriage/anniversary = shared life event both participants | EVS-086 |
@@ -208,9 +212,36 @@ Record one section per increment. Do not wait until end of P1.
 | Extend `/people/ui` Profile | Coherent owner surface |
 | Ask: owner → Relationship service → Person → existing retrieve | No string hacks |
 | Correction supersedes; prior provenance retained | Trust |
+| Thin mother/father via spouse of opposite gendered parent only | Avoid Anne-as-father from generic parent_of |
 | EVS-014 / tree viz / auto-genealogy / Immich write-back / multi-user / Places / universal lazy-teach / polish OUT | Scope lock |
 
 **Stop:** Do not begin Increment 10 until Tom authorizes.
+
+---
+
+## Increment 10 — Cross-provider Person in Ask (EVS-014)
+
+**Date:** 2026-08-11  
+**Authorization:** **BUILD COMPLETE** — harness green; FlightSim owner acceptance pending  
+**Definition:** [MBBS-001_INCREMENT_10_DEFINITION.md](MBBS-001_INCREMENT_10_DEFINITION.md)  
+**Acceptance:** [MBBS-001_INCREMENT_10_ACCEPTANCE.md](MBBS-001_INCREMENT_10_ACCEPTANCE.md)  
+**Roadmap:** After **I9A (ACCEPTED)** · Before **I11 Guided Capture**  
+**Owner gate:** One real family Person in Immich + ≥1 HVRT-processed video; Review attach/teach onto one `people.id`; Ask + Library same Person; **HVRT worker required**
+
+### Locked decisions (shipped)
+
+| Decision | Rationale |
+|----------|-----------|
+| Cross-provider teach via I6/I7 onto one `people.id`; no per-provider Person recreation | EVS-014 |
+| No display-name-only join; ambiguity → owner map (`/people/{id}/map`) | Create No False Memories |
+| Reprocess reconcile: Person + owner assertions + mapping provenance survive; external IDs not stable; no silent duplicate Person | Durability |
+| Ask + existing Library Person filter share mappings | Consistency; no new Library UX |
+| Photo-only interim invalid; HVRT worker required for I10-OWNER | EVS-014 |
+| EVS-009 shared-identity-across-sources portion only | Catalog bound |
+| Kinship / lazy-teach / write-back / tree / multi-user / Capture / Export / polish OUT | Scope |
+
+**Prove:** `python -m memorybox prove-cross-provider-person` (+ `--flightsim`)  
+**Stop:** Do not begin Increment 11 until Tom authorizes.
 
 ---
 

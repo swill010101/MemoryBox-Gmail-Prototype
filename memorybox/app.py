@@ -212,6 +212,15 @@ class RenameRequest(BaseModel):
     display_name: str = Field(..., min_length=2)
 
 
+class ReconcileIdentityRequest(BaseModel):
+    """I10: map a new provider external id onto an existing MB Person after reprocess."""
+
+    provider_key: str = Field(..., min_length=1)
+    new_external_id: str = Field(..., min_length=1)
+    previous_external_id: str | None = None
+    label: str | None = None
+
+
 class ReviewFaceRequest(BaseModel):
     video_external_id: str = Field(..., min_length=1)
     t_sec: float = 0.0
@@ -346,7 +355,7 @@ def health() -> dict[str, Any]:
     return {
         "ok": ok,
         "service": "memorybox",
-        "increment": "9A",
+        "increment": "10",
         "version": __version__,
         "database": db,
         "migrations": migrations,
@@ -368,7 +377,7 @@ def health() -> dict[str, Any]:
 def root() -> dict[str, Any]:
     return {
         "service": "memorybox",
-        "increment": "9A",
+        "increment": "10",
         "version": __version__,
         "health": "/health",
         "ask_ui": "/ask/ui",
@@ -1422,6 +1431,12 @@ def people_teach(body: TeachRequest) -> dict[str, Any]:
                 "error": "ambiguous_identity",
                 "message": str(exc),
                 "resolution": "owner_required",
+                "candidates": getattr(exc, "candidates", None) or [],
+                "hint": (
+                    "Do not recreate the human per provider. "
+                    "Pick the correct MB Person and POST /people/{person_id}/map "
+                    "with this provider_key + external_id (Review: Attach to existing Person)."
+                ),
             },
         ) from exc
     except PersonServiceError as exc:
@@ -1485,6 +1500,7 @@ def people_rename(person_id: str, body: RenameRequest) -> dict[str, Any]:
 
 @app.post("/people/{person_id}/map")
 def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
+    """Attach a provider identity onto an explicit MB Person (cross-provider teach)."""
     try:
         view = map_provider_identity(
             person_id=person_id,
@@ -1495,6 +1511,37 @@ def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
     except PersonServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+
+@app.post("/people/{person_id}/reconcile")
+def people_reconcile(person_id: str, body: ReconcileIdentityRequest) -> dict[str, Any]:
+    """I10: reconcile a new provider external id onto an existing Person after reprocess."""
+    from memorybox.person import reconcile_provider_identity
+
+    try:
+        view = reconcile_provider_identity(
+            person_id=person_id,
+            provider_key=body.provider_key,
+            new_external_id=body.new_external_id,
+            previous_external_id=body.previous_external_id,
+            label=body.label,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+
+
+@app.get("/people/{person_id}/provider-projection")
+def people_provider_projection(person_id: str) -> dict[str, Any]:
+    """Rebuildable Person↔provider mapping projection (I10 — PG is SoT)."""
+    from memorybox.person import provider_mappings_projection
+
+    try:
+        proj = provider_mappings_projection(person_id)
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, **proj}
+
 
 @app.get("/review/videos")
 def review_videos() -> dict[str, Any]:

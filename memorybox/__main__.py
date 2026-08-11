@@ -96,6 +96,19 @@ def main(argv: list[str] | None = None) -> int:
             "(set MEMORYBOX_P1_RUNTIME_HOST=1 and MEMORYBOX_OWNER_PERSON_ID)"
         ),
     )
+    p_prove10 = sub.add_parser(
+        "prove-cross-provider-person",
+        help="Increment 10 cross-provider Person (EVS-014) acceptance prove",
+    )
+    p_prove10.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Final P1-runtime-host acceptance "
+            "(MEMORYBOX_P1_RUNTIME_HOST=1, HVRT worker running, "
+            "MEMORYBOX_I10_OWNER_PERSON_ID after Review Immich+HVRT teach)"
+        ),
+    )
     p_stt = sub.add_parser(
         "stt-check",
         help="Smoke Capture/STT on a local audio file (FlightSim diagnose)",
@@ -229,6 +242,15 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.profile.acceptance import run_prove_person_profile
 
         payload = run_prove_person_profile(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-cross-provider-person":
+        from memorybox.person.cross_provider_acceptance import (
+            prove_cross_provider_person,
+        )
+
+        payload = prove_cross_provider_person(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
