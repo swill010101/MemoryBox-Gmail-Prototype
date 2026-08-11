@@ -84,6 +84,149 @@ def _scalar_ts(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> str | None:
     return str(v)
 
 
+def _immich_photo_total(client: Any) -> tuple[int | None, str]:
+    """Best-effort Immich library photo count without full asset pagination."""
+    if client is None or not hasattr(client, "_request"):
+        return None, "no Immich HTTP client"
+    # Preferred: dedicated search statistics (accurate total)
+    for body in ({}, {"type": "IMAGE"}, {"type": "image"}):
+        try:
+            status, data = client._request("POST", "/search/statistics", body=body)  # noqa: SLF001
+            if status == 200 and isinstance(data, dict):
+                for k in ("total", "photos", "count"):
+                    if isinstance(data.get(k), int):
+                        return int(data[k]), "immich:POST /search/statistics"
+        except Exception:  # noqa: BLE001
+            continue
+    # Server / asset statistics
+    for path in ("/server/statistics", "/assets/statistics"):
+        try:
+            status, data = client._request("GET", path)  # noqa: SLF001
+            if status == 200 and isinstance(data, dict):
+                for k in ("photos", "photo", "total", "assets"):
+                    if isinstance(data.get(k), int):
+                        return int(data[k]), f"immich:GET {path}"
+                photos = data.get("photos")
+                if isinstance(photos, dict) and isinstance(photos.get("count"), int):
+                    return int(photos["count"]), f"immich:GET {path}"
+        except Exception:  # noqa: BLE001
+            continue
+    return None, "Immich count endpoints not available to this API key"
+
+
+def _count_media_root_videos() -> tuple[int | None, str]:
+    """Count video files under MEMORYBOX_VIDEO_MEDIA_ROOT (filesystem; not HVRT SoT)."""
+    import os
+    from pathlib import Path
+
+    raw = (os.environ.get("MEMORYBOX_VIDEO_MEDIA_ROOT") or "").strip()
+    if not raw:
+        return None, "MEMORYBOX_VIDEO_MEDIA_ROOT unset"
+    root = Path(raw)
+    if not root.is_dir():
+        return None, f"media root not reachable: {raw}"
+    exts = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm", ".flv"}
+    n = 0
+    try:
+        for path in root.rglob("*"):
+            try:
+                if path.is_file() and path.suffix.lower() in exts:
+                    n += 1
+            except OSError:
+                continue
+    except OSError as exc:
+        return None, f"media root scan failed: {exc}"
+    return n, raw
+
+
+def _qdrant_point_count() -> tuple[int | None, str]:
+    try:
+        from memorybox.config import settings
+        from memorybox.ingest.rebuild_index import _qdrant_client
+
+        if not settings.qdrant_url or settings.qdrant_url == ":memory:":
+            return None, "Qdrant not a durable network/path store for Status"
+        client = _qdrant_client(settings)
+        name = settings.qdrant_collection
+        existing = {c.name for c in client.get_collections().collections}
+        if name not in existing:
+            return None, f"collection {name!r} missing"
+        info = client.get_collection(name)
+        # points_count attribute varies by qdrant-client version
+        n = getattr(info, "points_count", None)
+        if n is None and getattr(info, "points_count", None) is None:
+            n = getattr(getattr(info, "result", None), "points_count", None)
+        if n is None:
+            # dict-like
+            n = info.get("points_count") if isinstance(info, dict) else None
+        if isinstance(n, int):
+            return n, f"qdrant:{name}"
+        return None, "points_count not exposed"
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
+
+
+def _ollama_status(calculated_at: str) -> dict[str, Any]:
+    """Probe configured Ollama or common local default — do not pretend connected."""
+    import urllib.request
+
+    from memorybox.config import settings
+
+    configured = (settings.ollama_base_url or "").strip()
+    candidates: list[str] = []
+    if configured:
+        candidates.append(configured.rstrip("/"))
+    default = "http://127.0.0.1:11434"
+    if default not in candidates:
+        candidates.append(default)
+
+    last_err = "Not connected"
+    for base in candidates:
+        try:
+            with urllib.request.urlopen(f"{base}/api/tags", timeout=2.5) as resp:
+                ok = 200 <= getattr(resp, "status", 200) < 300
+            if ok:
+                if configured and base.rstrip("/") == configured.rstrip("/"):
+                    return _metric(
+                        "ollama",
+                        "Ollama",
+                        display="OK",
+                        state="available",
+                        source=f"ollama:{base}/api/tags",
+                        last_updated=calculated_at,
+                        note=f"Configured MEMORYBOX_OLLAMA_BASE_URL={configured}",
+                    )
+                return _metric(
+                    "ollama",
+                    "Ollama",
+                    display="Reachable (not configured for MemoryBox)",
+                    state="partial",
+                    source=f"ollama:{base}/api/tags",
+                    last_updated=calculated_at,
+                    reason="Partial — daemon responds but MEMORYBOX_OLLAMA_BASE_URL is unset",
+                    note=(
+                        f"Set MEMORYBOX_OLLAMA_BASE_URL={base} so Ask uses Ollama "
+                        "(otherwise FakeLlmProvider)"
+                    ),
+                )
+        except Exception as exc:  # noqa: BLE001
+            last_err = str(exc)
+            continue
+    return _metric(
+        "ollama",
+        "Ollama",
+        display="Not connected",
+        state="unavailable",
+        source="MEMORYBOX_OLLAMA_BASE_URL",
+        last_updated=calculated_at,
+        reason="Not connected",
+        note=(
+            (f"Configured {configured} unreachable: {last_err}" if configured else last_err)
+            + " — Ask falls back to FakeLlmProvider until Ollama is configured"
+        ),
+    )
+
+
 def build_status_summary() -> dict[str, Any]:
     """Assemble Status payload for all tabs. Never invent unsupported counts as 0."""
     calculated_at = _iso_now()
@@ -390,6 +533,15 @@ def build_status_summary() -> dict[str, Any]:
         reason="Not available",
         href="/library/ui",
     )
+    media_root_metric = _metric(
+        "source_videos_media_root",
+        "Video files under MEMORYBOX_VIDEO_MEDIA_ROOT",
+        state="unavailable",
+        source="filesystem:MEMORYBOX_VIDEO_MEDIA_ROOT",
+        last_updated=calculated_at,
+        reason="Not available",
+        note="Will scan when MEMORYBOX_VIDEO_MEDIA_ROOT is set on this serve process",
+    )
     source_video_dates = _metric(
         "source_videos_dated_undated",
         "Source videos dated / undated",
@@ -437,29 +589,14 @@ def build_status_summary() -> dict[str, Any]:
         photo_health = {"ok": bool(ph.ok), "detail": ph.detail, "provider": ph.provider_key}
         if ph.ok:
             client = getattr(photo, "_client", None)
-            total_photos = None
-            if client is not None and hasattr(client, "_request"):
-                for path in ("/server/statistics", "/assets/statistics"):
-                    try:
-                        status, body = client._request("GET", path)  # noqa: SLF001
-                        if status == 200 and isinstance(body, dict):
-                            for k in ("photos", "photo", "total", "assets"):
-                                if isinstance(body.get(k), int):
-                                    total_photos = int(body[k])
-                                    break
-                            if total_photos is None and isinstance(body.get("photos"), dict):
-                                total_photos = body["photos"].get("count")
-                            if total_photos is not None:
-                                break
-                    except Exception:  # noqa: BLE001
-                        continue
+            total_photos, photo_src = _immich_photo_total(client)
             if total_photos is not None:
                 photos_indexed = _metric(
                     "photos_indexed",
                     "Photos indexed",
                     value=int(total_photos),
                     state="available",
-                    source="immich:statistics",
+                    source=photo_src,
                     last_updated=calculated_at,
                     href="/library/ui",
                 )
@@ -468,12 +605,16 @@ def build_status_summary() -> dict[str, Any]:
                     "photos_indexed",
                     "Photos indexed",
                     state="deferred",
-                    source="immich:statistics",
+                    source="immich:search/statistics|server/statistics",
                     last_updated=calculated_at,
                     reason="Not available",
-                    note="Status metric deferred — Immich statistics endpoint not available to this key",
+                    note=(
+                        f"{photo_src}. Immich is healthy (ping OK) but this API key "
+                        "cannot read library totals — grant statistics/search.statistics "
+                        "or use a key with asset.read + statistics access"
+                    ),
                 )
-                deferred_notes.append("photos_indexed — Immich statistics")
+                deferred_notes.append("photos_indexed — Immich statistics permission")
         else:
             photos_indexed = _metric(
                 "photos_indexed",
@@ -487,12 +628,80 @@ def build_status_summary() -> dict[str, Any]:
 
         video = build_video()
         vh = video.health()
-        video_health = {"ok": bool(vh.ok), "detail": vh.detail, "provider": vh.provider_key}
-        if vh.ok:
+        video_health = {
+            "ok": bool(vh.ok),
+            "detail": vh.detail,
+            "provider": vh.provider_key,
+        }
+        media_n, media_detail = _count_media_root_videos()
+        media_root_metric = (
+            _metric(
+                "source_videos_media_root",
+                "Video files under MEMORYBOX_VIDEO_MEDIA_ROOT",
+                value=media_n,
+                state="partial",
+                source="filesystem:MEMORYBOX_VIDEO_MEDIA_ROOT",
+                last_updated=calculated_at,
+                reason="Partial — filesystem scan of configured media root",
+                note=(
+                    f"Recursive count under {media_detail}. "
+                    "This is the family-video library on disk — not the same as "
+                    "HVRT worker inventory unless the worker is pointed at this root."
+                ),
+            )
+            if media_n is not None
+            else _metric(
+                "source_videos_media_root",
+                "Video files under MEMORYBOX_VIDEO_MEDIA_ROOT",
+                state="unavailable",
+                source="filesystem:MEMORYBOX_VIDEO_MEDIA_ROOT",
+                last_updated=calculated_at,
+                reason="Not available",
+                note=media_detail,
+            )
+        )
+
+        if (vh.provider_key or "").startswith("fake"):
+            # Do not present synthetic fake clips as the real Home Videos archive
+            source_videos = _metric(
+                "source_videos",
+                "Source videos (via video provider)",
+                state="unavailable",
+                source="MEMORYBOX_VIDEO_PROVIDER",
+                last_updated=calculated_at,
+                reason="Not available — serve is using FakeVideoProvider",
+                note=(
+                    "Status/Ask are not talking to the HVRT video worker. "
+                    "Set MEMORYBOX_VIDEO_PROVIDER=hvrt and MEMORYBOX_VIDEO_WORKER_URL "
+                    "(e.g. http://127.0.0.1:8791), run `python -m memorybox.video_worker` "
+                    "with MEMORYBOX_VIDEO_MEDIA_ROOT pointing at your Home Videos share, "
+                    "then restart serve. Review needs the same worker for real inventory."
+                ),
+                href="/review/ui",
+            )
+            moments = _metric(
+                "searchable_moments",
+                "Searchable video moments",
+                state="unavailable",
+                source="MEMORYBOX_VIDEO_PROVIDER",
+                last_updated=calculated_at,
+                reason="Not available — FakeVideoProvider (synthetic spans only)",
+                note="Start HVRT worker for real presence spans",
+                href="/library/ui",
+            )
+            video_duration = _metric(
+                "source_video_duration_sec",
+                "Source video duration (sec)",
+                state="unavailable",
+                source="MEMORYBOX_VIDEO_PROVIDER",
+                last_updated=calculated_at,
+                reason="Not available — FakeVideoProvider",
+            )
+        elif vh.ok:
             try:
-                vids = video.list_videos(limit=500)
+                vids = video.list_videos(limit=5000)
                 n_vids = len(vids)
-                bounded = n_vids >= 500
+                bounded = n_vids >= 5000
                 dur = 0.0
                 dur_known = 0
                 for v in vids:
@@ -501,15 +710,17 @@ def build_status_summary() -> dict[str, Any]:
                         dur_known += 1
                 source_videos = _metric(
                     "source_videos",
-                    "Source videos",
+                    "Source videos (via video provider)",
                     value=n_vids,
                     display=f"{n_vids:,}{'+' if bounded else ''}",
                     state="partial" if bounded else "available",
                     source="hvrt:list_videos",
                     last_updated=calculated_at,
                     href="/review/ui",
-                    note="Preserved source files (HVRT). Bounded list ≤500."
-                    + (" Count may be incomplete." if bounded else ""),
+                    note=(
+                        f"Provider={vh.provider_key}. Bounded list ≤5000."
+                        + (" Count may be incomplete." if bounded else "")
+                    ),
                     reason="Bounded list" if bounded else None,
                 )
                 if dur_known > 0:
@@ -532,7 +743,6 @@ def build_status_summary() -> dict[str, Any]:
                         last_updated=calculated_at,
                         reason="Not available",
                     )
-                # Dates: explicit NA — do not approximate undated ≈ all
                 source_video_dates = _metric(
                     "source_videos_dated_undated",
                     "Source videos dated / undated",
@@ -544,9 +754,9 @@ def build_status_summary() -> dict[str, Any]:
                         "reliable source date"
                     ),
                 )
-                spans = video.list_presence_spans(limit=500)
+                spans = video.list_presence_spans(limit=5000)
                 n_mom = len(spans)
-                mom_bounded = n_mom >= 500
+                mom_bounded = n_mom >= 5000
                 moments = _metric(
                     "searchable_moments",
                     "Searchable video moments",
@@ -557,16 +767,15 @@ def build_status_summary() -> dict[str, Any]:
                     last_updated=calculated_at,
                     href="/library/ui",
                     note=(
-                        "Derived presence spans (rebuildable). Bounded ≤500. "
+                        "Derived presence spans (rebuildable). Bounded ≤5000. "
                         "Not the same inventory as source videos."
                     ),
                     reason="Bounded list" if mom_bounded else None,
                 )
-                # High-leverage dating ONLY when computable — omit while dates unavailable
             except Exception as exc:  # noqa: BLE001
                 source_videos = _metric(
                     "source_videos",
-                    "Source videos",
+                    "Source videos (via video provider)",
                     state="unavailable",
                     source="hvrt:list_videos",
                     last_updated=calculated_at,
@@ -585,7 +794,7 @@ def build_status_summary() -> dict[str, Any]:
         else:
             source_videos = _metric(
                 "source_videos",
-                "Source videos",
+                "Source videos (via video provider)",
                 state="unavailable",
                 source="hvrt:health",
                 last_updated=calculated_at,
@@ -615,6 +824,15 @@ def build_status_summary() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         photo_health = {"ok": False, "detail": str(exc)}
         video_health = {"ok": False, "detail": str(exc)}
+        media_root_metric = _metric(
+            "source_videos_media_root",
+            "Video files under MEMORYBOX_VIDEO_MEDIA_ROOT",
+            state="unavailable",
+            source="filesystem:MEMORYBOX_VIDEO_MEDIA_ROOT",
+            last_updated=calculated_at,
+            reason="Not available",
+            note=str(exc),
+        )
 
     try:
         email_st = email_adapter_status()
@@ -630,7 +848,8 @@ def build_status_summary() -> dict[str, Any]:
     from memorybox.config import settings
 
     qdrant_detail = settings.qdrant_url or "unset"
-    ollama_detail = settings.ollama_base_url or "Not connected"
+    qdrant_n, qdrant_src = _qdrant_point_count()
+    ollama_metric = _ollama_status(calculated_at)
 
     # Archive Health tasks from real attention signals only (no dating approx)
     if people_unresolved > 0:
@@ -756,8 +975,8 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Media / Evidence",
                     "metrics": [
-                        photos_indexed,
                         source_videos,
+                        media_root_metric,
                         moments,
                         _metric(
                             "mb_managed_audio",
@@ -774,11 +993,40 @@ def build_status_summary() -> dict[str, Any]:
                         ),
                         _metric(
                             "emails",
-                            "Emails indexed",
+                            "Emails indexed in MemoryBox Evidence (PostgreSQL)",
                             value=emails,
                             state="available",
                             source=f"{pg}:evidence.communication",
                             last_updated=calculated_at,
+                            note=(
+                                "This is the MemoryBox Evidence row count — not a Gmail "
+                                "mailbox total. If a prior mbox ingest was ~94k messages but "
+                                "this shows far fewer, those messages are not present as "
+                                "communication Evidence in this database (re-ingest or check "
+                                "which DB/serve host was used)."
+                            ),
+                        ),
+                        (
+                            _metric(
+                                "emails_qdrant",
+                                "Qdrant evidence points (all kinds)",
+                                value=qdrant_n,
+                                state="partial",
+                                source=qdrant_src,
+                                last_updated=calculated_at,
+                                reason="Partial — includes all indexed evidence kinds, not email-only",
+                                note="Compare to PG Evidence if index was rebuilt from a larger corpus",
+                            )
+                            if qdrant_n is not None
+                            else _metric(
+                                "emails_qdrant",
+                                "Qdrant evidence points (all kinds)",
+                                state="unavailable",
+                                source="qdrant",
+                                last_updated=calculated_at,
+                                reason="Not available",
+                                note=qdrant_src,
+                            )
                         ),
                         _metric(
                             "calendar",
@@ -1047,6 +1295,7 @@ def build_status_summary() -> dict[str, Any]:
                     "title": "SOURCE VIDEOS (preserved files)",
                     "metrics": [
                         source_videos,
+                        media_root_metric,
                         video_duration,
                         source_video_dates,
                         _metric(
@@ -1326,11 +1575,15 @@ def build_status_summary() -> dict[str, Any]:
                     "metrics": [
                         _metric(
                             "emails",
-                            "Email messages indexed",
+                            "Email messages indexed in MemoryBox Evidence (PostgreSQL)",
                             value=emails,
                             state="available",
                             source=f"{pg}:evidence.communication",
                             last_updated=calculated_at,
+                            note=(
+                                "PG Evidence count only. A historical ~94k Gmail/mbox ingest "
+                                "is not reflected here unless those rows exist in this database."
+                            ),
                         ),
                         _metric(
                             "email_correspondents",
@@ -1556,15 +1809,7 @@ def build_status_summary() -> dict[str, Any]:
                             reason="Not connected" if not settings.qdrant_url else "Configured URL shown",
                             note="Live ping not required for thin Status",
                         ),
-                        _metric(
-                            "ollama",
-                            "Ollama",
-                            display=ollama_detail if settings.ollama_base_url else "Not connected",
-                            state="partial" if settings.ollama_base_url else "unavailable",
-                            source="MEMORYBOX_OLLAMA_BASE_URL",
-                            last_updated=calculated_at,
-                            reason="Not connected" if not settings.ollama_base_url else "Configured",
-                        ),
+                        ollama_metric,
                         _metric(
                             "immich",
                             "Immich",
