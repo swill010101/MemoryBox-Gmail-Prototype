@@ -60,6 +60,20 @@
     .profile-block:first-of-type { border-top: 0; }
     .profile-block h3 { font-size: 0.95rem; margin: 0 0 0.35rem; }
     ul.clean { margin: 0.25rem 0 0; padding-left: 1.15rem; }
+    .contact-card {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0.65rem 0.75rem;
+      margin: 0.45rem 0;
+      cursor: pointer;
+    }
+    .contact-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .contact-card .kind { font-size: 0.78rem; color: #5a6170; text-transform: uppercase; letter-spacing: 0.03em; }
+    .contact-card .val { font-size: 1.05rem; font-weight: 600; margin-top: 0.15rem; }
+    .contact-card .edit-row { display: none; margin-top: 0.55rem; }
+    .contact-card.active .edit-row { display: block; }
+    .date-wrap { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem; align-items: end; }
+    .date-wrap input[type="date"] { width: auto; min-width: 9.5rem; }
     #statusLine { min-height: 1.2rem; margin-bottom: 0.5rem; }
     details.tech { margin-top: 0.75rem; }
     details.tech pre { max-height: 14rem; overflow: auto; font-size: 0.78rem; }
@@ -97,8 +111,11 @@
             <option value="death_date">Death date</option>
             <option value="note">Note</option>
           </select>
-          <label for="factDate">Date (YYYY-MM-DD)</label>
-          <input id="factDate" placeholder="1927-06-11" />
+          <label for="factDate">Date</label>
+          <div class="date-wrap">
+            <input id="factDate" type="text" inputmode="numeric" placeholder="mm-dd-yyyy or mmddyyyy" autocomplete="off" />
+            <input id="factDateCal" type="date" title="Pick from calendar" aria-label="Pick fact date" />
+          </div>
           <label for="factText">Note text (for notes)</label>
           <input id="factText" placeholder="Optional note" />
           <button id="addFact" type="button">Save fact</button>
@@ -112,22 +129,16 @@
           <label for="aliasText">Name</label>
           <input id="aliasText" placeholder="e.g. Gene" />
           <button id="addAlias" type="button">Save nickname</button>
-          <label for="contactKind">Contact</label>
+          <label for="contactKind">Add contact</label>
           <select id="contactKind">
             <option value="email">Email</option>
-            <option value="phone">Phone</option>
+            <option value="phone">Phone (10 digits)</option>
           </select>
           <label for="contactText">Email or phone</label>
-          <input id="contactText" placeholder="name@example.com" />
+          <input id="contactText" placeholder="email or 10-digit phone" />
+          <p class="muted">Phone: digits only (no dashes). To change an existing contact, open the profile and tap that contact card.</p>
           <button id="addContact" type="button">Add contact</button>
         </div>
-      </div>
-      <div id="contactFix" style="margin-top:0.75rem;display:none">
-        <label for="contactFixSel">Correct an existing contact</label>
-        <select id="contactFixSel"><option value="">(open a profile first)</option></select>
-        <label for="contactFixVal">New value</label>
-        <input id="contactFixVal" />
-        <button id="fixContact" type="button">Replace contact</button>
       </div>
     </section>
 
@@ -168,7 +179,10 @@
       <label for="marB">Person B</label>
       <select id="marB"><option value="">(choose)</option></select>
       <label for="marDate">Wedding / anniversary date</label>
-      <input id="marDate" placeholder="1947-09-25" />
+      <div class="date-wrap">
+        <input id="marDate" type="text" inputmode="numeric" placeholder="mm-dd-yyyy or mmddyyyy" autocomplete="off" />
+        <input id="marDateCal" type="date" title="Pick from calendar" aria-label="Pick marriage date" />
+      </div>
       <button id="addMarriage" type="button">Save marriage date</button>
     </section>
 
@@ -320,6 +334,91 @@
       throw { detail: "Unknown person selection." };
     }
 
+    /** Display ISO/date as mm-dd-yyyy */
+    function formatDateDisplay(raw) {
+      if (!raw) return "";
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return m[2] + "-" + m[3] + "-" + m[1];
+      return s;
+    }
+
+    /**
+     * Accept mmddyyyy, mm/dd/yyyy, mm-dd-yyyy, or yyyy-mm-dd → ISO yyyy-mm-dd.
+     * Returns null if empty; throws {detail} if invalid.
+     */
+    function parseDateInput(raw) {
+      const s = String(raw || "").trim();
+      if (!s) return null;
+      let mm, dd, yyyy;
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) {
+        yyyy = m[1]; mm = m[2]; dd = m[3];
+      } else {
+        m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (m) {
+          mm = m[1]; dd = m[2]; yyyy = m[3];
+        } else {
+          const digits = s.replace(/\D/g, "");
+          if (digits.length === 8) {
+            mm = digits.slice(0, 2);
+            dd = digits.slice(2, 4);
+            yyyy = digits.slice(4, 8);
+          } else {
+            throw { detail: "Date must be mm-dd-yyyy, mm/dd/yyyy, or mmddyyyy." };
+          }
+        }
+      }
+      const mi = parseInt(mm, 10);
+      const di = parseInt(dd, 10);
+      const yi = parseInt(yyyy, 10);
+      if (mi < 1 || mi > 12 || di < 1 || di > 31 || yi < 1800 || yi > 2100) {
+        throw { detail: "That date does not look valid." };
+      }
+      const iso = String(yi).padStart(4, "0") + "-" +
+        String(mi).padStart(2, "0") + "-" + String(di).padStart(2, "0");
+      const dt = new Date(iso + "T00:00:00");
+      if (isNaN(dt.getTime()) || dt.getMonth() + 1 !== mi || dt.getDate() !== di) {
+        throw { detail: "That date does not look valid." };
+      }
+      return iso;
+    }
+
+    function wireDatePair(textId, calId) {
+      const text = document.getElementById(textId);
+      const cal = document.getElementById(calId);
+      if (!text || !cal) return;
+      cal.addEventListener("change", () => {
+        if (!cal.value) return;
+        text.value = formatDateDisplay(cal.value);
+      });
+      text.addEventListener("blur", () => {
+        try {
+          const iso = parseDateInput(text.value);
+          if (iso) {
+            text.value = formatDateDisplay(iso);
+            cal.value = iso;
+          }
+        } catch (_) { /* leave as typed until save */ }
+      });
+    }
+    wireDatePair("factDate", "factDateCal");
+    wireDatePair("marDate", "marDateCal");
+
+    function normalizePhone(raw) {
+      const digits = String(raw || "").replace(/\D/g, "");
+      if (digits.length !== 10) {
+        throw { detail: "Phone must be exactly 10 digits (US), no dashes or spaces." };
+      }
+      return digits;
+    }
+
+    function formatPhoneDisplay(raw) {
+      const d = String(raw || "").replace(/\D/g, "");
+      if (d.length === 10) return d; // store/display digits only per owner rule
+      return raw || "";
+    }
+
     function renderProfile(profile) {
       const el = document.getElementById("profileView");
       const idn = profile.identity || {};
@@ -354,7 +453,10 @@
       else {
         html += "<ul class='clean'>";
         facts.forEach((f) => {
-          const v = f.value_date || f.value_text || "";
+          let v = f.value_text || "";
+          if (f.fact_kind === "birth_date" || f.fact_kind === "death_date") {
+            v = formatDateDisplay(f.value_date || f.value_text);
+          }
           html += "<li>" + esc(friendlyFact(f.fact_kind)) + ": <b>" + esc(v) + "</b></li>";
         });
         html += "</ul>";
@@ -362,13 +464,24 @@
       html += "</div>";
 
       html += "<div class='profile-block'><h3>Contacts</h3>";
+      html += "<p class='muted'>Tap a card to change it.</p>";
       if (!contacts.length) html += "<p class='muted'>No email/phone yet.</p>";
       else {
-        html += "<ul class='clean'>";
         contacts.forEach((c) => {
-          html += "<li>" + esc(c.contact_kind) + ": <b>" + esc(c.value_text) + "</b></li>";
+          const shown = c.contact_kind === "phone"
+            ? formatPhoneDisplay(c.value_text)
+            : (c.value_text || "");
+          html += "<div class='contact-card' data-contact-id='" + esc(c.id) +
+            "' data-kind='" + esc(c.contact_kind) + "'>" +
+            "<div class='kind'>" + esc(c.contact_kind) + "</div>" +
+            "<div class='val'>" + esc(shown) + "</div>" +
+            "<div class='edit-row'>" +
+            "<label>New value</label>" +
+            "<input class='contact-edit-input' type='text' value='" + esc(shown) + "' />" +
+            "<button type='button' class='contact-save-btn'>Save change</button>" +
+            "<button type='button' class='secondary contact-cancel-btn'>Cancel</button>" +
+            "</div></div>";
         });
-        html += "</ul>";
       }
       html += "</div>";
 
@@ -401,7 +514,7 @@
         html += "<ul class='clean'>";
         events.forEach((e) => {
           const names = (e.participants || []).map((p) => p.display_name || p.person_id).join(" & ");
-          html += "<li>" + esc(names) + " — <b>" + esc(e.event_date || "date unknown") + "</b></li>";
+          html += "<li>" + esc(names) + " — <b>" + esc(formatDateDisplay(e.event_date) || "date unknown") + "</b></li>";
         });
         html += "</ul>";
       }
@@ -422,25 +535,43 @@
       el.innerHTML = html;
       el.className = "";
 
-      // Contact correction dropdown
-      const fixWrap = document.getElementById("contactFix");
-      const fixSel = document.getElementById("contactFixSel");
-      fixSel.innerHTML = "";
-      if (contacts.length) {
-        fixWrap.style.display = "block";
-        const none = document.createElement("option");
-        none.value = "";
-        none.textContent = "(choose contact to correct)";
-        fixSel.appendChild(none);
-        contacts.forEach((c) => {
-          const opt = document.createElement("option");
-          opt.value = c.id;
-          opt.textContent = c.contact_kind + ": " + c.value_text;
-          fixSel.appendChild(opt);
+      el.querySelectorAll(".contact-card").forEach((card) => {
+        card.addEventListener("click", (ev) => {
+          if (ev.target.closest(".edit-row")) return;
+          el.querySelectorAll(".contact-card").forEach((c) => c.classList.remove("active"));
+          card.classList.add("active");
+          const inp = card.querySelector(".contact-edit-input");
+          if (inp) inp.focus();
         });
-      } else {
-        fixWrap.style.display = "none";
-      }
+        const saveBtn = card.querySelector(".contact-save-btn");
+        const cancelBtn = card.querySelector(".contact-cancel-btn");
+        if (saveBtn) {
+          saveBtn.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            try {
+              let val = card.querySelector(".contact-edit-input").value.trim();
+              const kind = card.getAttribute("data-kind");
+              if (kind === "phone") val = normalizePhone(val);
+              const cid = card.getAttribute("data-contact-id");
+              show(await j("/people/contacts/" + encodeURIComponent(cid) + "/supersede", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ value_text: val, note: "owner correction" }),
+              }));
+              setStatus("Contact updated.", false);
+              await openProfileForKey("mb:" + currentPersonId);
+            } catch (err) {
+              show(err);
+              setStatus(err.detail || "Could not update contact.", true);
+            }
+          });
+        }
+        if (cancelBtn) {
+          cancelBtn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            card.classList.remove("active");
+          });
+        }
+      });
 
       // Reject Immich faces for this person
       const rej = document.getElementById("rejectImmichSel");
@@ -501,11 +632,14 @@
     document.getElementById("addFact").onclick = async () => {
       try {
         if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
-        const body = {
-          fact_kind: document.getElementById("factKind").value,
-          value_date: document.getElementById("factDate").value.trim() || null,
-          value_text: document.getElementById("factText").value.trim() || null,
-        };
+        const kind = document.getElementById("factKind").value;
+        let value_date = null;
+        let value_text = document.getElementById("factText").value.trim() || null;
+        if (kind === "birth_date" || kind === "death_date") {
+          value_date = parseDateInput(document.getElementById("factDate").value);
+          if (!value_date) throw { detail: "Enter a date (mm-dd-yyyy) or pick from the calendar." };
+        }
+        const body = { fact_kind: kind, value_date, value_text };
         show(await j("/people/" + encodeURIComponent(currentPersonId) + "/facts", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -533,31 +667,18 @@
     document.getElementById("addContact").onclick = async () => {
       try {
         if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        const kind = document.getElementById("contactKind").value;
+        let value_text = document.getElementById("contactText").value.trim();
+        if (kind === "phone") value_text = normalizePhone(value_text);
+        if (!value_text) throw { detail: "Enter an email or 10-digit phone." };
         show(await j("/people/" + encodeURIComponent(currentPersonId) + "/contacts", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contact_kind: document.getElementById("contactKind").value,
-            value_text: document.getElementById("contactText").value.trim(),
-          }),
+          body: JSON.stringify({ contact_kind: kind, value_text }),
         }));
         document.getElementById("contactText").value = "";
-        setStatus("Contact added — it should appear on the profile below.", false);
+        setStatus("Contact added — tap its card on the profile to change it later.", false);
         await openProfileForKey("mb:" + currentPersonId);
       } catch (err) { show(err); setStatus(err.detail || "Could not add contact.", true); }
-    };
-
-    document.getElementById("fixContact").onclick = async () => {
-      try {
-        const cid = document.getElementById("contactFixSel").value;
-        const val = document.getElementById("contactFixVal").value.trim();
-        if (!cid || !val) { setStatus("Choose a contact and enter the new value.", true); return; }
-        show(await j("/people/contacts/" + encodeURIComponent(cid) + "/supersede", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value_text: val, note: "owner correction" }),
-        }));
-        setStatus("Contact updated.", false);
-        await openProfileForKey("mb:" + currentPersonId);
-      } catch (err) { show(err); setStatus(err.detail || "Could not update contact.", true); }
     };
 
     document.getElementById("addRel").onclick = async () => {
@@ -592,7 +713,7 @@
           body: JSON.stringify({
             person_a_id: a.id,
             person_b_id: b.id,
-            event_date: document.getElementById("marDate").value.trim() || null,
+            event_date: parseDateInput(document.getElementById("marDate").value),
           }),
         });
         show(data);
