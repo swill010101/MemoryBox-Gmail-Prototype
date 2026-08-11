@@ -1953,11 +1953,12 @@ def build_status_summary() -> dict[str, Any]:
                         ),
                         _metric(
                             "emails",
-                            "Emails indexed",
+                            "Emails in Evidence (PG)",
                             value=emails,
                             state="available",
                             source=f"{pg}:evidence",
                             last_updated=calculated_at,
+                            note="PostgreSQL Evidence communication rows — not Gmail mailbox total",
                         ),
                         _metric(
                             "calendar",
