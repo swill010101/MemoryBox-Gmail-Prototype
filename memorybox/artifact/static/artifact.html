@@ -106,9 +106,13 @@
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Optional associations</h2>
       <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <p id="peopleHint" class="muted">Loads MB People plus Immich names (lazy-create MB Person on associate).</p>
       <label for="personSel">Associate Person (optional)</label>
       <select id="personSel"><option value="">(none)</option></select>
       <button id="assocPersonBtn" type="button">Associate Person</button>
+      <p class="muted">
+        Immich names you already created appear under <b>Immich</b>. Associating teaches/maps that name into MemoryBox (same I6/I7 lazy pattern), then links the Artifact — no separate /people/ui step required.
+      </p>
       <label for="storyBody">Why it matters — Save as Story (typed; or paste STT draft)</label>
       <input id="storyTitle" placeholder="Story title (optional)" />
       <textarea id="storyBody" placeholder="Owner recollection…"></textarea>
@@ -140,7 +144,11 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const d = data.detail;
-        throw new Error(typeof d === "string" ? d : (res.status + " " + res.statusText));
+        if (typeof d === "string") throw new Error(d);
+        if (d && typeof d === "object") {
+          throw new Error(d.message || d.error || JSON.stringify(d));
+        }
+        throw new Error(res.status + " " + res.statusText);
       }
       return data;
     }
@@ -176,17 +184,76 @@
       renderArtifact(data.artifact);
     }
     async function loadPeople() {
-      const data = await j("/library/person-options?limit=200");
       const sel = document.getElementById("personSel");
+      const hint = document.getElementById("peopleHint");
       const cur = sel.value;
       sel.innerHTML = '<option value="">(none)</option>';
-      (data.people || []).forEach((p) => {
+
+      // Immich names teach/map MB Person on associate (I6/I7 lazy pattern).
+      let mbPeople = [];
+      let immich = [];
+      let immichErr = null;
+      try {
+        const data = await j("/library/person-options?limit=200");
+        mbPeople = data.people || [];
+      } catch (e) {
+        if (hint) hint.textContent = "MB People load failed: " + errText(e);
+      }
+      try {
+        const data = await j("/people/provider/immich");
+        if (data.unavailable || data.ok === false) {
+          immichErr = (data.provider_status && data.provider_status.detail) || "Immich unavailable";
+        } else {
+          immich = (data.people || []).filter((p) => (p.display_name || "").trim().length >= 2);
+        }
+      } catch (e) {
+        immichErr = errText(e);
+      }
+
+      const ogMb = document.createElement("optgroup");
+      ogMb.label = "MemoryBox People";
+      mbPeople.forEach((p) => {
         const opt = document.createElement("option");
-        opt.value = p.id;
+        opt.value = "mb:" + p.id;
         opt.textContent = (p.display_name || "(unnamed)") + " · " + (p.status || "");
-        sel.appendChild(opt);
+        ogMb.appendChild(opt);
       });
+      if (!mbPeople.length) {
+        const opt = document.createElement("option");
+        opt.disabled = true;
+        opt.textContent = "(none yet — Immich names below will create one)";
+        ogMb.appendChild(opt);
+      }
+      sel.appendChild(ogMb);
+
+      const ogIm = document.createElement("optgroup");
+      ogIm.label = "Immich names (create/map MB on associate)";
+      immich
+        .slice()
+        .sort((a, b) => String(a.display_name || "").localeCompare(String(b.display_name || "")))
+        .forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = "immich:" + encodeURIComponent(p.external_id) + ":" + encodeURIComponent(p.display_name || "");
+          opt.textContent = (p.display_name || "(unnamed)") + " · Immich";
+          ogIm.appendChild(opt);
+        });
+      if (!immich.length) {
+        const opt = document.createElement("option");
+        opt.disabled = true;
+        opt.textContent = immichErr
+          ? ("(Immich unavailable: " + immichErr + ")")
+          : "(no named Immich people)";
+        ogIm.appendChild(opt);
+      }
+      sel.appendChild(ogIm);
+
       if (cur) sel.value = cur;
+      if (hint) {
+        hint.textContent =
+          "MB=" + mbPeople.length + " · Immich named=" + immich.length +
+          (immichErr ? (" · Immich: " + immichErr) : "");
+        hint.className = immichErr && !immich.length ? "warn" : "muted";
+      }
     }
 
     document.getElementById("createBtn").onclick = async () => {
@@ -240,15 +307,45 @@
 
     document.getElementById("assocPersonBtn").onclick = async () => {
       if (!currentId) return setStatus("No Artifact selected.", true);
-      const pid = document.getElementById("personSel").value;
-      if (!pid) return setStatus("Select a Person.", true);
+      const raw = document.getElementById("personSel").value;
+      if (!raw) return setStatus("Select a Person (MB or Immich name).", true);
       try {
-        const data = await j(
-          "/artifact/" + encodeURIComponent(currentId) + "/persons/" + encodeURIComponent(pid),
-          { method: "POST" }
-        );
-        renderArtifact(data.artifact);
-        setStatus("Associated Person");
+        let data;
+        if (raw.startsWith("mb:")) {
+          const pid = raw.slice(3);
+          data = await j(
+            "/artifact/" + encodeURIComponent(currentId) + "/persons/" + encodeURIComponent(pid),
+            { method: "POST" }
+          );
+          renderArtifact(data.artifact);
+          setStatus("Associated MB Person " + pid);
+        } else if (raw.startsWith("immich:")) {
+          const parts = raw.split(":");
+          // immich:<encExternalId>:<encDisplayName> — display name may contain encoded chars only
+          const external_id = decodeURIComponent(parts[1] || "");
+          const display_name = decodeURIComponent(parts.slice(2).join(":") || "");
+          if (!external_id || !display_name) {
+            return setStatus("Invalid Immich person selection.", true);
+          }
+          data = await j(
+            "/artifact/" + encodeURIComponent(currentId) + "/persons/from-provider",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider_key: "immich",
+                external_id,
+                display_name,
+              }),
+            }
+          );
+          renderArtifact(data.artifact);
+          const pname = (data.person && data.person.display_name) || display_name;
+          setStatus("Taught/mapped Immich → MB Person “" + pname + "” and associated Artifact");
+          loadPeople().catch(() => {});
+        } else {
+          return setStatus("Unknown person selection.", true);
+        }
       } catch (e) {
         setStatus("Associate failed: " + errText(e), true);
       }

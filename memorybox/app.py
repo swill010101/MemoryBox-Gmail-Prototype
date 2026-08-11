@@ -18,6 +18,7 @@ from memorybox.artifact import (
     add_evidence_ref_representation,
     add_mb_managed_representation,
     associate_person as artifact_associate_person,
+    associate_person_from_provider as artifact_associate_person_from_provider,
     associate_story as artifact_associate_story,
     create_artifact,
     create_story_for_artifact,
@@ -239,6 +240,15 @@ class ArtifactStoryCreateRequest(BaseModel):
     title: str | None = None
     body_text: str = Field(..., min_length=1)
     narrator_display_name: str | None = None
+
+
+class ArtifactPersonFromProviderRequest(BaseModel):
+    """Lazy Immich (trusted provider) name → MB Person → Artifact association."""
+
+    display_name: str = Field(..., min_length=2)
+    provider_key: str = "immich"
+    external_id: str = Field(..., min_length=1)
+    label: str | None = None
 
 
 @app.get("/health")
@@ -910,6 +920,24 @@ def artifact_representation_bytes(
         media_type=mime,
         headers={"Content-Disposition": f'inline; filename="{safe}"'},
     )
+
+
+@app.post("/artifact/{artifact_id}/persons/from-provider")
+def artifact_add_person_from_provider(
+    artifact_id: str, body: ArtifactPersonFromProviderRequest
+) -> dict[str, Any]:
+    """Teach/map Immich person name into MB Person (I6/I7), then associate Artifact."""
+    try:
+        linked = artifact_associate_person_from_provider(
+            artifact_id,
+            display_name=body.display_name,
+            provider_key=body.provider_key,
+            external_id=body.external_id,
+            label=body.label,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **linked}
 
 
 @app.post("/artifact/{artifact_id}/persons/{person_id}")

@@ -671,6 +671,47 @@ def associate_person(artifact_id: str, person_id: str) -> ArtifactView:
         return _view(conn, dict(out))
 
 
+def associate_person_from_provider(
+    artifact_id: str,
+    *,
+    display_name: str,
+    provider_key: str = "immich",
+    external_id: str,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """I6/I7 lazy Immich name → MB Person, then Artifact association.
+
+    Immich already has the owner-created name; do not require a prior /people/ui
+    teach step before Artifact associate.
+    """
+    from memorybox.ask.deps import build_photo
+    from memorybox.person import AmbiguousIdentityError, PersonServiceError, teach_provider_person
+
+    name = (display_name or "").strip()
+    ext = (external_id or "").strip()
+    if len(name) < 2:
+        raise ArtifactServiceError("display_name required (use Immich person name)")
+    if not ext:
+        raise ArtifactServiceError("external_id required")
+    try:
+        person = teach_provider_person(
+            display_name=name,
+            provider_key=(provider_key or "immich").strip() or "immich",
+            external_id=ext,
+            label=label or name,
+            photo=build_photo(),
+        )
+    except AmbiguousIdentityError as exc:
+        raise ArtifactServiceError(
+            f"ambiguous Immich→MB Person for {name!r}: {exc} "
+            "(resolve in /people/ui, then retry)"
+        ) from exc
+    except PersonServiceError as exc:
+        raise ArtifactServiceError(str(exc)) from exc
+    art = associate_person(artifact_id, person.id)
+    return {"artifact": art.to_dict(), "person": person.to_dict()}
+
+
 def associate_story(artifact_id: str, story_id: str) -> ArtifactView:
     aid = _parse_uuid(artifact_id, field="artifact_id")
     sid = _parse_uuid(story_id, field="story_id")
