@@ -1,8 +1,44 @@
 # MBBS — P1 → P2 backlog tasks
 
-**Status:** Living backlog  
+**Status:** Living backlog — **P1 CLOSED** 2026-08-11 ([closeout](MBBS-001_P1_CLOSEOUT.md)); schedule under explicit P2 / TASK authorization  
 **Owner:** Tom  
-**Rule:** Do **not** expand the current authorized increment to absorb these. Schedule after P1 acceptance closeout / before or as early P2 planning — **unless** Tom explicitly resequences (e.g. kinship before EVS-014).
+**Rule:** Do **not** absorb these into an unauthorized increment. Open only when Tom authorizes a P2 slice or named TASK. Resequence only if Tom asks (e.g. kinship before EVS-014).
+
+---
+
+## TASK-P1P2-004 — Immich Status / Photos inventory (API access)
+
+**Logged:** 2026-08-11 (I12A FlightSim acceptance residual)  
+**Priority:** **Early P2 fix** — owner explicitly parked here when closing P1  
+**Status:** Open — **do not** reopen I12A / P1  
+
+### Problem
+
+Thin Status **Photos** tab reports all metrics **Not available** on FlightSim after I12A deploy. Immich is **healthy** (`ping` OK) but the configured API key cannot read library totals (`search/statistics`, `server/statistics`). Timeline-buckets fallback may still fail depending on key scopes. Owner accepted honest NA rather than fake zeros.
+
+### Product intent (when authorized)
+
+1. Photos indexed (and any other Status Immich metrics that are product-in) show real counts when Immich is the photo SoT.  
+2. Prefer fixing **ops/key permissions** and/or a **documented Immich endpoint path** that works with the key model FlightSim uses — not inventing unsupported metrics as `0`.  
+3. Keep metric contract: unavailable ≠ zero; deferred stays deferred until a real capability exists.
+
+### In scope (when authorized)
+
+- Diagnose FlightSim Immich API key scopes vs endpoints Status probes.  
+- Harden photo-provider / Status probe path (statistics and/or asset.read timeline/search alternatives).  
+- Document required Immich key permissions in ops/env examples.  
+- Prove on FlightSim: Status → Photos → Photos indexed available with real total.
+
+### Out of scope for this task alone
+
+- Final P2 Dashboard chrome  
+- Image-quality / blur engine  
+- Inventing favorites/duplicates/date/location counts Immich does not expose to this key  
+- Bulk Immich Person import / write-back  
+
+### Trigger
+
+**First fix-list item for P2** (owner 2026-08-11). Open under early P2 build doc or explicit *Build TASK-P1P2-004*.
 
 ---
 
@@ -122,4 +158,4 @@ Families should enter **minimal facts** and get safe, disclosed inferences, e.g.
 
 ---
 
-*Add new TASK-P1P2-### sections below as they arise.*
+*P1 CLOSED 2026-08-11. Add new TASK-P1P2-### below as P2 planning surfaces them.*

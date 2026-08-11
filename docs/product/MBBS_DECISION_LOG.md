@@ -306,7 +306,8 @@ Record one section per increment. Do not wait until end of P1.
 **Date:** 2026-08-11  
 **Authorization:** Tom: I12 accepted + define then implement Status · truthfulness refinements locked before final Status  
 **Definition:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md)  
-**Acceptance:** [MBBS-001_INCREMENT_12A_ACCEPTANCE.md](MBBS-001_INCREMENT_12A_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**  
+**Acceptance:** [MBBS-001_INCREMENT_12A_ACCEPTANCE.md](MBBS-001_INCREMENT_12A_ACCEPTANCE.md) — **ACCEPTED**  
+**P1 closeout:** [MBBS-001_P1_CLOSEOUT.md](MBBS-001_P1_CLOSEOUT.md) — **CLOSED**  
 **UI:** `/status/ui` · **API:** `GET /status/summary`
 
 ### Locked decisions
@@ -322,6 +323,11 @@ Record one section per increment. Do not wait until end of P1.
 | Archive Health: Strong / Needs attention / High-leverage — no % | Not a scoring science project |
 | Metric contract: value, state, source, last_updated, reason | Client must not treat unavailable as zero |
 | Read surface over existing PG + bounded provider health | Status is not a second archive SoT |
+| Immich Photos totals still NA on FlightSim at accept → TASK-P1P2-004 | Honest Status; fix in early P2, not P1 reopen |
+
+### P1 stop-line (2026-08-11)
+
+Owner accepted I12A and **closed P1**. No further P1 increments/polish. P2 starts only with an explicit new build document + authorization.
 
 ---
 

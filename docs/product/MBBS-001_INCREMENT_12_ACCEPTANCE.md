@@ -17,4 +17,4 @@ Owner ran export from `/export/ui` to a local folder; package produced with real
 
 Full Immich/HVRT mirror · pretty publishing · cloud escrow · multi-user share · import-back (TASK-P1P2-003) · P2 Dashboard · kinship · GC polish · SMS · EVS-140
 
-**Next:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md) — thin Status screen (P1/P2 bridge)
+**Next (done):** [MBBS-001_INCREMENT_12A_ACCEPTANCE.md](MBBS-001_INCREMENT_12A_ACCEPTANCE.md) — thin Status — **ACCEPTED**; [P1 closeout](MBBS-001_P1_CLOSEOUT.md)

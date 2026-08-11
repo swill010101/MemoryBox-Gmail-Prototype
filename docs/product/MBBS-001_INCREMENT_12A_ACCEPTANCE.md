@@ -1,26 +1,25 @@
 # MBBS-001 Increment 12A — Thin Status — Acceptance
 
-**Status:** **READY FOR OWNER ACCEPTANCE**  
-**Date:** 2026-08-11  
+**Status:** **ACCEPTED** (FlightSim owner 2026-08-11)  
+**Date:** 2026-08-11 (accepted)  
 **Definition:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md) — Final (truthfulness locked)  
-**UI:** `/status/ui` · **API:** `GET /status/summary`
+**UI:** `/status/ui` · **API:** `GET /status/summary`  
+**P1 closeout:** [MBBS-001_P1_CLOSEOUT.md](MBBS-001_P1_CLOSEOUT.md)
 
-## FlightSim owner gate
+## FlightSim owner gate — PASSED
 
-1. Land on Archive Summary by default.  
-2. See real counts; unavailable metrics show Not available (not zero).  
-3. Navigate every Status tab.  
-4. Distinguish source videos from searchable video moments.  
-5. See **separate** identity states (not one synthetic “unknown face clusters”).  
-6. See Story, Journal, Artifact, Guided Capture counts.  
-7. See provider/source health (down ≠ success with zero).  
-8. See pending vs failed processing separately.  
-9. See undated / missing-context where available; Story `created_at` not used as life chronology.  
-10. Source-video dated/undated is **Not available** until reliable dates exist (no undated≈all approximation).  
-11. See a few high-leverage Archive Health actions from real data (no health %).  
-12. Click through to existing surfaces where linked.  
-13. Refresh without SQL.
+Owner validated Thin Status as the P1/P2 bridge orientation surface: Archive Summary default, tab navigation, honest Not available (not zero), identity states separate, source videos ≠ moments, provider health, processing pending vs failed, Archive Health without a universal %.
+
+## Known residual (parked — not I12A reopen)
+
+**Immich Photos inventory** still **Not available** on FlightSim after deploy (Immich ping OK; statistics / library-total endpoints not usable with current API key / access). Owner accepted I12A with this honesty; fix scheduled as **[TASK-P1P2-004](MBBS_P1_P2_BACKLOG.md)** for early P2 — **not** a P1 reopen.
+
+Other parked items (lazy-teach, kinship, import-back, full mbox/SMS ingest) remain in [MBBS_P1_P2_BACKLOG.md](MBBS_P1_P2_BACKLOG.md) / P1 closeout.
 
 ## Prior
 
 I12 Export — **ACCEPTED** (2026-08-11); default export path corrected to `C:\memorybox_exports`.
+
+## Next
+
+**P1 CLOSED.** Owner starts P2 with a new build document under `docs/product/` (new agent).

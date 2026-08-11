@@ -1,6 +1,7 @@
 # MBBS-001 Increment 12A — Thin Status Screen — Final Definition
 
-**Status:** **BUILT — READY FOR OWNER ACCEPTANCE** (truthfulness refinements locked 2026-08-11)  
+**Status:** **ACCEPTED** (FlightSim owner 2026-08-11; truthfulness refinements locked same day)  
+**P1 closeout:** [MBBS-001_P1_CLOSEOUT.md](MBBS-001_P1_CLOSEOUT.md)  
 **Date:** 2026-08-11  
 **Roadmap:** After **I12 MV Export (ACCEPTED)** · P1/P2 **bridge utility** — **not** final P2 Dashboard  
 **Route:** `/status/ui`  
