@@ -115,15 +115,23 @@
   }
 
   function metricRow(m) {
+    const state = m.state || (m.available ? "available" : "unavailable");
     let val;
-    if (!m.available) {
+    if (state === "unavailable" || state === "deferred") {
       val = `<span class="na">${esc(m.display || m.reason || "Not available")}</span>`;
-    } else if (m.href) {
+    } else if (m.href && (state === "available" || state === "partial")) {
       val = `<a href="${esc(m.href)}">${esc(m.display)}</a>`;
     } else {
       val = esc(m.display);
     }
-    const note = m.note ? `<span class="note">${esc(m.note)}</span>` : "";
+    if (state === "partial" && !String(m.display || "").toLowerCase().includes("partial")) {
+      val += ` <span class="na">(partial)</span>`;
+    }
+    const bits = [];
+    if (m.note) bits.push(esc(m.note));
+    if (m.source) bits.push("source: " + esc(m.source));
+    if (m.reason && state !== "available") bits.push(esc(m.reason));
+    const note = bits.length ? `<span class="note">${bits.join(" · ")}</span>` : "";
     return `<tr><td class="k">${esc(m.label)}${note}</td><td class="v">${val}</td></tr>`;
   }
 

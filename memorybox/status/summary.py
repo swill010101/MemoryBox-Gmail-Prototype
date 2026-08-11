@@ -1,11 +1,17 @@
-"""Increment 12A — thin Status summary (read-only; not P2 Dashboard)."""
+"""Increment 12A — thin Status summary (read-only; not P2 Dashboard).
+
+Truthfulness locks: separate identity states; no Story created_at chronology;
+no undated≈all videos; narrow partial labels; no health %; structured metric state.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from memorybox.db import connection, ping
 from memorybox.guided_capture import email_adapter_status, new_response_count
+
+MetricState = Literal["available", "unavailable", "partial", "deferred"]
 
 
 def _iso_now() -> str:
@@ -18,26 +24,37 @@ def _metric(
     *,
     value: Any = None,
     display: str | None = None,
-    available: bool = True,
-    href: str | None = None,
+    state: MetricState = "available",
+    source: str | None = None,
+    last_updated: str | None = None,
     reason: str | None = None,
+    href: str | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
+    available = state == "available"
     if display is None:
-        if not available:
+        if state in ("unavailable", "deferred"):
             display = reason or "Not available"
+        elif state == "partial" and value is not None:
+            display = f"{value:,}" if isinstance(value, int) else str(value)
         elif value is None:
             display = "—"
         else:
             display = f"{value:,}" if isinstance(value, int) else str(value)
+    # Never coerce unavailable/deferred to numeric zero
+    if state in ("unavailable", "deferred") and value == 0:
+        value = None
     return {
         "key": key,
         "label": label,
         "value": value,
         "display": display,
+        "state": state,
         "available": available,
-        "href": href,
+        "source": source,
+        "last_updated": last_updated,
         "reason": reason,
+        "href": href,
         "note": note,
     }
 
@@ -46,17 +63,20 @@ def _count(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> int:
     row = conn.execute(sql, params).fetchone()
     if not row:
         return 0
-    # dict_row or tuple
     if isinstance(row, dict):
         return int(next(iter(row.values())))
     return int(row[0])
 
 
-def _scalar_ts(conn: Any, sql: str) -> str | None:
-    row = conn.execute(sql).fetchone()
+def _scalar(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> Any:
+    row = conn.execute(sql, params).fetchone()
     if not row:
         return None
-    v = next(iter(row.values())) if isinstance(row, dict) else row[0]
+    return next(iter(row.values())) if isinstance(row, dict) else row[0]
+
+
+def _scalar_ts(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> str | None:
+    v = _scalar(conn, sql, params)
     if v is None:
         return None
     if isinstance(v, datetime):
@@ -67,7 +87,7 @@ def _scalar_ts(conn: Any, sql: str) -> str | None:
 def build_status_summary() -> dict[str, Any]:
     """Assemble Status payload for all tabs. Never invent unsupported counts as 0."""
     calculated_at = _iso_now()
-    deferred: list[str] = []
+    deferred_notes: list[str] = []
 
     with connection() as conn:
         people_total = _count(
@@ -89,6 +109,10 @@ def build_status_summary() -> dict[str, Any]:
             """,
         )
         provider_identities = _count(conn, "SELECT COUNT(*) AS c FROM provider_identities")
+        provider_identities_unlinked = _count(
+            conn,
+            "SELECT COUNT(*) AS c FROM provider_identities WHERE person_id IS NULL",
+        )
         rel_current = _count(
             conn,
             """
@@ -136,6 +160,8 @@ def build_status_summary() -> dict[str, Any]:
             WHERE s.status = 'active'
             """,
         )
+        # Stories have no life/event date field — count as undated for chronology
+        stories_undated = stories
         journals = _count(
             conn, "SELECT COUNT(*) AS c FROM journal_entries WHERE status = 'active'"
         )
@@ -220,6 +246,7 @@ def build_status_summary() -> dict[str, Any]:
             )
             for r in artifact_kinds
         }
+        art_docs = art_by_kind.get("document", 0) + art_by_kind.get("letter", 0)
         art_with_story = _count(
             conn,
             """
@@ -248,11 +275,31 @@ def build_status_summary() -> dict[str, Any]:
         calendars = _count(
             conn, "SELECT COUNT(*) AS c FROM evidence WHERE evidence_kind = 'calendar_event'"
         )
+        emails_dated = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
+        )
+        calendars_dated = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'calendar_event'
+              AND (
+                NULLIF(payload_json->>'start', '') IS NOT NULL
+                OR NULLIF(payload_json->>'dtstart', '') IS NOT NULL
+                OR NULLIF(payload_json->>'start_at', '') IS NOT NULL
+              )
+            """,
+        )
         jobs_error = _count(conn, "SELECT COUNT(*) AS c FROM jobs WHERE status = 'error'")
         jobs_pending = _count(
             conn, "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('pending', 'running')"
         )
-        audio_uris = _count(
+        mb_audio = _count(
             conn,
             """
             SELECT (
@@ -284,46 +331,101 @@ def build_status_summary() -> dict[str, Any]:
               AND COALESCE(described_precision, 'unknown') <> 'unknown'
             """,
         )
+        earliest_email = _scalar_ts(
+            conn,
+            """
+            SELECT MIN(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
+        )
+        latest_email = _scalar_ts(
+            conn,
+            """
+            SELECT MAX(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
+        )
 
     last_activity_candidates = [t for t in (last_job, last_story, last_journal, last_gc) if t]
     last_activity = max(last_activity_candidates) if last_activity_candidates else None
 
-    # --- Providers (bounded; down ≠ zero) ---
-    photo_health = {"ok": False, "detail": "not probed"}
-    video_health = {"ok": False, "detail": "not probed"}
+    # --- Providers ---
+    photo_health: dict[str, Any] = {"ok": False, "detail": "not probed"}
+    video_health: dict[str, Any] = {"ok": False, "detail": "not probed"}
+
     photos_indexed = _metric(
         "photos_indexed",
         "Photos indexed",
-        available=False,
+        state="unavailable",
+        source="immich:statistics",
+        last_updated=calculated_at,
         reason="Not available",
-        note="Status metric deferred — Immich statistics not wrapped; provider probe below",
-    )
-    immich_people = _metric(
-        "immich_face_people",
-        "Immich people / face clusters (provider)",
-        available=False,
-        reason="Not available",
-        href="/review/ui",
+        note="Immich statistics not yet obtained",
     )
     source_videos = _metric(
         "source_videos",
         "Source videos",
-        available=False,
+        state="unavailable",
+        source="hvrt:list_videos",
+        last_updated=calculated_at,
         reason="Not available",
         href="/review/ui",
     )
     video_duration = _metric(
         "source_video_duration_sec",
-        "Source video duration (sec, partial)",
-        available=False,
+        "Source video duration (sec)",
+        state="unavailable",
+        source="hvrt:list_videos.duration_sec",
+        last_updated=calculated_at,
         reason="Not available",
     )
     moments = _metric(
         "searchable_moments",
         "Searchable video moments",
-        available=False,
+        state="unavailable",
+        source="hvrt:list_presence_spans",
+        last_updated=calculated_at,
         reason="Not available",
         href="/library/ui",
+    )
+    source_video_dates = _metric(
+        "source_videos_dated_undated",
+        "Source videos dated / undated",
+        state="unavailable",
+        source="hvrt:video_date",
+        last_updated=calculated_at,
+        reason=(
+            "Not available — provider/domain does not currently expose reliable source date"
+        ),
+        note="Do not infer undated from missing DTO field",
+    )
+    provider_clusters_unlinked = _metric(
+        "provider_identity_clusters_unlinked",
+        "Provider identity clusters not linked to MB Person",
+        state="unavailable",
+        source="provider:face_clusters",
+        last_updated=calculated_at,
+        reason="Not available",
+        note=(
+            "Exact provider cluster-not-linked state is not reliably exposed; "
+            "not synthesized from Immich people list"
+        ),
+        href="/review/ui",
+    )
+    unreviewed_identity = _metric(
+        "unreviewed_identity_candidates",
+        "Unreviewed identity candidates",
+        state="unavailable",
+        source="review:identity_queue",
+        last_updated=calculated_at,
+        reason="Not available",
+        note=(
+            "Status metric deferred — no durable unreviewed-identity queue distinct from "
+            "unresolved MB People"
+        ),
+        href="/review/ui",
     )
     leverage_tasks: list[dict[str, Any]] = []
 
@@ -334,74 +436,53 @@ def build_status_summary() -> dict[str, Any]:
         ph = photo.health()
         photo_health = {"ok": bool(ph.ok), "detail": ph.detail, "provider": ph.provider_key}
         if ph.ok:
-            try:
-                people_refs = photo.list_people(limit=500)
-                immich_people = _metric(
-                    "immich_face_people",
-                    "Immich people / face clusters (provider)",
-                    value=len(people_refs),
-                    href="/people/ui",
-                    note="Bounded list (≤500); not a full Immich census",
-                )
-                # Try Immich statistics without making Status SoT
-                client = getattr(photo, "_client", None)
-                total_photos = None
-                if client is not None and hasattr(client, "_request"):
-                    for path in ("/server/statistics", "/assets/statistics"):
-                        try:
-                            status, body = client._request("GET", path)  # noqa: SLF001
-                            if status == 200 and isinstance(body, dict):
-                                for k in ("photos", "photo", "total", "assets"):
-                                    if isinstance(body.get(k), int):
-                                        total_photos = int(body[k])
-                                        break
-                                usage = body.get("usageByUser") or body.get("usage")
-                                if total_photos is None and isinstance(body.get("photos"), dict):
-                                    total_photos = body["photos"].get("count")
-                                if total_photos is not None:
+            client = getattr(photo, "_client", None)
+            total_photos = None
+            if client is not None and hasattr(client, "_request"):
+                for path in ("/server/statistics", "/assets/statistics"):
+                    try:
+                        status, body = client._request("GET", path)  # noqa: SLF001
+                        if status == 200 and isinstance(body, dict):
+                            for k in ("photos", "photo", "total", "assets"):
+                                if isinstance(body.get(k), int):
+                                    total_photos = int(body[k])
                                     break
-                        except Exception:  # noqa: BLE001
-                            continue
-                if total_photos is not None:
-                    photos_indexed = _metric(
-                        "photos_indexed",
-                        "Photos indexed",
-                        value=int(total_photos),
-                        href="/library/ui",
-                        note="From Immich statistics endpoint",
-                    )
-                else:
-                    photos_indexed = _metric(
-                        "photos_indexed",
-                        "Photos indexed",
-                        available=False,
-                        reason="Not available",
-                        note="Status metric deferred — Immich statistics endpoint not available to this key",
-                    )
-                    deferred.append("photos_indexed — Immich statistics")
-            except Exception as exc:  # noqa: BLE001
+                            if total_photos is None and isinstance(body.get("photos"), dict):
+                                total_photos = body["photos"].get("count")
+                            if total_photos is not None:
+                                break
+                    except Exception:  # noqa: BLE001
+                        continue
+            if total_photos is not None:
                 photos_indexed = _metric(
                     "photos_indexed",
                     "Photos indexed",
-                    available=False,
-                    reason="Not available",
-                    note=str(exc),
+                    value=int(total_photos),
+                    state="available",
+                    source="immich:statistics",
+                    last_updated=calculated_at,
+                    href="/library/ui",
                 )
+            else:
+                photos_indexed = _metric(
+                    "photos_indexed",
+                    "Photos indexed",
+                    state="deferred",
+                    source="immich:statistics",
+                    last_updated=calculated_at,
+                    reason="Not available",
+                    note="Status metric deferred — Immich statistics endpoint not available to this key",
+                )
+                deferred_notes.append("photos_indexed — Immich statistics")
         else:
             photos_indexed = _metric(
                 "photos_indexed",
                 "Photos indexed",
-                available=False,
+                state="unavailable",
+                source="immich:health",
+                last_updated=calculated_at,
                 reason="Provider unavailable",
                 note=ph.detail,
-            )
-            immich_people = _metric(
-                "immich_face_people",
-                "Immich people / face clusters (provider)",
-                available=False,
-                reason="Provider unavailable",
-                note=ph.detail,
-                href="/review/ui",
             )
 
         video = build_video()
@@ -423,25 +504,45 @@ def build_status_summary() -> dict[str, Any]:
                     "Source videos",
                     value=n_vids,
                     display=f"{n_vids:,}{'+' if bounded else ''}",
+                    state="partial" if bounded else "available",
+                    source="hvrt:list_videos",
+                    last_updated=calculated_at,
                     href="/review/ui",
                     note="Preserved source files (HVRT). Bounded list ≤500."
                     + (" Count may be incomplete." if bounded else ""),
+                    reason="Bounded list" if bounded else None,
                 )
-                video_duration = _metric(
-                    "source_video_duration_sec",
-                    "Source video duration (sec)",
-                    value=int(dur) if dur_known else None,
-                    available=dur_known > 0,
-                    reason="Not available" if dur_known == 0 else None,
-                    note=f"Summed from {dur_known}/{n_vids} videos with duration",
-                )
-                # Library treats video browse dates as undated today
-                undated_sources = _metric(
-                    "source_videos_undated",
-                    "Source videos with missing / uncertain dates",
-                    value=n_vids,
-                    note="Video DTOs do not yet carry calendar dates; Library treats source video browse as undated",
-                    href="/library/ui",
+                if dur_known > 0:
+                    video_duration = _metric(
+                        "source_video_duration_sec",
+                        "Source video duration (sec)",
+                        value=int(dur),
+                        state="partial",
+                        source="hvrt:list_videos.duration_sec",
+                        last_updated=calculated_at,
+                        reason=f"Summed from {dur_known}/{n_vids} videos with duration",
+                        note=f"Partial — {dur_known}/{n_vids} videos expose duration_sec",
+                    )
+                else:
+                    video_duration = _metric(
+                        "source_video_duration_sec",
+                        "Source video duration (sec)",
+                        state="unavailable",
+                        source="hvrt:list_videos.duration_sec",
+                        last_updated=calculated_at,
+                        reason="Not available",
+                    )
+                # Dates: explicit NA — do not approximate undated ≈ all
+                source_video_dates = _metric(
+                    "source_videos_dated_undated",
+                    "Source videos dated / undated",
+                    state="unavailable",
+                    source="hvrt:video_date",
+                    last_updated=calculated_at,
+                    reason=(
+                        "Not available — provider/domain does not currently expose "
+                        "reliable source date"
+                    ),
                 )
                 spans = video.list_presence_spans(limit=500)
                 n_mom = len(spans)
@@ -451,32 +552,33 @@ def build_status_summary() -> dict[str, Any]:
                     "Searchable video moments",
                     value=n_mom,
                     display=f"{n_mom:,}{'+' if mom_bounded else ''}",
+                    state="partial" if mom_bounded else "available",
+                    source="hvrt:list_presence_spans",
+                    last_updated=calculated_at,
                     href="/library/ui",
-                    note="Derived presence spans (rebuildable). Bounded ≤500. Not the same inventory as source videos.",
+                    note=(
+                        "Derived presence spans (rebuildable). Bounded ≤500. "
+                        "Not the same inventory as source videos."
+                    ),
+                    reason="Bounded list" if mom_bounded else None,
                 )
-                if n_vids > 0 and n_mom > 0:
-                    leverage_tasks.append(
-                        {
-                            "text": (
-                                f"Dating source videos could place {n_mom:,} searchable moments "
-                                f"on the timeline (all listed sources currently lack calendar dates)."
-                            ),
-                            "href": "/library/ui",
-                            "kind": "high_leverage",
-                        }
-                    )
+                # High-leverage dating ONLY when computable — omit while dates unavailable
             except Exception as exc:  # noqa: BLE001
                 source_videos = _metric(
                     "source_videos",
                     "Source videos",
-                    available=False,
+                    state="unavailable",
+                    source="hvrt:list_videos",
+                    last_updated=calculated_at,
                     reason="Not available",
                     note=str(exc),
                 )
                 moments = _metric(
                     "searchable_moments",
                     "Searchable video moments",
-                    available=False,
+                    state="unavailable",
+                    source="hvrt:list_presence_spans",
+                    last_updated=calculated_at,
                     reason="Not available",
                     note=str(exc),
                 )
@@ -484,22 +586,36 @@ def build_status_summary() -> dict[str, Any]:
             source_videos = _metric(
                 "source_videos",
                 "Source videos",
-                available=False,
+                state="unavailable",
+                source="hvrt:health",
+                last_updated=calculated_at,
                 reason="Provider unavailable",
                 note=vh.detail,
             )
             moments = _metric(
                 "searchable_moments",
                 "Searchable video moments",
-                available=False,
+                state="unavailable",
+                source="hvrt:health",
+                last_updated=calculated_at,
                 reason="Provider unavailable",
                 note=vh.detail,
+            )
+            source_video_dates = _metric(
+                "source_videos_dated_undated",
+                "Source videos dated / undated",
+                state="unavailable",
+                source="hvrt:video_date",
+                last_updated=calculated_at,
+                reason=(
+                    "Not available — provider/domain does not currently expose "
+                    "reliable source date"
+                ),
             )
     except Exception as exc:  # noqa: BLE001
         photo_health = {"ok": False, "detail": str(exc)}
         video_health = {"ok": False, "detail": str(exc)}
 
-    # Email adapter / capture / db / qdrant / ollama
     try:
         email_st = email_adapter_status()
     except Exception as exc:  # noqa: BLE001
@@ -516,7 +632,7 @@ def build_status_summary() -> dict[str, Any]:
     qdrant_detail = settings.qdrant_url or "unset"
     ollama_detail = settings.ollama_base_url or "Not connected"
 
-    # High-leverage Archive Health tasks from real attention signals
+    # Archive Health tasks from real attention signals only (no dating approx)
     if people_unresolved > 0:
         n = min(5, people_unresolved)
         leverage_tasks.append(
@@ -539,7 +655,10 @@ def build_status_summary() -> dict[str, Any]:
         n = min(3, artifacts - art_with_story)
         leverage_tasks.append(
             {
-                "text": f"Add Story/context to {n} Artifact{'s' if n != 1 else ''} (optional — Artifacts are valid without Person links).",
+                "text": (
+                    f"Add Story/context to {n} Artifact{'s' if n != 1 else ''} "
+                    "(optional — Artifacts are valid without Person links)."
+                ),
                 "href": "/artifact/ui",
                 "kind": "attention",
             }
@@ -548,7 +667,10 @@ def build_status_summary() -> dict[str, Any]:
         n = min(5, journals_undated)
         leverage_tasks.append(
             {
-                "text": f"Review {n} Journal entr{'ies' if n != 1 else 'y'} missing meaningful described dates.",
+                "text": (
+                    f"Review {n} Journal entr{'ies' if n != 1 else 'y'} "
+                    "missing meaningful described dates."
+                ),
                 "href": "/journal/ui",
                 "kind": "attention",
             }
@@ -563,25 +685,20 @@ def build_status_summary() -> dict[str, Any]:
         )
     leverage_tasks = leverage_tasks[:5]
 
-    deferred.extend(
+    deferred_notes.extend(
         [
-            "Photo date/location/favorites/duplicates/blur — Status metric deferred — source capability not yet available",
-            "Videos awaiting analysis queue — Status metric deferred — no durable pending-analysis table",
-            "Documents awaiting OCR — Status metric deferred — source capability not yet available",
-            "Photo/video % linked to known People — Status metric deferred — expensive corpus join",
+            "Photo date/location/favorites/duplicates/blur — deferred",
+            "Videos awaiting analysis queue — deferred",
+            "Documents awaiting OCR — deferred",
+            "Photo/video % linked to known People — deferred",
+            "Provider face-cluster-not-linked exact count — unavailable (not synthesized)",
             "SMS ingest — Not connected in P1",
+            "Source video dated/undated — unavailable until reliable date exposed",
+            "High-leverage video dating task — omitted until source→moment dates computable",
         ]
     )
 
-    undated_sources_metric = locals().get("undated_sources")
-    if undated_sources_metric is None:
-        undated_sources_metric = _metric(
-            "source_videos_undated",
-            "Source videos with missing / uncertain dates",
-            available=False,
-            reason="Not available",
-        )
-
+    pg = "postgresql"
     tabs = {
         "archive_summary": {
             "title": "Archive Summary",
@@ -589,21 +706,49 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Knowledge",
                     "metrics": [
-                        _metric("people", "People", value=people_total, href="/people/ui"),
-                        _metric("stories", "Stories", value=stories, href="/story/ui"),
                         _metric(
-                            "journals", "Journal Entries", value=journals, href="/journal/ui"
+                            "people",
+                            "People",
+                            value=people_total,
+                            state="available",
+                            source=f"{pg}:people",
+                            last_updated=calculated_at,
+                            href="/people/ui",
+                        ),
+                        _metric(
+                            "stories",
+                            "Stories",
+                            value=stories,
+                            state="available",
+                            source=f"{pg}:stories",
+                            last_updated=calculated_at,
+                            href="/story/ui",
+                        ),
+                        _metric(
+                            "journals",
+                            "Journal Entries",
+                            value=journals,
+                            state="available",
+                            source=f"{pg}:journal_entries",
+                            last_updated=calculated_at,
+                            href="/journal/ui",
                         ),
                         _metric(
                             "gc_responses",
                             "Guided Capture Responses",
                             value=gc_responses,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
                         _metric(
                             "artifacts",
                             "Artifacts / Keepsakes",
                             value=artifacts,
+                            state="available",
+                            source=f"{pg}:artifacts",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                         ),
                     ],
@@ -615,62 +760,105 @@ def build_status_summary() -> dict[str, Any]:
                         source_videos,
                         moments,
                         _metric(
-                            "audio_recordings",
-                            "Audio recordings (MB-preserved refs)",
-                            value=audio_uris,
-                            note="Counts GC/Journal/Story audio_uri rows MemoryBox retained",
+                            "mb_managed_audio",
+                            "MemoryBox-managed audio recordings",
+                            value=mb_audio,
+                            state="partial",
+                            source=f"{pg}:audio_uri columns",
+                            last_updated=calculated_at,
+                            reason="Partial — MB-stored audio_uri rows only",
+                            note=(
+                                "Counts Guided Capture / Journal / Story audio_uri values "
+                                "MemoryBox retains — not Immich/HVRT audio libraries"
+                            ),
                         ),
-                        _metric("emails", "Emails indexed", value=emails),
-                        _metric("calendar", "Calendar events", value=calendars),
+                        _metric(
+                            "emails",
+                            "Emails indexed",
+                            value=emails,
+                            state="available",
+                            source=f"{pg}:evidence.communication",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "calendar",
+                            "Calendar events",
+                            value=calendars,
+                            state="available",
+                            source=f"{pg}:evidence.calendar_event",
+                            last_updated=calculated_at,
+                        ),
                         _metric(
                             "sms",
                             "SMS / Text Messages",
-                            available=False,
+                            state="unavailable",
+                            source="sms:ingest",
+                            last_updated=calculated_at,
                             reason="Not yet connected",
                             note="P1 does not ingest SMS",
                         ),
                         _metric(
-                            "documents",
-                            "Documents / letters (Artifacts)",
-                            value=art_by_kind.get("document", 0) + art_by_kind.get("letter", 0),
+                            "artifact_documents",
+                            "Artifact-backed documents / letters",
+                            value=art_docs,
+                            state="partial",
+                            source=f"{pg}:artifacts.kind in (document, letter)",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
+                            reason="Partial — Artifact kinds only",
+                            note="Does not include Immich documents or a full scan OCR corpus",
                         ),
                     ],
                 },
                 {
                     "title": "Processing / attention",
                     "metrics": [
-                        immich_people,
+                        provider_clusters_unlinked,
                         _metric(
                             "people_unresolved",
-                            "Unresolved Person candidates",
+                            "Unresolved MB People",
                             value=people_unresolved,
+                            state="available",
+                            source=f"{pg}:people.status=unresolved",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
+                        unreviewed_identity,
                         _metric(
                             "gc_new",
                             "New Guided Capture responses",
                             value=gc_new,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses.review_status=new",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
                         _metric(
                             "videos_awaiting_analysis",
                             "Videos awaiting analysis",
-                            available=False,
+                            state="deferred",
+                            source="hvrt:pending_analysis",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — no durable pending-analysis queue",
                         ),
                         _metric(
                             "audio_awaiting_stt",
-                            "Audio awaiting / failed transcription (GC)",
+                            "GC audio awaiting / failed transcription",
                             value=gc_stt_pending + gc_stt_fail,
-                            note=f"pending={gc_stt_pending} failed={gc_stt_fail}",
+                            state="partial",
+                            source=f"{pg}:guided_capture_responses.stt_status",
+                            last_updated=calculated_at,
+                            reason=f"pending={gc_stt_pending} failed={gc_stt_fail}",
                             href="/guided-capture/ui",
+                            note="Guided Capture STT states only",
                         ),
                         _metric(
                             "ocr_pending",
                             "Documents awaiting OCR",
-                            available=False,
+                            state="deferred",
+                            source="ocr:queue",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
@@ -678,6 +866,9 @@ def build_status_summary() -> dict[str, Any]:
                             "jobs_error",
                             "Processing errors (jobs)",
                             value=jobs_error,
+                            state="available",
+                            source=f"{pg}:jobs.status=error",
+                            last_updated=calculated_at,
                         ),
                     ],
                 },
@@ -687,10 +878,12 @@ def build_status_summary() -> dict[str, Any]:
                         _metric(
                             "last_activity",
                             "Last ingest / domain update",
-                            value=None,
                             display=last_activity or "Unknown",
-                            available=bool(last_activity),
+                            state="available" if last_activity else "unavailable",
+                            source=f"{pg}:max(jobs/stories/journals/gc)",
+                            last_updated=calculated_at,
                             reason="Unknown" if not last_activity else None,
+                            note="Record/activity timestamps — not archive life chronology",
                         ),
                     ],
                 },
@@ -700,56 +893,90 @@ def build_status_summary() -> dict[str, Any]:
             "title": "People & Identity",
             "sections": [
                 {
-                    "title": "People",
+                    "title": "People (states kept separate)",
                     "metrics": [
                         _metric(
                             "people_named",
                             "Known / named People",
                             value=people_named,
+                            state="available",
+                            source=f"{pg}:people",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
                         _metric(
                             "people_confirmed",
                             "Owner-confirmed People",
                             value=people_confirmed,
+                            state="available",
+                            source=f"{pg}:people.status=confirmed",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
                         _metric(
                             "people_unresolved",
-                            "Unresolved / provisional People",
+                            "Unresolved MB People",
                             value=people_unresolved,
+                            state="available",
+                            source=f"{pg}:people.status=unresolved",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
                         _metric(
                             "provider_identities",
                             "Provider identity mappings",
                             value=provider_identities,
+                            state="available",
+                            source=f"{pg}:provider_identities",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
-                        immich_people,
+                        _metric(
+                            "provider_identities_unlinked",
+                            "Provider identities without linked MB Person",
+                            value=provider_identities_unlinked,
+                            state="available",
+                            source=f"{pg}:provider_identities.person_id IS NULL",
+                            last_updated=calculated_at,
+                            href="/people/ui",
+                            note="MB mapping rows only — not Immich face-cluster census",
+                        ),
+                        provider_clusters_unlinked,
+                        unreviewed_identity,
                         _metric(
                             "relationships",
                             "Relationships recorded (current)",
                             value=rel_current,
+                            state="available",
+                            source=f"{pg}:person_relationship_assertions",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
                         _metric(
                             "family_relationships",
                             "Direct family relationships (thin vocab)",
                             value=rel_family,
+                            state="partial",
+                            source=f"{pg}:person_relationship_assertions.role_kind",
+                            last_updated=calculated_at,
                             href="/people/ui",
+                            reason="Partial — thin P1 role vocabulary only",
                         ),
                         _metric(
                             "photo_link_pct",
                             "Photos linked to known People",
-                            available=False,
+                            state="deferred",
+                            source="immich×people",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — expensive Immich corpus join",
                         ),
                         _metric(
                             "video_link_pct",
                             "Video moments linked to known People",
-                            available=False,
+                            state="deferred",
+                            source="hvrt×people",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — requires full span×identity census",
                         ),
@@ -767,35 +994,45 @@ def build_status_summary() -> dict[str, Any]:
                         _metric(
                             "photo_dates",
                             "Photos with reliable dates",
-                            available=False,
+                            state="deferred",
+                            source="immich:asset_dates",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "photo_location",
                             "Photos with location",
-                            available=False,
+                            state="deferred",
+                            source="immich:asset_location",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "photo_favorites",
                             "Favorites",
-                            available=False,
+                            state="deferred",
+                            source="immich:favorites",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "photo_duplicates",
                             "Potential duplicates",
-                            available=False,
+                            state="deferred",
+                            source="immich:duplicates",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "photo_blur",
                             "Low-quality / blurred",
-                            available=False,
+                            state="deferred",
+                            source="image_quality",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — no image-quality engine in P1",
                         ),
@@ -811,18 +1048,22 @@ def build_status_summary() -> dict[str, Any]:
                     "metrics": [
                         source_videos,
                         video_duration,
-                        undated_sources_metric,
+                        source_video_dates,
                         _metric(
                             "videos_with_transcripts",
                             "Videos with transcripts",
-                            available=False,
+                            state="deferred",
+                            source="hvrt:transcripts",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "videos_awaiting_analysis",
                             "Videos pending analysis",
-                            available=False,
+                            state="deferred",
+                            source="hvrt:pending_analysis",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — no durable pending-analysis queue",
                         ),
@@ -835,16 +1076,21 @@ def build_status_summary() -> dict[str, Any]:
                         _metric(
                             "moments_note",
                             "Note",
-                            value=None,
                             display="Source videos ≠ searchable moments",
-                            available=True,
-                            note="Moments/spans are rebuildable; do not treat as a second film archive",
+                            state="available",
+                            source="product_rule",
+                            last_updated=calculated_at,
+                            note="Moments/spans are rebuildable; not a second film archive",
                         ),
                     ],
                 },
                 {
                     "title": "High-leverage cleanup",
                     "metrics": [],
+                    "intro": (
+                        "Dating leverage appears only when source→moment dates are "
+                        "computable from real relationships."
+                    ),
                     "tasks": [t for t in leverage_tasks if t.get("kind") == "high_leverage"],
                 },
             ],
@@ -855,41 +1101,84 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Stories",
                     "metrics": [
-                        _metric("stories", "Story count", value=stories, href="/story/ui"),
+                        _metric(
+                            "stories",
+                            "Story count",
+                            value=stories,
+                            state="available",
+                            source=f"{pg}:stories",
+                            last_updated=calculated_at,
+                            href="/story/ui",
+                        ),
                         _metric(
                             "stories_narrator",
                             "Stories with narrator identified",
                             value=stories_narrator,
+                            state="available",
+                            source=f"{pg}:stories.narrator_person_id",
+                            last_updated=calculated_at,
                             href="/story/ui",
                         ),
                         _metric(
                             "stories_people",
                             "Stories linked to People",
                             value=stories_with_people,
+                            state="available",
+                            source=f"{pg}:relationships.about_person",
+                            last_updated=calculated_at,
                             href="/story/ui",
                         ),
                         _metric(
                             "stories_evidence",
                             "Stories linked to Evidence",
                             value=stories_with_evidence,
+                            state="available",
+                            source=f"{pg}:relationships.cites_evidence",
+                            last_updated=calculated_at,
                             href="/story/ui",
+                        ),
+                        _metric(
+                            "stories_undated",
+                            "Stories without life/event date (undated)",
+                            value=stories_undated,
+                            state="available",
+                            source=f"{pg}:stories (no event date field)",
+                            last_updated=calculated_at,
+                            note=(
+                                "Stories have no life/event date; created_at is record metadata "
+                                "only and is not used as archive chronology"
+                            ),
                         ),
                     ],
                 },
                 {
                     "title": "Journal",
                     "metrics": [
-                        _metric("journals", "Journal Entry count", value=journals, href="/journal/ui"),
+                        _metric(
+                            "journals",
+                            "Journal Entry count",
+                            value=journals,
+                            state="available",
+                            source=f"{pg}:journal_entries",
+                            last_updated=calculated_at,
+                            href="/journal/ui",
+                        ),
                         _metric(
                             "journals_dated",
                             "Entries with described/effective dates",
                             value=journals_dated,
+                            state="available",
+                            source=f"{pg}:journal_entries.described_start_date",
+                            last_updated=calculated_at,
                             href="/journal/ui",
                         ),
                         _metric(
                             "journals_undated",
                             "Entries missing meaningful dates",
                             value=journals_undated,
+                            state="available",
+                            source=f"{pg}:journal_entries",
+                            last_updated=calculated_at,
                             href="/journal/ui",
                         ),
                     ],
@@ -901,19 +1190,61 @@ def build_status_summary() -> dict[str, Any]:
                             "gc_responses",
                             "Total Responses",
                             value=gc_responses,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
-                        _metric("gc_new", "New / unreviewed", value=gc_new, href="/guided-capture/ui"),
+                        _metric(
+                            "gc_new",
+                            "New / unreviewed",
+                            value=gc_new,
+                            state="available",
+                            source=f"{pg}:review_status=new",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
+                        ),
                         _metric(
                             "gc_reviewed",
                             "Reviewed",
                             value=gc_reviewed,
+                            state="available",
+                            source=f"{pg}:review_status=reviewed",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
-                        _metric("gc_typed", "Typed responses", value=gc_typed),
-                        _metric("gc_voice", "Voice responses", value=gc_voice),
-                        _metric("gc_cred", "Credibility rated", value=gc_cred),
-                        _metric("gc_no_cred", "Not rated", value=gc_no_cred),
+                        _metric(
+                            "gc_typed",
+                            "Typed responses",
+                            value=gc_typed,
+                            state="available",
+                            source=f"{pg}:channel=email_text",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "gc_voice",
+                            "Voice responses",
+                            value=gc_voice,
+                            state="available",
+                            source=f"{pg}:channel=voice",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "gc_cred",
+                            "Credibility rated",
+                            value=gc_cred,
+                            state="available",
+                            source=f"{pg}:credibility",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "gc_no_cred",
+                            "Not rated",
+                            value=gc_no_cred,
+                            state="available",
+                            source=f"{pg}:credibility IS NULL",
+                            last_updated=calculated_at,
+                        ),
                     ],
                 },
             ],
@@ -925,13 +1256,22 @@ def build_status_summary() -> dict[str, Any]:
                     "title": "Inventory",
                     "metrics": [
                         _metric(
-                            "artifacts", "Total Artifacts", value=artifacts, href="/artifact/ui"
+                            "artifacts",
+                            "Total Artifacts",
+                            value=artifacts,
+                            state="available",
+                            source=f"{pg}:artifacts",
+                            last_updated=calculated_at,
+                            href="/artifact/ui",
                         ),
                         *[
                             _metric(
                                 f"artifact_kind_{k}",
                                 f"Kind: {k}",
                                 value=v,
+                                state="available",
+                                source=f"{pg}:artifacts.kind",
+                                last_updated=calculated_at,
                                 href="/artifact/ui",
                             )
                             for k, v in sorted(art_by_kind.items())
@@ -940,12 +1280,18 @@ def build_status_summary() -> dict[str, Any]:
                             "art_with_story",
                             "Artifacts with Story/context link",
                             value=art_with_story,
+                            state="available",
+                            source=f"{pg}:relationships",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                         ),
                         _metric(
                             "art_without_story",
                             "Artifacts missing Story/context",
                             value=max(0, artifacts - art_with_story),
+                            state="available",
+                            source=f"{pg}:artifacts",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                             note="Not an error — context is optional enrichment",
                         ),
@@ -953,12 +1299,18 @@ def build_status_summary() -> dict[str, Any]:
                             "art_with_person",
                             "Artifacts linked to People",
                             value=art_with_person,
+                            state="available",
+                            source=f"{pg}:relationships.about_person",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                         ),
                         _metric(
                             "art_without_person",
                             "Artifacts not linked to People",
                             value=max(0, artifacts - art_with_person),
+                            state="available",
+                            source=f"{pg}:artifacts",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                             note="Valid without Person — not an error",
                         ),
@@ -972,11 +1324,20 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Email",
                     "metrics": [
-                        _metric("emails", "Email messages indexed", value=emails),
+                        _metric(
+                            "emails",
+                            "Email messages indexed",
+                            value=emails,
+                            state="available",
+                            source=f"{pg}:evidence.communication",
+                            last_updated=calculated_at,
+                        ),
                         _metric(
                             "email_correspondents",
                             "Recognized correspondents",
-                            available=False,
+                            state="deferred",
+                            source="comms:correspondents",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — no durable correspondent SoT census",
                         ),
@@ -985,29 +1346,69 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Guided Capture campaigns",
                     "metrics": [
-                        _metric("gc_draft", "Draft", value=gc_campaigns["draft"], href="/guided-capture/ui"),
                         _metric(
-                            "gc_running", "Running", value=gc_campaigns["running"], href="/guided-capture/ui"
+                            "gc_draft",
+                            "Draft",
+                            value=gc_campaigns["draft"],
+                            state="available",
+                            source=f"{pg}:guided_capture_campaigns",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
                         ),
                         _metric(
-                            "gc_paused", "Paused", value=gc_campaigns["paused"], href="/guided-capture/ui"
+                            "gc_running",
+                            "Running",
+                            value=gc_campaigns["running"],
+                            state="available",
+                            source=f"{pg}:guided_capture_campaigns",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
+                        ),
+                        _metric(
+                            "gc_paused",
+                            "Paused",
+                            value=gc_campaigns["paused"],
+                            state="available",
+                            source=f"{pg}:guided_capture_campaigns",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
                         ),
                         _metric(
                             "gc_complete",
                             "Completed / exhausted (outbound_complete)",
                             value=gc_campaigns["outbound_complete"],
+                            state="available",
+                            source=f"{pg}:guided_capture_campaigns",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
                         _metric(
-                            "gc_stopped", "Stopped", value=gc_campaigns["stopped"], href="/guided-capture/ui"
+                            "gc_stopped",
+                            "Stopped",
+                            value=gc_campaigns["stopped"],
+                            state="available",
+                            source=f"{pg}:guided_capture_campaigns",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
                         ),
                         _metric(
                             "gc_pending_q",
                             "Questions waiting to send",
                             value=gc_pending_deliveries,
+                            state="available",
+                            source=f"{pg}:guided_capture_deliveries.pending",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
-                        _metric("gc_new", "New responses", value=gc_new, href="/guided-capture/ui"),
+                        _metric(
+                            "gc_new",
+                            "New responses",
+                            value=gc_new,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
+                        ),
                     ],
                 },
                 {
@@ -1016,7 +1417,9 @@ def build_status_summary() -> dict[str, Any]:
                         _metric(
                             "sms",
                             "SMS / Text Messages",
-                            available=False,
+                            state="unavailable",
+                            source="sms:ingest",
+                            last_updated=calculated_at,
                             reason="Not yet connected",
                         ),
                     ],
@@ -1033,34 +1436,94 @@ def build_status_summary() -> dict[str, Any]:
                             "earliest_journal",
                             "Earliest Journal described date",
                             display=earliest_journal or "Unknown",
-                            available=bool(earliest_journal),
+                            state="available" if earliest_journal else "unavailable",
+                            source=f"{pg}:journal_entries.described_start_date",
+                            last_updated=calculated_at,
                             reason="Unknown" if not earliest_journal else None,
                             href="/library/ui",
-                            note="Uses Journal described/effective date, not capture-only",
+                            note="Uses described/effective date, not capture-only",
                         ),
                         _metric(
                             "latest_journal",
                             "Latest Journal described date",
                             display=latest_journal or "Unknown",
-                            available=bool(latest_journal),
+                            state="available" if latest_journal else "unavailable",
+                            source=f"{pg}:journal_entries.described_start_date",
+                            last_updated=calculated_at,
                             reason="Unknown" if not latest_journal else None,
                             href="/library/ui",
+                        ),
+                        _metric(
+                            "earliest_email",
+                            "Earliest email sent_at",
+                            display=earliest_email or "Unknown",
+                            state="available" if earliest_email else "unavailable",
+                            source=f"{pg}:evidence.payload_json.sent_at",
+                            last_updated=calculated_at,
+                            reason="Unknown" if not earliest_email else None,
+                            note="Genuine communication event date",
+                        ),
+                        _metric(
+                            "latest_email",
+                            "Latest email sent_at",
+                            display=latest_email or "Unknown",
+                            state="available" if latest_email else "unavailable",
+                            source=f"{pg}:evidence.payload_json.sent_at",
+                            last_updated=calculated_at,
+                            reason="Unknown" if not latest_email else None,
                         ),
                         _metric(
                             "journals_dated",
                             "Journal entries with reliable described date",
                             value=journals_dated,
+                            state="available",
+                            source=f"{pg}:journal_entries",
+                            last_updated=calculated_at,
                         ),
                         _metric(
                             "journals_undated",
                             "Journal entries undated / unknown precision",
                             value=journals_undated,
+                            state="available",
+                            source=f"{pg}:journal_entries",
+                            last_updated=calculated_at,
                         ),
-                        undated_sources_metric,
+                        _metric(
+                            "emails_dated",
+                            "Emails with sent_at",
+                            value=emails_dated,
+                            state="available",
+                            source=f"{pg}:evidence.communication",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "calendars_dated",
+                            "Calendar events with start date",
+                            value=calendars_dated,
+                            state="partial",
+                            source=f"{pg}:evidence.calendar_event payload start fields",
+                            last_updated=calculated_at,
+                            reason="Partial — depends on ICS payload fields present",
+                        ),
+                        _metric(
+                            "stories_undated",
+                            "Stories undated (no life/event date)",
+                            value=stories_undated,
+                            state="available",
+                            source=f"{pg}:stories",
+                            last_updated=calculated_at,
+                            note=(
+                                "Story created_at is record creation only — not used as "
+                                "archive chronology"
+                            ),
+                        ),
+                        source_video_dates,
                         _metric(
                             "year_coverage",
                             "Strongest / weakest coverage years",
-                            available=False,
+                            state="deferred",
+                            source="timeline:year_histogram",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — avoid false precision in thin Status",
                         ),
@@ -1078,29 +1541,37 @@ def build_status_summary() -> dict[str, Any]:
                             "postgres",
                             "PostgreSQL",
                             display="OK" if db_ok else "unavailable",
-                            available=db_ok,
+                            state="available" if db_ok else "unavailable",
+                            source="memorybox.db.ping",
+                            last_updated=calculated_at,
                             reason=None if db_ok else "unavailable",
                         ),
                         _metric(
                             "qdrant",
                             "Qdrant",
                             display=qdrant_detail,
-                            available=bool(settings.qdrant_url),
-                            reason="Not connected" if not settings.qdrant_url else None,
-                            note="Configured URL shown; live ping not required for thin Status",
+                            state="partial" if settings.qdrant_url else "unavailable",
+                            source="MEMORYBOX_QDRANT_URL",
+                            last_updated=calculated_at,
+                            reason="Not connected" if not settings.qdrant_url else "Configured URL shown",
+                            note="Live ping not required for thin Status",
                         ),
                         _metric(
                             "ollama",
                             "Ollama",
                             display=ollama_detail if settings.ollama_base_url else "Not connected",
-                            available=bool(settings.ollama_base_url),
-                            reason="Not connected" if not settings.ollama_base_url else None,
+                            state="partial" if settings.ollama_base_url else "unavailable",
+                            source="MEMORYBOX_OLLAMA_BASE_URL",
+                            last_updated=calculated_at,
+                            reason="Not connected" if not settings.ollama_base_url else "Configured",
                         ),
                         _metric(
                             "immich",
                             "Immich",
                             display="OK" if photo_health.get("ok") else "unavailable",
-                            available=bool(photo_health.get("ok")),
+                            state="available" if photo_health.get("ok") else "unavailable",
+                            source="immich:health",
+                            last_updated=calculated_at,
                             reason=None if photo_health.get("ok") else "unavailable",
                             note=str(photo_health.get("detail") or ""),
                         ),
@@ -1108,7 +1579,9 @@ def build_status_summary() -> dict[str, Any]:
                             "hvrt",
                             "HVRT / Video worker",
                             display="OK" if video_health.get("ok") else "unavailable",
-                            available=bool(video_health.get("ok")),
+                            state="available" if video_health.get("ok") else "unavailable",
+                            source="hvrt:health",
+                            last_updated=calculated_at,
                             reason=None if video_health.get("ok") else "unavailable",
                             note=str(video_health.get("detail") or ""),
                         ),
@@ -1116,7 +1589,9 @@ def build_status_summary() -> dict[str, Any]:
                             "gmail",
                             "Gmail / Guided Capture email",
                             display="OK" if email_st.get("ok") else "degraded / unavailable",
-                            available=bool(email_st.get("ok")),
+                            state="available" if email_st.get("ok") else "unavailable",
+                            source="guided_capture:email_adapter_status",
+                            last_updated=calculated_at,
                             note=str(email_st.get("detail") or email_st),
                             href="/guided-capture/ui",
                         ),
@@ -1124,14 +1599,20 @@ def build_status_summary() -> dict[str, Any]:
                             "calendar_source",
                             "Calendar (ICS evidence)",
                             value=calendars,
+                            state="available",
+                            source=f"{pg}:evidence.calendar_event",
+                            last_updated=calculated_at,
                             note="Indexed calendar_event evidence rows",
                         ),
                         _metric(
                             "artifact_storage",
                             "Artifact storage",
                             display="Configured via MEMORYBOX_ARTIFACT_MEDIA_ROOT",
-                            available=True,
+                            state="partial",
+                            source="MEMORYBOX_ARTIFACT_MEDIA_ROOT",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
+                            reason="Partial — path configured; live disk probe not required",
                         ),
                     ],
                 }
@@ -1147,42 +1628,61 @@ def build_status_summary() -> dict[str, Any]:
                             "jobs_pending",
                             "Pending / running jobs",
                             value=jobs_pending,
+                            state="available",
+                            source=f"{pg}:jobs",
+                            last_updated=calculated_at,
                             note="Pending ≠ Unreviewed ≠ Unknown ≠ Failed",
                         ),
                         _metric(
                             "jobs_error",
                             "Failed processing jobs",
                             value=jobs_error,
+                            state="available",
+                            source=f"{pg}:jobs.status=error",
+                            last_updated=calculated_at,
                         ),
                         _metric(
                             "gc_new",
                             "Unreviewed Guided Capture (attention, not failure)",
                             value=gc_new,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses",
+                            last_updated=calculated_at,
                             href="/guided-capture/ui",
                         ),
                         _metric(
                             "people_unresolved",
-                            "Unknown / unresolved People (attention, not failure)",
+                            "Unresolved MB People (attention, not failure)",
                             value=people_unresolved,
+                            state="available",
+                            source=f"{pg}:people",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
                         _metric(
                             "gc_stt",
                             "GC audio STT pending / failed",
                             display=f"pending={gc_stt_pending} failed={gc_stt_fail}",
-                            available=True,
+                            state="partial",
+                            source=f"{pg}:guided_capture_responses.stt_status",
+                            last_updated=calculated_at,
+                            reason=f"pending={gc_stt_pending} failed={gc_stt_fail}",
                         ),
                         _metric(
                             "ocr",
                             "Documents awaiting OCR",
-                            available=False,
+                            state="deferred",
+                            source="ocr:queue",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — source capability not yet available",
                         ),
                         _metric(
                             "video_pending",
                             "Videos awaiting analysis",
-                            available=False,
+                            state="deferred",
+                            source="hvrt:pending_analysis",
+                            last_updated=calculated_at,
                             reason="Not available",
                             note="Status metric deferred — no durable pending-analysis queue",
                         ),
@@ -1195,10 +1695,33 @@ def build_status_summary() -> dict[str, Any]:
             "sections": [
                 {
                     "title": "Strong coverage",
+                    "intro": "No universal archive-health percentage is computed or displayed.",
                     "metrics": [
-                        _metric("people", "People", value=people_total, href="/people/ui"),
-                        _metric("emails", "Emails indexed", value=emails),
-                        _metric("calendar", "Calendar events", value=calendars),
+                        _metric(
+                            "people",
+                            "People",
+                            value=people_total,
+                            state="available",
+                            source=f"{pg}:people",
+                            last_updated=calculated_at,
+                            href="/people/ui",
+                        ),
+                        _metric(
+                            "emails",
+                            "Emails indexed",
+                            value=emails,
+                            state="available",
+                            source=f"{pg}:evidence",
+                            last_updated=calculated_at,
+                        ),
+                        _metric(
+                            "calendar",
+                            "Calendar events",
+                            value=calendars,
+                            state="available",
+                            source=f"{pg}:evidence",
+                            last_updated=calculated_at,
+                        ),
                         photos_indexed,
                     ],
                 },
@@ -1207,16 +1730,30 @@ def build_status_summary() -> dict[str, Any]:
                     "metrics": [
                         _metric(
                             "people_unresolved",
-                            "Unresolved People",
+                            "Unresolved MB People",
                             value=people_unresolved,
+                            state="available",
+                            source=f"{pg}:people",
+                            last_updated=calculated_at,
                             href="/people/ui",
                         ),
-                        _metric("gc_new", "New Guided Capture responses", value=gc_new, href="/guided-capture/ui"),
-                        undated_sources_metric,
+                        _metric(
+                            "gc_new",
+                            "New Guided Capture responses",
+                            value=gc_new,
+                            state="available",
+                            source=f"{pg}:guided_capture_responses",
+                            last_updated=calculated_at,
+                            href="/guided-capture/ui",
+                        ),
+                        source_video_dates,
                         _metric(
                             "art_without_story",
                             "Artifacts without Story/context",
                             value=max(0, artifacts - art_with_story),
+                            state="available",
+                            source=f"{pg}:artifacts",
+                            last_updated=calculated_at,
                             href="/artifact/ui",
                             note="Optional enrichment — not broken",
                         ),
@@ -1236,8 +1773,25 @@ def build_status_summary() -> dict[str, Any]:
         "ok": True,
         "calculated_at": calculated_at,
         "default_tab": "archive_summary",
+        "metric_contract": {
+            "fields": [
+                "key",
+                "label",
+                "value",
+                "display",
+                "state",
+                "available",
+                "source",
+                "last_updated",
+                "reason",
+                "href",
+                "note",
+            ],
+            "states": ["available", "unavailable", "partial", "deferred"],
+            "rule": "Client must not interpret unavailable/deferred as zero",
+        },
         "tabs": tabs,
-        "deferred_notes": deferred,
+        "deferred_notes": deferred_notes,
         "nav": [
             {"id": "archive_summary", "label": "Archive Summary"},
             {"id": "people", "label": "People & Identity"},

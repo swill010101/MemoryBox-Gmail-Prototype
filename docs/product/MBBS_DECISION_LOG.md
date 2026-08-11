@@ -304,7 +304,7 @@ Record one section per increment. Do not wait until end of P1.
 ## Increment 12A — Thin Status (P1/P2 bridge)
 
 **Date:** 2026-08-11  
-**Authorization:** Tom: I12 accepted + define then implement Status  
+**Authorization:** Tom: I12 accepted + define then implement Status · truthfulness refinements locked before final Status  
 **Definition:** [MBBS-001_INCREMENT_12A_DEFINITION.md](MBBS-001_INCREMENT_12A_DEFINITION.md)  
 **Acceptance:** [MBBS-001_INCREMENT_12A_ACCEPTANCE.md](MBBS-001_INCREMENT_12A_ACCEPTANCE.md) — **READY FOR OWNER ACCEPTANCE**  
 **UI:** `/status/ui` · **API:** `GET /status/summary`
@@ -315,8 +315,12 @@ Record one section per increment. Do not wait until end of P1.
 |----------|-----------|
 | Thin tabbed Status; Archive Summary default | Owner orientation without P2 Dashboard |
 | Real counts only; unsupported → Not available / Not connected | No fake zeroes |
-| Source videos ≠ searchable moments | Required product distinction |
-| High-leverage tasks only when computable | Prefer one correction → many derived items |
+| Separate identity states (clusters unlinked / unresolved People / unreviewed candidates) | Do not synthesize “unknown face clusters” |
+| Source videos ≠ searchable moments; dated/undated NA until reliable date | No undated≈all DTO approximation |
+| Narrow partial labels (MB-managed audio; Artifact-backed docs) | Honest coverage |
+| Timeline: described/evidence dates; Story created_at ≠ chronology | Avoid false archive dates |
+| Archive Health: Strong / Needs attention / High-leverage — no % | Not a scoring science project |
+| Metric contract: value, state, source, last_updated, reason | Client must not treat unavailable as zero |
 | Read surface over existing PG + bounded provider health | Status is not a second archive SoT |
 
 ---
