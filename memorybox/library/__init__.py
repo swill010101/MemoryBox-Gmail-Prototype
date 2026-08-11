@@ -572,6 +572,11 @@ def _videos_for_person(
                         "review": (
                             f"/review/ui?video={s.video_external_id}"
                             f"&t={s.start_sec}"
+                            + (
+                                f"&face={s.face_external_id}"
+                                if s.face_external_id
+                                else ""
+                            )
                         ),
                         "people": f"/people/ui?person_id={person.id}",
                     },

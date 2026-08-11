@@ -318,9 +318,28 @@
         sel.appendChild(opt);
       });
       show({ ok: true, count: videos.length, provider_status: data.provider_status });
-      if (videos[0]) {
-        sel.value = videos[0].external_id;
-        onVideoChange();
+
+      // Library "Open in Review" deep-link: ?video=&t=&face=
+      const q = new URLSearchParams(location.search);
+      const wantVideo = (q.get("video") || "").trim();
+      const wantT = parseFloat(q.get("t") || "");
+      const wantFace = (q.get("face") || "").trim();
+      let pick = videos[0] && videos[0].external_id;
+      if (wantVideo) {
+        const hit = videos.find((v) => v.external_id === wantVideo);
+        if (hit) pick = hit.external_id;
+        else {
+          const note = document.getElementById("videoNote");
+          note.textContent =
+            "Deep-link video not in list: " + wantVideo +
+            " — check MEMORYBOX_VIDEO_MEDIA_ROOT / worker. Showing first video.";
+          note.className = "warn";
+        }
+      }
+      if (pick) {
+        sel.value = pick;
+        const seekTo = Number.isFinite(wantT) && wantT >= 0 ? wantT : null;
+        await onVideoChange({ seekTo, preferFace: wantFace || null });
       }
     }
 
@@ -329,14 +348,29 @@
       return proxy ? base + "?proxy=1" : base;
     }
 
-    function playVideo(id, { proxy = false, keepTime = true } = {}) {
-      const t = keepTime ? (player.currentTime || 0) : 0;
+    function playVideo(id, { proxy = false, keepTime = true, seekTo = null } = {}) {
+      const t =
+        seekTo != null && Number.isFinite(seekTo)
+          ? seekTo
+          : keepTime
+            ? (player.currentTime || 0)
+            : 0;
       usingBrowserProxy = !!proxy;
       const onMeta = () => {
-        try { if (t > 0) player.currentTime = t; } catch (e) {}
+        try {
+          if (t > 0) player.currentTime = t;
+        } catch (e) {}
+        try { player.pause(); } catch (e) {}
         player.removeEventListener("loadedmetadata", onMeta);
         syncOverlaySize();
         if (player.videoWidth) codecNote.hidden = true;
+        if (seekTo != null && Number.isFinite(seekTo)) {
+          const note = document.getElementById("videoNote");
+          note.textContent =
+            "Opened from Library at " + seekTo.toFixed(1) +
+            "s — originals read-only; box/teach if needed.";
+          note.className = "muted";
+        }
       };
       player.addEventListener("loadedmetadata", onMeta);
       player.src = mediaUrl(id, proxy);
@@ -352,7 +386,7 @@
       browserProxyBtn.hidden = false;
     }
 
-    async function ensureBrowserProxy({ auto = false } = {}) {
+    async function ensureBrowserProxy({ auto = false, seekTo = null } = {}) {
       const id = document.getElementById("videoSel").value;
       if (!id) return;
       browserProxyBtn.hidden = false;
@@ -366,7 +400,7 @@
       show(start);
       if (start.status === "ready") {
         readyProxyIds.add(id);
-        playVideo(id, { proxy: true });
+        playVideo(id, { proxy: true, keepTime: false, seekTo });
         return;
       }
       if (proxyTimer) clearInterval(proxyTimer);
@@ -381,7 +415,7 @@
           if (st.status === "ready") {
             clearInterval(proxyTimer); proxyTimer = null;
             readyProxyIds.add(id);
-            playVideo(id, { proxy: true });
+            playVideo(id, { proxy: true, keepTime: false, seekTo });
             show(st);
           } else if (st.status === "error") {
             clearInterval(proxyTimer); proxyTimer = null;
@@ -397,29 +431,28 @@
       }, 1500);
     }
 
-    function onVideoChange() {
+    async function onVideoChange({ seekTo = null, preferFace = null } = {}) {
       const id = document.getElementById("videoSel").value;
       exitBoxMode("Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.");
       codecNote.hidden = true;
       usingBrowserProxy = false;
       if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
       if (!id) { player.removeAttribute("src"); return; }
-      if (readyProxyIds.has(id)) playVideo(id, { proxy: true, keepTime: false });
+      if (readyProxyIds.has(id)) playVideo(id, { proxy: true, keepTime: false, seekTo });
       else {
-        playVideo(id, { proxy: false, keepTime: false });
-        // If Chrome can't decode frames, auto-kick H.264 proxy (HVRT POC behavior)
+        playVideo(id, { proxy: false, keepTime: false, seekTo });
         setTimeout(() => {
           const cur = document.getElementById("videoSel").value;
           if (cur === id && !(player.videoWidth && player.videoHeight)) {
             codecNote.hidden = false;
-            ensureBrowserProxy({ auto: true }).catch(show);
+            ensureBrowserProxy({ auto: true, seekTo }).catch(show);
           }
         }, 1400);
       }
-      loadFaces();
+      await loadFaces({ preferFace });
     }
 
-    async function loadFaces() {
+    async function loadFaces({ preferFace = null } = {}) {
       const vid = document.getElementById("videoSel").value;
       const data = await j("/review/faces?video_external_id=" + encodeURIComponent(vid || ""));
       const sel = document.getElementById("faceSel");
@@ -442,12 +475,19 @@
         opt.textContent = (f.label || "face") + (f.boxed ? " [boxed]" : " [needs box]") + " — " + f.external_id;
         sel.appendChild(opt);
       });
-      if (lastFaceId) sel.value = lastFaceId;
+      if (preferFace && faceMeta[preferFace]) {
+        sel.value = preferFace;
+        lastFaceId = preferFace;
+      } else if (lastFaceId && faceMeta[lastFaceId]) {
+        sel.value = lastFaceId;
+      }
       refreshTeachEnabled();
     }
 
     document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
-    document.getElementById("videoSel").onchange = () => { try { onVideoChange(); } catch (e) { show(e); } };
+    document.getElementById("videoSel").onchange = () => {
+      try { onVideoChange(); } catch (e) { show(e); }
+    };
     browserProxyBtn.onclick = () => ensureBrowserProxy({ auto: false }).catch(show);
     document.getElementById("faceSel").onchange = () => {
       lastFaceId = document.getElementById("faceSel").value;
