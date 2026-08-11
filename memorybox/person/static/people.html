@@ -85,10 +85,22 @@
     <p class="sub">
       Pick a person by name. MemoryBox and photo-library names appear together — each name once.
       Choosing a photo-library-only name adds them to MemoryBox automatically.
-      Owner: <span id="ownerStatus">(loading)</span>
+      You are: <span id="ownerStatus">(loading)</span>
       · <a href="/ask/ui">Ask</a> · <a href="/library/ui">Library</a> · <a href="/artifact/ui">Artifact</a>
     </p>
     <p id="statusLine" class="muted"></p>
+
+    <section>
+      <h2>Who am I?</h2>
+      <p class="muted">
+        Ask needs this so “my father” / “my mother” are relative to you.
+        Pick your MemoryBox person (Tom Will), then save.
+      </p>
+      <label for="ownerSel">I am this person</label>
+      <select id="ownerSel"><option value="">(loading…)</option></select>
+      <button id="saveOwner" type="button">Save as me</button>
+      <p id="ownerHint" class="muted" style="margin-top:0.4rem"></p>
+    </section>
 
     <section>
       <h2>Who are you working on?</h2>
@@ -276,8 +288,8 @@
       ["profileSel", "relFrom", "relTo", "marA", "marB", "renameSel"].forEach((id) => {
         fillSelect(document.getElementById(id), empty, pickerOptions);
       });
-      // Merge / reject person: MemoryBox people only (already in MB)
-      ["rejectPersonSel", "survivorSel", "loserSel"].forEach((id) => {
+      // Merge / reject / who-am-I: MemoryBox people only
+      ["rejectPersonSel", "survivorSel", "loserSel", "ownerSel"].forEach((id) => {
         fillSelect(document.getElementById(id), empty, pickerOptions, { mbOnly: true });
       });
     }
@@ -855,21 +867,64 @@
       try {
         const o = await j("/people/owner");
         const el = document.getElementById("ownerStatus");
+        const hint = document.getElementById("ownerHint");
         if (o.configured) {
           ownerId = o.owner_person_id;
-          el.textContent = (o.display_name || "owner") + " ✓";
+          el.textContent = (o.display_name || "you") + " ✓";
           el.className = "ok";
+          const sel = document.getElementById("ownerSel");
+          if (sel && ownerId) sel.value = "mb:" + ownerId;
+          let msg = "Ask treats “my …” relative to " + (o.display_name || "you") + ".";
+          if (o.env_overrides) {
+            msg += " Note: MEMORYBOX_OWNER_PERSON_ID env is set and overrides the saved choice until cleared.";
+          } else if (o.source === "database") {
+            msg += " Saved in MemoryBox.";
+          }
+          hint.textContent = msg;
+          hint.className = "muted";
         } else {
-          el.textContent = "not set (MEMORYBOX_OWNER_PERSON_ID)";
+          ownerId = null;
+          el.textContent = "not set — pick yourself below";
           el.className = "warn";
+          hint.textContent =
+            "Until you save “I am this person,” Ask cannot answer my father / my mother.";
+          hint.className = "warn";
         }
       } catch (_) {
         document.getElementById("ownerStatus").textContent = "error";
       }
     }
 
+    document.getElementById("saveOwner").onclick = async () => {
+      try {
+        const key = document.getElementById("ownerSel").value;
+        if (!key || !key.startsWith("mb:")) {
+          setStatus("Choose your MemoryBox person (Tom Will) from the list.", true);
+          return;
+        }
+        const person_id = key.slice(3);
+        setStatus("Saving who you are…");
+        const data = await j("/people/owner", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person_id }),
+        });
+        show(data);
+        await loadOwner();
+        setStatus(
+          data.env_overrides
+            ? "Saved, but env MEMORYBOX_OWNER_PERSON_ID still overrides Ask until that shell env is cleared."
+            : ("You are " + (data.display_name || "set") + ". Ask can use my father / my mother now."),
+          !!data.env_overrides
+        );
+      } catch (err) {
+        show(err);
+        setStatus(err.detail || "Could not save who you are.", true);
+      }
+    };
+
     loadOwner();
-    loadPicker().catch((e) => { show(e); setStatus("Could not load people list.", true); });
+    loadPicker().then(() => loadOwner()).catch((e) => { show(e); setStatus("Could not load people list.", true); });
     loadImmichTeach().catch(show);
   </script>
 </body>

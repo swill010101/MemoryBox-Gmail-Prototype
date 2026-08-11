@@ -31,6 +31,7 @@ from memorybox.profile.owner import (
     get_owner_person_id,
     owner_config_status,
     require_owner_person_id,
+    set_owner_person_id,
 )
 from memorybox.profile.relationships import (
     assert_relationship,
@@ -69,6 +70,7 @@ __all__ = [
     "owner_config_status",
     "project_derived_edges",
     "require_owner_person_id",
+    "set_owner_person_id",
     "resolve_one_relative",
     "resolve_relational_ask",
     "resolve_relatives_for_person",

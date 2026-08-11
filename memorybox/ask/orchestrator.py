@@ -634,7 +634,10 @@ class AskOrchestrator:
             if plan.profile_intent == "who":
                 name = ans.get("display_name") or ans.get("person_id")
                 role = ans.get("role_phrase") or "relative"
-                text_out = f"Your {role} is {name}."
+                if role in ("self", "me"):
+                    text_out = f"You are {name}."
+                else:
+                    text_out = f"Your {role} is {name}."
                 if ans.get("inferred") and ans.get("inference_note"):
                     text_out = f"{text_out} ({ans['inference_note']}.)"
                 statements.append(

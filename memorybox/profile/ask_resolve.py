@@ -29,6 +29,7 @@ _MY_ROLE_RE = re.compile(
 _PICTURES_OF_ME_RE = re.compile(
     r"(?i)\b(pictures?|photos?|images?)\s+of\s+(me|myself)\b|\bof\s+myself\b"
 )
+_WHO_AM_I_RE = re.compile(r"(?i)\bwho\s+am\s+i\b")
 _WHO_IS_RE = re.compile(r"(?i)\bwho\s+is\b")
 _WHEN_BORN_RE = re.compile(r"(?i)\bwhen\s+was\b.+\bborn\b|\bbirth\s*date\b")
 _ANNIVERSARY_RE = re.compile(r"(?i)\b(my\s+)?anniversary\b|\bwhen\s+did\b.+\bmarry\b")
@@ -91,15 +92,47 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
     if not q:
         return RelationalAskResolve(ok=False, intent="none", disclosure="empty ask")
 
+    who_am_i = bool(_WHO_AM_I_RE.search(q))
+    pictures_me = bool(_PICTURES_OF_ME_RE.search(q))
+    anniversary_me = bool(_ANNIVERSARY_RE.search(q) and re.search(r"(?i)\bmy\b", q))
+    my_role = _MY_ROLE_RE.search(q)
+
+    # Non-relational asks must not touch owner config (leave planner / retrieve alone).
+    if not (who_am_i or pictures_me or anniversary_me or my_role):
+        return RelationalAskResolve(ok=False, intent="none")
+
     try:
         owner_id = require_owner_person_id()
     except ProfileServiceError as exc:
-        return RelationalAskResolve(ok=False, intent="none", disclosure=str(exc))
+        # Owner missing: stop keyword/evidence fall-through (see Ask “who am i?” email hit).
+        if who_am_i or (my_role and _WHO_IS_RE.search(q)):
+            intent = "who"
+        elif pictures_me:
+            intent = "self"
+        elif anniversary_me:
+            intent = "anniversary"
+        else:
+            intent = "who"
+        return RelationalAskResolve(
+            ok=False,
+            intent=intent,
+            role_phrase=my_role.group(1).lower() if my_role else ("self" if who_am_i else None),
+            disclosure=str(exc),
+        )
 
     owner = get_person(owner_id)
     owner_name = owner.display_name if owner else None
 
-    if _PICTURES_OF_ME_RE.search(q):
+    if who_am_i:
+        return RelationalAskResolve(
+            ok=True,
+            intent="who",
+            role_phrase="self",
+            person_id=owner_id,
+            display_name=owner_name,
+        )
+
+    if pictures_me:
         return RelationalAskResolve(
             ok=True,
             intent="self",
@@ -107,7 +140,7 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
             display_name=owner_name,
         )
 
-    if _ANNIVERSARY_RE.search(q) and re.search(r"(?i)\bmy\b", q):
+    if anniversary_me:
         events = list_life_events_for_person(owner_id)
         marriages = [e for e in events if e.event_kind == "marriage"]
         if not marriages:
@@ -132,11 +165,8 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
             life_event=marriages[0].to_dict(),
         )
 
-    m = _MY_ROLE_RE.search(q)
-    if not m:
-        return RelationalAskResolve(ok=False, intent="none")
-
-    phrase = m.group(1).lower()
+    assert my_role is not None
+    phrase = my_role.group(1).lower()
     try:
         edge = resolve_one_relative(owner_id, role_phrase=phrase)
     except AmbiguousRelationshipError as exc:

@@ -200,49 +200,101 @@ def name_map(conn, ids: list[UUID]) -> dict[str, str | None]:
 
 
 def get_owner_person_id() -> str | None:
-    """Canonical P1 owner Person id from env. Never infer via display_name."""
+    """Canonical P1 owner Person id.
+
+    Prefer env MEMORYBOX_OWNER_PERSON_ID when set (ops override).
+    Else durable DB setting set from People UI (“I am this person”).
+    Never infer via display_name search.
+    """
     raw = (os.environ.get(ENV_OWNER_PERSON_ID) or "").strip()
-    if not raw:
-        return None
+    if raw:
+        try:
+            return str(UUID(raw))
+        except (ValueError, TypeError, AttributeError):
+            return None
     try:
-        return str(UUID(raw))
-    except (ValueError, TypeError, AttributeError):
+        from memorybox.db import connection
+
+        with connection() as conn:
+            row = conn.execute(
+                """
+                SELECT value_text FROM memorybox_runtime_settings
+                WHERE setting_key = 'owner_person_id'
+                """
+            ).fetchone()
+        if not row or not (row.get("value_text") or "").strip():
+            return None
+        return str(UUID(str(row["value_text"]).strip()))
+    except Exception:  # noqa: BLE001 — table may not exist yet / DB down
         return None
+
+
+def set_owner_person_id(person_id: str, *, actor_key: str = "owner") -> dict[str, Any]:
+    """Persist canonical owner from People UI. Env still overrides when set."""
+    pid = ensure_person(person_id)
+    from memorybox.db import connection
+
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO memorybox_runtime_settings (setting_key, value_text, actor_key, updated_at)
+            VALUES ('owner_person_id', %s, %s, now())
+            ON CONFLICT (setting_key) DO UPDATE
+            SET value_text = EXCLUDED.value_text,
+                actor_key = EXCLUDED.actor_key,
+                updated_at = now()
+            """,
+            (str(pid), actor_key),
+        )
+    # If env override is active, DB save still succeeds but Ask uses env
+    status = owner_config_status()
+    status["saved_person_id"] = str(pid)
+    status["env_overrides"] = bool((os.environ.get(ENV_OWNER_PERSON_ID) or "").strip())
+    return status
 
 
 def require_owner_person_id() -> str:
     oid = get_owner_person_id()
     if not oid:
         raise ProfileServiceError(
-            f"{ENV_OWNER_PERSON_ID} is required for owner-relative resolution "
-            "(do not infer 'myself' from display_name)"
+            "MemoryBox does not know who you are yet. "
+            "Open People and choose “I am this person” (Tom Will), then ask again. "
+            f"(Ops may also set {ENV_OWNER_PERSON_ID}.)"
         )
     view = get_person(oid)
     if not view:
         raise ProfileServiceError(
-            f"{ENV_OWNER_PERSON_ID}={oid} does not match an MB Person"
+            f"Configured owner id {oid} does not match an MB Person. "
+            "Pick yourself again on People."
         )
     if view.status == "merged_away":
         raise ProfileServiceError(
-            f"owner_person_id {oid} is merged_away; merge survivors via I6 first"
+            f"Owner person {oid} was merged away; merge survivors via People, "
+            "then set “I am this person” to the survivor."
         )
     return oid
 
 
 def owner_config_status() -> dict[str, Any]:
+    env_set = bool((os.environ.get(ENV_OWNER_PERSON_ID) or "").strip())
     oid = get_owner_person_id()
     if not oid:
         return {
             "configured": False,
             "owner_person_id": None,
             "env": ENV_OWNER_PERSON_ID,
+            "env_overrides": env_set,
+            "source": None,
             "display_name": None,
         }
     view = get_person(oid)
+    source = "env" if env_set else "database"
     return {
         "configured": bool(view and view.status != "merged_away"),
         "owner_person_id": oid,
         "env": ENV_OWNER_PERSON_ID,
+        "env_overrides": env_set,
+        "source": source,
         "display_name": view.display_name if view else None,
         "status": view.status if view else "missing",
     }

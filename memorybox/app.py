@@ -92,6 +92,7 @@ DOMAIN_V0_TABLES = (
     "person_relationship_assertions",
     "shared_life_events",
     "shared_life_event_participants",
+    "memorybox_runtime_settings",
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
@@ -1012,6 +1013,22 @@ def people_owner() -> dict[str, Any]:
     from memorybox.profile import owner_config_status
 
     return {"ok": True, **owner_config_status()}
+
+
+class OwnerSetBody(BaseModel):
+    person_id: str = Field(..., min_length=1)
+
+
+@app.post("/people/owner")
+def people_set_owner(body: OwnerSetBody) -> dict[str, Any]:
+    """Set canonical “I am this person” owner for my-father / my-mother relativity."""
+    from memorybox.profile import ProfileServiceError, set_owner_person_id
+
+    try:
+        status = set_owner_person_id(body.person_id)
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **status}
 
 
 @app.get("/people/picker-options")

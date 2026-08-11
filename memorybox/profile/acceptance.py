@@ -106,9 +106,35 @@ def run_prove_person_profile(*, flightsim: bool = False) -> dict[str, Any]:
         )
         # Temporarily clear owner — resolve must fail (not search "Tom")
         os.environ.pop(ENV_OWNER_PERSON_ID, None)
+        cleared_db_owner = False
+        try:
+            from memorybox.db import connection
+
+            with connection() as conn:
+                conn.execute(
+                    "DELETE FROM memorybox_runtime_settings WHERE setting_key = 'owner_person_id'"
+                )
+            cleared_db_owner = True
+        except Exception:  # noqa: BLE001
+            cleared_db_owner = False
         bare = resolve_relational_ask("Who is my father?")
-        no_infer = not bare.ok and "MEMORYBOX_OWNER_PERSON_ID" in (bare.disclosure or "")
+        disc = bare.disclosure or ""
+        no_infer = (
+            not bare.ok
+            and (
+                "does not know who you are" in disc
+                or "MEMORYBOX_OWNER_PERSON_ID" in disc
+                or "I am this person" in disc
+            )
+        )
         os.environ[ENV_OWNER_PERSON_ID] = owner_id
+        if cleared_db_owner:
+            try:
+                from memorybox.profile import set_owner_person_id
+
+                set_owner_person_id(owner_id)
+            except Exception:  # noqa: BLE001
+                pass
         _check("i9a_b_no_display_name_infer", no_infer, checks, problems, detail=str(bare.to_dict()))
 
         # I9A-C birth fact
