@@ -412,6 +412,14 @@
       currentId = a.id;
       document.getElementById("lastId").textContent = a.id;
       document.getElementById("detail").textContent = JSON.stringify(a, null, 2);
+      // Prefill create form so Open Artifact doesn't look like a blank create page
+      const kindEl = document.getElementById("kind");
+      if (kindEl && a.kind) kindEl.value = a.kind;
+      const labelEl = document.getElementById("label");
+      if (labelEl) labelEl.value = a.label || "";
+      const descEl = document.getElementById("description");
+      if (descEl) descEl.value = a.description || "";
+      setStatus("Loaded Artifact " + a.id + " · " + (a.label || ""));
       const reps = document.getElementById("reps");
       reps.innerHTML = "";
       (a.representations || []).forEach((r) => {
@@ -430,10 +438,12 @@
       });
     }
     async function loadArtifact(id) {
+      setStatus("Loading Artifact " + id + "…");
       const data = await j("/artifact/" + encodeURIComponent(id));
+      if (!data.artifact) throw new Error("artifact payload missing");
       renderArtifact(data.artifact);
     }
-    async function fillPersonSelect(sel, *, emptyLabel, includeEnrollHint) {
+    async function fillPersonSelect(sel, emptyLabel) {
       const cur = sel.value;
       sel.innerHTML = "";
       const none = document.createElement("option");
@@ -503,11 +513,11 @@
       const hint = document.getElementById("peopleHint");
       const personStats = await fillPersonSelect(
         document.getElementById("personSel"),
-        { emptyLabel: "(none)", includeEnrollHint: false }
+        "(none)"
       );
       await fillPersonSelect(
         document.getElementById("narratorSel"),
-        { emptyLabel: "(select narrator)", includeEnrollHint: true }
+        "(select narrator)"
       );
       if (hint) {
         hint.textContent =

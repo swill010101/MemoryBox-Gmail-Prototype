@@ -128,6 +128,8 @@
       color: #6a7180;
       font-size: 0.75rem;
     }
+    /* Author .missing { display:flex } must not override HTML hidden */
+    [hidden] { display: none !important; }
     .gallery .card-thumb { max-height: 120px; }
   </style>
 </head>
@@ -318,10 +320,9 @@
       if (url && (c.modality === "photo" || c.modality === "video" || c.modality === "artifact")) {
         return (
           '<img class="' + cls + '" alt="" loading="lazy" src="' + esc(url) + '" ' +
-          'onerror="this.style.display=\'none\'; this.nextElementSibling && (this.nextElementSibling.hidden=false);" />' +
-          '<div class="' + cls + ' missing" hidden>' +
+          'onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:this.className+\' missing\',textContent:\'' +
           (c.modality === "video" ? "poster unavailable" : "thumb unavailable") +
-          "</div>"
+          '\'}));" />'
         );
       }
       if (c.modality === "photo" || c.modality === "video" || c.modality === "artifact") {

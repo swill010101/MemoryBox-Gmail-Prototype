@@ -602,6 +602,7 @@ def _videos_for_person(
 def _artifacts(*, person_id: UUID | None, limit: int) -> list[LibraryCard]:
     """First-class Artifact cards (I9). Person filter optional — narrows only."""
     from memorybox.artifact import list_artifacts
+    from memorybox.person import get_person
 
     views = list_artifacts(
         limit=limit,
@@ -615,6 +616,11 @@ def _artifacts(*, person_id: UUID | None, limit: int) -> list[LibraryCard]:
                 thumb = r.download_url
                 break
         unresolved = a.unresolved_context or {}
+        names: list[str] = []
+        for pid in a.person_ids:
+            p = get_person(pid)
+            if p and p.display_name:
+                names.append(p.display_name)
         out.append(
             LibraryCard(
                 card_id=f"artifact:{a.id}",
@@ -629,7 +635,7 @@ def _artifacts(*, person_id: UUID | None, limit: int) -> list[LibraryCard]:
                 undated=True,
                 identity_trust=None,
                 person_ids=list(a.person_ids),
-                person_names=[],
+                person_names=names,
                 domain_id=a.id,
                 deep_links={
                     "artifact": f"/artifact/ui?id={a.id}",

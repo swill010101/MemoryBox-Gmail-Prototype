@@ -464,7 +464,11 @@ def library_ui() -> HTMLResponse:
 def artifact_ui() -> FileResponse:
     if not ARTIFACT_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Artifact UI missing")
-    return FileResponse(ARTIFACT_STATIC, media_type="text/html")
+    return FileResponse(
+        ARTIFACT_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/library/person-options")
