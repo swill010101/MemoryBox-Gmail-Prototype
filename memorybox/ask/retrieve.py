@@ -562,7 +562,10 @@ def search_photos(
                 taken_at=a.taken_at.isoformat() if a.taken_at else None,
                 people=[p.display_name for p in a.people if p.display_name],
                 location=loc,
-                thumb_url=a.thumb_url,
+                # Browser-safe MB proxy (Immich URLs are not cookie-auth'd for Ask UI)
+                thumb_url=(
+                    f"/library/media/photo/{a.external_id}" if a.external_id else a.thumb_url
+                ),
                 web_url=a.web_url,
                 identity_trust=trust,
                 mb_person_id=person_id,

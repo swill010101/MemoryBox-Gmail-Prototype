@@ -167,8 +167,11 @@
       if (ph.length) {
         html += `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:0.5rem 0">`;
         ph.slice(0, 12).forEach(h => {
-          const thumb = h.thumb_url || "";
-          const label = (h.mb_person_name || (h.people && h.people[0]) || h.external_id || "photo");
+          const eid = h.external_id || "";
+          const thumb = eid
+            ? ("/library/media/photo/" + encodeURIComponent(eid))
+            : (h.thumb_url || "");
+          const label = (h.mb_person_name || (h.people && h.people[0]) || eid || "photo");
           if (thumb) {
             html += `<a href="/library/ui?person_id=${encodeURIComponent(h.mb_person_id || libPerson || "")}" title="${label}" style="display:block">` +
               `<img src="${thumb}" alt="${label}" style="width:96px;height:96px;object-fit:cover;border:1px solid #c5c9d1;background:#fff" loading="lazy" />` +
@@ -220,10 +223,14 @@
               `</li>`;
           }
           if (c.kind === "photo") {
-            const t = c.thumb_url
-              ? ` <img src="${c.thumb_url}" alt="" style="width:48px;height:48px;object-fit:cover;vertical-align:middle;border:1px solid #c5c9d1" loading="lazy" />`
+            const eid = c.external_id || "";
+            const src = eid
+              ? ("/library/media/photo/" + encodeURIComponent(eid))
+              : (c.thumb_url || "");
+            const t = src
+              ? ` <img src="${src}" alt="" style="width:48px;height:48px;object-fit:cover;vertical-align:middle;border:1px solid #c5c9d1" loading="lazy" />`
               : "";
-            return `<li>Photo <code>${c.external_id || ""}</code> (${c.provider_key || ""})${t}</li>`;
+            return `<li>Photo <code>${eid}</code> (${c.provider_key || ""})${t}</li>`;
           }
           if (c.kind === "video") {
             return `<li>Video <code>${c.external_id || ""}</code></li>`;
