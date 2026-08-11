@@ -240,6 +240,9 @@ class ArtifactStoryCreateRequest(BaseModel):
     title: str | None = None
     body_text: str = Field(..., min_length=1)
     narrator_display_name: str | None = None
+    narrator_person_id: str | None = None
+    narrator_provider_key: str | None = "immich"
+    narrator_external_id: str | None = None
 
 
 class ArtifactPersonFromProviderRequest(BaseModel):
@@ -968,6 +971,9 @@ def artifact_create_story(
             title=body.title,
             body_text=body.body_text,
             narrator_display_name=body.narrator_display_name,
+            narrator_person_id=body.narrator_person_id,
+            narrator_provider_key=body.narrator_provider_key,
+            narrator_external_id=body.narrator_external_id,
         )
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

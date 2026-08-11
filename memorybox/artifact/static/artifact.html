@@ -136,8 +136,14 @@
       <input id="storyTitle" placeholder="Story title (optional)" />
       <label for="storyBody">Story body (STT draft lands here — edit before Save)</label>
       <textarea id="storyBody" placeholder="Owner recollection…"></textarea>
-      <label for="narrator">Narrator display name</label>
-      <input id="narrator" placeholder="Narrator display name" />
+      <label for="narratorSel">Narrator (who spoke / wrote — MB Person)</label>
+      <select id="narratorSel"><option value="">(select narrator)</option></select>
+      <label for="narratorEnroll">Or enroll a <b>new</b> narrator name (exact spelling → new MB Person)</label>
+      <input id="narratorEnroll" placeholder="Only if not in list — exact spelling matters" autocomplete="off" />
+      <p class="warn" style="font-size:0.85rem">
+        Narrator ≠ About person on the Artifact. Prefer the list (MB or Immich lazy-teach).
+        Enrolling “Tom” vs “Tom W” creates two People — no fuzzy merge here; use /people/ui merge if needed.
+      </p>
       <button id="storyBtn" type="button">Save Story + link Artifact</button>
     </section>
 
@@ -427,22 +433,21 @@
       const data = await j("/artifact/" + encodeURIComponent(id));
       renderArtifact(data.artifact);
     }
-    async function loadPeople() {
-      const sel = document.getElementById("personSel");
-      const hint = document.getElementById("peopleHint");
+    async function fillPersonSelect(sel, *, emptyLabel, includeEnrollHint) {
       const cur = sel.value;
-      sel.innerHTML = '<option value="">(none)</option>';
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = emptyLabel;
+      sel.appendChild(none);
 
-      // Immich names teach/map MB Person on associate (I6/I7 lazy pattern).
       let mbPeople = [];
       let immich = [];
       let immichErr = null;
       try {
         const data = await j("/library/person-options?limit=200");
         mbPeople = data.people || [];
-      } catch (e) {
-        if (hint) hint.textContent = "MB People load failed: " + errText(e);
-      }
+      } catch (_) {}
       try {
         const data = await j("/people/provider/immich");
         if (data.unavailable || data.ok === false) {
@@ -465,13 +470,13 @@
       if (!mbPeople.length) {
         const opt = document.createElement("option");
         opt.disabled = true;
-        opt.textContent = "(none yet — Immich names below will create one)";
+        opt.textContent = "(none yet)";
         ogMb.appendChild(opt);
       }
       sel.appendChild(ogMb);
 
       const ogIm = document.createElement("optgroup");
-      ogIm.label = "Immich names (create/map MB on associate)";
+      ogIm.label = "Immich names (create/map MB on use)";
       immich
         .slice()
         .sort((a, b) => String(a.display_name || "").localeCompare(String(b.display_name || "")))
@@ -490,13 +495,26 @@
         ogIm.appendChild(opt);
       }
       sel.appendChild(ogIm);
-
       if (cur) sel.value = cur;
+      return { mbPeople, immich, immichErr };
+    }
+
+    async function loadPeople() {
+      const hint = document.getElementById("peopleHint");
+      const personStats = await fillPersonSelect(
+        document.getElementById("personSel"),
+        { emptyLabel: "(none)", includeEnrollHint: false }
+      );
+      await fillPersonSelect(
+        document.getElementById("narratorSel"),
+        { emptyLabel: "(select narrator)", includeEnrollHint: true }
+      );
       if (hint) {
         hint.textContent =
-          "MB=" + mbPeople.length + " · Immich named=" + immich.length +
-          (immichErr ? (" · Immich: " + immichErr) : "");
-        hint.className = immichErr && !immich.length ? "warn" : "muted";
+          "MB=" + personStats.mbPeople.length +
+          " · Immich named=" + personStats.immich.length +
+          (personStats.immichErr ? (" · Immich: " + personStats.immichErr) : "");
+        hint.className = personStats.immichErr && !personStats.immich.length ? "warn" : "muted";
       }
     }
 
@@ -598,19 +616,54 @@
     document.getElementById("storyBtn").onclick = async () => {
       if (!currentId) return setStatus("No Artifact selected.", true);
       const body_text = document.getElementById("storyBody").value.trim();
-      if (!body_text) return setStatus("Story body required.", true);
+      if (!body_text) return setStatus("Story body required (type or Record STT first).", true);
+
+      const narrRaw = document.getElementById("narratorSel").value;
+      const enroll = (document.getElementById("narratorEnroll").value || "").trim();
+      const payload = {
+        title: document.getElementById("storyTitle").value || null,
+        body_text,
+      };
+
+      if (narrRaw.startsWith("mb:")) {
+        payload.narrator_person_id = narrRaw.slice(3);
+      } else if (narrRaw.startsWith("immich:")) {
+        const parts = narrRaw.split(":");
+        payload.narrator_provider_key = "immich";
+        payload.narrator_external_id = decodeURIComponent(parts[1] || "");
+        payload.narrator_display_name = decodeURIComponent(parts.slice(2).join(":") || "");
+        if (!payload.narrator_external_id || !payload.narrator_display_name) {
+          return setStatus("Invalid Immich narrator selection.", true);
+        }
+      } else if (enroll.length >= 2) {
+        if (!confirm(
+          "Enroll new narrator \"" + enroll + "\" as an MB Person?\n\n" +
+          "Exact spelling only — a slight difference creates a second Person for the same human.\n" +
+          "Prefer picking an existing MB/Immich name when possible."
+        )) {
+          return;
+        }
+        payload.narrator_display_name = enroll;
+      } else {
+        return setStatus(
+          "Select a Narrator (MB or Immich), or enroll a new exact name.",
+          true
+        );
+      }
+
       try {
         const data = await j("/artifact/" + encodeURIComponent(currentId) + "/story", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: document.getElementById("storyTitle").value || null,
-            body_text,
-            narrator_display_name: document.getElementById("narrator").value || null,
-          }),
+          body: JSON.stringify(payload),
         });
         renderArtifact(data.artifact);
-        setStatus("Story saved and linked: " + ((data.story && data.story.id) || ""));
+        const n =
+          (data.story && (data.story.narrator_display_name || data.story.narrator_person_id)) || "";
+        setStatus("Story saved and linked" + (n ? (" · narrator=" + n) : "") +
+          ": " + ((data.story && data.story.id) || ""));
+        document.getElementById("narratorEnroll").value = "";
+        loadPeople().catch(() => {});
       } catch (e) {
         setStatus("Story save failed: " + errText(e), true);
       }

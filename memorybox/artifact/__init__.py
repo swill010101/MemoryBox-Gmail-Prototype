@@ -747,16 +747,60 @@ def create_story_for_artifact(
     title: str | None,
     body_text: str,
     narrator_display_name: str | None = None,
+    narrator_person_id: str | None = None,
+    narrator_provider_key: str | None = None,
+    narrator_external_id: str | None = None,
 ) -> dict[str, Any]:
-    """Typed Story association earn-in (optional voice path saves body via STT then calls this)."""
+    """Story Save earn-in: narrator must resolve to an MB Person when given.
+
+    Prefer narrator_person_id or Immich lazy-teach (external_id + display_name).
+    Free-text narrator_display_name alone enrolls by exact name (typos → new Person).
+    """
     view = get_artifact(artifact_id)
     if not view:
         raise ArtifactServiceError("artifact not found")
+
+    nid = (narrator_person_id or "").strip() or None
+    ndisp = (narrator_display_name or "").strip() or None
+    next_id = (narrator_external_id or "").strip() or None
+    npk = (narrator_provider_key or "immich").strip() or "immich"
+
+    if next_id:
+        if not ndisp or len(ndisp) < 2:
+            raise ArtifactServiceError(
+                "narrator Immich selection requires display_name (Immich person name)"
+            )
+        from memorybox.ask.deps import build_photo
+        from memorybox.person import AmbiguousIdentityError, PersonServiceError, teach_provider_person
+
+        try:
+            person = teach_provider_person(
+                display_name=ndisp,
+                provider_key=npk,
+                external_id=next_id,
+                label=ndisp,
+                photo=build_photo(),
+            )
+        except AmbiguousIdentityError as exc:
+            raise ArtifactServiceError(
+                f"ambiguous narrator Immich→MB Person for {ndisp!r}: {exc}"
+            ) from exc
+        except PersonServiceError as exc:
+            raise ArtifactServiceError(str(exc)) from exc
+        nid = person.id
+        ndisp = None
+
+    if not nid and not ndisp:
+        raise ArtifactServiceError(
+            "narrator required: select an MB/Immich Person or enroll a new exact display name"
+        )
+
     try:
         story = create_story(
             title=title or f"About {view.label}",
             body_text=body_text,
-            narrator_display_name=narrator_display_name,
+            narrator_person_id=nid,
+            narrator_display_name=ndisp if not nid else None,
             person_ids=list(view.person_ids) or None,
         )
     except StoryServiceError as exc:

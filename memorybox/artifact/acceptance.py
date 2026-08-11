@@ -185,6 +185,25 @@ def run_prove_artifact(*, flightsim: bool = False) -> dict[str, Any]:
         detail="create_story_for_artifact",
     )
 
+    # Narrator must resolve to MB Person (exact enroll path)
+    linked_n = create_story_for_artifact(
+        art.id,
+        title="Narrator enroll path",
+        body_text="Narrator resolved via display name enroll.",
+        narrator_display_name="I9 Narrator Enroll",
+    )
+    narr_ok = bool(
+        (linked_n.get("story") or {}).get("narrator_person_id")
+        or (linked_n.get("story") or {}).get("narrator_display_name")
+    )
+    _check(
+        "i9_i_narrator_person",
+        narr_ok,
+        checks,
+        problems,
+        detail=str((linked_n.get("story") or {}).get("narrator_person_id")),
+    )
+
     lib_all = list_library_cards(
         person_id=None,
         modalities=["artifact"],
