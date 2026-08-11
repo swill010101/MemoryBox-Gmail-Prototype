@@ -5,6 +5,7 @@ FlightSim uses Marvin live Gmail client when configured.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import secrets
@@ -411,11 +412,101 @@ class MarvinGmailGuidedEmailAdapter:
 
 
 _ADAPTER: GuidedEmailAdapter | None = None
+_ADAPTER_STATUS: dict[str, Any] = {
+    "provider_key": None,
+    "ok": False,
+    "detail": "not_initialized",
+    "user_email": None,
+    "live": False,
+}
 
 
 def set_email_adapter(adapter: GuidedEmailAdapter | None) -> None:
     global _ADAPTER
     _ADAPTER = adapter
+    if adapter is None:
+        _ADAPTER_STATUS.update(
+            {
+                "provider_key": None,
+                "ok": False,
+                "detail": "cleared",
+                "user_email": None,
+                "live": False,
+            }
+        )
+
+
+def _is_placeholder_email(email: str) -> bool:
+    e = (email or "").strip().lower()
+    if not e or "@" not in e:
+        return True
+    return e.startswith("your_gmail@") or e.startswith("you@") or "example.com" in e
+
+
+def _owner_email_from_memorybox_json() -> str | None:
+    path = _REPO_ROOT / "config" / "memorybox.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        emails = (((data.get("memory_box") or {}).get("owner") or {}).get("emails")) or []
+        for e in emails:
+            if isinstance(e, str) and "@" in e and not _is_placeholder_email(e):
+                return e.strip()
+    except Exception:
+        return None
+    return None
+
+
+def resolve_guided_capture_user_email(cfg: dict[str, Any] | None = None) -> str | None:
+    """Owner Gmail for send/Reply-To — same Marvin account, never a separate mailbox."""
+    env = (os.environ.get("MEMORYBOX_GC_USER_EMAIL") or "").strip()
+    if env and not _is_placeholder_email(env):
+        return env
+    if cfg is None:
+        try:
+            from application.marvin_capture.config import load_config
+
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+    raw = ((cfg or {}).get("gmail") or {}).get("user_email") or ""
+    if raw and not _is_placeholder_email(str(raw)):
+        return str(raw).strip()
+    return _owner_email_from_memorybox_json()
+
+
+class UnavailableGuidedEmailAdapter:
+    """Visible degrade — do not pretend Sent when live Gmail is not wired."""
+
+    provider_key = "unavailable"
+
+    def __init__(self, detail: str, *, user_email: str | None = None) -> None:
+        self.detail = detail
+        self.user_email = user_email or ""
+
+    def send_question(
+        self,
+        *,
+        to_email: str,
+        respondent_name: str,
+        question_body: str,
+        correlation_token: str,
+        campaign_title: str | None = None,
+    ) -> OutboundSendResult:
+        return OutboundSendResult(ok=False, fail_detail=self.detail)
+
+    def poll_inbound(self) -> list[InboundMailItem]:
+        return []
+
+    def mark_processed(self, inbound_message_id: str) -> None:
+        return
+
+
+def email_adapter_status() -> dict[str, Any]:
+    """Snapshot for UI / tick — whether owner Gmail is live or degraded."""
+    get_email_adapter()  # ensure initialized
+    return dict(_ADAPTER_STATUS)
 
 
 def get_email_adapter() -> GuidedEmailAdapter:
@@ -425,19 +516,87 @@ def get_email_adapter() -> GuidedEmailAdapter:
     mode = (os.environ.get("MEMORYBOX_GC_EMAIL_PROVIDER") or "auto").strip().lower()
     if mode == "fake":
         _ADAPTER = FakeGuidedEmailAdapter()
+        _ADAPTER_STATUS.update(
+            {
+                "provider_key": "fake_guided_email",
+                "ok": True,
+                "detail": "MEMORYBOX_GC_EMAIL_PROVIDER=fake (harness only — no real Gmail)",
+                "user_email": _ADAPTER.user_email,
+                "live": False,
+            }
+        )
         return _ADAPTER
-    # Try Marvin live config
+
+    last_err = ""
     try:
         from application.marvin_capture.config import load_config
         from application.marvin_capture.gmail_client import build_live_gmail_client
 
         cfg = load_config()
-        user_email = (cfg.get("gmail") or {}).get("user_email") or ""
-        if user_email and mode in ("auto", "marvin", "gmail"):
-            client = build_live_gmail_client(cfg)
-            _ADAPTER = MarvinGmailGuidedEmailAdapter(client, user_email=user_email)
-            return _ADAPTER
-    except Exception:
-        pass
-    _ADAPTER = FakeGuidedEmailAdapter()
+        gmail = cfg.get("gmail") or {}
+        creds_path = Path(gmail.get("credentials_file") or "")
+        token_path = Path(gmail.get("token_file") or "")
+        user_email = resolve_guided_capture_user_email(cfg)
+        has_creds = creds_path.is_file()
+        has_token = token_path.is_file()
+
+        if mode in ("auto", "marvin", "gmail") and has_creds and has_token:
+            if not user_email:
+                last_err = (
+                    "Marvin Gmail token/credentials found, but user_email is missing "
+                    "or still a placeholder in config/marvin_capture.json. "
+                    "Set gmail.user_email to your real address (e.g. swill01@gmail.com) "
+                    "or MEMORYBOX_GC_USER_EMAIL."
+                )
+            else:
+                client = build_live_gmail_client(cfg)
+                # Prefer live profile address when placeholder was wrong
+                try:
+                    profile = client.service.users().getProfile(userId="me").execute()
+                    profile_email = (profile or {}).get("emailAddress") or ""
+                    if profile_email and not _is_placeholder_email(profile_email):
+                        user_email = profile_email
+                except Exception:
+                    pass
+                _ADAPTER = MarvinGmailGuidedEmailAdapter(client, user_email=user_email)
+                _ADAPTER_STATUS.update(
+                    {
+                        "provider_key": "marvin_gmail",
+                        "ok": True,
+                        "detail": (
+                            f"Live owner Gmail via Marvin Capture token "
+                            f"({user_email}); send goes to Sent; poll owner inbox"
+                        ),
+                        "user_email": user_email,
+                        "live": True,
+                    }
+                )
+                return _ADAPTER
+        elif mode in ("marvin", "gmail"):
+            last_err = (
+                f"MEMORYBOX_GC_EMAIL_PROVIDER={mode} but credentials/token missing "
+                f"(creds={has_creds} token={has_token} at {creds_path} / {token_path})"
+            )
+        elif mode == "auto" and not (has_creds and has_token):
+            last_err = (
+                "No Marvin Gmail credentials/token under config/; "
+                "refusing silent fake send. Copy POC gmail_credentials.json + "
+                "gmail_token.json and set user_email, or set "
+                "MEMORYBOX_GC_EMAIL_PROVIDER=fake for harness only."
+            )
+    except Exception as exc:  # noqa: BLE001
+        last_err = f"Marvin Gmail adapter failed: {exc}"
+
+    # Visible degrade — never pretend outbound succeeded on fake when owner expects Gmail
+    detail = last_err or "Guided Capture email provider unavailable"
+    _ADAPTER = UnavailableGuidedEmailAdapter(detail, user_email=resolve_guided_capture_user_email())
+    _ADAPTER_STATUS.update(
+        {
+            "provider_key": "unavailable",
+            "ok": False,
+            "detail": detail,
+            "user_email": getattr(_ADAPTER, "user_email", None) or None,
+            "live": False,
+        }
+    )
     return _ADAPTER

@@ -1917,6 +1917,13 @@ def _cadence_seconds_from_body(body: GcCampaignCreateBody) -> int:
     return max(1, int(round(float(days) * 86400)))
 
 
+@app.get("/guided-capture/email-status")
+def gc_email_status() -> dict[str, Any]:
+    from memorybox.guided_capture import email_adapter_status
+
+    return email_adapter_status()
+
+
 @app.get("/guided-capture/respondent-options")
 def gc_respondent_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
     from memorybox.guided_capture import respondent_options

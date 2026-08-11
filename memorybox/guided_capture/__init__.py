@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from memorybox.db import connection
 from memorybox.guided_capture.email_adapter import (
     FakeGuidedEmailAdapter,
+    email_adapter_status,
     get_email_adapter,
     new_correlation_token,
     set_email_adapter,
@@ -873,7 +874,13 @@ def tick_scheduler(*, now: datetime | None = None, adapter: Any | None = None) -
                 )
             _maybe_outbound_complete(conn, d["campaign_id"])
 
-    return {"ok": True, "sent": sent_ids, "failed": failed_ids, "at": _iso(now)}
+    return {
+        "ok": True,
+        "sent": sent_ids,
+        "failed": failed_ids,
+        "at": _iso(now),
+        "email_provider": email_adapter_status(),
+    }
 
 
 def retry_delivery(delivery_id: str, *, now: datetime | None = None) -> dict[str, Any]:
@@ -1449,5 +1456,6 @@ __all__ = [
     "search_responses_for_ask",
     "get_email_adapter",
     "set_email_adapter",
+    "email_adapter_status",
     "FakeGuidedEmailAdapter",
 ]

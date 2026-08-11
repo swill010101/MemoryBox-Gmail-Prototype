@@ -41,8 +41,9 @@
     <span class="badge" id="newBadge">New responses: 0</span>
     <span class="muted">Time-driven campaigns · thin review · credibility</span>
   </header>
-  <p id="status" class="muted"></p>
-  <main>
+    <p id="status" class="muted"></p>
+    <p id="emailStatus" class="muted" style="padding:0 1.25rem 0.5rem"></p>
+    <main>
     <section>
       <h2>Campaigns</h2>
       <label>Respondent (optional MB Person — not required)</label>
@@ -141,6 +142,16 @@
       if (s >= 86400 && s % 86400 === 0) return `${s / 86400} day(s)`;
       if (s >= 60 && s % 60 === 0) return `${s / 60} minute(s)`;
       return `${s} second(s)`;
+    }
+
+    async function refreshEmailStatus() {
+      const d = await api("/guided-capture/email-status");
+      const el = document.getElementById("emailStatus");
+      const live = !!d.live;
+      el.className = live ? "muted" : "err";
+      el.textContent = live
+        ? `Email: LIVE owner Gmail (${d.user_email || "?"}) via Marvin Capture — Tick sends real mail to Sent.`
+        : `Email: NOT LIVE (${d.provider_key || "?"}) — ${d.detail || "no detail"}. Fix config/marvin_capture.json user_email + token, use the same Python env as Marvin POC (google-auth), then restart serve. Tick will mark deliveries failed instead of fake-sending.`;
     }
 
     async function refreshBadge() {
@@ -378,7 +389,13 @@
     document.getElementById("btnStop").onclick = () => campAction("stop");
     document.getElementById("btnTick").onclick = async () => {
       const d = await api("/guided-capture/tick", { method: "POST", body: "{}" });
-      status(`Tick sent=${(d.sent||[]).length} failed=${(d.failed||[]).length}`);
+      const ep = d.email_provider || {};
+      status(
+        `Tick sent=${(d.sent||[]).length} failed=${(d.failed||[]).length}` +
+        ` · email=${ep.provider_key || "?"} live=${!!ep.live}` +
+        (ep.detail ? ` · ${ep.detail}` : "")
+      );
+      await refreshEmailStatus();
       if (selectedCampaign) await selectCampaign(selectedCampaign.id);
       await loadCampaigns();
     };
@@ -392,6 +409,7 @@
     (async () => {
       try {
         await refreshBadge();
+        await refreshEmailStatus();
         await loadRespondentOptions();
         await loadCampaigns();
         await loadResponses();

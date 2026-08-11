@@ -54,6 +54,8 @@ def prove_guided_capture(*, flightsim: bool = False) -> dict[str, Any]:
 
     os.environ["MEMORYBOX_STT_PROVIDER"] = "fake"
     os.environ["MEMORYBOX_GC_EMAIL_PROVIDER"] = "fake"
+    # Clear any prior adapter from other tests / serve imports
+    set_email_adapter(None)
 
     tag = f"GC11-{uuid4().hex[:8]}"
     adapter = FakeGuidedEmailAdapter(user_email="owner@example.com")
