@@ -289,6 +289,26 @@
       catch (e) { show(e); }
     };
 
+    async function openStory(id) {
+      rememberId(id);
+      const data = await j("/story/" + encodeURIComponent(id));
+      show(data);
+      const s = (data && data.story) || {};
+      const body = (s.version && s.version.body_text) || "";
+      if (s.title != null) document.getElementById("title").value = s.title || "";
+      if (body) {
+        document.getElementById("body").value = body;
+        document.getElementById("editBody").value = body;
+      }
+      if (s.narrator_display_name) {
+        document.getElementById("narrator").value = s.narrator_display_name;
+      }
+    }
+
+    const bootId = new URLSearchParams(location.search).get("id");
+    if (bootId && UUID_RE.test(bootId)) {
+      openStory(bootId).catch((e) => show(e));
+    }
     loadPeople();
   </script>
 </body>

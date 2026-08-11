@@ -493,16 +493,24 @@
         try {
           const data = await j("/story/" + encodeURIComponent(sid));
           const s = data.story || {};
-          const body = (s.body_text || "").trim();
-          const excerpt = body.length > 280 ? body.slice(0, 280) + "…" : body;
+          // Body lives on current version, not top-level story fields
+          const body = String(
+            (s.version && s.version.body_text) ||
+            s.body_text ||
+            ""
+          ).trim();
+          const excerpt = body.length > 400 ? body.slice(0, 400) + "…" : body;
+          const storyUrl = "/story/ui?id=" + encodeURIComponent(sid);
           card.innerHTML =
             "<div><strong>" + esc(s.title || "(untitled Story)") + "</strong></div>" +
             '<div class="muted">id=<code>' + esc(sid) + "</code>" +
             (s.narrator_display_name ? (" · narrator=" + esc(s.narrator_display_name)) : "") +
             (s.current_version != null ? (" · v" + esc(String(s.current_version))) : "") +
             "</div>" +
-            '<div style="margin-top:0.35rem;white-space:pre-wrap">' + esc(excerpt || "(empty body)") + "</div>" +
-            '<div class="muted" style="margin-top:0.35rem"><a href="/story/ui">Open Story UI</a> · paste id above to edit versions</div>';
+            '<div style="margin-top:0.35rem;white-space:pre-wrap">' +
+            esc(excerpt || "(empty body — no text on current version)") +
+            "</div>" +
+            '<div style="margin-top:0.35rem"><a href="' + esc(storyUrl) + '">Open this Story</a></div>';
         } catch (e) {
           card.innerHTML =
             '<div class="warn">Story <code>' + esc(sid) + "</code> — load failed: " +

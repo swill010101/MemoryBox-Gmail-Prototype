@@ -391,7 +391,11 @@ def ask_ui() -> FileResponse:
 def story_ui() -> FileResponse:
     if not STORY_STATIC.is_file():
         raise HTTPException(status_code=404, detail="Story UI missing")
-    return FileResponse(STORY_STATIC, media_type="text/html")
+    return FileResponse(
+        STORY_STATIC,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/journal/ui")
