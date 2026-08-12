@@ -1,11 +1,9 @@
 # MBRM-001 — MemoryBox P2 Roadmap
 
-**Status:** Superseded for sequencing by [MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · **Date:** 2026-08-12  
+**Status:** Historical shell-first draft · **Superseded for sequencing by** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **ID:** MBRM-001  
 **Owner:** Tom  
-**Authority:** Locked [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) · Locked [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · DOCX masters in [`docs/source/`](../source/README.md)  
-**Note:** The shell-first increment order in this file is **not** the recommended first build. Review **MBRM-001A**, which re-sequences around the locked “Show me Peggy” proof point and updated sync/confidence decisions.  
-**Gate:** **No build** until founder approves the implementation plan (MBRM-001A or a successor) and then the named first-increment definition.
+**Gate:** **No build** — see MBRM-001A + P2-I1 definition.
 
 ## 1. Purpose
 
