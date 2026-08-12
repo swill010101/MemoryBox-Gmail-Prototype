@@ -40,4 +40,8 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 ## P2 planning (no build)
 
-P1→P2 backlog sequencing is recorded in [docs/product/MBBS_P2_BACKLOG_PLANNING.md](docs/product/MBBS_P2_BACKLOG_PLANNING.md). **Planning only** — no slice is authorized to build until Tom supplies a PRD / build doc and names a TASK.
+- Locked specs: [docs/source/README.md](docs/source/README.md) (MBPS-002, MBEVS-001 v1.0)
+- Cursor-ready roadmap (pending approval): [docs/product/MBRM-001_P2_ROADMAP.md](docs/product/MBRM-001_P2_ROADMAP.md)
+- Historical backlog parking: [docs/product/MBBS_P2_BACKLOG_PLANNING.md](docs/product/MBBS_P2_BACKLOG_PLANNING.md)
+
+**No build** until MBRM-001 is approved and the named increment definition (first: P2-I1) is approved.
