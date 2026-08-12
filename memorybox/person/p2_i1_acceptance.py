@@ -392,18 +392,21 @@ def _prove_p2_i1_flightsim() -> dict[str, Any]:
         "p2i1_flightsim_corpus_env",
         bool(positive_video)
         and bool(negative_video)
+        and positive_video.startswith("vid-")
+        and negative_video.startswith("vid-")
         and "<" not in positive_video
         and ">" not in positive_video
         and "<" not in negative_video
         and ">" not in negative_video
+        and "paste-" not in negative_video.lower()
+        and "paste-" not in positive_video.lower()
         and positive_video != negative_video,
         checks,
         problems,
         detail=(
-            "set real HVRT video external ids (not <placeholders>): "
-            "MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID and MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID "
-            f"(got positive={positive_video!r} negative={negative_video!r}). "
-            "List ids via GET http://127.0.0.1:8791/videos after starting the worker."
+            "set real HVRT external ids from GET http://127.0.0.1:8791/videos "
+            "(must look like vid-…; no placeholders / paste-instructions). "
+            f"got positive={positive_video!r} negative={negative_video!r}"
         ),
     )
 
@@ -412,6 +415,17 @@ def _prove_p2_i1_flightsim() -> dict[str, Any]:
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
 
     inventory = _eligible_video_rows(video)
+    inv_ids = {r["video_external_id"] for r in inventory}
+    _check(
+        "p2i1_flightsim_corpus_in_inventory",
+        positive_video in inv_ids and negative_video in inv_ids,
+        checks,
+        problems,
+        detail=(
+            f"positive_in={positive_video in inv_ids} negative_in={negative_video in inv_ids} "
+            f"inventory={len(inventory)}; pick ids from worker /videos"
+        ),
+    )
     list_faces = _list_face_assets_fn(photo)
     sync = sync_immich_people(
         photo_provider=photo,
