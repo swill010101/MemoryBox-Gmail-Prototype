@@ -44,17 +44,17 @@ Also still locked from prior planning: owner-run campaigns (not multi-user); Lat
 Immich named Person
   → nightly sync / Sync now
   → canonical MB Person (map or create; conflict → review)
-  → Immich face assets + owner confirms as provenance-preserved face evidence
-  → enqueue ALL eligible existing source videos into durable recognition queue
+  → Immich face assets as provenance-preserved exemplars
+  → enqueue FULL eligible-archive into durable recognition queue
+     (excluded/failed videos visible with reason — never silent omit)
   → observable processing state
-  → face-appearance timeslot (start/end, frame, confidence, method, correction state)
-  → searchable moment
+  → face-appearance timeslot (method, confidence, exemplars, confirmation state)
+  → searchable moment (owner-confirmed outranks auto-associate)
   → Ask “Show me Peggy” (photos + moments, not file-only)
   → open jumps to timeslot
   → correct miss/wrong association
-  → reusable identity evidence
+  → reusable higher-authority identity evidence
   → subsequent retrieval reflects correction
-  → provenance + system confidence preserved
   → return to original result context
 ```
 
