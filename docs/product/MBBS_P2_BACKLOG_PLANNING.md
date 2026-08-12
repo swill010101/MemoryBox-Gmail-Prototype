@@ -1,18 +1,18 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Superseded for sequencing by [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md) · **Date:** 2026-08-12  
-**Authority:** Historical parking note only — **MBRM-001** is the P2 sequencing authority (pending founder approval)  
+**Status:** Historical parking note · **Date:** 2026-08-12  
+**Authority:** Superseded for sequencing by [MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (review [MBRM-001](MBRM-001_P2_ROADMAP.md) as prior shell-first draft only)  
 **Owner:** Tom
 
 ## Gate (hard)
 
-- **No build** until Tom approves MBRM-001, then approves a named increment definition (first target: **P2-I1**).
+- **No build** until Tom approves MBRM-001A (or successor), then approves a named increment definition (recommended first: **P2-I1 Show me Peggy**).
 - **No PRD invent** beyond locked MBPS-002 / MBEVS-001 v1.0.
 - Prefer **one** authorized increment at a time.
 
 ## Sequencing authority
 
-Use **[MBRM-001 P2 Roadmap](MBRM-001_P2_ROADMAP.md)** for order, IN/OUT, and EVS traceability.
+Use **[MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)** for dependency-aware order, IN/OUT, and EVS traceability.
 
 Parked P1 backlog items are **absorbed** there:
 

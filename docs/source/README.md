@@ -8,7 +8,7 @@
 1. [MBPS-002](MBPS-002_MemoryBox_Product_Specification_P2_Iteration_v0.1.docx) — P2 Product Specification (WHAT)  
 2. [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.docx) — Experience Validation Scenario Catalog  
 3. Supporting UX / domain / experience-flow / architecture specs as they are updated for P2  
-4. Execution sequencing: [MBRM-001 P2 Roadmap](../product/MBRM-001_P2_ROADMAP.md)
+4. Execution sequencing (proposed): [MBRM-001A P2 Implementation Plan](../product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — prior shell-first draft: [MBRM-001](../product/MBRM-001_P2_ROADMAP.md)
 
 Readable markdown extracts (not substitutes for the DOCX masters):
 

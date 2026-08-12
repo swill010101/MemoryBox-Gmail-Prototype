@@ -41,7 +41,8 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 ## P2 planning (no build)
 
 - Locked specs: [docs/source/README.md](docs/source/README.md) (MBPS-002, MBEVS-001 v1.0)
-- Cursor-ready roadmap (pending approval): [docs/product/MBRM-001_P2_ROADMAP.md](docs/product/MBRM-001_P2_ROADMAP.md)
+- **Proposed implementation plan (review):** [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
+- Prior shell-first draft (superseded for sequencing): [docs/product/MBRM-001_P2_ROADMAP.md](docs/product/MBRM-001_P2_ROADMAP.md)
 - Historical backlog parking: [docs/product/MBBS_P2_BACKLOG_PLANNING.md](docs/product/MBBS_P2_BACKLOG_PLANNING.md)
 
-**No build** until MBRM-001 is approved and the named increment definition (first: P2-I1) is approved.
+**No build** until MBRM-001A (or successor) is approved and the named first-increment definition is approved. Recommended first build: **Show me Peggy** vertical.
