@@ -37,3 +37,7 @@ C:\MemoryBox
 Takeout zips sync FlightSim → GitHub → Toms-Desktop via **Git LFS**.
 
 See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHIVE_LAYOUT.md).
+
+## P2 planning (no build)
+
+P1→P2 backlog sequencing is recorded in [docs/product/MBBS_P2_BACKLOG_PLANNING.md](docs/product/MBBS_P2_BACKLOG_PLANNING.md). **Planning only** — no slice is authorized to build until Tom supplies a PRD / build doc and names a TASK.
