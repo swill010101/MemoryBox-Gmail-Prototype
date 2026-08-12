@@ -3,7 +3,8 @@
 **Status:** **BUILD AUTHORIZED** (founder 2026-08-12: “approved to build”) · Definition **LOCKED**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I1 clarifications below  
-**CLI prove:** `python -m memorybox prove-p2-i1` (harness) · `prove-p2-i1 --flightsim` on P1 runtime  
+**CLI prove:** `python -m memorybox prove-p2-i1` (harness / fake corpus) · `prove-p2-i1 --flightsim` on P1 runtime with **real Immich + real HVRT** (fakes/degraded fail)  
+**FlightSim env (ACCEPTED):** `MEMORYBOX_P1_RUNTIME_HOST=1` · Immich via `MEMORYBOX_PHOTO_PROVIDER=immich` · HVRT via `MEMORYBOX_VIDEO_PROVIDER=hvrt` + `MEMORYBOX_VIDEO_WORKER_URL` · corpus ids `MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID` / `MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID` · optional `MEMORYBOX_P2_I1_PERSON_NAME` (default Peggy) / `MEMORYBOX_P2_I1_PERSON_ID` / `MEMORYBOX_P2_I1_HVRT_FACE_ID`  
 **APIs:** `POST /people/sync/immich` · `GET /recognition/queue` · `POST /recognition/queue/process` · `POST /recognition/appearances/correct`  
 **Gate:** Implementation in progress under Build P2-I1. FlightSim owner acceptance still required for ACCEPTED.
 ## 0. Product intent

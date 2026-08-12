@@ -21,12 +21,34 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Reuse Marvin reply extraction (derived text only; raw remains authoritative)
-from application.marvin_capture.plus_address import (
-    build_plus_address,
-    parse_plus_tag,
-)
-from application.marvin_capture.reply_extract import extract_reply_text, make_subject
+# Reuse Marvin reply extraction (derived text only; raw remains authoritative).
+# Optional: FlightSim has application.marvin_capture; cloud/harness may not.
+try:
+    from application.marvin_capture.plus_address import (
+        build_plus_address,
+        parse_plus_tag,
+    )
+    from application.marvin_capture.reply_extract import extract_reply_text, make_subject
+except ImportError:  # pragma: no cover — harness without Marvin tree
+
+    def build_plus_address(local: str, domain: str, tag: str) -> str:
+        return f"{local}+{tag}@{domain}"
+
+    def parse_plus_tag(addr: str) -> str | None:
+        if "+" not in (addr or ""):
+            return None
+        local = (addr or "").split("@", 1)[0]
+        parts = local.split("+", 1)
+        return parts[1] if len(parts) == 2 else None
+
+    def extract_reply_text(raw: str | bytes) -> str:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        return (raw or "").strip()
+
+    def make_subject(token: str, title: str | None = None) -> str:
+        base = (title or "MemoryBox Guided Capture").strip()
+        return f"{base} [MB-GC-{token}]"
 
 GC_PLUS_PREFIX = "gc-"
 SUBJECT_TOKEN_RE = re.compile(r"\[MB-GC-([A-Za-z0-9]+)\]", re.IGNORECASE)

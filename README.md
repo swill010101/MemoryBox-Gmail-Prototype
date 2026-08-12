@@ -46,7 +46,19 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
 **Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1`  
-**FlightSim:** `prove-p2-i1 --flightsim` with `MEMORYBOX_P1_RUNTIME_HOST=1` + real Immich/HVRT.
+**FlightSim ACCEPTED:** real Immich + real HVRT only (fakes fail):
+
+```powershell
+$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+$env:MEMORYBOX_PHOTO_PROVIDER = "immich"
+$env:MEMORYBOX_VIDEO_PROVIDER = "hvrt"
+# MEMORYBOX_VIDEO_WORKER_URL + immich.env already configured on FlightSim
+$env:MEMORYBOX_P2_I1_PERSON_NAME = "Peggy"   # optional; default Peggy
+$env:MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID = "<hvrt-video-id-with-peggy>"
+$env:MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID = "<hvrt-video-id-without-peggy>"
+$env:MEMORYBOX_P2_I1_HVRT_FACE_ID = "<hvrt-face-id>"  # or teach via Review first
+python -m memorybox prove-p2-i1 --flightsim
+```
 
 ## UI mockups
 

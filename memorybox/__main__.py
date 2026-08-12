@@ -137,7 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     p_prove_p2i1.add_argument(
         "--flightsim",
         action="store_true",
-        help="FlightSim final gate (MEMORYBOX_P1_RUNTIME_HOST=1 + real Immich/HVRT)",
+        help=(
+            "FlightSim ACCEPTED gate: MEMORYBOX_P1_RUNTIME_HOST=1, real Immich + real HVRT "
+            "(fakes/degraded fail). Also set MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID, "
+            "MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID; optional PERSON_NAME/PERSON_ID/HVRT_FACE_ID"
+        ),
     )
     p_export = sub.add_parser(
         "export",
