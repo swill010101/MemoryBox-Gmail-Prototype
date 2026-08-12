@@ -42,7 +42,7 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)
 - Approved planning direction: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
-- **P2-I1 definition (review):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
-- Prior shell-first draft: [docs/product/MBRM-001_P2_ROADMAP.md](docs/product/MBRM-001_P2_ROADMAP.md)
+- **P2-I1 definition (LOCKED):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
+- Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
-**No code** until P2-I1 definition is approved and build is authorized. First increment: **Show me Peggy**.
+**No code** until explicit **“Build P2-I1”** authorization.

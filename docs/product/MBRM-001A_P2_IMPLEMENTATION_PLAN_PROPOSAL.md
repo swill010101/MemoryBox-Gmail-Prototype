@@ -1,9 +1,10 @@
 # MBRM-001A — P2 Implementation Plan
 
-**Status:** Planning direction **approved** (founder 2026-08-12), subject to locked decisions below · **Docs only — no build authorization**  
+**Status:** Planning direction **approved** · P2-I1 definition **LOCKED** · **Date:** 2026-08-12  
 **Locked inputs:** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · [`docs/source/`](../source/)  
-**Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md) (shell-first draft retained historically)  
-**Next doc:** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md) — for founder review · **still no code** until that definition is approved and build is authorized.
+**Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
+**P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
+**Gate:** **No code** until explicit **“Build P2-I1”** authorization.
 
 ## 0. First-increment verdict (confirmed)
 
@@ -22,7 +23,10 @@ Shell, Archive Health, Settings, and high-volume timeline stay in P2 but **after
 | 1 | Duplicate EVSs | **Lower-number EVS is canonical.** Higher duplicate (EVS-183..202) is a **historical alias**, not a separate acceptance scenario. |
 | 2 | EVS-020 vs 202 | **EVS-020 governs** → phase **P2**. EVS-202 is alias only. |
 | 3 | I1 “moment” | **Face-appearance timeslot only** (not speech passages). |
-| 4 | New-Person video reprocessing | **Entire eligible existing video archive** enters a **durable, persistent recognition work queue**. Prioritization/background scheduling allowed. “Eligible” **≠** a flag alone — Person must be **placed into the queue** covering applicable source videos, with **processing state observable to the owner**. |
+| 4 | New-Person video reprocessing | **Full eligible-archive** durable queue; excluded/failed videos visible with reason; later exemplar changes may be targeted/incremental only if equivalent coverage is provable; not flag-only |
+| 4a | Eligible video | Configured/healthy source + technically processable by supported pipeline |
+| 4b | Recognition authority | Auto-associate at system confidence; **owner-confirmed/corrected outranks**; preserve method, confidence, exemplars, confirmation state |
+| 4c | I1 acceptance corpus | Clear Peggy appearance; no-Peggy video; ideally ambiguous; correction case; enough videos for full-library queue demo |
 | 5 | Immich face assets | **Required in I1** as usable, provenance-preserved face evidence. |
 | 6 | HVRT readiness | **Real timeslot recognition required** for I1 acceptance. Degraded-provider UX alone **does not pass**. |
 | 7 | TASK-004 inventory | Keep in **P2-I3**, unless a **minimal** piece is technically necessary to expose I1 sync/reprocessing status. |
@@ -229,7 +233,7 @@ Appendix A — canonical homes + alias table.
 
 ### E. First authorized build
 
-**P2-I1 Show me Peggy** — definition drafted in [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md). **No code** until that definition is founder-approved and build is explicitly authorized.
+**P2-I1 Show me Peggy** — definition **LOCKED**: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md). **No code** until explicit **“Build P2-I1”**.
 
 ---
 
