@@ -390,12 +390,20 @@ def _prove_p2_i1_flightsim() -> dict[str, Any]:
     )
     _check(
         "p2i1_flightsim_corpus_env",
-        bool(positive_video) and bool(negative_video),
+        bool(positive_video)
+        and bool(negative_video)
+        and "<" not in positive_video
+        and ">" not in positive_video
+        and "<" not in negative_video
+        and ">" not in negative_video
+        and positive_video != negative_video,
         checks,
         problems,
         detail=(
-            "set MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID and MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID "
-            f"(got positive={positive_video!r} negative={negative_video!r})"
+            "set real HVRT video external ids (not <placeholders>): "
+            "MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID and MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID "
+            f"(got positive={positive_video!r} negative={negative_video!r}). "
+            "List ids via GET http://127.0.0.1:8791/videos after starting the worker."
         ),
     )
 
