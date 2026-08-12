@@ -1,10 +1,11 @@
 # MBBS-P2 Increment 1 — Show me Peggy (Person-in-Media Vertical)
 
-**Status:** **LOCKED** (founder clarifications 2026-08-12) · Final planning baseline for P2-I1  
+**Status:** **BUILD AUTHORIZED** (founder 2026-08-12: “approved to build”) · Definition **LOCKED**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I1 clarifications below  
-**Gate:** **No build / no code** until explicit authorization: **“Build P2-I1”**.
-
+**CLI prove:** `python -m memorybox prove-p2-i1` (harness) · `prove-p2-i1 --flightsim` on P1 runtime  
+**APIs:** `POST /people/sync/immich` · `GET /recognition/queue` · `POST /recognition/queue/process` · `POST /recognition/appearances/correct`  
+**Gate:** Implementation in progress under Build P2-I1. FlightSim owner acceptance still required for ACCEPTED.
 ## 0. Product intent
 
 Deliver the first meaningful P2 proof:
@@ -245,6 +246,6 @@ Known residuals (e.g. queue still draining) must be explicit and must not hide m
 | MBRM-001A planning direction | Approved |
 | Founder I1 clarifications (§1) | Locked into this definition |
 | **This I1 definition** | **LOCKED — final planning baseline** |
-| Build / code / migrations / FlightSim implement | **Blocked** until explicit **“Build P2-I1”** |
+| Build / code / migrations / FlightSim implement | **AUTHORIZED** (founder “approved to build” 2026-08-12) — FlightSim acceptance still pending |
 
-Do not start implementation, spikes that change product behavior, or FlightSim feature work from this document alone. Wait for **Build P2-I1**.
+Implementation tracks this definition. Mark **ACCEPTED** only after FlightSim owner gate passes.
