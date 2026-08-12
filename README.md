@@ -42,7 +42,12 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)
 - Approved planning direction: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
-- **P2-I1 definition (LOCKED):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
+- **P2-I1 definition (LOCKED, build authorized):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
-**No code** until explicit **“Build P2-I1”** authorization.
+**Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1`  
+**FlightSim:** `prove-p2-i1 --flightsim` with `MEMORYBOX_P1_RUNTIME_HOST=1` + real Immich/HVRT.
+
+## UI mockups
+
+Experience / walkthrough / prototype screens from earlier agent work live in [`mockups/`](mockups/README.md) (start at [`mockups/index.html`](mockups/index.html)).

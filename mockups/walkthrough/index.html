@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Feedback Walkthrough</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="walk.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">MemoryBox</div>
+      <div class="meta">Feedback Walkthrough · shoppable story, screen by screen · not final UI</div>
+    </div>
+    <nav>
+      <a href="../experience-boards/index.html">Boards</a>
+      <a href="../prototype/index.html">Prototype 1</a>
+      <a href="index.html" aria-current="page">Walkthrough</a>
+    </nav>
+  </header>
+
+  <header class="intro">
+    <p class="eyebrow">MB-FW-001 · Show folks this</p>
+    <h1>Step through the story</h1>
+    <p>Each panel is a product moment — typed questions, microphone, narrative, evidence counts (not files). Continuity through one archive.</p>
+    <nav class="rail" aria-label="Panels">
+      <a href="#w01">01 Ask</a>
+      <a href="#w02">02 Spoken</a>
+      <a href="#w03">03 Christmas</a>
+      <a href="#w04">04 Photo</a>
+      <a href="#w05">05 Teach</a>
+      <a href="#w06">06 Grandpa</a>
+      <a href="#w07">07 Presence</a>
+      <a href="#w08">08 Listen</a>
+      <a href="#w09">09 Who is she?</a>
+      <a href="#w10">10 Sue</a>
+      <a href="#w11">11 Watch</a>
+      <a href="#w12">12 Family</a>
+      <a href="#w13">13 Next</a>
+    </nav>
+  </header>
+
+  <!-- 01 -->
+  <section class="panel" id="w01">
+    <div class="panel-head">
+      <span class="step">01 · You type</span>
+      <p class="bridge">You open MemoryBox. You ask about Christmas.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>MemoryBox</span></div>
+      <div class="body">
+        <p class="brand-mark">MemoryBox</p>
+        <h2 class="invite">What would you like to explore today?</h2>
+        <div class="hints">
+          <span class="hint">Tell me about Grandpa</span>
+          <span class="hint">What have I forgotten?</span>
+        </div>
+        <div class="composer">
+          <button class="mic" type="button" aria-label="Speak" title="Speak">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <div class="typed">Tell me about Christmas at our house</div>
+          <span class="send">Ask</span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><span></span><a href="#w02">Next →</a></div>
+  </section>
+
+  <!-- 02 mic / spoken path option shown as alternate beat -->
+  <section class="panel" id="w02">
+    <div class="panel-head">
+      <span class="step">02 · Or you speak</span>
+      <p class="bridge">Same question. Microphone — not a transcript lecture.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Listening…</span></div>
+      <div class="body">
+        <p class="brand-mark">MemoryBox</p>
+        <h2 class="invite">What would you like to explore today?</h2>
+        <div class="composer">
+          <button class="mic live" type="button" aria-label="Listening">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <div class="typed" style="color:#8a958e;font-style:italic">Listening…</div>
+          <span class="send" style="opacity:0.45">Ask</span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w01">← Prev</a><a href="#w03">Next →</a></div>
+  </section>
+
+  <!-- 03 rich christmas -->
+  <section class="panel" id="w03">
+    <div class="panel-head">
+      <span class="step">03 · Christmas reconstructed</span>
+      <p class="bridge">You asked about Christmas. The archive answered — counts and narrative, not a file list.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Christmas · Oak Street</span></div>
+      <div class="body">
+        <span class="bubble you-label">You</span>
+        <div class="bubble">Tell me about Christmas at our house</div>
+        <span class="tag">Narrative</span>
+        <p class="narrative">
+          Christmas week, 2014, at the Oak Street house.
+          Peggy is in the photographs. The tree is lit in the living room.
+        </p>
+        <p class="note">Year and place look solid — mail, calendar, and photos agree.</p>
+        <div class="counts" aria-label="Evidence summary">
+          <div class="count"><strong>129</strong><span>photos</span></div>
+          <div class="count"><strong>4</strong><span>emails</span></div>
+          <div class="count"><strong>5</strong><span>text messages</span></div>
+          <div class="count"><strong>1</strong><span>calendar week</span></div>
+        </div>
+        <div class="photos">
+          <div class="ph p-living"><span>Living room</span></div>
+          <div class="ph p-tree"><span>Tree</span></div>
+          <div class="ph p-kitchen"><span>Kitchen</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w02">← Prev</a><a href="#w04">Next →</a></div>
+  </section>
+
+  <!-- 04 single photo -->
+  <section class="panel" id="w04">
+    <div class="panel-head">
+      <span class="step">04 · One photograph</span>
+      <p class="bridge">Among those 129 photos, one living-room frame still has no day.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Living room · 2014?</span></div>
+      <div class="body">
+        <div class="ph hero p-living wide" style="width:100%"><span>Living room</span></div>
+        <div class="card">
+          <span class="tag">Question</span>
+          <p class="q">Do you remember about when this was taken?</p>
+          <div class="actions">
+            <span class="btn">Around 2014</span>
+            <span class="btn ghost">Not sure yet</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w03">← Prev</a><a href="#w05">Next →</a></div>
+  </section>
+
+  <!-- 05 taught -->
+  <section class="panel" id="w05">
+    <div class="panel-head">
+      <span class="step">05 · You teach</span>
+      <p class="bridge">You answered. MemoryBox remembers — linked to the Christmas photos.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Saved</span></div>
+      <div class="body">
+        <span class="bubble you-label">You</span>
+        <div class="bubble">Around 2014</div>
+        <span class="tag">Saved</span>
+        <p class="narrative">Thank you. I’ll remember that — about 2014.</p>
+        <p class="note">Linked to the living-room photographs from that Christmas.</p>
+        <div class="counts" style="grid-template-columns:repeat(2,1fr)">
+          <div class="count"><strong>129</strong><span>photos · year linked</span></div>
+          <div class="count"><strong>✓</strong><span>your teaching</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w04">← Prev</a><a href="#w06">Next →</a></div>
+  </section>
+
+  <!-- 06 grandpa ask -->
+  <section class="panel" id="w06">
+    <div class="panel-head">
+      <span class="step">06 · Next curiosity</span>
+      <p class="bridge">Christmas rooms held more people. You ask about Grandpa.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>MemoryBox</span></div>
+      <div class="body">
+        <p class="brand-mark">MemoryBox</p>
+        <h2 class="invite">What would you like to explore next?</h2>
+        <div class="composer">
+          <button class="mic" type="button" aria-label="Speak">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <div class="typed">Tell me about Grandpa</div>
+          <span class="send">Ask</span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w05">← Prev</a><a href="#w07">Next →</a></div>
+  </section>
+
+  <!-- 07 grandpa presence -->
+  <section class="panel" id="w07">
+    <div class="panel-head">
+      <span class="step">07 · Grandpa</span>
+      <p class="bridge">Presence from the archive — photos and papers, not a CRM card.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Grandpa</span></div>
+      <div class="body">
+        <span class="bubble you-label">You</span>
+        <div class="bubble">Tell me about Grandpa</div>
+        <span class="tag">Narrative</span>
+        <p class="narrative">
+          Grandpa appears in photographs from the porch, the workshop, and family gatherings.
+          Short letters. Military papers. A voice recording from 1998.
+        </p>
+        <div class="counts">
+          <div class="count"><strong>86</strong><span>photos</span></div>
+          <div class="count"><strong>12</strong><span>letters</span></div>
+          <div class="count"><strong>3</strong><span>papers</span></div>
+          <div class="count"><strong>1</strong><span>recording</span></div>
+        </div>
+        <div class="photos">
+          <div class="ph p-porch"><span>Porch</span></div>
+          <div class="ph p-shop"><span>Workshop</span></div>
+          <div class="ph p-family"><span>Family</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w06">← Prev</a><a href="#w08">Next →</a></div>
+  </section>
+
+  <!-- 08 silence / listen -->
+  <section class="panel" id="w08">
+    <div class="panel-head">
+      <span class="step">08 · Listen</span>
+      <p class="bridge">You play the 1998 recording. Nothing else on screen.</p>
+    </div>
+    <div class="phone">
+      <div class="status" style="background:#0a0c0b;color:#8a958e"><span class="mode" style="color:#a68b4b">Guided Exploration</span><span>Grandpa · 1998</span></div>
+      <div class="body" style="padding:0">
+        <div class="listening">
+          <button class="mic live" type="button" aria-label="Playing">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <div class="wave" aria-hidden="true"></div>
+          <h3>Grandpa · 1998</h3>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w07">← Prev</a><a href="#w09">Next →</a></div>
+  </section>
+
+  <!-- 09 who is she -->
+  <section class="panel" id="w09">
+    <div class="panel-head">
+      <span class="step">09 · Who is she?</span>
+      <p class="bridge">After the recording — a face with Grandpa the archive does not know.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Grandpa · photographs</span></div>
+      <div class="body">
+        <div class="ph hero p-sue wide" style="width:100%"><span>With Grandpa</span></div>
+        <div class="card">
+          <div class="face-row">
+            <div class="face" aria-hidden="true"></div>
+            <div>
+              <span class="tag">Question</span>
+              <p class="q">I don’t know this person with Grandpa. Can you tell me who she is?</p>
+            </div>
+          </div>
+          <div class="composer" style="margin-top:0.25rem">
+            <button class="mic" type="button" aria-label="Speak">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+            </button>
+            <div class="typed">Aunt Sue</div>
+            <span class="send">Save</span>
+          </div>
+          <div class="actions" style="margin-top:0.65rem">
+            <span class="btn soft">Not now</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w08">← Prev</a><a href="#w10">Next →</a></div>
+  </section>
+
+  <!-- 10 sue bloom -->
+  <section class="panel" id="w10">
+    <div class="panel-head">
+      <span class="step">10 · Sue</span>
+      <p class="bridge">You named her. The archive connects the photographs.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Sue · linked</span></div>
+      <div class="body">
+        <span class="bubble you-label">You</span>
+        <div class="bubble">Aunt Sue</div>
+        <p class="bloom-num">183 photographs</p>
+        <p class="note">Sue with Grandpa — picnic, porch, winter.</p>
+        <div class="mosaic" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w09">← Prev</a><a href="#w11">Next →</a></div>
+  </section>
+
+  <!-- 11 watch -->
+  <section class="panel" id="w11">
+    <div class="panel-head">
+      <span class="step">11 · Pocket watch</span>
+      <p class="bridge">Grandpa’s papers lived in a tin. The same tin held Dad’s watch.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>Artifact</span></div>
+      <div class="body">
+        <div class="watch" aria-hidden="true"></div>
+        <span class="tag">Artifact</span>
+        <p class="narrative">Dad’s watch. From the war. Kept in the tin with the papers.</p>
+        <div class="counts" style="grid-template-columns:repeat(3,1fr)">
+          <div class="count"><strong>1</strong><span>photograph</span></div>
+          <div class="count"><strong>Dad</strong><span>linked</span></div>
+          <div class="count"><strong>War</strong><span>service years</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w10">← Prev</a><a href="#w12">Next →</a></div>
+  </section>
+
+  <!-- 12 family -->
+  <section class="panel" id="w12">
+    <div class="panel-head">
+      <span class="step">12 · Family night</span>
+      <p class="bridge">Christmas, Grandpa, Sue, and the watch are connected. The family looks together.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Family Mode</span><span>Shared</span></div>
+      <div class="body">
+        <div class="family-row" aria-hidden="true">
+          <div class="sil sm"></div>
+          <div class="sil"></div>
+          <div class="sil lg"></div>
+          <div class="sil"></div>
+          <div class="sil sm"></div>
+        </div>
+        <div class="photos two">
+          <div class="ph p-living wide"><span>Christmas</span></div>
+          <div class="ph p-sue wide"><span>Sue &amp; Grandpa</span></div>
+        </div>
+        <p class="narrative">Christmas photographs on the wall. Three generations in the room.</p>
+        <p class="note">Same archive. Wonder first.</p>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w11">← Prev</a><a href="#w13">Next →</a></div>
+  </section>
+
+  <!-- 13 next ask -->
+  <section class="panel" id="w13">
+    <div class="panel-head">
+      <span class="step">13 · Another question</span>
+      <p class="bridge">The door stays open. Success: someone asks again.</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span class="mode">Guided Exploration</span><span>MemoryBox</span></div>
+      <div class="body">
+        <p class="brand-mark">MemoryBox</p>
+        <h2 class="invite">What would you like to explore today?</h2>
+        <div class="hints">
+          <span class="hint">Sue and Grandpa at the lake</span>
+          <span class="hint">Mom laughing</span>
+          <span class="hint">What have I forgotten?</span>
+        </div>
+        <div class="composer">
+          <button class="mic" type="button" aria-label="Speak">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <div class="typed" style="color:#8a958e">Ask another question…</div>
+          <span class="send">Ask</span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-row"><a href="#w12">← Prev</a><a href="#w01">Back to start</a></div>
+  </section>
+
+  <footer class="footer-note">
+    <p><strong>For feedback sessions:</strong> walk panels 01→13. Ask: does this feel like a museum curator — or software? Does each screen answer why this, why it matters, what next?</p>
+    <p>Evidence shows as <em>counts and narrative</em>, never a file browser. Voice is a microphone, not a paragraph about voice.</p>
+    <p><a href="../experience-boards/index.html">Feeling boards</a> · <a href="../prototype/index.html">Prototype 1 scenes</a></p>
+  </footer>
+</body>
+</html>
