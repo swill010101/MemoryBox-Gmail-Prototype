@@ -17,6 +17,23 @@ Open [`index.html`](index.html) for links to:
 
 Companion notes: [`MB-EX-001_Experience_Mockups.md`](MB-EX-001_Experience_Mockups.md).
 
+## PNG pack for P2 UX
+
+All P1 screens + these mockup screens as PNGs (**86 files**) are packed in one ZIP for download from this agent run:
+
+**`/opt/cursor/artifacts/ux-png-pack/MemoryBox_P1_and_Mockup_Screens_PNG.zip`** (~87 MB)
+
+Contents:
+
+| Folder | What’s inside |
+|--------|----------------|
+| `01_p1_screens` | Ask, People, Library, Review, Story, Journal, Artifact, Guided Capture, Export, Status (+ HVRT viewer/review) |
+| `02_mockups_experience` | EX-01–EX-08 + gallery |
+| `03_mockups_experience_boards` | 10 boards + full page |
+| `04_mockups_prototype_scenes` | Prototype 1 scene captures |
+| `05`–`07` | Walkthrough / demo / hub HTML captures |
+| `08`–`09` | Existing walkthrough + silent-demo panel PNGs |
+
 ## Design chat that shaped these images
 
 Pertinent prompts / decisions from that agent (architecture/docs-only stretches omitted):
