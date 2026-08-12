@@ -19,9 +19,12 @@ Companion notes: [`MB-EX-001_Experience_Mockups.md`](MB-EX-001_Experience_Mockup
 
 ## PNG pack for P2 UX
 
-All P1 screens + these mockup screens as PNGs (**86 files**) are packed in one ZIP for download from this agent run:
+All P1 screens + these mockup screens as PNGs (**86 files**) in one ZIP:
 
-**`/opt/cursor/artifacts/ux-png-pack/MemoryBox_P1_and_Mockup_Screens_PNG.zip`** (~87 MB)
+- **ZIP (download this):** [`/workspace/MemoryBox_P1_and_Mockup_Screens_PNG.zip`](../MemoryBox_P1_and_Mockup_Screens_PNG.zip) (~87 MB)
+- **Unpacked folder:** [`/workspace/ux-png-pack/`](../ux-png-pack/) (same PNGs, browsable in the IDE)
+
+Both are local workspace artifacts (gitignored), not committed to the repo.
 
 Contents:
 
