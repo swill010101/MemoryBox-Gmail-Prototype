@@ -4,12 +4,13 @@
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX):** [MBUX-001 v0.4 I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md) — where more specific, the addendum governs UX detail  
-**Visual anchor:** Mixed-Media Find mockup (hierarchy / density / calm aesthetic — **not** pixel-perfect spec)  
+**Visual hierarchy anchor:** Mixed-Media Find mockup (density / calm aesthetic — **not** pixel-perfect spec)  
+**Interaction reference (binding):** The **current Explore screen** (`/explore/ui`, branch implementation as of founder confirmation 2026-08-13) is the **accepted interaction reference for I4**. Implementation may improve underneath (providers, data, performance, honesty). **Do not redesign the experience** while wiring it up.  
 **Depends on:** P2-I1 (moments + identity correction) · P2-I2 (shell/context) · P2-I3 (honest coverage / undated)  
 **CLI prove (assist only):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
 **ACCEPTED gate:** §8 + §8.1 manual cases. Structural prove does not equal ACCEPTED.
 
-**Founder direction:** Combined I4 direction approved with clarifications. Top-level learn destination labeled **Review & Learn** (founder preference). **Build authorized** against this locked text.
+**Founder direction:** Combined I4 direction approved with clarifications. Top-level learn destination labeled **Review & Learn**. **Build authorized.** Current on-screen Explore interaction is the reference — wire/improve implementation without redesigning the UX.
 
 ---
 
@@ -217,13 +218,14 @@ Gesture implementation may choose the technically appropriate model; the user me
 
 ---
 
-## 3. Implementation discipline (when build is later authorized against LOCKED text)
+## 3. Implementation discipline (when wiring / improving under the locked experience)
 
-1. Reuse working backend/domain/provider behavior; do not rewrite services merely to match visuals.  
-2. Honor state hierarchy §1.1; separate gallery presentation from domain/timeline.  
-3. Do not hard-code demo fixtures into product logic.  
-4. Do not implement the mockup as static cards — synchronized interaction is required.  
-5. If a constraint makes an accepted §8 / §8.1 behavior materially impractical: **stop and report** constraint, affected behavior, smallest architectural change, tradeoff — do **not** silently redesign UX.
+1. **Do not redesign** the Explore interaction, layout hierarchy, or control model relative to the **accepted interaction reference** (current Explore screen). Wire live data and harden behavior underneath it.  
+2. Reuse working backend/domain/provider behavior; do not rewrite services merely to change visuals.  
+3. Honor state hierarchy §1.1; separate gallery presentation from domain/timeline.  
+4. Do not hard-code demo fixtures into product logic.  
+5. Synchronized interaction is required — static mock cards are not enough.  
+6. If a constraint makes an accepted §8 / §8.1 behavior materially impractical: **stop and report** constraint, affected behavior, smallest architectural change, tradeoff — do **not** silently redesign UX.
 
 ---
 
@@ -263,8 +265,9 @@ Gesture implementation may choose the technically appropriate model; the user me
 | Source | Role in I4 |
 |--------|------------|
 | MBUX-001 v0.4 addendum | UX authority for Mixed-Media Find / Explore |
-| Mixed-Media Find mockup | Visual hierarchy / density / calm aesthetic anchor |
-| Founder clarifications 2026-08-13 | State hierarchy, Reset, undated, density, scrub, correction-aware restore, Teach proof, nav label preference |
+| Mixed-Media Find mockup | Visual hierarchy / density / calm aesthetic (not pixel spec) |
+| **Current Explore screen** | **Accepted I4 interaction reference** — do not redesign while wiring |
+| Founder clarifications 2026-08-13 | State hierarchy, Reset, undated, density, scrub, correction-aware restore, Teach proof, Review & Learn |
 | §8 / §8.1 (this doc) | Authoritative ACCEPTED pass/fail |
 | P2-I1 | Moments, jump `t=`, **identity correction path for Teach proof** |
 | P2-I2 | Shell / context stack |
@@ -391,11 +394,12 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | MBRM-001A I3→I4 | Approved direction |
 | P2-I1..I3 | **ACCEPTED** |
 | MBUX-001 v0.4 | Approved UX direction (recorded) |
-| Mixed-Media Find mockup | Visual hierarchy anchor (not pixel spec) |
+| Mixed-Media Find mockup | Visual hierarchy / density / calm aesthetic (not pixel spec) |
+| **Current Explore screen** | **Accepted I4 interaction reference** (founder 2026-08-13) |
 | Combined I4 direction | **Approved** with clarifications |
 | **This revised definition** | **LOCKED** |
 | Teach vs Review & Learn label | **Review & Learn** (locked) |
 | Build | **AUTHORIZED** (2026-08-13) |
 | FlightSim ACCEPTED | **PENDING** — §8 + §8.1 |
 
-Build is authorized against this locked text. Do **not** mark ACCEPTED until §8 and §8.1 pass on FlightSim.
+Build is authorized against this locked text. **Do not redesign** the Explore experience while wiring implementation underneath it. Do **not** mark ACCEPTED until §8 and §8.1 pass on FlightSim.

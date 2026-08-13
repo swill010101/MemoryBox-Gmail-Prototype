@@ -1,11 +1,15 @@
 /**
  * MemoryBox P2-I4 — Mixed-Media Exploration
  *
- * Separated state layers (MBUX-001 / I4 directive):
- *   domain  — query, chips, type filter, result membership
- *   timeline — result extent, active range, playhead, precision
+ * INTERACTION REFERENCE (founder): the current Explore screen is the accepted
+ * I4 interaction reference. Improve implementation underneath; do NOT redesign
+ * the experience while wiring live data / providers.
+ *
+ * Separated state layers (MBUX-001 / locked I4 definition):
+ *   domain  — query, chips, type filter → eligible result set
+ *   timeline — dated portion of eligible set; active range; playhead
  *   gallery  — density (presentation only), scroll position
- *   modal    — open item; close restores explore snapshot
+ *   modal    — open item; close restores explore snapshot (+ correction consequences)
  *
  * Typed Ask commands and future STT must manipulate the same domain/timeline state.
  */
