@@ -2,8 +2,11 @@
 
 ## Version 0.4 — I4 Mixed-Media Exploration Addendum
 
-**Status:** Approved UX direction for current P2 implementation.  
-**Supplements:** MBUX-001 v0.3. Where this addendum is more specific about the Mixed-Media Find / Explore experience, **this addendum governs**.  
+> **Historical / absorbed (2026-08-13).** Full **[MBUX-001 v0.4](MBUX-001_v0.4.md)** (DOCX master in `docs/source/`) now incorporates these exploration patterns in §22. Prefer the full baseline. This file is retained for I4 history and deep links.  
+> Capability pairing: [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · Planning delta: [MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)
+
+**Status:** Absorbed into MBUX-001 v0.4 full baseline · kept for I4 history.  
+**Originally supplemented:** MBUX-001 v0.3.  
 **Recorded in-repo:** 2026-08-13 (founder-provided text; formatting only).
 
 ---

@@ -3,8 +3,9 @@
 **Status:** **LOCKED** · Combined functionality + UX · Founder clarifications incorporated · **BUILD AUTHORIZED** (2026-08-13) · **Not ACCEPTED** until §8 + §8.1 pass on FlightSim  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
-**Authority (UX):** [MBUX-001 v0.4 I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md) — where more specific, the addendum governs UX detail  
-**Visual hierarchy anchor:** Mixed-Media Find mockup (density / calm aesthetic — **not** pixel-perfect spec)  
+**Authority (UX):** [MBUX-001 v0.4](MBUX-001_v0.4.md) full baseline (§22 exploration patterns) · historical addendum: [I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)  
+**Authority (capabilities):** [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) — especially CAP-P2-001 / 025 / 026; planning delta: [MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
+**Visual hierarchy anchor:** Mixed-Media Find mockup (density / calm aesthetic — **not** pixel-perfect spec) · drill-down SoT: [Shared Evidence Viewer + preview inventory](mockups/P2_SHARED_EVIDENCE_VIEWER_AND_PREVIEW.md)  
 **Interaction reference (binding):** The **current Explore screen** (`/explore/ui`, branch implementation as of founder confirmation 2026-08-13) is the **accepted interaction reference for I4**. Implementation may improve underneath (providers, data, performance, honesty). **Do not redesign the experience** while wiring it up.  
 **Depends on:** P2-I1 (moments + identity correction) · P2-I2 (shell/context) · P2-I3 (honest coverage / undated)  
 **CLI prove (assist only):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
@@ -273,7 +274,7 @@ Gesture implementation may choose the technically appropriate model; the user me
 
 | Source | Role in I4 |
 |--------|------------|
-| MBUX-001 v0.4 addendum | UX authority for Mixed-Media Find / Explore |
+| MBUX-001 v0.4 full | UX authority for Mixed-Media Find / Explore (§22); addendum historical |
 | Mixed-Media Find mockup | Visual hierarchy / density / calm aesthetic (not pixel spec) |
 | **Current Explore screen** | **Accepted I4 interaction reference** — do not redesign while wiring |
 | Founder clarifications 2026-08-13 | State hierarchy, Reset, undated, density, scrub, correction-aware restore, Teach proof, Review & Learn |
@@ -404,7 +405,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 |------|--------|
 | MBRM-001A I3→I4 | Approved direction |
 | P2-I1..I3 | **ACCEPTED** |
-| MBUX-001 v0.4 | Approved UX direction (recorded) |
+| MBUX-001 v0.4 full + MBCAP-001 v0.2 | Approved UX + capability catalogs (ingested 2026-08-13) |
 | Mixed-Media Find mockup | Visual hierarchy / density / calm aesthetic (not pixel spec) |
 | **Current Explore screen** | **Accepted I4 interaction reference** (founder 2026-08-13) |
 | Combined I4 direction | **Approved** with clarifications |

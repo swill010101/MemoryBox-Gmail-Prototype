@@ -2,9 +2,10 @@
 
 **Status:** Planning direction **approved** · P2-I1 definition **LOCKED** · **Date:** 2026-08-12  
 **Locked inputs:** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · [`docs/source/`](../source/)  
+**Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** **No code** until explicit **“Build P2-I1”** authorization.
+**Gate:** Increment builds require explicit definition + build authorization (I1–I3 ACCEPTED; I4 build authorized separately).
 
 ## 0. First-increment verdict (confirmed)
 
@@ -83,7 +84,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I1** | Show me Peggy (Person-in-Media Vertical) | F+E | **ACCEPTED** (2026-08-13) |
 | **P2-I2** | Product Shell & Context Maturation | U | **ACCEPTED** (2026-08-13) |
 | **P2-I3** | Archive Health & Provider Honesty | U+A | **ACCEPTED** (2026-08-13) |
-| **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **DRAFT** — MBUX-001 v0.4 governs UX; awaiting approval |
+| **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **BUILD AUTHORIZED** / not ACCEPTED — [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md); UX: MBUX-001 v0.4 §22; caps: MBCAP CAP-P2-001/025/026 |
 | **P2-I5** | Universal Person Surfaces | F+U | Rest of TASK-001 |
 | **P2-I6** | Kinship Inference | A | TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | |
