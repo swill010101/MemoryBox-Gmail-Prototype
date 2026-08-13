@@ -2182,7 +2182,7 @@ def build_status_summary() -> dict[str, Any]:
         },
     }
 
-    return {
+    payload = {
         "ok": True,
         "calculated_at": calculated_at,
         "default_tab": "archive_summary",
@@ -2229,5 +2229,9 @@ def build_status_summary() -> dict[str, Any]:
             "ask": "/ask/ui",
             "export": "/export/ui",
             "status": "/status/ui",
+            "settings": "/settings/ui",
         },
     }
+    from memorybox.status.archive_health import enrich_status_for_p2_i3
+
+    return enrich_status_for_p2_i3(payload)

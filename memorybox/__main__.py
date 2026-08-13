@@ -156,6 +156,18 @@ def main(argv: list[str] | None = None) -> int:
             "plus prove-p2-i1 --flightsim"
         ),
     )
+    p_prove_p2i3 = sub.add_parser(
+        "prove-p2-i3",
+        help="P2-I3 Archive Health & Provider Honesty acceptance prove",
+    )
+    p_prove_p2i3.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim ACCEPTED gate: MEMORYBOX_P1_RUNTIME_HOST=1, live Archive Health "
+            "at MEMORYBOX_BASE_URL, plus prove-p2-i1 and prove-p2-i2 --flightsim"
+        ),
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -340,6 +352,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.shell.p2_i2_acceptance import prove_p2_i2
 
         payload = prove_p2_i2(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i3":
+        from memorybox.status.p2_i3_acceptance import prove_p2_i3
+
+        payload = prove_p2_i3(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

@@ -1,12 +1,12 @@
 # MBBS-P2 Increment 3 — Archive Health & Provider Honesty
 
-**Status:** **LOCKED** (founder decisions 2026-08-13) · **No build** until explicit “Build P2-I3” authorization  
+**Status:** **BUILD AUTHORIZED** (Tom 2026-08-13: “build it”) · Definition **LOCKED** · **Not ACCEPTED** until FlightSim owner gate (§8)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A sequencing · **P2-I1 ACCEPTED** · **P2-I2 ACCEPTED**  
 **Depends on:** P2-I1 ACCEPTED · P2-I2 ACCEPTED (Archive Health entry already exists under I2 shell)  
 **Absorbs:** **TASK-P1P2-004** Immich Photos inventory  
-**CLI prove (proposed):** `python -m memorybox prove-p2-i3` · `prove-p2-i3 --flightsim`  
-**Gate:** Build only after explicit authorization. Mark **ACCEPTED** only after FlightSim owner gate (§8).
+**CLI prove:** `python -m memorybox prove-p2-i3` · `prove-p2-i3 --flightsim`  
+**Gate:** Mark **ACCEPTED** only after FlightSim owner gate (§8).
 
 ---
 
@@ -291,7 +291,9 @@ Implement prove only after build authorization.
 | P2-I1 | **ACCEPTED** |
 | P2-I2 | **ACCEPTED** (2026-08-13) |
 | Founder I3 decisions (§1 Q1–Q6 + rules A–D) | **LOCKED** (2026-08-13) |
-| **This I3 definition** | **LOCKED — awaiting explicit build authorization** |
-| Build / code / FlightSim implement | **NOT AUTHORIZED** until Tom says **Build P2-I3** |
+| **This I3 definition** | **LOCKED** |
+| Build authorization | **AUTHORIZED** (2026-08-13 — Tom: “build it”) |
+| Implementation | **IN PROGRESS** on `cursor/p2-iteration-roadmap-3061` |
+| FlightSim owner gate (`prove-p2-i3 --flightsim`) | **PENDING** |
 
-**No code for I3 until explicit build approval.**
+Build is authorized. Do **not** mark ACCEPTED until FlightSim gate passes.
