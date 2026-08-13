@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Export</title>
+  <style>
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a655c; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .ok { color: var(--accent); font-weight: 600; }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; word-break: break-all; }
+    pre {
+      background: #1c1a16;
+      color: #f3f0e8;
+      padding: 0.75rem;
+      overflow: auto;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Export</h1>
+  <p class="sub">Minimum viable exit package (format 1). Folder on disk is the source of truth. No Immich/HVRT library copy. No import-back.</p>
+
+  <section>
+    <h2 style="font-size:1rem;margin:0 0 0.5rem;">Destination</h2>
+    <p class="muted">Uses <code>MEMORYBOX_EXPORT_DIR</code> by default. Optionally override with an absolute path you choose (not hard-coded by MemoryBox).</p>
+    <label for="dest">Destination parent folder (optional override)</label>
+    <input id="dest" type="text" placeholder="Leave blank to use MEMORYBOX_EXPORT_DIR" />
+    <label><input id="zip" type="checkbox" /> Also write optional ZIP (derivative of the folder)</label>
+    <div>
+      <button id="startBtn" type="button">Start export</button>
+      <button id="refreshBtn" class="secondary" type="button">Refresh status</button>
+    </div>
+    <p id="configHint" class="muted"></p>
+  </section>
+
+  <section>
+    <h2 style="font-size:1rem;margin:0 0 0.5rem;">Status</h2>
+    <p id="statusLine">No export started.</p>
+    <p id="destLine" class="muted"></p>
+    <pre id="detail">{}</pre>
+  </section>
+</main>
+<script>
+  let jobId = null;
+  let timer = null;
+
+    async function loadConfig() {
+    const r = await fetch("/export/config");
+    const j = await r.json();
+    const el = document.getElementById("configHint");
+    const dest = document.getElementById("dest");
+    if (j.warning) {
+      el.innerHTML = "<span class='warn'>" + j.warning + "</span>";
+      if (!dest.value && j.export_dir) dest.value = j.export_dir;
+    } else if (j.export_dir_configured) {
+      el.textContent = "Configured MEMORYBOX_EXPORT_DIR → " + j.export_dir;
+    } else if (j.export_dir) {
+      el.textContent = "Default destination: " + j.export_dir + " (override with MEMORYBOX_EXPORT_DIR if needed).";
+      if (!dest.value) dest.placeholder = j.export_dir;
+    } else {
+      el.innerHTML = "<span class='warn'>MEMORYBOX_EXPORT_DIR is not set. Set it before exporting on FlightSim.</span>";
+    }
+  }
+
+  function render(job) {
+    const status = job.status || "?";
+    const line = document.getElementById("statusLine");
+    line.textContent = status.toUpperCase() + (job.message ? " — " + job.message : "");
+    line.className = status === "error" ? "warn" : (status === "done" ? "ok" : "");
+    const dest = job.export_root || job.destination || "";
+    document.getElementById("destLine").textContent = dest ? ("Destination: " + dest) : "";
+    document.getElementById("detail").textContent = JSON.stringify(job, null, 2);
+  }
+
+  async function refresh() {
+    if (!jobId) return;
+    const r = await fetch("/export/jobs/" + jobId);
+    const j = await r.json();
+    if (!r.ok) {
+      document.getElementById("statusLine").textContent = j.detail || "status failed";
+      document.getElementById("statusLine").className = "warn";
+      return;
+    }
+    render(j);
+    if (j.status === "done" || j.status === "error") {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+  }
+
+  document.getElementById("startBtn").onclick = async () => {
+    const dest = document.getElementById("dest").value.trim();
+    const make_zip = document.getElementById("zip").checked;
+    const body = { make_zip };
+    if (dest) body.destination = dest;
+    const r = await fetch("/export/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      document.getElementById("statusLine").textContent = j.detail || "start failed";
+      document.getElementById("statusLine").className = "warn";
+      document.getElementById("detail").textContent = JSON.stringify(j, null, 2);
+      return;
+    }
+    jobId = j.id;
+    render(j);
+    if (timer) clearInterval(timer);
+    timer = setInterval(refresh, 1000);
+  };
+
+  document.getElementById("refreshBtn").onclick = refresh;
+  loadConfig();
+</script>
+</body>
+</html>

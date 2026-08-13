@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Silent Demonstration (15 min)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #eef1ef;
+      --mist: #c5cec8;
+      --gold: #a68b4b;
+      --font-display: "Newsreader", Georgia, serif;
+      --font-body: "Figtree", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #050706; color: var(--paper); font-family: var(--font-body); }
+    a { color: var(--gold); text-decoration: none; }
+    .shell { min-height: 100%; display: flex; flex-direction: column; }
+    .bar {
+      display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
+      justify-content: space-between; align-items: baseline;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(8,10,9,0.9);
+    }
+    .brand { font-family: var(--font-display); font-size: 1.25rem; }
+    .meta { font-size: 0.75rem; color: var(--mist); max-width: 40rem; }
+    .nav { display: flex; gap: 0.85rem; font-size: 0.75rem; flex-wrap: wrap; }
+    .nav a { color: var(--mist); }
+    .stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      gap: 1rem;
+    }
+    .frame {
+      width: min(1100px, 100%);
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+      position: relative;
+    }
+    .frame img, .frame video {
+      width: 100%; height: 100%; object-fit: contain; display: block; background: #0c0f0d;
+    }
+    .frame video { object-fit: contain; }
+    .controls {
+      width: min(1100px, 100%);
+      display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center;
+      justify-content: space-between;
+    }
+    .controls .left, .controls .right { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    button {
+      font: inherit; font-size: 0.85rem; font-weight: 600;
+      padding: 0.55rem 0.95rem; border-radius: 999px; border: 0;
+      background: #1f4d3f; color: #fff; cursor: pointer;
+    }
+    button.ghost { background: transparent; border: 1px solid rgba(197,206,200,0.35); color: var(--mist); }
+    .progress {
+      width: min(1100px, 100%);
+      height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+    }
+    .progress > i { display: block; height: 100%; width: 0; background: var(--gold); }
+    .caption {
+      width: min(1100px, 100%);
+      font-family: var(--font-display);
+      font-size: clamp(1rem, 2.2vw, 1.25rem);
+      color: var(--mist);
+      font-style: italic;
+      min-height: 2.5rem;
+    }
+    .hint {
+      width: min(1100px, 100%);
+      font-size: 0.8rem; color: #8a958e; line-height: 1.45;
+    }
+    .mode-video .slideshow { display: none; }
+    .mode-slides .movie { display: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="bar">
+      <div>
+        <div class="brand">MemoryBox</div>
+        <div class="meta">Silent demonstration · ~15 minutes · no narrator required · demonstration, not interface</div>
+      </div>
+      <nav class="nav">
+        <a href="../walkthrough/rich.html">Rich panels</a>
+        <a href="../experience-boards/index.html">Boards</a>
+        <a href="index.html" style="color:var(--gold)">Demo</a>
+      </nav>
+    </header>
+
+    <main class="stage mode-video" id="app">
+      <div class="frame">
+        <video class="movie" id="movie" controls playsinline poster="media/c00-title.png">
+          <source src="media/MemoryBox-Silent-Demo-15min.mp4" type="video/mp4" />
+        </video>
+        <img class="slideshow" id="slide" alt="" />
+      </div>
+      <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+      <p class="caption" id="caption">Press Play. Watch in silence.</p>
+      <div class="controls">
+        <div class="left">
+          <button type="button" id="btn-play">Play demonstration</button>
+          <button type="button" class="ghost" id="btn-mode">Use timed slides instead</button>
+        </div>
+        <div class="right">
+          <button type="button" class="ghost" id="btn-prev" hidden>Previous</button>
+          <button type="button" class="ghost" id="btn-next" hidden>Next</button>
+        </div>
+      </div>
+      <p class="hint">
+        Pass/fail: when it ends, can a newcomer explain what MemoryBox is — without you speaking?
+        Full video is ~16 minutes (chapter cards + story panels). Timed-slides mode follows the same beat map.
+      </p>
+    </main>
+  </div>
+
+  <script>
+    const beats = [
+      { src: "media/c00-title.png", sec: 50, caption: "MemoryBox — a demonstration." },
+      { src: "media/c01-promise.png", sec: 45, caption: "It reconstructs evidence from personal memories." },
+      { src: "media/c02-not.png", sec: 40, caption: "Not a photo app. Not a chatbot. Not a filing cabinet." },
+      { src: "media/c03-ch-ask.png", sec: 28, caption: "Chapter one — you ask." },
+      { src: "media/s01-threshold.png", sec: 35, caption: "Conversation is the front door." },
+      { src: "media/s02-typed-ask.png", sec: 40, caption: "A human question — typed or spoken." },
+      { src: "media/c04-ch-understand.png", sec: 28, caption: "Chapter two — understanding arrives." },
+      { src: "media/s03-christmas.png", sec: 50, caption: "Narrative first. Counts, not a file dump." },
+      { src: "media/c05-evidence-line.png", sec: 32, caption: "Evidence is available — never invent." },
+      { src: "media/s04-evidence.png", sec: 45, caption: "Mail, texts, calendar — supporting the story." },
+      { src: "media/s05-living-room.png", sec: 42, caption: "One soft question. Partnership." },
+      { src: "media/c06-ch-teach.png", sec: 28, caption: "Chapter three — you teach." },
+      { src: "media/c06b-grandpa-ask.png", sec: 30, caption: "Curiosity continues." },
+      { src: "media/s06-grandpa.png", sec: 48, caption: "Presence — not a contact card." },
+      { src: "media/c07-ch-silence.png", sec: 30, caption: "Chapter four — silence." },
+      { src: "media/s07-silence.png", sec: 55, caption: "The story has the right of way." },
+      { src: "media/s08-who.png", sec: 48, caption: "Only after the breath — who is she?" },
+      { src: "media/c08-ch-name.png", sec: 28, caption: "Chapter five — one name." },
+      { src: "media/s09-bloom.png", sec: 45, caption: "The archive grows." },
+      { src: "media/c09-meaning.png", sec: 30, caption: "Meaning before inventory." },
+      { src: "media/s10-watch.png", sec: 42, caption: "An object becomes a life attached." },
+      { src: "media/c10-ch-family.png", sec: 28, caption: "Chapter six — shared light." },
+      { src: "media/s11-family.png", sec: 45, caption: "Same archive. A family together." },
+      { src: "media/s12-ask.png", sec: 40, caption: "The door stays open." },
+      { src: "media/c11-close.png", sec: 55, caption: "Trust. Evidence first. Never invent." }
+    ];
+
+    const app = document.getElementById("app");
+    const movie = document.getElementById("movie");
+    const slide = document.getElementById("slide");
+    const caption = document.getElementById("caption");
+    const bar = document.getElementById("bar");
+    const btnPlay = document.getElementById("btn-play");
+    const btnMode = document.getElementById("btn-mode");
+    const btnPrev = document.getElementById("btn-prev");
+    const btnNext = document.getElementById("btn-next");
+
+    let mode = "video";
+    let i = 0;
+    let timer = null;
+    let started = 0;
+    let hold = 0;
+
+    function showSlide(idx) {
+      i = Math.max(0, Math.min(beats.length - 1, idx));
+      const b = beats[i];
+      slide.src = b.src;
+      caption.textContent = b.caption;
+      hold = b.sec * 1000;
+      started = Date.now();
+      bar.style.width = ((i / (beats.length - 1)) * 100) + "%";
+    }
+
+    function clearTimer() {
+      if (timer) { clearTimeout(timer); timer = null; }
+    }
+
+    function arm() {
+      clearTimer();
+      timer = setTimeout(function () {
+        if (i < beats.length - 1) {
+          showSlide(i + 1);
+          arm();
+        } else {
+          caption.textContent = "End of demonstration.";
+          bar.style.width = "100%";
+        }
+      }, hold);
+    }
+
+    btnPlay.addEventListener("click", function () {
+      if (mode === "video") {
+        movie.play();
+        caption.textContent = "Watching the silent demonstration…";
+      } else {
+        showSlide(0);
+        arm();
+        caption.textContent = beats[0].caption;
+      }
+    });
+
+    btnMode.addEventListener("click", function () {
+      clearTimer();
+      movie.pause();
+      if (mode === "video") {
+        mode = "slides";
+        app.classList.remove("mode-video");
+        app.classList.add("mode-slides");
+        btnMode.textContent = "Use full video instead";
+        btnPrev.hidden = false;
+        btnNext.hidden = false;
+        showSlide(0);
+        caption.textContent = "Timed slides ready — press Play demonstration.";
+      } else {
+        mode = "video";
+        app.classList.remove("mode-slides");
+        app.classList.add("mode-video");
+        btnMode.textContent = "Use timed slides instead";
+        btnPrev.hidden = true;
+        btnNext.hidden = true;
+        caption.textContent = "Press Play. Watch in silence.";
+        bar.style.width = "0";
+      }
+    });
+
+    btnPrev.addEventListener("click", function () { clearTimer(); showSlide(i - 1); });
+    btnNext.addEventListener("click", function () { clearTimer(); showSlide(i + 1); arm(); });
+
+    movie.addEventListener("timeupdate", function () {
+      if (!movie.duration) return;
+      bar.style.width = ((movie.currentTime / movie.duration) * 100) + "%";
+    });
+  </script>
+</body>
+</html>

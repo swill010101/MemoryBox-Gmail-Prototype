@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Guided Capture — MemoryBox</title>
+  <style>
+    :root { --bg:#f6f3ee; --ink:#1c1917; --muted:#78716c; --line:#d6d3d1; --acc:#0f766e; --warn:#b45309; }
+    * { box-sizing: border-box; }
+    body { font-family: "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: #fff; display:flex; gap:1rem; align-items:baseline; flex-wrap:wrap; }
+    header h1 { font-size: 1.15rem; margin: 0; }
+    header .badge { background: #fef3c7; color: var(--warn); padding: .15rem .5rem; border-radius: 4px; font-size: .85rem; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    section { background: #fff; border: 1px solid var(--line); padding: 1rem; }
+    h2 { font-size: 1rem; margin: 0 0 .75rem; }
+    label { display:block; font-size:.8rem; color:var(--muted); margin-top:.5rem; }
+    input, textarea, select, button { font: inherit; }
+    input, textarea, select { width: 100%; padding: .4rem .5rem; border: 1px solid var(--line); background:#fff; }
+    textarea { min-height: 7rem; white-space: pre-wrap; }
+    button { margin-top: .5rem; margin-right: .35rem; padding: .4rem .7rem; background: var(--acc); color:#fff; border:0; cursor:pointer; }
+    button.secondary { background: #44403c; }
+    button.warn { background: #b45309; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .hint { color: var(--muted); font-size: .78rem; margin: .2rem 0 .4rem; }
+    .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; }
+    .row > * { flex: 1; min-width: 8rem; }
+    ul.list { list-style:none; padding:0; margin:0; }
+    ul.list li { border-top: 1px solid var(--line); padding: .55rem 0; cursor:pointer; }
+    ul.list li:hover { background: #fafaf9; }
+    .pill { display:inline-block; font-size:.75rem; padding:.1rem .4rem; border:1px solid var(--line); border-radius:3px; margin-right:.25rem; }
+    #status { padding: .5rem 1.25rem; font-size:.9rem; }
+    .err { color: #b91c1c; }
+    .warn-box { background:#fff7ed; border:1px solid #fdba74; padding:.55rem .7rem; margin-top:.5rem; font-size:.85rem; }
+    audio { width: 100%; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Guided Capture</h1>
+    <span class="badge" id="newBadge">New responses: 0</span>
+    <span class="muted">Time-driven campaigns · thin review · credibility</span>
+  </header>
+    <p id="status" class="muted"></p>
+    <p id="emailStatus" class="muted" style="padding:0 1.25rem 0.5rem"></p>
+    <main>
+    <section>
+      <h2>Campaigns</h2>
+      <label>Respondent (optional MB Person — not required)</label>
+      <select id="cPerson">
+        <option value="">— Type a name below, or pick MB Person / prior contact —</option>
+      </select>
+      <p class="hint">If you pick an MB Person who has an email on their profile, that email is filled in. You can still edit name/email. Linking a Person is optional.</p>
+      <div class="row">
+        <div>
+          <label>Respondent name</label>
+          <input id="cName" placeholder="Rick" autocomplete="off" />
+        </div>
+        <div>
+          <label>Email (no MemoryBox account required)</label>
+          <input id="cEmail" placeholder="rick@example.com" autocomplete="off" />
+        </div>
+      </div>
+      <label>Title</label>
+      <input id="cTitle" placeholder="Family interview" />
+      <div class="row">
+        <div>
+          <label>Cadence (days)</label>
+          <input id="cCadenceDays" type="number" value="7" min="1" step="1" />
+          <p class="hint">Normal: days between questions. Default 7.</p>
+        </div>
+        <div>
+          <label>Test override (minutes)</label>
+          <input id="cCadenceMinutes" type="number" min="1" step="1" placeholder="blank = use days" />
+          <p class="hint">Acceptance only — if set, overrides days.</p>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Starter pack</label>
+          <button type="button" class="secondary" id="btnStarter">Load starters</button>
+        </div>
+      </div>
+      <label>Questions</label>
+      <p class="hint">One question per <strong>Enter / newline</strong> (carriage return). Soft word-wrap on long text does <strong>not</strong> create a new question — only pressing Enter does.</p>
+      <textarea id="cQuestions" placeholder="What is your earliest childhood memory?&#10;Who influenced you most growing up?&#10;What family tradition means the most to you?"></textarea>
+      <button type="button" id="btnCreate">Create draft</button>
+      <button type="button" id="btnStart">Start</button>
+      <button type="button" class="secondary" id="btnPause">Pause</button>
+      <button type="button" class="secondary" id="btnResume">Resume</button>
+      <button type="button" class="warn" id="btnStop">Stop</button>
+      <button type="button" class="secondary" id="btnTick">Tick scheduler</button>
+      <button type="button" class="secondary" id="btnPoll">Poll inbound email</button>
+      <p class="muted" id="campMeta"></p>
+      <ul class="list" id="campList"></ul>
+      <div id="campDetail"></div>
+    </section>
+    <section>
+      <h2>Response review</h2>
+      <p class="muted">Open · read/play · correct transcript (audio immutable) · credibility · mark reviewed</p>
+      <ul class="list" id="respList"></ul>
+      <div id="respDetail"></div>
+    </section>
+  </main>
+  <script>
+    const CRED = [
+      ["not_rated", "Not rated"],
+      ["trust_strongly", "Trust strongly"],
+      ["generally_trust", "Generally trust"],
+      ["uncertain", "Uncertain"],
+      ["doubt", "Doubt"],
+      ["believe_incorrect", "Believe incorrect"],
+    ];
+    let selectedCampaign = null;
+    let selectedResponse = null;
+    let respondentOptions = [];
+    let selectedPeopleId = null;
+
+    function status(msg, err) {
+      const el = document.getElementById("status");
+      el.textContent = msg || "";
+      el.className = err ? "err" : "muted";
+    }
+
+    async function api(path, opts) {
+      const r = await fetch(path, {
+        headers: { "Content-Type": "application/json", ...(opts && opts.headers || {}) },
+        ...opts,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = data.detail;
+        const msg = typeof detail === "string" ? detail
+          : (detail && JSON.stringify(detail)) || data.error || r.statusText;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    function formatCadence(seconds) {
+      const s = Number(seconds) || 0;
+      if (s >= 86400 && s % 86400 === 0) return `${s / 86400} day(s)`;
+      if (s >= 60 && s % 60 === 0) return `${s / 60} minute(s)`;
+      return `${s} second(s)`;
+    }
+
+    async function refreshEmailStatus() {
+      const d = await api("/guided-capture/email-status");
+      const el = document.getElementById("emailStatus");
+      const live = !!d.live;
+      el.className = live ? "muted" : "err";
+      el.textContent = live
+        ? `Email: LIVE owner Gmail (${d.user_email || "?"}) via Marvin Capture — Tick sends real mail to Sent.`
+        : `Email: NOT LIVE (${d.provider_key || "?"}) — ${d.detail || "no detail"}. Fix config/marvin_capture.json user_email + token, use the same Python env as Marvin POC (google-auth), then restart serve. Tick will mark deliveries failed instead of fake-sending.`;
+    }
+
+    async function refreshBadge() {
+      const d = await api("/guided-capture/new-count");
+      document.getElementById("newBadge").textContent = `New responses: ${d.count ?? 0}`;
+    }
+
+    async function loadRespondentOptions() {
+      const d = await api("/guided-capture/respondent-options");
+      respondentOptions = d.options || [];
+      const sel = document.getElementById("cPerson");
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">— Type a name below, or pick MB Person / prior contact —</option>';
+      respondentOptions.forEach((o, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = o.label || o.display_name;
+        sel.appendChild(opt);
+      });
+      if (keep) sel.value = keep;
+    }
+
+    document.getElementById("cPerson").onchange = () => {
+      const idx = document.getElementById("cPerson").value;
+      if (idx === "") {
+        selectedPeopleId = null;
+        return;
+      }
+      const o = respondentOptions[Number(idx)];
+      if (!o) return;
+      document.getElementById("cName").value = o.display_name || "";
+      if (o.email) {
+        document.getElementById("cEmail").value = o.email;
+        status(`Filled email from ${o.source === "mb_person" ? "MB Person profile" : "prior campaign contact"}`);
+      } else {
+        status("No email on that MB Person profile — enter email manually", true);
+      }
+      selectedPeopleId = o.people_id || null;
+    };
+
+    async function loadCampaigns() {
+      const d = await api("/guided-capture/campaigns");
+      const ul = document.getElementById("campList");
+      ul.innerHTML = "";
+      (d.campaigns || []).forEach(c => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="pill">${c.status}</span> <strong>${escapeHtml(c.title || "(untitled)")}</strong>
+          · ${escapeHtml(c.respondent_name)} &lt;${escapeHtml(c.respondent_email)}&gt;
+          · new ${c.new_response_count} · ${formatCadence(c.cadence_seconds)}`;
+        li.onclick = () => selectCampaign(c.id);
+        ul.appendChild(li);
+      });
+    }
+
+    async function selectCampaign(id) {
+      const c = await api(`/guided-capture/campaigns/${id}`);
+      selectedCampaign = c;
+      document.getElementById("campMeta").textContent =
+        `${c.id} · ${c.status} · cadence ${formatCadence(c.cadence_seconds)} · mode ${c.send_mode}`;
+      const det = document.getElementById("campDetail");
+      const qs = (c.questions || []).map(q =>
+        `<li><span class="pill">${q.status}</span> ${escapeHtml(q.body_text)}
+         ${q.status === "active" ? `<button data-skip="${q.id}" class="secondary">Skip</button>` : ""}</li>`
+      ).join("");
+      const ds = (c.deliveries || []).map(d =>
+        `<li><span class="pill">${d.status}</span> q=${d.question_id.slice(0,8)} · sched ${d.scheduled_for || ""} · sent ${d.sent_at || ""} ${escapeHtml(d.fail_detail || "")}</li>`
+      ).join("");
+      det.innerHTML = `<h3>Questions</h3><ul class="list">${qs}</ul><h3>Deliveries</h3><ul class="list">${ds}</ul>`;
+      det.querySelectorAll("[data-skip]").forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          await api(`/guided-capture/questions/${btn.dataset.skip}/skip`, { method: "POST", body: "{}" });
+          await selectCampaign(id);
+          await loadCampaigns();
+        };
+      });
+    }
+
+    async function loadResponses() {
+      const d = await api("/guided-capture/responses?limit=50");
+      const ul = document.getElementById("respList");
+      ul.innerHTML = "";
+      (d.responses || []).forEach(r => {
+        const li = document.createElement("li");
+        const synth = /GC11-|fake|synthetic/i.test(r.campaign_title || "")
+          || /GC11-/.test(r.respondent_name || "");
+        li.innerHTML = `<span class="pill">${r.review_status}</span>
+          <span class="pill">${r.credibility}</span>
+          <span class="pill">${r.channel}</span>
+          ${synth ? '<span class="pill">harness</span>' : ''}
+          <strong>${escapeHtml(r.respondent_name || "?")}</strong>
+          · ${escapeHtml(r.campaign_title || "")} · ${r.received_at || ""}`;
+        li.onclick = () => showResponse(r.id);
+        ul.appendChild(li);
+      });
+    }
+
+    async function showResponse(id) {
+      const r = await api(`/guided-capture/responses/${id}`);
+      selectedResponse = r;
+      const det = document.getElementById("respDetail");
+      const credOpts = CRED.map(([v,l]) =>
+        `<option value="${v}" ${r.credibility===v?"selected":""}>${l}</option>`
+      ).join("");
+      const looksHarness =
+        /GC11-|fake|synthetic/i.test(r.campaign_title || "")
+        || /GC11-/.test(r.respondent_name || "")
+        || (r.extracted_text || "") === "(voice attachment)";
+      let audioBlock = "";
+      if (r.audio_uri) {
+        audioBlock = `
+          <label>Audio</label>
+          <audio id="audioPlayer" controls src="/guided-capture/responses/${r.id}/audio"></audio>
+          <p class="hint" id="audioHint">Loading audio…</p>
+          ${looksHarness ? `<div class="warn-box">This looks like a <strong>synthetic harness</strong> voice clip from <code>prove-guided-capture</code> (placeholder bytes, not a real recording). Real Gmail voice attachments will play here after Poll.</div>` : ""}
+        `;
+      } else if (r.channel === "voice") {
+        audioBlock = `<div class="warn-box">Channel is voice but no audio_uri was preserved on this host.</div>`;
+      }
+      det.innerHTML = `
+        <p><strong>Question:</strong> ${escapeHtml(r.question_body || "")}</p>
+        <p><strong>Respondent:</strong> ${escapeHtml(r.respondent_name || "")} &lt;${escapeHtml(r.respondent_email || "")}&gt;</p>
+        <p class="muted">Campaign ${escapeHtml(r.campaign_title || "")} (${r.campaign_status}) · received ${r.received_at}</p>
+        <label>Typed / extracted text</label>
+        <textarea readonly>${escapeHtml(r.extracted_text || "")}</textarea>
+        ${(r.extracted_text || "").includes("MemoryBox Guided Capture") && (r.extracted_text || "").includes("Please reply")
+          ? `<div class="warn-box">This text looks like the <strong>outbound question email</strong>, not the respondent’s reply. Pull again after updating Guided Capture (Poll skips those), or open the real reply in Gmail and ensure it was sent as a Reply.</div>`
+          : ""}
+        <label>Transcript (voice STT only — typed replies use the box above)</label>
+        <textarea id="txEdit">${escapeHtml(r.transcript_text || "")}</textarea>
+        ${audioBlock}
+        <p class="muted">STT: ${r.stt_status} · audio preserved: ${r.audio_uri ? "yes" : "no"}</p>
+        <label>Credibility</label>
+        <select id="credSel">${credOpts}</select>
+        <div>
+          <button type="button" id="btnSaveTx">Save transcript correction</button>
+          <button type="button" id="btnCred">Set credibility</button>
+          <button type="button" id="btnReviewed">Mark reviewed</button>
+        </div>
+      `;
+      const player = document.getElementById("audioPlayer");
+      const hint = document.getElementById("audioHint");
+      if (player && hint) {
+        player.addEventListener("loadeddata", () => {
+          hint.textContent = "Audio ready — press play.";
+        });
+        player.addEventListener("error", () => {
+          hint.textContent =
+            "Could not play this file in the browser (missing on this machine, or synthetic non-media bytes). Real voice attachments from Gmail should play after Poll on FlightSim.";
+          hint.className = "err";
+        });
+      }
+      document.getElementById("btnSaveTx").onclick = async () => {
+        await api(`/guided-capture/responses/${id}/transcript`, {
+          method: "POST",
+          body: JSON.stringify({ text: document.getElementById("txEdit").value }),
+        });
+        status("Transcript corrected (new version); audio unchanged");
+        await showResponse(id);
+        await loadResponses();
+      };
+      document.getElementById("btnCred").onclick = async () => {
+        await api(`/guided-capture/responses/${id}/credibility`, {
+          method: "POST",
+          body: JSON.stringify({ credibility: document.getElementById("credSel").value }),
+        });
+        status("Credibility saved (testimony unchanged)");
+        await showResponse(id);
+        await loadResponses();
+        await refreshBadge();
+      };
+      document.getElementById("btnReviewed").onclick = async () => {
+        await api(`/guided-capture/responses/${id}/reviewed`, { method: "POST", body: "{}" });
+        status("Marked reviewed");
+        await showResponse(id);
+        await loadResponses();
+        await refreshBadge();
+      };
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      })[c]);
+    }
+
+    document.getElementById("btnStarter").onclick = async () => {
+      const d = await api("/guided-capture/starter-questions");
+      document.getElementById("cQuestions").value = (d.questions || []).join("\n");
+    };
+
+    document.getElementById("btnCreate").onclick = async () => {
+      try {
+        // Split on real newlines only (Enter) — not soft wrap
+        const questions = document.getElementById("cQuestions").value
+          .split(/\r\n|\n|\r/)
+          .map(s => s.trim())
+          .filter(Boolean);
+        const minutes = document.getElementById("cCadenceMinutes").value;
+        const days = Number(document.getElementById("cCadenceDays").value || 7);
+        const body = {
+          display_name: document.getElementById("cName").value,
+          email: document.getElementById("cEmail").value,
+          title: document.getElementById("cTitle").value,
+          questions,
+          people_id: selectedPeopleId || null,
+        };
+        if (minutes) {
+          body.cadence_seconds = Math.max(1, Math.round(Number(minutes) * 60));
+        } else {
+          body.cadence_days = days;
+        }
+        const d = await api("/guided-capture/campaigns", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        status(`Created draft ${d.id} · cadence ${formatCadence(d.cadence_seconds)}`);
+        await loadCampaigns();
+        await loadRespondentOptions();
+        await selectCampaign(d.id);
+      } catch (e) { status(String(e.message || e), true); }
+    };
+
+    async function campAction(path) {
+      if (!selectedCampaign) { status("Select a campaign", true); return; }
+      try {
+        const d = await api(`/guided-capture/campaigns/${selectedCampaign.id}/${path}`, {
+          method: "POST", body: "{}",
+        });
+        status(`${path}: ${d.status}`);
+        await selectCampaign(d.id);
+        await loadCampaigns();
+      } catch (e) { status(String(e.message || e), true); }
+    }
+    document.getElementById("btnStart").onclick = () => campAction("start");
+    document.getElementById("btnPause").onclick = () => campAction("pause");
+    document.getElementById("btnResume").onclick = () => campAction("resume");
+    document.getElementById("btnStop").onclick = () => campAction("stop");
+    document.getElementById("btnTick").onclick = async () => {
+      const d = await api("/guided-capture/tick", { method: "POST", body: "{}" });
+      const ep = d.email_provider || {};
+      status(
+        `Tick sent=${(d.sent||[]).length} failed=${(d.failed||[]).length}` +
+        ` · email=${ep.provider_key || "?"} live=${!!ep.live}` +
+        (ep.detail ? ` · ${ep.detail}` : "")
+      );
+      await refreshEmailStatus();
+      if (selectedCampaign) await selectCampaign(selectedCampaign.id);
+      await loadCampaigns();
+    };
+    document.getElementById("btnPoll").onclick = async () => {
+      const d = await api("/guided-capture/poll", { method: "POST", body: "{}" });
+      const skipped = d.skipped || [];
+      const reasons = skipped.slice(0, 3).map(s => s.reason).join(", ");
+      const dbg = d.debug || {};
+      status(
+        `Poll examined=${d.examined ?? "?"} created=${(d.created||[]).length}` +
+        ` quarantined=${(d.quarantined||[]).length} skipped=${skipped.length}` +
+        (reasons ? ` (${reasons})` : "") +
+        ((d.duplicates||[]).length ? ` duplicates=${d.duplicates.length}` : "") +
+        (dbg.error ? ` ERROR=${dbg.error}` : "") +
+        (dbg.subjects && dbg.subjects.length ? ` subjects=${dbg.subjects.join(" | ")}` : "")
+      );
+      await refreshBadge();
+      await loadResponses();
+    };
+
+    (async () => {
+      try {
+        await refreshBadge();
+        await refreshEmailStatus();
+        await loadRespondentOptions();
+        await loadCampaigns();
+        await loadResponses();
+      } catch (e) { status(String(e.message || e), true); }
+    })();
+  </script>
+</body>
+</html>
