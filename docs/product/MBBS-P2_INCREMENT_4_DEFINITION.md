@@ -181,7 +181,7 @@ Founder confirmation 2026-08-13 (updated — off-axis filter):
 - If the eligible set has **no** dated peers, undated stay in the Gallery; the axis does not invent a calendar day.
 - Reset restores full temporal extent without clearing type/place/undated filters (§8.1 case B).
 
-**Person library honesty (founder 2026-08-13):** Older Immich assets with real EXIF/taken metadata must not be dropped because Ask only fetched the newest page. Person finds paginate Immich toward the full person library (photos + videos as Immich returns them) so Timeline extent matches Immich life span (e.g. mid-century → present), not a fake “recent years only” window. Cap may still apply on extremely large libraries; undated remain available via the Undated filter / oldest-end gallery sort.
+**Person library honesty (founder 2026-08-13):** Older Immich assets with real EXIF/taken metadata must not be dropped because Ask only fetched the newest page. Person finds paginate Immich toward the full person library (photos + videos as Immich returns them) so Timeline extent matches Immich life span (e.g. mid-century → present), not a fake “recent years only” window. **Do not trust Immich `assets.total` as an early-stop** — it often mirrors page size (~100–250) and falsely capped Explore near 120. Cap may still apply on extremely large libraries; undated remain available via the Undated control left of Timeline + filter bar.
 
 #### 2.7.2 Proportional scrub (clarification — binding)
 

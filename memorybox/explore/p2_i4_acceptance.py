@@ -85,7 +85,6 @@ def _assert_explore_html(html: str) -> list[str]:
         "mb-explore-ask-row",
         "mb-explore-gallery",
         "mb-explore-map",
-        "mb-view-map",
         "mb-tl-track",
         "mb-tl-reset",
         "Reset",
@@ -97,6 +96,8 @@ def _assert_explore_html(html: str) -> list[str]:
     ):
         if marker not in html:
             problems.append(f"UI missing: {marker}")
+    if "mb-view-map" in html or "mb-view-gallery" in html:
+        problems.append("Map must be a filter-bar control, not Gallery|Map toolbar toggle")
     if "Full Range" in html or "Life Span" in html:
         problems.append("Reset control must not use Full Range / Life Span labels")
     return problems
@@ -218,6 +219,8 @@ def _prove_harness() -> dict[str, Any]:
             "Clear location",
             "only undated",
             "never exclude undated from gallery",
+            "data-map-filter",
+            "mb-filter-map",
             "faceBoxHtml",
             "applyCorrectionConsequences",
             "confirmIdentityCorrection",
@@ -351,42 +354,65 @@ def _prove_harness() -> dict[str, Any]:
                 assert method == "POST" and path == "/search/metadata"
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
-                size = int((body or {}).get("size") or 250)
-                self._calls.append({"page": page, "order": order, "size": size})
-                # 600 assets across pages of `size`
-                total = 600
-                if order == "desc":
-                    start = (page - 1) * size
-                else:
-                    start = (page - 1) * size
+                size = int((body or {}).get("size") or 100)
+                taken_after = (body or {}).get("takenAfter")
+                self._calls.append(
+                    {
+                        "page": page,
+                        "order": order,
+                        "size": size,
+                        "takenAfter": taken_after,
+                    }
+                )
+                # Simulate Immich bug: assets.total == page size (not library total).
+                # Explore must still paginate past this trap to reach 600 assets.
+                total_library = 600
+                start = (page - 1) * size
                 items = []
                 for i in range(size):
                     idx = start + i
-                    if idx >= total:
+                    if idx >= total_library:
                         break
-                    # distinct ids per order so asc merge can add when capped
-                    prefix = "n" if order == "desc" else "o"
-                    items.append({"id": f"{prefix}-{idx}", "originalFileName": f"{idx}.jpg"})
+                    # Same id space across order/year windows (real Immich asset ids)
+                    items.append({"id": f"asset-{idx}", "originalFileName": f"{idx}.jpg"})
+                next_page = str(page + 1) if start + len(items) < total_library else None
                 return 200, {
-                    "assets": {"items": items, "total": total, "count": len(items)}
+                    "assets": {
+                        "items": items,
+                        # Trap: total mirrors page count (historic Immich quirk)
+                        "total": len(items),
+                        "count": len(items),
+                        "nextPage": next_page,
+                    }
                 }
 
         client = _FakeImmich()
         got = client.search_by_person_ids(["person-1"], size=500)
         _check(
             "immich_person_full_page",
-            len(got) == 500 and len(client._calls) >= 2,
+            len(got) >= 500 and len(client._calls) >= 5,
             checks,
             problems,
             f"n={len(got)} calls={len(client._calls)}",
         )
-        got_all = client.search_by_person_ids(["person-1"], size=5000)
+        client2 = _FakeImmich()
+        got_all = client2.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_exhausts_library",
-            len(got_all) == 600,
+            len(got_all) >= 600,
             checks,
             problems,
-            f"n={len(got_all)}",
+            f"n={len(got_all)} calls={len(client2._calls)}",
+        )
+        # Explicit total-trap: first page alone must not be the whole result
+        client3 = _FakeImmich()
+        got_trap = client3.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_ignores_page_total_trap",
+            len(got_trap) > 120,
+            checks,
+            problems,
+            f"n={len(got_trap)} (must exceed fake page total)",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))

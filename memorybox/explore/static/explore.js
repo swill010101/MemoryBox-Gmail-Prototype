@@ -512,6 +512,7 @@
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
+      setViewMode("gallery");
       render();
       return;
     }
@@ -739,15 +740,28 @@
       return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${f.label}</button>`;
     }).join("");
     const uCount = undatedEligible().length;
-    if (uCount > 0 || state.domain.undatedFilter) {
+    // Undated filter always offered next to type filters (mirrors timeline-left control)
+    {
       const on = Boolean(state.domain.undatedFilter);
       el.insertAdjacentHTML(
         "beforeend",
         `<button type="button" class="mb-filter-undated${on ? " is-active" : ""}" data-undated-filter="1" aria-pressed="${
           on ? "true" : "false"
         }" title="${on ? "Clear undated filter" : "Show only undated"}">Undated${
-          uCount ? ` · ${uCount}` : ""
+          uCount ? ` · ${uCount}` : " · 0"
         }${on ? " ×" : ""}</button>`
+      );
+    }
+    // Map is opt-in via filter bar (not a default Gallery|Map takeover)
+    {
+      const on = (state.gallery && state.gallery.viewMode) === "map";
+      el.insertAdjacentHTML(
+        "beforeend",
+        `<button type="button" class="mb-filter-map${on ? " is-active" : ""}" data-map-filter="1" aria-pressed="${
+          on ? "true" : "false"
+        }" title="${on ? "Back to gallery" : "Show result set on map"}">Map${
+          on ? " ×" : ""
+        }</button>`
       );
     }
     if (state.domain.placeFilter) {
@@ -771,6 +785,14 @@
         render();
       });
     }
+    const mapBtn = el.querySelector("[data-map-filter]");
+    if (mapBtn) {
+      mapBtn.addEventListener("click", () => {
+        const on = (state.gallery && state.gallery.viewMode) === "map";
+        setViewMode(on ? "gallery" : "map");
+        render();
+      });
+    }
     const clearPlace = el.querySelector("[data-place-clear]");
     if (clearPlace) {
       clearPlace.addEventListener("click", () => {
@@ -782,16 +804,6 @@
 
   function renderViewMode() {
     const mode = (state.gallery && state.gallery.viewMode) || "gallery";
-    const gBtn = document.getElementById("mb-view-gallery");
-    const mBtn = document.getElementById("mb-view-map");
-    if (gBtn) {
-      gBtn.classList.toggle("is-active", mode === "gallery");
-      gBtn.setAttribute("aria-pressed", mode === "gallery" ? "true" : "false");
-    }
-    if (mBtn) {
-      mBtn.classList.toggle("is-active", mode === "map");
-      mBtn.setAttribute("aria-pressed", mode === "map" ? "true" : "false");
-    }
     const gallery = document.getElementById("mb-explore-gallery");
     const mapPane = document.getElementById("mb-explore-map-pane");
     if (gallery) gallery.hidden = mode === "map";
@@ -1084,17 +1096,21 @@
     const undatedEl = document.getElementById("mb-tl-undated");
     const uCount = undatedEligible().length;
     if (undatedEl) {
-      if (uCount > 0 || state.domain.undatedFilter) {
-        undatedEl.hidden = false;
-        undatedEl.textContent = `Undated: ${uCount}`;
-        undatedEl.classList.toggle("is-active", Boolean(state.domain.undatedFilter));
-        undatedEl.setAttribute(
-          "aria-pressed",
-          state.domain.undatedFilter ? "true" : "false"
-        );
-      } else {
-        undatedEl.hidden = true;
-      }
+      // Always visible left of the Timeline axis (founder: undated filter next to timeline)
+      undatedEl.hidden = false;
+      undatedEl.textContent = `Undated: ${uCount}`;
+      undatedEl.classList.toggle("is-active", Boolean(state.domain.undatedFilter));
+      undatedEl.setAttribute(
+        "aria-pressed",
+        state.domain.undatedFilter ? "true" : "false"
+      );
+      undatedEl.disabled = uCount === 0 && !state.domain.undatedFilter;
+      undatedEl.title =
+        uCount === 0 && !state.domain.undatedFilter
+          ? "No undated memories in the current result set"
+          : state.domain.undatedFilter
+            ? "Clear undated filter"
+            : "Filter gallery to undated memories (off Timeline axis)";
     }
 
     const dotsEl = document.getElementById("mb-tl-dots");

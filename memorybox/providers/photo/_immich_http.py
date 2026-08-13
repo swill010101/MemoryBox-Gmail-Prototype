@@ -149,27 +149,20 @@ class ImmichHttpClient:
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
-        Immich metadata search is paginated (newest-first by default). A short
-        page window (~48–120) hides older EXIF-dated library photos that Immich
-        still shows on the person page (e.g. Eugene Will ~648, Tom Will ~2994).
-        Paginate until exhausted or ``size`` (hard-capped) so Explore's gallery
-        and Timeline span the full person library.
+        Immich metadata search is paginated. Do **not** trust ``assets.total`` to
+        stop early — on many Immich builds it mirrors the page count (~100–250),
+        which falsely capped Explore at ~120 newest assets (Tom Will / Eugene).
+
+        Paginate via ``page`` / ``nextPage`` until a short page, zero new ids, or
+        the hard cap. Then backfill by multi-year date windows so older EXIF years
+        still appear if page pagination stalls.
         """
         if not person_ids:
             return []
-        # Hard cap keeps Ask/Explore responsive on huge libraries while covering
-        # typical family person pages (thousands of assets).
         target = max(1, min(int(size), 5000))
-        page_size = min(250, max(25, min(target, 250)))
-        max_pages = max(1, (target + page_size - 1) // page_size) + 2
+        page_size = 100  # widely compatible; Immich max is 1000
 
-        def _page(*, page: int, order: str) -> tuple[list[dict[str, Any]], int | None]:
-            body: dict[str, Any] = {
-                "personIds": person_ids,
-                "size": page_size,
-                "page": max(1, int(page)),
-                "order": order,
-            }
+        def _search(body: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
             status, data = self._request("POST", "/search/metadata", body=body)
             if status != 200 or not isinstance(data, dict):
                 return [], None
@@ -177,68 +170,139 @@ class ImmichHttpClient:
             if not isinstance(assets, dict):
                 return [], None
             items = assets.get("items") if isinstance(assets.get("items"), list) else []
-            total = assets.get("total")
-            total_n = (
-                int(total)
-                if isinstance(total, (int, float)) and int(total) >= 0
-                else None
-            )
-            return ([it for it in items if isinstance(it, dict)], total_n)
+            next_page = assets.get("nextPage")
+            next_s = str(next_page).strip() if next_page not in (None, "", 0, "0") else None
+            return ([it for it in items if isinstance(it, dict)], next_s)
 
-        by_id: dict[str, dict[str, Any]] = {}
-        library_total: int | None = None
-        # Newest → oldest until exhausted (full life span when under the cap)
-        for page in range(1, max_pages + 1):
-            batch, total_n = _page(page=page, order="desc")
-            if total_n is not None:
-                library_total = total_n
-            if not batch:
-                break
+        def _ingest(batch: list[dict[str, Any]], into: dict[str, dict[str, Any]]) -> int:
+            added = 0
             for it in batch:
                 eid = it.get("id")
-                if eid:
-                    by_id[str(eid)] = it
+                if not eid:
+                    continue
+                key = str(eid)
+                if key in into:
+                    continue
+                into[key] = it
+                added += 1
+            return added
+
+        by_id: dict[str, dict[str, Any]] = {}
+
+        # --- Pass 1: newest-first pagination (ignore assets.total) ---
+        page: int | str = 1
+        for _ in range((target // page_size) + 5):
             if len(by_id) >= target:
                 break
-            if library_total is not None and len(by_id) >= library_total:
+            body: dict[str, Any] = {
+                "personIds": person_ids,
+                "size": page_size,
+                "page": int(page) if str(page).isdigit() else 1,
+                "order": "desc",
+            }
+            batch, next_page = _search(body)
+            if not batch:
                 break
-            if len(batch) < page_size:
+            added = _ingest(batch, by_id)
+            if added == 0:
+                break  # Immich returned a duplicate page — stop
+            if len(by_id) >= target:
                 break
+            if next_page and str(next_page).isdigit():
+                page = int(next_page)
+            elif len(batch) < page_size:
+                break
+            else:
+                page = int(page) + 1 if str(page).isdigit() else 2
 
-        # Cap hit but Immich still has older assets: reserve a slice of the
-        # budget for oldest pages so early-life EXIF years are not dropped.
-        if (
-            library_total is not None
-            and len(by_id) < library_total
-            and len(by_id) >= target
-        ):
-            oldest_budget = max(1, target // 5)
-            # Drop newest overflow room for oldest inserts
-            if len(by_id) > target - oldest_budget:
-                # Keep insertion order from desc pages (newest first in dict
-                # only if Python 3.7+ insertion — Immich desc page1 = newest).
-                keys = list(by_id.keys())
-                keep = keys[: max(0, target - oldest_budget)]
-                by_id = {k: by_id[k] for k in keep}
-            for page in range(1, max(2, oldest_budget // page_size) + 3):
-                if oldest_budget <= 0 or len(by_id) >= target:
+        # --- Pass 2: oldest-first pages (early-life EXIF) if still under cap ---
+        if len(by_id) < target:
+            page = 1
+            for _ in range(8):
+                if len(by_id) >= target:
                     break
-                batch, _ = _page(page=page, order="asc")
+                batch, next_page = _search(
+                    {
+                        "personIds": person_ids,
+                        "size": page_size,
+                        "page": int(page),
+                        "order": "asc",
+                    }
+                )
                 if not batch:
                     break
-                for it in batch:
-                    eid = it.get("id")
-                    if not eid:
-                        continue
-                    key = str(eid)
-                    if key in by_id:
-                        continue
-                    by_id[key] = it
-                    oldest_budget -= 1
-                    if oldest_budget <= 0 or len(by_id) >= target:
-                        break
-                if len(batch) < page_size:
+                added = _ingest(batch, by_id)
+                if added == 0:
                     break
+                if next_page and str(next_page).isdigit():
+                    page = int(next_page)
+                elif len(batch) < page_size:
+                    break
+                else:
+                    page = int(page) + 1
+
+        # --- Pass 3: year/decade windows — recovers libraries when page walk stalls ---
+        if len(by_id) < target:
+            from datetime import datetime, timezone
+
+            year_now = datetime.now(timezone.utc).year
+            # Walk decades oldest→newest so mid-century scans are not dropped
+            decades = list(range(1940, year_now + 1, 10))
+            for y0 in decades:
+                if len(by_id) >= target:
+                    break
+                y1 = min(y0 + 9, year_now)
+                page = 1
+                for _ in range(40):
+                    if len(by_id) >= target:
+                        break
+                    batch, next_page = _search(
+                        {
+                            "personIds": person_ids,
+                            "size": page_size,
+                            "page": int(page),
+                            "order": "desc",
+                            "takenAfter": f"{y0}-01-01T00:00:00.000Z",
+                            "takenBefore": f"{y1}-12-31T23:59:59.999Z",
+                        }
+                    )
+                    if not batch:
+                        break
+                    added = _ingest(batch, by_id)
+                    if added == 0:
+                        break
+                    if next_page and str(next_page).isdigit():
+                        page = int(next_page)
+                    elif len(batch) < page_size:
+                        break
+                    else:
+                        page = int(page) + 1
+
+            # Undated / missing EXIF: Immich often omits taken* filters — one more
+            # unbounded oldest pass already done; also try without order quirks.
+            if len(by_id) < target:
+                page = 1
+                for _ in range((target // page_size) + 5):
+                    if len(by_id) >= target:
+                        break
+                    batch, next_page = _search(
+                        {
+                            "personIds": person_ids,
+                            "size": page_size,
+                            "page": int(page),
+                        }
+                    )
+                    if not batch:
+                        break
+                    added = _ingest(batch, by_id)
+                    if added == 0:
+                        break
+                    if next_page and str(next_page).isdigit():
+                        page = int(next_page)
+                    elif len(batch) < page_size:
+                        break
+                    else:
+                        page = int(page) + 1
 
         return list(by_id.values())[:target]
 

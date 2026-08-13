@@ -9,7 +9,7 @@ Explore can show people/time/type, but **place is only a chip string**. Immich G
 
 ## Success criteria
 1. **Location is a first-class filter** on the current Explore result corpus (alongside type), including from chips and Ask commands.
-2. **Map toggle** is a secondary result mode (Gallery | Map), not a top-level app.
+2. **Map is opt-in only** — lives in the **filter bar** (with Undated / type filters). Default remains Gallery. Map must not appear as an empty pane unless the owner asked for Map (`Map` filter or Ask `Show map.`).
 3. **Map markers/clusters** come from the **same current result set** (type ∩ place ∩ timeline).
 4. **Marker/cluster selection refines the gallery** (shared underlying state).
 5. **Ask/STT** can set/clear location and switch Gallery/Map via `applyAskCommand`.
@@ -18,10 +18,13 @@ Explore can show people/time/type, but **place is only a chip string**. Immich G
 ## In scope (implement now)
 - Preserve `place` / `location` / `lat` / `lng` on Explore items from Ask/Immich (+ demo fixture coords for Oak Street).
 - `domain.placeFilter` intersecting eligible set; place chips activate/clear filter.
-- `gallery.viewMode`: `gallery` | `map` (presentation mode; membership stays domain+timeline).
+- `gallery.viewMode`: `gallery` | `map` (presentation mode; membership stays domain+timeline). Activated from filter-bar **Map** control or Ask — not a standing Gallery|Map toolbar takeover.
 - Lightweight OSM/Leaflet map + simple clustering over current result set.
 - Marker/cluster → `domain.mapRefineIds` → gallery refined; clearable.
-- Ask: `Only <Place>.` / `Near <Place>.` / `Clear location.` / `Show map.` / `Show gallery.` / clear filters clears place+map refine.
+- Ask: `Only <Place>.` / `Near <Place>.` / `Clear location.` / `Show map.` / `Show gallery.` / clear filters clears place+map refine + returns to gallery.
+
+## Founder correction (2026-08-13)
+Map should **only show when requested**, and the control belongs **with filters** (not a default dual canvas that can leave an empty gray map).
 
 ## Out of scope (do not implement now)
 - Full GIS tools, route/history reconstruction, complicated layers

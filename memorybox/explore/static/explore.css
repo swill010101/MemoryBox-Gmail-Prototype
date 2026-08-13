@@ -387,6 +387,23 @@ body {
   border-color: #b45309;
 }
 
+.mb-filter-map {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border: 1px solid var(--mb-line);
+  background: #fff;
+  color: var(--mb-ink);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mb-filter-map.is-active,
+.mb-filter-map[aria-pressed="true"] {
+  background: var(--mb-blue);
+  border-color: var(--mb-blue);
+  color: #fff;
+}
+
 .mb-filter-place {
   font: inherit;
   font-size: 0.82rem;
@@ -448,6 +465,9 @@ body {
   flex-direction: column;
   gap: 0.45rem;
   margin-bottom: 0.25rem;
+}
+.mb-explore-map-pane[hidden] {
+  display: none !important;
 }
 
 .mb-explore-map {
@@ -886,6 +906,10 @@ body {
   background: #b45309;
   color: #fff;
   border-color: #b45309;
+}
+.mb-tl-undated:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .mb-tl-undated[hidden] { display: none !important; }
 
