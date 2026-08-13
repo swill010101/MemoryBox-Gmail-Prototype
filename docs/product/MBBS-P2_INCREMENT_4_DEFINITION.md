@@ -1,12 +1,12 @@
 # MBBS-P2 Increment 4 — Mixed-Media Find / Explore (Timeline-first)
 
-**Status:** **DRAFT for founder review / approval** · **No build** until this definition is approved  
+**Status:** **BUILD AUTHORIZED** (Tom 2026-08-13 — I4 UX Implementation Directive) · Definition aligned to **MBUX-001 v0.4** · **Not ACCEPTED** until FlightSim acceptance test (§8)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX — Mixed-Media Find / Explore):** **[MBUX-001 v0.4 I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)** — where more specific than MBUX-001 v0.3 or earlier I4 drafts, **the addendum governs**  
 **Depends on:** P2-I1 (moments) · P2-I2 (shell/context) · P2-I3 (honest coverage / undated)  
 **CLI prove (proposed):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
-**Gate:** Definition approval → “Build P2-I4” → FlightSim functionality + UX gate per §8. **ACCEPTED only when visible UX conforms to MBUX-001 v0.4.**
+**Gate:** Build authorized. **ACCEPTED only when visible UX conforms to MBUX-001 v0.4** + acceptance sequence.
 
 ---
 
@@ -232,7 +232,8 @@ Pass **all** on FlightSim for **ACCEPTED**:
 | MBRM-001A I3→I4 | Approved direction |
 | P2-I1..I3 | **ACCEPTED** |
 | MBUX-001 v0.4 I4 addendum | **Approved UX direction** (founder); recorded in-repo |
-| **This I4 definition (reworked to MBUX-001)** | **DRAFT — awaiting founder approval** |
-| Build / code | **NOT AUTHORIZED** until definition approved + “Build P2-I4” |
+| **This I4 definition (reworked to MBUX-001)** | **LOCKED** under MBUX-001 v0.4 + Implementation Directive |
+| Build / code | **AUTHORIZED** (2026-08-13 — I4 UX Implementation Directive) |
+| FlightSim ACCEPTED | **PENDING** — acceptance sequence in directive |
 
-**No I4 code until you approve this definition and authorize build.**
+Build is authorized. Do **not** mark ACCEPTED until the Mixed-Media Find acceptance sequence passes.

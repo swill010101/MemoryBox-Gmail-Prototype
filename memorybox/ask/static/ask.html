@@ -45,9 +45,10 @@
       </p>
       <div class="mb-journey-row" id="journeyRow" aria-label="Suggested journeys">
         <button type="button" class="mb-journey" data-ask="Show me Peggy George">Show me Peggy George</button>
-        <button type="button" class="mb-journey" data-ask="Tell me about Christmas at our house">Christmas at our house</button>
+        <button type="button" class="mb-journey" data-ask="Tell me about Peggy around Christmas">Peggy around Christmas</button>
         <button type="button" class="mb-journey" data-ask="What have I forgotten?">What have I forgotten?</button>
       </div>
+      <p class="mb-recent"><a href="/explore/ui?demo=peggy-christmas">Open Mixed-Media Explore (I4 demo)</a></p>
       <p class="mb-recent" id="recentRow"></p>
       <div class="mb-ask-bar">
         <input id="askInput" type="text" placeholder="Ask about a person, place, or time…" autocomplete="off" />
@@ -258,6 +259,12 @@
       if (!text) return;
       if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
       renderRecent();
+      // I4: Mixed-Media Find surface for Peggy Christmas demo (shared Ask→Explore path).
+      const lower = text.toLowerCase();
+      if (/peggy/.test(lower) && /christmas/.test(lower)) {
+        window.location.href = "/explore/ui?demo=peggy-christmas";
+        return;
+      }
       const res = await fetch("/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

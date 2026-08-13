@@ -117,6 +117,9 @@ EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.
 STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
 SETTINGS_STATIC = Path(__file__).resolve().parent / "settings" / "static" / "settings.html"
 SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
+EXPLORE_STATIC = Path(__file__).resolve().parent / "explore" / "static" / "explore.html"
+EXPLORE_STATIC_DIR = Path(__file__).resolve().parent / "explore" / "static"
+FAMILY_NIGHT_STATIC = Path(__file__).resolve().parent / "family_night" / "static" / "family_night.html"
 
 app = FastAPI(
     title="MemoryBox",
@@ -126,6 +129,12 @@ app = FastAPI(
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
+if EXPLORE_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/explore",
+        StaticFiles(directory=str(EXPLORE_STATIC_DIR)),
+        name="explore_static",
+    )
 
 
 def _html_ui(path: Path, *, surface: str, missing: str) -> HTMLResponse:
@@ -401,6 +410,8 @@ def health() -> dict[str, Any]:
         "export": "/export/ui",
         "status": "/status/ui",
         "settings": "/settings/ui",
+        "explore": "/explore/ui",
+        "family_night": "/family-night/ui",
     }
 
 
@@ -413,6 +424,33 @@ def root() -> RedirectResponse:
 @app.get("/ask/ui")
 def ask_ui() -> HTMLResponse:
     return _html_ui(ASK_STATIC, surface="ask", missing="Ask UI missing")
+
+
+@app.get("/explore/ui")
+def explore_ui() -> HTMLResponse:
+    """P2-I4 Mixed-Media Find / Explore surface (MBUX-001 v0.4)."""
+    return _html_ui(EXPLORE_STATIC, surface="explore", missing="Explore UI missing")
+
+
+@app.get("/explore/api/demo/{demo_id}")
+def explore_demo(demo_id: str) -> dict[str, Any]:
+    """Demo/fixture payload for I4 UX prove — not product hard-code."""
+    from memorybox.explore.payload import demo_payload
+
+    payload = demo_payload(demo_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Unknown explore demo: {demo_id}")
+    return payload
+
+
+@app.get("/family-night/ui")
+def family_night_ui() -> HTMLResponse:
+    """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""
+    return _html_ui(
+        FAMILY_NIGHT_STATIC,
+        surface="family-night",
+        missing="Family Night UI missing",
+    )
 
 
 @app.get("/story/ui")

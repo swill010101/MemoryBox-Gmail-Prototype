@@ -3,16 +3,20 @@
  * Surfaces set data-mb-surface on <html> or body via inject.
  */
 (function () {
+  // MBUX-001 v0.4 family primary destinations (I4).
   const FAMILY = [
     { id: "ask", href: "/ask/ui", label: "Ask" },
-    { id: "library", href: "/library/ui", label: "Library" },
     { id: "people", href: "/people/ui", label: "People" },
-    { id: "review", href: "/review/ui", label: "Review" },
     { id: "story", href: "/story/ui", label: "Stories" },
     { id: "journal", href: "/journal/ui", label: "Journal" },
     { id: "artifact", href: "/artifact/ui", label: "Artifacts" },
+    { id: "family-night", href: "/family-night/ui", label: "Family Night" },
+    { id: "teach", href: "/review/ui", label: "Teach" },
   ];
+  // System / internals — not family primary (Archive Health contextual / settings).
   const SYSTEM = [
+    { id: "explore", href: "/explore/ui?demo=peggy-christmas", label: "Explore" },
+    { id: "library", href: "/library/ui", label: "Library" },
     { id: "status", href: "/status/ui", label: "Archive Health" },
     { id: "settings", href: "/settings/ui", label: "Settings" },
     { id: "export", href: "/export/ui", label: "Export" },

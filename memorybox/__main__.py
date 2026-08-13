@@ -168,6 +168,18 @@ def main(argv: list[str] | None = None) -> int:
             "at MEMORYBOX_BASE_URL, plus prove-p2-i1 and prove-p2-i2 --flightsim"
         ),
     )
+    p_prove_p2i4 = sub.add_parser(
+        "prove-p2-i4",
+        help="P2-I4 Mixed-Media Find / Explore acceptance prove",
+    )
+    p_prove_p2i4.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim ACCEPTED gate: MEMORYBOX_P1_RUNTIME_HOST=1, live Explore at "
+            "MEMORYBOX_BASE_URL (default http://127.0.0.1:$MEMORYBOX_PORT or :8790)"
+        ),
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -359,6 +371,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.status.p2_i3_acceptance import prove_p2_i3
 
         payload = prove_p2_i3(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i4":
+        from memorybox.explore.p2_i4_acceptance import prove_p2_i4
+
+        payload = prove_p2_i4(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
