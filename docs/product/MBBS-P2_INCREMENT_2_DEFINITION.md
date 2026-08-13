@@ -1,11 +1,11 @@
 # MBBS-P2 Increment 2 — Product Shell & Context Maturation
 
-**Status:** **LOCKED** (founder clarifications 2026-08-13) · **No build** until explicit “Build P2-I2” authorization  
+**Status:** **BUILD AUTHORIZED** (Tom 2026-08-13: “approved to build”) · Definition **LOCKED** · **Not ACCEPTED** until FlightSim owner gate  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I2 clarifications below · prior I1 ACCEPTED baseline  
 **Depends on:** **P2-I1 ACCEPTED** (Show me Peggy / Person-in-Media)  
-**CLI prove (proposed):** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
-**Gate:** Build only after explicit authorization. Mark **ACCEPTED** only after FlightSim owner gate.
+**CLI prove:** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
+**Gate:** Mark **ACCEPTED** only after FlightSim owner gate (`prove-p2-i2 --flightsim` → `ok: true`).
 
 ---
 
@@ -225,7 +225,7 @@ Pass **all** on FlightSim with real-family material where practical:
 9. **I1 regression:** Person-in-media proof still works inside the shell.  
 10. **No scope leak:** I3 Archive Health content, I4 timeline engine, and EVS-242 cast not required.
 
-Proposed prove: `python -m memorybox prove-p2-i2` / `--flightsim` (checks to be implemented only after build authorization).
+Prove: `python -m memorybox prove-p2-i2` (harness) · `prove-p2-i2 --flightsim` (live shell + I1 regression).
 
 ---
 
@@ -250,7 +250,9 @@ Proposed prove: `python -m memorybox prove-p2-i2` / `--flightsim` (checks to be 
 | MBRM-001A sequencing (I1→I2 Shell) | Approved |
 | P2-I1 | **ACCEPTED** (2026-08-13) |
 | Founder I2 clarifications (§1) | **LOCKED** (2026-08-13) |
-| **This I2 definition** | **LOCKED — awaiting explicit build authorization** |
-| Build / code / FlightSim implement | **NOT AUTHORIZED** until Tom says **Build P2-I2** |
+| **This I2 definition** | **LOCKED** |
+| Build authorization | **AUTHORIZED** (2026-08-13 — Tom: “approved to build”) |
+| Implementation | **IN PROGRESS** on `cursor/p2-iteration-roadmap-3061` |
+| FlightSim owner gate (`prove-p2-i2 --flightsim`) | **PENDING** — required for **ACCEPTED** |
 
-**No code for I2 until explicit build approval.**
+Build is authorized. Do **not** mark ACCEPTED until FlightSim gate passes.

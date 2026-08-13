@@ -1,101 +1,84 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-mb-surface="ask">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MemoryBox Ask</title>
+  <title>MemoryBox — Ask</title>
   <style>
-    :root {
-      --bg: #f3f0e8;
-      --ink: #1c1a16;
-      --line: #c9c2b4;
-      --accent: #2f5d50;
-      --warn: #8a3b12;
-      --panel: #fffcf6;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
-      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
-      color: var(--ink);
-      min-height: 100vh;
-    }
-    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; letter-spacing: 0.02em; }
-    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
-    .bar { display: flex; gap: 0.5rem; }
-    #askInput {
-      flex: 1;
-      padding: 0.7rem 0.8rem;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      font-size: 1rem;
-    }
-    button {
-      border: 1px solid var(--accent);
-      background: var(--accent);
-      color: #fff;
-      padding: 0.65rem 0.9rem;
-      cursor: pointer;
-    }
-    button.secondary { background: transparent; color: var(--accent); }
+    /* Page-local only; shell.css supplies MBUX chrome */
     #breadcrumb {
-      margin: 0.85rem 0;
+      margin: 0.65rem 0;
       padding: 0.55rem 0.7rem;
-      border: 1px dashed var(--line);
-      background: rgba(255,252,246,0.7);
+      border: 1px dashed rgba(31, 77, 63, 0.28);
+      background: rgba(255, 255, 255, 0.55);
       min-height: 2.2rem;
       font-size: 0.9rem;
     }
     #breadcrumb:empty::before { content: "Context: (none)"; color: #7a766c; }
     .crumb { display: inline-block; margin-right: 0.6rem; }
     .crumb b { font-weight: 600; }
-    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
-    section {
-      background: var(--panel);
-      border: 1px solid var(--line);
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; align-items: center; }
+    .ask-section {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(31, 77, 63, 0.12);
       padding: 0.85rem;
       margin-bottom: 0.75rem;
+      border-radius: 2px;
     }
-    section h2 { font-size: 1rem; margin: 0 0 0.5rem; }
-    .warn { color: var(--warn); font-weight: 600; }
+    .ask-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: #1f4d3f; font-family: Georgia, serif; }
+    .warn { color: #6b3a3a; font-weight: 600; }
     .muted { color: #6a655c; font-size: 0.85rem; }
     ul { margin: 0.25rem 0; padding-left: 1.2rem; }
-    code { font-size: 0.8rem; }
     #sessionId { font-size: 0.75rem; color: #6a655c; }
+    #resultsHome { display: none; }
+    #resultsHome.is-open { display: block; }
   </style>
 </head>
 <body>
   <main>
-    <h1>MemoryBox Ask</h1>
-    <p class="sub">Thin functional shell (Increment 4) — Evidence-backed answers; no visual polish.</p>
-    <div class="bar">
-      <input id="askInput" type="text" placeholder="Ask about your archive…" autocomplete="off" />
-      <button id="askBtn" type="button">Ask</button>
+    <div class="mb-panel" id="invitePanel">
+      <p class="mb-recent" id="homeEyebrow">Guided exploration</p>
+      <h1 class="mb-invite-title">What would you like to explore today?</h1>
+      <p class="mb-invite-lede">
+        You are walking into a living museum of a life. The curator is quiet.
+        Curiosity leads — not folders, not dashboards.
+      </p>
+      <div class="mb-journey-row" id="journeyRow" aria-label="Suggested journeys">
+        <button type="button" class="mb-journey" data-ask="Show me Peggy George">Show me Peggy George</button>
+        <button type="button" class="mb-journey" data-ask="Tell me about Christmas at our house">Christmas at our house</button>
+        <button type="button" class="mb-journey" data-ask="What have I forgotten?">What have I forgotten?</button>
+      </div>
+      <p class="mb-recent" id="recentRow"></p>
+      <div class="mb-ask-bar">
+        <input id="askInput" type="text" placeholder="Ask about a person, place, or time…" autocomplete="off" />
+        <button id="askBtn" type="button">Ask</button>
+      </div>
+      <div id="breadcrumb" aria-live="polite"></div>
+      <div class="row">
+        <button class="mb-btn-secondary" id="clearBtn" type="button">Clear context</button>
+        <button class="mb-btn-secondary" id="changeBtn" type="button">Change context…</button>
+        <span id="sessionId"></span>
+      </div>
     </div>
-    <div id="breadcrumb" aria-live="polite"></div>
-    <div class="row">
-      <button class="secondary" id="clearBtn" type="button">Clear context</button>
-      <button class="secondary" id="changeBtn" type="button">Change context…</button>
-      <span id="sessionId"></span>
+
+    <div id="resultsHome">
+      <section class="ask-section">
+        <h2>Answer</h2>
+        <div id="answer" class="muted">Submit an ask to see results.</div>
+      </section>
+      <section class="ask-section">
+        <h2>Results</h2>
+        <div id="results" class="muted">—</div>
+      </section>
+      <section class="ask-section">
+        <h2>Evidence / citations</h2>
+        <div id="citations" class="muted">—</div>
+      </section>
+      <details class="mb-adv ask-section">
+        <summary>Provider status (advanced)</summary>
+        <pre id="providers" class="muted" style="white-space:pre-wrap;margin:0.5rem 0 0;">—</pre>
+      </details>
     </div>
-    <section>
-      <h2>Answer</h2>
-      <div id="answer" class="muted">Submit an ask to see results.</div>
-    </section>
-    <section>
-      <h2>Results</h2>
-      <div id="results" class="muted">—</div>
-    </section>
-    <section>
-      <h2>Evidence / citations</h2>
-      <div id="citations" class="muted">—</div>
-    </section>
-    <section>
-      <h2>Provider status</h2>
-      <pre id="providers" class="muted" style="white-space:pre-wrap;margin:0;">—</pre>
-    </section>
   </main>
   <script>
     let sessionId = localStorage.getItem("mb_ask_session") || "";
@@ -113,7 +96,32 @@
       });
     }
 
+    function showResultsPane() {
+      document.getElementById("resultsHome").classList.add("is-open");
+    }
+
+    function renderRecent() {
+      const row = document.getElementById("recentRow");
+      const recent = (window.mbShell && window.mbShell.recentAsks && window.mbShell.recentAsks()) || [];
+      if (!recent.length) {
+        row.textContent = "";
+        return;
+      }
+      row.innerHTML = "Continue: " + recent.slice(0, 3).map((t) => {
+        const safe = t.replace(/"/g, "&quot;");
+        return `<a href="#" data-ask="${safe}">${t}</a>`;
+      }).join(" · ");
+      row.querySelectorAll("a[data-ask]").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          document.getElementById("askInput").value = a.getAttribute("data-ask") || "";
+          doAsk();
+        });
+      });
+    }
+
     function renderResult(data) {
+      showResultsPane();
       sessionId = data.session_id;
       localStorage.setItem("mb_ask_session", sessionId);
       document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
@@ -142,7 +150,6 @@
         p.textContent = data.answer_text || "";
         ans.appendChild(p);
       }
-      // Rule H: show effective plan slots when present
       const slots = (data.context && data.context.plan_slots) || null;
       if (slots) {
         const s = document.createElement("p");
@@ -162,7 +169,7 @@
       const libPerson = personIds[0] || (ph[0] && ph[0].mb_person_id) || "";
       let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · artifacts=${ar.length} · kind=${kind}</p>`;
       if (libPerson) {
-        html += `<p><a href="/library/ui?person_id=${encodeURIComponent(libPerson)}"><b>Open in Library</b></a> (same person filter — browse / confirm thumbnails there)</p>`;
+        html += `<p><a href="/library/ui?person_id=${encodeURIComponent(libPerson)}"><b>Open in Library</b></a></p>`;
       }
       if (ph.length) {
         html += `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:0.5rem 0">`;
@@ -176,8 +183,6 @@
             html += `<a href="/library/ui?person_id=${encodeURIComponent(h.mb_person_id || libPerson || "")}" title="${label}" style="display:block">` +
               `<img src="${thumb}" alt="${label}" style="width:96px;height:96px;object-fit:cover;border:1px solid #c5c9d1;background:#fff" loading="lazy" />` +
               `</a>`;
-          } else {
-            html += `<span class="muted" style="width:96px;height:96px;border:1px solid #c5c9d1;display:flex;align-items:center;justify-content:center;font-size:0.7rem">no thumb</span>`;
           }
         });
         html += `</div>`;
@@ -190,13 +195,13 @@
         html += `<li>[photo] <code>${h.external_id || ""}</code>${h.mb_person_name ? (" — " + h.mb_person_name) : ""}</li>`;
       });
       st.slice(0, 12).forEach(h => {
-        html += `<li>[story recollection] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
+        html += `<li>[story] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
       });
       jn.slice(0, 12).forEach(h => {
-        html += `<li>[journal] <code>${h.journal_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
+        html += `<li>[journal] <code>${h.journal_id}</code> v${h.version}</li>`;
       });
       ar.slice(0, 12).forEach(h => {
-        html += `<li>[artifact] <code>${h.artifact_id}</code> — ${h.label || ""} (${h.kind || ""})</li>`;
+        html += `<li>[artifact] <code>${h.artifact_id}</code> — ${h.label || ""}</li>`;
       });
       html += "</ul>";
       results.innerHTML = html;
@@ -208,25 +213,21 @@
       } else {
         cit.innerHTML = "<ul>" + citations.map(c => {
           if (c.kind === "evidence") {
-            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind}) [archive]</li>`;
+            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind})</li>`;
           }
           if (c.kind === "story") {
-            return `<li>Story <code>${c.story_id}</code> v${c.version} — ${c.attribution || "owner recollection"}</li>`;
+            return `<li>Story <code>${c.story_id}</code> v${c.version}</li>`;
           }
           if (c.kind === "journal") {
-            return `<li>Journal <code>${c.journal_id}</code> v${c.version} — ${c.attribution || "owner journal"}</li>`;
+            return `<li>Journal <code>${c.journal_id}</code> v${c.version}</li>`;
           }
           if (c.kind === "profile") {
             return `<li>Profile / relationship` +
-              (c.person_id ? ` <code>${c.person_id}</code>` : "") +
-              (c.intent ? ` (${c.intent})` : "") +
-              `</li>`;
+              (c.person_id ? ` <code>${c.person_id}</code>` : "") + `</li>`;
           }
           if (c.kind === "photo") {
             const eid = c.external_id || "";
-            const src = eid
-              ? ("/library/media/photo/" + encodeURIComponent(eid))
-              : (c.thumb_url || "");
+            const src = eid ? ("/library/media/photo/" + encodeURIComponent(eid)) : (c.thumb_url || "");
             const t = src
               ? ` <img src="${src}" alt="" style="width:48px;height:48px;object-fit:cover;vertical-align:middle;border:1px solid #c5c9d1" loading="lazy" />`
               : "";
@@ -246,7 +247,7 @@
           if (c.kind === "artifact") {
             return `<li>Artifact <code>${c.artifact_id || ""}</code> — ${c.label || ""}</li>`;
           }
-          return `<li>${c.kind || "citation"} ${c.external_id || c.person_id || ""}</li>`;
+          return `<li>${c.kind || "citation"}</li>`;
         }).join("") + "</ul>";
       }
       document.getElementById("providers").textContent = JSON.stringify(data.provider_status || {}, null, 2);
@@ -255,6 +256,8 @@
     async function doAsk() {
       const text = document.getElementById("askInput").value.trim();
       if (!text) return;
+      if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
+      renderRecent();
       const res = await fetch("/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -300,8 +303,20 @@
     });
     document.getElementById("clearBtn").addEventListener("click", clearContext);
     document.getElementById("changeBtn").addEventListener("click", changeContext);
+    document.querySelectorAll(".mb-journey[data-ask]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.getElementById("askInput").value = btn.getAttribute("data-ask") || "";
+        doAsk();
+      });
+    });
 
     (async () => {
+      renderRecent();
+      const q = new URLSearchParams(location.search).get("q");
+      if (q) {
+        document.getElementById("askInput").value = q;
+        await doAsk();
+      }
       if (!sessionId) return;
       try {
         const res = await fetch(`/ask/context/${sessionId}`);

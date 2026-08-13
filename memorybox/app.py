@@ -8,11 +8,13 @@ from typing import Any
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from html import escape as html_escape
 
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from memorybox import __version__
 from memorybox import migrate as migrate_mod
+from memorybox.shell.inject import inject_shell, read_and_inject
 from memorybox.artifact import (
     ARTIFACT_KINDS,
     ArtifactServiceError,
@@ -113,12 +115,26 @@ ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "art
 GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "guided_capture.html"
 EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
 STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
+SETTINGS_STATIC = Path(__file__).resolve().parent / "settings" / "static" / "settings.html"
+SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
-    description="MemoryBox modular monolith (MBBS-001). Increment 9A: Person Profile.",
+    description="MemoryBox modular monolith (MBBS-001). P2-I2 Product Shell.",
 )
+
+if SHELL_STATIC_DIR.is_dir():
+    app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
+
+
+def _html_ui(path: Path, *, surface: str, missing: str) -> HTMLResponse:
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=missing)
+    return HTMLResponse(
+        read_and_inject(path, surface=surface),
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 _orchestrator: AskOrchestrator | None = None
 _capture_stt = None
@@ -384,76 +400,39 @@ def health() -> dict[str, Any]:
         "guided_capture": "/guided-capture/ui",
         "export": "/export/ui",
         "status": "/status/ui",
+        "settings": "/settings/ui",
     }
 
 
 @app.get("/")
-def root() -> dict[str, Any]:
-    return {
-        "service": "memorybox",
-        "increment": "12",
-        "version": __version__,
-        "health": "/health",
-        "ask_ui": "/ask/ui",
-        "ask": "POST /ask",
-        "story_ui": "/story/ui",
-        "story": "/story",
-        "journal_ui": "/journal/ui",
-        "journal": "/journal",
-        "people_ui": "/people/ui",
-        "people": "/people",
-        "review_ui": "/review/ui",
-        "library_ui": "/library/ui",
-        "library_cards": "GET /library/cards",
-        "artifact_ui": "/artifact/ui",
-        "artifact": "/artifact",
-        "guided_capture_ui": "/guided-capture/ui",
-        "guided_capture": "/guided-capture",
-        "export_ui": "/export/ui",
-        "export": "/export",
-        "status_ui": "/status/ui",
-        "status": "/status/summary",
-        "capture_transcribe": "POST /capture/transcribe",
-    }
+def root() -> RedirectResponse:
+    """P2-I2: Ask/Home is the product front door."""
+    return RedirectResponse(url="/ask/ui", status_code=307)
 
 
 @app.get("/ask/ui")
-def ask_ui() -> FileResponse:
-    if not ASK_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Ask UI missing")
-    return FileResponse(ASK_STATIC, media_type="text/html")
+def ask_ui() -> HTMLResponse:
+    return _html_ui(ASK_STATIC, surface="ask", missing="Ask UI missing")
 
 
 @app.get("/story/ui")
-def story_ui() -> FileResponse:
-    if not STORY_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Story UI missing")
-    return FileResponse(
-        STORY_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
-    )
+def story_ui() -> HTMLResponse:
+    return _html_ui(STORY_STATIC, surface="story", missing="Story UI missing")
 
 
 @app.get("/journal/ui")
-def journal_ui() -> FileResponse:
-    if not JOURNAL_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Journal UI missing")
-    return FileResponse(JOURNAL_STATIC, media_type="text/html")
+def journal_ui() -> HTMLResponse:
+    return _html_ui(JOURNAL_STATIC, surface="journal", missing="Journal UI missing")
 
 
 @app.get("/people/ui")
-def people_ui() -> FileResponse:
-    if not PEOPLE_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="People UI missing")
-    return FileResponse(PEOPLE_STATIC, media_type="text/html")
+def people_ui() -> HTMLResponse:
+    return _html_ui(PEOPLE_STATIC, surface="people", missing="People UI missing")
 
 
 @app.get("/review/ui")
-def review_ui() -> FileResponse:
-    if not REVIEW_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Review UI missing")
-    return FileResponse(REVIEW_STATIC, media_type="text/html")
+def review_ui() -> HTMLResponse:
+    return _html_ui(REVIEW_STATIC, surface="review", missing="Review UI missing")
 
 
 @app.get("/library/ui")
@@ -496,42 +475,24 @@ def library_ui() -> HTMLResponse:
         1,
     )
     return HTMLResponse(
-        content=html,
+        content=inject_shell(html, surface="library"),
         headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
     )
 
 
 @app.get("/artifact/ui")
-def artifact_ui() -> FileResponse:
-    if not ARTIFACT_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Artifact UI missing")
-    return FileResponse(
-        ARTIFACT_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
-    )
+def artifact_ui() -> HTMLResponse:
+    return _html_ui(ARTIFACT_STATIC, surface="artifact", missing="Artifact UI missing")
 
 
 @app.get("/guided-capture/ui")
-def guided_capture_ui() -> FileResponse:
-    if not GC_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Guided Capture UI missing")
-    return FileResponse(
-        GC_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
-    )
+def guided_capture_ui() -> HTMLResponse:
+    return _html_ui(GC_STATIC, surface="guided_capture", missing="Guided Capture UI missing")
 
 
 @app.get("/export/ui")
-def export_ui() -> FileResponse:
-    if not EXPORT_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Export UI missing")
-    return FileResponse(
-        EXPORT_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
-    )
+def export_ui() -> HTMLResponse:
+    return _html_ui(EXPORT_STATIC, surface="export", missing="Export UI missing")
 
 
 class ExportStartRequest(BaseModel):
@@ -582,14 +543,15 @@ def export_job_status(job_id: str) -> dict[str, Any]:
 
 
 @app.get("/status/ui")
-def status_ui() -> FileResponse:
-    if not STATUS_STATIC.is_file():
-        raise HTTPException(status_code=404, detail="Status UI missing")
-    return FileResponse(
-        STATUS_STATIC,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
-    )
+def status_ui() -> HTMLResponse:
+    """Archive Health entry (owner/system) under Product Shell — content remains I3."""
+    return _html_ui(STATUS_STATIC, surface="status", missing="Status UI missing")
+
+
+@app.get("/settings/ui")
+def settings_ui() -> HTMLResponse:
+    """Settings stub entry (owner/system) — mature Settings deferred to I14."""
+    return _html_ui(SETTINGS_STATIC, surface="settings", missing="Settings UI missing")
 
 
 @app.get("/status/summary")

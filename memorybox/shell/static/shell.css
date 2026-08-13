@@ -1,0 +1,306 @@
+/* MemoryBox P2-I2 shell — MBUX quiet-curator language (validation, not pixel-match) */
+:root {
+  --mb-ink: #141816;
+  --mb-ink-soft: #2a312e;
+  --mb-paper: #eef1ef;
+  --mb-paper-deep: #dfe5e1;
+  --mb-mist: #c5cec8;
+  --mb-forest: #1f4d3f;
+  --mb-forest-bright: #2f6b56;
+  --mb-gold: #a68b4b;
+  --mb-voice: #3d4a5c;
+  --mb-danger: #6b3a3a;
+  --mb-radius: 2px;
+  --mb-font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --mb-font-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body.mb-shell {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--mb-font-body);
+  color: var(--mb-ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #2a3d36 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #1e2a32 0%, transparent 50%),
+    linear-gradient(165deg, #101412 0%, #1a221f 45%, #121816 100%);
+  background-attachment: fixed;
+}
+
+.mb-site-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.35rem;
+  border-bottom: 1px solid rgba(197, 206, 200, 0.18);
+  background: rgba(10, 14, 12, 0.62);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.mb-brand {
+  font-family: var(--mb-font-display);
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--mb-paper);
+  text-decoration: none;
+}
+
+.mb-brand:hover { color: var(--mb-gold); }
+
+.mb-nav-family {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.95rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.mb-nav-family a {
+  color: var(--mb-paper-deep);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 0.1rem;
+}
+
+.mb-nav-family a:hover,
+.mb-nav-family a[aria-current="page"] {
+  color: var(--mb-gold);
+  border-bottom-color: rgba(166, 139, 75, 0.55);
+}
+
+.mb-nav-system {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  font-size: 0.72rem;
+  opacity: 0.72;
+  border-left: 1px solid rgba(197, 206, 200, 0.22);
+  padding-left: 0.85rem;
+  margin-left: 0.25rem;
+}
+
+.mb-nav-system a {
+  color: var(--mb-mist);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+
+.mb-nav-system a:hover,
+.mb-nav-system a[aria-current="page"] {
+  color: var(--mb-paper);
+}
+
+.mb-global-ask-btn {
+  border: 1px solid rgba(166, 139, 75, 0.55);
+  background: transparent;
+  color: var(--mb-gold);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  border-radius: var(--mb-radius);
+}
+
+.mb-global-ask-btn:hover {
+  background: rgba(166, 139, 75, 0.12);
+}
+
+.mb-stage {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3rem;
+}
+
+.mb-panel {
+  background: var(--mb-paper);
+  color: var(--mb-ink);
+  border: 1px solid rgba(20, 24, 22, 0.08);
+  border-radius: 4px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  padding: 1.25rem 1.35rem 1.5rem;
+}
+
+.mb-panel h1,
+.mb-invite-title {
+  font-family: var(--mb-font-display);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--mb-forest);
+  margin: 0 0 0.35rem;
+}
+
+.mb-invite-lede {
+  color: var(--mb-ink-soft);
+  font-size: 1.02rem;
+  line-height: 1.45;
+  margin: 0 0 1rem;
+  max-width: 38rem;
+}
+
+.mb-journey-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.mb-journey {
+  border: 1px dashed rgba(31, 77, 63, 0.35);
+  background: rgba(31, 77, 63, 0.04);
+  color: var(--mb-forest);
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  border-radius: var(--mb-radius);
+}
+
+.mb-journey:hover {
+  background: rgba(31, 77, 63, 0.1);
+  border-style: solid;
+}
+
+.mb-recent {
+  font-size: 0.85rem;
+  color: var(--mb-ink-soft);
+  margin: 0 0 1rem;
+}
+
+.mb-recent a { color: var(--mb-forest-bright); }
+
+.mb-ask-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.mb-ask-bar input {
+  flex: 1;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(31, 77, 63, 0.28);
+  background: #fff;
+  font: inherit;
+  font-size: 1.02rem;
+  border-radius: var(--mb-radius);
+}
+
+.mb-ask-bar button,
+.mb-btn-primary {
+  border: 1px solid var(--mb-forest);
+  background: var(--mb-forest);
+  color: #fff;
+  font: inherit;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  border-radius: var(--mb-radius);
+}
+
+.mb-btn-secondary {
+  border: 1px solid rgba(31, 77, 63, 0.35);
+  background: transparent;
+  color: var(--mb-forest);
+  font: inherit;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  border-radius: var(--mb-radius);
+}
+
+.mb-return-bar {
+  display: none;
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0.75rem;
+  background: rgba(31, 77, 63, 0.08);
+  border: 1px solid rgba(31, 77, 63, 0.2);
+  border-radius: var(--mb-radius);
+  font-size: 0.88rem;
+}
+
+.mb-return-bar.is-visible { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+
+.mb-global-ask-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(8, 10, 9, 0.55);
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4.5rem 1rem 1rem;
+}
+
+.mb-global-ask-overlay.is-open { display: flex; }
+
+.mb-global-ask-card {
+  width: min(640px, 100%);
+  background: var(--mb-paper);
+  color: var(--mb-ink);
+  border-radius: 4px;
+  padding: 1rem 1.1rem 1.15rem;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+}
+
+.mb-global-ask-card h2 {
+  font-family: var(--mb-font-display);
+  font-size: 1.15rem;
+  margin: 0 0 0.35rem;
+  color: var(--mb-forest);
+}
+
+.mb-context-chip {
+  font-size: 0.78rem;
+  color: var(--mb-ink-soft);
+  margin: 0 0 0.65rem;
+}
+
+.mb-adv {
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(20, 24, 22, 0.08);
+  padding-top: 0.55rem;
+}
+
+.mb-adv summary {
+  cursor: pointer;
+  color: var(--mb-voice);
+  font-size: 0.8rem;
+}
+
+/* Soften legacy page chrome when shell wraps it */
+body.mb-shell main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2.5rem;
+}
+
+body.mb-shell main > h1:first-child {
+  font-family: var(--mb-font-display);
+  color: var(--mb-paper);
+}
+
+body.mb-shell .sub { color: var(--mb-mist) !important; }
+
+body.mb-shell section,
+body.mb-shell .card,
+body.mb-shell .panel {
+  background: var(--mb-paper) !important;
+  border-color: rgba(20, 24, 22, 0.1) !important;
+}
+
+@media (max-width: 720px) {
+  .mb-nav-system {
+    border-left: none;
+    padding-left: 0;
+    width: 100%;
+    opacity: 0.85;
+  }
+}
