@@ -35,8 +35,13 @@ _SHOW_ME_ROLE_RE = re.compile(
     r"grandparent|uncle|aunt|spouse|partner|sibling|brother|sister|"
     r"grandson|granddaughter|grandchild|parent|child)\b"
 )
+# "pictures of me/myself", "show me myself", "show me me" → owner (not prior dad context)
 _PICTURES_OF_ME_RE = re.compile(
-    r"(?i)\b(pictures?|photos?|images?)\s+of\s+(me|myself)\b|\bof\s+myself\b"
+    r"(?i)"
+    r"(?:\b(?:pictures?|photos?|images?|videos?|stills?)\s+of\s+(?:me|myself)\b)"
+    r"|(?:\bof\s+myself\b)"
+    r"|(?:\bshow\s+me\s+(?:myself|me)\b)"
+    r"|(?:\bshow\s+myself\b)"
 )
 _WHO_AM_I_RE = re.compile(r"(?i)\bwho\s+am\s+i\b")
 _WHO_IS_RE = re.compile(r"(?i)\bwho\s+is\b")

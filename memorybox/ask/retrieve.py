@@ -398,14 +398,15 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 
 
 def search_photos(
-    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 120
+    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 5000
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
     """Search photos via PhotoProvider with I6/I7 identity authority rules.
 
     Confirmed and trusted-provider-seeded MB Persons retrieve via provider_identities.
     Unconfirmed Immich name matches remain candidates and never become confirmed.
     Empty mapped Immich results fall through to name search (stale mapping safe).
-    Limit defaults higher so person asks can span older EXIF-dated library years.
+    Limit defaults high so person asks can return the full Immich person library
+    (hundreds–thousands), not only the newest page (~48–120).
     """
     from memorybox.person import (
         AUTHORITY_TRUSTED_PROVIDER,

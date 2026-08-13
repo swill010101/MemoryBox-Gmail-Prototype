@@ -149,17 +149,21 @@ class ImmichHttpClient:
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
-        Immich metadata search defaults to newest-first and is paginated.
-        A single page of ~48 newest assets hides older library photos that still
-        have EXIF/taken dates (common for Tom Will / family archives).
-        We merge newest + oldest pages so Explore's timeline can span the life.
+        Immich metadata search is paginated (newest-first by default). A short
+        page window (~48–120) hides older EXIF-dated library photos that Immich
+        still shows on the person page (e.g. Eugene Will ~648, Tom Will ~2994).
+        Paginate until exhausted or ``size`` (hard-capped) so Explore's gallery
+        and Timeline span the full person library.
         """
         if not person_ids:
             return []
-        target = max(1, min(int(size), 1000))
-        page_size = min(100, max(target, 25))
+        # Hard cap keeps Ask/Explore responsive on huge libraries while covering
+        # typical family person pages (thousands of assets).
+        target = max(1, min(int(size), 5000))
+        page_size = min(250, max(25, min(target, 250)))
+        max_pages = max(1, (target + page_size - 1) // page_size) + 2
 
-        def _page(*, page: int, order: str) -> list[dict[str, Any]]:
+        def _page(*, page: int, order: str) -> tuple[list[dict[str, Any]], int | None]:
             body: dict[str, Any] = {
                 "personIds": person_ids,
                 "size": page_size,
@@ -168,33 +172,72 @@ class ImmichHttpClient:
             }
             status, data = self._request("POST", "/search/metadata", body=body)
             if status != 200 or not isinstance(data, dict):
-                return []
+                return [], None
             assets = data.get("assets") or {}
-            items = assets.get("items") if isinstance(assets, dict) else []
-            return items if isinstance(items, list) else []
+            if not isinstance(assets, dict):
+                return [], None
+            items = assets.get("items") if isinstance(assets.get("items"), list) else []
+            total = assets.get("total")
+            total_n = (
+                int(total)
+                if isinstance(total, (int, float)) and int(total) >= 0
+                else None
+            )
+            return ([it for it in items if isinstance(it, dict)], total_n)
 
         by_id: dict[str, dict[str, Any]] = {}
-        # Newest first (Immich default order)
-        for page in range(1, 6):
-            batch = _page(page=page, order="desc")
+        library_total: int | None = None
+        # Newest → oldest until exhausted (full life span when under the cap)
+        for page in range(1, max_pages + 1):
+            batch, total_n = _page(page=page, order="desc")
+            if total_n is not None:
+                library_total = total_n
             if not batch:
                 break
             for it in batch:
-                if isinstance(it, dict) and it.get("id"):
-                    by_id[str(it["id"])] = it
-            if len(by_id) >= target or len(batch) < page_size:
+                eid = it.get("id")
+                if eid:
+                    by_id[str(eid)] = it
+            if len(by_id) >= target:
+                break
+            if library_total is not None and len(by_id) >= library_total:
+                break
+            if len(batch) < page_size:
                 break
 
-        # Oldest first — pull early-life / pre-import-dated faces into the set
-        if len(by_id) < target:
-            for page in range(1, 4):
-                batch = _page(page=page, order="asc")
+        # Cap hit but Immich still has older assets: reserve a slice of the
+        # budget for oldest pages so early-life EXIF years are not dropped.
+        if (
+            library_total is not None
+            and len(by_id) < library_total
+            and len(by_id) >= target
+        ):
+            oldest_budget = max(1, target // 5)
+            # Drop newest overflow room for oldest inserts
+            if len(by_id) > target - oldest_budget:
+                # Keep insertion order from desc pages (newest first in dict
+                # only if Python 3.7+ insertion — Immich desc page1 = newest).
+                keys = list(by_id.keys())
+                keep = keys[: max(0, target - oldest_budget)]
+                by_id = {k: by_id[k] for k in keep}
+            for page in range(1, max(2, oldest_budget // page_size) + 3):
+                if oldest_budget <= 0 or len(by_id) >= target:
+                    break
+                batch, _ = _page(page=page, order="asc")
                 if not batch:
                     break
                 for it in batch:
-                    if isinstance(it, dict) and it.get("id"):
-                        by_id.setdefault(str(it["id"]), it)
-                if len(by_id) >= target or len(batch) < page_size:
+                    eid = it.get("id")
+                    if not eid:
+                        continue
+                    key = str(eid)
+                    if key in by_id:
+                        continue
+                    by_id[key] = it
+                    oldest_budget -= 1
+                    if oldest_budget <= 0 or len(by_id) >= target:
+                        break
+                if len(batch) < page_size:
                     break
 
         return list(by_id.values())[:target]

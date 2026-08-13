@@ -575,9 +575,25 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         notes.append("said_about_communication_focus")
 
     show_me = bool(SHOW_ME_RE.search(q))
+    # Owner self: "show me myself" / "show me me" — force broad visual and do
+    # NOT inherit prior session person (dad/Eugene must not stick).
+    self_show = bool(
+        re.search(
+            r"(?i)\bshow\s+me\s+(?:myself|me)\b|\bshow\s+myself\b|"
+            r"\b(?:pictures?|photos?|images?|videos?)\s+of\s+(?:me|myself)\b",
+            q,
+        )
+    )
+    if self_show and visual_scope == "none" and not want_relationship and not about_trip:
+        visual_scope = "broad"
+        want_still = True
+        want_video = True
+        want_visual = True
+        want_photo = True
+        notes.append("show_me_self_forces_broad_visual")
     # "show me <person>" (or show me + session person) → broad visual when no
     # explicit media word already set scope (photos→still_only, videos→video_only).
-    if (
+    elif (
         show_me
         and visual_scope == "none"
         and not want_email
@@ -671,11 +687,14 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
 
     if subject_changed:
         # D: do not inherit incompatible place/event/trip from prior subject
-        if not people and ctx.person_names:
+        if not people and ctx.person_names and not self_show:
             people = list(ctx.person_names)
             inherit = True
             notes.append("inherit_person_only_after_subject_change")
         notes.append("rule_D_no_inherit_incompatible_place_event_trip")
+    elif self_show:
+        # "show me myself" — I9A owner resolve owns identity; do not keep dad/etc.
+        notes.append("show_me_self_no_inherit_person")
     elif should_inherit_missing or is_followup or (show_me and not people and ctx.person_names):
         inherit = True
         notes.append("inherited_missing_slots_only")
@@ -692,7 +711,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if t1 is None and not show_me:
             t1 = ctx.time_end
     # show me + partial name: keep context people that contain the uttered token
-    if show_me and u_people and ctx.person_names:
+    if show_me and u_people and ctx.person_names and not self_show:
         merged = list(u_people)
         for cp in ctx.person_names:
             if any(u.lower() in cp.lower() or cp.lower() in u.lower() for u in u_people):

@@ -298,6 +298,99 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check("ask_to_explore_mapper", False, checks, problems, str(exc))
 
+    try:
+        from memorybox.profile.ask_resolve import _PICTURES_OF_ME_RE
+
+        self_asks = (
+            "Show me myself",
+            "show me me",
+            "pictures of myself",
+            "Show myself",
+        )
+        miss = [a for a in self_asks if not _PICTURES_OF_ME_RE.search(a)]
+        _check(
+            "show_me_myself_regex",
+            not miss,
+            checks,
+            problems,
+            ("miss: " + ", ".join(miss)) if miss else "self patterns match",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("show_me_myself_regex", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.context import AskContext
+        from memorybox.planner import plan_ask
+
+        ctx = AskContext(session_id="prove-self", person_names=("Eugene Will",))
+        plan = plan_ask("Show me myself", ctx)
+        _check(
+            "show_me_myself_no_inherit_dad",
+            "Eugene Will" not in (plan.person_names or ())
+            and "show_me_self_no_inherit_person" in (plan.notes or ())
+            and plan.want_visual is True,
+            checks,
+            problems,
+            f"people={plan.person_names} notes={plan.notes}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("show_me_myself_no_inherit_dad", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.providers.photo._immich_http import ImmichHttpClient
+
+        class _FakeImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self._calls: list[dict[str, Any]] = []
+
+            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+                assert method == "POST" and path == "/search/metadata"
+                page = int((body or {}).get("page") or 1)
+                order = str((body or {}).get("order") or "desc")
+                size = int((body or {}).get("size") or 250)
+                self._calls.append({"page": page, "order": order, "size": size})
+                # 600 assets across pages of `size`
+                total = 600
+                if order == "desc":
+                    start = (page - 1) * size
+                else:
+                    start = (page - 1) * size
+                items = []
+                for i in range(size):
+                    idx = start + i
+                    if idx >= total:
+                        break
+                    # distinct ids per order so asc merge can add when capped
+                    prefix = "n" if order == "desc" else "o"
+                    items.append({"id": f"{prefix}-{idx}", "originalFileName": f"{idx}.jpg"})
+                return 200, {
+                    "assets": {"items": items, "total": total, "count": len(items)}
+                }
+
+        client = _FakeImmich()
+        got = client.search_by_person_ids(["person-1"], size=500)
+        _check(
+            "immich_person_full_page",
+            len(got) == 500 and len(client._calls) >= 2,
+            checks,
+            problems,
+            f"n={len(got)} calls={len(client._calls)}",
+        )
+        got_all = client.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_person_exhausts_library",
+            len(got_all) == 600,
+            checks,
+            problems,
+            f"n={len(got_all)}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_person_full_page", False, checks, problems, str(exc))
+
     ok = not problems
     return {
         "ok": ok,
@@ -398,7 +491,7 @@ def _prove_flightsim() -> dict[str, Any]:
             {"area": "Banding", "criterion": "Dragging a period narrows result and increases precision", "automated": "manual"},
             {"area": "Handles", "criterion": "Widen/narrow current temporal range", "automated": "manual"},
             {"area": "Reset", "criterion": "Restores full temporal extent of current query+context+type-filter set; does not clear filters", "automated": "structural"},
-            {"area": "Undated", "criterion": "Matching undated discoverable unbounded; no fake date; excluded when date-bounded", "automated": "fixture+structural"},
+            {"area": "Undated", "criterion": "Matching undated always in Gallery when filter off; Undated control left of Timeline + filter bar; no fake date", "automated": "fixture+structural"},
             {"area": "Synchronization", "criterion": "Timeline changes immediately update Gallery", "automated": "manual"},
             {"area": "Scrub", "criterion": "Playhead continuously moves Gallery through chronological neighborhood", "automated": "structural"},
             {"area": "Detail", "criterion": "Large modal, not new screen", "automated": "structural"},
