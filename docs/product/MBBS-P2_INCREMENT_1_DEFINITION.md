@@ -1,12 +1,12 @@
 # MBBS-P2 Increment 1 — Show me Peggy (Person-in-Media Vertical)
 
-**Status:** **BUILD AUTHORIZED** (founder 2026-08-12: “approved to build”) · Definition **LOCKED**  
+**Status:** **ACCEPTED** (FlightSim owner gate 2026-08-13: `prove-p2-i1 --flightsim` → `ok: true` · Peggy George · real Immich + HVRT) · Definition **LOCKED**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I1 clarifications below  
 **CLI prove:** `python -m memorybox prove-p2-i1` (harness / fake corpus) · `prove-p2-i1 --flightsim` on P1 runtime with **real Immich + real HVRT** (fakes/degraded fail)  
 **FlightSim env (ACCEPTED):** `MEMORYBOX_P1_RUNTIME_HOST=1` · Immich via `MEMORYBOX_PHOTO_PROVIDER=immich` · HVRT via `MEMORYBOX_VIDEO_PROVIDER=hvrt` + `MEMORYBOX_VIDEO_WORKER_URL` · corpus ids `MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID` / `MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID` · optional `MEMORYBOX_P2_I1_PERSON_NAME` (default Peggy) / `MEMORYBOX_P2_I1_PERSON_ID` / `MEMORYBOX_P2_I1_HVRT_FACE_ID`  
 **APIs:** `POST /people/sync/immich` · `GET /recognition/queue` · `POST /recognition/queue/process` · `POST /recognition/appearances/correct`  
-**Gate:** Implementation in progress under Build P2-I1. FlightSim owner acceptance still required for ACCEPTED.
+**Gate:** **PASSED** — full eligible-archive queue (515), Immich face evidence, real HVRT timeslots + jump `t=`, Ask photos+moments, owner correct→reuse, negative video no false hit.
 ## 0. Product intent
 
 Deliver the first meaningful P2 proof:
@@ -247,6 +247,7 @@ Known residuals (e.g. queue still draining) must be explicit and must not hide m
 | MBRM-001A planning direction | Approved |
 | Founder I1 clarifications (§1) | Locked into this definition |
 | **This I1 definition** | **LOCKED — final planning baseline** |
-| Build / code / migrations / FlightSim implement | **AUTHORIZED** (founder “approved to build” 2026-08-12) — FlightSim acceptance still pending |
+| Build / code / migrations / FlightSim implement | **AUTHORIZED** (founder “approved to build” 2026-08-12) |
+| FlightSim owner gate (`prove-p2-i1 --flightsim`) | **ACCEPTED** (2026-08-13) |
 
-Implementation tracks this definition. Mark **ACCEPTED** only after FlightSim owner gate passes.
+P2-I1 is **ACCEPTED**. Next roadmap increment per MBRM-001A is **I2 Shell**.
