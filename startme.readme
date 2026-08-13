@@ -1,0 +1,136 @@
+# startme.readme — FlightSim MemoryBox cold-boot runbook
+
+**Machine:** FlightSim (`\\flightsim\memorybox` ↔ `C:\memorybox`)  
+**Script:** `startmb.cmd` / `startmb.ps1`  
+**Goal:** After a reboot, get Docker data plane + video worker + Ask/serve up, then open Explore in Chrome.
+
+---
+
+## Why this exists
+
+A fresh FlightSim login is not enough for MemoryBox. You still need:
+
+1. **Docker containers** for Postgres (`memorybox-pg` :5432) and Qdrant (`memorybox-qdrant` :6333)  
+2. **Video worker** (`python -m memorybox.video_worker` on :8791)  
+3. **Ask / serve** (`python -m memorybox serve` on :8790)  
+4. A browser on **Explore** (`http://127.0.0.1:8790/explore/ui`)
+
+Docker Desktop is set to **start automatically on login**. `startmb` waits for the Docker engine, then does the rest so you do not re-type the recovery commands.
+
+---
+
+## How to start
+
+### Normal (recommended)
+
+1. Log into FlightSim; wait until Docker Desktop has finished starting (whale idle in the tray is fine).  
+2. From File Explorer open `\\flightsim\memorybox` (or `C:\memorybox`).  
+3. Double-click **`startmb.cmd`**  
+   — or in PowerShell:
+
+```powershell
+cd C:\memorybox
+.\startmb.cmd
+```
+
+4. Two PowerShell windows open and stay open: **video worker** and **serve**. Leave them running.  
+5. Chrome opens on Explore when `/health` responds.
+
+### Optional flags (PowerShell)
+
+```powershell
+cd C:\memorybox
+.\startmb.ps1 -SkipChrome
+.\startmb.ps1 -RecreateContainers   # wipe/recreate PG+Qdrant containers (keeps named volumes unless you remove them)
+.\startmb.ps1 -ExploreUrl "http://127.0.0.1:8790/explore/ui?demo=peggy-christmas"
+```
+
+---
+
+## What the script does (in order)
+
+| Step | Action |
+|------|--------|
+| 1 | `cd` to the MemoryBox repo root (script directory). |
+| 2 | Load local env files if present: `config\memorybox_app.env`, `config\video_worker.env`, `config\memorybox_sources.env` (gitignored — secrets stay on the box). |
+| 3 | Apply safe FlightSim defaults for anything still unset (`MEMORYBOX_DATABASE_URL`, Qdrant, Immich/HVRT provider flags, worker URL). Points `MEMORYBOX_IMMICH_ENV` at `config\immich.env` when that file exists. |
+| 4 | Wait for **Docker engine** (up to ~3 minutes). |
+| 5 | Ensure containers **`memorybox-pg`** and **`memorybox-qdrant`** exist and are running (create with named volumes if missing). |
+| 6 | Wait until ports **5432** and **6333** accept TCP. |
+| 7 | If **:8791** is free → start worker in a new window; else reuse the existing listener. |
+| 8 | If **:8790** is free → start serve in a new window; else reuse. |
+| 9 | Wait for `http://127.0.0.1:8790/health`. |
+| 10 | Launch **Chrome** to Explore (falls back to the default browser if Chrome is missing). |
+
+Child windows re-enter the same script with `-Role worker` or `-Role serve` so they load the same env files.
+
+---
+
+## What you should already have on FlightSim
+
+- Docker Desktop (auto-start on login) — **done**  
+- Python 3 on PATH (`python` or `py`)  
+- This git checkout at `C:\memorybox`  
+- Local config (recommended, not in git):
+
+```text
+config\memorybox_app.env      # DATABASE_URL, Qdrant, providers
+config\immich.env             # Immich credentials
+config\video_worker.env       # MEMORYBOX_VIDEO_MEDIA_ROOT, derived dir, etc.
+```
+
+Copy from the `config\*.env.example` files if you are missing them.
+
+Default DB URL the script uses when unset:
+
+```text
+postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
+```
+
+---
+
+## After reboot checklist (if startmb fails)
+
+```powershell
+docker info
+docker ps -a
+docker start memorybox-pg memorybox-qdrant
+python -m memorybox health
+```
+
+- **Docker not ready:** wait for Desktop; re-run `startmb`.  
+- **Port in use / wrong process:** close old worker/serve windows, or reboot again.  
+- **Serve hangs with no “owner bootstrap”:** Postgres is down — fix `memorybox-pg` first.  
+- **Photos missing:** confirm `config\immich.env` and `MEMORYBOX_PHOTO_PROVIDER=immich`.  
+- **Videos missing:** confirm worker window is up and `MEMORYBOX_VIDEO_MEDIA_ROOT` points at the Home Videos share.
+
+Pull latest I4 branch when you want new code:
+
+```powershell
+cd C:\memorybox
+git fetch
+git checkout cursor/p2-i4-mixed-media-explore-3061
+git pull
+.\startmb.cmd
+```
+
+---
+
+## Stopping
+
+Close the **worker** and **serve** PowerShell windows (Ctrl+C then close).  
+Containers can stay running; next `startmb` will reuse them. To stop containers:
+
+```powershell
+docker stop memorybox-pg memorybox-qdrant
+```
+
+---
+
+## Files
+
+| File | Role |
+|------|------|
+| `startmb.cmd` | Double-click entrypoint |
+| `startmb.ps1` | Orchestrator + worker/serve roles |
+| `startme.readme` | This runbook |
