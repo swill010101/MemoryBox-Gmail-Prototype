@@ -42,7 +42,7 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)
 - Approved planning direction: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
-- **P2-I1 definition (LOCKED, build authorized):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
+- **P2-I1 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
 **Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1`  
