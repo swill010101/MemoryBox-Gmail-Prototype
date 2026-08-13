@@ -253,6 +253,17 @@ Prove: `python -m memorybox prove-p2-i2` (harness) · `prove-p2-i2 --flightsim` 
 | **This I2 definition** | **LOCKED** |
 | Build authorization | **AUTHORIZED** (2026-08-13 — Tom: “approved to build”) |
 | Implementation | **COMPLETE** on `cursor/p2-iteration-roadmap-3061` |
-| FlightSim owner gate (`prove-p2-i2 --flightsim`) | **ACCEPTED** (2026-08-13 · `ok: true` · I1 regression green) |
+| FlightSim prove (`prove-p2-i2 --flightsim`) | **PASSED** (2026-08-13 · `ok: true` · I1 regression green) |
+| Founder UX acceptance (flow review) | **PENDING** — Tom reviewing screen-by-screen; do **not** mark ACCEPTED until explicit approval |
+| I2.1 Ask polish / I3 | **HOLD** — no build until I2 ACCEPTED |
 
-P2-I2 is **ACCEPTED**. Next roadmap increment per MBRM-001A is **I3 Archive Health & Provider Honesty** (+ TASK-004).
+**Not ACCEPTED yet.** No I3 definition/build and no Ask polish until Tom accepts I2 after flow review.
+
+### Parked Ask follow-on decisions (2026-08-13 — hold until after I2 ACCEPTED)
+
+| Q | Decision |
+|---|----------|
+| Polish vs I3 | Hold polish; no I3 until I2 ACCEPTED |
+| Viewer identity | Do **now** when polish is authorized (durable viewer / who’s exploring) |
+| Journey chips | Use **named People with relationships already set** (not inactive capabilities; full kinship inference stays I6) |
+| Timeline gallery | **I4** — not pulled forward into Ask |

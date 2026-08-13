@@ -61,7 +61,7 @@ $env:MEMORYBOX_P2_I1_HVRT_FACE_ID = "<hvrt-face-id>"  # or teach via Review firs
 python -m memorybox prove-p2-i1 --flightsim
 ```
 
-**FlightSim ACCEPTED (I2):** serve on `:8790` (or `MEMORYBOX_BASE_URL`), then:
+**FlightSim prove (I2):** serve on `:8790` (or `MEMORYBOX_BASE_URL`), then:
 
 ```powershell
 $env:MEMORYBOX_P1_RUNTIME_HOST = "1"

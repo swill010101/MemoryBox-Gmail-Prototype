@@ -250,4 +250,4 @@ Known residuals (e.g. queue still draining) must be explicit and must not hide m
 | Build / code / migrations / FlightSim implement | **AUTHORIZED** (founder “approved to build” 2026-08-12) |
 | FlightSim owner gate (`prove-p2-i1 --flightsim`) | **ACCEPTED** (2026-08-13) |
 
-P2-I1 is **ACCEPTED**. **P2-I2 Product Shell** is also **ACCEPTED** (2026-08-13) — [MBBS-P2_INCREMENT_2_DEFINITION.md](MBBS-P2_INCREMENT_2_DEFINITION.md). Next per MBRM-001A: **I3 Archive Health**.
+P2-I1 is **ACCEPTED**. **P2-I2 Product Shell** — FlightSim prove passed; **owner UX acceptance PENDING** — [MBBS-P2_INCREMENT_2_DEFINITION.md](MBBS-P2_INCREMENT_2_DEFINITION.md). Do not start I3 until Tom accepts I2.
