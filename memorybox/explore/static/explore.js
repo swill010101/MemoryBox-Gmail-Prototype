@@ -51,6 +51,14 @@
 
   const DENSITY_LABEL = { 1: "Small", 2: "Medium", 3: "Large" };
 
+  const PERSON = window.MB_PERSON_SURFACE || null;
+  const PERSON_MODE = Boolean(PERSON && PERSON.personId);
+  if (PERSON_MODE) {
+    // I5: Audio empty-OK; Location = has-location filter (option D provisional)
+    FILTERS.push({ id: "audio", label: "Audio" });
+    FILTERS.push({ id: "location", label: "Location" });
+  }
+
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
   // "Show 2005 through 2011." "Only Oak Street." "Near Cascadia."
@@ -235,8 +243,14 @@
 
   function matchesType(item, filter) {
     if (!filter || filter === "all") return true;
+    if (filter === "location") {
+      // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
+      if (itemLatLng(item)) return true;
+      return Boolean(itemPlaceBlob(item).trim());
+    }
     const t = String(item.type || "").toLowerCase();
     if (filter === "email") return t === "email" || t === "sms" || t === "text";
+    if (filter === "audio") return t === "audio" || t === "voice";
     return t === filter;
   }
 
@@ -273,7 +287,56 @@
       const d = parseISO(a.date) - parseISO(b.date);
       return sort === "oldest" ? d : -d;
     });
+    if (PERSON_MODE && (PERSON.memoryMode || "highlights") === "highlights") {
+      return rankHighlights(list);
+    }
     return list;
+  }
+
+  /** I5 Highlights: real ranking — prefer stories/artifacts, year coverage, then recent photos/video. */
+  function rankHighlights(items) {
+    const MAX = 36;
+    if (!items || items.length <= MAX) return items;
+    const byYear = new Map();
+    const preferred = [];
+    const rest = [];
+    for (const it of items) {
+      const t = String(it.type || "");
+      if (t === "story" || t === "artifact" || t === "email" || t === "sms") {
+        preferred.push(it);
+      } else {
+        rest.push(it);
+      }
+      if (isDated(it)) {
+        const y = String(it.date).slice(0, 4);
+        if (!byYear.has(y)) byYear.set(y, []);
+        byYear.get(y).push(it);
+      }
+    }
+    const out = [];
+    const seen = new Set();
+    function take(it) {
+      if (!it || seen.has(it.id) || out.length >= MAX) return;
+      seen.add(it.id);
+      out.push(it);
+    }
+    // One representative per year (coverage)
+    const years = Array.from(byYear.keys()).sort();
+    for (const y of years) {
+      const bucket = byYear.get(y) || [];
+      const story = bucket.find((x) => x.type === "story");
+      take(story || bucket[0]);
+      if (out.length >= MAX) break;
+    }
+    for (const it of preferred) take(it);
+    for (const it of rest) take(it);
+    // Preserve newest-first among selected
+    out.sort((a, b) => {
+      if (isUndated(a) && !isUndated(b)) return 1;
+      if (!isUndated(a) && isUndated(b)) return -1;
+      return parseISO(b.date) - parseISO(a.date);
+    });
+    return out;
   }
 
   /**
@@ -432,8 +495,23 @@
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
 
+  function personScopedAsk(askText) {
+    let q = String(askText || "").trim();
+    if (!PERSON_MODE) return q;
+    const name = (PERSON.displayName || "").trim();
+    if (!name) return q;
+    const lower = q.toLowerCase();
+    const nameL = name.toLowerCase();
+    const first = nameL.split(/\s+/)[0];
+    // Keep Person locked: ensure name present unless empty Ask means "show person".
+    if (!q) return "Show " + name;
+    if (lower.includes(nameL) || (first && lower.includes(first))) return q;
+    // Bare refinements inherit Person ("Christmas." → "Show Peggy Christmas")
+    return "Show " + name + " " + q;
+  }
+
   async function liveFind(askText) {
-    const q = String(askText || "").trim();
+    const q = personScopedAsk(askText);
     const url =
       "/explore/api/find?q=" +
       encodeURIComponent(q) +
@@ -582,6 +660,43 @@
     if (/clear context.*people|go to people/.test(lower)) {
       window.location.href = "/people/ui";
       return;
+    }
+
+    if (
+      PERSON_MODE &&
+      (/^clear everything except\b/.test(lower) ||
+        /^reset to person\.?$/.test(lower) ||
+        /^clear all but person\.?$/.test(lower))
+    ) {
+      setTypeFilter("all");
+      clearPlaceFilter();
+      setUndatedFilter(false);
+      state.domain.temporalWindows = null;
+      resetTimelineExtent(false);
+      setViewMode("gallery");
+      if (PERSON.memoryMode) PERSON.memoryMode = PERSON.memoryMode;
+      liveFind("Show " + (PERSON.displayName || "person"))
+        .then((payload) => {
+          applyPayloadToState(payload, { keepPresentation: true });
+          // Re-assert locked person chip
+          ensureLockedPersonChip();
+          render();
+        })
+        .catch((err) => {
+          state.domain.summary = "Find failed: " + err;
+          renderCurator();
+        });
+      return;
+    }
+
+    if (PERSON_MODE && /^go to\s+(.+?)\s+instead\.?$/.test(lower)) {
+      const m = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+      const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
+      if (who) {
+        window.location.href =
+          "/people/ui?person_name=" + encodeURIComponent(who.replace(/\b\w/g, (c) => c.toUpperCase()));
+        return;
+      }
     }
 
     if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
@@ -738,11 +853,36 @@
       return;
     }
 
+    if (PERSON_MODE && /^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i.test(lower)) {
+      const m = lower.match(/^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i);
+      const token = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim().toLowerCase();
+      if (token && token !== "peggy" && !(PERSON.displayName || "").toLowerCase().includes(token)) {
+        // Drop matching event/time chips by re-asking without that token — clear temporal if holiday/season-like
+        if (/christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd/.test(token)) {
+          state.domain.temporalWindows = null;
+          resetTimelineExtent(false);
+          const chips = (state.domain.chips || []).filter(
+            (c) => !(c.kind === "event" || c.kind === "time") || !String(c.label || "").toLowerCase().includes(token.split(/\s+/)[0])
+          );
+          state.domain.chips = chips;
+          ensureLockedPersonChip();
+          liveFind("Show " + (PERSON.displayName || ""))
+            .then((payload) => {
+              applyPayloadToState(payload, { keepPresentation: true });
+              ensureLockedPersonChip();
+              render();
+            });
+          return;
+        }
+      }
+    }
+
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
       liveFind(text)
         .then((payload) => {
           applyPayloadToState(payload, { keepPresentation: true });
+          ensureLockedPersonChip();
           setTypeFilter("all");
           render();
         })
@@ -792,19 +932,48 @@
 
   // ——— Render ———
 
+  function ensureLockedPersonChip() {
+    if (!PERSON_MODE) return;
+    const name = (PERSON.displayName || "").trim();
+    if (!name || !state) return;
+    const chips = Array.isArray(state.domain.chips) ? state.domain.chips.slice() : [];
+    const without = chips.filter((c) => c.kind !== "person");
+    without.unshift({ kind: "person", label: name, locked: true, personId: PERSON.personId });
+    state.domain.chips = without;
+  }
+
+
   function renderNav() {
     const el = document.getElementById("mb-explore-nav");
     if (!el) return;
     el.innerHTML = NAV.map(
       (n) =>
         `<a href="${n.href}" data-nav="${n.id}"${
-          n.id === "ask" ? ' aria-current="page"' : ""
+          (PERSON_MODE ? n.id === "people" : n.id === "ask")
+            ? ' aria-current="page"'
+            : ""
         }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
     ).join("");
   }
 
   // Expose for shell Global Ask + future STT — same applyAskCommand path.
   window.mbExploreApplyAsk = applyAskCommand;
+  window.mbExploreSetViewMode = function (mode) {
+    setViewMode(mode === "map" ? "map" : "gallery");
+    render();
+  };
+  window.mbPersonSetMemoryMode = function (mode) {
+    if (!PERSON_MODE) return;
+    PERSON.memoryMode = mode === "all" ? "all" : "highlights";
+    render();
+  };
+  window.addEventListener("mb-person-ready", (ev) => {
+    if (!PERSON_MODE) return;
+    const d = (ev && ev.detail) || {};
+    if (d.displayName) PERSON.displayName = d.displayName;
+    ensureLockedPersonChip();
+    renderCurator();
+  });
 
   function renderCurator() {
     refreshCuratorFromVisible();
@@ -831,9 +1000,10 @@
             label
           )}</button>`;
         }
-        return `<span class="${cls}" data-kind="${escapeAttr(kind)}">${escapeHtml(
-          label
-        )}</span>`;
+        const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
+        return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
+          kind
+        )}">${escapeHtml(label)}</span>`;
       })
       .join("");
     chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
@@ -2305,6 +2475,7 @@
   function bootFromPayload(payload) {
     liveMode = !payload.demo;
     applyPayloadToState(payload, { keepPresentation: false });
+    ensureLockedPersonChip();
     renderNav();
     bindChrome();
     bindTimeline();
@@ -2347,6 +2518,12 @@
         const res = await fetch(`/explore/api/demo/${encodeURIComponent(demo)}`);
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
+      } else if (PERSON_MODE) {
+        const seed = q || ("Show " + (PERSON.displayName || "person"));
+        payload = await liveFind(seed);
+        if (payload.session_id) {
+          localStorage.setItem("mb_ask_session", payload.session_id);
+        }
       } else {
         payload = await liveFind(q);
         if (payload.session_id) {

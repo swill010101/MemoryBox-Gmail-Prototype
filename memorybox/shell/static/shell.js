@@ -127,8 +127,11 @@
     const text = (input && input.value || "").trim();
     if (!text) return;
     window.mbShell.rememberAsk(text);
-    // On Explore, typed/STT commands must share the same context/filter/timeline state.
-    if (surface() === "explore" && typeof window.mbExploreApplyAsk === "function") {
+    // On Explore / Person Explorer, typed/STT commands share filter/timeline state.
+    if (
+      (surface() === "explore" || surface() === "people") &&
+      typeof window.mbExploreApplyAsk === "function"
+    ) {
       closeGlobalAsk();
       window.mbExploreApplyAsk(text);
       return;

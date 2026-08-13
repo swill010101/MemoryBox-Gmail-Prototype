@@ -109,6 +109,10 @@ ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
 STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.html"
 JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journal.html"
 PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
+PERSON_EXPLORE_STATIC = (
+    Path(__file__).resolve().parent / "person" / "static" / "person-explore.html"
+)
+PERSON_STATIC_DIR = Path(__file__).resolve().parent / "person" / "static"
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
 ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
@@ -134,6 +138,12 @@ if EXPLORE_STATIC_DIR.is_dir():
         "/static/explore",
         StaticFiles(directory=str(EXPLORE_STATIC_DIR)),
         name="explore_static",
+    )
+if PERSON_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/person",
+        StaticFiles(directory=str(PERSON_STATIC_DIR)),
+        name="person_static",
     )
 
 
@@ -525,7 +535,40 @@ def journal_ui() -> HTMLResponse:
 
 
 @app.get("/people/ui")
-def people_ui() -> HTMLResponse:
+def people_ui(
+    person: str | None = Query(None, description="MB Person id → Person Explorer"),
+    person_id: str | None = Query(None),
+    person_name: str | None = Query(None),
+    admin: str | None = Query(None, description="1 = legacy profile admin form"),
+) -> HTMLResponse:
+    """P2-I5: Person Explorer (dark) when ?person= set; admin form with ?admin=1."""
+    pid = (person or person_id or "").strip()
+    # Resolve display name → id when only person_name provided
+    if not pid and person_name:
+        try:
+            from memorybox.person import find_ask_person_by_name
+
+            view = find_ask_person_by_name(person_name.strip(), lazy_seed=False)
+            if view:
+                pid = view.id
+        except Exception:
+            pid = ""
+    if pid and str(admin or "") not in ("1", "true", "yes"):
+        if not PERSON_EXPLORE_STATIC.is_file():
+            raise HTTPException(status_code=404, detail="Person Explorer UI missing")
+        # person-explore.html reads ?person= from the URL; rewrite if needed
+        html = read_and_inject(PERSON_EXPLORE_STATIC, surface="people")
+        if f"person={pid}" not in html and "MB_PERSON_SURFACE" in html:
+            # Ensure boot config even if client URL used person_id only
+            html = html.replace(
+                'personId: params.get("person") || params.get("person_id") || ""',
+                f'personId: params.get("person") || params.get("person_id") || "{pid}"',
+                1,
+            )
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+        )
     return _html_ui(PEOPLE_STATIC, surface="people", missing="People UI missing")
 
 

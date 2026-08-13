@@ -180,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
             "MEMORYBOX_BASE_URL (default http://127.0.0.1:$MEMORYBOX_PORT or :8790)"
         ),
     )
+    p_prove_p2i5 = sub.add_parser(
+        "prove-p2-i5",
+        help="P2-I5 Universal Person Surfaces acceptance prove",
+    )
+    p_prove_p2i5.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Reserved for FlightSim manual gate (structural harness today)",
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -380,6 +389,18 @@ def main(argv: list[str] | None = None) -> int:
         payload = prove_p2_i4(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i5":
+        from memorybox.person.p2_i5_acceptance import run_p2_i5_acceptance
+
+        payload = run_p2_i5_acceptance()
+        # Normalize to {ok: bool} for CLI
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package

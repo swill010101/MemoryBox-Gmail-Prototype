@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Person</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="" />
+  <link rel="stylesheet" href="/static/explore/explore.css" />
+  <link rel="stylesheet" href="/static/person/person-explore.css" />
+</head>
+<body class="mb-person-surface">
+  <div class="mb-explore mb-person-explore" id="mb-explore-root">
+    <header class="mb-explore-top mb-person-top">
+      <div class="mb-explore-brand">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
+        </div>
+      </div>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+
+    <section class="mb-person-header" id="mb-person-header" aria-label="Person">
+      <div class="mb-person-portrait" id="mb-person-portrait" aria-hidden="true">?</div>
+      <div class="mb-person-id">
+        <h1 class="mb-person-name" id="mb-person-name">—</h1>
+        <p class="mb-person-sub" id="mb-person-sub">—</p>
+        <p class="mb-person-summary" id="mb-person-summary">—</p>
+      </div>
+      <div class="mb-person-actions">
+        <a class="mb-person-action" id="mb-person-edit" href="#">Edit</a>
+        <a class="mb-person-action" id="mb-person-relationships" href="#mb-person-family">Relationships</a>
+        <a class="mb-person-action" id="mb-person-learn-link" href="#mb-person-learn">Learn</a>
+        <a class="mb-person-action mb-person-back" href="/people/ui">People</a>
+      </div>
+    </section>
+
+    <section class="mb-explore-ask-band mb-person-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="mb-explore-ask" id="mb-person-ask-label">Ask about this person</label>
+        <div class="mb-explore-ask-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input
+            id="mb-explore-ask"
+            type="text"
+            autocomplete="off"
+            placeholder="Christmas. Only video. 1998 through 2010."
+          />
+          <button type="button" class="mb-explore-ask-go" id="mb-explore-ask-go" title="Ask" aria-label="Ask">→</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-explore-curator" id="mb-explore-curator" aria-live="polite">
+      <div class="mb-explore-curator-avatar" id="mb-explore-curator-avatar" aria-hidden="true">P</div>
+      <div class="mb-explore-curator-copy">
+        <h1 id="mb-explore-curator-title">—</h1>
+        <p id="mb-explore-curator-body">—</p>
+      </div>
+      <div class="mb-explore-chips" id="mb-explore-chips"></div>
+    </section>
+
+    <div class="mb-person-mode-row" role="tablist" aria-label="Memory mode">
+      <button type="button" class="mb-person-mode is-active" data-mode="highlights" id="mb-mode-highlights" aria-selected="true">Highlights</button>
+      <button type="button" class="mb-person-mode" data-mode="all" id="mb-mode-all" aria-selected="false">All Memories</button>
+      <div class="mb-person-view-toggle" role="group" aria-label="View mode">
+        <button type="button" class="mb-person-view is-active" data-view="gallery" id="mb-view-gallery">Gallery</button>
+        <button type="button" class="mb-person-view" data-view="map" id="mb-view-map">Map</button>
+      </div>
+    </div>
+
+    <div class="mb-explore-toolbar">
+      <div class="mb-explore-filters" id="mb-explore-filters" role="group" aria-label="Type filters"></div>
+      <div class="mb-explore-toolbar-right">
+        <label class="mb-explore-sort">
+          <span class="mb-sr-only">Sort</span>
+          <select id="mb-explore-sort" aria-label="Sort order">
+            <option value="newest">Newest to oldest</option>
+            <option value="oldest">Oldest to newest</option>
+          </select>
+        </label>
+        <div class="mb-explore-density" aria-label="Gallery size">
+          <button type="button" id="mb-density-minus" title="More / smaller items">−</button>
+          <span id="mb-density-label">Medium</span>
+          <button type="button" id="mb-density-plus" title="Fewer / larger items">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-explore-results" id="mb-explore-results">
+      <div class="mb-explore-gallery" id="mb-explore-gallery" tabindex="0" aria-label="Mixed-media gallery"></div>
+      <div class="mb-explore-map-pane" id="mb-explore-map-pane" hidden>
+        <div id="mb-explore-map" class="mb-explore-map" role="application" aria-label="Result map"></div>
+        <div class="mb-map-chrome">
+          <p class="mb-map-hint" id="mb-map-hint">Map shows the current Person result set. Select a marker or cluster to refine.</p>
+          <button type="button" class="mb-map-clear" id="mb-map-clear-refine" hidden>Clear map selection</button>
+        </div>
+      </div>
+    </div>
+    <p class="mb-explore-meta" id="mb-explore-meta"></p>
+
+    <section class="mb-explore-timeline" aria-label="Unified timeline">
+      <div class="mb-tl-row">
+        <button type="button" class="mb-tl-reset" id="mb-tl-reset" title="Reset to full result range">↺ Reset</button>
+        <button type="button" class="mb-tl-undated" id="mb-tl-undated" aria-pressed="false" title="Filter gallery to undated">Undated: 0</button>
+        <button type="button" class="mb-tl-nudge" id="mb-tl-nudge-l" aria-label="Nudge earlier">‹</button>
+        <div class="mb-tl-track" id="mb-tl-track">
+          <div class="mb-tl-rail"></div>
+          <div class="mb-tl-dots" id="mb-tl-dots"></div>
+          <div class="mb-tl-band" id="mb-tl-band"></div>
+          <div class="mb-tl-playhead" id="mb-tl-playhead"><span class="mb-tl-play" aria-hidden="true">▶</span></div>
+          <button type="button" class="mb-tl-handle" id="mb-tl-handle-l" aria-label="Range start"></button>
+          <button type="button" class="mb-tl-handle" id="mb-tl-handle-r" aria-label="Range end"></button>
+        </div>
+        <button type="button" class="mb-tl-nudge" id="mb-tl-nudge-r" aria-label="Nudge later">›</button>
+        <span class="mb-tl-range-label" id="mb-tl-range-label">—</span>
+      </div>
+      <div class="mb-tl-ticks" id="mb-tl-ticks"></div>
+      <p class="mb-tl-hint">Drag timeline, move playhead, or resize range. Person context stays locked.</p>
+    </section>
+
+    <section class="mb-person-footer" aria-label="Person context panels">
+      <div class="mb-person-panel" id="mb-person-about">
+        <h2>About <span data-person-first>them</span></h2>
+        <dl class="mb-person-dl" id="mb-person-about-dl"></dl>
+        <a class="mb-person-panel-link" id="mb-person-about-edit" href="#">View / Edit details</a>
+      </div>
+      <div class="mb-person-panel" id="mb-person-family">
+        <h2>Family</h2>
+        <div class="mb-person-family-row" id="mb-person-family-row"></div>
+        <a class="mb-person-panel-link" id="mb-person-family-add" href="#">+ Add family</a>
+      </div>
+      <div class="mb-person-panel" id="mb-person-learn">
+        <h2>Learn about <span data-person-first>them</span></h2>
+        <ul class="mb-person-learn-stats" id="mb-person-learn-stats"></ul>
+        <a class="mb-person-panel-link" id="mb-person-learn-explore" href="#">Explore</a>
+      </div>
+    </section>
+  </div>
+
+  <div class="mb-modal-backdrop" id="mb-modal" hidden>
+    <div class="mb-viewer" role="dialog" aria-modal="true" aria-labelledby="mb-modal-title">
+      <header class="mb-viewer-chrome">
+        <div class="mb-viewer-nav">
+          <button type="button" class="mb-viewer-navbtn" id="mb-viewer-prev" aria-label="Previous">‹ Previous</button>
+          <span class="mb-viewer-count" id="mb-viewer-count">—</span>
+          <button type="button" class="mb-viewer-navbtn" id="mb-viewer-next" aria-label="Next">Next ›</button>
+        </div>
+        <div class="mb-viewer-heading">
+          <div class="mb-modal-kicker" id="mb-modal-kicker">Evidence</div>
+          <h2 class="mb-modal-title" id="mb-modal-title">—</h2>
+        </div>
+        <button type="button" class="mb-modal-close" id="mb-modal-close">Close ✕</button>
+      </header>
+      <div class="mb-viewer-stage">
+        <div class="mb-viewer-main">
+          <div class="mb-modal-body" id="mb-modal-body"></div>
+          <footer class="mb-viewer-footer" id="mb-viewer-footer"></footer>
+        </div>
+        <aside class="mb-viewer-rail" id="mb-viewer-rail" aria-label="Evidence context">
+          <div class="mb-rail-tabs" role="tablist" id="mb-rail-tabs">
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="people" aria-selected="true" title="People">People</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="story" aria-selected="false" title="Story">Story</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="artifact" aria-selected="false" title="Artifact">Artifact</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="source" aria-selected="false" title="Source">Source</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="learn" aria-selected="false" title="Learn">Learn</button>
+          </div>
+          <div class="mb-rail-scroll">
+            <div class="mb-rail-panel" id="mb-rail-panel"></div>
+            <div class="mb-rail-tools" id="mb-rail-tools" hidden></div>
+            <div class="mb-modal-teach" id="mb-modal-teach" data-teach-slot="1" hidden></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-quick-preview" id="mb-quick-preview" hidden role="tooltip"></div>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      window.MB_PERSON_SURFACE = {
+        personId: params.get("person") || params.get("person_id") || "",
+        displayName: params.get("person_name") || "",
+        memoryMode: "highlights",
+        locationFilterMode: "has_location",
+      };
+    })();
+  </script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+  <script src="/static/explore/explore.js"></script>
+  <script src="/static/person/person-explore.js"></script>
+</body>
+</html>

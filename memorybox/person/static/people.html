@@ -616,19 +616,28 @@
     async function openProfileForKey(key) {
       const person = await ensureFromKey(key);
       currentPersonId = person.id;
-      const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
-      currentProfile = data.profile;
-      renderProfile(data.profile);
-      show(data);
-      setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
-      // Keep profile select on MB key after lazy teach
-      const mbKey = "mb:" + person.id;
-      const sel = document.getElementById("profileSel");
-      if (![...sel.options].some((o) => o.value === mbKey)) {
-        await loadPicker();
+      // I5: Person Explorer is the primary surface; admin form via ?admin=1
+      const params = new URLSearchParams(location.search);
+      if (params.get("admin") === "1") {
+        const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
+        currentProfile = data.profile;
+        renderProfile(data.profile);
+        show(data);
+        setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
+        const mbKey = "mb:" + person.id;
+        const sel = document.getElementById("profileSel");
+        if (![...sel.options].some((o) => o.value === mbKey)) {
+          await loadPicker();
+        }
+        sel.value = mbKey;
+        document.getElementById("rejectPersonSel").value = mbKey;
+        return person;
       }
-      sel.value = mbKey;
-      document.getElementById("rejectPersonSel").value = mbKey;
+      window.location.href =
+        "/people/ui?person=" +
+        encodeURIComponent(person.id) +
+        "&person_name=" +
+        encodeURIComponent(person.display_name || "");
       return person;
     }
 
