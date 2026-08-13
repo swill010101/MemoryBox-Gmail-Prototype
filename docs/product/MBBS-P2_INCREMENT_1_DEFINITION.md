@@ -250,4 +250,4 @@ Known residuals (e.g. queue still draining) must be explicit and must not hide m
 | Build / code / migrations / FlightSim implement | **AUTHORIZED** (founder “approved to build” 2026-08-12) |
 | FlightSim owner gate (`prove-p2-i1 --flightsim`) | **ACCEPTED** (2026-08-13) |
 
-P2-I1 is **ACCEPTED**. Next roadmap increment per MBRM-001A is **I2 Shell**.
+P2-I1 is **ACCEPTED**. Next roadmap increment per MBRM-001A is **I2 Shell** — draft definition: [MBBS-P2_INCREMENT_2_DEFINITION.md](MBBS-P2_INCREMENT_2_DEFINITION.md) (review only; no build until approved).
