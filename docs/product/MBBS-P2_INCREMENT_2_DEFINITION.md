@@ -1,11 +1,11 @@
 # MBBS-P2 Increment 2 — Product Shell & Context Maturation
 
-**Status:** **BUILD AUTHORIZED** (Tom 2026-08-13: “approved to build”) · Definition **LOCKED** · **Not ACCEPTED** until FlightSim owner gate  
+**Status:** **ACCEPTED** (FlightSim owner gate 2026-08-13: `prove-p2-i2 --flightsim` → `ok: true` · shell surfaces + static mount · I1 regression) · Definition **LOCKED**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I2 clarifications below · prior I1 ACCEPTED baseline  
 **Depends on:** **P2-I1 ACCEPTED** (Show me Peggy / Person-in-Media)  
 **CLI prove:** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
-**Gate:** Mark **ACCEPTED** only after FlightSim owner gate (`prove-p2-i2 --flightsim` → `ok: true`).
+**Gate:** FlightSim owner gate passed 2026-08-13.
 
 ---
 
@@ -252,7 +252,7 @@ Prove: `python -m memorybox prove-p2-i2` (harness) · `prove-p2-i2 --flightsim` 
 | Founder I2 clarifications (§1) | **LOCKED** (2026-08-13) |
 | **This I2 definition** | **LOCKED** |
 | Build authorization | **AUTHORIZED** (2026-08-13 — Tom: “approved to build”) |
-| Implementation | **IN PROGRESS** on `cursor/p2-iteration-roadmap-3061` |
-| FlightSim owner gate (`prove-p2-i2 --flightsim`) | **PENDING** — required for **ACCEPTED** |
+| Implementation | **COMPLETE** on `cursor/p2-iteration-roadmap-3061` |
+| FlightSim owner gate (`prove-p2-i2 --flightsim`) | **ACCEPTED** (2026-08-13 · `ok: true` · I1 regression green) |
 
-Build is authorized. Do **not** mark ACCEPTED until FlightSim gate passes.
+P2-I2 is **ACCEPTED**. Next roadmap increment per MBRM-001A is **I3 Archive Health & Provider Honesty** (+ TASK-004).

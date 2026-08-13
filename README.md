@@ -43,11 +43,11 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 - Locked specs: [docs/source/README.md](docs/source/README.md)
 - Approved planning direction: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 - **P2-I1 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
-- **P2-I2 definition (LOCKED, awaiting build auth):** [docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md)
+- **P2-I2 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
-**Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1`  
-**FlightSim ACCEPTED:** real Immich + real HVRT only (fakes fail):
+**Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1` · `prove-p2-i2`  
+**FlightSim ACCEPTED (I1):** real Immich + real HVRT only (fakes fail):
 
 ```powershell
 $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
@@ -59,6 +59,13 @@ $env:MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID = "<hvrt-video-id-with-peggy>"
 $env:MEMORYBOX_P2_I1_NEGATIVE_VIDEO_ID = "<hvrt-video-id-without-peggy>"
 $env:MEMORYBOX_P2_I1_HVRT_FACE_ID = "<hvrt-face-id>"  # or teach via Review first
 python -m memorybox prove-p2-i1 --flightsim
+```
+
+**FlightSim ACCEPTED (I2):** serve on `:8790` (or `MEMORYBOX_BASE_URL`), then:
+
+```powershell
+$env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+python -m memorybox prove-p2-i2 --flightsim
 ```
 
 ## UI mockups
