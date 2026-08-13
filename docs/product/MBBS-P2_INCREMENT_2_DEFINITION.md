@@ -1,11 +1,11 @@
 # MBBS-P2 Increment 2 — Product Shell & Context Maturation
 
-**Status:** **DRAFT FOR FOUNDER REVIEW** · No build until explicitly approved  
+**Status:** **LOCKED** (founder clarifications 2026-08-13) · **No build** until explicit “Build P2-I2” authorization  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
-**Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · prior I1 ACCEPTED baseline  
+**Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I2 clarifications below · prior I1 ACCEPTED baseline  
 **Depends on:** **P2-I1 ACCEPTED** (Show me Peggy / Person-in-Media)  
 **CLI prove (proposed):** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
-**Gate:** Definition must be LOCKED + build authorized before implementation. Mark **ACCEPTED** only after FlightSim owner gate.
+**Gate:** Build only after explicit authorization. Mark **ACCEPTED** only after FlightSim owner gate.
 
 ---
 
@@ -15,82 +15,117 @@ I1 proved the first meaningful P2 vertical:
 
 > **Show me Peggy** — photos + face-appearance moments, jump-to-timeslot, correct→reuse, durable full-archive queue.
 
-I2 wraps that proof (and the existing P1 surfaces) into **one coherent MemoryBox product**:
+I2 wraps that proof (and the existing P1/P2 surfaces) into **one coherent MemoryBox product**:
 
 > **MemoryBox feels like one product, not a set of disconnected tools.**
 
-End-to-end owner outcomes:
+End-to-end outcomes:
 
-1. Owner can move among **Ask, Library/Timeline, People, Stories, Journal, Artifacts, Review & Learn**, plus **entries** to Settings and Archive Health, without losing the sense of a single product.  
-2. **Open → inspect → act → return** preserves meaningful context (results, selection, person, moment, prior ask).  
-3. Family-facing exploration stays simple (**progressive disclosure**); provider/processing/confidence detail appears only when useful for an owner decision.  
-4. The I1 Peggy path remains reachable and coherent inside the shell (Ask → results → open moment → correct → return).  
-5. Shared / living-room style exploration is supported as a **first-class product posture** (not solo-admin chrome) — see §1 open questions on EVS-242 depth.
+1. **Ask/Home is the front door** — an invitation, not a dashboard: Ask is prominent; authentic family content, suggested journeys, and continuation of recent exploration lead; administrative status is subordinate.  
+2. Owner moves among family exploration surfaces under **light shared shell/chrome** without losing product coherence.  
+3. **Open → inspect/act → return** preserves meaningful context across Ask, Library, People, and contextual Review & Learn.  
+4. **Global Ask** is reachable from major surfaces and inherits current context where practical.  
+5. Family-navigation chrome stays **visually distinct** from owner/system destinations (Archive Health, Settings).  
+6. Shared / living-room viewing posture is first-class; **device cast / Home Assistant is deferred**.  
+7. Visual language follows **MBUX**: warm, calm, modern, premium, quiet-curator (mockups = validation/reference, not pixel-match).  
+8. I1 Peggy path remains coherent inside the shell.
 
 I2 is **product maturation (UX/shell)**, not a new provider capability wave.
 
 ---
 
-## 1. Open questions for Tom (sign-off blockers)
+## 1. Locked clarifications (2026-08-13)
 
-Answer these before LOCKED:
+### 1.A Shell depth (Q1 = A)
 
-| # | Question | Options / notes |
-|---|----------|-----------------|
-| Q1 | **Shell chrome depth** | (A) Light shared chrome + nav over existing P1 HTML surfaces, or (B) stronger IA redesign that still keeps P1 pages as destinations? |
-| Q2 | **Primary home** | Is **Ask** the default front door (aligned with experience mockups), or a hub/home that links into Ask? |
-| Q3 | **EVS-242 (Family Room TV)** | (A) Full cast/display to authorized TV / Home Assistant in I2, (B) shell supports shared-screen / living-room viewing posture but defers device cast to later, or (C) out of I2 entirely? |
-| Q4 | **Settings / Archive Health entries** | Confirm I2 only needs **reachable entry points** (stub/thin), with full Archive Health + TASK-004 in **I3** and Settings maturity later (**I14** per 001A). |
-| Q5 | **Context stack scope** | Minimum for ACCEPTED: Ask result → open photo/moment/person → return restores prior Ask results. Should Library/People/Review get the same depth in I2, or Ask-path only? |
-| Q6 | **Visual language** | Preserve current thin functional shells, or bring forward validated mockup language (quiet curator / experience gallery) as the I2 shell look? |
+- Use **light shared shell/chrome** and consistent navigation around **existing** P1/P2 surfaces.  
+- **Do not** broadly rewrite individual screens in I2.  
+- Rewrite/adjust a screen only where required for **context continuity** or **MBUX consistency**.
 
-Until Q1–Q6 are answered, treat §2 IN as the planning baseline and §8 acceptance as provisional.
+### 1.B Front door (Q2)
+
+- **Ask/Home is the primary front door.**  
+- Home is an **invitation**, not a dashboard.  
+- Ask is prominent, with authentic family content, suggested journeys, and continuation of recent exploration.  
+- Administrative / status content is **subordinate**.
+
+### 1.C Shared viewing vs cast (Q3 = B)
+
+- I2 **must** support a shared / living-room viewing posture (EVS-017 / EVS-199).  
+- **Actual TV casting / Home Assistant / device integration is deferred** (EVS-242 cast path out of I2).
+
+### 1.D Settings & Archive Health (Q4)
+
+- Require **coherent, reachable entry points only**.  
+- Archive Health **content** = **I3**; mature Settings = later (**I14**).  
+- Both are **owner/system destinations**, not equal primary family-navigation destinations.
+
+### 1.E Context stack (Q5)
+
+- Broader than Ask-only.  
+- Preserve meaningful open→inspect/act→return across main exploration paths: **Ask, Library, People, and contextual Review & Learn**.  
+- Need not perfect every legacy P1 workflow in this increment.  
+- Return should preserve relevant **result set, selection, filter / scroll / timeline state** where applicable.
+
+### 1.F Visual language (Q6)
+
+- Bring forward the **MBUX visual language**: warm, calm, modern, premium, quiet-curator.  
+- Mockups under `mockups/` are **validation/reference**, not pixel-match specs.  
+- **Do not** simply preserve development-style thin shells when they conflict with MBUX.
+
+### 1.G Additional locked requirements
+
+- **Global Ask** reachable throughout major MemoryBox surfaces; inherits current context where practical.  
+- **Primary family experience navigation** remains visually distinct from owner/system destinations (Archive Health, Settings).
 
 ---
 
 ## 2. IN scope
 
-### 2.1 Coherent product shell (MBPS P2-UX-01)
+### 2.1 Light coherent shell (MBPS P2-UX-01)
 
-Surfaces must feel like parts of **one product**:
+| Surface | Role in I2 |
+|---------|------------|
+| **Ask / Home** | Primary front door; invitation; I1 Peggy path; suggested journeys; recent continuation |
+| Library / Timeline | Family exploration path; context return; **not** I4 timeline engine |
+| People | Family exploration path; context return |
+| Review & Learn | Contextual destination; teach/correct continuity from exploration |
+| Stories / Journal / Artifacts | Reachable family destinations under shared chrome |
+| Settings | Owner/system **entry only** (visually distinct) |
+| Archive Health / Status | Owner/system **entry only** (visually distinct); content = I3 |
 
-| Surface | I2 expectation |
-|---------|----------------|
-| Ask | First-class; I1 Peggy path remains primary proof inside shell |
-| Library / Timeline | Reachable; **not** the I4 high-volume timeline engine |
-| People | Reachable; I1 sync/status affordances remain available |
-| Stories | Reachable |
-| Journal | Reachable |
-| Artifacts | Reachable |
-| Review & Learn | Reachable; I1 teach/correct remains coherent when entered from Ask |
-| Settings | **Entry** only (thin/stub OK) |
-| Archive Health / Status | **Entry** only (thin/stub OK); full honesty = I3 |
+Shared chrome: product identity, family primary nav, Global Ask affordance, distinct owner/system entries, consistent return-to-context.
 
-Shared chrome (exact form per Q1): product identity, primary nav, and a consistent way back to Ask / prior context.
+### 2.2 Context maturation
 
-### 2.2 Context maturation (open → inspect → act → return)
-
-- Opening a result (photo, video moment, person, story, etc.) must not orphan the owner.  
-- Return restores **meaningful prior context** (at minimum the Ask session/results that led here — Q5).  
-- Correction / teach actions from I1 remain available without breaking the stack.  
-- Context is product state, not a browser-history accident.
+- Opening a result must not orphan the owner.  
+- Return restores meaningful prior context on Ask, Library, People, and contextual Review paths (§1.E).  
+- I1 correction/teach remains available without breaking the stack.  
+- Context is product state, not browser-history accident.  
+- Global Ask may inherit active person / place / filters / selection when practical.
 
 ### 2.3 Progressive disclosure (MBPS P2-UX-04)
 
-- Default family-facing UI stays simple (invitation / results / evidence).  
-- Provider keys, raw confidence machinery, processing internals, and admin density stay secondary.  
-- Reveal technical detail when the owner is deciding (e.g. why uncertain, what to correct, sync/queue state already proven in I1).
+- Default family path: invitation, journeys, results, evidence.  
+- Provider keys, raw confidence machinery, processing internals, admin density stay secondary.  
+- Reveal technical detail when the owner is deciding (uncertainty, correction, sync/queue already proven in I1).
 
 ### 2.4 Shared / living-room posture (EVS-017 / EVS-199)
 
-- Shell must not read as “solo admin console.”  
-- Support a gathered / shared exploration posture (large readable results, quiet chrome, conversation-first Ask).  
-- **EVS-242 TV cast** depth is gated by **Q3**.
+- Not solo-admin chrome.  
+- Large readable results, quiet chrome, conversation-first Ask/Home.  
+- Suitable for gathered viewing; **no device cast required** (§1.C).
 
-### 2.5 Preserve I1 without regression
+### 2.5 MBUX visual language
 
-- I1 acceptance remains green on FlightSim after I2 lands.  
-- No redesign that strips jump-to-timeslot, face evidence, queue observability, or owner-correct authority.
+- Warm, calm, modern, premium, quiet-curator.  
+- Apply shell-wide; touch individual screens only as needed for consistency (§1.A).  
+- Mockups guide feel; not pixel slavery.
+
+### 2.6 Preserve I1 without regression
+
+- `prove-p2-i1 --flightsim` remains green after I2.  
+- Jump-to-timeslot, face evidence, queue observability, owner-correct authority preserved.
 
 ---
 
@@ -98,24 +133,25 @@ Shared chrome (exact form per Q1): product identity, primary nav, and a consiste
 
 | Deferred | Home |
 |----------|------|
-| Timeline-first high-volume explore (adaptive zoom/clustering/banding engine) | **P2-I4** |
-| Archive Health redesign + TASK-004 Immich Photos inventory honesty | **P2-I3** |
-| Full Settings maturity | **P2-I14** (001A) |
+| Timeline-first high-volume explore engine | **P2-I4** |
+| Archive Health redesign + TASK-004 inventory | **P2-I3** |
+| Mature Settings | **P2-I14** |
+| TV cast / Home Assistant / device integration (EVS-242 cast) | Later (post-I2) |
+| Broad rewrite of every P1 screen | Not I2 |
 | Universal Person pickers on all surfaces | **P2-I5** |
 | Kinship, SMS, richer email, spoken moments | **I6–I9** |
 | Narrative / external history / views / campaigns / trust / portability | **I11–I17** |
 | Multi-user / tone dial | Late |
-| New providers / Immich sync redesign / HVRT recognition redesign | Not I2 (already I1) |
-| Speech moments | I9 |
-| Synthetic media | P3 |
+| New providers / Immich or HVRT redesign | Not I2 |
 
 **Explicit non-goals**
 
-- Do not rebuild Archive Health “while we’re here.”  
+- Do not rebuild Archive Health or Settings content “while we’re here.”  
 - Do not ship the I4 timeline engine inside shell chrome.  
 - Do not invent multi-user.  
-- Do not replace I1 Ask proof with a dashboard-first home unless Q2 explicitly chooses hub-home.  
-- Do not treat EVS-242 as requiring unscoped Home Assistant work without Q3.
+- Do not make Home a status/admin dashboard.  
+- Do not require Home Assistant / TV cast for I2 ACCEPTED.  
+- Do not pixel-match mockups; do not keep thin-dev chrome that fights MBUX.
 
 ---
 
@@ -125,11 +161,11 @@ Shared chrome (exact form per Q1): product identity, primary nav, and a consiste
 |--------|---------|
 | **P2-UX-01** Coherent product shell | Primary IN |
 | **P2-UX-04** Progressive disclosure | Primary IN |
-| **P2-UX-02 / P2-UX-03** High-volume timeline + refinement | **OUT → I4** (shell may leave Timeline reachable only) |
+| **P2-UX-02 / P2-UX-03** High-volume timeline + refinement | **OUT → I4** |
 | **P2-AH-*** Archive Health | Entry only → **I3** |
-| **EVS-017** Family gathered around TV exploring Christmas memories | Primary shared-experience validation |
+| **EVS-017** Family gathered around TV exploring Christmas memories | Shared-posture validation (no cast required) |
 | **EVS-199** Alias of EVS-017 | Same as 017 |
-| **EVS-242** Show Peggy pictures on Family Room TV | Conditional on **Q3** |
+| **EVS-242** Peggy on Family Room TV | **Cast deferred**; living-room posture only in I2 |
 
 ---
 
@@ -137,12 +173,13 @@ Shared chrome (exact form per Q1): product identity, primary nav, and a consiste
 
 | Area | I2 expectation |
 |------|----------------|
-| **Shell / IA** | Shared navigation + product identity over existing MemoryBox surfaces |
-| **Context service / stack** | Durable enough for open→return across Ask (and optionally other surfaces per Q5) |
-| **Ask** | Remains primary conversation front door unless Q2 says otherwise; I1 behaviors preserved |
-| **Review / People / Library / …** | Destinations inside the shell; no capability rewrite required for I2 |
-| **Settings / Archive Health** | Routes/entries; content owned by later increments |
-| **Experience Flows** | Formalize only if needed: Shell navigate→Ask→open→return; Shared explore Christmas/Peggy |
+| **Shell / IA** | Light shared chrome; family nav vs owner/system destinations |
+| **Ask / Home** | Invitation front door; Global Ask; context inheritance |
+| **Context stack** | Ask, Library, People, contextual Review return state |
+| **Visual system** | MBUX tokens/language applied to shell (+ targeted screen consistency) |
+| **Review / People / Library / …** | Existing surfaces wrapped; rewrite only for context/MBUX necessity |
+| **Settings / Archive Health** | Distinct entries; thin destinations |
+| **Experience Flows** | Ask/Home → explore → open → return; shared Christmas/Peggy gather path |
 
 No new evidence providers required for I2.
 
@@ -151,9 +188,9 @@ No new evidence providers required for I2.
 ## 6. Prerequisites
 
 - P1 baseline on FlightSim.  
-- **P2-I1 ACCEPTED** (`prove-p2-i1 --flightsim` green).  
-- Existing P1 UIs remain available to wrap (Ask, People, Library, Review, Story, Journal, Artifact, Status, Export, Guided Capture as present).  
-- Experience mockups under `mockups/` are **validation reference**, not a mandatory pixel match (unless Q6 chooses mockup language).
+- **P2-I1 ACCEPTED**.  
+- Existing P1/P2 UIs available to wrap.  
+- `mockups/` as MBUX validation reference.
 
 ---
 
@@ -161,30 +198,34 @@ No new evidence providers required for I2.
 
 | Case | Requirement |
 |------|-------------|
-| One product | From a single entry URL/app, owner reaches Ask, People, Library, Review, Stories/Journal/Artifacts (as present), plus Settings and Archive Health **entries** |
-| Context return | Ask → open Peggy photo or video moment → return restores prior Ask results/context |
-| I1 preserved | “Show me Peggy” (or Peggy George) still returns photos + moments with jump `t=` inside the shell |
-| Progressive disclosure | Default path does not force provider/admin chrome; advanced detail available when needed |
-| Shared posture | Shell supports gathered exploration feel (EVS-017); not admin-dashboard-first |
-| EVS-242 | Only if Q3 = A; otherwise deferred with explicit note in ACCEPTED record |
-| Regression | `prove-p2-i1 --flightsim` still passes after I2 |
+| Invitation home | Ask/Home is front door; not dashboard-first; status subordinate |
+| One product | Shared chrome reaches family surfaces + distinct Settings/Archive Health entries |
+| Global Ask | Reachable from major surfaces; inherits context where practical |
+| Context return | Ask, Library, People, contextual Review: open→return preserves result set / selection / filter-scroll-timeline state where applicable |
+| I1 preserved | Show me Peggy (George) still returns photos + moments with jump `t=` |
+| Shared posture | Gathered / living-room viewing feel validated (EVS-017); no cast required |
+| Visual language | Shell reads as MBUX quiet-curator; not thin-dev admin chrome |
+| Nav distinction | Family primary nav visually distinct from owner/system destinations |
+| Regression | `prove-p2-i1 --flightsim` still passes |
 
 ---
 
-## 8. Acceptance gate (provisional until Q1–Q6 locked)
+## 8. Acceptance gate
 
-Pass **all** of the following on FlightSim with real-family material where practical:
+Pass **all** on FlightSim with real-family material where practical:
 
-1. **Single product feel:** Owner navigates MemoryBox as one product, not disconnected P1 tools.  
-2. **Nav completeness:** All IN surfaces in §2.1 are reachable from the shell.  
-3. **Context return:** Ask drill-down/return preserves meaningful context (Q5 minimum).  
-4. **Progressive disclosure:** Family path stays simple; technical detail on demand.  
-5. **I1 regression:** Person-in-media proof still works inside the shell.  
-6. **Shared exploration:** EVS-017 posture validated (Christmas / family gather path — scripted OK).  
-7. **No scope leak:** I3 Archive Health content and I4 timeline engine are not required to pass I2.  
-8. **EVS-242:** Per locked Q3.
+1. **Invitation front door:** Ask/Home invites; not an admin dashboard.  
+2. **Single product feel:** Light shared chrome; coherent navigation.  
+3. **Family vs system:** Primary family nav distinct from Archive Health / Settings entries.  
+4. **Global Ask:** Available on major surfaces; context inheritance demonstrated at least once.  
+5. **Context return:** Demonstrated on Ask, Library, People, and contextual Review paths (§1.E).  
+6. **Progressive disclosure:** Family path simple; technical detail on demand.  
+7. **Shared posture:** EVS-017 living-room gather path validated without device cast.  
+8. **MBUX language:** Warm/calm/premium quiet-curator shell (reference mockups; not pixel-match).  
+9. **I1 regression:** Person-in-media proof still works inside the shell.  
+10. **No scope leak:** I3 Archive Health content, I4 timeline engine, and EVS-242 cast not required.
 
-Proposed prove: `python -m memorybox prove-p2-i2` (harness) and `prove-p2-i2 --flightsim` (owner gate). Exact checks to be finalized when Q1–Q6 are answered and this definition is LOCKED.
+Proposed prove: `python -m memorybox prove-p2-i2` / `--flightsim` (checks to be implemented only after build authorization).
 
 ---
 
@@ -192,11 +233,13 @@ Proposed prove: `python -m memorybox prove-p2-i2` (harness) and `prove-p2-i2 --f
 
 | Risk | Mitigation |
 |------|------------|
-| Shell becomes a rewrite of every P1 page | Wrap first; deepen only where context return requires it |
-| Context scope creep into full app state machine | Lock Q5; Ask-path minimum for ACCEPTED |
-| EVS-242 pulls Home Assistant / casting into shell | Lock Q3 before build |
-| Dashboard-first home fights curator/Ask front door | Lock Q2; mockups favor Ask invitation |
-| I3/I4 work sneaks into I2 | Hard OUT table; acceptance forbids requiring them |
+| Shell becomes a rewrite of every P1 page | §1.A wrap-first; change only for context/MBUX |
+| Context stack overbuilt | §1.E main exploration paths only; not every legacy workflow |
+| Cast/HA sneaks in via EVS-242 | §1.C deferred; acceptance forbids requiring cast |
+| Dashboard-first home | §1.B invitation locked |
+| Thin-dev chrome survives | §1.F MBUX required |
+| Owner/system mixed into family nav | §1.G visual distinction required |
+| I3/I4 sneak-in | Hard OUT; acceptance item 10 |
 
 ---
 
@@ -206,7 +249,8 @@ Proposed prove: `python -m memorybox prove-p2-i2` (harness) and `prove-p2-i2 --f
 |------|--------|
 | MBRM-001A sequencing (I1→I2 Shell) | Approved |
 | P2-I1 | **ACCEPTED** (2026-08-13) |
-| **This I2 definition** | **DRAFT — awaiting founder answers to Q1–Q6** |
-| Build / code / FlightSim implement | **NOT AUTHORIZED** until definition LOCKED + explicit build approval |
+| Founder I2 clarifications (§1) | **LOCKED** (2026-08-13) |
+| **This I2 definition** | **LOCKED — awaiting explicit build authorization** |
+| Build / code / FlightSim implement | **NOT AUTHORIZED** until Tom says **Build P2-I2** |
 
-**No code for I2 until Tom signs off this definition (and answers §1).**
+**No code for I2 until explicit build approval.**
