@@ -47,7 +47,7 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 - **P2-I3 definition (BUILD AUTHORIZED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 
-**Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1` · `prove-p2-i2`  
+**Prove harness:** `python -m memorybox migrate && python -m memorybox prove-p2-i1` · `prove-p2-i2` · `prove-p2-i3`  
 **FlightSim ACCEPTED (I1):** real Immich + real HVRT only (fakes fail):
 
 ```powershell
