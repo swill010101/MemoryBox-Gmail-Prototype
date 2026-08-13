@@ -87,13 +87,19 @@ class ImmichPhotoProvider:
                 )
                 items = raw if isinstance(raw, list) else []
             else:
+                # Text-only metadata search is not a person library. Immich often
+                # ignores unknown `query` and returns newest assets — never use
+                # that to pad person finds. Require personIds or date bounds.
                 body: dict[str, Any] = {"size": min(int(query.limit), 250)}
                 if query.taken_after:
                     body["takenAfter"] = query.taken_after.isoformat()
                 if query.taken_before:
                     body["takenBefore"] = query.taken_before.isoformat()
-                if query.text:
-                    body["query"] = query.text
+                if query.text and (query.taken_after or query.taken_before):
+                    body["originalFileName"] = query.text
+                elif query.text and not (query.taken_after or query.taken_before):
+                    # No personIds and no date window: refuse unfiltered dump.
+                    return []
                 data = self._client.search_metadata(body)
                 items = (data or {}).get("assets", {}).get("items", []) or []
                 if isinstance(items, list) and not items and isinstance(

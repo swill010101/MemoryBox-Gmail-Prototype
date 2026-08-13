@@ -506,6 +506,124 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check("immich_exif_gps_mapped", False, checks, problems, str(exc))
 
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        person = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="eugene-immich-id",
+            display_name="Eugene Will",
+        )
+        person_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"eugene-{i}",
+                taken_at=datetime(2010, 1, 1, tzinfo=timezone.utc),
+                people=(person,),
+            )
+            for i in range(5)
+        ]
+        recent_library = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"recent-{i}",
+                taken_at=datetime(2026, 8, 5, tzinfo=timezone.utc),
+                people=(),
+            )
+            for i in range(3)
+        ]
+
+        class _CountingPhoto:
+            provider_key = "scripted_photo"
+
+            def __init__(self) -> None:
+                self.calls: list[PhotoSearchQuery] = []
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                return [person]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                self.calls.append(query)
+                if query.person_external_ids:
+                    return list(person_assets)[: query.limit]
+                return list(recent_library)[: query.limit]
+
+        photo = _CountingPhoto()
+        plan = QueryPlan(
+            original_ask="Show me Eugene Will",
+            effective_ask="Show me Eugene Will",
+            is_followup=False,
+            want_photo=True,
+            want_communication=False,
+            want_calendar=False,
+            want_still=True,
+            want_video=True,
+            want_visual=True,
+            visual_scope="broad",
+            person_names=("Eugene Will",),
+            notes=("visual_scope=broad_show_me_person",),
+        )
+
+        class _FakePerson:
+            id = "mb-eugene"
+            display_name = "Eugene Will"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "eugene-immich-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _FakePerson()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["eugene-immich-id"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _FakePerson()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            hits, st = R.search_photos(plan, photo, limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+
+        years = {(h.taken_at or "")[:4] for h in hits if h.taken_at}
+        _check(
+            "person_ask_no_library_pad",
+            len(hits) == 5
+            and "2026" not in years
+            and bool(photo.calls)
+            and all(c.person_external_ids for c in photo.calls)
+            and "supplementing_via_name_search" not in str(st.get("detail") or ""),
+            checks,
+            problems,
+            f"n={len(hits)} years={sorted(years)} calls={len(photo.calls)} detail={st.get('detail')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("person_ask_no_library_pad", False, checks, problems, str(exc))
+
     ok = not problems
     return {
         "ok": ok,

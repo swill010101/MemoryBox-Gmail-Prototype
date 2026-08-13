@@ -183,6 +183,8 @@ Founder confirmation 2026-08-13 (updated — off-axis filter):
 
 **Person library honesty (founder 2026-08-13):** Older Immich assets with real EXIF/taken metadata must not be dropped because Ask only fetched the newest page. Person finds paginate Immich toward the full person library (photos + videos as Immich returns them) so Timeline extent matches Immich life span (e.g. mid-century → present), not a fake “recent years only” window. **Do not trust Immich `assets.total` as an early-stop** — it often mirrors page size (~100–250) and falsely capped Explore near 120. Cap may still apply on extremely large libraries; undated remain available via the Undated control left of Timeline + filter bar.
 
+**Person library scope (founder 2026-08-13):** A person Ask must not exceed that person’s Immich person-page count by padding with newest unfiltered library pages (e.g. Eugene Immich 661 ending 2013 must not become ~912 with 2026 gallery dates). Successful `personIds` retrieval stands alone; name fallback is only for empty/stale mappings and must resolve Immich person ids — never bare text/metadata search.
+
 #### 2.7.2 Proportional scrub (clarification — binding)
 
 Dragging the Timeline playhead **continuously** moves the Gallery through **chronological result position**.

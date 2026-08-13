@@ -404,7 +404,10 @@ def search_photos(
 
     Confirmed and trusted-provider-seeded MB Persons retrieve via provider_identities.
     Unconfirmed Immich name matches remain candidates and never become confirmed.
-    Empty mapped Immich results fall through to name search (stale mapping safe).
+    Empty mapped Immich results fall through to Immich **person-id** name
+    lookup (stale mapping safe). Never pad a successful personIds result with
+    bare Immich text/metadata search — that returns newest library pages and
+    over-counts person asks (e.g. 661 → 912 with unrelated 2026 photos).
     Limit defaults high so person asks can return the full Immich person library
     (hundreds–thousands), not only the newest page (~48–120).
     """
@@ -645,13 +648,16 @@ def search_photos(
                     (status.get("disclosure") or "")
                     + f" Ambiguous identity for: {ambiguous_names}."
                 ).strip()
-            # Mapped Immich ids can be stale, empty, or a partial cluster —
-            # name search fills remaining slots from the owner's Immich library.
-            if len(hits) >= limit:
+            # PersonIds hits are the Immich person library. Do **not** "fill"
+            # remaining slots with Immich text/metadata search — that path
+            # often ignores `query` and returns the newest ~page of the whole
+            # library (FlightSim: Eugene 661 + ~250 recent 2026 → 912).
+            # Only fall through when the mapped id returned zero (stale mapping).
+            if hits:
                 return hits[:limit], status
             status["detail"] = (
-                f"mapped_hits={len(hits)} mapped_names={mapped_names}; "
-                "supplementing_via_name_search"
+                f"mapped_hits=0 mapped_names={mapped_names}; "
+                "fallback_via_name_person_ids"
             )
 
         status["identity_mode"] = (
@@ -693,16 +699,21 @@ def search_photos(
                 refs = photo.list_people(query=name, limit=20)
             except Exception:  # noqa: BLE001
                 refs = []
+            needle = name.lower().strip()
+            needle_first = needle.split()[0] if needle.split() else needle
             for r in refs or []:
                 dn = (r.display_name or "").strip()
                 if not dn:
                     continue
-                needle = name.lower()
-                first = dn.split()[0].lower() if dn.split() else ""
+                dl = dn.lower()
+                first = dl.split()[0] if dl.split() else ""
+                # Strict-ish Immich name match — never prefix3 / fuzzy that merges
+                # other people (or worse, falls through to library-wide dump).
                 name_hit = bool(
-                    needle in dn.lower()
-                    or first == needle
-                    or dn.lower().startswith(needle[:3])
+                    needle == dl
+                    or needle in dl
+                    or dl in needle
+                    or (needle_first and first == needle_first and len(needle_first) >= 3)
                 )
                 if not name_hit:
                     continue
@@ -717,11 +728,24 @@ def search_photos(
                     continue
                 person_ext.append(r.external_id)
 
-        text_bits = list(plan.place_names) + list(name_queries)
-        text = " ".join(text_bits) if text_bits else (plan.original_ask or None)
+        person_ext = list(dict.fromkeys(person_ext))
+        if not person_ext:
+            status["ok"] = True
+            status["detail"] = (
+                f"no_immich_person_ids names={name_queries} "
+                f"unmapped_resolvable={unmapped_resolvable_names or []}"
+            )
+            if unmapped_resolvable_names:
+                status["disclosure"] = (
+                    "Resolvable MB Person(s) exist without Immich mapping; "
+                    "no Immich person id resolved for name search."
+                )
+            return hits[:limit], status
+
+        # Person asks must stay on personIds only — never bare Immich text search
+        # (unfiltered newest-library page).
         query = PhotoSearchQuery(
-            person_external_ids=tuple(dict.fromkeys(person_ext)),
-            text=text,
+            person_external_ids=tuple(person_ext),
             limit=limit,
         )
         assets = photo.search_assets(query)
@@ -733,7 +757,7 @@ def search_photos(
             seen_ext.add(a.external_id)
         status["ok"] = True
         status["detail"] = (
-            f"candidate_hits={len(hits)} "
+            f"candidate_hits={len(hits)} person_ids={len(person_ext)} "
             f"unmapped_resolvable={unmapped_resolvable_names or []}"
         )
         if unmapped_resolvable_names:
