@@ -240,23 +240,47 @@
   }
 
   /**
+   * Earliest dated capture in the current eligible group (type ∩ place).
+   * Undated items are arbitrarily anchored here on the Timeline (still labeled Undated).
+   */
+  function earliestEligibleDateMs() {
+    let lo = Infinity;
+    for (const it of datedEligible()) {
+      const t = parseISO(it.date);
+      if (Number.isFinite(t)) lo = Math.min(lo, t);
+    }
+    return Number.isFinite(lo) ? lo : NaN;
+  }
+
+  function undatedTimelineAnchorMs() {
+    return earliestEligibleDateMs();
+  }
+
+  /**
    * Result set before map-marker refine (type ∩ place ∩ timeline).
    * Map markers are drawn from this set — same underlying membership as gallery.
+   *
+   * Undated: ALWAYS remain in the gallery when they match query/type/place.
+   * They are never excluded by date-banding. Sort to the oldest end of the group.
+   * Timeline placement uses undatedTimelineAnchorMs() (earliest dated in group).
    */
   function resultSetItems() {
     const eligible = eligibleItems();
     const { rangeStart, rangeEnd } = state.timeline;
     const sort = (state.gallery && state.gallery.sort) || "newest";
-    const bounded = isDateBounded();
+    const hasRange =
+      Number.isFinite(rangeStart) && Number.isFinite(rangeEnd);
     const list = eligible.filter((it) => {
-      if (isUndated(it)) return !bounded;
+      if (isUndated(it)) return true; // never exclude undated from gallery
+      if (!hasRange) return true;
       const t = parseISO(it.date);
       return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
     });
     list.sort((a, b) => {
       if (isUndated(a) && isUndated(b)) return 0;
-      if (isUndated(a)) return 1;
-      if (isUndated(b)) return -1;
+      // Undated → oldest end of the group (earliest chronologically)
+      if (isUndated(a)) return sort === "oldest" ? -1 : 1;
+      if (isUndated(b)) return sort === "oldest" ? 1 : -1;
       const d = parseISO(a.date) - parseISO(b.date);
       return sort === "oldest" ? d : -d;
     });
@@ -266,7 +290,7 @@
   /**
    * Gallery membership:
    * - dated items in active Timeline range
-   * - undated items only when NOT date-bounded (unbounded / full-extent view)
+   * - undated items always (when eligible) — never dropped by date bound
    * - optional mapRefineIds from marker/cluster selection
    */
   function visibleItems() {
@@ -385,7 +409,7 @@
       FILTERS.find((f) => f.id === state.domain.typeFilter)?.label || "All";
     const undatedOnly = !hasDatedExtent() && vis.some(isUndated);
     const range = undatedOnly
-      ? "undated memories (not placed on the Timeline axis)"
+      ? "undated memories (anchored when dated peers exist)"
       : hasDatedExtent()
         ? fmtRangeLabel(
             state.timeline.rangeStart,
@@ -1032,8 +1056,9 @@
     if (undatedEl) {
       if (uCount > 0) {
         undatedEl.hidden = false;
-        undatedEl.textContent = isDateBounded()
-          ? `Undated: ${uCount} (hidden while date-bounded)`
+        const anchor = undatedTimelineAnchorMs();
+        undatedEl.textContent = Number.isFinite(anchor)
+          ? `Undated: ${uCount} (at earliest ${fmtDay(anchor)})`
           : `Undated: ${uCount}`;
       } else {
         undatedEl.hidden = true;
@@ -1046,7 +1071,7 @@
       dotsEl.innerHTML = "";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
-      dotsEl.innerHTML = typedDated
+      const datedDots = typedDated
         .map((it) => {
           const t = parseISO(it.date);
           if (!Number.isFinite(t)) return "";
@@ -1054,6 +1079,19 @@
           return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
         })
         .join("");
+      // Undated → arbitrarily at earliest dated time in the eligible group
+      const anchor = undatedTimelineAnchorMs();
+      let undatedDots = "";
+      if (uCount > 0 && Number.isFinite(anchor)) {
+        const x = ((anchor - extentStart) / span) * 100;
+        undatedDots = `<span class="mb-tl-dot mb-tl-dot-undated" style="left:${Math.min(
+          98,
+          Math.max(0, x)
+        )}%" title="Undated × ${uCount} (anchored at earliest ${fmtDay(
+          anchor
+        )})"></span>`;
+      }
+      dotsEl.innerHTML = datedDots + undatedDots;
     }
 
     const ticks = document.getElementById("mb-tl-ticks");

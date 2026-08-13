@@ -31,7 +31,7 @@ Governing loop:
 | Separate primary Photo / Video / Email result apps for this find | One mixed-media canvas |
 | Voice-only state logic separate from typed Ask | One command/state model |
 | Archive Health / Status as family top-level | Contextual / system only |
-| Invented Timeline dates for undated evidence | Honesty; undated stays undated |
+| Invented Timeline dates presented as real capture dates | Undated labeled; earliest-group anchor is navigation placement only (§2.7.1) |
 | Reset that clears query or type filters | Reset is temporal extent only |
 
 ---
@@ -170,11 +170,14 @@ Example fixture orientation:
 
 #### 2.7.1 Undated evidence (clarification — binding)
 
-- Undated evidence that otherwise matches query/context/type filter **remains in the Gallery** when the owner is in an **unbounded** (full-extent / non-date-bounded) view.
-- It must **not** be placed at an invented Timeline position.
-- Timeline may show **Undated** indication/count outside the dated axis.
-- When the owner **explicitly** uses a date-bounded view (band / handles / Ask date range), undated items are **excluded appropriately** from the Gallery for that bounded explore period.
-- Reset returns to full temporal extent of the current filtered eligible set; undated discoverability in the unbounded view is restored without clearing filters (§8.1 case B).
+Founder confirmation 2026-08-13 (supersedes prior “exclude when date-bounded / never on axis”):
+
+- Undated evidence that otherwise matches query/context/type filter **always remains in the Gallery**. It must **not** be excluded by Timeline date-banding.
+- Undated items sort to the **oldest end** of the gallery group.
+- On the Timeline, undated items are **arbitrarily anchored at the earliest dated time in the current eligible group** (still labeled **Undated** — not a claimed capture date).
+- Timeline shows an **Undated** count (with the anchor day when dated peers exist).
+- If the eligible set has **no** dated peers, undated stay in the Gallery; the axis does not invent a calendar day.
+- Reset restores full temporal extent of the current filtered eligible set without clearing filters (§8.1 case B).
 
 #### 2.7.2 Proportional scrub (clarification — binding)
 
@@ -314,7 +317,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | **Banding** | Dragging a period narrows dated Gallery results and increases precision; preserves query/filters |
 | **Handles** | Widen/narrow current temporal range |
 | **Reset** | Restores full temporal extent of **current** query + context + type-filter set; does **not** clear query or type filters |
-| **Undated** | Matching undated remains discoverable unbounded; no fake date; excluded appropriately when date-bounded |
+| **Undated** | Always in Gallery; sorted to oldest end; Timeline-anchored at earliest dated peer in group (labeled Undated) |
 | **Synchronization** | Timeline changes immediately update Gallery; no drift |
 | **Scrub** | Playhead continuously moves Gallery through chronological neighborhood; proportional/controllable; no huge unexpected jumps |
 | **Detail** | Large modal, not new screen |
@@ -338,9 +341,10 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 
 #### B. Undated evidence
 
-1. A matching undated object remains discoverable in the **unbounded** result.  
-2. It is **not** assigned a fake date on the Timeline.  
-3. Explicit temporal banding **excludes it appropriately**.
+1. A matching undated object remains discoverable in the Gallery (**including** when date-banded).  
+2. It sorts to the **oldest end** of the gallery group.  
+3. On the Timeline it is **anchored at the earliest dated time** in the eligible group and still labeled **Undated**.  
+4. Banding must **not** drop it from the Gallery.
 
 #### C. Density independence
 
@@ -377,7 +381,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 |------|------------|
 | Treat Timeline as separate app | Forbidden for ACCEPTED; unified control only |
 | Reset clears filters | Explicitly forbidden (§2.7) |
-| Fake dates for undated | Explicitly forbidden (§2.7.1) |
+| Invented capture dates presented as fact | Undated stays labeled Undated; axis anchor is explicit placement only |
 | Brittle “exactly 12 cards” density | Non-brittle 10–14 / two-row target (§2.4) |
 | Scrub jumps / drift | Proportional continuous neighborhood sync (§2.7.2) |
 | Modal close dumps to Home/default | Correction-aware restore (§2.8) |

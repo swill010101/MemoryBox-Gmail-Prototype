@@ -771,6 +771,15 @@ body {
   opacity: 0.85;
 }
 
+.mb-tl-dot-undated {
+  background: #b45309;
+  box-shadow: 0 0 0 2px rgba(180, 83, 9, 0.25);
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  top: 23px;
+}
+
 .mb-tl-band {
   position: absolute;
   top: 18px;
