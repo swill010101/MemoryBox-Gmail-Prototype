@@ -65,11 +65,12 @@ def _assert_explore_html(html: str) -> list[str]:
     for marker in (
         "mb-explore",
         "What would you like to see?",
+        "mb-explore-ask-row",
         "mb-explore-gallery",
         "mb-tl-track",
         "mb-tl-reset",
-        ">Reset<",
-        "Gallery Size",
+        "Reset",
+        "mb-density-label",
         "mb-modal",
         "/static/explore/explore.js",
         "data-mb-surface=\"explore\"",
@@ -78,6 +79,19 @@ def _assert_explore_html(html: str) -> list[str]:
             problems.append(f"UI missing: {marker}")
     if "Full Range" in html or "Life Span" in html:
         problems.append("Reset control must not use Full Range / Life Span labels")
+    return problems
+
+
+def _assert_explore_css(css: str) -> list[str]:
+    problems: list[str] = []
+    if ".mb-explore-ask-row" not in css:
+        problems.append("explore.css missing .mb-explore-ask-row")
+    if "flex-wrap: nowrap" not in css:
+        problems.append("Ask row must use flex-wrap: nowrap where width permits")
+    if "max-height: calc(var(--mb-row-h) * 2" not in css and "max-height: calc(var(--mb-row-h) * 2 +" not in css:
+        # two-row gallery target
+        if "* 2 +" not in css and "* 2)" not in css:
+            problems.append("gallery CSS should target two visible rows")
     return problems
 
 
@@ -129,6 +143,11 @@ def _prove_harness() -> dict[str, Any]:
         injected = inject_shell(html, surface="explore")
         hp = _assert_explore_html(injected)
         _check("explore_html", not hp, checks, problems, "; ".join(hp) if hp else "ok")
+        css = (Path(__file__).resolve().parent / "static" / "explore.css").read_text(
+            encoding="utf-8"
+        )
+        cp = _assert_explore_css(css)
+        _check("explore_css_hierarchy", not cp, checks, problems, "; ".join(cp) if cp else "ok")
     except Exception as exc:  # noqa: BLE001
         _check("explore_html", False, checks, problems, str(exc))
 
@@ -171,7 +190,14 @@ def _prove_harness() -> dict[str, Any]:
         _check("explore_js_state", False, checks, problems, str(exc))
 
     ok = not problems
-    return {"ok": ok, "checks": checks, "problems": problems, "meta": meta}
+    return {
+        "ok": ok,
+        "checks": checks,
+        "problems": problems,
+        "meta": meta,
+        "acceptance_gate_authority": "docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md §8",
+        "note": "Harness is structural. ACCEPTED requires FlightSim manual pass of every §8 gate row.",
+    }
 
 
 def _prove_flightsim() -> dict[str, Any]:

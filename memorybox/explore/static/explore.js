@@ -21,28 +21,30 @@
     { id: "story", label: "Stories" },
   ];
 
-  const TYPE_ICON = {
-    photo: "📷",
-    video: "🎬",
-    email: "✉️",
-    artifact: "📦",
-    story: "📖",
-    audio: "🎧",
+  const TYPE_GLYPH = {
+    photo: "▣",
+    video: "▶",
+    email: "✉",
+    artifact: "◇",
+    story: "❧",
+    audio: "♫",
     sms: "💬",
-    calendar: "📅",
-    recipe: "🍲",
-    document: "📄",
+    calendar: "▦",
+    recipe: "♨",
+    document: "▤",
   };
 
   const NAV = [
-    { id: "ask", label: "Ask", href: "/ask/ui" },
-    { id: "people", label: "People", href: "/people/ui" },
-    { id: "stories", label: "Stories", href: "/story/ui" },
-    { id: "journal", label: "Journal", href: "/journal/ui" },
-    { id: "artifacts", label: "Artifacts", href: "/artifact/ui" },
-    { id: "family-night", label: "Family Night", href: "/family-night/ui" },
-    { id: "teach", label: "Teach", href: "/review/ui" },
+    { id: "ask", label: "Ask", href: "/ask/ui", ico: "?" },
+    { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+    { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+    { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+    { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+    { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
+    { id: "teach", label: "Teach", href: "/review/ui", ico: "✧" },
   ];
+
+  const DENSITY_LABEL = { 1: "Small", 2: "Medium", 3: "Large" };
 
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
@@ -65,7 +67,7 @@
    *     playhead: number,
    *     precision: 'years'|'months'|'days',
    *   },
-   *   gallery: { density: number, scrollTop: number },
+   *   gallery: { density: number, scrollTop: number, sort: 'newest'|'oldest' },
    *   modal: { openId: string|null, snapshot: object|null },
    * }} */
   let state = null;
@@ -145,13 +147,18 @@
   function visibleItems() {
     const { typeFilter } = state.domain;
     const { rangeStart, rangeEnd } = state.timeline;
-    return rawItems
+    const sort = (state.gallery && state.gallery.sort) || "newest";
+    const list = rawItems
       .filter((it) => matchesType(it, typeFilter))
       .filter((it) => {
         const t = parseISO(it.date);
         return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
-      })
-      .sort((a, b) => parseISO(a.date) - parseISO(b.date));
+      });
+    list.sort((a, b) => {
+      const d = parseISO(a.date) - parseISO(b.date);
+      return sort === "oldest" ? d : -d;
+    });
+    return list;
   }
 
   function snapshotExplore() {
@@ -315,7 +322,14 @@
   // ——— Render ———
 
   function renderNav() {
-    // Family destinations come from the injected Product Shell (MBUX FAMILY).
+    const el = document.getElementById("mb-explore-nav");
+    if (!el) return;
+    el.innerHTML = NAV.map(
+      (n) =>
+        `<a href="${n.href}" data-nav="${n.id}"${
+          n.id === "ask" ? ' aria-current="page"' : ""
+        }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
+    ).join("");
   }
 
   // Expose for shell Global Ask + future STT — same applyAskCommand path.
@@ -329,8 +343,19 @@
       state.domain.summary || "";
     const chips = document.getElementById("mb-explore-chips");
     chips.innerHTML = (state.domain.chips || [])
-      .map((c) => `<span class="mb-chip">${escapeHtml(c.label)}</span>`)
+      .map(
+        (c) =>
+          `<span class="mb-chip" data-kind="${escapeAttr(c.kind || "")}">${escapeHtml(
+            c.label
+          )}</span>`
+      )
       .join("");
+    const av = document.getElementById("mb-explore-curator-avatar");
+    if (av) {
+      const person = (state.domain.chips || []).find((c) => c.kind === "person");
+      const label = (person && person.label) || state.domain.title || "M";
+      av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+    }
   }
 
   function renderFilters() {
@@ -347,22 +372,79 @@
     });
   }
 
+  function densityLabel() {
+    return DENSITY_LABEL[state.gallery.density] || "Medium";
+  }
+
+  function fmtCardDate(iso) {
+    const t = parseISO(iso);
+    if (!Number.isFinite(t)) return iso || "";
+    const d = new Date(t);
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  }
+
+  function cardMediaInner(it) {
+    const t = String(it.type || "").toLowerCase();
+    const prev = escapeHtml(it.preview || "");
+    if (t === "email" || t === "sms" || t === "text") {
+      const from = escapeHtml(it.from || "Message");
+      return `<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+    }
+    if (t === "story") {
+      return `<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+    }
+    if (t === "video") {
+      const dur = it.duration_sec
+        ? `${Math.floor(it.duration_sec / 60)}:${String(Math.floor(it.duration_sec % 60)).padStart(2, "0")}`
+        : "";
+      return `<span class="mb-card-play" aria-hidden="true">▶</span>${
+        dur ? `<span class="mb-card-dur">${dur}</span>` : ""
+      }<span class="mb-card-preview">${prev}</span>`;
+    }
+    return `<span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
+  }
+
   function renderGallery() {
     const gallery = document.getElementById("mb-explore-gallery");
     const items = visibleItems();
     state.domain.items = items;
     gallery.dataset.density = String(state.gallery.density);
+    const densLabel = document.getElementById("mb-density-label");
+    if (densLabel) densLabel.textContent = densityLabel();
+    const sortEl = document.getElementById("mb-explore-sort");
+    if (sortEl) sortEl.value = state.gallery.sort || "newest";
+
     gallery.innerHTML = items
       .map((it) => {
-        const icon = TYPE_ICON[it.type] || "•";
+        const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
-        const date = escapeHtml(it.date || "");
-        const prev = escapeHtml(it.preview || "");
-        return `<button type="button" class="mb-card" data-id="${escapeAttr(it.id)}" data-type="${escapeAttr(it.type)}">
-          <div class="mb-card-media" data-type="${escapeAttr(it.type)}">${icon}<span class="mb-card-preview">${prev}</span></div>
+        const date = escapeHtml(fmtCardDate(it.date));
+        return `<button type="button" class="mb-card" data-id="${escapeAttr(
+          it.id
+        )}" data-type="${escapeAttr(it.type)}">
+          <div class="mb-card-media" data-type="${escapeAttr(it.type)}">${cardMediaInner(
+            it
+          )}</div>
           <div class="mb-card-meta">
-            <div class="mb-card-title">${title}</div>
-            <div class="mb-card-sub">${date} · ${escapeHtml(it.type)}</div>
+            <span class="mb-card-type" aria-hidden="true">${glyph}</span>
+            <div>
+              <div class="mb-card-title">${title}</div>
+              <div class="mb-card-sub">${date}</div>
+            </div>
           </div>
         </button>`;
       })
@@ -372,13 +454,14 @@
       card.addEventListener("click", () => openModal(card.getAttribute("data-id")));
     });
 
-    // restore scroll after re-render
     requestAnimationFrame(() => {
       gallery.scrollTop = state.gallery.scrollTop || 0;
     });
 
     const meta = document.getElementById("mb-explore-meta");
-    meta.textContent = `${items.length} visible · density ${state.gallery.density} · filter ${state.domain.typeFilter}`;
+    meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
+      state.domain.typeFilter
+    }`;
   }
 
   function renderTimeline() {
@@ -512,7 +595,7 @@
     }
     // artifact / audio / calendar / recipe / document / default
     return `<div class="mb-ev-photo" data-type="${escapeAttr(t)}" style="min-height:160px">${escapeHtml(
-      TYPE_ICON[t] || "•"
+      TYPE_GLYPH[t] || "•"
     )} ${escapeHtml(item.preview || t)}</div>
       <p class="mb-ev-meta">${escapeHtml(item.date || "")} · ${escapeHtml(t)}</p>
       <p>${escapeHtml(item.detail || "")}</p>`;
@@ -555,6 +638,18 @@
     document.getElementById("mb-tl-reset").addEventListener("click", () => {
       resetTimelineExtent(true);
     });
+
+    const nudge = (dir) => {
+      const span = state.timeline.extentEnd - state.timeline.extentStart;
+      const step = span * 0.04 * dir;
+      let next = state.timeline.playhead + step;
+      next = Math.min(state.timeline.extentEnd, Math.max(state.timeline.extentStart, next));
+      state.timeline.playhead = next;
+      scrollGalleryToward(next);
+      renderTimeline();
+    };
+    document.getElementById("mb-tl-nudge-l").addEventListener("click", () => nudge(-1));
+    document.getElementById("mb-tl-nudge-r").addEventListener("click", () => nudge(1));
 
     // Band drag = redefine active range (explore period)
     track.addEventListener("pointerdown", (e) => {
@@ -662,13 +757,22 @@
       }
     });
     document.getElementById("mb-density-minus").addEventListener("click", () => {
+      // minus = more / smaller
       state.gallery.density = Math.max(1, state.gallery.density - 1);
       renderGallery();
     });
     document.getElementById("mb-density-plus").addEventListener("click", () => {
+      // plus = fewer / larger
       state.gallery.density = Math.min(3, state.gallery.density + 1);
       renderGallery();
     });
+    const sortEl = document.getElementById("mb-explore-sort");
+    if (sortEl) {
+      sortEl.addEventListener("change", () => {
+        state.gallery.sort = sortEl.value === "oldest" ? "oldest" : "newest";
+        renderGallery();
+      });
+    }
     document.getElementById("mb-modal-close").addEventListener("click", closeModal);
     document.getElementById("mb-modal").addEventListener("click", (e) => {
       if (e.target.id === "mb-modal") closeModal();
@@ -714,7 +818,7 @@
         playhead: ext.start,
         precision: computePrecision(ext.start, ext.end),
       },
-      gallery: { density: 2, scrollTop: 0 },
+      gallery: { density: 2, scrollTop: 0, sort: "newest" },
       modal: { openId: null, snapshot: null },
     };
     renderNav();
