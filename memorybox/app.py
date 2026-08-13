@@ -476,6 +476,34 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
 
 
+@app.get("/explore/api/photo/{external_id}/people")
+def explore_photo_people(external_id: str) -> dict[str, Any]:
+    """Lazy Immich people + face boxes for Shared Evidence Viewer People rail."""
+    from memorybox.ask import deps as ask_deps
+
+    eid = (external_id or "").strip()
+    if not eid:
+        raise HTTPException(status_code=400, detail="external_id required")
+    photo = ask_deps.build_photo()
+    faces_fn = getattr(photo, "asset_people_faces", None)
+    if not callable(faces_fn):
+        return {"ok": True, "external_id": eid, "people": [], "faces": []}
+    try:
+        faces = faces_fn(eid) or []
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502, detail=f"photo people lookup failed: {exc}"
+        ) from exc
+    people: list[str] = []
+    for f in faces:
+        if not isinstance(f, dict):
+            continue
+        name = str(f.get("name") or "").strip()
+        if name and name not in people:
+            people.append(name)
+    return {"ok": True, "external_id": eid, "people": people, "faces": faces}
+
+
 @app.get("/family-night/ui")
 def family_night_ui() -> HTMLResponse:
     """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""

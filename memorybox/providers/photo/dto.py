@@ -28,6 +28,15 @@ class PhotoPersonRef:
 
 
 @dataclass(frozen=True)
+class PhotoFaceRef:
+    """Named face on an asset with optional normalized box (x,y,w,h in 0..1)."""
+
+    display_name: str
+    external_person_id: str | None = None
+    face_box: tuple[float, float, float, float] | None = None  # x, y, w, h
+
+
+@dataclass(frozen=True)
 class PhotoLocation:
     city: str | None = None
     state: str | None = None
@@ -49,6 +58,8 @@ class PhotoAssetDto:
     albums: tuple[str, ...] = ()
     # Camera / capture EXIF for Source rail (empty when Immich omitted withExif)
     exif: tuple[tuple[str, str], ...] = ()
+    # Named faces (+ boxes when Immich returned geometry)
+    faces: tuple[PhotoFaceRef, ...] = ()
 
 
 @dataclass(frozen=True)

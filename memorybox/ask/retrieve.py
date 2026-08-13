@@ -53,6 +53,8 @@ class PhotoHit:
     original_filename: str | None = None
     # Camera EXIF for Source rail — dict keys are human labels
     exif: dict[str, str] | None = None
+    # Immich-named faces on the asset (+ optional boxes)
+    faces: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -599,10 +601,35 @@ def search_photos(
                 n = (pref.display_name or "").strip()
                 if n and n.lower() != "unknown" and n not in out:
                     out.append(n)
+            for face in getattr(a, "faces", ()) or ():
+                n = (getattr(face, "display_name", None) or "").strip()
+                if n and n.lower() != "unknown" and n not in out:
+                    out.append(n)
             pn = (person_name or "").strip()
             if pn and pn.lower() != "unknown" and pn not in out:
                 out.insert(0, pn)
             return out
+
+        def _faces_for_hit(a: PhotoAssetDto) -> list[dict[str, Any]] | None:
+            rows: list[dict[str, Any]] = []
+            for face in getattr(a, "faces", ()) or ():
+                name = (getattr(face, "display_name", None) or "").strip()
+                if not name:
+                    continue
+                row: dict[str, Any] = {
+                    "name": name,
+                    "person_external_id": getattr(face, "external_person_id", None),
+                }
+                box = getattr(face, "face_box", None)
+                if box and len(box) == 4:
+                    row["face_box"] = {
+                        "x": float(box[0]),
+                        "y": float(box[1]),
+                        "w": float(box[2]),
+                        "h": float(box[3]),
+                    }
+                rows.append(row)
+            return rows or None
 
         def _asset_to_hit(
             a: PhotoAssetDto,
@@ -664,6 +691,7 @@ def search_photos(
                 longitude=lon,
                 original_filename=getattr(a, "original_filename", None),
                 exif=dict(getattr(a, "exif", ()) or ()) or None,
+                faces=_faces_for_hit(a),
             )
 
         if mapped_ext:

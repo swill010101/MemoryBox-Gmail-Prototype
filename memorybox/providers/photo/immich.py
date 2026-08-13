@@ -10,6 +10,7 @@ from memorybox.providers.photo._immich_http import ImmichAuthError, ImmichHttpCl
 from memorybox.providers.photo.dto import (
     PhotoAssetDto,
     PhotoBytesDto,
+    PhotoFaceRef,
     PhotoLocation,
     PhotoPersonRef,
     PhotoSearchQuery,
@@ -133,6 +134,102 @@ class ImmichPhotoProvider:
             return None
         return self._map_asset(raw)
 
+    def asset_people_faces(self, external_asset_id: str) -> list[dict[str, Any]]:
+        """Named Immich people + face boxes for one asset (viewer People rail)."""
+        try:
+            raw = self._client.get_asset(external_asset_id)
+        except self._AuthError as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(str(exc)) from exc
+        if not isinstance(raw, dict):
+            return []
+        return [self._face_ref_to_dict(f) for f in self._faces_from_raw(raw)]
+
+    @staticmethod
+    def _face_ref_to_dict(face: PhotoFaceRef) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "name": face.display_name,
+            "person_external_id": face.external_person_id,
+        }
+        if face.face_box:
+            x, y, w, h = face.face_box
+            out["face_box"] = {"x": x, "y": y, "w": w, "h": h}
+        return out
+
+    @staticmethod
+    def _normalize_face_box(
+        face: dict[str, Any],
+    ) -> tuple[float, float, float, float] | None:
+        try:
+            x1 = float(face.get("boundingBoxX1", face.get("x1")))
+            y1 = float(face.get("boundingBoxY1", face.get("y1")))
+            x2 = float(face.get("boundingBoxX2", face.get("x2")))
+            y2 = float(face.get("boundingBoxY2", face.get("y2")))
+            iw = float(face.get("imageWidth") or face.get("image_width") or 0)
+            ih = float(face.get("imageHeight") or face.get("image_height") or 0)
+        except (TypeError, ValueError):
+            return None
+        if iw <= 0 or ih <= 0:
+            return None
+        w = max(0.0, (x2 - x1) / iw)
+        h = max(0.0, (y2 - y1) / ih)
+        x = max(0.0, min(1.0, x1 / iw))
+        y = max(0.0, min(1.0, y1 / ih))
+        if w <= 0 or h <= 0:
+            return None
+        return (x, y, min(1.0, w), min(1.0, h))
+
+    def _faces_from_raw(self, raw: dict[str, Any]) -> tuple[PhotoFaceRef, ...]:
+        out: list[PhotoFaceRef] = []
+        seen: set[str] = set()
+
+        def add(
+            name: str,
+            pid: str | None,
+            box: tuple[float, float, float, float] | None,
+        ) -> None:
+            n = (name or "").strip()
+            if not n or n.lower() == "unknown":
+                return
+            key = f"{n}|{pid or ''}|{box}"
+            if key in seen:
+                return
+            seen.add(key)
+            out.append(
+                PhotoFaceRef(
+                    display_name=n,
+                    external_person_id=pid or None,
+                    face_box=box,
+                )
+            )
+
+        for p in raw.get("people") or []:
+            if not isinstance(p, dict):
+                continue
+            name = str(p.get("name") or "").strip()
+            pid = str(p.get("id") or "") or None
+            person_faces = p.get("faces") if isinstance(p.get("faces"), list) else []
+            if person_faces:
+                for f in person_faces:
+                    if not isinstance(f, dict):
+                        continue
+                    add(name, pid, self._normalize_face_box(f))
+            elif name:
+                add(name, pid, None)
+
+        for f in raw.get("unassignedFaces") or raw.get("faces") or []:
+            if not isinstance(f, dict):
+                continue
+            person = f.get("person") if isinstance(f.get("person"), dict) else {}
+            name = str((person or {}).get("name") or f.get("name") or "").strip()
+            pid = str((person or {}).get("id") or "") or None
+            if not name:
+                continue
+            add(name, pid, self._normalize_face_box(f))
+
+        return tuple(out)
+
     def fetch_preview(self, external_asset_id: str) -> PhotoBytesDto:
         try:
             data, content_type, _source = self._client.fetch_preview_bytes(
@@ -154,14 +251,17 @@ class ImmichPhotoProvider:
         # Prefer EXIF / Immich display date over fileCreatedAt (often the Immich
         # import time). Older scans imported in 2023+ still carry pre-2023 EXIF.
         taken_at = self._parse_taken_at(raw)
+        faces = self._faces_from_raw(raw)
         people_raw = raw.get("people") or []
         people: list[PhotoPersonRef] = []
+        seen_pids: set[str] = set()
         for p in people_raw:
             if not isinstance(p, dict):
                 continue
             pid = str(p.get("id") or "")
-            if not pid:
+            if not pid or pid in seen_pids:
                 continue
+            seen_pids.add(pid)
             people.append(
                 PhotoPersonRef(
                     provider_key=self.provider_key,
@@ -169,6 +269,16 @@ class ImmichPhotoProvider:
                     display_name=str(p.get("name") or ""),
                 )
             )
+        for face in faces:
+            if face.external_person_id and face.external_person_id not in seen_pids:
+                seen_pids.add(face.external_person_id)
+                people.append(
+                    PhotoPersonRef(
+                        provider_key=self.provider_key,
+                        external_id=face.external_person_id,
+                        display_name=face.display_name,
+                    )
+                )
         loc_raw = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
         location = None
         # Immich puts GPS + reverse-geocode city/state/country on exifInfo when
@@ -208,6 +318,7 @@ class ImmichPhotoProvider:
             web_url=self._client.web_url(ext) if ext else None,
             albums=albums,
             exif=exif_pairs,
+            faces=faces,
         )
 
     @staticmethod

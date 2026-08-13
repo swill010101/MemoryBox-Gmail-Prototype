@@ -116,6 +116,8 @@ def _assert_explore_css(css: str) -> list[str]:
         problems.append("explore.css missing Shared Evidence Viewer / quick preview styles")
     if ".mb-viewer-zoom" not in css:
         problems.append("explore.css missing photo zoom control styles")
+    if ".mb-rail-tools" not in css:
+        problems.append("explore.css missing rail tools styles")
     if "max-height: calc(var(--mb-row-h) * 2" not in css and "max-height: calc(var(--mb-row-h) * 2 +" not in css:
         # two-row gallery target
         if "* 2 +" not in css and "* 2)" not in css:
@@ -244,8 +246,12 @@ def _prove_harness() -> dict[str, Any]:
             "bindCardPreview",
             "stepViewer",
             "mb-zoom-in",
-            "mb-viewer-inspect",
+            "mb-rail-exif-btn",
             "mb-viewer-share",
+            "mb-rail-add-story",
+            "enrichPhotoPeople",
+            "bindPhotoPan",
+            "renderRailTools",
             "Camera / EXIF",
         ):
             if marker not in js:

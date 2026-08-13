@@ -1087,17 +1087,8 @@ body {
   flex-direction: column;
 }
 
-.mb-viewer-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: center;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 5;
-  padding: 0.55rem 0.75rem;
-  border-top: 1px solid #1f2937;
-  background: #0f172a;
+.mb-viewer-footer:empty {
+  display: none;
 }
 
 .mb-viewer-footbtn {
@@ -1154,12 +1145,21 @@ body {
   min-height: 0;
 }
 
+.mb-rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .mb-rail-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   padding: 0.5rem;
   border-bottom: 1px solid #1f2937;
+  flex-shrink: 0;
 }
 
 .mb-rail-tab {
@@ -1180,11 +1180,41 @@ body {
 }
 
 .mb-rail-panel {
-  flex: 1;
-  overflow: auto;
+  flex: 0 0 auto;
+  overflow: visible;
   padding: 0.75rem 0.85rem;
   font-size: 0.84rem;
   color: #cbd5e1;
+}
+
+.mb-rail-tools {
+  flex-shrink: 0;
+  padding: 0.65rem 0.85rem 0.85rem;
+  border-top: 1px solid #1f2937;
+  background: #0f172a;
+  position: sticky;
+  bottom: 0;
+}
+
+.mb-rail-tools[hidden] {
+  display: none !important;
+}
+
+.mb-rail-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.mb-rail-tools .mb-viewer-footbtn {
+  text-decoration: none;
+}
+
+.mb-rail-source-block {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #1f2937;
 }
 
 .mb-rail-panel h3 {
@@ -1274,6 +1304,12 @@ body {
   overflow: auto;
   justify-content: flex-start;
   align-items: flex-start;
+  cursor: grab;
+}
+
+.mb-ev-photo.is-zoomed.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .mb-ev-photo img {
@@ -1281,6 +1317,18 @@ body {
   max-height: min(62vh, 560px);
   object-fit: contain;
   transition: width 0.12s ease-out;
+  display: block;
+}
+
+.mb-ev-photo-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.mb-ev-photo-frame img {
+  max-width: 100%;
 }
 
 .mb-ev-photo.is-zoomed img {
@@ -1361,19 +1409,28 @@ body {
   position: absolute;
   border: 2px solid #38bdf8;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.6);
-  pointer-events: none;
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .mb-face-label {
   position: absolute;
   left: 0;
   top: calc(100% + 2px);
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.92);
   color: #e0f2fe;
   font-size: 0.68rem;
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+
+.mb-face-box:hover .mb-face-label,
+.mb-face-box:focus-within .mb-face-label {
+  opacity: 1;
 }
 
 /* ——— Gallery quick preview (MBUX §22.6) ——— */

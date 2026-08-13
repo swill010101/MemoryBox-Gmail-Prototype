@@ -98,6 +98,12 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         mb_name = str(p.get("mb_person_name") or "").strip() or None
         if mb_name and mb_name.lower() != "unknown" and mb_name not in people:
             people.insert(0, mb_name)
+        for face in p.get("faces") or []:
+            if not isinstance(face, dict):
+                continue
+            fn = str(face.get("name") or "").strip()
+            if fn and fn.lower() != "unknown" and fn not in people:
+                people.append(fn)
         for n in ask_people:
             if n not in people:
                 people.append(n)
@@ -143,6 +149,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "country": p.get("country"),
             "original_filename": p.get("original_filename"),
             "exif": p.get("exif") if isinstance(p.get("exif"), dict) else None,
+            "faces": list(p.get("faces") or []) if isinstance(p.get("faces"), list) else [],
         }
         if lat_f is not None and lng_f is not None:
             extra["lat"] = lat_f

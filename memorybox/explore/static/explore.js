@@ -1219,7 +1219,10 @@
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
+    renderRailTools(item);
     renderTeachSlot(item);
+    bindPhotoPan();
+    enrichPhotoPeople(item);
   }
 
   function stepViewer(delta) {
@@ -1280,8 +1283,8 @@
     }
   }
 
-  function faceBoxStyle(item) {
-    const b = item && item.face_box;
+  function faceBoxStyle(box) {
+    const b = box;
     if (
       !b ||
       typeof b.x !== "number" ||
@@ -1294,13 +1297,37 @@
     return `left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%`;
   }
 
+  function faceBoxesForItem(item) {
+    const out = [];
+    const faces = Array.isArray(item.faces) ? item.faces : [];
+    faces.forEach((f) => {
+      if (!f || typeof f !== "object") return;
+      const box = f.face_box || f.box;
+      const style = faceBoxStyle(box);
+      if (!style) return;
+      out.push({ style, name: f.name || f.display_name || "" });
+    });
+    if (!out.length && item.face_box) {
+      const style = faceBoxStyle(item.face_box);
+      if (style) {
+        out.push({
+          style,
+          name: item.face_identity || item.mb_person_name || "",
+        });
+      }
+    }
+    return out;
+  }
+
   function faceBoxHtml(item) {
-    const style = faceBoxStyle(item);
-    if (!style) return "";
-    const label = escapeHtml(item.face_identity || item.mb_person_name || "");
-    return `<div class="mb-face-box" style="${style}" title="Face region">${
-      label ? `<span class="mb-face-label">${label}</span>` : ""
-    }</div>`;
+    return faceBoxesForItem(item)
+      .map((f) => {
+        const label = escapeHtml(f.name || "");
+        return `<div class="mb-face-box" style="${f.style}" title="${label || "Face"}">${
+          label ? `<span class="mb-face-label">${label}</span>` : ""
+        }</div>`;
+      })
+      .join("");
   }
 
   function peopleList(item) {
@@ -1333,6 +1360,121 @@
     });
   }
 
+  function sourceDetailsHtml(item) {
+    const rows = [
+      ["Type", String(item.type || "—").toUpperCase()],
+      ["Date", fmtCardDate(item.date)],
+      ["Location", item.place || item.location || item.city || "—"],
+      ["Provider", item.provider_key || item.source || "—"],
+      ["Original preserved", item.original_preserved === false ? "No" : "Yes"],
+      ["File / id", item.original_filename || item.external_id || item.id || "—"],
+    ];
+    const exif =
+      item.exif && typeof item.exif === "object" && !Array.isArray(item.exif)
+        ? item.exif
+        : null;
+    const exifKeys = exif ? Object.keys(exif) : [];
+    let exifBlock = "";
+    if (exifKeys.length) {
+      exifBlock =
+        `<h3 id="mb-rail-exif" style="margin-top:1rem">Camera / EXIF</h3>` +
+        exifKeys
+          .map(
+            (k) =>
+              `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
+                String(exif[k])
+              )}</dd></div>`
+          )
+          .join("");
+    } else {
+      exifBlock =
+        `<p id="mb-rail-exif" class="mb-rail-empty" style="margin-top:0.75rem">No camera EXIF on this asset. Shown when Immich/provider returns it.</p>`;
+    }
+    return (
+      `<h3>Source details</h3>` +
+      rows
+        .map(
+          ([k, v]) =>
+            `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
+              String(v)
+            )}</dd></div>`
+        )
+        .join("") +
+      exifBlock
+    );
+  }
+
+  function renderRailTools(item) {
+    const tools = document.getElementById("mb-rail-tools");
+    if (!tools) return;
+    const t = String(item.type || "").toLowerCase();
+    if (t !== "photo") {
+      tools.hidden = true;
+      tools.innerHTML = "";
+      return;
+    }
+    const zPct = Math.round((Number(state.modal.zoom) || 1) * 100);
+    tools.hidden = false;
+    tools.innerHTML = `
+      <div class="mb-rail-tools-row" role="group" aria-label="Photo tools">
+        <div class="mb-viewer-zoom" role="group" aria-label="Zoom">
+          <button type="button" class="mb-viewer-footbtn" id="mb-zoom-out" aria-label="Zoom out">−</button>
+          <span class="mb-viewer-zoom-label" id="mb-zoom-label">${zPct}%</span>
+          <button type="button" class="mb-viewer-footbtn" id="mb-zoom-in" aria-label="Zoom in">+</button>
+        </div>
+        <button type="button" class="mb-viewer-footbtn" id="mb-rail-exif-btn">Exif</button>
+        <button type="button" class="mb-viewer-footbtn" id="mb-viewer-share" title="Coming soon">Share</button>
+        <button type="button" class="mb-viewer-footbtn" id="mb-rail-add-story">Add story</button>
+      </div>`;
+    const zin = document.getElementById("mb-zoom-in");
+    const zout = document.getElementById("mb-zoom-out");
+    if (zin) {
+      zin.addEventListener("click", () => {
+        state.modal.zoom = Math.min(
+          3,
+          Math.round(((Number(state.modal.zoom) || 1) + 0.05) * 100) / 100
+        );
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (cur) renderViewer(cur);
+      });
+    }
+    if (zout) {
+      zout.addEventListener("click", () => {
+        state.modal.zoom = Math.max(
+          0.5,
+          Math.round(((Number(state.modal.zoom) || 1) - 0.05) * 100) / 100
+        );
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (cur) renderViewer(cur);
+      });
+    }
+    const exifBtn = document.getElementById("mb-rail-exif-btn");
+    if (exifBtn) {
+      exifBtn.addEventListener("click", () => {
+        state.modal.railTab = "people";
+        syncRailTabs();
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (cur) renderRailPanel(cur);
+        requestAnimationFrame(() => {
+          const el = document.getElementById("mb-rail-exif");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      });
+    }
+    const shareBtn = document.getElementById("mb-viewer-share");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", () => {
+        window.alert("Share is coming soon — button stays; wiring is a later slice.");
+      });
+    }
+    const addStory = document.getElementById("mb-rail-add-story");
+    if (addStory) {
+      addStory.addEventListener("click", () => {
+        window.location.href = "/story/ui";
+      });
+    }
+  }
+
   function renderRailPanel(item) {
     const panel = document.getElementById("mb-rail-panel");
     const teach = document.getElementById("mb-modal-teach");
@@ -1342,21 +1484,23 @@
 
     if (tab === "people") {
       const peeps = peopleList(item);
+      let peopleHtml = "";
       if (!peeps.length) {
-        panel.innerHTML =
+        peopleHtml =
           `<h3>People</h3><p class="mb-rail-empty">No people identified on this evidence yet. Use Learn to teach a face.</p>`;
-        return;
+      } else {
+        peopleHtml =
+          `<h3>People in this ${escapeHtml(item.type || "memory")}</h3>` +
+          peeps
+            .map((n) => {
+              const initial = escapeHtml((n[0] || "?").toUpperCase());
+              return `<div class="mb-rail-person"><span class="mb-rail-avatar" aria-hidden="true">${initial}</span><div><strong>${escapeHtml(
+                n
+              )}</strong><div style="font-size:0.72rem;color:#94a3b8">Confirmed / known</div></div></div>`;
+            })
+            .join("");
       }
-      panel.innerHTML =
-        `<h3>People in this ${escapeHtml(item.type || "memory")}</h3>` +
-        peeps
-          .map((n) => {
-            const initial = escapeHtml((n[0] || "?").toUpperCase());
-            return `<div class="mb-rail-person"><span class="mb-rail-avatar" aria-hidden="true">${initial}</span><div><strong>${escapeHtml(
-              n
-            )}</strong><div style="font-size:0.72rem;color:#94a3b8">Confirmed / known</div></div></div>`;
-          })
-          .join("");
+      panel.innerHTML = peopleHtml + `<div class="mb-rail-source-block">${sourceDetailsHtml(item)}</div>`;
       return;
     }
 
@@ -1394,48 +1538,10 @@
     }
 
     if (tab === "source") {
-      const rows = [
-        ["Type", String(item.type || "—").toUpperCase()],
-        ["Date", fmtCardDate(item.date)],
-        ["Location", item.place || item.location || item.city || "—"],
-        ["Provider", item.provider_key || item.source || "—"],
-        ["Original preserved", item.original_preserved === false ? "No" : "Yes"],
-        ["File / id", item.original_filename || item.external_id || item.id || "—"],
-      ];
-      const exif =
-        item.exif && typeof item.exif === "object" && !Array.isArray(item.exif)
-          ? item.exif
-          : null;
-      const exifKeys = exif ? Object.keys(exif) : [];
-      let exifBlock = "";
-      if (exifKeys.length) {
-        exifBlock =
-          `<h3 style="margin-top:1rem">Camera / EXIF</h3>` +
-          exifKeys
-            .map(
-              (k) =>
-                `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
-                  String(exif[k])
-                )}</dd></div>`
-            )
-            .join("");
-      } else {
-        exifBlock =
-          `<p class="mb-rail-empty" style="margin-top:0.75rem">No camera EXIF on this asset. Shown when Immich/provider returns it (often missing on recent phone exports).</p>`;
-      }
-      panel.innerHTML =
-        `<h3>Source details</h3>` +
-        rows
-          .map(
-            ([k, v]) =>
-              `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
-                String(v)
-              )}</dd></div>`
-          )
-          .join("") +
-        exifBlock;
+      panel.innerHTML = sourceDetailsHtml(item);
       return;
     }
+
 
     if (tab === "learn") {
       panel.innerHTML = `<h3>Learn</h3>
@@ -1449,15 +1555,7 @@
     const t = String(item.type || "").toLowerCase();
     const bits = [];
     if (t === "photo") {
-      const zPct = Math.round((Number(state.modal.zoom) || 1) * 100);
-      bits.push(`<div class="mb-viewer-zoom" role="group" aria-label="Zoom">
-        <button type="button" class="mb-viewer-footbtn" id="mb-zoom-out" aria-label="Zoom out">−</button>
-        <span class="mb-viewer-zoom-label" id="mb-zoom-label">${zPct}%</span>
-        <button type="button" class="mb-viewer-footbtn" id="mb-zoom-in" aria-label="Zoom in">+</button>
-      </div>`);
-      bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-inspect">Inspect</button>`);
-      bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-share" title="Coming soon">Share</button>`);
-      bits.push(`<a class="mb-viewer-footbtn" href="/story/ui">Add story</a>`);
+      // Photo tools live in the right rail (zoom / exif / share / add story).
     } else if (t === "video") {
       const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
       bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
@@ -1489,41 +1587,8 @@
         tr.textContent = `Transcript ${state.modal.transcriptOn ? "on" : "off"}`;
       });
     }
-    const zin = document.getElementById("mb-zoom-in");
-    const zout = document.getElementById("mb-zoom-out");
-    if (zin) {
-      zin.addEventListener("click", () => {
-        state.modal.zoom = Math.min(3, Math.round(((Number(state.modal.zoom) || 1) + 0.05) * 100) / 100);
-        const cur = rawItems.find((x) => x.id === state.modal.openId);
-        if (cur) renderViewer(cur);
-      });
-    }
-    if (zout) {
-      zout.addEventListener("click", () => {
-        state.modal.zoom = Math.max(0.5, Math.round(((Number(state.modal.zoom) || 1) - 0.05) * 100) / 100);
-        const cur = rawItems.find((x) => x.id === state.modal.openId);
-        if (cur) renderViewer(cur);
-      });
-    }
-    const inspectBtn = document.getElementById("mb-viewer-inspect");
-    if (inspectBtn) {
-      inspectBtn.addEventListener("click", () => {
-        // Honest now: Source + EXIF. Face-box overlay inspect is later.
-        state.modal.railTab = "source";
-        const cur = rawItems.find((x) => x.id === state.modal.openId);
-        if (!cur) return;
-        syncRailTabs();
-        renderRailPanel(cur);
-        renderTeachSlot(cur);
-      });
-    }
-    const shareBtn = document.getElementById("mb-viewer-share");
-    if (shareBtn) {
-      shareBtn.addEventListener("click", () => {
-        window.alert("Share is coming soon — button stays; wiring is a later slice.");
-      });
-    }
   }
+
 
   function renderTeachSlot(item) {
     const slot = document.getElementById("mb-modal-teach");
@@ -1630,8 +1695,8 @@
             item.title || "Photo"
           )}"${zoomStyle} />`
         : escapeHtml(item.preview || item.title || "Photo");
-      return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">${img}
-        ${faceBoxHtml(item)}
+      return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">
+        <div class="mb-ev-photo-frame">${img}${faceBoxHtml(item)}</div>
       </div>`;
     }
     if (t === "video") {
@@ -1707,6 +1772,79 @@
           : ""
       }
     </div>`;
+  }
+
+
+  async function enrichPhotoPeople(item) {
+    if (!item || String(item.type || "").toLowerCase() !== "photo") return;
+    const eid = item.external_id;
+    if (!eid || item._facesLoaded) return;
+    try {
+      const res = await fetch(
+        `/explore/api/photo/${encodeURIComponent(eid)}/people`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const faces = Array.isArray(data.faces) ? data.faces : [];
+      const names = Array.isArray(data.people) ? data.people : [];
+      item._facesLoaded = true;
+      if (faces.length) item.faces = faces;
+      item.people = Array.isArray(item.people) ? item.people.slice() : [];
+      names.forEach((n) => {
+        const s = String(n || "").trim();
+        if (s && s.toLowerCase() !== "unknown" && !item.people.includes(s)) {
+          item.people.push(s);
+        }
+      });
+      if (item.id !== state.modal.openId) return;
+      document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+      renderRailPanel(item);
+      renderRailTools(item);
+      bindPhotoPan();
+    } catch (_err) {
+      /* keep ask-scoped people */
+    }
+  }
+
+  function bindPhotoPan() {
+    if (state.modal._panCleanup) {
+      state.modal._panCleanup();
+      state.modal._panCleanup = null;
+    }
+    const stage = document.querySelector(".mb-ev-photo.is-zoomed");
+    if (!stage) return;
+    let dragging = false;
+    let sx = 0;
+    let sy = 0;
+    let sl = 0;
+    let st = 0;
+    const onDown = (ev) => {
+      if (ev.button !== 0) return;
+      dragging = true;
+      stage.classList.add("is-panning");
+      sx = ev.clientX;
+      sy = ev.clientY;
+      sl = stage.scrollLeft;
+      st = stage.scrollTop;
+      ev.preventDefault();
+    };
+    const onMove = (ev) => {
+      if (!dragging) return;
+      stage.scrollLeft = sl - (ev.clientX - sx);
+      stage.scrollTop = st - (ev.clientY - sy);
+    };
+    const onUp = () => {
+      dragging = false;
+      stage.classList.remove("is-panning");
+    };
+    stage.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    state.modal._panCleanup = () => {
+      stage.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }
 
   const QUICK_PREVIEW_DELAY_MS = 2500;
