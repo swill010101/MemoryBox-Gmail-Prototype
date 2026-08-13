@@ -83,7 +83,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I1** | Show me Peggy (Person-in-Media Vertical) | F+E | **ACCEPTED** (2026-08-13) |
 | **P2-I2** | Product Shell & Context Maturation | U | **ACCEPTED** (2026-08-13) |
 | **P2-I3** | Archive Health & Provider Honesty | U+A | **ACCEPTED** (2026-08-13) |
-| **P2-I4** | Timeline-first High-Volume Explore | U | **DRAFT** — UX ACCEPTED held for curator canvas |
+| **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **DRAFT** — MBUX-001 v0.4 governs UX; awaiting approval |
 | **P2-I5** | Universal Person Surfaces | F+U | Rest of TASK-001 |
 | **P2-I6** | Kinship Inference | A | TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | |

@@ -15,6 +15,7 @@ Readable markdown extracts (not substitutes for the DOCX masters):
 
 - [MBPS-002 extract](../product/MBPS-002_P2_PRODUCT_SPECIFICATION.md)
 - [MBEVS-001 v1.0 extract](../product/MBEVS-001_EVS_CATALOG_v1.0.md)
+- [MBUX-001 v0.4 I4 Mixed-Media Exploration Addendum](../product/MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md) — governs Mixed-Media Find / Explore UX for P2-I4
 
 ## Build / authorization gate
 
