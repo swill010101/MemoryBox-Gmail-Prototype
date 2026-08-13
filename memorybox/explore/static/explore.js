@@ -65,6 +65,7 @@
    *     chips: Array<{label:string,kind?:string}>,
    *     typeFilter: string,
    *     placeFilter: string|null,
+   *     undatedFilter: boolean,
    *     mapRefineIds: string[]|null,
    *     items: Array<object>,
    *   },
@@ -240,29 +241,11 @@
   }
 
   /**
-   * Earliest dated capture in the current eligible group (type ∩ place).
-   * Undated items are arbitrarily anchored here on the Timeline (still labeled Undated).
-   */
-  function earliestEligibleDateMs() {
-    let lo = Infinity;
-    for (const it of datedEligible()) {
-      const t = parseISO(it.date);
-      if (Number.isFinite(t)) lo = Math.min(lo, t);
-    }
-    return Number.isFinite(lo) ? lo : NaN;
-  }
-
-  function undatedTimelineAnchorMs() {
-    return earliestEligibleDateMs();
-  }
-
-  /**
-   * Result set before map-marker refine (type ∩ place ∩ timeline).
-   * Map markers are drawn from this set — same underlying membership as gallery.
+   * Result set before map-marker refine (type ∩ place ∩ timeline ∩ undated filter).
    *
-   * Undated: ALWAYS remain in the gallery when they match query/type/place.
-   * They are never excluded by date-banding. Sort to the oldest end of the group.
-   * Timeline placement uses undatedTimelineAnchorMs() (earliest dated in group).
+   * Undated sit OFF the Timeline axis (control to the left). They always remain
+   * in the Gallery unless the Undated filter is on (then Gallery = undated only).
+   * Sort undated to the oldest end of the group when mixed with dated items.
    */
   function resultSetItems() {
     const eligible = eligibleItems();
@@ -270,7 +253,9 @@
     const sort = (state.gallery && state.gallery.sort) || "newest";
     const hasRange =
       Number.isFinite(rangeStart) && Number.isFinite(rangeEnd);
+    const undatedOnly = Boolean(state.domain.undatedFilter);
     const list = eligible.filter((it) => {
+      if (undatedOnly) return isUndated(it);
       if (isUndated(it)) return true; // never exclude undated from gallery
       if (!hasRange) return true;
       const t = parseISO(it.date);
@@ -278,7 +263,6 @@
     });
     list.sort((a, b) => {
       if (isUndated(a) && isUndated(b)) return 0;
-      // Undated → oldest end of the group (earliest chronologically)
       if (isUndated(a)) return sort === "oldest" ? -1 : 1;
       if (isUndated(b)) return sort === "oldest" ? 1 : -1;
       const d = parseISO(a.date) - parseISO(b.date);
@@ -289,8 +273,8 @@
 
   /**
    * Gallery membership:
-   * - dated items in active Timeline range
-   * - undated items always (when eligible) — never dropped by date bound
+   * - dated items in active Timeline range (unless Undated filter is on)
+   * - undated always included when filter off; only undated when filter on
    * - optional mapRefineIds from marker/cluster selection
    */
   function visibleItems() {
@@ -327,6 +311,11 @@
     state.domain.typeFilter = id || "all";
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
+  }
+
+  function setUndatedFilter(on) {
+    state.domain.undatedFilter = Boolean(on);
+    state.domain.mapRefineIds = null;
   }
 
   function setPlaceFilter(label) {
@@ -409,7 +398,7 @@
       FILTERS.find((f) => f.id === state.domain.typeFilter)?.label || "All";
     const undatedOnly = !hasDatedExtent() && vis.some(isUndated);
     const range = undatedOnly
-      ? "undated memories (anchored when dated peers exist)"
+      ? "undated memories (off Timeline axis — use Undated filter)"
       : hasDatedExtent()
         ? fmtRangeLabel(
             state.timeline.rangeStart,
@@ -417,6 +406,12 @@
             state.timeline.precision
           )
         : "no dated memories";
+    if (state.domain.undatedFilter) {
+      state.domain.summary = `Showing ${vis.length} undated memories (${filterLabel})${
+        parts.length ? ": " + parts.join(", ") + "." : "."
+      }`;
+      return;
+    }
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
     }`;
@@ -447,6 +442,8 @@
       keepPresentation && state ? state.gallery.viewMode || "gallery" : "gallery";
     const typeFilter =
       keepPresentation && state ? state.domain.typeFilter : "all";
+    const undatedFilter =
+      keepPresentation && state ? Boolean(state.domain.undatedFilter) : false;
     const chips = payload.chips || [];
     // Keep prior place filter across re-find; chips are activatable (not auto-forced).
     let placeFilter = null;
@@ -471,6 +468,7 @@
         chips: chips,
         typeFilter: typeFilter,
         placeFilter: placeFilter,
+        undatedFilter: undatedFilter,
         mapRefineIds: null,
         items: [],
       },
@@ -513,6 +511,18 @@
     if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
       setTypeFilter("all");
       clearPlaceFilter();
+      setUndatedFilter(false);
+      render();
+      return;
+    }
+
+    if (/^only undated\.?$|^undated\.?$|^show undated\.?$/.test(lower)) {
+      setUndatedFilter(true);
+      render();
+      return;
+    }
+    if (/^clear undated\.?$|^include dated\.?$/.test(lower)) {
+      setUndatedFilter(false);
       render();
       return;
     }
@@ -728,6 +738,18 @@
       const on = state.domain.typeFilter === f.id;
       return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${f.label}</button>`;
     }).join("");
+    const uCount = undatedEligible().length;
+    if (uCount > 0 || state.domain.undatedFilter) {
+      const on = Boolean(state.domain.undatedFilter);
+      el.insertAdjacentHTML(
+        "beforeend",
+        `<button type="button" class="mb-filter-undated${on ? " is-active" : ""}" data-undated-filter="1" aria-pressed="${
+          on ? "true" : "false"
+        }" title="${on ? "Clear undated filter" : "Show only undated"}">Undated${
+          uCount ? ` · ${uCount}` : ""
+        }${on ? " ×" : ""}</button>`
+      );
+    }
     if (state.domain.placeFilter) {
       el.insertAdjacentHTML(
         "beforeend",
@@ -742,6 +764,13 @@
         render();
       });
     });
+    const undatedBtn = el.querySelector("[data-undated-filter]");
+    if (undatedBtn) {
+      undatedBtn.addEventListener("click", () => {
+        setUndatedFilter(!state.domain.undatedFilter);
+        render();
+      });
+    }
     const clearPlace = el.querySelector("[data-place-clear]");
     if (clearPlace) {
       clearPlace.addEventListener("click", () => {
@@ -875,6 +904,7 @@
     const placeBit = state.domain.placeFilter
       ? ` · place ${state.domain.placeFilter}`
       : "";
+    const undatedBit = state.domain.undatedFilter ? " · undated only" : "";
     const refineBit =
       state.domain.mapRefineIds && state.domain.mapRefineIds.length
         ? ` · map selection ${state.domain.mapRefineIds.length}`
@@ -883,7 +913,7 @@
       (state.gallery.viewMode || "gallery") === "map" ? " · map" : "";
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
-    }${placeBit}${refineBit}${viewBit}`;
+    }${placeBit}${undatedBit}${refineBit}${viewBit}`;
   }
 
   function ensureMap() {
@@ -1054,12 +1084,14 @@
     const undatedEl = document.getElementById("mb-tl-undated");
     const uCount = undatedEligible().length;
     if (undatedEl) {
-      if (uCount > 0) {
+      if (uCount > 0 || state.domain.undatedFilter) {
         undatedEl.hidden = false;
-        const anchor = undatedTimelineAnchorMs();
-        undatedEl.textContent = Number.isFinite(anchor)
-          ? `Undated: ${uCount} (at earliest ${fmtDay(anchor)})`
-          : `Undated: ${uCount}`;
+        undatedEl.textContent = `Undated: ${uCount}`;
+        undatedEl.classList.toggle("is-active", Boolean(state.domain.undatedFilter));
+        undatedEl.setAttribute(
+          "aria-pressed",
+          state.domain.undatedFilter ? "true" : "false"
+        );
       } else {
         undatedEl.hidden = true;
       }
@@ -1071,7 +1103,7 @@
       dotsEl.innerHTML = "";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
-      const datedDots = typedDated
+      dotsEl.innerHTML = typedDated
         .map((it) => {
           const t = parseISO(it.date);
           if (!Number.isFinite(t)) return "";
@@ -1079,19 +1111,6 @@
           return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
         })
         .join("");
-      // Undated → arbitrarily at earliest dated time in the eligible group
-      const anchor = undatedTimelineAnchorMs();
-      let undatedDots = "";
-      if (uCount > 0 && Number.isFinite(anchor)) {
-        const x = ((anchor - extentStart) / span) * 100;
-        undatedDots = `<span class="mb-tl-dot mb-tl-dot-undated" style="left:${Math.min(
-          98,
-          Math.max(0, x)
-        )}%" title="Undated × ${uCount} (anchored at earliest ${fmtDay(
-          anchor
-        )})"></span>`;
-      }
-      dotsEl.innerHTML = datedDots + undatedDots;
     }
 
     const ticks = document.getElementById("mb-tl-ticks");
@@ -1556,6 +1575,13 @@
     if (clearRefine) {
       clearRefine.addEventListener("click", () => {
         setMapRefine(null);
+        render();
+      });
+    }
+    const undatedTl = document.getElementById("mb-tl-undated");
+    if (undatedTl) {
+      undatedTl.addEventListener("click", () => {
+        setUndatedFilter(!state.domain.undatedFilter);
         render();
       });
     }

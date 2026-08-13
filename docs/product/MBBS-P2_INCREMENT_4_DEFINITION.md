@@ -31,7 +31,7 @@ Governing loop:
 | Separate primary Photo / Video / Email result apps for this find | One mixed-media canvas |
 | Voice-only state logic separate from typed Ask | One command/state model |
 | Archive Health / Status as family top-level | Contextual / system only |
-| Invented Timeline dates presented as real capture dates | Undated labeled; earliest-group anchor is navigation placement only (§2.7.1) |
+| Invented Timeline dates presented as real capture dates | Undated off-axis left of Timeline; Undated filter is explicit (§2.7.1) |
 | Reset that clears query or type filters | Reset is temporal extent only |
 
 ---
@@ -317,7 +317,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | **Banding** | Dragging a period narrows dated Gallery results and increases precision; preserves query/filters |
 | **Handles** | Widen/narrow current temporal range |
 | **Reset** | Restores full temporal extent of **current** query + context + type-filter set; does **not** clear query or type filters |
-| **Undated** | Always in Gallery; sorted to oldest end; Timeline-anchored at earliest dated peer in group (labeled Undated) |
+| **Undated** | Always in Gallery (filter off); off-axis left of Timeline; click sets Undated filter (also in filter bar) |
 | **Synchronization** | Timeline changes immediately update Gallery; no drift |
 | **Scrub** | Playhead continuously moves Gallery through chronological neighborhood; proportional/controllable; no huge unexpected jumps |
 | **Detail** | Large modal, not new screen |
@@ -343,8 +343,9 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 
 1. A matching undated object remains discoverable in the Gallery (**including** when date-banded).  
 2. It sorts to the **oldest end** of the gallery group.  
-3. On the Timeline it is **anchored at the earliest dated time** in the eligible group and still labeled **Undated**.  
-4. Banding must **not** drop it from the Gallery.
+3. It is **not** plotted on the dated Timeline axis; **Undated** appears **left of the Timeline**.  
+4. Clicking **Undated** (timeline-left or filter bar) sets the Undated filter; gallery shows undated only.  
+5. Banding must **not** drop undated from the Gallery when the Undated filter is off.
 
 #### C. Density independence
 
@@ -381,7 +382,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 |------|------------|
 | Treat Timeline as separate app | Forbidden for ACCEPTED; unified control only |
 | Reset clears filters | Explicitly forbidden (§2.7) |
-| Invented capture dates presented as fact | Undated stays labeled Undated; axis anchor is explicit placement only |
+| Invented capture dates presented as fact | Undated stays off the dated axis; filter is explicit |
 | Brittle “exactly 12 cards” density | Non-brittle 10–14 / two-row target (§2.4) |
 | Scrub jumps / drift | Proportional continuous neighborhood sync (§2.7.2) |
 | Modal close dumps to Home/default | Correction-aware restore (§2.8) |

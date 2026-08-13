@@ -84,6 +84,16 @@
     <section class="mb-explore-timeline" aria-label="Unified timeline">
       <div class="mb-tl-row">
         <button type="button" class="mb-tl-reset" id="mb-tl-reset" title="Reset to full result range">↺ Reset</button>
+        <button
+          type="button"
+          class="mb-tl-undated"
+          id="mb-tl-undated"
+          hidden
+          aria-pressed="false"
+          title="Filter gallery to undated memories"
+        >
+          Undated: 0
+        </button>
         <button type="button" class="mb-tl-nudge" id="mb-tl-nudge-l" aria-label="Nudge earlier">‹</button>
         <div class="mb-tl-track" id="mb-tl-track">
           <div class="mb-tl-rail"></div>
@@ -95,10 +105,9 @@
         </div>
         <button type="button" class="mb-tl-nudge" id="mb-tl-nudge-r" aria-label="Nudge later">›</button>
         <span class="mb-tl-range-label" id="mb-tl-range-label">—</span>
-        <span class="mb-tl-undated" id="mb-tl-undated" hidden>Undated: 0</span>
       </div>
       <div class="mb-tl-ticks" id="mb-tl-ticks"></div>
-      <p class="mb-tl-hint">Drag timeline, move playhead, or resize range to explore your memories.</p>
+      <p class="mb-tl-hint">Drag timeline, move playhead, or resize range to explore your memories. Undated sits left of the axis — click to filter.</p>
     </section>
   </div>
 
