@@ -131,13 +131,9 @@ class ImmichPhotoProvider:
 
     def _map_asset(self, raw: dict[str, Any]) -> PhotoAssetDto:
         ext = str(raw.get("id") or "")
-        taken = raw.get("fileCreatedAt") or raw.get("takenAt") or raw.get("localDateTime")
-        taken_at: datetime | None = None
-        if isinstance(taken, str):
-            try:
-                taken_at = datetime.fromisoformat(taken.replace("Z", "+00:00"))
-            except ValueError:
-                taken_at = None
+        # Prefer EXIF / Immich display date over fileCreatedAt (often the Immich
+        # import time). Older scans imported in 2023+ still carry pre-2023 EXIF.
+        taken_at = self._parse_taken_at(raw)
         people_raw = raw.get("people") or []
         people: list[PhotoPersonRef] = []
         for p in people_raw:
@@ -181,6 +177,38 @@ class ImmichPhotoProvider:
             web_url=self._client.web_url(ext) if ext else None,
             albums=albums,
         )
+
+    @staticmethod
+    def _parse_taken_at(raw: dict[str, Any]) -> datetime | None:
+        """Resolve capture date; never prefer Immich import time over EXIF."""
+        exif = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
+        candidates = (
+            exif.get("dateTimeOriginal"),
+            exif.get("dateTime"),
+            raw.get("localDateTime"),
+            raw.get("takenAt"),
+            raw.get("fileCreatedAt"),
+        )
+        for taken in candidates:
+            if not isinstance(taken, str) or not taken.strip():
+                continue
+            s = taken.strip()
+            try:
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+            # EXIF style "2010:05:12 14:30:00"
+            if len(s) >= 10 and s[4] == ":" and s[7] == ":":
+                date_part = s[:10].replace(":", "-")
+                rest = s[10:].strip()
+                if rest.startswith(" "):
+                    rest = rest[1:]
+                iso = f"{date_part}T{rest}" if rest else date_part
+                try:
+                    return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+        return None
 
     def list_face_assets(
         self, *, person_external_id: str, limit: int = 50

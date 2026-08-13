@@ -147,18 +147,57 @@ class ImmichHttpClient:
     def search_by_person_ids(
         self, person_ids: list[str], *, size: int = 50
     ) -> list[dict[str, Any]]:
+        """Fetch Immich assets for person id(s).
+
+        Immich metadata search defaults to newest-first and is paginated.
+        A single page of ~48 newest assets hides older library photos that still
+        have EXIF/taken dates (common for Tom Will / family archives).
+        We merge newest + oldest pages so Explore's timeline can span the life.
+        """
         if not person_ids:
             return []
-        body: dict[str, Any] = {
-            "personIds": person_ids,
-            "size": max(1, min(size, 1000)),
-        }
-        status, data = self._request("POST", "/search/metadata", body=body)
-        if status != 200 or not isinstance(data, dict):
-            return []
-        assets = data.get("assets") or {}
-        items = assets.get("items") if isinstance(assets, dict) else []
-        return items if isinstance(items, list) else []
+        target = max(1, min(int(size), 1000))
+        page_size = min(100, max(target, 25))
+
+        def _page(*, page: int, order: str) -> list[dict[str, Any]]:
+            body: dict[str, Any] = {
+                "personIds": person_ids,
+                "size": page_size,
+                "page": max(1, int(page)),
+                "order": order,
+            }
+            status, data = self._request("POST", "/search/metadata", body=body)
+            if status != 200 or not isinstance(data, dict):
+                return []
+            assets = data.get("assets") or {}
+            items = assets.get("items") if isinstance(assets, dict) else []
+            return items if isinstance(items, list) else []
+
+        by_id: dict[str, dict[str, Any]] = {}
+        # Newest first (Immich default order)
+        for page in range(1, 6):
+            batch = _page(page=page, order="desc")
+            if not batch:
+                break
+            for it in batch:
+                if isinstance(it, dict) and it.get("id"):
+                    by_id[str(it["id"])] = it
+            if len(by_id) >= target or len(batch) < page_size:
+                break
+
+        # Oldest first — pull early-life / pre-import-dated faces into the set
+        if len(by_id) < target:
+            for page in range(1, 4):
+                batch = _page(page=page, order="asc")
+                if not batch:
+                    break
+                for it in batch:
+                    if isinstance(it, dict) and it.get("id"):
+                        by_id.setdefault(str(it["id"]), it)
+                if len(by_id) >= target or len(batch) < page_size:
+                    break
+
+        return list(by_id.values())[:target]
 
     def find_people_by_name(self, name_query: str, *, limit: int = 8) -> list[dict[str, Any]]:
         q = (name_query or "").strip().lower()
