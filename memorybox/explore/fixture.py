@@ -9,6 +9,9 @@ from typing import Any
 
 def peggy_christmas_fixture() -> dict[str, Any]:
     """Deterministic Mixed-Media Find fixture for I4 acceptance demo."""
+    # Demo GPS for Oak Street cluster (fixture-only coords for map prove).
+    oak_lat, oak_lng = 47.6124, -122.3342
+
     items: list[dict[str, Any]] = [
         {
             "id": "ph-01",
@@ -17,6 +20,9 @@ def peggy_christmas_fixture() -> dict[str, Any]:
             "date": "1998-12-24",
             "people": ["Peggy"],
             "place": "Oak Street",
+            "location": "Oak Street",
+            "lat": oak_lat,
+            "lng": oak_lng,
             "excerpt": "Christmas Eve living room",
         },
         {
@@ -79,6 +85,9 @@ def peggy_christmas_fixture() -> dict[str, Any]:
             "date": "2006-12-23",
             "people": ["Peggy"],
             "place": "Oak Street",
+            "location": "Oak Street",
+            "lat": oak_lat + 0.0012,
+            "lng": oak_lng - 0.0008,
         },
         {
             "id": "vid-02",
@@ -173,6 +182,9 @@ def peggy_christmas_fixture() -> dict[str, Any]:
             "date": "2018-12-23",
             "people": ["Peggy"],
             "place": "Oak Street",
+            "location": "Oak Street",
+            "lat": oak_lat - 0.0009,
+            "lng": oak_lng + 0.0011,
         },
         {
             "id": "ph-12",
@@ -257,6 +269,7 @@ def peggy_christmas_fixture() -> dict[str, Any]:
         "chips": [
             {"kind": "person", "label": "Peggy"},
             {"kind": "event", "label": "Christmas"},
+            {"kind": "place", "label": "Oak Street"},
             {"kind": "range", "label": "1998–2021"},
         ],
         "range": {"start": "1998-01-01", "end": "2021-12-31"},

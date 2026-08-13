@@ -20,6 +20,20 @@ def _normalize_item(raw: dict[str, Any]) -> dict[str, Any]:
     out["detail"] = detail
     out["date"] = str(raw.get("date") or "")[:10] if raw.get("date") else ""
     out["undated"] = bool(raw.get("undated") or not raw.get("date"))
+    # Preserve place / map coords when present (never invent).
+    if raw.get("place") and not out.get("location"):
+        out["location"] = raw.get("place")
+    lat = raw.get("lat", raw.get("latitude"))
+    lng = raw.get("lng", raw.get("longitude"))
+    try:
+        if lat is not None and lng is not None:
+            out["lat"] = float(lat)
+            out["lng"] = float(lng)
+            out["latitude"] = out["lat"]
+            out["longitude"] = out["lng"]
+    except (TypeError, ValueError):
+        out.pop("lat", None)
+        out.pop("lng", None)
     return out
 
 

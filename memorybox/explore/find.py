@@ -62,10 +62,29 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         taken = _date_prefix(p.get("taken_at"))
         name = p.get("mb_person_name") or (p.get("people") or [None])[0]
         title = name or "Photo"
-        if p.get("location"):
+        place = p.get("place") or None
+        loc_str = p.get("location") or None
+        if place and not loc_str:
+            loc_str = str(place)
+        if loc_str and not place:
+            place = str(loc_str).split(",")[0].strip() or loc_str
+        if place:
+            title = f"{title} · {place}"
+        elif p.get("location"):
             title = f"{title} · {p.get('location')}"
         thumb = f"/library/media/photo/{eid}"
         face_box = p.get("face_box")
+        lat = p.get("latitude")
+        lng = p.get("longitude")
+        try:
+            lat_f = float(lat) if lat is not None else None
+            lng_f = float(lng) if lng is not None else None
+        except (TypeError, ValueError):
+            lat_f = lng_f = None
+        if lat_f is not None and (lat_f < -90 or lat_f > 90):
+            lat_f = None
+        if lng_f is not None and (lng_f < -180 or lng_f > 180):
+            lng_f = None
         extra: dict[str, Any] = {
             "people": list(p.get("people") or []),
             "mb_person_id": p.get("mb_person_id"),
@@ -76,7 +95,17 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "thumb_url": thumb,
             "teachable": True,
             "face_identity": p.get("mb_person_name") or "Unknown",
+            "place": place,
+            "location": loc_str,
+            "city": p.get("city"),
+            "state": p.get("state"),
+            "country": p.get("country"),
         }
+        if lat_f is not None and lng_f is not None:
+            extra["lat"] = lat_f
+            extra["lng"] = lng_f
+            extra["latitude"] = lat_f
+            extra["longitude"] = lng_f
         # Only attach real geometry — never invent a placeholder box.
         if isinstance(face_box, dict) and all(
             isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")

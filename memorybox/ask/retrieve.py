@@ -43,6 +43,13 @@ class PhotoHit:
     mb_person_id: str | None = None
     mb_person_name: str | None = None
     attribution: str | None = None
+    # Structured place (I4 location filter / map) — optional; never invent coords
+    place: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -537,9 +544,18 @@ def search_photos(
             person_name: str | None = None,
         ) -> PhotoHit:
             loc = None
+            city = state = country = None
+            lat = lon = None
+            place = None
             if a.location:
-                parts = [a.location.city, a.location.state, a.location.country]
+                city = a.location.city
+                state = a.location.state
+                country = a.location.country
+                lat = a.location.latitude
+                lon = a.location.longitude
+                parts = [city, state, country]
                 loc = ", ".join(p for p in parts if p)
+                place = city or state or country or loc
             if trust == "confirmed":
                 attrib = (
                     f"MB Person {person_name} via owner-confirmed Immich mapping"
@@ -572,6 +588,12 @@ def search_photos(
                 mb_person_id=person_id,
                 mb_person_name=person_name,
                 attribution=attrib,
+                place=place,
+                city=city,
+                state=state,
+                country=country,
+                latitude=lat,
+                longitude=lon,
             )
 
         if mapped_ext:

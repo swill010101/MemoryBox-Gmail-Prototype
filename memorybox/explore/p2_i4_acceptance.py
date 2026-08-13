@@ -64,9 +64,16 @@ def _assert_fixture(payload: dict[str, Any]) -> list[str]:
         problems.append("fixture missing curator summary")
     chips = payload.get("chips") or []
     labels = {str(c.get("label") or "") for c in chips}
-    for need in ("Peggy", "Christmas"):
+    for need in ("Peggy", "Christmas", "Oak Street"):
         if need not in labels:
             problems.append(f"fixture chip missing: {need}")
+    geo = [
+        i
+        for i in items
+        if i.get("lat") is not None and i.get("lng") is not None
+    ]
+    if len(geo) < 2:
+        problems.append(f"fixture geo-located items < 2 ({len(geo)})")
     return problems
 
 
@@ -77,6 +84,8 @@ def _assert_explore_html(html: str) -> list[str]:
         "What would you like to see?",
         "mb-explore-ask-row",
         "mb-explore-gallery",
+        "mb-explore-map",
+        "mb-view-map",
         "mb-tl-track",
         "mb-tl-reset",
         "Reset",
@@ -196,9 +205,15 @@ def _prove_harness() -> dict[str, Any]:
             "density",
             "Show 2005 through 2011",
             "eligibleItems",
+            "resultSetItems",
             "isDateBounded",
             "hasDatedExtent",
             "undatedEligible",
+            "placeFilter",
+            "setPlaceFilter",
+            "renderMap",
+            "Show map",
+            "Clear location",
             "faceBoxHtml",
             "applyCorrectionConsequences",
             "confirmIdentityCorrection",

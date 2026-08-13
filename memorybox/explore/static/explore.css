@@ -281,6 +281,18 @@ body {
 .mb-chip:nth-child(1) { background: var(--mb-blue-soft); color: #1d4ed8; }
 .mb-chip[data-kind="event"],
 .mb-chip:nth-child(2) { background: var(--mb-green-soft); color: #047857; }
+.mb-chip[data-kind="place"] {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  cursor: pointer;
+  font: inherit;
+}
+.mb-chip[data-kind="place"].is-active {
+  background: #059669;
+  color: #fff;
+  border-color: #059669;
+}
 .mb-chip[data-kind="range"],
 .mb-chip:nth-child(3) { background: var(--mb-purple-soft); color: #6d28d9; }
 
@@ -335,6 +347,40 @@ body {
   gap: 0.55rem;
 }
 
+.mb-explore-viewmode {
+  display: inline-flex;
+  border: 1px solid var(--mb-line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.mb-viewmode-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--mb-ink);
+  cursor: pointer;
+}
+
+.mb-viewmode-btn.is-active {
+  background: var(--mb-blue);
+  color: #fff;
+}
+
+.mb-filter-place {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
 .mb-explore-sort select {
   font: inherit;
   font-size: 0.82rem;
@@ -373,6 +419,53 @@ body {
   color: var(--mb-ink);
   font-weight: 600;
   font-size: 0.78rem;
+}
+
+/* ——— Results: gallery or map (secondary mode) ——— */
+.mb-explore-results {
+  margin-bottom: 0.25rem;
+}
+
+.mb-explore-map-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.25rem;
+}
+
+.mb-explore-map {
+  height: calc(var(--mb-row-h, 168px) * 2 + var(--mb-gap, 0.55rem) + 48px);
+  min-height: 280px;
+  border: 1px solid var(--mb-line);
+  border-radius: 10px;
+  background: #e8eef5;
+  z-index: 1;
+}
+
+.mb-map-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.8rem;
+}
+
+.mb-map-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--mb-muted);
+  max-width: 52rem;
+}
+
+.mb-map-clear {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--mb-line);
+  background: #fff;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--mb-ink);
 }
 
 /* ——— Gallery: two rows, ~12 at laptop density ——— */

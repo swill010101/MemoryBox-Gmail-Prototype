@@ -6,12 +6,13 @@
  * the experience while wiring live data / providers.
  *
  * Separated state layers (MBUX-001 / locked I4 definition):
- *   domain  — query, chips, type filter → eligible result set
+ *   domain  — query, chips, type filter, place filter, map refine → eligible set
  *   timeline — dated portion of eligible set; active range; playhead
- *   gallery  — density (presentation only), scroll position
+ *   gallery  — density + viewMode (gallery|map presentation), scroll position
  *   modal    — open item; close restores explore snapshot (+ correction consequences)
  *
  * Typed Ask commands and future STT must manipulate the same domain/timeline state.
+ * Map is a secondary result mode over the current result set — not a top-level app.
  */
 (function () {
   "use strict";
@@ -52,7 +53,9 @@
 
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
-  // "Show 2005 through 2011." "Clear context and go to People."
+  // "Show 2005 through 2011." "Only Oak Street." "Near Cascadia."
+  // "Clear location." "Show map." "Show gallery."
+  // "Clear context and go to People."
 
   /** @type {{
    *   domain: {
@@ -61,6 +64,8 @@
    *     summary: string,
    *     chips: Array<{label:string,kind?:string}>,
    *     typeFilter: string,
+   *     placeFilter: string|null,
+   *     mapRefineIds: string[]|null,
    *     items: Array<object>,
    *   },
    *   timeline: {
@@ -71,7 +76,7 @@
    *     playhead: number,
    *     precision: 'years'|'months'|'days',
    *   },
-   *   gallery: { density: number, scrollTop: number, sort: 'newest'|'oldest' },
+   *   gallery: { density: number, scrollTop: number, sort: 'newest'|'oldest', viewMode: 'gallery'|'map' },
    *   modal: { openId: string|null, snapshot: object|null, pendingCorrection: object|null },
    * }} */
   let state = null;
@@ -82,6 +87,9 @@
   let bandDrag = null;
   let handleDrag = null;
   let scrubDrag = null;
+  let mapInstance = null;
+  let mapClusterLayer = null;
+  let mapReady = false;
 
   function dayMs(y, m, d) {
     return Date.UTC(y, m - 1, d);
@@ -102,9 +110,46 @@
     return !isUndated(item);
   }
 
-  /** Eligible result set = query/context corpus ∩ type filter (not yet date-bounded). */
+  function itemPlaceBlob(item) {
+    if (!item) return "";
+    return [
+      item.place,
+      item.location,
+      item.city,
+      item.state,
+      item.country,
+      item.title,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function matchesPlace(item, placeFilter) {
+    if (!placeFilter) return true;
+    const needle = String(placeFilter).trim().toLowerCase();
+    if (!needle) return true;
+    return itemPlaceBlob(item).includes(needle);
+  }
+
+  function itemLatLng(item) {
+    if (!item) return null;
+    const lat = item.lat != null ? item.lat : item.latitude;
+    const lng = item.lng != null ? item.lng : item.longitude;
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    if (la < -90 || la > 90 || lo < -180 || lo > 180) return null;
+    return { lat: la, lng: lo };
+  }
+
+  /** Eligible = corpus ∩ type ∩ place (map refine applies at visible layer). */
   function eligibleItems() {
-    return rawItems.filter((it) => matchesType(it, state.domain.typeFilter));
+    return rawItems.filter(
+      (it) =>
+        matchesType(it, state.domain.typeFilter) &&
+        matchesPlace(it, state.domain.placeFilter)
+    );
   }
 
   function datedEligible() {
@@ -195,11 +240,10 @@
   }
 
   /**
-   * Gallery membership:
-   * - dated items in active Timeline range
-   * - undated items only when NOT date-bounded (unbounded / full-extent view)
+   * Result set before map-marker refine (type ∩ place ∩ timeline).
+   * Map markers are drawn from this set — same underlying membership as gallery.
    */
-  function visibleItems() {
+  function resultSetItems() {
     const eligible = eligibleItems();
     const { rangeStart, rangeEnd } = state.timeline;
     const sort = (state.gallery && state.gallery.sort) || "newest";
@@ -217,6 +261,20 @@
       return sort === "oldest" ? d : -d;
     });
     return list;
+  }
+
+  /**
+   * Gallery membership:
+   * - dated items in active Timeline range
+   * - undated items only when NOT date-bounded (unbounded / full-extent view)
+   * - optional mapRefineIds from marker/cluster selection
+   */
+  function visibleItems() {
+    const base = resultSetItems();
+    const refine = state.domain.mapRefineIds;
+    if (!refine || !refine.length) return base;
+    const allow = new Set(refine.map(String));
+    return base.filter((it) => allow.has(String(it.id)));
   }
 
   /** After type-filter change: Timeline = dated portion of new eligible set (full extent). */
@@ -243,7 +301,40 @@
 
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
+    state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
+  }
+
+  function setPlaceFilter(label) {
+    const next = label ? String(label).trim() : "";
+    state.domain.placeFilter = next || null;
+    state.domain.mapRefineIds = null;
+    syncTimelineToEligibleDatedExtent();
+  }
+
+  function clearPlaceFilter() {
+    state.domain.placeFilter = null;
+    state.domain.mapRefineIds = null;
+    syncTimelineToEligibleDatedExtent();
+  }
+
+  function setViewMode(mode) {
+    const m = mode === "map" ? "map" : "gallery";
+    state.gallery.viewMode = m;
+  }
+
+  function setMapRefine(ids) {
+    if (!ids || !ids.length) {
+      state.domain.mapRefineIds = null;
+      return;
+    }
+    state.domain.mapRefineIds = ids.map(String);
+  }
+
+  function placeFilterFromChips(chips) {
+    const places = (chips || []).filter((c) => c && c.kind === "place" && c.label);
+    if (places.length === 1) return String(places[0].label);
+    return null;
   }
 
   function snapshotExplore() {
@@ -328,9 +419,24 @@
     const dens = keepPresentation && state ? state.gallery.density : 2;
     const sort = keepPresentation && state ? state.gallery.sort : "newest";
     const scrollTop = keepPresentation && state ? state.gallery.scrollTop : 0;
+    const viewMode =
+      keepPresentation && state ? state.gallery.viewMode || "gallery" : "gallery";
     const typeFilter =
       keepPresentation && state ? state.domain.typeFilter : "all";
-    const ext = extentOf(rawItems.filter(isDated));
+    const chips = payload.chips || [];
+    // Keep prior place filter across re-find; chips are activatable (not auto-forced).
+    let placeFilter = null;
+    if (keepPresentation && state && state.domain.placeFilter) {
+      placeFilter = state.domain.placeFilter;
+    }
+    const ext = extentOf(
+      rawItems.filter(
+        (it) =>
+          isDated(it) &&
+          matchesType(it, typeFilter) &&
+          matchesPlace(it, placeFilter)
+      )
+    );
     const emptyTl = Boolean(ext.empty);
     state = {
       domain: {
@@ -338,8 +444,10 @@
         title: payload.title || "Memories",
         summary: payload.summary || "",
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
-        chips: payload.chips || [],
+        chips: chips,
         typeFilter: typeFilter,
+        placeFilter: placeFilter,
+        mapRefineIds: null,
         items: [],
       },
       timeline: {
@@ -351,11 +459,17 @@
         precision: emptyTl ? "years" : computePrecision(ext.start, ext.end),
         empty: emptyTl,
       },
-      gallery: { density: dens, scrollTop: scrollTop, sort: sort },
+      gallery: {
+        density: dens,
+        scrollTop: scrollTop,
+        sort: sort,
+        viewMode: viewMode,
+      },
       modal: { openId: null, snapshot: null, pendingCorrection: null },
     };
-    // After membership change, type filter may need extent sync
     if (typeFilter && typeFilter !== "all") {
+      syncTimelineToEligibleDatedExtent();
+    } else if (placeFilter) {
       syncTimelineToEligibleDatedExtent();
     }
   }
@@ -374,8 +488,44 @@
 
     if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
       setTypeFilter("all");
+      clearPlaceFilter();
       render();
       return;
+    }
+
+    if (/^show map\.?$|^map view\.?$|^on the map\.?$/.test(lower)) {
+      setViewMode("map");
+      render();
+      return;
+    }
+    if (/^show gallery\.?$|^gallery view\.?$|^list view\.?$/.test(lower)) {
+      setViewMode("gallery");
+      render();
+      return;
+    }
+
+    if (
+      /^clear location\.?$/.test(lower) ||
+      /^clear place\.?$/.test(lower) ||
+      /^clear map selection\.?$/.test(lower)
+    ) {
+      clearPlaceFilter();
+      render();
+      return;
+    }
+
+    // Location filter on current result set (Ask/STT same path)
+    const placeOnly = lower.match(
+      /^(?:only|near|around|at)\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
+    );
+    if (placeOnly) {
+      const candidate = placeOnly[1].replace(/\.$/, "").trim();
+      const blocked = /^(photos?|videos?|emails?|texts?|artifacts?|stories?|everything|map|gallery)$/i;
+      if (candidate && !blocked.test(candidate)) {
+        setPlaceFilter(candidate.replace(/\b\w/g, (c) => c.toUpperCase()));
+        render();
+        return;
+      }
     }
 
     if (/only photos?\.?/.test(lower) || /^photos?\.?$/.test(lower)) {
@@ -461,6 +611,7 @@
     state.timeline.rangeEnd = b;
     state.timeline.precision = computePrecision(a, b);
     state.timeline.playhead = a;
+    state.domain.mapRefineIds = null;
   }
 
   function resetTimelineExtent(andRender) {
@@ -502,14 +653,43 @@
     document.getElementById("mb-explore-curator-body").textContent =
       state.domain.summary || "";
     const chips = document.getElementById("mb-explore-chips");
+    const activePlace = (state.domain.placeFilter || "").toLowerCase();
     chips.innerHTML = (state.domain.chips || [])
-      .map(
-        (c) =>
-          `<span class="mb-chip" data-kind="${escapeAttr(c.kind || "")}">${escapeHtml(
-            c.label
-          )}</span>`
-      )
+      .map((c) => {
+        const kind = c.kind || "";
+        const label = c.label || "";
+        const isPlace = kind === "place";
+        const active =
+          isPlace && activePlace && String(label).toLowerCase() === activePlace;
+        const cls = `mb-chip${isPlace ? " mb-chip-place" : ""}${
+          active ? " is-active" : ""
+        }`;
+        if (isPlace) {
+          return `<button type="button" class="${cls}" data-kind="place" data-place="${escapeAttr(
+            label
+          )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(
+            label
+          )}</button>`;
+        }
+        return `<span class="${cls}" data-kind="${escapeAttr(kind)}">${escapeHtml(
+          label
+        )}</span>`;
+      })
       .join("");
+    chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const place = btn.getAttribute("data-place") || "";
+        if (
+          state.domain.placeFilter &&
+          String(state.domain.placeFilter).toLowerCase() === place.toLowerCase()
+        ) {
+          clearPlaceFilter();
+        } else {
+          setPlaceFilter(place);
+        }
+        render();
+      });
+    });
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) {
       const person = (state.domain.chips || []).find((c) => c.kind === "person");
@@ -524,12 +704,45 @@
       const on = state.domain.typeFilter === f.id;
       return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${f.label}</button>`;
     }).join("");
-    el.querySelectorAll("button").forEach((btn) => {
+    if (state.domain.placeFilter) {
+      el.insertAdjacentHTML(
+        "beforeend",
+        `<button type="button" class="mb-filter-place is-active" data-place-clear="1" aria-pressed="true" title="Clear location filter">📍 ${escapeHtml(
+          state.domain.placeFilter
+        )} ×</button>`
+      );
+    }
+    el.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
         setTypeFilter(btn.getAttribute("data-filter"));
         render();
       });
     });
+    const clearPlace = el.querySelector("[data-place-clear]");
+    if (clearPlace) {
+      clearPlace.addEventListener("click", () => {
+        clearPlaceFilter();
+        render();
+      });
+    }
+  }
+
+  function renderViewMode() {
+    const mode = (state.gallery && state.gallery.viewMode) || "gallery";
+    const gBtn = document.getElementById("mb-view-gallery");
+    const mBtn = document.getElementById("mb-view-map");
+    if (gBtn) {
+      gBtn.classList.toggle("is-active", mode === "gallery");
+      gBtn.setAttribute("aria-pressed", mode === "gallery" ? "true" : "false");
+    }
+    if (mBtn) {
+      mBtn.classList.toggle("is-active", mode === "map");
+      mBtn.setAttribute("aria-pressed", mode === "map" ? "true" : "false");
+    }
+    const gallery = document.getElementById("mb-explore-gallery");
+    const mapPane = document.getElementById("mb-explore-map-pane");
+    if (gallery) gallery.hidden = mode === "map";
+    if (mapPane) mapPane.hidden = mode !== "map";
   }
 
   function densityLabel() {
@@ -635,9 +848,148 @@
     });
 
     const meta = document.getElementById("mb-explore-meta");
+    const placeBit = state.domain.placeFilter
+      ? ` · place ${state.domain.placeFilter}`
+      : "";
+    const refineBit =
+      state.domain.mapRefineIds && state.domain.mapRefineIds.length
+        ? ` · map selection ${state.domain.mapRefineIds.length}`
+        : "";
+    const viewBit =
+      (state.gallery.viewMode || "gallery") === "map" ? " · map" : "";
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
-    }`;
+    }${placeBit}${refineBit}${viewBit}`;
+  }
+
+  function ensureMap() {
+    if (mapInstance || typeof L === "undefined") return mapInstance;
+    const el = document.getElementById("mb-explore-map");
+    if (!el) return null;
+    mapInstance = L.map(el, {
+      scrollWheelZoom: true,
+      attributionControl: true,
+    }).setView([39.5, -98.35], 4);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap",
+    }).addTo(mapInstance);
+    if (typeof L.markerClusterGroup === "function") {
+      mapClusterLayer = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        maxClusterRadius: 48,
+        zoomToBoundsOnClick: false,
+      });
+      mapInstance.addLayer(mapClusterLayer);
+    }
+    mapReady = true;
+    return mapInstance;
+  }
+
+  function renderMap() {
+    const hint = document.getElementById("mb-map-hint");
+    const clearBtn = document.getElementById("mb-map-clear-refine");
+    const mode = (state.gallery && state.gallery.viewMode) || "gallery";
+    if (clearBtn) {
+      const hasRefine =
+        state.domain.mapRefineIds && state.domain.mapRefineIds.length;
+      clearBtn.hidden = !hasRefine;
+    }
+    if (mode !== "map") return;
+
+    if (typeof L === "undefined") {
+      if (hint)
+        hint.textContent =
+          "Map library unavailable offline — Gallery still works. Location filter remains active.";
+      return;
+    }
+
+    const map = ensureMap();
+    if (!map) return;
+
+    // Markers from current result set (before refine) so selection can refine gallery.
+    const base = resultSetItems();
+    const withGeo = base.filter((it) => itemLatLng(it));
+    const selected = new Set(
+      (state.domain.mapRefineIds || []).map(String)
+    );
+
+    const layerParent = mapClusterLayer || map;
+    if (mapClusterLayer) mapClusterLayer.clearLayers();
+    else {
+      map.eachLayer((ly) => {
+        if (ly instanceof L.Marker) map.removeLayer(ly);
+      });
+    }
+
+    const bounds = [];
+    withGeo.forEach((it) => {
+      const ll = itemLatLng(it);
+      const marker = L.marker([ll.lat, ll.lng], {
+        title: it.title || it.place || it.id,
+      });
+      marker._mbItemId = String(it.id);
+      marker.bindPopup(
+        `<strong>${escapeHtml(it.title || "Memory")}</strong><br/>${escapeHtml(
+          it.place || it.location || "Located"
+        )}`
+      );
+      marker.on("click", () => {
+        setMapRefine([it.id]);
+        setViewMode("gallery");
+        render();
+        openModal(it.id);
+      });
+      if (selected.size && selected.has(String(it.id))) {
+        marker.setOpacity(1);
+      } else if (selected.size) {
+        marker.setOpacity(0.45);
+      }
+      if (mapClusterLayer) mapClusterLayer.addLayer(marker);
+      else marker.addTo(map);
+      bounds.push([ll.lat, ll.lng]);
+    });
+
+    if (mapClusterLayer) {
+      mapClusterLayer.off("clusterclick");
+      mapClusterLayer.on("clusterclick", (e) => {
+        const childMarkers = e.layer.getAllChildMarkers
+          ? e.layer.getAllChildMarkers()
+          : [];
+        const ids = childMarkers
+          .map((m) => m._mbItemId)
+          .filter(Boolean);
+        if (!ids.length) return;
+        // Prevent zoom-through; refine gallery to cluster members
+        L.DomEvent.stopPropagation(e);
+        setMapRefine(ids);
+        setViewMode("gallery");
+        render();
+      });
+    }
+
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 13);
+      } else if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [28, 28], maxZoom: 14 });
+      }
+    });
+
+    if (hint) {
+      const nGeo = withGeo.length;
+      const nAll = base.length;
+      const missing = nAll - nGeo;
+      hint.textContent =
+        nGeo === 0
+          ? nAll === 0
+            ? "No memories in the current result set."
+            : `No coordinates on the current ${nAll} result${nAll === 1 ? "" : "s"} — location text filter still works; Map stays honest.`
+          : `Showing ${nGeo} located of ${nAll} in the current result set${
+              missing ? ` (${missing} without coordinates)` : ""
+            }. Select a marker or cluster to refine the gallery.`;
+    }
   }
 
   function renderTimeline() {
@@ -688,7 +1040,6 @@
       }
     }
 
-    // density dots = dated portion of eligible set (not invented undated positions)
     const dotsEl = document.getElementById("mb-tl-dots");
     const typedDated = datedEligible();
     if (empty) {
@@ -705,7 +1056,6 @@
         .join("");
     }
 
-    // ticks
     const ticks = document.getElementById("mb-tl-ticks");
     if (empty) {
       ticks.innerHTML = "";
@@ -731,7 +1081,9 @@
     document.getElementById("mb-explore-ask").value = state.domain.askText || "";
     renderCurator();
     renderFilters();
+    renderViewMode();
     renderGallery();
+    renderMap();
     renderTimeline();
   }
 
@@ -1134,12 +1486,10 @@
       }
     });
     document.getElementById("mb-density-minus").addEventListener("click", () => {
-      // minus = more / smaller
       state.gallery.density = Math.max(1, state.gallery.density - 1);
       renderGallery();
     });
     document.getElementById("mb-density-plus").addEventListener("click", () => {
-      // plus = fewer / larger
       state.gallery.density = Math.min(3, state.gallery.density + 1);
       renderGallery();
     });
@@ -1148,6 +1498,27 @@
       sortEl.addEventListener("change", () => {
         state.gallery.sort = sortEl.value === "oldest" ? "oldest" : "newest";
         renderGallery();
+      });
+    }
+    const gBtn = document.getElementById("mb-view-gallery");
+    const mBtn = document.getElementById("mb-view-map");
+    if (gBtn) {
+      gBtn.addEventListener("click", () => {
+        setViewMode("gallery");
+        render();
+      });
+    }
+    if (mBtn) {
+      mBtn.addEventListener("click", () => {
+        setViewMode("map");
+        render();
+      });
+    }
+    const clearRefine = document.getElementById("mb-map-clear-refine");
+    if (clearRefine) {
+      clearRefine.addEventListener("click", () => {
+        setMapRefine(null);
+        render();
       });
     }
     document.getElementById("mb-modal-close").addEventListener("click", closeModal);
