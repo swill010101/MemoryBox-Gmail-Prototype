@@ -13,6 +13,8 @@
 
 **Founder direction:** Combined I4 direction approved with clarifications. Top-level learn destination labeled **Review & Learn**. **Build authorized.** Current on-screen Explore interaction is the reference — wire/improve implementation without redesigning the UX.
 
+**I4 UI amendment (2026-08-13):** Shared Evidence Viewer + gallery rollover/focus preview authorized (MBUX §22.4–22.6 · CAP-P2-026). Named Places and Living Albums remain out of I4.
+
 ---
 
 ## 0. Product intent (one sentence)

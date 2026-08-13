@@ -91,6 +91,9 @@ def _assert_explore_html(html: str) -> list[str]:
         "mb-density-label",
         "mb-tl-undated",
         "mb-modal-teach",
+        "mb-viewer-rail",
+        "mb-rail-tabs",
+        "mb-quick-preview",
         "/static/explore/explore.js",
         "data-mb-surface=\"explore\"",
     ):
@@ -109,6 +112,8 @@ def _assert_explore_css(css: str) -> list[str]:
         problems.append("explore.css missing .mb-explore-ask-row")
     if "flex-wrap: nowrap" not in css:
         problems.append("Ask row must use flex-wrap: nowrap where width permits")
+    if ".mb-viewer" not in css or ".mb-quick-preview" not in css:
+        problems.append("explore.css missing Shared Evidence Viewer / quick preview styles")
     if "max-height: calc(var(--mb-row-h) * 2" not in css and "max-height: calc(var(--mb-row-h) * 2 +" not in css:
         # two-row gallery target
         if "* 2 +" not in css and "* 2)" not in css:
@@ -229,6 +234,11 @@ def _prove_harness() -> dict[str, Any]:
             "liveFind",
             "/explore/api/find",
             "No dated memories on the Timeline",
+            "renderViewer",
+            "renderRailPanel",
+            "showQuickPreview",
+            "bindCardPreview",
+            "stepViewer",
         ):
             if marker not in js:
                 missing.append(marker)

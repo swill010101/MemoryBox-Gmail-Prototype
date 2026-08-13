@@ -487,7 +487,13 @@
         sort: sort,
         viewMode: viewMode,
       },
-      modal: { openId: null, snapshot: null, pendingCorrection: null },
+      modal: {
+        openId: null,
+        snapshot: null,
+        pendingCorrection: null,
+        railTab: "people",
+        transcriptOn: false,
+      },
     };
     if (typeFilter && typeFilter !== "all") {
       syncTimelineToEligibleDatedExtent();
@@ -905,7 +911,9 @@
       .join("");
 
     gallery.querySelectorAll(".mb-card").forEach((card) => {
-      card.addEventListener("click", () => openModal(card.getAttribute("data-id")));
+      const id = card.getAttribute("data-id");
+      card.addEventListener("click", () => openModal(id));
+      bindCardPreview(card, id);
     });
 
     requestAnimationFrame(() => {
@@ -1160,27 +1168,63 @@
     renderTimeline();
   }
 
-  // ——— Modal ———
+  // ——— Shared Evidence Viewer + quick preview (MBUX §22.4–22.6) ———
+
+  function visibleIds() {
+    return visibleItems().map((x) => x.id);
+  }
 
   function openModal(id) {
     const item = rawItems.find((x) => x.id === id);
     if (!item) return;
+    hideQuickPreview();
     state.gallery.scrollTop =
       document.getElementById("mb-explore-gallery").scrollTop || 0;
-    state.modal.snapshot = snapshotExplore();
+    if (!state.modal.snapshot) state.modal.snapshot = snapshotExplore();
     state.modal.openId = id;
     state.modal.pendingCorrection = null;
+    if (!state.modal.railTab) state.modal.railTab = "people";
+    state.modal.transcriptOn = false;
+    renderViewer(item);
+    document.getElementById("mb-modal").hidden = false;
+    document.getElementById("mb-modal-close").focus();
+  }
 
-    const modal = document.getElementById("mb-modal");
+  function renderViewer(item) {
+    const ids = visibleIds();
+    const idx = ids.indexOf(item.id);
     document.getElementById("mb-modal-kicker").textContent = String(
       item.type || "Evidence"
     ).toUpperCase();
     document.getElementById("mb-modal-title").textContent = item.title || item.id;
-    const body = document.getElementById("mb-modal-body");
-    body.innerHTML = renderEvidenceBody(item);
+    const count = document.getElementById("mb-viewer-count");
+    if (count) {
+      count.textContent =
+        idx >= 0 ? `${idx + 1} of ${ids.length}` : `— of ${ids.length}`;
+    }
+    const prevBtn = document.getElementById("mb-viewer-prev");
+    const nextBtn = document.getElementById("mb-viewer-next");
+    if (prevBtn) prevBtn.disabled = idx <= 0;
+    if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
+    document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+    renderViewerFooter(item);
+    syncRailTabs();
+    renderRailPanel(item);
     renderTeachSlot(item);
-    modal.hidden = false;
-    document.getElementById("mb-modal-close").focus();
+  }
+
+  function stepViewer(delta) {
+    const ids = visibleIds();
+    const idx = ids.indexOf(state.modal.openId);
+    if (idx < 0) return;
+    const next = ids[idx + delta];
+    if (!next) return;
+    const item = rawItems.find((x) => x.id === next);
+    if (!item) return;
+    state.modal.openId = next;
+    state.modal.pendingCorrection = null;
+    state.modal.transcriptOn = false;
+    renderViewer(item);
   }
 
   function closeModal() {
@@ -1189,12 +1233,19 @@
     state.modal.openId = null;
     state.modal.snapshot = null;
     state.modal.pendingCorrection = null;
+    state.modal.transcriptOn = false;
     document.getElementById("mb-modal-body").innerHTML = "";
-    document.getElementById("mb-modal-teach").innerHTML = "";
+    const teach = document.getElementById("mb-modal-teach");
+    if (teach) {
+      teach.innerHTML = "";
+      teach.hidden = true;
+    }
+    const foot = document.getElementById("mb-viewer-footer");
+    if (foot) foot.innerHTML = "";
+    const rail = document.getElementById("mb-rail-panel");
+    if (rail) rail.innerHTML = "";
     document.getElementById("mb-modal").hidden = true;
-    // 1) Restore prior exploration state/position
     if (snap) restoreExplore(snap);
-    // 2) Then incorporate correction consequences without dumping to a new default
     if (pending) applyCorrectionConsequences(pending);
     render();
     requestAnimationFrame(() => {
@@ -1211,7 +1262,6 @@
     if (pending.personLabel && !item.people.includes(pending.personLabel)) {
       item.people.push(pending.personLabel);
     }
-    // Soft curator note — do not reset filters/range/query
     const note = `Identity updated: ${pending.personLabel}`;
     if (state.domain.summary && !state.domain.summary.includes(note)) {
       state.domain.summary = `${state.domain.summary} (${note})`;
@@ -1235,51 +1285,207 @@
   function faceBoxHtml(item) {
     const style = faceBoxStyle(item);
     if (!style) return "";
-    return `<div class="mb-face-box" style="${style}" title="Face region"></div>`;
+    const label = escapeHtml(item.face_identity || item.mb_person_name || "");
+    return `<div class="mb-face-box" style="${style}" title="Face region">${
+      label ? `<span class="mb-face-label">${label}</span>` : ""
+    }</div>`;
+  }
+
+  function peopleList(item) {
+    const seen = [];
+    const push = (n) => {
+      const s = String(n || "").trim();
+      if (s && !seen.includes(s)) seen.push(s);
+    };
+    if (Array.isArray(item.people)) item.people.forEach(push);
+    push(item.face_identity);
+    push(item.mb_person_name);
+    return seen;
+  }
+
+  function syncRailTabs() {
+    const tab = state.modal.railTab || "people";
+    document.querySelectorAll(".mb-rail-tab").forEach((btn) => {
+      const on = btn.getAttribute("data-rail") === tab;
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+
+  function renderRailPanel(item) {
+    const panel = document.getElementById("mb-rail-panel");
+    const teach = document.getElementById("mb-modal-teach");
+    if (!panel) return;
+    const tab = state.modal.railTab || "people";
+    if (teach) teach.hidden = tab !== "learn";
+
+    if (tab === "people") {
+      const peeps = peopleList(item);
+      if (!peeps.length) {
+        panel.innerHTML =
+          `<h3>People</h3><p class="mb-rail-empty">No people identified on this evidence yet. Use Learn to teach a face.</p>`;
+        return;
+      }
+      panel.innerHTML =
+        `<h3>People in this ${escapeHtml(item.type || "memory")}</h3>` +
+        peeps
+          .map((n) => {
+            const initial = escapeHtml((n[0] || "?").toUpperCase());
+            return `<div class="mb-rail-person"><span class="mb-rail-avatar" aria-hidden="true">${initial}</span><div><strong>${escapeHtml(
+              n
+            )}</strong><div style="font-size:0.72rem;color:#94a3b8">Confirmed / known</div></div></div>`;
+          })
+          .join("");
+      return;
+    }
+
+    if (tab === "story") {
+      const storyTitle = item.story_title || item.linked_story_title;
+      const storyBody = item.story_excerpt || item.linked_story_excerpt;
+      if (storyTitle || String(item.type || "").toLowerCase() === "story") {
+        panel.innerHTML = `<h3>Story</h3>
+          <p><strong>${escapeHtml(storyTitle || item.title || "Story")}</strong></p>
+          <p class="mb-rail-empty">${escapeHtml(
+            storyBody || item.detail || item.preview || ""
+          )}</p>
+          <p><a class="mb-viewer-footbtn" href="/story/ui">Read story</a></p>`;
+        return;
+      }
+      panel.innerHTML = `<h3>Story</h3>
+        <p class="mb-rail-empty">No story yet. Would you like to add one?</p>
+        <p><a class="mb-viewer-footbtn" href="/story/ui">Add story</a></p>`;
+      return;
+    }
+
+    if (tab === "artifact") {
+      const art = item.artifact_title || item.linked_artifact_title;
+      if (art || String(item.type || "").toLowerCase() === "artifact") {
+        panel.innerHTML = `<h3>Artifact</h3>
+          <p><strong>${escapeHtml(art || item.title || "Artifact")}</strong></p>
+          <p class="mb-rail-empty">${escapeHtml(item.detail || item.preview || "")}</p>
+          <p><a class="mb-viewer-footbtn" href="/artifact/ui">View artifact</a></p>`;
+        return;
+      }
+      panel.innerHTML = `<h3>Artifact</h3>
+        <p class="mb-rail-empty">No linked artifact on this evidence.</p>
+        <p><a class="mb-viewer-footbtn" href="/artifact/ui">Browse artifacts</a></p>`;
+      return;
+    }
+
+    if (tab === "source") {
+      const rows = [
+        ["Type", String(item.type || "—").toUpperCase()],
+        ["Date", fmtCardDate(item.date)],
+        ["Location", item.place || item.location || item.city || "—"],
+        ["Provider", item.provider_key || item.source || "—"],
+        ["Original preserved", item.original_preserved === false ? "No" : "Yes"],
+        ["File / id", item.original_filename || item.external_id || item.id || "—"],
+      ];
+      panel.innerHTML =
+        `<h3>Source details</h3>` +
+        rows
+          .map(
+            ([k, v]) =>
+              `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
+                String(v)
+              )}</dd></div>`
+          )
+          .join("");
+      return;
+    }
+
+    if (tab === "learn") {
+      panel.innerHTML = `<h3>Learn</h3>
+        <p class="mb-rail-empty">Teach / correct identity from this evidence. Actions appear below when this item is teachable.</p>`;
+    }
+  }
+
+  function renderViewerFooter(item) {
+    const foot = document.getElementById("mb-viewer-footer");
+    if (!foot) return;
+    const t = String(item.type || "").toLowerCase();
+    const bits = [];
+    if (t === "photo") {
+      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>− 100% +</button>`);
+      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>Inspect</button>`);
+      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>Share</button>`);
+      bits.push(`<a class="mb-viewer-footbtn" href="/story/ui">Add to story</a>`);
+    } else if (t === "video") {
+      const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
+      bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
+      bits.push(
+        `<button type="button" class="mb-viewer-footbtn" id="mb-transcript-toggle" aria-pressed="${
+          state.modal.transcriptOn ? "true" : "false"
+        }">Transcript ${state.modal.transcriptOn ? "on" : "off"}</button>`
+      );
+      if (item.play_url) {
+        bits.push(
+          `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
+        );
+      }
+    } else {
+      bits.push(
+        `<span class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(
+          t || "evidence"
+        )}</span>`
+      );
+    }
+    foot.innerHTML = bits.join("");
+    const tr = document.getElementById("mb-transcript-toggle");
+    if (tr) {
+      tr.addEventListener("click", () => {
+        state.modal.transcriptOn = !state.modal.transcriptOn;
+        const box = document.getElementById("mb-ev-transcript");
+        if (box) box.classList.toggle("is-on", state.modal.transcriptOn);
+        tr.setAttribute("aria-pressed", state.modal.transcriptOn ? "true" : "false");
+        tr.textContent = `Transcript ${state.modal.transcriptOn ? "on" : "off"}`;
+      });
+    }
   }
 
   function renderTeachSlot(item) {
     const slot = document.getElementById("mb-modal-teach");
+    if (!slot) return;
     const t = String(item.type || "").toLowerCase();
     const teachable =
       item.teachable ||
       t === "photo" ||
-      (t === "video" && (item.paused_frame !== false));
+      (t === "video" && item.paused_frame !== false);
     if (!teachable) {
       slot.innerHTML =
-        "Contextual Review &amp; Learn attaches here for photos, paused video frames, and future voice/transcript teaching — same modal shell.";
+        "Contextual Review &amp; Learn attaches here for photos, paused video frames, and future voice/transcript teaching — same viewer shell.";
       return;
     }
-    const opts = (peopleOptions.length ? peopleOptions : [
-      { id: "demo:peggy", label: "Peggy" },
-      { id: "demo:rick", label: "Rick" },
-      { id: "demo:tom", label: "Tom Will" },
-    ])
+    const opts = (peopleOptions.length
+      ? peopleOptions
+      : [
+          { id: "demo:peggy", label: "Peggy" },
+          { id: "demo:rick", label: "Rick" },
+          { id: "demo:tom", label: "Tom Will" },
+        ]
+    )
       .map(
         (p) =>
-          `<option value="${escapeAttr(p.id)}" data-label="${escapeAttr(p.label)}">${escapeHtml(
+          `<option value="${escapeAttr(p.id)}" data-label="${escapeAttr(
             p.label
-          )}</option>`
+          )}">${escapeHtml(p.label)}</option>`
       )
       .join("");
-    const current = escapeHtml(item.face_identity || "Unknown");
-    slot.innerHTML = `<div class="mb-teach-proof" data-i1-teach-proof="1">
-      <h3>Review &amp; Learn — face identity (I1 path)</h3>
-      <p class="mb-teach-status">Current assignment: <strong id="mb-teach-current">${current}</strong></p>
-      <div class="mb-teach-row">
-        <label for="mb-teach-person">Correct identity</label>
+    slot.innerHTML = `
+      <div><strong>Selected face:</strong> <span id="mb-teach-current">${escapeHtml(
+        item.face_identity || "Unknown"
+      )}</span></div>
+      <label style="display:block;margin:0.4rem 0 0.25rem">Assign / reassign
         <select id="mb-teach-person">${opts}</select>
-        <button type="button" id="mb-teach-correct">Confirm identity</button>
-      </div>
-      <p class="mb-teach-status" id="mb-teach-status">Uses the owner identity-correction path. Close returns to the same exploration context.</p>
-    </div>`;
-    document.getElementById("mb-teach-correct").addEventListener("click", () => {
-      confirmIdentityCorrection(item);
-    });
+      </label>
+      <button type="button" class="mb-viewer-footbtn" id="mb-teach-confirm">Learn from this face</button>
+      <div id="mb-teach-status" style="margin-top:0.35rem"></div>`;
+    const btn = document.getElementById("mb-teach-confirm");
+    if (btn) btn.addEventListener("click", () => confirmIdentityCorrection(item));
   }
 
   async function confirmIdentityCorrection(item) {
     const sel = document.getElementById("mb-teach-person");
+    if (!sel) return;
     const opt = sel.options[sel.selectedIndex];
     const personId = sel.value;
     const personLabel = opt.getAttribute("data-label") || opt.textContent || "Person";
@@ -1294,7 +1500,6 @@
     };
     item.face_identity = personLabel;
 
-    // Live I1 API when we have a real person id + video moment coordinates
     const livePerson = personId && !String(personId).startsWith("demo:");
     const vid = item.video_external_id;
     if (livePerson && vid) {
@@ -1319,10 +1524,9 @@
           status.textContent =
             "Local correction recorded; live I1 call: " + err + " — close still restores context.";
       }
-    } else {
-      if (status)
-        status.textContent =
-          "Identity correction recorded (demo / photo path). Close returns to the same exploration context.";
+    } else if (status) {
+      status.textContent =
+        "Identity correction recorded (demo / photo path). Close returns to the same exploration context.";
     }
     if (current) current.textContent = personLabel;
   }
@@ -1336,36 +1540,29 @@
         : escapeHtml(item.preview || item.title || "Photo");
       return `<div class="mb-ev-photo" aria-label="Photo workspace">${img}
         ${faceBoxHtml(item)}
-      </div>
-      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Photo evidence · Face: ${escapeHtml(
-        item.face_identity || "Unknown"
-      )}</p>
-      <p>${escapeHtml(item.detail || "")}</p>`;
+      </div>`;
     }
     if (t === "video") {
       const poster = media
         ? `<img src="${escapeAttr(media)}" alt="" />`
         : "Paused frame · face teach applies here only (not during playback)";
-      const jump = item.play_url
-        ? `<p><a class="mb-ev-jump" href="${escapeAttr(item.play_url)}">Open moment in Review @ ${
-            item.t != null ? Number(item.t).toFixed(1) + "s" : "?"
-          }</a></p>`
-        : "";
-      return `<div class="mb-ev-video">
-        <div class="mb-ev-video-frame" id="mb-ev-video-frame" style="position:relative">
+      const t0 = item.t != null ? Number(item.t) : 0;
+      return `<div class="mb-ev-video-shell">
+        <div class="mb-ev-video-frame" id="mb-ev-video-frame">
           ${poster}
           ${faceBoxHtml(item)}
         </div>
-        <div class="mb-ev-transcript" aria-label="Time-aligned transcript (prepared)">
-          <strong>Transcript (architecture)</strong><br/>
-          [00:12] …speech span selectable for speaker ID / Learn from voice…<br/>
-          ${escapeHtml(item.detail || "Video moment ready for time-aligned teaching.")}
+        <div class="mb-ev-video-transport" aria-label="Video transport">
+          <span>▶︎</span>
+          <span>${t0.toFixed(1)}s · paused frame</span>
         </div>
-      </div>
-      ${jump}
-      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Video moment · Face: ${escapeHtml(
-        item.face_identity || "Unknown"
-      )}</p>`;
+        <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
+          <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>
+          <div>[${t0.toFixed(0)}] ${escapeHtml(
+        item.detail || "Video moment ready for time-aligned teaching."
+      )}</div>
+        </div>
+      </div>`;
     }
     if (t === "email" || t === "sms" || t === "text") {
       return `<div class="mb-ev-email">${escapeHtml(item.detail || item.preview || "")}</div>
@@ -1373,15 +1570,89 @@
     }
     if (t === "story") {
       return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
-        <p>${escapeHtml(item.detail || "")}</p>
-        <p style="color:var(--mb-muted);font-size:13px">Stories stay tied to people / evidence / events — not a disconnected writing surface in I4.</p>`;
+        <p>${escapeHtml(item.detail || "")}</p>`;
     }
     const img = media
-      ? `<img src="${escapeAttr(media)}" alt="" />`
+      ? `<img src="${escapeAttr(media)}" alt="" style="max-width:100%;border-radius:10px" />`
       : `${escapeHtml(TYPE_GLYPH[t] || "•")} ${escapeHtml(item.preview || t)}`;
-    return `<div class="mb-ev-photo" data-type="${escapeAttr(t)}" style="min-height:160px">${img}</div>
-      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(t)}</p>
+    return `<div class="mb-ev-photo">${img}</div>
+      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))}</p>
       <p>${escapeHtml(item.detail || "")}</p>`;
+  }
+
+  function quickPreviewHtml(item) {
+    const t = String(item.type || "memory");
+    const media = item.thumb_url || item.media_url || "";
+    const peeps = peopleList(item).slice(0, 4).join(", ");
+    const place = item.place || item.location || item.city || "";
+    const dur =
+      item.duration_sec != null
+        ? `${Math.floor(item.duration_sec / 60)}:${String(
+            Math.floor(item.duration_sec % 60)
+          ).padStart(2, "0")}`
+        : item.t != null
+          ? `@ ${Number(item.t).toFixed(0)}s`
+          : "";
+    const mediaBlock = media
+      ? `<div class="mb-qp-media"><img src="${escapeAttr(media)}" alt="" /></div>`
+      : `<div class="mb-qp-media"><span>${escapeHtml(TYPE_GLYPH[t] || "•")}</span></div>`;
+    return `${mediaBlock}<div class="mb-qp-body">
+      <div class="mb-qp-type">${escapeHtml(t)}</div>
+      <div class="mb-qp-title">${escapeHtml(item.title || t)}</div>
+      <div class="mb-qp-line">${escapeHtml(fmtCardDate(item.date))}${
+      place ? " · " + escapeHtml(place) : ""
+    }</div>
+      ${peeps ? `<div class="mb-qp-line">${escapeHtml(peeps)}</div>` : ""}
+      ${
+        item.preview
+          ? `<div class="mb-qp-line">${escapeHtml(String(item.preview).slice(0, 120))}</div>`
+          : ""
+      }
+      ${dur ? `<div class="mb-qp-line">${escapeHtml(dur)}</div>` : ""}
+      ${
+        item.provider_key
+          ? `<div class="mb-qp-line">${escapeHtml(item.provider_key)}</div>`
+          : ""
+      }
+    </div>`;
+  }
+
+  function hideQuickPreview() {
+    const el = document.getElementById("mb-quick-preview");
+    if (el) el.hidden = true;
+  }
+
+  function showQuickPreview(item, anchorEl) {
+    const el = document.getElementById("mb-quick-preview");
+    if (!el || !item || !anchorEl) return;
+    el.innerHTML = quickPreviewHtml(item);
+    el.hidden = false;
+    const r = anchorEl.getBoundingClientRect();
+    const pad = 10;
+    let left = r.right + pad;
+    let top = r.top;
+    const w = 280;
+    const h = el.offsetHeight || 200;
+    if (left + w > window.innerWidth - 8) left = r.left - w - pad;
+    if (left < 8) left = 8;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+  }
+
+  function bindCardPreview(card, id) {
+    card.addEventListener("mouseenter", () => {
+      if (state.modal.openId) return;
+      const it = rawItems.find((x) => x.id === id);
+      if (it) showQuickPreview(it, card);
+    });
+    card.addEventListener("mouseleave", hideQuickPreview);
+    card.addEventListener("focus", () => {
+      if (state.modal.openId) return;
+      const it = rawItems.find((x) => x.id === id);
+      if (it) showQuickPreview(it, card);
+    });
+    card.addEventListener("blur", hideQuickPreview);
   }
 
   // ——— Timeline interaction ———
@@ -1605,12 +1876,30 @@
     document.getElementById("mb-modal").addEventListener("click", (e) => {
       if (e.target.id === "mb-modal") closeModal();
     });
+    const prevBtn = document.getElementById("mb-viewer-prev");
+    const nextBtn = document.getElementById("mb-viewer-next");
+    if (prevBtn) prevBtn.addEventListener("click", () => stepViewer(-1));
+    if (nextBtn) nextBtn.addEventListener("click", () => stepViewer(1));
+    document.querySelectorAll(".mb-rail-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.modal.railTab = btn.getAttribute("data-rail") || "people";
+        const item = rawItems.find((x) => x.id === state.modal.openId);
+        if (!item) return;
+        syncRailTabs();
+        renderRailPanel(item);
+        renderTeachSlot(item);
+      });
+    });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && state.modal.openId) closeModal();
+      if (!state.modal.openId) return;
+      if (e.key === "Escape") closeModal();
+      if (e.key === "ArrowLeft") stepViewer(-1);
+      if (e.key === "ArrowRight") stepViewer(1);
     });
     const gallery = document.getElementById("mb-explore-gallery");
     gallery.addEventListener("scroll", () => {
       state.gallery.scrollTop = gallery.scrollTop;
+      hideQuickPreview();
     });
   }
 

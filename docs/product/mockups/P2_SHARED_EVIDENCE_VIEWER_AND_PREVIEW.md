@@ -59,5 +59,9 @@ docs/source/mockups/p2-gallery-rollover-preview.png
 
 Until then, founder chat mockups (2026-08-13) remain the review reference.
 
-## 5. I4 vs later (default)
-See planning delta §4. This file does **not** authorize implementation by itself.
+## 5. I4 vs later (authorized 2026-08-13)
+
+**Authorized for I4 build:** Shared Evidence Viewer shell + gallery rollover/focus preview (this inventory).  
+**Out:** Named Places, Living Albums, transcript-as-gate, full Story/Artifact authoring inside the rail.
+
+See [planning delta §7](../MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md).

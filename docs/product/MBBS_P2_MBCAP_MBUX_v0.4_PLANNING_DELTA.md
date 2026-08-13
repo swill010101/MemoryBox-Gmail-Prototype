@@ -64,8 +64,29 @@ PNG masters: add under `docs/source/mockups/` when exported; chat images were th
 - No Explore/Ask runtime code on this branch  
 - No inventing Place / LivingAlbum schemas here  
 
-## 7. Next decisions for Tom
+## 7. Founder decisions locked (2026-08-13 evening)
 
-1. Authorize **viewer + rollover UI** as an I4 definition amendment (scope A: preview + shell + People/Source) vs park until post-I4.  
+| # | Decision |
+|---|----------|
+| 1 | **DOCX = master**, markdown = working extract (same as MBPS/MBEVS). |
+| 2 | **I4 UI amendment authorized:** Shared Evidence Viewer + gallery rollover/focus preview **only** (not Named Places, not Living Albums, not full Story/Artifact authoring products). |
+| 3 | Visual masters: Word doc *Screen mockups from p2I4 shared gallery.docx* with embedded PNGs → park under `docs/source/mockups/` when extracted. |
+| 4 | **Full planning delta** (this document) is the planning record. |
+
+### I4 build scope (authorized)
+
+**Build now**
+- Shared Evidence Viewer shell (Photo + Video; prev/next; Close restores explore snapshot)
+- Right rail tabs People / Story / Artifact / Source / Learn — **contextual panels** with empty/link-out states; Learn reuses existing teach slot / Review paths
+- Gallery mouse hover + keyboard focus **quick preview** (lightweight; not mini-detail)
+
+**Still out of I4**
+- Named Places / saved pins as durable domain objects
+- Living Albums (→ P2-I13 or dedicated definition)
+- Video transcript as a required acceptance surface (toggle may exist; off by default; not a gate)
+
+## 8. Next decisions for Tom
+
+1. After FlightSim pass of viewer + preview, whether to expand Learn rail beyond existing I1 correction.  
 2. Confirm Living Albums → **I13** (or new increment id).  
 3. Confirm Named Places increment home (with CAP-P2-024/025).  

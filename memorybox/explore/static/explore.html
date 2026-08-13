@@ -107,20 +107,40 @@
   </div>
 
   <div class="mb-modal-backdrop" id="mb-modal" hidden>
-    <div class="mb-modal" role="dialog" aria-modal="true" aria-labelledby="mb-modal-title">
-      <div class="mb-modal-chrome">
-        <div>
+    <div class="mb-viewer" role="dialog" aria-modal="true" aria-labelledby="mb-modal-title">
+      <header class="mb-viewer-chrome">
+        <div class="mb-viewer-nav">
+          <button type="button" class="mb-viewer-navbtn" id="mb-viewer-prev" aria-label="Previous">‹ Previous</button>
+          <span class="mb-viewer-count" id="mb-viewer-count">—</span>
+          <button type="button" class="mb-viewer-navbtn" id="mb-viewer-next" aria-label="Next">Next ›</button>
+        </div>
+        <div class="mb-viewer-heading">
           <div class="mb-modal-kicker" id="mb-modal-kicker">Evidence</div>
           <h2 class="mb-modal-title" id="mb-modal-title">—</h2>
         </div>
-        <button type="button" class="mb-modal-close" id="mb-modal-close">Close</button>
-      </div>
-      <div class="mb-modal-body" id="mb-modal-body"></div>
-      <div class="mb-modal-teach" id="mb-modal-teach" data-teach-slot="1">
-        <!-- Filled when item is teachable (I1 identity correction) -->
+        <button type="button" class="mb-modal-close" id="mb-modal-close">Close ✕</button>
+      </header>
+      <div class="mb-viewer-stage">
+        <div class="mb-viewer-main">
+          <div class="mb-modal-body" id="mb-modal-body"></div>
+          <footer class="mb-viewer-footer" id="mb-viewer-footer"></footer>
+        </div>
+        <aside class="mb-viewer-rail" id="mb-viewer-rail" aria-label="Evidence context">
+          <div class="mb-rail-tabs" role="tablist" id="mb-rail-tabs">
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="people" aria-selected="true" title="People">People</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="story" aria-selected="false" title="Story">Story</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="artifact" aria-selected="false" title="Artifact">Artifact</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="source" aria-selected="false" title="Source">Source</button>
+            <button type="button" role="tab" class="mb-rail-tab" data-rail="learn" aria-selected="false" title="Learn">Learn</button>
+          </div>
+          <div class="mb-rail-panel" id="mb-rail-panel"></div>
+          <div class="mb-modal-teach" id="mb-modal-teach" data-teach-slot="1" hidden></div>
+        </aside>
       </div>
     </div>
   </div>
+
+  <div class="mb-quick-preview" id="mb-quick-preview" hidden role="tooltip"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
