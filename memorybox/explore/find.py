@@ -320,15 +320,37 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
     chips: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(kind: str, label: str) -> None:
+        s = str(label or "").strip()
+        if not s:
+            return
+        key = f"{kind}:{s.lower()}"
+        if key in seen:
+            return
+        seen.add(key)
+        chips.append({"kind": kind, "label": s})
+
     ctx = result.get("context") or {}
     slots = ctx.get("plan_slots") or {}
-    for name in slots.get("person") or ctx.get("person_names") or []:
-        chips.append({"kind": "person", "label": str(name)})
-    for ev in slots.get("event") or ctx.get("event_labels") or []:
-        chips.append({"kind": "event", "label": str(ev)})
-    for pl in slots.get("place") or ctx.get("place_names") or []:
-        chips.append({"kind": "place", "label": str(pl)})
-    # Range chip from dated items only
+    plan = result.get("plan") or {}
+    for name in slots.get("person") or ctx.get("person_names") or plan.get("person_names") or []:
+        add("person", str(name))
+    for pl in slots.get("place") or ctx.get("place_names") or plan.get("place_names") or []:
+        add("place", str(pl))
+    for ev in slots.get("event") or ctx.get("event_labels") or plan.get("event_labels") or []:
+        add("event", str(ev))
+    for tr in slots.get("trip") or plan.get("trip_labels") or []:
+        add("trip", str(tr))
+    # Temporal chip — prefer holiday/season label over raw year range chip later
+    tlabel = plan.get("temporal_label") or slots.get("time_label")
+    if tlabel:
+        add("time", str(tlabel))
+    elif plan.get("time_start") and plan.get("time_end"):
+        a = str(plan["time_start"])[:4]
+        b = str(plan["time_end"])[:4]
+        add("time", a if a == b else f"{a}–{b}")
     return chips
 
 
@@ -453,9 +475,11 @@ def build_explore_find(
         provider_status=result.get("provider_status") or {},
     )
     chips = chips_from_ask_result(result)
-    rc = range_chip_for_items(items)
-    if rc:
-        chips.append(rc)
+    # Prefer plan temporal chip over item-derived year range when present
+    if not any(c.get("kind") == "time" for c in chips):
+        rc = range_chip_for_items(items)
+        if rc:
+            chips.append(rc)
 
     counts: dict[str, int] = {}
     for i in items:
@@ -463,6 +487,7 @@ def build_explore_find(
         counts[t] = counts.get(t, 0) + 1
     counts["undated"] = sum(1 for i in items if i.get("undated"))
 
+    plan = result.get("plan") or {}
     return {
         "ok": True,
         "demo": False,
@@ -478,6 +503,18 @@ def build_explore_find(
         "answer_kind": result.get("answer_kind"),
         "missing_disclosure": result.get("missing_disclosure"),
         "provider_status": result.get("provider_status") or {},
-        "plan": result.get("plan"),
+        "plan": plan,
         "context": result.get("context"),
+        # Shared exploration hints for Gallery/Timeline/Map sync
+        "explore_state": {
+            "person_names": list(plan.get("person_names") or []),
+            "place_names": list(plan.get("place_names") or []),
+            "time_start": plan.get("time_start"),
+            "time_end": plan.get("time_end"),
+            "temporal_windows": list(plan.get("temporal_windows") or []),
+            "temporal_label": plan.get("temporal_label"),
+            "visual_scope": plan.get("visual_scope"),
+            "life_event_kind": plan.get("life_event_kind"),
+            "life_event_years": list(plan.get("life_event_years") or []),
+        },
     }

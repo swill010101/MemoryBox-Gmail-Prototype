@@ -19,6 +19,174 @@ from memorybox.providers.photo.protocol import PhotoProvider
 from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
 
+def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
+    """Fill birthday/anniversary temporal windows from MB People when recorded.
+
+    Does not invent dates. Missing fact → clarification / disclosure.
+    """
+    from dataclasses import replace
+
+    kind = getattr(plan, "life_event_kind", None)
+    if kind not in ("birthday", "anniversary"):
+        return plan
+
+    years = list(getattr(plan, "life_event_years", ()) or ())
+    if not years:
+        # Planner should already clarify; keep as-is.
+        return plan
+
+    person_id = (plan.person_ids[0] if plan.person_ids else None)
+    display = plan.person_names[0] if plan.person_names else None
+    notes = list(plan.notes)
+
+    try:
+        from memorybox.person import find_ask_person_by_name, get_person
+        from memorybox.planner.temporal import observance_window_md
+        from memorybox.profile.facts import get_current_fact
+        from memorybox.profile.life_events import list_life_events_for_person
+    except Exception as exc:  # pragma: no cover
+        return replace(
+            plan,
+            requires_clarification=True,
+            ambiguity_message=f"Could not load person observance data ({exc}).",
+            notes=tuple(notes + ["life_event_resolve_import_failed"]),
+        )
+
+    if not person_id and display:
+        try:
+            view = find_ask_person_by_name(display, lazy_seed=False)
+            if view:
+                person_id = view.id
+                display = view.display_name or display
+        except Exception:
+            person_id = None
+
+    if not person_id:
+        name = display or "that person"
+        return replace(
+            plan,
+            requires_clarification=True,
+            ambiguity_message=(
+                f"No MemoryBox person matched for {name}; "
+                f"cannot resolve {kind} without a recorded person."
+            ),
+            notes=tuple(notes + ["life_event_person_missing"]),
+        )
+
+    if not display:
+        try:
+            pv = get_person(person_id)
+            display = pv.display_name if pv else person_id
+        except Exception:
+            display = person_id
+
+    md: tuple[int, int] | None = None
+    source_note = None
+    if kind == "birthday":
+        try:
+            fact = get_current_fact(person_id, "birth_date")
+        except Exception:
+            fact = None
+        if not fact or not fact.value_date:
+            return replace(
+                plan,
+                person_ids=(person_id,),
+                person_names=(display,) if display else plan.person_names,
+                requires_clarification=True,
+                ambiguity_message=(
+                    f"No birth_date recorded for {display}. "
+                    "Add it on the person profile to search birthday photos."
+                ),
+                notes=tuple(notes + ["life_event_birth_date_missing"]),
+            )
+        try:
+            y, m, d = [int(x) for x in str(fact.value_date)[:10].split("-")]
+            md = (m, d)
+            source_note = f"birth_date={fact.value_date[:10]}"
+        except Exception:
+            return replace(
+                plan,
+                requires_clarification=True,
+                ambiguity_message=f"Invalid birth_date for {display}.",
+                notes=tuple(notes + ["life_event_birth_date_invalid"]),
+            )
+    else:
+        try:
+            events = [
+                e
+                for e in list_life_events_for_person(person_id)
+                if e.event_kind == "marriage" and e.event_date
+            ]
+        except Exception:
+            events = []
+        if not events:
+            return replace(
+                plan,
+                person_ids=(person_id,),
+                person_names=(display,) if display else plan.person_names,
+                requires_clarification=True,
+                ambiguity_message=(
+                    f"No marriage/anniversary date recorded for {display}. "
+                    "Add a marriage life event to search anniversary photos."
+                ),
+                notes=tuple(notes + ["life_event_anniversary_missing"]),
+            )
+        if len(events) > 1:
+            return replace(
+                plan,
+                person_ids=(person_id,),
+                person_names=(display,) if display else plan.person_names,
+                requires_clarification=True,
+                ambiguity_message=(
+                    f"Multiple marriage events for {display}; "
+                    "clarify which anniversary."
+                ),
+                notes=tuple(notes + ["life_event_anniversary_ambiguous"]),
+            )
+        try:
+            y, m, d = [int(x) for x in str(events[0].event_date)[:10].split("-")]
+            md = (m, d)
+            source_note = f"marriage_date={events[0].event_date[:10]}"
+        except Exception:
+            return replace(
+                plan,
+                requires_clarification=True,
+                ambiguity_message=f"Invalid anniversary date for {display}.",
+                notes=tuple(notes + ["life_event_anniversary_invalid"]),
+            )
+
+    assert md is not None
+    windows = tuple(observance_window_md(md[0], md[1], yr) for yr in years)
+    base = "Birthday" if kind == "birthday" else "Anniversary"
+    if len(years) == 1:
+        label = f"{base} {years[0]}"
+    else:
+        label = f"{base} {years[0]}–{years[-1]}"
+    notes.append("life_event_windows_from_mb_people")
+    if source_note:
+        notes.append(source_note)
+    notes.append("holiday_pad_days=2")
+    return replace(
+        plan,
+        person_ids=(person_id,),
+        person_names=(display,) if display else plan.person_names,
+        time_start=min(w[0] for w in windows),
+        time_end=max(w[1] for w in windows),
+        temporal_windows=windows,
+        temporal_label=label,
+        # Explore path — do not force profile-only short-circuit
+        profile_intent=None if getattr(plan, "profile_intent", None) in ("birth", "anniversary") else plan.profile_intent,
+        want_photo=True,
+        want_still=True,
+        want_video=True,
+        want_visual=True,
+        visual_scope="broad" if plan.visual_scope == "none" else plan.visual_scope,
+        requires_clarification=False,
+        ambiguity_message=None,
+        notes=tuple(notes),
+    )
+
+
 @dataclass
 class AskResult:
     session_id: str
@@ -628,7 +796,12 @@ class AskOrchestrator:
                     profile_answer=rel.to_dict(),
                 )
                 # Who / birth / anniversary: profile facts, not photo modality required
-                if rel.intent in ("who", "birth", "anniversary"):
+                # Exception: birthday/anniversary Explore asks with years keep visual.
+                life_explore = bool(
+                    getattr(plan, "life_event_kind", None)
+                    and getattr(plan, "life_event_years", ())
+                )
+                if rel.intent in ("who", "birth", "anniversary") and not life_explore:
                     plan = replace(
                         plan,
                         want_photo=False,
@@ -673,6 +846,9 @@ class AskOrchestrator:
                     want_visual=False,
                     visual_scope="none",
                 )
+
+        # Birthday / anniversary Explore windows from MB People facts when present.
+        plan = _apply_person_life_event_windows(plan)
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
@@ -936,6 +1112,14 @@ class AskOrchestrator:
             "trip": list(plan.trip_labels),
             "event": [e for e in plan.event_labels if not e.lower().startswith("trip:")],
             "modality": list(plan.modalities),
+            "time_label": getattr(plan, "temporal_label", None),
+            "time_start": plan.time_start,
+            "time_end": plan.time_end,
+            "temporal_windows": [
+                list(w) for w in (getattr(plan, "temporal_windows", ()) or ())
+            ],
+            "life_event_kind": getattr(plan, "life_event_kind", None),
+            "life_event_years": list(getattr(plan, "life_event_years", ()) or ()),
         }
 
         providers = provider_snapshot(self.photo, self.llm, self.video)

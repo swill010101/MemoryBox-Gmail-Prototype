@@ -254,12 +254,17 @@
     const hasRange =
       Number.isFinite(rangeStart) && Number.isFinite(rangeEnd);
     const undatedOnly = Boolean(state.domain.undatedFilter);
+    const windows = state.domain.temporalWindows || null;
     const list = eligible.filter((it) => {
       if (undatedOnly) return isUndated(it);
       if (isUndated(it)) return true; // never exclude undated from gallery
-      if (!hasRange) return true;
       const t = parseISO(it.date);
-      return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
+      if (!Number.isFinite(t)) return true;
+      if (windows && windows.length) {
+        return windows.some(([a, b]) => t >= a && t <= b);
+      }
+      if (!hasRange) return true;
+      return t >= rangeStart && t <= rangeEnd;
     });
     list.sort((a, b) => {
       if (isUndated(a) && isUndated(b)) return 0;
@@ -445,20 +450,64 @@
     const undatedFilter =
       keepPresentation && state ? Boolean(state.domain.undatedFilter) : false;
     const chips = payload.chips || [];
-    // Keep prior place filter across re-find; chips are activatable (not auto-forced).
+    const exploreHint = payload.explore_state || {};
+    const plan = payload.plan || {};
+    // Shared Ask → Explore state: place + media + temporal windows from plan.
     let placeFilter = null;
-    if (keepPresentation && state && state.domain.placeFilter) {
+    const planPlaces = exploreHint.place_names || plan.place_names || [];
+    if (Array.isArray(planPlaces) && planPlaces.length === 1) {
+      placeFilter = planPlaces[0];
+    } else if (keepPresentation && state && state.domain.placeFilter) {
       placeFilter = state.domain.placeFilter;
+    }
+    let nextType = typeFilter;
+    if (!keepPresentation) {
+      const vs = exploreHint.visual_scope || plan.visual_scope || "";
+      if (vs === "still_only") nextType = "photo";
+      else if (vs === "video_only") nextType = "video";
+      else nextType = "all";
+    }
+    let temporalWindows = null;
+    const rawWindows =
+      exploreHint.temporal_windows || plan.temporal_windows || [];
+    if (Array.isArray(rawWindows) && rawWindows.length) {
+      temporalWindows = rawWindows
+        .map((w) => {
+          if (!Array.isArray(w) || w.length < 2) return null;
+          const a = parseISO(String(w[0]).slice(0, 10));
+          const b = parseISO(String(w[1]).slice(0, 10));
+          if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+          return [Math.min(a, b), Math.max(a, b)];
+        })
+        .filter(Boolean);
+      if (!temporalWindows.length) temporalWindows = null;
     }
     const ext = extentOf(
       rawItems.filter(
         (it) =>
           isDated(it) &&
-          matchesType(it, typeFilter) &&
+          matchesType(it, nextType) &&
           matchesPlace(it, placeFilter)
       )
     );
     const emptyTl = Boolean(ext.empty);
+    let rangeStart = emptyTl ? NaN : ext.start;
+    let rangeEnd = emptyTl ? NaN : ext.end;
+    // Band timeline to plan union (or single year/season/holiday span).
+    const t0 = exploreHint.time_start || plan.time_start;
+    const t1 = exploreHint.time_end || plan.time_end;
+    if (!emptyTl && t0 && t1) {
+      const a = parseISO(String(t0).slice(0, 10));
+      const b = parseISO(String(t1).slice(0, 10));
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        rangeStart = Math.max(ext.start, Math.min(a, b));
+        rangeEnd = Math.min(ext.end, Math.max(a, b));
+        if (rangeEnd < rangeStart) {
+          rangeStart = ext.start;
+          rangeEnd = ext.end;
+        }
+      }
+    }
     state = {
       domain: {
         askText: payload.ask_text || "",
@@ -466,19 +515,20 @@
         summary: payload.summary || "",
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
         chips: chips,
-        typeFilter: typeFilter,
+        typeFilter: nextType,
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
+        temporalWindows: temporalWindows,
         items: [],
       },
       timeline: {
         extentStart: emptyTl ? NaN : ext.start,
         extentEnd: emptyTl ? NaN : ext.end,
-        rangeStart: emptyTl ? NaN : ext.start,
-        rangeEnd: emptyTl ? NaN : ext.end,
-        playhead: emptyTl ? NaN : ext.start,
-        precision: emptyTl ? "years" : computePrecision(ext.start, ext.end),
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        playhead: emptyTl ? NaN : rangeStart,
+        precision: emptyTl ? "years" : computePrecision(rangeStart, rangeEnd),
         empty: emptyTl,
       },
       gallery: {
@@ -563,13 +613,54 @@
       return;
     }
 
+    if (/^clear date\.?$|^clear time\.?$|^clear timeline\.?$/.test(lower)) {
+      state.domain.temporalWindows = null;
+      resetTimelineExtent(true);
+      render();
+      return;
+    }
+
+    if (/^reset\.?$/.test(lower)) {
+      setTypeFilter("all");
+      clearPlaceFilter();
+      setUndatedFilter(false);
+      state.domain.temporalWindows = null;
+      resetTimelineExtent(false);
+      setViewMode("gallery");
+      render();
+      return;
+    }
+
+    const removePlace = lower.match(
+      /^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
+    );
+    if (removePlace) {
+      const drop = removePlace[1].replace(/\.$/, "").trim().toLowerCase();
+      const cur = (state.domain.placeFilter || "").toLowerCase();
+      if (cur && (cur === drop || cur.includes(drop) || drop.includes(cur))) {
+        clearPlaceFilter();
+        render();
+        return;
+      }
+    }
+
+    // Single year refinement on current result set: "Only 2024." / "2024 only."
+    const onlyYear = lower.match(/^(?:only\s+)?((?:19|20)\d{2})(?:\s+only)?\.?$/);
+    if (onlyYear) {
+      const y = +onlyYear[1];
+      setActiveRange(dayMs(y, 1, 1), dayMs(y, 12, 31));
+      render();
+      return;
+    }
+
     // Location filter on current result set (Ask/STT same path)
     const placeOnly = lower.match(
-      /^(?:only|near|around|at)\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
+      /^(?:only|near|around|at|show)\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
     );
     if (placeOnly) {
       const candidate = placeOnly[1].replace(/\.$/, "").trim();
-      const blocked = /^(photos?|videos?|emails?|texts?|artifacts?|stories?|everything|map|gallery)$/i;
+      const blocked =
+        /^(photos?|videos?|emails?|texts?|artifacts?|stories?|everything|map|gallery|undated)$/i;
       if (candidate && !blocked.test(candidate)) {
         setPlaceFilter(candidate.replace(/\b\w/g, (c) => c.toUpperCase()));
         render();
@@ -661,6 +752,8 @@
     state.timeline.precision = computePrecision(a, b);
     state.timeline.playhead = a;
     state.domain.mapRefineIds = null;
+    // Manual band replaces Ask multi-window holiday filter with contiguous range.
+    state.domain.temporalWindows = null;
   }
 
   function resetTimelineExtent(andRender) {

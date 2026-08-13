@@ -432,6 +432,44 @@ def search_photos(
         "detail": "",
         "identity_mode": "none",
     }
+
+    def _filter_photo_hits(hits: list[PhotoHit]) -> list[PhotoHit]:
+        """Apply shared plan time windows + place tokens to photo hits."""
+        from memorybox.planner.temporal import date_in_windows
+
+        windows = tuple(getattr(plan, "temporal_windows", ()) or ())
+        if not windows and plan.time_start and plan.time_end:
+            windows = ((plan.time_start, plan.time_end),)
+        places = [str(p).lower() for p in (plan.place_names or ()) if p]
+        if not windows and not places:
+            return hits
+        out: list[PhotoHit] = []
+        for h in hits:
+            if windows and not date_in_windows(h.taken_at, windows):
+                continue
+            if places:
+                blob = " ".join(
+                    str(x)
+                    for x in (
+                        h.location,
+                        getattr(h, "place", None),
+                        h.city,
+                        h.state,
+                        h.country,
+                    )
+                    if x
+                ).lower()
+                if not any(p in blob for p in places):
+                    continue
+            out.append(h)
+        if windows:
+            status["temporal_windows"] = [list(w) for w in windows]
+            status["temporal_label"] = getattr(plan, "temporal_label", None)
+            status["before_temporal_filter"] = len(hits)
+        if places:
+            status["place_filter"] = list(plan.place_names)
+        return out
+
     if not plan.want_still and not plan.want_photo:
         status["ok"] = True
         status["detail"] = "not_requested"

@@ -19,6 +19,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from memorybox.context import AskContext
+from memorybox.planner.temporal import (
+    TemporalParse,
+    holiday_window,
+    parse_temporal,
+    season_window,
+    HOLIDAY_LABELS,
+)
 
 VisualScope = Literal["none", "broad", "still_only", "video_only"]
 
@@ -150,6 +157,56 @@ SHOW_PERSON_RE = re.compile(
     r"everything\b|map\b|gallery\b|undated\b)"
     rf"{_PERSON_NAME}\b"
 )
+# "Tom Will 2025" / "Tom Will in Alaska" / "Tom Will summer 2025" / "Tom Will Easter 2022"
+# Also "Tom Will 4th of July 2024" (lookahead must see 4th/fourth, not only "july").
+PERSON_BARE_LEADING_RE = re.compile(
+    rf"(?i)^\s*{_PERSON_NAME}\s+"
+    rf"(?=(?:(?:19|20)\d{{2}})|in\s+|at\s+|near\s+|around\s+|"
+    rf"summer\b|fall\b|autumn\b|winter\b|spring\b|"
+    rf"christmas\b|easter\b|thanksgiving\b|halloween\b|"
+    rf"memorial\b|labor\b|independence\b|july\b|"
+    rf"4th\b|fourth\b|nye\b|nyd\b|"
+    rf"juneteenth\b|mlk\b|presidents?\b|columbus\b|veterans?\b|"
+    rf"valentine\b|mother'?s?\b|father'?s?\b|"
+    rf"birthday\b|bday\b|anniversary\b|"
+    rf"new\s+year)"
+)
+# Bare leading person must not swallow seasons / holidays as names ("summer 2024").
+_PERSON_BARE_BLOCKED = frozenset(
+    {
+        "spring",
+        "summer",
+        "fall",
+        "autumn",
+        "winter",
+        "christmas",
+        "easter",
+        "thanksgiving",
+        "halloween",
+        "memorial",
+        "labor",
+        "independence",
+        "july",
+        "nye",
+        "nyd",
+        "xmas",
+        "juneteenth",
+        "mlk",
+        "presidents",
+        "president",
+        "columbus",
+        "veterans",
+        "veteran",
+        "valentine",
+        "valentines",
+        "mother",
+        "mothers",
+        "father",
+        "fathers",
+        "birthday",
+        "anniversary",
+    }
+)
 
 # Places: geographic/locative — never "from <Person>" for email.
 PLACE_IN_AT_RE = re.compile(
@@ -167,10 +224,30 @@ TRIP_TO_RE = re.compile(
 
 KNOWN_EVENT_WORDS = (
     "Christmas",
+    "Christmas Eve",
     "Thanksgiving",
     "Hanukkah",
     "Easter",
+    "Memorial Day",
+    "Labor Day",
+    "Independence Day",
+    "July 4",
+    "Juneteenth",
+    "MLK Day",
+    "Presidents' Day",
+    "Presidents Day",
+    "Columbus Day",
+    "Veterans Day",
+    "New Year's Day",
+    "New Year's Eve",
+    "Halloween",
+    "Valentine's Day",
+    "Mother's Day",
+    "Father's Day",
+    "NYE",
+    "NYD",
     "Birthday",
+    "Anniversary",
     "Wedding",
     "Graduation",
 )
@@ -263,6 +340,12 @@ class QueryPlan:
     trip_labels: tuple[str, ...] = ()
     time_start: str | None = None
     time_end: str | None = None
+    # Inclusive ISO date pairs for non-contiguous periods (recurring holidays).
+    temporal_windows: tuple[tuple[str, str], ...] = ()
+    temporal_label: str | None = None
+    # birthday | anniversary — windows filled from MB People when facts exist
+    life_event_kind: str | None = None
+    life_event_years: tuple[int, ...] = ()
     inherit_from_context: bool = False
     notes: tuple[str, ...] = ()
     temporal_after: bool = False
@@ -364,6 +447,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         PERSON_POSSESSIVE_RE,
         SHOW_ME_PERSON_RE,
         SHOW_PERSON_RE,
+        PERSON_BARE_LEADING_RE,
         PERSON_EMAIL_FROM_RE,
         PERSON_SAID_RE,
     ]
@@ -385,6 +469,9 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
                     role = lowered[len(prefix) :].strip()
                     break
             if role in kinship_stop or lowered in kinship_stop:
+                continue
+            # Do not treat season/holiday tokens as Person via bare-leading pattern.
+            if lowered in _PERSON_BARE_BLOCKED or role in _PERSON_BARE_BLOCKED:
                 continue
             if ent not in found:
                 found.append(ent)
@@ -506,6 +593,15 @@ def _enforce_typed_slots(
     return people, places2, trips2, events2, notes
 
 
+
+def _final_windows(temporal, t0, t1):
+    """Prefer explicit multi-windows; else single contiguous range from t0/t1."""
+    if temporal.windows and temporal.time_start == t0 and temporal.time_end == t1:
+        return tuple(temporal.windows)
+    if t0 and t1:
+        return ((t0, t1),)
+    return ()
+
 def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     q = (ask or "").strip()
     notes: list[str] = []
@@ -518,7 +614,21 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     u_people = _extract_people(q, want_email=want_email)
     u_places, u_trips = _extract_places_and_trips(q, want_email=want_email)
     u_events = _extract_events(q)
-    u_t0, u_t1 = _extract_years(q)
+    temporal = parse_temporal(q)
+    u_t0, u_t1 = temporal.time_start, temporal.time_end
+    if temporal.notes:
+        notes.extend(temporal.notes)
+    # Prefer holiday/season event labels from temporal when present
+    if temporal.holiday:
+        hol_label = temporal.label or temporal.holiday
+        # Keep short holiday name in events for chips; full label via temporal_label
+        short = HOLIDAY_LABELS.get(temporal.holiday, temporal.holiday)
+        if short not in u_events:
+            u_events.append(short)
+    if temporal.life_event_kind == "birthday" and "Birthday" not in u_events:
+        u_events.append("Birthday")
+    if temporal.life_event_kind == "anniversary" and "Anniversary" not in u_events:
+        u_events.append("Anniversary")
 
     about_trip = bool(PLACE_TRIP_RE.search(q) or TRIP_TO_RE.search(q) or re.search(r"(?i)\btrip\b", q))
     exploratory = bool(EXPLORATORY_RE.search(q))
@@ -535,6 +645,24 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         people=u_people,
     )
     notes.extend(vnotes)
+    # Person + time/place/holiday compose → shared visual explore (Gallery path).
+    if (
+        visual_scope == "none"
+        and not narrowed_comms
+        and u_people
+        and (
+            u_t0
+            or u_t1
+            or u_places
+            or u_trips
+            or temporal.holiday
+            or temporal.season
+            or temporal.windows
+            or temporal.life_event_kind
+        )
+    ):
+        visual_scope = "broad"
+        notes.append("visual_scope=broad_person_compose")
 
     # Bare "tell me about <Subject>" / "know about <Subject>" (not "... trip")
     if exploratory and not u_people and not u_places and not u_trips and not u_events:
@@ -680,6 +808,16 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             subject_changed = True
             notes.append("supersede_clear_prior_events_for_new_trip")
 
+    # Explicit clear / remove / reset refinements (mutate shared state; do not re-inherit cleared slots).
+    clear_date = bool(re.search(r"(?i)^\s*clear\s+(?:date|time|dates|timeline)\b", q))
+    clear_place = bool(
+        re.search(r"(?i)^\s*clear\s+(?:location|place|places|map(?:\s+selection)?)\b", q)
+    )
+    reset_all = bool(re.search(r"(?i)^\s*reset\.?\s*$", q))
+    remove_place_m = re.match(
+        r"(?i)^\s*remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40}?)\.?\s*$", q
+    )
+
     # --- Merge slots (Rules A, B, D) ---
     # A: utterance present → use utterance; B: else inherit if followup/missing
     inherit = False
@@ -697,9 +835,50 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         and not about_trip
         and not ctx.is_empty()
         and not (u_people or u_places or u_trips or u_events)
+        and not clear_date
+        and not clear_place
+        and not reset_all
+        and not remove_place_m
     )
 
-    if subject_changed:
+    if reset_all:
+        people = []
+        places = []
+        trips = []
+        events = []
+        t0, t1 = None, None
+        temporal = TemporalParse()
+        notes.append("reset_cleared_shared_state")
+    elif clear_date or clear_place or remove_place_m:
+        inherit = True
+        notes.append("clear_refinement")
+        if not people:
+            people = list(ctx.person_names)
+        if clear_place:
+            places = []
+            trips = []
+            notes.append("cleared_place")
+        elif remove_place_m:
+            drop = remove_place_m.group(1).replace(".", "").strip().lower()
+            places = [p for p in ctx.place_names if p.lower() != drop and drop not in p.lower()]
+            trips = [t for t in ctx_trips if t.lower() != drop and drop not in t.lower()]
+            notes.append(f"removed_place={drop}")
+        elif not places:
+            places = list(ctx.place_names)
+        if not trips and not clear_place and not remove_place_m:
+            trips = list(ctx_trips)
+        if not events:
+            events = list(ctx_events)
+        if clear_date:
+            t0, t1 = None, None
+            temporal = TemporalParse()
+            notes.append("cleared_date")
+        else:
+            if t0 is None:
+                t0 = ctx.time_start
+            if t1 is None:
+                t1 = ctx.time_end
+    elif subject_changed:
         # D: do not inherit incompatible place/event/trip from prior subject
         if not people and ctx.person_names and not self_show:
             people = list(ctx.person_names)
@@ -819,6 +998,85 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         people, places, trips, events
     )
     notes.extend(type_notes)
+
+    # Fill season/holiday/life-event that need a year from session time when available.
+    if (
+        "temporal=season_needs_year" in temporal.notes
+        or "temporal=holiday_needs_year" in temporal.notes
+        or "life_event_needs_year" in temporal.notes
+    ):
+        year_src = None
+        for cand in (t0, t1, ctx.time_start, ctx.time_end):
+            if cand and len(str(cand)) >= 4 and str(cand)[:4].isdigit():
+                year_src = int(str(cand)[:4])
+                break
+        if year_src is None:
+            requires_clarification = True
+            if "temporal=season_needs_year" in temporal.notes:
+                ambiguity_message = (
+                    "Which year do you mean for that season?"
+                )
+            elif temporal.life_event_kind:
+                kind = temporal.life_event_kind
+                ambiguity_message = f"Which year do you mean for that {kind}?"
+            else:
+                hol = HOLIDAY_LABELS.get(temporal.holiday or "", temporal.holiday or "that holiday")
+                ambiguity_message = f"Which year do you mean for {hol}?"
+            notes.append("clarify_temporal_needs_year")
+        else:
+            if "temporal=season_needs_year" in temporal.notes:
+                m = re.search(r"(?i)\b(spring|summer|fall|autumn|winter)\b", q)
+                if m:
+                    season = m.group(1).lower()
+                    if season == "autumn":
+                        season = "fall"
+                    start, end = season_window(season, year_src)
+                    temporal = TemporalParse(
+                        time_start=start,
+                        time_end=end,
+                        windows=((start, end),),
+                        label=f"{season.title()} {year_src}",
+                        season=season,
+                        notes=(
+                            "temporal=season",
+                            "season_def=meteorological_nh",
+                            "season_year_from_context",
+                        ),
+                    )
+                    t0, t1 = start, end
+                    notes.append("season_year_from_context")
+            elif temporal.holiday:
+                w = holiday_window(temporal.holiday, year_src)
+                label_base = HOLIDAY_LABELS.get(temporal.holiday, temporal.holiday)
+                hnotes = ["temporal=holiday", "holiday_year_from_context"]
+                if temporal.holiday == "christmas":
+                    hnotes.insert(0, "christmas_window=minus_14d_through_nyd")
+                else:
+                    hnotes.insert(0, "holiday_pad_days=2")
+                temporal = TemporalParse(
+                    time_start=w[0],
+                    time_end=w[1],
+                    windows=(w,),
+                    label=f"{label_base} {year_src}",
+                    holiday=temporal.holiday,
+                    notes=tuple(hnotes),
+                )
+                t0, t1 = w[0], w[1]
+                notes.append("holiday_year_from_context")
+            elif temporal.life_event_kind:
+                base = "Birthday" if temporal.life_event_kind == "birthday" else "Anniversary"
+                temporal = TemporalParse(
+                    label=f"{base} {year_src}",
+                    life_event_kind=temporal.life_event_kind,
+                    life_event_years=(year_src,),
+                    notes=tuple(
+                        n
+                        for n in temporal.notes
+                        if n != "life_event_needs_year"
+                    )
+                    + ("life_event_year_from_context",),
+                )
+                notes.append("life_event_year_from_context")
 
     # Modality inheritance for pure follow-ups without modality cue
     visual_ctx = any(
@@ -986,6 +1244,22 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         trip_labels=tuple(trips),
         time_start=t0,
         time_end=t1,
+        temporal_windows=_final_windows(temporal, t0, t1),
+        temporal_label=(
+            temporal.label
+            if temporal.label
+            and (
+                temporal.life_event_kind
+                or (temporal.time_start == t0 and temporal.time_end == t1)
+            )
+            else (
+                f"{t0[:4]}–{t1[:4]}"
+                if t0 and t1 and t0[:4] != t1[:4]
+                else (t0[:4] if t0 else None)
+            )
+        ),
+        life_event_kind=temporal.life_event_kind,
+        life_event_years=tuple(temporal.life_event_years or ()),
         inherit_from_context=inherit,
         notes=tuple(notes),
         temporal_after=temporal_after or ref_then,

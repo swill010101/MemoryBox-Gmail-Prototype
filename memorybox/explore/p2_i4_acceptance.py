@@ -354,6 +354,270 @@ def _prove_harness() -> dict[str, Any]:
         _check("ask_to_explore_mapper", False, checks, problems, str(exc))
 
     try:
+        from memorybox.context import AskContext
+        from memorybox.planner import plan_ask
+        from memorybox.planner.temporal import (
+            holiday_window,
+            parse_temporal,
+            resolve_holiday_date,
+        )
+
+        ctx = AskContext.empty("prove-i4-compose")
+
+        def _plan(ask: str):
+            return plan_ask(ask, ctx)
+
+        c1 = _plan("Tom Will 2025")
+        _check(
+            "i4_compose_case1_year",
+            c1.person_names == ("Tom Will",)
+            and c1.time_start == "2025-01-01"
+            and c1.time_end == "2025-12-31"
+            and c1.visual_scope == "broad"
+            and c1.temporal_label == "2025",
+            checks,
+            problems,
+            f"people={c1.person_names} time={c1.time_start}..{c1.time_end} vs={c1.visual_scope}",
+        )
+
+        c2 = _plan("Tom Will 2023 to 2025")
+        _check(
+            "i4_compose_case2_year_range",
+            c2.person_names == ("Tom Will",)
+            and c2.time_start == "2023-01-01"
+            and c2.time_end == "2025-12-31"
+            and len(c2.temporal_windows) == 1,
+            checks,
+            problems,
+            f"time={c2.time_start}..{c2.time_end} label={c2.temporal_label}",
+        )
+
+        c3 = _plan("Tom Will summer 2025")
+        _check(
+            "i4_compose_case3_summer",
+            c3.time_start == "2025-06-01"
+            and c3.time_end == "2025-08-31"
+            and c3.temporal_label == "Summer 2025",
+            checks,
+            problems,
+            f"time={c3.time_start}..{c3.time_end} label={c3.temporal_label}",
+        )
+
+        c4 = _plan("Tom Will in Alaska")
+        _check(
+            "i4_compose_case4_alaska",
+            c4.person_names == ("Tom Will",)
+            and c4.place_names == ("Alaska",)
+            and c4.visual_scope == "broad",
+            checks,
+            problems,
+            f"people={c4.person_names} places={c4.place_names}",
+        )
+
+        c5 = _plan("Tom Will in Paris")
+        _check(
+            "i4_compose_case5_paris",
+            c5.person_names == ("Tom Will",) and c5.place_names == ("Paris",),
+            checks,
+            problems,
+            f"places={c5.place_names}",
+        )
+
+        easter_2022 = resolve_holiday_date("easter", 2022)
+        c6 = _plan("Tom Will Easter 2022")
+        w6 = holiday_window("easter", 2022)
+        _check(
+            "i4_compose_case6_easter_2022",
+            easter_2022.isoformat() == "2022-04-17"
+            and c6.temporal_windows == (w6,)
+            and c6.time_start == w6[0]
+            and c6.time_end == w6[1]
+            and "Easter" in c6.event_labels,
+            checks,
+            problems,
+            f"easter={easter_2022} windows={c6.temporal_windows} label={c6.temporal_label}",
+        )
+
+        c7 = _plan("Tom Will Easter 2018 through 2022")
+        _check(
+            "i4_compose_case7_easter_recurring",
+            len(c7.temporal_windows) == 5
+            and c7.temporal_windows[0] == holiday_window("easter", 2018)
+            and c7.temporal_windows[-1] == holiday_window("easter", 2022)
+            # Must NOT be one contiguous spring band
+            and c7.temporal_windows[0][1] < c7.temporal_windows[1][0],
+            checks,
+            problems,
+            f"n={len(c7.temporal_windows)} first={c7.temporal_windows[0]} last={c7.temporal_windows[-1]}",
+        )
+
+        c8 = _plan("Tom Will Memorial Day 2024")
+        _check(
+            "i4_compose_case8_memorial_day",
+            resolve_holiday_date("memorial_day", 2024).isoformat() == "2024-05-27"
+            and c8.temporal_windows == (holiday_window("memorial_day", 2024),),
+            checks,
+            problems,
+            f"windows={c8.temporal_windows}",
+        )
+
+        c9 = _plan("Tom Will Labor Day 2024")
+        _check(
+            "i4_compose_case9_labor_day",
+            resolve_holiday_date("labor_day", 2024).isoformat() == "2024-09-02"
+            and c9.temporal_windows == (holiday_window("labor_day", 2024),),
+            checks,
+            problems,
+            f"windows={c9.temporal_windows}",
+        )
+
+        c10 = _plan("Tom Will NYE 2023")
+        _check(
+            "i4_compose_case10_nye",
+            c10.temporal_windows == (holiday_window("nye", 2023),)
+            and c10.temporal_windows[0][0] == "2023-12-29",
+            checks,
+            problems,
+            f"windows={c10.temporal_windows}",
+        )
+
+        c11 = _plan("Tom Will NYD 2024")
+        _check(
+            "i4_compose_case11_nyd",
+            c11.temporal_windows == (holiday_window("nyd", 2024),),
+            checks,
+            problems,
+            f"windows={c11.temporal_windows}",
+        )
+
+        c12 = _plan("Tom Will in Alaska 2026")
+        _check(
+            "i4_compose_case12_alaska_2026",
+            c12.person_names == ("Tom Will",)
+            and c12.place_names == ("Alaska",)
+            and c12.time_start == "2026-01-01"
+            and c12.time_end == "2026-12-31"
+            and c12.visual_scope == "broad",
+            checks,
+            problems,
+            f"people={c12.person_names} places={c12.place_names} time={c12.time_start}",
+        )
+
+        xmas = parse_temporal("Christmas 2022")
+        _check(
+            "i4_compose_christmas_window",
+            xmas.windows == (("2022-12-11", "2023-01-01"),),
+            checks,
+            problems,
+            f"christmas={xmas.windows}",
+        )
+
+        # US national / federal holidays (±2d; computed variable dates)
+        national = {
+            "MLK Day 2024": ("mlk_day", "2024-01-15"),
+            "Presidents Day 2024": ("presidents_day", "2024-02-19"),
+            "Juneteenth 2024": ("juneteenth", "2024-06-19"),
+            "Veterans Day 2024": ("veterans_day", "2024-11-11"),
+            "Columbus Day 2024": ("columbus_day", "2024-10-14"),
+            "Mother's Day 2024": ("mothers_day", "2024-05-12"),
+            "Father's Day 2024": ("fathers_day", "2024-06-16"),
+            "Tom Will 4th of July 2024": ("july_4", "2024-07-04"),
+        }
+        nat_ok = True
+        nat_detail = []
+        for ask, (key, center) in national.items():
+            p = _plan(ask) if ask.startswith("Tom") else parse_temporal(ask)
+            got = (
+                p.temporal_windows[0]
+                if hasattr(p, "temporal_windows") and p.temporal_windows
+                else (p.windows[0] if getattr(p, "windows", None) else None)
+            )
+            expect = holiday_window(key, 2024)
+            center_ok = resolve_holiday_date(key, 2024).isoformat() == center
+            win_ok = got == expect
+            if not (center_ok and win_ok):
+                nat_ok = False
+            nat_detail.append(f"{key}:{center_ok}:{got}")
+            if ask.startswith("Tom"):
+                if p.person_names != ("Tom Will",):
+                    nat_ok = False
+                    nat_detail.append(f"people={p.person_names}")
+        _check(
+            "i4_compose_national_holidays",
+            nat_ok,
+            checks,
+            problems,
+            "; ".join(nat_detail),
+        )
+
+        bday = _plan("Tom Will birthday 2024")
+        _check(
+            "i4_compose_birthday_intent",
+            bday.person_names == ("Tom Will",)
+            and bday.life_event_kind == "birthday"
+            and bday.life_event_years == (2024,)
+            and bday.visual_scope == "broad"
+            and "Birthday" in bday.event_labels,
+            checks,
+            problems,
+            f"kind={bday.life_event_kind} years={bday.life_event_years} "
+            f"people={bday.person_names} label={bday.temporal_label}",
+        )
+        ann = _plan("Tom Will anniversary 2018 through 2020")
+        _check(
+            "i4_compose_anniversary_intent",
+            ann.life_event_kind == "anniversary"
+            and ann.life_event_years == (2018, 2019, 2020)
+            and ann.person_names == ("Tom Will",),
+            checks,
+            problems,
+            f"kind={ann.life_event_kind} years={ann.life_event_years}",
+        )
+        from memorybox.planner.temporal import observance_window_md
+
+        ow = observance_window_md(6, 11, 2024)
+        _check(
+            "i4_compose_observance_pad",
+            ow == ("2024-06-09", "2024-06-13"),
+            checks,
+            problems,
+            f"observance={ow}",
+        )
+        # Missing MB People birth_date must not invent windows (orchestrator).
+        from memorybox.ask.orchestrator import _apply_person_life_event_windows
+
+        applied = _apply_person_life_event_windows(bday)
+        _check(
+            "i4_compose_birthday_missing_data_no_invent",
+            applied.requires_clarification is True
+            and not applied.temporal_windows
+            and (
+                "birth_date" in (applied.ambiguity_message or "").lower()
+                or "person" in (applied.ambiguity_message or "").lower()
+            ),
+            checks,
+            problems,
+            f"clarify={applied.requires_clarification} msg={applied.ambiguity_message} "
+            f"windows={applied.temporal_windows}",
+        )
+
+        js = (Path(__file__).resolve().parent / "static" / "explore.js").read_text(
+            encoding="utf-8"
+        )
+        _check(
+            "i4_compose_explore_sync_markers",
+            "temporalWindows" in js
+            and "explore_state" in js
+            and "temporal_windows" in js
+            and "clear date" in js,
+            checks,
+            problems,
+            "explore.js shared temporal/place sync markers",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("i4_compose_query_expansion", False, checks, problems, str(exc))
+
+    try:
         from memorybox.profile.ask_resolve import _PICTURES_OF_ME_RE
 
         self_asks = (
