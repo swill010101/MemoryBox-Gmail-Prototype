@@ -33,6 +33,11 @@ from memorybox.profile.owner import (
     require_owner_person_id,
     set_owner_person_id,
 )
+from memorybox.profile.bootstrap import (
+    ensure_default_owner_session,
+    get_current_person_id,
+    set_current_person_id,
+)
 from memorybox.profile.relationships import (
     assert_relationship,
     list_relationship_assertions,
@@ -57,8 +62,10 @@ __all__ = [
     "assert_relationship",
     "create_marriage_event",
     "ensure_person_named",
+    "ensure_default_owner_session",
     "find_marriage_between",
     "get_current_fact",
+    "get_current_person_id",
     "get_life_event",
     "get_owner_person_id",
     "get_person_profile",
@@ -70,6 +77,7 @@ __all__ = [
     "owner_config_status",
     "project_derived_edges",
     "require_owner_person_id",
+    "set_current_person_id",
     "set_owner_person_id",
     "resolve_one_relative",
     "resolve_relational_ask",

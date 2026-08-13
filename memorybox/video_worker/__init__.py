@@ -602,4 +602,12 @@ def serve() -> None:
 
 
 def main() -> None:
+    try:
+        from memorybox.profile.bootstrap import ensure_default_owner_session
+
+        boot = ensure_default_owner_session()
+        if not boot.get("skipped"):
+            print(f"owner bootstrap: {boot}", flush=True)
+    except Exception as exc:  # noqa: BLE001 — worker must still start
+        print(f"owner bootstrap skipped: {exc}", flush=True)
     serve()

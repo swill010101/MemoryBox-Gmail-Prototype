@@ -1230,9 +1230,14 @@ def people_appearances(person_id: str, limit: int = Query(100, ge=1, le=500)) ->
 
 @app.get("/people/owner")
 def people_owner() -> dict[str, Any]:
-    from memorybox.profile import owner_config_status
+    from memorybox.profile import get_current_person_id, owner_config_status
 
-    return {"ok": True, **owner_config_status()}
+    status = owner_config_status()
+    return {
+        "ok": True,
+        **status,
+        "current_person_id": get_current_person_id(),
+    }
 
 
 class OwnerSetBody(BaseModel):

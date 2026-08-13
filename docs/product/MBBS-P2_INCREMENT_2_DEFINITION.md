@@ -1,11 +1,11 @@
 # MBBS-P2 Increment 2 — Product Shell & Context Maturation
 
-**Status:** **FlightSim prove PASSED** (2026-08-13: `prove-p2-i2 --flightsim` → `ok: true`) · **Owner UX acceptance PENDING** (Tom flow review) · Definition **LOCKED** · **Not ACCEPTED** until Tom explicitly accepts  
+**Status:** **ACCEPTED** (2026-08-13: FlightSim prove `ok: true` · founder UX acceptance after flow review · Tom Will owner bootstrap) · Definition **LOCKED**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I2 clarifications below · prior I1 ACCEPTED baseline  
 **Depends on:** **P2-I1 ACCEPTED** (Show me Peggy / Person-in-Media)  
 **CLI prove:** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
-**Gate:** Automated FlightSim prove passed; **ACCEPTED** only after founder UX acceptance.
+**Gate:** ACCEPTED — FlightSim prove + founder acceptance.
 
 ---
 
@@ -251,19 +251,18 @@ Prove: `python -m memorybox prove-p2-i2` (harness) · `prove-p2-i2 --flightsim` 
 | P2-I1 | **ACCEPTED** (2026-08-13) |
 | Founder I2 clarifications (§1) | **LOCKED** (2026-08-13) |
 | **This I2 definition** | **LOCKED** |
-| Build authorization | **AUTHORIZED** (2026-08-13 — Tom: “approved to build”) |
-| Implementation | **COMPLETE** on `cursor/p2-iteration-roadmap-3061` |
-| FlightSim prove (`prove-p2-i2 --flightsim`) | **PASSED** (2026-08-13 · `ok: true` · I1 regression green) |
-| Founder UX acceptance (flow review) | **PENDING** — Tom reviewing screen-by-screen; do **not** mark ACCEPTED until explicit approval |
-| I2.1 Ask polish / I3 | **HOLD** — no build until I2 ACCEPTED |
+| Build authorization | **AUTHORIZED** (2026-08-13) |
+| Implementation | **COMPLETE** (+ Tom Will owner/current-person bootstrap on serve/worker) |
+| FlightSim prove (`prove-p2-i2 --flightsim`) | **PASSED** (2026-08-13) |
+| Founder UX acceptance | **ACCEPTED** (2026-08-13 — Tom) |
 
-**Not ACCEPTED yet.** No I3 definition/build and no Ask polish until Tom accepts I2 after flow review.
+P2-I2 is **ACCEPTED**. Next: [MBBS-P2_INCREMENT_3_DEFINITION.md](MBBS-P2_INCREMENT_3_DEFINITION.md) (draft; no build until authorized).
 
-### Parked Ask follow-on decisions (2026-08-13 — hold until after I2 ACCEPTED)
+### Parked Ask follow-on (post-I2; not I3)
 
-| Q | Decision |
-|---|----------|
-| Polish vs I3 | Hold polish; no I3 until I2 ACCEPTED |
-| Viewer identity | Do **now** when polish is authorized (durable viewer / who’s exploring) |
-| Journey chips | Use **named People with relationships already set** (not inactive capabilities; full kinship inference stays I6) |
-| Timeline gallery | **I4** — not pulled forward into Ask |
+| Decision | Status |
+|----------|--------|
+| Ask polish (gallery honesty, context continuity, journeys, single context control) | **Parked** — separate from I3 |
+| Viewer identity | Bootstrap sets owner + current person = **Tom Will** on serve/worker (testing aid); full owner vs user roles later |
+| Journey chips from named related People | Parked for Ask polish |
+| Timeline gallery | **I4** — not pulled forward |
