@@ -123,6 +123,22 @@ HOLIDAY_LABELS: dict[str, str] = {
 DEFAULT_HOLIDAY_PAD_DAYS = 2
 CHRISTMAS_LEAD_DAYS = 14  # through NYD (Jan 1 next year)
 
+# Bare "at Christmas" / "at Thanksgiving" (no year) → one window per year.
+# Not a sticky single context year — family archives span decades.
+DEFAULT_HOLIDAY_YEAR_START = 1950
+
+
+def default_holiday_year_end() -> int:
+    return date.today().year
+
+
+def holiday_years_all(*, start: int | None = None, end: int | None = None) -> list[int]:
+    y0 = start if start is not None else DEFAULT_HOLIDAY_YEAR_START
+    y1 = end if end is not None else default_holiday_year_end()
+    if y1 < y0:
+        y0, y1 = y1, y0
+    return list(range(y0, y1 + 1))
+
 _MONTHS = {
     "january": 1,
     "february": 2,
@@ -403,22 +419,28 @@ def parse_temporal(text: str) -> TemporalParse:
 
     # Holiday (± window / Christmas special); multi-year → per-year windows
     if holiday_key:
+        all_years = False
         if not years:
-            notes.append("holiday_missing_year")
-            return TemporalParse(
-                holiday=holiday_key,
-                label=HOLIDAY_LABELS.get(holiday_key, holiday_key),
-                notes=tuple(notes + ["temporal=holiday_needs_year"]),
-            )
+            # "at Christmas" / "at Thanksgiving" with no year → every archive year
+            years = holiday_years_all()
+            all_years = True
+            notes.append("holiday_all_years")
         windows: list[tuple[str, str]] = []
         for y in years:
             windows.append(holiday_window(holiday_key, y))
         label_base = HOLIDAY_LABELS.get(holiday_key, holiday_key)
-        if len(years) == 1:
+        if all_years:
+            label = label_base
+        elif len(years) == 1:
             label = f"{label_base} {years[0]}"
         else:
             label = f"{label_base} {years[0]}–{years[-1]}"
-        note = "temporal=holiday_recurring" if len(years) > 1 else "temporal=holiday"
+        if all_years:
+            note = "temporal=holiday_all_years"
+        elif len(years) > 1:
+            note = "temporal=holiday_recurring"
+        else:
+            note = "temporal=holiday"
         if holiday_key == "christmas":
             notes.append("christmas_window=minus_14d_through_nyd")
         else:

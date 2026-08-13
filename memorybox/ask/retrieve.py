@@ -466,9 +466,15 @@ def search_photos(
             status["temporal_windows"] = [list(w) for w in windows]
             status["temporal_label"] = getattr(plan, "temporal_label", None)
             status["before_temporal_filter"] = len(hits)
+            status["after_temporal_filter"] = len(out)
         if places:
             status["place_filter"] = list(plan.place_names)
+            status["after_place_filter"] = len(out)
         return out
+
+    def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
+        filtered = _filter_photo_hits(hits)
+        return filtered[:limit], status
 
     if not plan.want_still and not plan.want_photo:
         status["ok"] = True
@@ -785,7 +791,7 @@ def search_photos(
             # library (FlightSim: Eugene 661 + ~250 recent 2026 → 912).
             # Only fall through when the mapped id returned zero (stale mapping).
             if hits:
-                return hits[:limit], status
+                return _finish(hits)
             status["detail"] = (
                 f"mapped_hits=0 mapped_names={mapped_names}; "
                 "fallback_via_name_person_ids"
@@ -881,7 +887,7 @@ def search_photos(
                 status["detail"] = f"unknown={list(plan.person_names)}"
                 status["unknown_person_names"] = list(plan.person_names)
                 status["clarify_message"] = f"Who is {who}?"
-                return hits[:limit], status
+                return _finish(hits)
             status["detail"] = (
                 f"no_immich_person_ids names={name_queries} "
                 f"unmapped_resolvable={unmapped_resolvable_names or []}"
@@ -891,7 +897,7 @@ def search_photos(
                     "Resolvable MB Person(s) exist without Immich mapping; "
                     "no Immich person id resolved for name search."
                 )
-            return hits[:limit], status
+            return _finish(hits)
 
         # Person asks must stay on personIds only — never bare Immich text search
         # (unfiltered newest-library page).
@@ -916,7 +922,7 @@ def search_photos(
                 "Resolvable MB Person(s) exist without Immich mapping; "
                 "Immich name matches are unconfirmed candidates only."
             )
-        return hits[:limit], status
+        return _finish(hits)
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)

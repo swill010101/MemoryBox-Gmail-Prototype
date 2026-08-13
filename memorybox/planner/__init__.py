@@ -1016,10 +1016,11 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     )
     notes.extend(type_notes)
 
-    # Fill season/holiday/life-event that need a year from session time when available.
+    # Season / birthday-anniversary without year: fill from session when available.
+    # Holidays without a year already expand to all archive years in parse_temporal
+    # (do NOT steal a sticky single context year like 2015).
     if (
         "temporal=season_needs_year" in temporal.notes
-        or "temporal=holiday_needs_year" in temporal.notes
         or "life_event_needs_year" in temporal.notes
     ):
         year_src = None
@@ -1033,12 +1034,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
                 ambiguity_message = (
                     "Which year do you mean for that season?"
                 )
-            elif temporal.life_event_kind:
-                kind = temporal.life_event_kind
-                ambiguity_message = f"Which year do you mean for that {kind}?"
             else:
-                hol = HOLIDAY_LABELS.get(temporal.holiday or "", temporal.holiday or "that holiday")
-                ambiguity_message = f"Which year do you mean for {hol}?"
+                kind = temporal.life_event_kind or "date"
+                ambiguity_message = f"Which year do you mean for that {kind}?"
             notes.append("clarify_temporal_needs_year")
         else:
             if "temporal=season_needs_year" in temporal.notes:
@@ -1062,28 +1060,10 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
                     )
                     t0, t1 = start, end
                     notes.append("season_year_from_context")
-            elif temporal.holiday:
-                w = holiday_window(temporal.holiday, year_src)
-                label_base = HOLIDAY_LABELS.get(temporal.holiday, temporal.holiday)
-                hnotes = ["temporal=holiday", "holiday_year_from_context"]
-                if temporal.holiday == "christmas":
-                    hnotes.insert(0, "christmas_window=minus_14d_through_nyd")
-                else:
-                    hnotes.insert(0, "holiday_pad_days=2")
-                temporal = TemporalParse(
-                    time_start=w[0],
-                    time_end=w[1],
-                    windows=(w,),
-                    label=f"{label_base} {year_src}",
-                    holiday=temporal.holiday,
-                    notes=tuple(hnotes),
-                )
-                t0, t1 = w[0], w[1]
-                notes.append("holiday_year_from_context")
             elif temporal.life_event_kind:
                 base = "Birthday" if temporal.life_event_kind == "birthday" else "Anniversary"
                 temporal = TemporalParse(
-                    label=f"{base} {year_src}",
+                    label=base,
                     life_event_kind=temporal.life_event_kind,
                     life_event_years=(year_src,),
                     notes=tuple(
