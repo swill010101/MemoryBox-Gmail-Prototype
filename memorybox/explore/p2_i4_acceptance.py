@@ -114,6 +114,8 @@ def _assert_explore_css(css: str) -> list[str]:
         problems.append("Ask row must use flex-wrap: nowrap where width permits")
     if ".mb-viewer" not in css or ".mb-quick-preview" not in css:
         problems.append("explore.css missing Shared Evidence Viewer / quick preview styles")
+    if ".mb-viewer-zoom" not in css:
+        problems.append("explore.css missing photo zoom control styles")
     if "max-height: calc(var(--mb-row-h) * 2" not in css and "max-height: calc(var(--mb-row-h) * 2 +" not in css:
         # two-row gallery target
         if "* 2 +" not in css and "* 2)" not in css:
@@ -236,9 +238,15 @@ def _prove_harness() -> dict[str, Any]:
             "No dated memories on the Timeline",
             "renderViewer",
             "renderRailPanel",
-            "showQuickPreview",
+            "QUICK_PREVIEW_DELAY_MS",
+            "scheduleQuickPreview",
+            "renderQuickPreview",
             "bindCardPreview",
             "stepViewer",
+            "mb-zoom-in",
+            "mb-viewer-inspect",
+            "mb-viewer-share",
+            "Camera / EXIF",
         ):
             if marker not in js:
                 missing.append(marker)

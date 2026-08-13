@@ -50,6 +50,9 @@ class PhotoHit:
     country: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    original_filename: str | None = None
+    # Camera EXIF for Source rail — dict keys are human labels
+    exif: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -647,6 +650,8 @@ def search_photos(
                 country=country,
                 latitude=lat,
                 longitude=lon,
+                original_filename=getattr(a, "original_filename", None),
+                exif=dict(getattr(a, "exif", ()) or ()) or None,
             )
 
         if mapped_ext:

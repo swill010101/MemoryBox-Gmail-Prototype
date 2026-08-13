@@ -1,10 +1,11 @@
 # MBBS — Planning delta: MBCAP-001 v0.2 + MBUX-001 v0.4
 
-**Status:** Planning only (docs ingest authorized 2026-08-13) · **No silent resequence of MBRM-001A**  
-**Branch:** `cursor/p2-mbcap-mbux-docs-3061`  
+**Status:** Full planning delta (founder decisions locked 2026-08-13) · PNG masters extracted · I4 runtime builds on `cursor/p2-i4-mixed-media-explore-3061`  
+**Docs branch (ingest):** `cursor/p2-mbcap-mbux-docs-3061`  
 **Masters:**  
 - [MBCAP-001 v0.2 DOCX](../source/MBCAP-001_MemoryBox_Capability_Catalog_P2_v0.2.docx) · [markdown extract](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md)  
 - [MBUX-001 v0.4 DOCX](../source/MBUX-001_MemoryBox_UX_Foundation_and_Design_Principles_v0.4.docx) · [markdown extract](MBUX-001_v0.4.md)
+- [Screen mockups DOCX + PNGs](../source/mockups/README.md)
 
 ## 1. What supersedes what
 
@@ -56,7 +57,7 @@ Founder screen mockups (2026-08-13) for Ask gallery → inspect:
 2. **Gallery mouse rollover / focus preview** (quiet at-a-glance; not mini-detail)
 
 Inventory + I4 mapping: [mockups/P2_SHARED_EVIDENCE_VIEWER_AND_PREVIEW.md](mockups/P2_SHARED_EVIDENCE_VIEWER_AND_PREVIEW.md).  
-PNG masters: add under `docs/source/mockups/` when exported; chat images were the review reference.
+**PNG masters extracted** from *Screen mockups from p2I4 shared gallery.docx* → [`docs/source/mockups/`](../source/mockups/README.md) (`p2-shared-evidence-viewer-right-rail.png`, `p2-gallery-rollover-preview.png`, plus Ask gallery context PNGs).
 
 ## 6. Explicit non-goals of this ingest
 
@@ -79,14 +80,19 @@ PNG masters: add under `docs/source/mockups/` when exported; chat images were th
 - Shared Evidence Viewer shell (Photo + Video; prev/next; Close restores explore snapshot)
 - Right rail tabs People / Story / Artifact / Source / Learn — **contextual panels** with empty/link-out states; Learn reuses existing teach slot / Review paths
 - Gallery mouse hover + keyboard focus **quick preview** (lightweight; not mini-detail)
+- Photo footer: **zoom works**; **Inspect → Source**; **Share** visible stub; Source shows **EXIF when Immich provides it**
+- Rollover: **2s hover**, preview **UL at pointer**, does **not** track mouse
 
 **Still out of I4**
 - Named Places / saved pins as durable domain objects
 - Living Albums (→ P2-I13 or dedicated definition)
 - Video transcript as a required acceptance surface (toggle may exist; off by default; not a gate)
+- Share delivery / permissions plumbing
+- Face-box overlay “Inspect” mode (Inspect currently = Source rail)
 
 ## 8. Next decisions for Tom
 
 1. After FlightSim pass of viewer + preview, whether to expand Learn rail beyond existing I1 correction.  
 2. Confirm Living Albums → **I13** (or new increment id).  
 3. Confirm Named Places increment home (with CAP-P2-024/025).  
+4. When Share should become real (family share vs export link).  

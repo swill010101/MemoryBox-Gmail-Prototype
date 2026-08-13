@@ -196,6 +196,7 @@ class ImmichPhotoProvider:
             for a in (raw.get("albums") or [])
             if isinstance(a, dict)
         )
+        exif_pairs = self._exif_pairs(loc_raw, raw)
         return PhotoAssetDto(
             provider_key=self.provider_key,
             external_id=ext,
@@ -206,7 +207,49 @@ class ImmichPhotoProvider:
             thumb_url=self._client.thumb_url(ext) if ext else None,
             web_url=self._client.web_url(ext) if ext else None,
             albums=albums,
+            exif=exif_pairs,
         )
+
+    @staticmethod
+    def _exif_pairs(exif: dict[str, Any], raw: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+        """Human Source-rail rows from Immich exifInfo (omit empties)."""
+        rows: list[tuple[str, str]] = []
+
+        def add(label: str, value: Any) -> None:
+            if value is None or value == "":
+                return
+            s = str(value).strip()
+            if not s or s.lower() in ("none", "null", "undefined"):
+                return
+            rows.append((label, s))
+
+        add("Camera make", exif.get("make"))
+        add("Camera model", exif.get("model"))
+        add("Lens", exif.get("lensModel") or exif.get("lens"))
+        fnum = exif.get("fNumber")
+        if fnum is not None and fnum != "":
+            try:
+                add("Aperture", f"f/{float(fnum):g}")
+            except (TypeError, ValueError):
+                add("Aperture", fnum)
+        add("Exposure", exif.get("exposureTime"))
+        fl = exif.get("focalLength")
+        if fl is not None and fl != "":
+            try:
+                add("Focal length", f"{float(fl):g} mm")
+            except (TypeError, ValueError):
+                add("Focal length", fl)
+        add("ISO", exif.get("iso") or exif.get("ISO"))
+        add(
+            "Date original",
+            exif.get("dateTimeOriginal") or exif.get("dateTime"),
+        )
+        w = exif.get("exifImageWidth") or raw.get("exifImageWidth")
+        h = exif.get("exifImageHeight") or raw.get("exifImageHeight")
+        if w and h:
+            add("Dimensions", f"{w} × {h}")
+        add("Description", exif.get("description") or exif.get("imageDescription"))
+        return tuple(rows)
 
     @staticmethod
     def _coerce_coord(value: Any, *, kind: str) -> float | None:

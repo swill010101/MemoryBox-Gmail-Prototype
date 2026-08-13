@@ -100,6 +100,8 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "city": p.get("city"),
             "state": p.get("state"),
             "country": p.get("country"),
+            "original_filename": p.get("original_filename"),
+            "exif": p.get("exif") if isinstance(p.get("exif"), dict) else None,
         }
         if lat_f is not None and lng_f is not None:
             extra["lat"] = lat_f

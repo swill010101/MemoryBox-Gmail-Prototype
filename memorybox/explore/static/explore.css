@@ -1106,6 +1106,36 @@ body {
   cursor: pointer;
 }
 
+.mb-viewer-footbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mb-viewer-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  background: #1e293b;
+}
+
+.mb-viewer-zoom .mb-viewer-footbtn {
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  min-width: 1.75rem;
+}
+
+.mb-viewer-zoom-label {
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  min-width: 2.75rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .mb-viewer-footbtn[aria-pressed="true"] {
   background: #2563eb;
   border-color: #2563eb;
@@ -1233,10 +1263,22 @@ body {
   overflow: hidden;
 }
 
+.mb-ev-photo.is-zoomed {
+  overflow: auto;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
 .mb-ev-photo img {
   max-width: 100%;
   max-height: min(62vh, 560px);
   object-fit: contain;
+  transition: transform 0.12s ease-out;
+}
+
+.mb-ev-photo.is-zoomed img {
+  max-width: none;
+  max-height: none;
 }
 
 .mb-ev-video-shell {

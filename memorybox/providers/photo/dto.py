@@ -47,6 +47,8 @@ class PhotoAssetDto:
     thumb_url: str | None = None
     web_url: str | None = None
     albums: tuple[str, ...] = ()
+    # Camera / capture EXIF for Source rail (empty when Immich omitted withExif)
+    exif: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

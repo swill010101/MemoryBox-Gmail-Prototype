@@ -493,6 +493,14 @@
         pendingCorrection: null,
         railTab: "people",
         transcriptOn: false,
+        zoom: 1,
+      },
+      preview: {
+        timer: null,
+        itemId: null,
+        x: 0,
+        y: 0,
+        visible: false,
       },
     };
     if (typeFilter && typeFilter !== "all") {
@@ -1185,6 +1193,7 @@
     state.modal.pendingCorrection = null;
     if (!state.modal.railTab) state.modal.railTab = "people";
     state.modal.transcriptOn = false;
+    state.modal.zoom = 1;
     renderViewer(item);
     document.getElementById("mb-modal").hidden = false;
     document.getElementById("mb-modal-close").focus();
@@ -1224,13 +1233,16 @@
     state.modal.openId = next;
     state.modal.pendingCorrection = null;
     state.modal.transcriptOn = false;
+    state.modal.zoom = 1;
     renderViewer(item);
   }
 
   function closeModal() {
+    hideQuickPreview();
     const snap = state.modal.snapshot;
     const pending = state.modal.pendingCorrection;
     state.modal.openId = null;
+    state.modal.zoom = 1;
     state.modal.snapshot = null;
     state.modal.pendingCorrection = null;
     state.modal.transcriptOn = false;
@@ -1295,7 +1307,9 @@
     const seen = [];
     const push = (n) => {
       const s = String(n || "").trim();
-      if (s && !seen.includes(s)) seen.push(s);
+      if (!s) return;
+      if (s.toLowerCase() === "unknown") return;
+      if (!seen.includes(s)) seen.push(s);
     };
     if (Array.isArray(item.people)) item.people.forEach(push);
     push(item.face_identity);
@@ -1380,6 +1394,27 @@
         ["Original preserved", item.original_preserved === false ? "No" : "Yes"],
         ["File / id", item.original_filename || item.external_id || item.id || "—"],
       ];
+      const exif =
+        item.exif && typeof item.exif === "object" && !Array.isArray(item.exif)
+          ? item.exif
+          : null;
+      const exifKeys = exif ? Object.keys(exif) : [];
+      let exifBlock = "";
+      if (exifKeys.length) {
+        exifBlock =
+          `<h3 style="margin-top:1rem">Camera / EXIF</h3>` +
+          exifKeys
+            .map(
+              (k) =>
+                `<div class="mb-rail-meta-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(
+                  String(exif[k])
+                )}</dd></div>`
+            )
+            .join("");
+      } else {
+        exifBlock =
+          `<p class="mb-rail-empty" style="margin-top:0.75rem">No camera EXIF on this asset. Shown when Immich/provider returns it (often missing on recent phone exports).</p>`;
+      }
       panel.innerHTML =
         `<h3>Source details</h3>` +
         rows
@@ -1389,7 +1424,8 @@
                 String(v)
               )}</dd></div>`
           )
-          .join("");
+          .join("") +
+        exifBlock;
       return;
     }
 
@@ -1405,9 +1441,14 @@
     const t = String(item.type || "").toLowerCase();
     const bits = [];
     if (t === "photo") {
-      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>− 100% +</button>`);
-      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>Inspect</button>`);
-      bits.push(`<button type="button" class="mb-viewer-footbtn" disabled>Share</button>`);
+      const zPct = Math.round((Number(state.modal.zoom) || 1) * 100);
+      bits.push(`<div class="mb-viewer-zoom" role="group" aria-label="Zoom">
+        <button type="button" class="mb-viewer-footbtn" id="mb-zoom-out" aria-label="Zoom out">−</button>
+        <span class="mb-viewer-zoom-label" id="mb-zoom-label">${zPct}%</span>
+        <button type="button" class="mb-viewer-footbtn" id="mb-zoom-in" aria-label="Zoom in">+</button>
+      </div>`);
+      bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-inspect">Inspect</button>`);
+      bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-share" title="Coming soon">Share</button>`);
       bits.push(`<a class="mb-viewer-footbtn" href="/story/ui">Add to story</a>`);
     } else if (t === "video") {
       const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
@@ -1438,6 +1479,40 @@
         if (box) box.classList.toggle("is-on", state.modal.transcriptOn);
         tr.setAttribute("aria-pressed", state.modal.transcriptOn ? "true" : "false");
         tr.textContent = `Transcript ${state.modal.transcriptOn ? "on" : "off"}`;
+      });
+    }
+    const zin = document.getElementById("mb-zoom-in");
+    const zout = document.getElementById("mb-zoom-out");
+    if (zin) {
+      zin.addEventListener("click", () => {
+        state.modal.zoom = Math.min(3, Math.round(((Number(state.modal.zoom) || 1) + 0.25) * 100) / 100);
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (cur) renderViewer(cur);
+      });
+    }
+    if (zout) {
+      zout.addEventListener("click", () => {
+        state.modal.zoom = Math.max(0.5, Math.round(((Number(state.modal.zoom) || 1) - 0.25) * 100) / 100);
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (cur) renderViewer(cur);
+      });
+    }
+    const inspectBtn = document.getElementById("mb-viewer-inspect");
+    if (inspectBtn) {
+      inspectBtn.addEventListener("click", () => {
+        // Honest now: Source + EXIF. Face-box overlay inspect is later.
+        state.modal.railTab = "source";
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        if (!cur) return;
+        syncRailTabs();
+        renderRailPanel(cur);
+        renderTeachSlot(cur);
+      });
+    }
+    const shareBtn = document.getElementById("mb-viewer-share");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", () => {
+        window.alert("Share is coming soon — button stays; wiring is a later slice.");
       });
     }
   }
@@ -1535,10 +1610,17 @@
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
     if (t === "photo") {
+      const zoom = Number(state.modal.zoom) || 1;
+      const zoomStyle =
+        zoom === 1
+          ? ""
+          : ` style="transform:scale(${zoom});transform-origin:center center"`;
       const img = media
-        ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(item.title || "Photo")}" />`
+        ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(
+            item.title || "Photo"
+          )}"${zoomStyle} />`
         : escapeHtml(item.preview || item.title || "Photo");
-      return `<div class="mb-ev-photo" aria-label="Photo workspace">${img}
+      return `<div class="mb-ev-photo${zoom > 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">${img}
         ${faceBoxHtml(item)}
       </div>`;
     }
@@ -1617,40 +1699,87 @@
     </div>`;
   }
 
-  function hideQuickPreview() {
-    const el = document.getElementById("mb-quick-preview");
-    if (el) el.hidden = true;
+  const QUICK_PREVIEW_DELAY_MS = 2000;
+
+  function clearPreviewTimer() {
+    if (state.preview && state.preview.timer) {
+      clearTimeout(state.preview.timer);
+      state.preview.timer = null;
+    }
   }
 
-  function showQuickPreview(item, anchorEl) {
+  function hideQuickPreview() {
+    clearPreviewTimer();
+    if (state.preview) {
+      state.preview.visible = false;
+      state.preview.itemId = null;
+    }
     const el = document.getElementById("mb-quick-preview");
-    if (!el || !item || !anchorEl) return;
-    el.innerHTML = quickPreviewHtml(item);
-    el.hidden = false;
-    const r = anchorEl.getBoundingClientRect();
-    const pad = 10;
-    let left = r.right + pad;
-    let top = r.top;
-    const w = 280;
+    if (el) {
+      el.hidden = true;
+      el.innerHTML = "";
+    }
+  }
+
+  function positionQuickPreviewAtPointer() {
+    const el = document.getElementById("mb-quick-preview");
+    if (!el || el.hidden || !state.preview) return;
+    const pad = 8;
+    const w = el.offsetWidth || 280;
     const h = el.offsetHeight || 200;
-    if (left + w > window.innerWidth - 8) left = r.left - w - pad;
-    if (left < 8) left = 8;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+    let left = state.preview.x;
+    let top = state.preview.y;
+    // Upper-left of preview sits at pointer; nudge into viewport only.
+    if (left + w > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - w - pad);
+    if (top + h > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - h - pad);
+    if (left < pad) left = pad;
+    if (top < pad) top = pad;
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(top)}px`;
   }
 
+  function renderQuickPreview(item) {
+    const el = document.getElementById("mb-quick-preview");
+    if (!el || !item || !state.preview) return;
+    el.innerHTML = quickPreviewHtml(item);
+    el.hidden = false;
+    state.preview.visible = true;
+    state.preview.itemId = item.id;
+    positionQuickPreviewAtPointer();
+  }
+
+  function scheduleQuickPreview(item, clientX, clientY) {
+    if (!state.preview) {
+      state.preview = { timer: null, itemId: null, x: 0, y: 0, visible: false };
+    }
+    clearPreviewTimer();
+    state.preview.x = clientX;
+    state.preview.y = clientY;
+    state.preview.timer = setTimeout(() => {
+      state.preview.timer = null;
+      if (state.modal.openId) return;
+      renderQuickPreview(item);
+    }, QUICK_PREVIEW_DELAY_MS);
+  }
+
   function bindCardPreview(card, id) {
-    card.addEventListener("mouseenter", () => {
+    card.addEventListener("mouseenter", (ev) => {
       if (state.modal.openId) return;
       const it = rawItems.find((x) => x.id === id);
-      if (it) showQuickPreview(it, card);
+      if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
+    });
+    card.addEventListener("mousemove", (ev) => {
+      if (!state.preview || state.preview.visible) return;
+      state.preview.x = ev.clientX;
+      state.preview.y = ev.clientY;
     });
     card.addEventListener("mouseleave", hideQuickPreview);
     card.addEventListener("focus", () => {
       if (state.modal.openId) return;
       const it = rawItems.find((x) => x.id === id);
-      if (it) showQuickPreview(it, card);
+      if (!it) return;
+      const r = card.getBoundingClientRect();
+      scheduleQuickPreview(it, r.left, r.top);
     });
     card.addEventListener("blur", hideQuickPreview);
   }
