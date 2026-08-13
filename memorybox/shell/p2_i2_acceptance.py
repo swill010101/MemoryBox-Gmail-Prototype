@@ -230,7 +230,9 @@ def _prove_p2_i2_flightsim() -> dict[str, Any]:
         problems.append("prove-p2-i2 --flightsim requires MEMORYBOX_P1_RUNTIME_HOST=1")
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
 
-    base = _env("MEMORYBOX_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    # Match memorybox.config defaults (MEMORYBOX_PORT=8790), not generic 8000.
+    default_port = _env("MEMORYBOX_PORT", "8790") or "8790"
+    base = _env("MEMORYBOX_BASE_URL", f"http://127.0.0.1:{default_port}").rstrip("/")
     meta["base_url"] = base
 
     asset_probs = _assert_shell_assets()

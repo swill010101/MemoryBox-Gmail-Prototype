@@ -152,7 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "FlightSim ACCEPTED gate: MEMORYBOX_P1_RUNTIME_HOST=1, live serve at "
-            "MEMORYBOX_BASE_URL (default http://127.0.0.1:8000), plus prove-p2-i1 --flightsim"
+            "MEMORYBOX_BASE_URL (default http://127.0.0.1:$MEMORYBOX_PORT or :8790), "
+            "plus prove-p2-i1 --flightsim"
         ),
     )
     p_export = sub.add_parser(
