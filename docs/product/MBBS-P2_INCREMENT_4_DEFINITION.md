@@ -170,14 +170,16 @@ Example fixture orientation:
 
 #### 2.7.1 Undated evidence (clarification — binding)
 
-Founder confirmation 2026-08-13 (supersedes prior “exclude when date-bounded / never on axis”):
+Founder confirmation 2026-08-13 (updated — off-axis filter):
 
-- Undated evidence that otherwise matches query/context/type filter **always remains in the Gallery**. It must **not** be excluded by Timeline date-banding.
+- Undated evidence that otherwise matches query/context/type filter **always remains in the Gallery** when the Undated filter is off. Date-banding must **not** drop it.
 - Undated items sort to the **oldest end** of the gallery group.
-- On the Timeline, undated items are **arbitrarily anchored at the earliest dated time in the current eligible group** (still labeled **Undated** — not a claimed capture date).
-- Timeline shows an **Undated** count (with the anchor day when dated peers exist).
+- Undated are **not** plotted on the dated Timeline axis.
+- An **Undated** control sits **to the left of the Timeline** (off-axis). Clicking it **sets the Undated filter** (gallery = undated only). Click again clears it.
+- The same **Undated** filter appears in the **filter area** when undated results exist or the filter is active.
+- Ask/STT: `Only undated.` / `Clear undated.` / `Clear filters.` share the same state.
 - If the eligible set has **no** dated peers, undated stay in the Gallery; the axis does not invent a calendar day.
-- Reset restores full temporal extent of the current filtered eligible set without clearing filters (§8.1 case B).
+- Reset restores full temporal extent without clearing type/place/undated filters (§8.1 case B).
 
 #### 2.7.2 Proportional scrub (clarification — binding)
 

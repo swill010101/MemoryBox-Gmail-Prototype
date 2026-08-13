@@ -370,6 +370,23 @@ body {
   color: #fff;
 }
 
+.mb-filter-undated {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.75rem;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mb-filter-undated.is-active,
+.mb-filter-undated[aria-pressed="true"] {
+  background: #b45309;
+  color: #fff;
+  border-color: #b45309;
+}
+
 .mb-filter-place {
   font: inherit;
   font-size: 0.82rem;
@@ -853,13 +870,22 @@ body {
 
 .mb-tl-undated {
   flex: 0 0 auto;
+  font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
   color: #92400e;
   background: #ffedd5;
-  padding: 0.25rem 0.55rem;
+  border: 1px solid #fdba74;
+  padding: 0.3rem 0.65rem;
   border-radius: 999px;
   white-space: nowrap;
+  cursor: pointer;
+}
+.mb-tl-undated.is-active,
+.mb-tl-undated[aria-pressed="true"] {
+  background: #b45309;
+  color: #fff;
+  border-color: #b45309;
 }
 .mb-tl-undated[hidden] { display: none !important; }
 
