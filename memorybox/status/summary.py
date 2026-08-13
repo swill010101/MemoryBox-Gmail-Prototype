@@ -85,39 +85,103 @@ def _scalar_ts(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> str | None:
 
 
 def _immich_photo_total(client: Any) -> tuple[int | None, str]:
-    """Best-effort Immich library photo/asset count without full pagination."""
+    """Best-effort Immich library photo/asset count without full pagination.
+
+    Prefers IMAGE-only totals when the API supports type filters; otherwise
+    falls back to asset totals that asset.read can see (timeline / metadata).
+    Never invents 0 when the probe fails — caller must use unavailable/deferred.
+    """
     if client is None or not hasattr(client, "_request"):
         return None, "no Immich HTTP client"
-    # Preferred: dedicated search statistics (accurate total)
-    for body in ({}, {"type": "IMAGE"}, {"type": "image"}):
+
+    def _as_int(v: Any) -> int | None:
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v.is_integer():
+            return int(v)
+        if isinstance(v, str) and v.isdigit():
+            return int(v)
+        return None
+
+    def _from_dict(data: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+        for k in keys:
+            n = _as_int(data.get(k))
+            if n is not None:
+                return n
+        return None
+
+    # 1) Dedicated search statistics (IMAGE-only when accepted)
+    for body in (
+        {"type": "IMAGE"},
+        {"type": "image"},
+        {"assetType": "IMAGE"},
+        {},
+    ):
         try:
             status, data = client._request("POST", "/search/statistics", body=body)  # noqa: SLF001
             if status == 200 and isinstance(data, dict):
-                for k in ("total", "photos", "count"):
-                    if isinstance(data.get(k), int):
-                        return int(data[k]), "immich:POST /search/statistics"
+                n = _from_dict(data, ("total", "photos", "count", "assets"))
+                if n is not None:
+                    return n, "immich:POST /search/statistics"
         except Exception:  # noqa: BLE001
             continue
-    # Server / asset statistics
-    for path in ("/server/statistics", "/assets/statistics"):
+
+    # 2) Server / asset statistics (often needs broader key)
+    for path in ("/server/statistics", "/assets/statistics", "/server/stats"):
         try:
             status, data = client._request("GET", path)  # noqa: SLF001
             if status == 200 and isinstance(data, dict):
-                for k in ("photos", "photo", "total", "assets"):
-                    if isinstance(data.get(k), int):
-                        return int(data[k]), f"immich:GET {path}"
+                n = _from_dict(data, ("photos", "photo", "total", "assets", "usage"))
+                if n is not None:
+                    return n, f"immich:GET {path}"
                 photos = data.get("photos")
-                if isinstance(photos, dict) and isinstance(photos.get("count"), int):
-                    return int(photos["count"]), f"immich:GET {path}"
+                if isinstance(photos, dict):
+                    n = _from_dict(photos, ("count", "total", "value"))
+                    if n is not None:
+                        return n, f"immich:GET {path}"
         except Exception:  # noqa: BLE001
             continue
-    # asset.read fallback: sum timeline bucket counts (no server.statistics needed)
-    for path in ("/timeline/buckets", "/timeline/buckets?size=MONTH"):
+
+    # 3) search/metadata — works with asset.read; prefer IMAGE filter
+    for body in (
+        {"size": 1, "type": "IMAGE"},
+        {"size": 1, "type": "image"},
+        {"size": 1},
+    ):
+        try:
+            status, data = client._request("POST", "/search/metadata", body=body)  # noqa: SLF001
+            if status != 200 or not isinstance(data, dict):
+                continue
+            assets = data.get("assets") if isinstance(data.get("assets"), dict) else data
+            if not isinstance(assets, dict):
+                continue
+            # Prefer true library total when Immich provides it (not page count)
+            n = _as_int(assets.get("total"))
+            page_count = _as_int(assets.get("count"))
+            items = assets.get("items") if isinstance(assets.get("items"), list) else []
+            # If total looks like a page size only, keep looking for better probes
+            if n is not None and page_count is not None and n == page_count and n == len(items) and n <= 1:
+                continue
+            if n is not None and n > 1:
+                return n, "immich:POST /search/metadata (assets.total)"
+        except Exception:  # noqa: BLE001
+            continue
+
+    # 4) Timeline buckets — usually available with asset.read
+    for path in (
+        "/timeline/buckets?size=MONTH",
+        "/timeline/buckets",
+        "/timeline/buckets?size=YEAR",
+    ):
         try:
             status, data = client._request("GET", path)  # noqa: SLF001
             if status != 200:
                 continue
-            rows = data if isinstance(data, list) else (data.get("buckets") if isinstance(data, dict) else None)
+            rows = data if isinstance(data, list) else (
+                data.get("buckets") if isinstance(data, dict) else None
+            )
             if not isinstance(rows, list) or not rows:
                 continue
             total = 0
@@ -125,15 +189,55 @@ def _immich_photo_total(client: Any) -> tuple[int | None, str]:
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                c = row.get("count")
-                if isinstance(c, int):
+                c = _from_dict(row, ("count", "assetCount", "assets", "total", "value"))
+                if c is not None:
                     total += c
                     ok = True
             if ok:
-                return total, "immich:GET /timeline/buckets (sum of counts; asset.read)"
+                return total, f"immich:GET {path} (sum of bucket counts; asset.read)"
         except Exception:  # noqa: BLE001
             continue
-    return None, "Immich count endpoints not available to this API key"
+
+    # 5) Permission hint for Archive Health honesty note
+    perms: dict[str, bool] = {}
+    try:
+        if hasattr(client, "check_read_permissions"):
+            perms = dict(client.check_read_permissions() or {})
+    except Exception:  # noqa: BLE001
+        perms = {}
+    hint = "Immich count endpoints not available to this API key"
+    if perms:
+        missing = [k for k, v in perms.items() if not v]
+        if missing:
+            hint += f" (missing: {', '.join(missing)}; need at least asset.read)"
+        elif not perms.get("asset.read", True):
+            hint += " (enable asset.read on the Immich API key)"
+        else:
+            hint += " (asset.read OK but statistics/timeline totals not exposed)"
+    return None, hint
+
+
+def _immich_people_count(client: Any) -> tuple[int | None, str]:
+    """Named Immich People count (provider inventory — not MB People)."""
+    if client is None:
+        return None, "no Immich HTTP client"
+    try:
+        if hasattr(client, "list_people"):
+            rows = client.list_people() or []
+            return len(rows), "immich:GET /people"
+        if hasattr(client, "_request"):
+            status, data = client._request("GET", "/people?withHidden=false")  # noqa: SLF001
+            if status != 200:
+                return None, f"immich:/people HTTP {status}"
+            if isinstance(data, dict):
+                people = data.get("people") or []
+                return len(people), "immich:GET /people"
+            if isinstance(data, list):
+                return len(data), "immich:GET /people"
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
+    return None, "Immich people list unavailable"
+
 
 
 def _sources_root() -> Any:
@@ -663,13 +767,23 @@ def build_status_summary() -> dict[str, Any]:
     video_health: dict[str, Any] = {"ok": False, "detail": "not probed"}
 
     photos_indexed = _metric(
-        "photos_indexed",
-        "Photos indexed",
+        "photos_available",
+        "Photos available",
         state="unavailable",
         source="immich:statistics",
         last_updated=calculated_at,
         reason="Not available",
         note="Immich statistics not yet obtained",
+    )
+    immich_people = _metric(
+        "immich_named_people",
+        "Immich named People (provider)",
+        state="unavailable",
+        source="immich:people",
+        last_updated=calculated_at,
+        reason="Not available",
+        note="Provider People list — not the same as MB Known People",
+        href="/people/ui",
     )
     source_videos = _metric(
         "source_videos",
@@ -754,40 +868,87 @@ def build_status_summary() -> dict[str, Any]:
         if ph.ok:
             client = getattr(photo, "_client", None)
             total_photos, photo_src = _immich_photo_total(client)
+            people_n, people_src = _immich_people_count(client)
+            perms: dict[str, bool] = {}
+            try:
+                if client is not None and hasattr(client, "check_read_permissions"):
+                    perms = dict(client.check_read_permissions() or {})
+            except Exception:  # noqa: BLE001
+                perms = {}
+            if isinstance(getattr(ph, "meta", None), dict):
+                photo_health["permissions"] = ph.meta.get("permissions") or perms
+            else:
+                photo_health["permissions"] = perms
             if total_photos is not None:
                 photos_indexed = _metric(
-                    "photos_indexed",
-                    "Photos indexed",
+                    "photos_available",
+                    "Photos available",
                     value=int(total_photos),
                     state="available",
                     source=photo_src,
                     last_updated=calculated_at,
                     href="/library/ui",
+                    note=(
+                        "Immich library total when authorized — not MemoryBox completeness. "
+                        f"Determined via {photo_src}."
+                    ),
                 )
             else:
                 photos_indexed = _metric(
-                    "photos_indexed",
-                    "Photos indexed",
+                    "photos_available",
+                    "Photos available",
                     state="deferred",
-                    source="immich:search/statistics|server/statistics",
+                    source="immich:count_probes",
                     last_updated=calculated_at,
                     reason="Not available",
                     note=(
-                        f"{photo_src}. Immich is healthy (ping OK) but this API key "
-                        "cannot read library totals — grant statistics/search.statistics "
-                        "or use a key with asset.read + statistics access"
+                        f"{photo_src}. Immich health is OK (ping) but no count endpoint "
+                        "returned a total. API key needs at least asset.read; "
+                        "optional: search.statistics / server.statistics for faster totals."
                     ),
                 )
-                deferred_notes.append("photos_indexed — Immich statistics permission")
+                deferred_notes.append("photos_available — Immich count endpoints")
+            if people_n is not None:
+                immich_people = _metric(
+                    "immich_named_people",
+                    "Immich named People (provider)",
+                    value=int(people_n),
+                    state="available",
+                    source=people_src,
+                    last_updated=calculated_at,
+                    href="/people/ui",
+                    note="Immich People named in the provider — map into MB People via Sync.",
+                )
+            else:
+                immich_people = _metric(
+                    "immich_named_people",
+                    "Immich named People (provider)",
+                    state="unavailable",
+                    source="immich:people",
+                    last_updated=calculated_at,
+                    reason="Not available",
+                    note=people_src or "Enable person.read on the Immich API key",
+                    href="/people/ui",
+                )
         else:
             photos_indexed = _metric(
-                "photos_indexed",
-                "Photos indexed",
+                "photos_available",
+                "Photos available",
                 state="unavailable",
                 source="immich:health",
                 last_updated=calculated_at,
                 reason="Provider unavailable",
                 note=ph.detail,
+            )
+            immich_people = _metric(
+                "immich_named_people",
+                "Immich named People (provider)",
+                state="unavailable",
+                source="immich:health",
+                last_updated=calculated_at,
+                reason="Provider unavailable",
+                note=ph.detail,
+                href="/people/ui",
             )
 
         video = build_video()
@@ -1398,9 +1559,53 @@ def build_status_summary() -> dict[str, Any]:
             "title": "Photos",
             "sections": [
                 {
-                    "title": "Inventory",
+                    "title": "Immich inventory",
+                    "intro": (
+                        "Explicit Immich provider totals. Healthy Immich does not mean "
+                        "these counts are complete or that MemoryBox has learned everything."
+                    ),
                     "metrics": [
                         photos_indexed,
+                        immich_people,
+                        _metric(
+                            "immich_api_key_asset_read",
+                            "Immich API key — asset.read",
+                            display=(
+                                "OK"
+                                if (photo_health.get("permissions") or {}).get("asset.read")
+                                else (
+                                    "Missing / unknown"
+                                    if photo_health.get("ok")
+                                    else "Provider unavailable"
+                                )
+                            ),
+                            state=(
+                                "available"
+                                if (photo_health.get("permissions") or {}).get("asset.read")
+                                else (
+                                    "unavailable"
+                                    if photo_health.get("ok")
+                                    else "unavailable"
+                                )
+                            ),
+                            source="immich:permission_probe",
+                            last_updated=calculated_at,
+                            reason=(
+                                None
+                                if (photo_health.get("permissions") or {}).get("asset.read")
+                                else "Enable asset.read on the Immich API key used by MemoryBox"
+                            ),
+                            note=(
+                                "Photos available uses asset.read (timeline/search). "
+                                "server.statistics is optional, not required."
+                            ),
+                            href="/settings/ui",
+                        ),
+                    ],
+                },
+                {
+                    "title": "Derived / deferred photo signals",
+                    "metrics": [
                         _metric(
                             "photo_dates",
                             "Photos with reliable dates",
@@ -1447,7 +1652,7 @@ def build_status_summary() -> dict[str, Any]:
                             note="Status metric deferred — no image-quality engine in P1",
                         ),
                     ],
-                }
+                },
             ],
         },
         "video": {

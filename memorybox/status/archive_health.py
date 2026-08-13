@@ -637,7 +637,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
                         return m
         return None
 
-    photos_m = _find_metric("photos_indexed") or _metric(
+    photos_m = _find_metric("photos_available") or _find_metric("photos_indexed") or _metric(
         "photos_available",
         "Photos available",
         state="unavailable",
@@ -648,7 +648,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
     for tab in tabs.values():
         for sec in tab.get("sections") or []:
             for m in sec.get("metrics") or []:
-                if m.get("key") == "photos_indexed":
+                if m.get("key") in ("photos_indexed", "photos_available"):
                     m["key"] = "photos_available"
                     m["label"] = "Photos available"
                 if m.get("key") == "searchable_moments":
