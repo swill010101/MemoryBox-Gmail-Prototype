@@ -434,13 +434,46 @@ def explore_ui() -> HTMLResponse:
 
 @app.get("/explore/api/demo/{demo_id}")
 def explore_demo(demo_id: str) -> dict[str, Any]:
-    """Demo/fixture payload for I4 UX prove — not product hard-code."""
+    """Demo/fixture payload for I4 UX prove — not required for the live path."""
     from memorybox.explore.payload import demo_payload
 
     payload = demo_payload(demo_id)
     if payload is None:
         raise HTTPException(status_code=404, detail=f"Unknown explore demo: {demo_id}")
     return payload
+
+
+@app.get("/explore/api/find")
+def explore_find(
+    q: str = Query("", description="Natural-language Ask / find"),
+    session_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Live Mixed-Media Find → Explore item contract (I4 real path)."""
+    from memorybox.explore.find import build_explore_find
+
+    try:
+        return build_explore_find(
+            ask_text=q,
+            session_id=session_id,
+            orchestrator=get_orchestrator(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
+
+
+@app.post("/explore/api/find")
+def explore_find_post(body: AskRequest) -> dict[str, Any]:
+    """Same as GET /explore/api/find using AskRequest body."""
+    from memorybox.explore.find import build_explore_find
+
+    try:
+        return build_explore_find(
+            ask_text=body.ask,
+            session_id=body.session_id,
+            orchestrator=get_orchestrator(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
 
 
 @app.get("/family-night/ui")

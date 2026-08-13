@@ -202,6 +202,8 @@ def _prove_harness() -> dict[str, Any]:
             "confirmIdentityCorrection",
             "syncTimelineToEligibleDatedExtent",
             "Does NOT clear query/filters",
+            "liveFind",
+            "/explore/api/find",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -214,6 +216,52 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("explore_js_state", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.explore.find import items_from_ask_result, curator_from_items
+
+        sample = {
+            "photo_hits": [
+                {
+                    "provider_key": "immich",
+                    "external_id": "x1",
+                    "taken_at": "2010-12-24T12:00:00",
+                    "people": ["Test"],
+                    "mb_person_name": "Test",
+                }
+            ],
+            "video_hits": [
+                {
+                    "provider_key": "hvrt",
+                    "external_id": "seg1",
+                    "video_external_id": "vid1",
+                    "start_sec": 12.5,
+                    "end_sec": 14.0,
+                    "mb_person_name": "Test",
+                    "play_url": "/review/ui?video=vid1&t=12.5",
+                }
+            ],
+            "evidence_hits": [],
+            "artifact_hits": [],
+            "story_hits": [],
+            "context": {"plan_slots": {"person": ["Test"]}},
+        }
+        mapped = items_from_ask_result(sample)
+        _check(
+            "ask_to_explore_mapper",
+            len(mapped) == 2
+            and mapped[0]["type"] == "photo"
+            and mapped[1]["type"] == "video"
+            and mapped[1].get("undated") is True
+            and bool(mapped[1].get("play_url")),
+            checks,
+            problems,
+            f"n={len(mapped)}",
+        )
+        _t, _s = curator_from_items("Show me Test", mapped, None)
+        _check("curator_builder", bool(_s), checks, problems, (_s or "")[:80])
+    except Exception as exc:  # noqa: BLE001
+        _check("ask_to_explore_mapper", False, checks, problems, str(exc))
 
     ok = not problems
     return {

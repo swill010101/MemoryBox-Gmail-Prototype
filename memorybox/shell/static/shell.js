@@ -15,7 +15,7 @@
   ];
   // System / internals — not family primary (Archive Health contextual / settings).
   const SYSTEM = [
-    { id: "explore", href: "/explore/ui?demo=peggy-christmas", label: "Explore" },
+    { id: "explore", href: "/explore/ui", label: "Explore" },
     { id: "library", href: "/library/ui", label: "Library" },
     { id: "status", href: "/status/ui", label: "Archive Health" },
     { id: "settings", href: "/settings/ui", label: "Settings" },

@@ -77,6 +77,8 @@
   let state = null;
   let rawItems = [];
   let peopleOptions = [];
+  let liveMode = true;
+  let sessionId = null;
   let bandDrag = null;
   let handleDrag = null;
   let scrubDrag = null;
@@ -279,6 +281,55 @@
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
 
+  async function liveFind(askText) {
+    const q = String(askText || "").trim();
+    const url =
+      "/explore/api/find?q=" +
+      encodeURIComponent(q) +
+      (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("find " + res.status);
+    return res.json();
+  }
+
+  function applyPayloadToState(payload, { keepPresentation } = {}) {
+    rawItems = Array.isArray(payload.items)
+      ? payload.items.map((x) => Object.assign({}, x))
+      : [];
+    if (payload.session_id) sessionId = payload.session_id;
+    const dens = keepPresentation && state ? state.gallery.density : 2;
+    const sort = keepPresentation && state ? state.gallery.sort : "newest";
+    const scrollTop = keepPresentation && state ? state.gallery.scrollTop : 0;
+    const typeFilter =
+      keepPresentation && state ? state.domain.typeFilter : "all";
+    const ext = extentOf(rawItems.filter(isDated));
+    state = {
+      domain: {
+        askText: payload.ask_text || "",
+        title: payload.title || "Memories",
+        summary: payload.summary || "",
+        _fixtureSummary: payload.demo ? payload.summary || "" : "",
+        chips: payload.chips || [],
+        typeFilter: typeFilter,
+        items: [],
+      },
+      timeline: {
+        extentStart: ext.start,
+        extentEnd: ext.end,
+        rangeStart: ext.start,
+        rangeEnd: ext.end,
+        playhead: ext.start,
+        precision: computePrecision(ext.start, ext.end),
+      },
+      gallery: { density: dens, scrollTop: scrollTop, sort: sort },
+      modal: { openId: null, snapshot: null, pendingCorrection: null },
+    };
+    // After membership change, type filter may need extent sync
+    if (typeFilter && typeFilter !== "all") {
+      syncTimelineToEligibleDatedExtent();
+    }
+  }
+
   function applyAskCommand(raw) {
     const text = String(raw || "").trim();
     if (!text) return;
@@ -349,7 +400,21 @@
       return;
     }
 
-    // Soft query update — keep exploring current fixture set with note
+    // New find query — live path re-runs Ask; demo path keeps fixture membership
+    if (liveMode) {
+      liveFind(text)
+        .then((payload) => {
+          applyPayloadToState(payload, { keepPresentation: true });
+          setTypeFilter("all");
+          render();
+        })
+        .catch((err) => {
+          state.domain.summary = "Find failed: " + err;
+          renderCurator();
+        });
+      return;
+    }
+
     state.domain.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
     refreshCuratorFromVisible();
     render();
@@ -461,6 +526,7 @@
   function cardMediaInner(it) {
     const t = String(it.type || "").toLowerCase();
     const prev = escapeHtml(it.preview || "");
+    const media = it.thumb_url || it.media_url || "";
     if (t === "email" || t === "sms" || t === "text") {
       const from = escapeHtml(it.from || "Message");
       return `<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
@@ -471,10 +537,18 @@
     if (t === "video") {
       const dur = it.duration_sec
         ? `${Math.floor(it.duration_sec / 60)}:${String(Math.floor(it.duration_sec % 60)).padStart(2, "0")}`
+        : it.t != null
+          ? `@ ${Number(it.t).toFixed(0)}s`
+          : "";
+      const bg = media
+        ? `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" />`
         : "";
-      return `<span class="mb-card-play" aria-hidden="true">▶</span>${
+      return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
         dur ? `<span class="mb-card-dur">${dur}</span>` : ""
       }<span class="mb-card-preview">${prev}</span>`;
+    }
+    if (t === "photo" && media) {
+      return `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
     }
     return `<span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
   }
@@ -759,10 +833,12 @@
 
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
+    const media = item.media_url || item.thumb_url || "";
     if (t === "photo") {
-      return `<div class="mb-ev-photo" aria-label="Photo workspace">${escapeHtml(
-        item.preview || item.title || "Photo"
-      )}
+      const img = media
+        ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(item.title || "Photo")}" />`
+        : escapeHtml(item.preview || item.title || "Photo");
+      return `<div class="mb-ev-photo" aria-label="Photo workspace">${img}
         <div class="mb-face-box" style="${faceBoxStyle(item)}" title="Face region"></div>
       </div>
       <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Photo evidence · Face: ${escapeHtml(
@@ -771,9 +847,17 @@
       <p>${escapeHtml(item.detail || "")}</p>`;
     }
     if (t === "video") {
+      const poster = media
+        ? `<img src="${escapeAttr(media)}" alt="" />`
+        : "Paused frame · face teach applies here only (not during playback)";
+      const jump = item.play_url
+        ? `<p><a class="mb-ev-jump" href="${escapeAttr(item.play_url)}">Open moment in Review @ ${
+            item.t != null ? Number(item.t).toFixed(1) + "s" : "?"
+          }</a></p>`
+        : "";
       return `<div class="mb-ev-video">
         <div class="mb-ev-video-frame" id="mb-ev-video-frame" style="position:relative">
-          Paused frame · face teach applies here only (not during playback)
+          ${poster}
           <div class="mb-face-box" style="${faceBoxStyle(item)}"></div>
         </div>
         <div class="mb-ev-transcript" aria-label="Time-aligned transcript (prepared)">
@@ -782,6 +866,7 @@
           ${escapeHtml(item.detail || "Video moment ready for time-aligned teaching.")}
         </div>
       </div>
+      ${jump}
       <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Video moment · Face: ${escapeHtml(
         item.face_identity || "Unknown"
       )}</p>`;
@@ -795,9 +880,10 @@
         <p>${escapeHtml(item.detail || "")}</p>
         <p style="color:var(--mb-muted);font-size:13px">Stories stay tied to people / evidence / events — not a disconnected writing surface in I4.</p>`;
     }
-    return `<div class="mb-ev-photo" data-type="${escapeAttr(t)}" style="min-height:160px">${escapeHtml(
-      TYPE_GLYPH[t] || "•"
-    )} ${escapeHtml(item.preview || t)}</div>
+    const img = media
+      ? `<img src="${escapeAttr(media)}" alt="" />`
+      : `${escapeHtml(TYPE_GLYPH[t] || "•")} ${escapeHtml(item.preview || t)}`;
+    return `<div class="mb-ev-photo" data-type="${escapeAttr(t)}" style="min-height:160px">${img}</div>
       <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(t)}</p>
       <p>${escapeHtml(item.detail || "")}</p>`;
   }
@@ -1013,31 +1099,8 @@
   }
 
   function bootFromPayload(payload) {
-    rawItems = Array.isArray(payload.items)
-      ? payload.items.map((x) => Object.assign({}, x))
-      : [];
-    const ext = extentOf(rawItems.filter(isDated));
-    state = {
-      domain: {
-        askText: payload.ask_text || "",
-        title: payload.title || "Memories",
-        summary: payload.summary || "",
-        _fixtureSummary: payload.summary || "",
-        chips: payload.chips || [],
-        typeFilter: "all",
-        items: [],
-      },
-      timeline: {
-        extentStart: ext.start,
-        extentEnd: ext.end,
-        rangeStart: ext.start,
-        rangeEnd: ext.end,
-        playhead: ext.start,
-        precision: computePrecision(ext.start, ext.end),
-      },
-      gallery: { density: 2, scrollTop: 0, sort: "newest" },
-      modal: { openId: null, snapshot: null, pendingCorrection: null },
-    };
+    liveMode = !payload.demo;
+    applyPayloadToState(payload, { keepPresentation: false });
     renderNav();
     bindChrome();
     bindTimeline();
@@ -1067,15 +1130,29 @@
 
   async function main() {
     const params = new URLSearchParams(location.search);
-    const demo = params.get("demo") || "peggy-christmas";
+    const demo = params.get("demo");
+    const q = params.get("q") || "";
+    sessionId =
+      params.get("session_id") ||
+      localStorage.getItem("mb_ask_session") ||
+      null;
     try {
-      const res = await fetch(`/explore/api/demo/${encodeURIComponent(demo)}`);
-      if (!res.ok) throw new Error(`demo ${res.status}`);
-      const payload = await res.json();
+      let payload;
+      if (demo) {
+        // Explicit demo/prove path only — not required for real experience
+        const res = await fetch(`/explore/api/demo/${encodeURIComponent(demo)}`);
+        if (!res.ok) throw new Error(`demo ${res.status}`);
+        payload = await res.json();
+      } else {
+        payload = await liveFind(q);
+        if (payload.session_id) {
+          localStorage.setItem("mb_ask_session", payload.session_id);
+        }
+      }
       bootFromPayload(payload);
     } catch (err) {
       document.getElementById("mb-explore-curator-body").textContent =
-        "Could not load exploration demo: " + err;
+        "Could not load exploration: " + err;
     }
   }
 

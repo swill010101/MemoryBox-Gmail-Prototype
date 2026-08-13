@@ -48,7 +48,7 @@
         <button type="button" class="mb-journey" data-ask="Tell me about Peggy around Christmas">Peggy around Christmas</button>
         <button type="button" class="mb-journey" data-ask="What have I forgotten?">What have I forgotten?</button>
       </div>
-      <p class="mb-recent"><a href="/explore/ui?demo=peggy-christmas">Open Mixed-Media Explore (I4 demo)</a></p>
+      <p class="mb-recent"><a href="/explore/ui">Open Mixed-Media Explore</a> · <a href="/explore/ui?demo=peggy-christmas">Demo fixture (prove)</a></p>
       <p class="mb-recent" id="recentRow"></p>
       <div class="mb-ask-bar">
         <input id="askInput" type="text" placeholder="Ask about a person, place, or time…" autocomplete="off" />
@@ -259,10 +259,17 @@
       if (!text) return;
       if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
       renderRecent();
-      // I4: Mixed-Media Find surface for Peggy Christmas demo (shared Ask→Explore path).
+      // I4: Mixed-Media Explore — live find (same Ask state). Demo only if ?demo= set.
       const lower = text.toLowerCase();
       if (/peggy/.test(lower) && /christmas/.test(lower)) {
-        window.location.href = "/explore/ui?demo=peggy-christmas";
+        // Prefer live Explore; optional demo prove uses ?demo=peggy-christmas
+        window.location.href =
+          "/explore/ui?q=" + encodeURIComponent(text);
+        return;
+      }
+      // Person-oriented asks: land on Explore with the same query
+      if (/^(show me|tell me about|who is)\b/i.test(text) || /\b(photo|photos|video|videos|memories)\b/i.test(lower)) {
+        window.location.href = "/explore/ui?q=" + encodeURIComponent(text);
         return;
       }
       const res = await fetch("/ask", {
