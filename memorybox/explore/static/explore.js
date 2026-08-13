@@ -1309,11 +1309,19 @@
       const s = String(n || "").trim();
       if (!s) return;
       if (s.toLowerCase() === "unknown") return;
+      if (s.toLowerCase() === "photo") return;
       if (!seen.includes(s)) seen.push(s);
     };
     if (Array.isArray(item.people)) item.people.forEach(push);
     push(item.face_identity);
     push(item.mb_person_name);
+    // Ask-scoped person chips — why this result set exists (e.g. Show me Peggy).
+    (state.domain.chips || []).forEach((c) => {
+      if (c && c.kind === "person") push(c.label);
+    });
+    // Title often begins with the person name before " · place".
+    const titleHead = String(item.title || "").split(" · ")[0].trim();
+    push(titleHead);
     return seen;
   }
 

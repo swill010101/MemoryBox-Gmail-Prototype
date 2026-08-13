@@ -592,6 +592,18 @@ def search_photos(
 
         hits: list[PhotoHit] = []
 
+        def _people_for_hit(a: PhotoAssetDto, person_name: str | None) -> list[str]:
+            """Immich personId search often omits per-asset people[]; keep ask person."""
+            out: list[str] = []
+            for pref in a.people or ():
+                n = (pref.display_name or "").strip()
+                if n and n.lower() != "unknown" and n not in out:
+                    out.append(n)
+            pn = (person_name or "").strip()
+            if pn and pn.lower() != "unknown" and pn not in out:
+                out.insert(0, pn)
+            return out
+
         def _asset_to_hit(
             a: PhotoAssetDto,
             *,
@@ -633,7 +645,7 @@ def search_photos(
                 provider_key=a.provider_key,
                 external_id=a.external_id,
                 taken_at=a.taken_at.isoformat() if a.taken_at else None,
-                people=[p.display_name for p in a.people if p.display_name],
+                people=_people_for_hit(a, person_name),
                 location=loc,
                 # Browser-safe MB proxy (Immich URLs are not cookie-auth'd for Ask UI)
                 thumb_url=(

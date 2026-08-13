@@ -43,10 +43,40 @@ def _item_base(
     return out
 
 
+def _ask_scoped_person_names(result: dict[str, Any]) -> list[str]:
+    """People the Ask was about — attach to photo items when Immich omits tags."""
+    names: list[str] = []
+
+    def add(raw: Any) -> None:
+        s = str(raw or "").strip()
+        if not s or s.lower() == "unknown":
+            return
+        if s not in names:
+            names.append(s)
+
+    ctx = result.get("context") or {}
+    slots = ctx.get("plan_slots") or {}
+    plan = result.get("plan") or {}
+    plan_slots = plan.get("slots") or {}
+    for key in ("person",):
+        for n in slots.get(key) or plan_slots.get(key) or []:
+            add(n)
+    for n in ctx.get("person_names") or plan.get("person_names") or []:
+        add(n)
+    status = result.get("provider_status") or {}
+    for block in status.values():
+        if not isinstance(block, dict):
+            continue
+        for n in block.get("mapped_person_names") or []:
+            add(n)
+    return names
+
+
 def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert AskResult.to_dict() (or equivalent) into Explore gallery items."""
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
+    ask_people = _ask_scoped_person_names(result)
 
     def add(it: dict[str, Any]) -> None:
         iid = str(it.get("id") or "")
@@ -60,7 +90,18 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not eid:
             continue
         taken = _date_prefix(p.get("taken_at"))
-        name = p.get("mb_person_name") or (p.get("people") or [None])[0]
+        people: list[str] = []
+        for n in list(p.get("people") or []):
+            s = str(n or "").strip()
+            if s and s.lower() != "unknown" and s not in people:
+                people.append(s)
+        mb_name = str(p.get("mb_person_name") or "").strip() or None
+        if mb_name and mb_name.lower() != "unknown" and mb_name not in people:
+            people.insert(0, mb_name)
+        for n in ask_people:
+            if n not in people:
+                people.append(n)
+        name = mb_name or (people[0] if people else None)
         title = name or "Photo"
         place = p.get("place") or None
         loc_str = p.get("location") or None
@@ -86,15 +127,15 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if lng_f is not None and (lng_f < -180 or lng_f > 180):
             lng_f = None
         extra: dict[str, Any] = {
-            "people": list(p.get("people") or []),
+            "people": people,
             "mb_person_id": p.get("mb_person_id"),
-            "mb_person_name": p.get("mb_person_name"),
+            "mb_person_name": mb_name or (people[0] if people else None),
             "provider_key": p.get("provider_key") or "immich",
             "external_id": eid,
             "media_url": thumb,
             "thumb_url": thumb,
             "teachable": True,
-            "face_identity": p.get("mb_person_name") or "Unknown",
+            "face_identity": mb_name or (people[0] if people else None) or "Unknown",
             "place": place,
             "location": loc_str,
             "city": p.get("city"),

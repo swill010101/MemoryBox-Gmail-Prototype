@@ -314,6 +314,34 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n={len(mapped)} titles={[m.get('title') for m in mapped]}",
         )
+        peggy = items_from_ask_result(
+            {
+                "photo_hits": [
+                    {
+                        "provider_key": "immich",
+                        "external_id": "peg1",
+                        "taken_at": "2012-12-25T12:00:00",
+                        "people": [],
+                        "mb_person_name": None,
+                    }
+                ],
+                "context": {"person_names": ["Peggy"], "plan_slots": {"person": ["Peggy"]}},
+                "provider_status": {
+                    "photo": {"mapped_person_names": ["Peggy George"]}
+                },
+            }
+        )
+        peggy_people = list((peggy[0].get("people") if peggy else None) or [])
+        _check(
+            "people_rail_ask_scoped_person",
+            bool(peggy)
+            and "Peggy" in peggy_people
+            and "Peggy George" in peggy_people
+            and peggy[0].get("face_identity") not in (None, "", "Unknown"),
+            checks,
+            problems,
+            f"people={peggy_people} face={peggy[0].get('face_identity') if peggy else None}",
+        )
         _t, _s = curator_from_items("Show me Test", mapped, None)
         _check("curator_builder", bool(_s), checks, problems, (_s or "")[:80])
     except Exception as exc:  # noqa: BLE001
