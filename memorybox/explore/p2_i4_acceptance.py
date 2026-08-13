@@ -352,9 +352,10 @@ def _prove_harness() -> dict[str, Any]:
 
             def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
                 assert method == "POST" and path == "/search/metadata"
+                assert (body or {}).get("withExif") is True
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
-                size = int((body or {}).get("size") or 100)
+                size = int((body or {}).get("size") or 250)
                 taken_after = (body or {}).get("takenAfter")
                 self._calls.append(
                     {
@@ -362,10 +363,10 @@ def _prove_harness() -> dict[str, Any]:
                         "order": order,
                         "size": size,
                         "takenAfter": taken_after,
+                        "withExif": (body or {}).get("withExif"),
                     }
                 )
                 # Simulate Immich bug: assets.total == page size (not library total).
-                # Explore must still paginate past this trap to reach 600 assets.
                 total_library = 600
                 start = (page - 1) * size
                 items = []
@@ -373,13 +374,23 @@ def _prove_harness() -> dict[str, Any]:
                     idx = start + i
                     if idx >= total_library:
                         break
-                    # Same id space across order/year windows (real Immich asset ids)
-                    items.append({"id": f"asset-{idx}", "originalFileName": f"{idx}.jpg"})
+                    items.append(
+                        {
+                            "id": f"asset-{idx}",
+                            "originalFileName": f"{idx}.jpg",
+                            "exifInfo": {
+                                "latitude": 38.597,
+                                "longitude": -90.509,
+                                "city": "Manchester",
+                                "state": "Missouri",
+                                "country": "United States of America",
+                            },
+                        }
+                    )
                 next_page = str(page + 1) if start + len(items) < total_library else None
                 return 200, {
                     "assets": {
                         "items": items,
-                        # Trap: total mirrors page count (historic Immich quirk)
                         "total": len(items),
                         "count": len(items),
                         "nextPage": next_page,
@@ -390,10 +401,17 @@ def _prove_harness() -> dict[str, Any]:
         got = client.search_by_person_ids(["person-1"], size=500)
         _check(
             "immich_person_full_page",
-            len(got) >= 500 and len(client._calls) >= 5,
+            len(got) >= 500 and len(client._calls) >= 2,
             checks,
             problems,
             f"n={len(got)} calls={len(client._calls)}",
+        )
+        _check(
+            "immich_with_exif_requested",
+            all(c.get("withExif") is True for c in client._calls),
+            checks,
+            problems,
+            f"calls={len(client._calls)}",
         )
         client2 = _FakeImmich()
         got_all = client2.search_by_person_ids(["person-1"], size=5000)
@@ -404,7 +422,6 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n={len(got_all)} calls={len(client2._calls)}",
         )
-        # Explicit total-trap: first page alone must not be the whole result
         client3 = _FakeImmich()
         got_trap = client3.search_by_person_ids(["person-1"], size=5000)
         _check(
@@ -416,6 +433,45 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.providers.photo.immich import ImmichPhotoProvider
+
+        prov = object.__new__(ImmichPhotoProvider)
+        prov._client = type(
+            "C",
+            (),
+            {
+                "thumb_url": staticmethod(lambda *a, **k: None),
+                "web_url": staticmethod(lambda *a, **k: None),
+            },
+        )()
+        mapped = ImmichPhotoProvider._map_asset(
+            prov,
+            {
+                "id": "gps-1",
+                "exifInfo": {
+                    "latitude": "38.597",
+                    "longitude": "-90.509",
+                    "city": "Manchester",
+                    "state": "Missouri",
+                    "country": "United States of America",
+                    "dateTimeOriginal": "2020-02-29T21:43:06",
+                },
+            },
+        )
+        _check(
+            "immich_exif_gps_mapped",
+            mapped.location is not None
+            and abs(float(mapped.location.latitude) - 38.597) < 0.001
+            and abs(float(mapped.location.longitude) - (-90.509)) < 0.001
+            and mapped.location.city == "Manchester",
+            checks,
+            problems,
+            str(mapped.location),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_exif_gps_mapped", False, checks, problems, str(exc))
 
     ok = not problems
     return {

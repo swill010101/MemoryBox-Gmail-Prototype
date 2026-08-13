@@ -127,7 +127,10 @@ class ImmichHttpClient:
         return out
 
     def search_metadata(self, body: dict[str, Any]) -> dict[str, Any]:
-        status, data = self._request("POST", "/search/metadata", body=body)
+        req = dict(body or {})
+        # Always request EXIF so city/GPS are available for Explore Map / place filter.
+        req.setdefault("withExif", True)
+        status, data = self._request("POST", "/search/metadata", body=req)
         if status == 403:
             raise ImmichAuthError(
                 "Immich API key lacks asset.read (needed for /search/metadata)."
@@ -151,19 +154,35 @@ class ImmichHttpClient:
 
         Immich metadata search is paginated. Do **not** trust ``assets.total`` to
         stop early — on many Immich builds it mirrors the page count (~100–250),
-        which falsely capped Explore at ~120 newest assets (Tom Will / Eugene).
+        which falsely capped Explore near 120 assets.
 
-        Paginate via ``page`` / ``nextPage`` until a short page, zero new ids, or
-        the hard cap. Then backfill by multi-year date windows so older EXIF years
-        still appear if page pagination stalls.
+        Always request ``withExif`` so city/GPS reach Explore Map pins.
+
+        Paginate newest-first until exhausted or the hard cap. Only if pagination
+        stalls (duplicate full page) while under the cap, run a bounded decade
+        backfill. Never throw away already-fetched assets on a later-pass error
+        (timeouts were wiping Tom Will / Eugene to empty Ask results).
         """
         if not person_ids:
             return []
         target = max(1, min(int(size), 5000))
-        page_size = 100  # widely compatible; Immich max is 1000
+        page_size = 250  # Immich default; fewer round-trips for ~3k libraries
+        max_calls = max(30, (target // page_size) + 10)
+        calls = 0
+        stalled = False
 
         def _search(body: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
-            status, data = self._request("POST", "/search/metadata", body=body)
+            nonlocal calls
+            if calls >= max_calls:
+                return [], None
+            calls += 1
+            req = dict(body)
+            # Immich omits exifInfo (city/GPS) unless withExif is true.
+            req["withExif"] = True
+            try:
+                status, data = self._request("POST", "/search/metadata", body=req)
+            except Exception:  # noqa: BLE001 — keep prior pages on network blip
+                return [], None
             if status != 200 or not isinstance(data, dict):
                 return [], None
             assets = data.get("assets") or {}
@@ -171,7 +190,11 @@ class ImmichHttpClient:
                 return [], None
             items = assets.get("items") if isinstance(assets.get("items"), list) else []
             next_page = assets.get("nextPage")
-            next_s = str(next_page).strip() if next_page not in (None, "", 0, "0") else None
+            next_s = (
+                str(next_page).strip()
+                if next_page not in (None, "", 0, "0")
+                else None
+            )
             return ([it for it in items if isinstance(it, dict)], next_s)
 
         def _ingest(batch: list[dict[str, Any]], into: dict[str, dict[str, Any]]) -> int:
@@ -189,78 +212,53 @@ class ImmichHttpClient:
 
         by_id: dict[str, dict[str, Any]] = {}
 
-        # --- Pass 1: newest-first pagination (ignore assets.total) ---
-        page: int | str = 1
+        # --- Newest-first pagination (ignore assets.total) ---
+        page: int = 1
         for _ in range((target // page_size) + 5):
-            if len(by_id) >= target:
+            if len(by_id) >= target or calls >= max_calls:
                 break
-            body: dict[str, Any] = {
-                "personIds": person_ids,
-                "size": page_size,
-                "page": int(page) if str(page).isdigit() else 1,
-                "order": "desc",
-            }
-            batch, next_page = _search(body)
+            batch, next_page = _search(
+                {
+                    "personIds": person_ids,
+                    "size": page_size,
+                    "page": page,
+                    "order": "desc",
+                }
+            )
             if not batch:
                 break
             added = _ingest(batch, by_id)
             if added == 0:
-                break  # Immich returned a duplicate page — stop
+                # Duplicate page while Immich still claims a full page → stalled
+                stalled = len(batch) >= page_size
+                break
             if len(by_id) >= target:
                 break
             if next_page and str(next_page).isdigit():
                 page = int(next_page)
             elif len(batch) < page_size:
-                break
+                break  # clean exhaustion
             else:
-                page = int(page) + 1 if str(page).isdigit() else 2
+                page += 1
 
-        # --- Pass 2: oldest-first pages (early-life EXIF) if still under cap ---
-        if len(by_id) < target:
-            page = 1
-            for _ in range(8):
-                if len(by_id) >= target:
-                    break
-                batch, next_page = _search(
-                    {
-                        "personIds": person_ids,
-                        "size": page_size,
-                        "page": int(page),
-                        "order": "asc",
-                    }
-                )
-                if not batch:
-                    break
-                added = _ingest(batch, by_id)
-                if added == 0:
-                    break
-                if next_page and str(next_page).isdigit():
-                    page = int(next_page)
-                elif len(batch) < page_size:
-                    break
-                else:
-                    page = int(page) + 1
-
-        # --- Pass 3: year/decade windows — recovers libraries when page walk stalls ---
-        if len(by_id) < target:
+        # --- Bounded decade backfill only when pagination stalled early ---
+        if stalled and len(by_id) < min(target, 500) and calls < max_calls:
             from datetime import datetime, timezone
 
             year_now = datetime.now(timezone.utc).year
-            # Walk decades oldest→newest so mid-century scans are not dropped
-            decades = list(range(1940, year_now + 1, 10))
-            for y0 in decades:
-                if len(by_id) >= target:
+            for y0 in range(1940, year_now + 1, 10):
+                if len(by_id) >= target or calls >= max_calls:
                     break
                 y1 = min(y0 + 9, year_now)
                 page = 1
-                for _ in range(40):
-                    if len(by_id) >= target:
+                for _ in range(8):
+                    if len(by_id) >= target or calls >= max_calls:
                         break
                     batch, next_page = _search(
                         {
                             "personIds": person_ids,
                             "size": page_size,
-                            "page": int(page),
+                            "page": page,
                             "order": "desc",
                             "takenAfter": f"{y0}-01-01T00:00:00.000Z",
                             "takenBefore": f"{y1}-12-31T23:59:59.999Z",
@@ -276,33 +274,7 @@ class ImmichHttpClient:
                     elif len(batch) < page_size:
                         break
                     else:
-                        page = int(page) + 1
-
-            # Undated / missing EXIF: Immich often omits taken* filters — one more
-            # unbounded oldest pass already done; also try without order quirks.
-            if len(by_id) < target:
-                page = 1
-                for _ in range((target // page_size) + 5):
-                    if len(by_id) >= target:
-                        break
-                    batch, next_page = _search(
-                        {
-                            "personIds": person_ids,
-                            "size": page_size,
-                            "page": int(page),
-                        }
-                    )
-                    if not batch:
-                        break
-                    added = _ingest(batch, by_id)
-                    if added == 0:
-                        break
-                    if next_page and str(next_page).isdigit():
-                        page = int(next_page)
-                    elif len(batch) < page_size:
-                        break
-                    else:
-                        page = int(page) + 1
+                        page += 1
 
         return list(by_id.values())[:target]
 

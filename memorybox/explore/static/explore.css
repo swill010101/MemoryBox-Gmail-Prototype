@@ -466,7 +466,8 @@ body {
   gap: 0.45rem;
   margin-bottom: 0.25rem;
 }
-.mb-explore-map-pane[hidden] {
+.mb-explore-map-pane[hidden],
+.mb-explore-gallery[hidden] {
   display: none !important;
 }
 

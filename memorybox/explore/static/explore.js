@@ -438,8 +438,8 @@
     const dens = keepPresentation && state ? state.gallery.density : 2;
     const sort = keepPresentation && state ? state.gallery.sort : "newest";
     const scrollTop = keepPresentation && state ? state.gallery.scrollTop : 0;
-    const viewMode =
-      keepPresentation && state ? state.gallery.viewMode || "gallery" : "gallery";
+    // Map is opt-in only — never carry map mode across a new find payload
+    const viewMode = "gallery";
     const typeFilter =
       keepPresentation && state ? state.domain.typeFilter : "all";
     const undatedFilter =

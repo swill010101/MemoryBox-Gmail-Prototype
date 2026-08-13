@@ -149,17 +149,26 @@ class ImmichPhotoProvider:
                     display_name=str(p.get("name") or ""),
                 )
             )
-        loc_raw = raw.get("exifInfo") or {}
+        loc_raw = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
         location = None
-        if isinstance(loc_raw, dict) and any(
-            loc_raw.get(k) for k in ("city", "state", "country", "latitude", "longitude")
-        ):
+        # Immich puts GPS + reverse-geocode city/state/country on exifInfo when
+        # search was called with withExif=true (otherwise Map pins are empty).
+        lat = self._coerce_coord(loc_raw.get("latitude"), kind="lat")
+        lon = self._coerce_coord(loc_raw.get("longitude"), kind="lng")
+        if lat is None:
+            lat = self._coerce_coord(raw.get("latitude"), kind="lat")
+        if lon is None:
+            lon = self._coerce_coord(raw.get("longitude"), kind="lng")
+        city = loc_raw.get("city") or raw.get("city")
+        state = loc_raw.get("state") or raw.get("state")
+        country = loc_raw.get("country") or raw.get("country")
+        if any(v is not None and v != "" for v in (city, state, country, lat, lon)):
             location = PhotoLocation(
-                city=loc_raw.get("city"),
-                state=loc_raw.get("state"),
-                country=loc_raw.get("country"),
-                latitude=loc_raw.get("latitude"),
-                longitude=loc_raw.get("longitude"),
+                city=str(city) if city else None,
+                state=str(state) if state else None,
+                country=str(country) if country else None,
+                latitude=lat,
+                longitude=lon,
             )
         albums = tuple(
             str(a.get("albumName") or a.get("name") or "")
@@ -177,6 +186,20 @@ class ImmichPhotoProvider:
             web_url=self._client.web_url(ext) if ext else None,
             albums=albums,
         )
+
+    @staticmethod
+    def _coerce_coord(value: Any, *, kind: str) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return None
+        if kind == "lat" and (-90.0 <= n <= 90.0):
+            return n
+        if kind == "lng" and (-180.0 <= n <= 180.0):
+            return n
+        return None
 
     @staticmethod
     def _parse_taken_at(raw: dict[str, Any]) -> datetime | None:
