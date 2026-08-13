@@ -829,6 +829,40 @@ class AskOrchestrator:
                     plan, self.video, photo=self.photo
                 )
 
+        # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
+        # many→Please specify which X you would like.
+        for st in (photo_status, video_status):
+            mode = str((st or {}).get("identity_mode") or "")
+            if mode in ("ambiguous_identity", "unknown_person"):
+                msg = str(
+                    (st or {}).get("clarify_message")
+                    or (st or {}).get("disclosure")
+                    or ""
+                ).strip()
+                if not msg:
+                    names = (st or {}).get("ambiguous_person_names") or (
+                        st or {}
+                    ).get("unknown_person_names") or plan.person_names
+                    label = (list(names)[0] if names else "this person")
+                    if mode == "unknown_person":
+                        msg = f"Who is {label}?"
+                    else:
+                        first = str(label).split()[0]
+                        msg = f"Please specify which {first} you would like."
+                plan = replace(
+                    plan,
+                    requires_clarification=True,
+                    ambiguity_message=msg,
+                )
+                photos = []
+                videos = []
+                stories = []
+                journals = []
+                artifacts = []
+                guided_capture = []
+                evidence = []
+                break
+
         # Disclose failed relational resolve when no other answer path
         if (
             getattr(plan, "profile_answer", None)

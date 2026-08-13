@@ -172,9 +172,8 @@ class ImmichPhotoProvider:
         loc_raw = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
         location = None
         # Immich puts GPS + reverse-geocode city/state/country on exifInfo when
-        # the asset payload includes EXIF (get_asset / withExif searches). Person
-        # library search stays without withExif for speed; Map may be sparse until
-        # a later enrichment pass.
+        # person search learned withExif=true (Map pins). If Immich rejected or
+        # timed out withExif, location may be sparse — gallery still honest.
         lat = self._coerce_coord(loc_raw.get("latitude"), kind="lat")
         lon = self._coerce_coord(loc_raw.get("longitude"), kind="lng")
         if lat is None:

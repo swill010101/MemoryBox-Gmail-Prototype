@@ -383,9 +383,7 @@ def _prove_harness() -> dict[str, Any]:
 
             def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
                 assert method == "POST" and path == "/search/metadata"
-                # Person library fetch stays minimal (no withExif) so FlightSim
-                # Immich does not timeout and wipe Explore photos.
-                assert "withExif" not in (body or {})
+                # Prefer withExif for Map GPS; fake Immich accepts it.
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
                 size = int((body or {}).get("size") or 100)
@@ -440,11 +438,13 @@ def _prove_harness() -> dict[str, Any]:
             f"n={len(got)} calls={len(client._calls)}",
         )
         _check(
-            "immich_person_no_with_exif",
-            all(c.get("withExif") is None for c in client._calls),
+            "immich_with_exif_for_map",
+            any(c.get("withExif") is True for c in client._calls)
+            and bool(got)
+            and isinstance((got[0].get("exifInfo") or {}).get("latitude"), (int, float)),
             checks,
             problems,
-            f"calls={len(client._calls)}",
+            f"calls={len(client._calls)} sample_exif={got[0].get('exifInfo') if got else None}",
         )
         client2 = _FakeImmich()
         got_all = client2.search_by_person_ids(["person-1"], size=5000)
@@ -623,6 +623,52 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("person_ask_no_library_pad", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person
+
+        a = PersonView(
+            id="a1",
+            display_name="Tom Will",
+            status="confirmed",
+            identity_authority="owner_confirmed",
+        )
+        b = PersonView(
+            id="a2",
+            display_name="Tom Smith",
+            status="confirmed",
+            identity_authority="owner_confirmed",
+        )
+        try:
+            _pick_unique_ask_person([a, b])
+            _check(
+                "first_name_ambiguous_clarify",
+                False,
+                checks,
+                problems,
+                "expected AmbiguousIdentityError",
+            )
+        except AmbiguousIdentityError as exc:
+            msg = str(exc)
+            _check(
+                "first_name_ambiguous_clarify",
+                "Please specify which Tom you would like" in msg
+                and "Tom Will" in msg
+                and "Tom Smith" in msg,
+                checks,
+                problems,
+                msg,
+            )
+        alone = _pick_unique_ask_person([a])
+        _check(
+            "first_name_unique_proceeds",
+            alone is not None and alone.id == "a1",
+            checks,
+            problems,
+            f"got={alone}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("first_name_ambiguous_clarify", False, checks, problems, str(exc))
 
     ok = not problems
     return {

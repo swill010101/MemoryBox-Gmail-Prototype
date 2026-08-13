@@ -150,21 +150,21 @@ class ImmichHttpClient:
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
-        Keep this path **simple and fast** — multi-variant / withExif-first
-        probes were timing out on FlightSim and wiping Ask photo results for
-        every named person (Tom / Eugene / Diane / Anne), leaving only HVRT
-        video moments or nothing.
+        Prefer ``withExif: true`` so Map gets GPS, but learn once per client:
+        if Immich rejects or times out withExif, fall back to plain personIds
+        pagination for the rest of the fetch. Never re-probe multi-variants on
+        every page (that wiped FlightSim person libraries).
 
-        Paginate with personIds + size + page (+ order when accepted). Do not
-        trust assets.total. GPS/withExif can be enriched later; photos first.
+        Do not trust ``assets.total`` as an early-stop.
         """
         if not person_ids:
             return []
         target = max(1, min(int(size), 5000))
         page_size = 100
         max_pages = max(2, (target + page_size - 1) // page_size) + 2
-        # Learned per-client: whether Immich accepts order=desc
         use_order = getattr(self, "_person_use_order", True)
+        # None = not yet probed; True/False = learned for this client
+        use_exif: bool | None = getattr(self, "_person_with_exif", None)
 
         def _extract_items(data: Any) -> tuple[list[dict[str, Any]], str | None]:
             if not isinstance(data, dict):
@@ -189,39 +189,75 @@ class ImmichHttpClient:
             )
             return ([it for it in items if isinstance(it, dict)], next_s)
 
+        def _once(payload: dict[str, Any]) -> tuple[int, Any, Exception | None]:
+            try:
+                status, data = self._request(
+                    "POST", "/search/metadata", body=payload, timeout=25
+                )
+                return status, data, None
+            except Exception as exc:  # noqa: BLE001
+                return 0, None, exc
+
         def _page(page: int) -> tuple[list[dict[str, Any]], str | None]:
-            nonlocal use_order
+            nonlocal use_order, use_exif
             base: dict[str, Any] = {
                 "personIds": list(person_ids),
                 "size": page_size,
                 "page": max(1, int(page)),
             }
-            attempts: list[dict[str, Any]] = []
-            if use_order:
-                attempts.append({**base, "order": "desc"})
-            attempts.append(dict(base))
+            # After flags are learned, one payload only (keeps Tom/Eugene fast).
+            if use_exif is not None:
+                payload = dict(base)
+                if use_exif:
+                    payload["withExif"] = True
+                if use_order:
+                    payload["order"] = "desc"
+                status, data, err = _once(payload)
+                if status == 200:
+                    return _extract_items(data)
+                if err is not None and page == 1:
+                    raise err
+                # Learned withExif started failing mid-pagination — drop EXIF once.
+                if use_exif and (err is not None or status in (400, 422)):
+                    use_exif = False
+                    self._person_with_exif = False
+                    payload.pop("withExif", None)
+                    status, data, err = _once(payload)
+                    if status == 200:
+                        return _extract_items(data)
+                return [], None
+
+            # First page(s): probe withExif once, then fall back — never wipe library.
+            probe_order: list[dict[str, Any]] = [
+                {**base, "order": "desc", "withExif": True},
+                {**base, "withExif": True},
+                {**base, "order": "desc"},
+                dict(base),
+            ]
             last_err: Exception | None = None
             last_status = 0
-            for payload in attempts:
-                try:
-                    status, data = self._request(
-                        "POST", "/search/metadata", body=payload, timeout=25
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
+            for payload in probe_order:
+                status, data, err = _once(payload)
+                if err is not None:
+                    last_err = err
+                    if payload.get("withExif"):
+                        # Timeout/reject on EXIF — keep probing without it.
+                        continue
                     continue
                 last_status = status
                 if status == 200:
+                    use_exif = bool(payload.get("withExif"))
                     use_order = "order" in payload
+                    self._person_with_exif = use_exif
                     self._person_use_order = use_order
                     return _extract_items(data)
-                if status in (400, 422) and "order" in payload:
-                    use_order = False
-                    self._person_use_order = False
+                if status in (400, 422):
                     continue
             if page == 1 and last_err is not None and last_status == 0:
-                # First-page transport failure — do not pretend the person has 0 photos.
                 raise last_err
+            # All probes failed without a transport error — no assets.
+            use_exif = False
+            self._person_with_exif = False
             return [], None
 
         by_id: dict[str, dict[str, Any]] = {}

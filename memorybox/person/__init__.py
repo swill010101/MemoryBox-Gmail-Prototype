@@ -804,9 +804,15 @@ def resolve_or_seed_trusted_provider_person(
     if not matches:
         return None
     if len(matches) > 1:
+        first = (name.split()[0] if name.split() else name) or "person"
+        labels = [
+            str(getattr(m, "display_name", "") or "").strip()
+            for m in matches
+            if str(getattr(m, "display_name", "") or "").strip()
+        ]
         raise AmbiguousIdentityError(
-            f"ambiguous trusted-provider name {name!r}: "
-            f"{len(matches)} Immich/photo identities — owner resolution required",
+            f"Please specify which {first} you would like"
+            + (f": {', '.join(labels)}." if labels else "."),
             candidates=[
                 {
                     "provider_key": getattr(m, "provider_key", None)
@@ -977,9 +983,11 @@ def _pick_unique_ask_person(candidates: list[PersonView]) -> PersonView | None:
     unique = list(by_id.values())
     if len(unique) == 1:
         return unique[0]
+    first = (unique[0].display_name or "person").strip().split()[0] or "person"
+    labels = [str(p.display_name) for p in unique if p.display_name]
     raise AmbiguousIdentityError(
-        f"ambiguous person name {unique[0].display_name!r} / first-token match: "
-        f"{len(unique)} MB People — owner resolution required",
+        f"Please specify which {first} you would like"
+        + (f": {', '.join(labels)}." if labels else "."),
         candidates=[
             {
                 "person_id": p.id,

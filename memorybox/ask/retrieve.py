@@ -450,6 +450,8 @@ def search_photos(
         mapped_names: list[str] = []
         unmapped_resolvable_names: list[str] = []
         ambiguous_names: list[str] = []
+        ambiguous_candidates: list[dict[str, Any]] = []
+        clarify_message: str | None = None
 
         # I9A: prefer MB Person ids from relational resolve (owner ? Relationship ? id)
         from memorybox.person import get_person as _get_person_by_id
@@ -500,6 +502,8 @@ def search_photos(
                 person = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
             except AmbiguousIdentityError as exc:
                 ambiguous_names.append(name)
+                ambiguous_candidates.extend(list(exc.candidates or []))
+                clarify_message = str(exc) or clarify_message
                 status["disclosure"] = str(exc)
                 continue
             if person:
@@ -538,6 +542,50 @@ def search_photos(
                         )
                 else:
                     unmapped_resolvable_names.append(name)
+
+        if ambiguous_names and not mapped_ext:
+            status["identity_mode"] = "ambiguous_identity"
+            status["ok"] = True
+            status["detail"] = f"ambiguous={ambiguous_names}"
+            status["candidates"] = ambiguous_candidates
+            status["clarify_message"] = clarify_message or (
+                f"Please specify which {ambiguous_names[0].split()[0]} you would like."
+            )
+            status["ambiguous_person_names"] = list(ambiguous_names)
+            return [], status
+
+        # Named person ask with zero MB+Immich matches → ask who (do not dump library).
+        if (
+            plan.person_names
+            and not mapped_ext
+            and not unmapped_resolvable_names
+            and not ambiguous_names
+            and not (getattr(plan, "person_ids", None) or ())
+        ):
+            from memorybox.person import (
+                _ask_named_photo_people,
+                list_people_by_exact_name,
+                list_people_by_first_token,
+            )
+
+            unknown: list[str] = []
+            for name in plan.person_names:
+                mb_hits = (
+                    list_people_by_first_token(name)
+                    if " " not in name.strip()
+                    else list_people_by_exact_name(name)
+                )
+                photo_hits = _ask_named_photo_people(photo, name)
+                if not mb_hits and not photo_hits:
+                    unknown.append(name)
+            if unknown and len(unknown) == len(list(plan.person_names)):
+                who = unknown[0]
+                status["identity_mode"] = "unknown_person"
+                status["ok"] = True
+                status["detail"] = f"unknown={unknown}"
+                status["unknown_person_names"] = list(unknown)
+                status["clarify_message"] = f"Who is {who}?"
+                return [], status
 
         hits: list[PhotoHit] = []
 
@@ -681,6 +729,11 @@ def search_photos(
             status["identity_mode"] = "ambiguous_identity"
             status["ok"] = True
             status["detail"] = f"ambiguous={ambiguous_names}"
+            status["candidates"] = ambiguous_candidates
+            status["clarify_message"] = clarify_message or (
+                f"Please specify which {ambiguous_names[0].split()[0]} you would like."
+            )
+            status["ambiguous_person_names"] = list(ambiguous_names)
             return [], status
 
         person_ext: list[str] = []
@@ -695,35 +748,43 @@ def search_photos(
                 name_queries.append(n)
         for name in name_queries:
             confirmed = find_confirmed_person_by_name(name)
+            from memorybox.person import _ask_named_photo_people
+
+            # Strict Immich name resolution only (exact / unique first-token).
             try:
-                refs = photo.list_people(query=name, limit=20)
+                refs = _ask_named_photo_people(photo, name)
             except Exception:  # noqa: BLE001
                 refs = []
-            needle = name.lower().strip()
-            needle_first = needle.split()[0] if needle.split() else needle
-            for r in refs or []:
-                dn = (r.display_name or "").strip()
-                if not dn:
-                    continue
-                dl = dn.lower()
-                first = dl.split()[0] if dl.split() else ""
-                # Strict-ish Immich name match — never prefix3 / fuzzy that merges
-                # other people (or worse, falls through to library-wide dump).
-                name_hit = bool(
-                    needle == dl
-                    or needle in dl
-                    or dl in needle
-                    or (needle_first and first == needle_first and len(needle_first) >= 3)
+            if len(refs) > 1:
+                first = name.split()[0] if name.split() else name
+                labels = [
+                    str(getattr(r, "display_name", "") or "").strip()
+                    for r in refs
+                    if str(getattr(r, "display_name", "") or "").strip()
+                ]
+                status["identity_mode"] = "ambiguous_identity"
+                status["ok"] = True
+                status["detail"] = f"ambiguous={name}"
+                status["clarify_message"] = (
+                    f"Please specify which {first} you would like"
+                    + (f": {', '.join(labels)}." if labels else ".")
                 )
-                if not name_hit:
-                    continue
+                status["ambiguous_person_names"] = [name]
+                status["candidates"] = [
+                    {
+                        "external_id": str(getattr(r, "external_id", "") or ""),
+                        "display_name": getattr(r, "display_name", name),
+                    }
+                    for r in refs
+                ]
+                return [], status
+            for r in refs or []:
                 if confirmed and is_negative(
                     provider_key=photo_pk,
                     external_id=r.external_id,
                     person_id=confirmed.id,
                 ):
                     continue
-                # Skip ids already searched via mapping that returned empty
                 if r.external_id in mapped_ext and hits:
                     continue
                 person_ext.append(r.external_id)
@@ -731,6 +792,13 @@ def search_photos(
         person_ext = list(dict.fromkeys(person_ext))
         if not person_ext:
             status["ok"] = True
+            if plan.person_names and not hits:
+                who = list(plan.person_names)[0]
+                status["identity_mode"] = "unknown_person"
+                status["detail"] = f"unknown={list(plan.person_names)}"
+                status["unknown_person_names"] = list(plan.person_names)
+                status["clarify_message"] = f"Who is {who}?"
+                return hits[:limit], status
             status["detail"] = (
                 f"no_immich_person_ids names={name_queries} "
                 f"unmapped_resolvable={unmapped_resolvable_names or []}"
