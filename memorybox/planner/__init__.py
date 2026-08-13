@@ -130,7 +130,19 @@ YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 
 # Typed person extractors (not places).
 # Name capture is case-insensitive — owners often type "dan will"; _clean_entity title-cases.
-_PERSON_NAME = r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)"
+# Second token must not be a preposition / season / holiday ("Show me Peggy in 2021").
+_PERSON_NAME_STOP2 = (
+    r"in|at|on|near|around|during|from|with|for|to|and|or|of|the|a|an|"
+    r"only|just|through|thru|"
+    r"summer|winter|spring|fall|autumn|"
+    r"christmas|xmas|easter|thanksgiving|halloween|birthday|bday|anniversary|"
+    r"january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"nye|nyd|juneteenth|memorial|labor|presidents|columbus|veterans|valentine|mlk"
+)
+_PERSON_NAME = (
+    rf"([A-Za-z][A-Za-z'’-]*"
+    rf"(?:\s+(?!{_PERSON_NAME_STOP2}\b)[A-Za-z][A-Za-z'’-]*)?)"
+)
 PERSON_WITH_RE = re.compile(
     rf"(?i)\b(?:with|featuring|including)\s+{_PERSON_NAME}\b"
 )
@@ -161,7 +173,7 @@ SHOW_PERSON_RE = re.compile(
 # Also "Tom Will 4th of July 2024" (lookahead must see 4th/fourth, not only "july").
 PERSON_BARE_LEADING_RE = re.compile(
     rf"(?i)^\s*{_PERSON_NAME}\s+"
-    rf"(?=(?:(?:19|20)\d{{2}})|in\s+|at\s+|near\s+|around\s+|"
+    rf"(?=(?:(?:19|20)\d{{2}})|in\s+|at\s+|near\s+|around\s+|during\s+|"
     rf"summer\b|fall\b|autumn\b|winter\b|spring\b|"
     rf"christmas\b|easter\b|thanksgiving\b|halloween\b|"
     rf"memorial\b|labor\b|independence\b|july\b|"
@@ -205,6 +217,11 @@ _PERSON_BARE_BLOCKED = frozenset(
         "fathers",
         "birthday",
         "anniversary",
+        "during",
+        "in",
+        "at",
+        "near",
+        "around",
     }
 )
 

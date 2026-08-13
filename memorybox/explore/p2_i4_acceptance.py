@@ -609,10 +609,38 @@ def _prove_harness() -> dict[str, Any]:
             "temporalWindows" in js
             and "explore_state" in js
             and "temporal_windows" in js
-            and "clear date" in js,
+            and "clear date" in js
+            # Regression: "Show me <Person>" must NOT be a client place filter.
+            and 'at|show)' not in js
+            and "never keep a stale pin" in js,
             checks,
             problems,
             "explore.js shared temporal/place sync markers",
+        )
+
+        peggy_in = _plan("Show me Peggy in 2021")
+        _check(
+            "i4_compose_show_me_peggy_year",
+            peggy_in.person_names == ("Peggy",)
+            and peggy_in.place_names == ()
+            and peggy_in.time_start == "2021-01-01"
+            and peggy_in.visual_scope == "broad",
+            checks,
+            problems,
+            f"people={peggy_in.person_names} places={peggy_in.place_names} "
+            f"t={peggy_in.time_start} vs={peggy_in.visual_scope}",
+        )
+        peggy_xmas = _plan("Show me Peggy during Christmas 2021")
+        _check(
+            "i4_compose_show_me_peggy_christmas",
+            peggy_xmas.person_names == ("Peggy",)
+            and peggy_xmas.place_names == ()
+            and peggy_xmas.temporal_windows == (("2021-12-11", "2022-01-01"),)
+            and "Christmas" in peggy_xmas.event_labels,
+            checks,
+            problems,
+            f"people={peggy_xmas.person_names} places={peggy_xmas.place_names} "
+            f"win={peggy_xmas.temporal_windows}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("i4_compose_query_expansion", False, checks, problems, str(exc))

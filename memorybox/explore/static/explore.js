@@ -392,6 +392,14 @@
       state.domain.summary = state.domain._fixtureSummary;
       return;
     }
+    // Prefer Ask clarification / curator answer over empty "0 memories" noise.
+    if (
+      state.domain._askSummary &&
+      (state.domain._askKind === "clarification" || vis.length === 0)
+    ) {
+      state.domain.summary = state.domain._askSummary;
+      return;
+    }
     const c = countByType(vis);
     const parts = [];
     if (c.photo) parts.push(`${c.photo} photo${c.photo === 1 ? "" : "s"}`);
@@ -453,12 +461,14 @@
     const exploreHint = payload.explore_state || {};
     const plan = payload.plan || {};
     // Shared Ask → Explore state: place + media + temporal windows from plan.
+    // Place comes from Ask plan only — never keep a stale pin from a prior
+    // mis-parse (e.g. "Show me Peggy" → place "Me Peggy George").
     let placeFilter = null;
     const planPlaces = exploreHint.place_names || plan.place_names || [];
     if (Array.isArray(planPlaces) && planPlaces.length === 1) {
       placeFilter = planPlaces[0];
-    } else if (keepPresentation && state && state.domain.placeFilter) {
-      placeFilter = state.domain.placeFilter;
+    } else if (Array.isArray(planPlaces) && planPlaces.length > 1) {
+      placeFilter = null;
     }
     let nextType = typeFilter;
     if (!keepPresentation) {
@@ -514,6 +524,8 @@
         title: payload.title || "Memories",
         summary: payload.summary || "",
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
+        _askSummary: payload.summary || "",
+        _askKind: payload.answer_kind || "",
         chips: chips,
         typeFilter: nextType,
         placeFilter: placeFilter,
@@ -653,15 +665,21 @@
       return;
     }
 
-    // Location filter on current result set (Ask/STT same path)
+    // Location refine on *current* result set only — never "Show me <Person>".
+    // "Show …" must fall through to liveFind / Ask (person + time + place compose).
     const placeOnly = lower.match(
-      /^(?:only|near|around|at|show)\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
+      /^(?:only|near|around|at)\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i
     );
     if (placeOnly) {
       const candidate = placeOnly[1].replace(/\.$/, "").trim();
       const blocked =
-        /^(photos?|videos?|emails?|texts?|artifacts?|stories?|everything|map|gallery|undated)$/i;
-      if (candidate && !blocked.test(candidate)) {
+        /^(me|myself|photos?|videos?|emails?|texts?|artifacts?|stories?|everything|map|gallery|undated)$/i;
+      // Reject person-like / year-bearing phrases so Ask owns those.
+      const looksLikeAsk =
+        /\b((?:19|20)\d{2}|christmas|easter|thanksgiving|summer|winter|spring|fall)\b/i.test(
+          candidate
+        ) || /^me\b/i.test(candidate);
+      if (candidate && !blocked.test(candidate) && !looksLikeAsk) {
         setPlaceFilter(candidate.replace(/\b\w/g, (c) => c.toUpperCase()));
         render();
         return;
