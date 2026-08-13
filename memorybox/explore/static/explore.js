@@ -117,6 +117,7 @@
 
   /** True when active range is narrower than full dated extent of eligible set. */
   function isDateBounded() {
+    if (!hasDatedExtent()) return false;
     const span = state.timeline.extentEnd - state.timeline.extentStart;
     const eps = Math.max(span * 0.004, 86400000 * 0.5);
     return (
@@ -157,8 +158,9 @@
   function extentOf(items) {
     const dated = items.filter(isDated);
     if (!dated.length) {
-      const now = Date.now();
-      return { start: now, end: now };
+      // Honest empty extent — do not invent "today" (that fake-bounded the gallery
+      // and showed 2026-08-13 → 2026-08-13 for all-undated result sets).
+      return { start: NaN, end: NaN, empty: true };
     }
     let lo = Infinity;
     let hi = -Infinity;
@@ -169,11 +171,20 @@
       hi = Math.max(hi, t);
     }
     if (!Number.isFinite(lo)) {
-      const now = Date.now();
-      return { start: now, end: now };
+      return { start: NaN, end: NaN, empty: true };
     }
     const pad = Math.max((hi - lo) * 0.02, 86400000);
-    return { start: lo - pad, end: hi + pad };
+    return { start: lo - pad, end: hi + pad, empty: false };
+  }
+
+  function hasDatedExtent() {
+    return (
+      state &&
+      state.timeline &&
+      Number.isFinite(state.timeline.extentStart) &&
+      Number.isFinite(state.timeline.extentEnd) &&
+      state.timeline.extentEnd > state.timeline.extentStart
+    );
   }
 
   function matchesType(item, filter) {
@@ -211,6 +222,17 @@
   /** After type-filter change: Timeline = dated portion of new eligible set (full extent). */
   function syncTimelineToEligibleDatedExtent() {
     const ext = extentOf(datedEligible());
+    if (ext.empty) {
+      state.timeline.extentStart = NaN;
+      state.timeline.extentEnd = NaN;
+      state.timeline.rangeStart = NaN;
+      state.timeline.rangeEnd = NaN;
+      state.timeline.playhead = NaN;
+      state.timeline.precision = "years";
+      state.timeline.empty = true;
+      return;
+    }
+    state.timeline.empty = false;
     state.timeline.extentStart = ext.start;
     state.timeline.extentEnd = ext.end;
     state.timeline.rangeStart = ext.start;
@@ -254,8 +276,9 @@
     // Keep fixture curator copy when on demo All+full range; else summarize live set.
     const vis = visibleItems();
     const atFull =
-      state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
-      state.timeline.rangeEnd >= state.timeline.extentEnd - 1;
+      !hasDatedExtent() ||
+      (state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
+        state.timeline.rangeEnd >= state.timeline.extentEnd - 1);
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;
       return;
@@ -267,13 +290,18 @@
     if (c.email) parts.push(`${c.email} email${c.email === 1 ? "" : "s"}`);
     if (c.artifact) parts.push(`${c.artifact} artifact${c.artifact === 1 ? "" : "s"}`);
     if (c.story) parts.push(`${c.story} stor${c.story === 1 ? "y" : "ies"}`);
-    const range = fmtRangeLabel(
-      state.timeline.rangeStart,
-      state.timeline.rangeEnd,
-      state.timeline.precision
-    );
     const filterLabel =
       FILTERS.find((f) => f.id === state.domain.typeFilter)?.label || "All";
+    const undatedOnly = !hasDatedExtent() && vis.some(isUndated);
+    const range = undatedOnly
+      ? "undated memories (not placed on the Timeline axis)"
+      : hasDatedExtent()
+        ? fmtRangeLabel(
+            state.timeline.rangeStart,
+            state.timeline.rangeEnd,
+            state.timeline.precision
+          )
+        : "no dated memories";
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
     }`;
@@ -303,6 +331,7 @@
     const typeFilter =
       keepPresentation && state ? state.domain.typeFilter : "all";
     const ext = extentOf(rawItems.filter(isDated));
+    const emptyTl = Boolean(ext.empty);
     state = {
       domain: {
         askText: payload.ask_text || "",
@@ -314,12 +343,13 @@
         items: [],
       },
       timeline: {
-        extentStart: ext.start,
-        extentEnd: ext.end,
-        rangeStart: ext.start,
-        rangeEnd: ext.end,
-        playhead: ext.start,
-        precision: computePrecision(ext.start, ext.end),
+        extentStart: emptyTl ? NaN : ext.start,
+        extentEnd: emptyTl ? NaN : ext.end,
+        rangeStart: emptyTl ? NaN : ext.start,
+        rangeEnd: emptyTl ? NaN : ext.end,
+        playhead: emptyTl ? NaN : ext.start,
+        precision: emptyTl ? "years" : computePrecision(ext.start, ext.end),
+        empty: emptyTl,
       },
       gallery: { density: dens, scrollTop: scrollTop, sort: sort },
       modal: { openId: null, snapshot: null, pendingCorrection: null },
@@ -421,6 +451,7 @@
   }
 
   function setActiveRange(start, end) {
+    if (!hasDatedExtent()) return;
     let a = Math.min(start, end);
     let b = Math.max(start, end);
     a = Math.max(a, state.timeline.extentStart);
@@ -434,6 +465,10 @@
 
   function resetTimelineExtent(andRender) {
     // Reset = full temporal extent of current eligible set. Does NOT clear query/filters.
+    if (!hasDatedExtent()) {
+      if (andRender) render();
+      return;
+    }
     state.timeline.rangeStart = state.timeline.extentStart;
     state.timeline.rangeEnd = state.timeline.extentEnd;
     state.timeline.precision = computePrecision(
@@ -608,26 +643,37 @@
   function renderTimeline() {
     const { extentStart, extentEnd, rangeStart, rangeEnd, playhead, precision } =
       state.timeline;
-    const span = Math.max(extentEnd - extentStart, 1);
     const band = document.getElementById("mb-tl-band");
     const ph = document.getElementById("mb-tl-playhead");
     const hl = document.getElementById("mb-tl-handle-l");
     const hr = document.getElementById("mb-tl-handle-r");
-    const left = ((rangeStart - extentStart) / span) * 100;
-    const right = ((rangeEnd - extentStart) / span) * 100;
-    const width = Math.max(right - left, 0.5);
-    band.style.left = `${left}%`;
-    band.style.width = `${width}%`;
-    hl.style.left = `${left}%`;
-    hr.style.left = `${right}%`;
-    const p = ((playhead - extentStart) / span) * 100;
-    ph.style.left = `${Math.min(100, Math.max(0, p))}%`;
+    const empty = !hasDatedExtent();
 
-    document.getElementById("mb-tl-range-label").textContent = fmtRangeLabel(
-      rangeStart,
-      rangeEnd,
-      precision
-    );
+    if (empty) {
+      band.style.left = "0%";
+      band.style.width = "100%";
+      hl.style.left = "0%";
+      hr.style.left = "100%";
+      ph.style.left = "0%";
+      document.getElementById("mb-tl-range-label").textContent =
+        "No dated memories on the Timeline";
+    } else {
+      const span = Math.max(extentEnd - extentStart, 1);
+      const left = ((rangeStart - extentStart) / span) * 100;
+      const right = ((rangeEnd - extentStart) / span) * 100;
+      const width = Math.max(right - left, 0.5);
+      band.style.left = `${left}%`;
+      band.style.width = `${width}%`;
+      hl.style.left = `${left}%`;
+      hr.style.left = `${right}%`;
+      const p = ((playhead - extentStart) / span) * 100;
+      ph.style.left = `${Math.min(100, Math.max(0, p))}%`;
+      document.getElementById("mb-tl-range-label").textContent = fmtRangeLabel(
+        rangeStart,
+        rangeEnd,
+        precision
+      );
+    }
 
     const undatedEl = document.getElementById("mb-tl-undated");
     const uCount = undatedEligible().length;
@@ -645,30 +691,40 @@
     // density dots = dated portion of eligible set (not invented undated positions)
     const dotsEl = document.getElementById("mb-tl-dots");
     const typedDated = datedEligible();
-    dotsEl.innerHTML = typedDated
-      .map((it) => {
-        const t = parseISO(it.date);
-        if (!Number.isFinite(t)) return "";
-        const x = ((t - extentStart) / span) * 100;
-        return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
-      })
-      .join("");
+    if (empty) {
+      dotsEl.innerHTML = "";
+    } else {
+      const span = Math.max(extentEnd - extentStart, 1);
+      dotsEl.innerHTML = typedDated
+        .map((it) => {
+          const t = parseISO(it.date);
+          if (!Number.isFinite(t)) return "";
+          const x = ((t - extentStart) / span) * 100;
+          return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
+        })
+        .join("");
+    }
 
     // ticks
     const ticks = document.getElementById("mb-tl-ticks");
-    const years = [];
-    const y0 = new Date(extentStart).getUTCFullYear();
-    const y1 = new Date(extentEnd).getUTCFullYear();
-    for (let y = y0; y <= y1; y++) years.push(y);
-    const step = years.length > 16 ? 4 : years.length > 10 ? 2 : 1;
-    ticks.innerHTML = years
-      .filter((y, i) => i === 0 || i === years.length - 1 || y % step === 0)
-      .map((y) => {
-        const t = dayMs(y, 1, 1);
-        const x = ((t - extentStart) / span) * 100;
-        return `<span style="left:${Math.min(98, Math.max(0, x))}%">${y}</span>`;
-      })
-      .join("");
+    if (empty) {
+      ticks.innerHTML = "";
+    } else {
+      const span = Math.max(extentEnd - extentStart, 1);
+      const years = [];
+      const y0 = new Date(extentStart).getUTCFullYear();
+      const y1 = new Date(extentEnd).getUTCFullYear();
+      for (let y = y0; y <= y1; y++) years.push(y);
+      const step = years.length > 16 ? 4 : years.length > 10 ? 2 : 1;
+      ticks.innerHTML = years
+        .filter((y, i) => i === 0 || i === years.length - 1 || y % step === 0)
+        .map((y) => {
+          const t = dayMs(y, 1, 1);
+          const x = ((t - extentStart) / span) * 100;
+          return `<span style="left:${Math.min(98, Math.max(0, x))}%">${y}</span>`;
+        })
+        .join("");
+    }
   }
 
   function render() {
@@ -738,8 +794,23 @@
   }
 
   function faceBoxStyle(item) {
-    const b = item.face_box || { x: 0.3, y: 0.2, w: 0.22, h: 0.28 };
+    const b = item && item.face_box;
+    if (
+      !b ||
+      typeof b.x !== "number" ||
+      typeof b.y !== "number" ||
+      typeof b.w !== "number" ||
+      typeof b.h !== "number"
+    ) {
+      return "";
+    }
     return `left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%`;
+  }
+
+  function faceBoxHtml(item) {
+    const style = faceBoxStyle(item);
+    if (!style) return "";
+    return `<div class="mb-face-box" style="${style}" title="Face region"></div>`;
   }
 
   function renderTeachSlot(item) {
@@ -839,7 +910,7 @@
         ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(item.title || "Photo")}" />`
         : escapeHtml(item.preview || item.title || "Photo");
       return `<div class="mb-ev-photo" aria-label="Photo workspace">${img}
-        <div class="mb-face-box" style="${faceBoxStyle(item)}" title="Face region"></div>
+        ${faceBoxHtml(item)}
       </div>
       <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Photo evidence · Face: ${escapeHtml(
         item.face_identity || "Unknown"
@@ -858,7 +929,7 @@
       return `<div class="mb-ev-video">
         <div class="mb-ev-video-frame" id="mb-ev-video-frame" style="position:relative">
           ${poster}
-          <div class="mb-face-box" style="${faceBoxStyle(item)}"></div>
+          ${faceBoxHtml(item)}
         </div>
         <div class="mb-ev-transcript" aria-label="Time-aligned transcript (prepared)">
           <strong>Transcript (architecture)</strong><br/>
@@ -891,6 +962,7 @@
   // ——— Timeline interaction ———
 
   function trackFrac(clientX) {
+    if (!hasDatedExtent()) return NaN;
     const track = document.getElementById("mb-tl-track");
     const r = track.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
@@ -947,6 +1019,7 @@
     });
 
     const nudge = (dir) => {
+      if (!hasDatedExtent()) return;
       const span = state.timeline.extentEnd - state.timeline.extentStart;
       const step = span * 0.04 * dir;
       let next = state.timeline.playhead + step;
@@ -960,6 +1033,7 @@
 
     // Band drag = redefine active range (explore period)
     track.addEventListener("pointerdown", (e) => {
+      if (!hasDatedExtent()) return;
       if (e.target.classList.contains("mb-tl-handle")) return;
       const t = trackFrac(e.clientX);
       // Click near playhead → scrub; elsewhere start band
@@ -1031,11 +1105,13 @@
     });
 
     hl.addEventListener("pointerdown", (e) => {
+      if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "l";
       hl.setPointerCapture(e.pointerId);
     });
     hr.addEventListener("pointerdown", (e) => {
+      if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "r";
       hr.setPointerCapture(e.pointerId);

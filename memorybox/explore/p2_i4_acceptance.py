@@ -197,13 +197,16 @@ def _prove_harness() -> dict[str, Any]:
             "Show 2005 through 2011",
             "eligibleItems",
             "isDateBounded",
+            "hasDatedExtent",
             "undatedEligible",
+            "faceBoxHtml",
             "applyCorrectionConsequences",
             "confirmIdentityCorrection",
             "syncTimelineToEligibleDatedExtent",
             "Does NOT clear query/filters",
             "liveFind",
             "/explore/api/find",
+            "No dated memories on the Timeline",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -239,7 +242,18 @@ def _prove_harness() -> dict[str, Any]:
                     "end_sec": 14.0,
                     "mb_person_name": "Test",
                     "play_url": "/review/ui?video=vid1&t=12.5",
-                }
+                },
+                # Near-duplicate appearance moment (same clip / seek window)
+                {
+                    "provider_key": "hvrt",
+                    "external_id": "mom-dup",
+                    "video_external_id": "vid1",
+                    "start_sec": 12.8,
+                    "end_sec": 14.2,
+                    "label": "face-appearance-moment",
+                    "mb_person_name": None,
+                    "play_url": "/review/ui?video=vid1&t=12.8",
+                },
             ],
             "evidence_hits": [],
             "artifact_hits": [],
@@ -253,10 +267,12 @@ def _prove_harness() -> dict[str, Any]:
             and mapped[0]["type"] == "photo"
             and mapped[1]["type"] == "video"
             and mapped[1].get("undated") is True
-            and bool(mapped[1].get("play_url")),
+            and bool(mapped[1].get("play_url"))
+            and mapped[1].get("face_identity") == "Test"
+            and "face_box" not in mapped[1],
             checks,
             problems,
-            f"n={len(mapped)}",
+            f"n={len(mapped)} titles={[m.get('title') for m in mapped]}",
         )
         _t, _s = curator_from_items("Show me Test", mapped, None)
         _check("curator_builder", bool(_s), checks, problems, (_s or "")[:80])
@@ -326,6 +342,23 @@ def _prove_flightsim() -> dict[str, Any]:
             meta["live_item_count"] = len(payload.get("items") or [])
         except Exception as exc:  # noqa: BLE001
             _check("live_fixture", False, checks, problems, str(exc))
+
+    st_find, find_body, _ = _fetch(f"{base}/explore/api/find")
+    _check("explore_find_api", st_find == 200, checks, problems, f"status={st_find}")
+    if st_find == 200:
+        import json
+
+        try:
+            find_payload = json.loads(find_body)
+            _check(
+                "explore_find_live_flag",
+                find_payload.get("live") is True and find_payload.get("demo") is False,
+                checks,
+                problems,
+                f"live={find_payload.get('live')} demo={find_payload.get('demo')}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            _check("explore_find_live_flag", False, checks, problems, str(exc))
 
     st3, _, _ = _fetch(f"{base}/family-night/ui")
     _check("family_night_ui", st3 == 200, checks, problems, f"status={st3}")

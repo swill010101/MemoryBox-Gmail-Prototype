@@ -65,6 +65,28 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if p.get("location"):
             title = f"{title} · {p.get('location')}"
         thumb = f"/library/media/photo/{eid}"
+        face_box = p.get("face_box")
+        extra: dict[str, Any] = {
+            "people": list(p.get("people") or []),
+            "mb_person_id": p.get("mb_person_id"),
+            "mb_person_name": p.get("mb_person_name"),
+            "provider_key": p.get("provider_key") or "immich",
+            "external_id": eid,
+            "media_url": thumb,
+            "thumb_url": thumb,
+            "teachable": True,
+            "face_identity": p.get("mb_person_name") or "Unknown",
+        }
+        # Only attach real geometry — never invent a placeholder box.
+        if isinstance(face_box, dict) and all(
+            isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
+        ):
+            extra["face_box"] = {
+                "x": float(face_box["x"]),
+                "y": float(face_box["y"]),
+                "w": float(face_box["w"]),
+                "h": float(face_box["h"]),
+            }
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
@@ -74,18 +96,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 undated=not taken,
                 preview=str(p.get("attribution") or name or "Photo"),
                 detail=str(p.get("attribution") or ""),
-                people=list(p.get("people") or []),
-                mb_person_id=p.get("mb_person_id"),
-                mb_person_name=p.get("mb_person_name"),
-                provider_key=p.get("provider_key") or "immich",
-                external_id=eid,
-                media_url=thumb,
-                thumb_url=thumb,
-                teachable=True,
-                face_identity=p.get("mb_person_name") or "Unknown",
+                **extra,
             )
         )
 
+    video_raw: list[dict[str, Any]] = []
     for v in result.get("video_hits") or []:
         vid = str(v.get("video_external_id") or v.get("external_id") or "")
         if not vid:
@@ -100,35 +115,60 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
         # Appearance moments are in-video spans — calendar undated unless known
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
-        add(
-            _item_base(
-                id=f"video:{v.get('provider_key') or 'hvrt'}:{v.get('external_id') or vid}:{t0}",
-                type_="video",
-                title=str(label)[:80],
-                date="",
-                undated=True,
-                preview=f"Moment @ {t0:.1f}s",
-                detail=f"{t0:.1f}s" + (f"–{float(t1):.1f}s" if t1 is not None else ""),
-                people=[v["mb_person_name"]] if v.get("mb_person_name") else [],
-                mb_person_id=v.get("mb_person_id"),
-                mb_person_name=v.get("mb_person_name"),
-                provider_key=v.get("provider_key") or "hvrt",
-                video_provider_key=v.get("provider_key") or "hvrt",
-                video_external_id=vid,
-                external_id=v.get("external_id"),
-                face_external_id=face,
-                t=t0,
-                start_sec=t0,
-                end_sec=t1,
-                duration_sec=(float(t1) - t0) if t1 is not None else None,
-                play_url=play,
-                media_url=poster,
-                thumb_url=poster,
-                teachable=True,
-                paused_frame=True,
-                face_identity=v.get("mb_person_name") or "Unknown",
-            )
+        if label == "face-appearance-moment":
+            label = v.get("mb_person_name") or "Video moment"
+        face_box = v.get("face_box")
+        item = _item_base(
+            id=f"video:{v.get('provider_key') or 'hvrt'}:{v.get('external_id') or vid}:{t0}",
+            type_="video",
+            title=str(label)[:80],
+            date="",
+            undated=True,
+            preview=f"Moment @ {t0:.1f}s",
+            detail=f"{t0:.1f}s" + (f"–{float(t1):.1f}s" if t1 is not None else ""),
+            people=[v["mb_person_name"]] if v.get("mb_person_name") else [],
+            mb_person_id=v.get("mb_person_id"),
+            mb_person_name=v.get("mb_person_name"),
+            provider_key=v.get("provider_key") or "hvrt",
+            video_provider_key=v.get("provider_key") or "hvrt",
+            video_external_id=vid,
+            external_id=v.get("external_id"),
+            face_external_id=face,
+            t=t0,
+            start_sec=t0,
+            end_sec=t1,
+            duration_sec=(float(t1) - t0) if t1 is not None else None,
+            play_url=play,
+            media_url=poster,
+            thumb_url=poster,
+            teachable=True,
+            paused_frame=True,
+            face_identity=v.get("mb_person_name") or "Unknown",
         )
+        if isinstance(face_box, dict) and all(
+            isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
+        ):
+            item["face_box"] = {
+                "x": float(face_box["x"]),
+                "y": float(face_box["y"]),
+                "w": float(face_box["w"]),
+                "h": float(face_box["h"]),
+            }
+        video_raw.append(item)
+
+    # Collapse near-duplicate video moments (same clip / ~same seek)
+    video_kept: list[dict[str, Any]] = []
+    video_slots: set[tuple[str, int]] = set()
+    for it in video_raw:
+        vid = str(it.get("video_external_id") or "")
+        slot = int(float(it.get("start_sec") or 0) // 2.5)
+        key = (vid, slot)
+        if key in video_slots:
+            continue
+        video_slots.add(key)
+        video_kept.append(it)
+    for it in video_kept:
+        add(it)
 
     for e in result.get("evidence_hits") or []:
         kind = str(e.get("evidence_kind") or "document").lower()

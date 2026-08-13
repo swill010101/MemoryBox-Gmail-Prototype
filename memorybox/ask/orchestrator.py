@@ -643,6 +643,19 @@ class AskOrchestrator:
                         want_artifact=False,
                         want_guided_capture=False,
                     )
+                elif rel.intent in ("pictures", "self") and not plan.want_visual:
+                    # "show me dad" — planner may not have set visual before resolve
+                    plan = replace(
+                        plan,
+                        want_photo=True,
+                        want_still=True,
+                        want_video=True,
+                        want_visual=True,
+                        visual_scope="broad",
+                        notes=tuple(
+                            list(plan.notes) + ["i9a_pictures_forces_broad_visual"]
+                        ),
+                    )
             elif not rel.ok:
                 # Failed relational resolve: do not fall through to prior context person
                 plan = replace(

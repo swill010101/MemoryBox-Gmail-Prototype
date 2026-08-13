@@ -26,6 +26,15 @@ _MY_ROLE_RE = re.compile(
     r"grandparent|uncle|aunt|spouse|partner|sibling|brother|sister|"
     r"grandson|granddaughter|grandchild|parent|child)\b"
 )
+# "show me dad" / "show me pictures of dad" without requiring "my"
+_SHOW_ME_ROLE_RE = re.compile(
+    r"(?i)\bshow\s+me\s+"
+    r"(?:(?:pictures?|photos?|images?|videos?|stills?)\s+(?:of\s+)?)?"
+    r"(?:(?:my|our)\s+)?"
+    r"(father|dad|mother|mom|son|daughter|grandfather|grandmother|"
+    r"grandparent|uncle|aunt|spouse|partner|sibling|brother|sister|"
+    r"grandson|granddaughter|grandchild|parent|child)\b"
+)
 _PICTURES_OF_ME_RE = re.compile(
     r"(?i)\b(pictures?|photos?|images?)\s+of\s+(me|myself)\b|\bof\s+myself\b"
 )
@@ -95,7 +104,7 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
     who_am_i = bool(_WHO_AM_I_RE.search(q))
     pictures_me = bool(_PICTURES_OF_ME_RE.search(q))
     anniversary_me = bool(_ANNIVERSARY_RE.search(q) and re.search(r"(?i)\bmy\b", q))
-    my_role = _MY_ROLE_RE.search(q)
+    my_role = _MY_ROLE_RE.search(q) or _SHOW_ME_ROLE_RE.search(q)
 
     # Non-relational asks must not touch owner config (leave planner / retrieve alone).
     if not (who_am_i or pictures_me or anniversary_me or my_role):
@@ -111,6 +120,8 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
             intent = "self"
         elif anniversary_me:
             intent = "anniversary"
+        elif my_role and _SHOW_ME_ROLE_RE.search(q):
+            intent = "pictures"
         else:
             intent = "who"
         return RelationalAskResolve(

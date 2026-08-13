@@ -367,7 +367,16 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     for rx in patterns:
         for m in rx.finditer(text or ""):
             ent = _clean_entity(m.group(1))
-            if not ent or ent.lower() in kinship_stop:
+            if not ent:
+                continue
+            # "my dad" / "our mother" are kinship, not display names
+            lowered = ent.lower()
+            role = lowered
+            for prefix in ("my ", "our ", "the "):
+                if lowered.startswith(prefix):
+                    role = lowered[len(prefix) :].strip()
+                    break
+            if role in kinship_stop or lowered in kinship_stop:
                 continue
             if ent not in found:
                 found.append(ent)
@@ -580,13 +589,27 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if not u_people and ctx.person_names:
             u_people = list(ctx.person_names)
             notes.append("show_me_inherited_person_for_visual")
-        if u_people or ctx.person_names:
+        # Kinship ("dad"/"my father") is stripped from u_people; still force
+        # broad visual so I9A relational resolve can retrieve Immich/HVRT.
+        kinship_show = bool(
+            re.search(
+                r"(?i)\b(?:my\s+)?(father|dad|mother|mom|son|daughter|"
+                r"grandfather|grandmother|uncle|aunt|spouse|partner|"
+                r"brother|sister|parent|child)\b",
+                q,
+            )
+        )
+        if u_people or ctx.person_names or kinship_show:
             visual_scope = "broad"
             want_still = True
             want_video = True
             want_visual = True
             want_photo = True
-            notes.append("show_me_person_forces_broad_visual")
+            notes.append(
+                "show_me_kinship_forces_broad_visual"
+                if kinship_show and not (u_people or ctx.person_names)
+                else "show_me_person_forces_broad_visual"
+            )
 
     ref_then = bool(AROUND_THEN_RE.search(q))
     ref_other_trip = bool(OTHER_TRIP_RE.search(q))

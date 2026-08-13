@@ -636,6 +636,36 @@ def list_people_by_exact_name(display_name: str) -> list[PersonView]:
         return [_view(conn, r) for r in rows]
 
 
+def list_people_by_first_token(display_name: str) -> list[PersonView]:
+    """Match people whose first display-name token equals the query (case-insensitive).
+
+    Used for short Ask names like \"Peggy\" → \"Peggy George\" when unique.
+    Multi-word queries return exact matches only (via list_people_by_exact_name).
+    """
+    name = (display_name or "").strip()
+    if len(name) < 2:
+        return []
+    if " " in name:
+        return list_people_by_exact_name(name)
+    token = name.lower()
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM people
+            WHERE status IN ('unresolved', 'confirmed')
+              AND (
+                lower(display_name) = %s
+                OR lower(split_part(display_name, ' ', 1)) = %s
+              )
+            ORDER BY
+              CASE status WHEN 'confirmed' THEN 0 ELSE 1 END,
+              created_at ASC
+            """,
+            (token, token),
+        ).fetchall()
+        return [_view(conn, r) for r in rows]
+
+
 def _exact_named_photo_people(photo: Any, display_name: str) -> list[Any]:
     """Exact case-insensitive display-name match only (no substring merge)."""
     name = (display_name or "").strip()
@@ -651,6 +681,36 @@ def _exact_named_photo_people(photo: Any, display_name: str) -> list[Any]:
         for r in refs
         if (getattr(r, "display_name", None) or "").strip().lower() == needle
     ]
+
+
+def _ask_named_photo_people(photo: Any, display_name: str) -> list[Any]:
+    """Immich/photo people for Ask: exact name, else unique first-token match."""
+    exact = _exact_named_photo_people(photo, display_name)
+    if exact:
+        return exact
+    name = (display_name or "").strip()
+    if not photo or len(name) < 2 or " " in name:
+        return []
+    try:
+        refs = photo.list_people(query=name, limit=50) or []
+    except Exception:  # noqa: BLE001
+        return []
+    token = name.lower()
+    matched = []
+    for r in refs:
+        dn = (getattr(r, "display_name", None) or "").strip()
+        if not dn:
+            continue
+        first = dn.split()[0].lower() if dn.split() else ""
+        if first == token or dn.lower() == token:
+            matched.append(r)
+    # De-dupe by external_id
+    by_ext: dict[str, Any] = {}
+    for r in matched:
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext and ext not in by_ext:
+            by_ext[ext] = r
+    return list(by_ext.values())
 
 
 def seed_person_from_trusted_provider(
@@ -740,13 +800,13 @@ def resolve_or_seed_trusted_provider_person(
         except Exception:  # noqa: BLE001
             return None
 
-    matches = _exact_named_photo_people(photo, name)
+    matches = _ask_named_photo_people(photo, name)
     if not matches:
         return None
     if len(matches) > 1:
         raise AmbiguousIdentityError(
             f"ambiguous trusted-provider name {name!r}: "
-            f"{len(matches)} exact Immich/photo identities — owner resolution required",
+            f"{len(matches)} Immich/photo identities — owner resolution required",
             candidates=[
                 {
                     "provider_key": getattr(m, "provider_key", None)
@@ -890,6 +950,48 @@ def resolve_person_for_identity_teach(
     return view
 
 
+def _pick_unique_ask_person(candidates: list[PersonView]) -> PersonView | None:
+    """Return the single usable Ask person, or raise if several distinct people match."""
+    if not candidates:
+        return None
+    # Prefer confirmed, then trusted-provider, then mapped unresolved
+    ranked: list[PersonView] = []
+    for p in candidates:
+        if p.status == "confirmed":
+            ranked.append(p)
+            continue
+        if p.identity_authority == AUTHORITY_TRUSTED_PROVIDER:
+            ranked.append(p)
+            continue
+        if any(
+            m.get("provider_key")
+            in {PROVIDER_IMMICH, "fake_photo", "immich", "hvrt", "fake_video"}
+            for m in p.provider_mappings
+        ):
+            ranked.append(p)
+    if not ranked:
+        return None
+    by_id: dict[str, PersonView] = {}
+    for p in ranked:
+        by_id.setdefault(p.id, p)
+    unique = list(by_id.values())
+    if len(unique) == 1:
+        return unique[0]
+    raise AmbiguousIdentityError(
+        f"ambiguous person name {unique[0].display_name!r} / first-token match: "
+        f"{len(unique)} MB People — owner resolution required",
+        candidates=[
+            {
+                "person_id": p.id,
+                "display_name": p.display_name,
+                "status": p.status,
+                "identity_authority": p.identity_authority,
+            }
+            for p in unique
+        ],
+    )
+
+
 def find_ask_person_by_name(
     display_name: str,
     *,
@@ -899,6 +1001,8 @@ def find_ask_person_by_name(
     """Resolve a Person usable for Ask retrieval (confirmed or trusted-provider).
 
     Never returns AI/inferred as confirmed. May lazily seed from Immich when needed.
+    Short single-token names (e.g. \"Peggy\") resolve when exactly one MB Person
+    shares that first display-name token (e.g. \"Peggy George\").
     """
     name = (display_name or "").strip()
     if len(name) < 2:
@@ -908,16 +1012,18 @@ def find_ask_person_by_name(
         return confirmed
 
     # Unresolved / provider-seeded MB Person with exact name
-    for p in list_people_by_exact_name(name):
-        if p.identity_authority == AUTHORITY_TRUSTED_PROVIDER:
-            return p
-        # Unresolved with any photo or video provider mapping is usable for retrieval
-        if any(
-            m.get("provider_key")
-            in {PROVIDER_IMMICH, "fake_photo", "immich", "hvrt", "fake_video"}
-            for m in p.provider_mappings
-        ):
-            return p
+    exact = list_people_by_exact_name(name)
+    picked = _pick_unique_ask_person(exact) if exact else None
+    if picked:
+        return picked
+
+    # Unique first-token match (Peggy → Peggy George) when query is a single token
+    if " " not in name:
+        token_hits = list_people_by_first_token(name)
+        # Exclude already-considered exact (none) — pick unique among token hits
+        picked = _pick_unique_ask_person(token_hits) if token_hits else None
+        if picked:
+            return picked
 
     if not lazy_seed:
         return None

@@ -391,12 +391,13 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 
 
 def search_photos(
-    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 24
+    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 48
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
     """Search photos via PhotoProvider with I6/I7 identity authority rules.
 
     Confirmed and trusted-provider-seeded MB Persons retrieve via provider_identities.
     Unconfirmed Immich name matches remain candidates and never become confirmed.
+    Empty mapped Immich results fall through to name search (stale mapping safe).
     """
     from memorybox.person import (
         AUTHORITY_TRUSTED_PROVIDER,
@@ -620,30 +621,64 @@ def search_photos(
                     (status.get("disclosure") or "")
                     + f" Ambiguous identity for: {ambiguous_names}."
                 ).strip()
-            return hits[:limit], status
+            # Mapped Immich ids can be stale, empty, or a partial cluster —
+            # name search fills remaining slots from the owner's Immich library.
+            if len(hits) >= limit:
+                return hits[:limit], status
+            status["detail"] = (
+                f"mapped_hits={len(hits)} mapped_names={mapped_names}; "
+                "supplementing_via_name_search"
+            )
 
         status["identity_mode"] = (
             "candidate_unmapped_person"
-            if unmapped_resolvable_names
-            else "candidate_provider_name"
+            if unmapped_resolvable_names and not hits
+            else (
+                "mixed_mapping_plus_name"
+                if hits and mapped_ext
+                else (
+                    "candidate_after_empty_mapping"
+                    if mapped_ext and not hits
+                    else (
+                        "candidate_unmapped_person"
+                        if unmapped_resolvable_names
+                        else "candidate_provider_name"
+                    )
+                )
+            )
         )
-        if ambiguous_names:
+        if ambiguous_names and not hits:
             status["identity_mode"] = "ambiguous_identity"
             status["ok"] = True
             status["detail"] = f"ambiguous={ambiguous_names}"
             return [], status
 
         person_ext: list[str] = []
+        # Prefer resolved MB display names (Peggy → Peggy George) for Immich lookup
+        name_queries: list[str] = []
         for name in plan.person_names:
+            if name and name not in name_queries:
+                name_queries.append(name)
+        for meta in mapped_meta:
+            n = meta.get("name")
+            if n and n not in name_queries:
+                name_queries.append(n)
+        for name in name_queries:
             confirmed = find_confirmed_person_by_name(name)
-            refs = photo.list_people(query=name, limit=5)
-            for r in refs:
+            try:
+                refs = photo.list_people(query=name, limit=20)
+            except Exception:  # noqa: BLE001
+                refs = []
+            for r in refs or []:
+                dn = (r.display_name or "").strip()
+                if not dn:
+                    continue
+                needle = name.lower()
+                first = dn.split()[0].lower() if dn.split() else ""
                 name_hit = bool(
-                    r.display_name
-                    and (
-                        name.lower() in r.display_name.lower()
-                        or r.display_name.lower().startswith(name.lower()[:3])
-                    )
+                    needle in dn.lower()
+                    or first == needle
+                    or dn.lower().startswith(needle[:3])
                 )
                 if not name_hit:
                     continue
@@ -653,9 +688,12 @@ def search_photos(
                     person_id=confirmed.id,
                 ):
                     continue
+                # Skip ids already searched via mapping that returned empty
+                if r.external_id in mapped_ext and hits:
+                    continue
                 person_ext.append(r.external_id)
 
-        text_bits = list(plan.place_names) + list(plan.person_names)
+        text_bits = list(plan.place_names) + list(name_queries)
         text = " ".join(text_bits) if text_bits else (plan.original_ask or None)
         query = PhotoSearchQuery(
             person_external_ids=tuple(dict.fromkeys(person_ext)),
@@ -663,8 +701,12 @@ def search_photos(
             limit=limit,
         )
         assets = photo.search_assets(query)
+        seen_ext = {h.external_id for h in hits}
         for a in assets:
+            if a.external_id in seen_ext:
+                continue
             hits.append(_asset_to_hit(a, trust="candidate"))
+            seen_ext.add(a.external_id)
         status["ok"] = True
         status["detail"] = (
             f"candidate_hits={len(hits)} "
@@ -690,11 +732,43 @@ def search_photos(
         return [], status
 
 
+def _dedupe_video_hits(
+    hits: list[VideoHit], *, window_sec: float = 2.5, limit: int = 48
+) -> list[VideoHit]:
+    """Collapse near-duplicate moments (HVRT segment + appearance merge).
+
+    Prefer labeled / named / confirmed hits over generic face-appearance copies.
+    """
+
+    def _score(h: VideoHit) -> tuple[int, int, int]:
+        named = 1 if (h.mb_person_name or (h.label and h.label != "face-appearance-moment")) else 0
+        trust = {"confirmed": 3, "trusted_provider": 2, "candidate": 1}.get(
+            h.identity_trust or "", 0
+        )
+        has_face = 1 if h.face_external_id else 0
+        return (named, trust, has_face)
+
+    buckets: dict[tuple[str, int], VideoHit] = {}
+    order: list[tuple[str, int]] = []
+    for h in hits:
+        vid = str(h.video_external_id or h.external_id or "")
+        slot = int(float(h.start_sec or 0) // window_sec)
+        key = (vid, slot)
+        prev = buckets.get(key)
+        if prev is None:
+            buckets[key] = h
+            order.append(key)
+            continue
+        if _score(h) > _score(prev):
+            buckets[key] = h
+    return [buckets[k] for k in order][:limit]
+
+
 def search_videos(
     plan: QueryPlan,
     video: Any,
     *,
-    limit: int = 24,
+    limit: int = 48,
     photo: Any | None = None,
 ) -> tuple[list[VideoHit], dict[str, Any]]:
     """Search video presence spans with I6/I7 identity authority rules."""
@@ -872,22 +946,40 @@ def search_videos(
                     for m in mapped_meta
                     if m.get("person_id")
                 }
+                name_by_pid = {
+                    str(m.get("person_id")): str(m.get("name") or "")
+                    for m in mapped_meta
+                    if m.get("person_id")
+                }
+                existing_keys = {
+                    (
+                        str(h.video_external_id or ""),
+                        int(float(h.start_sec or 0) // 2.5),
+                    )
+                    for h in hits
+                }
                 for pid in person_ids:
                     for mom in list_appearance_moments(pid, limit=limit):
+                        vid = str(mom["video_external_id"])
+                        t0 = float(mom["start_sec"])
+                        slot_key = (vid, int(t0 // 2.5))
+                        if slot_key in existing_keys:
+                            continue
                         play = ensure_timeslot_play_url(
-                            video_external_id=str(mom["video_external_id"]),
-                            start_sec=float(mom["start_sec"]),
+                            video_external_id=vid,
+                            start_sec=t0,
                             play_url=mom.get("play_url"),
                         )
+                        pname = name_by_pid.get(pid) or None
                         hits.append(
                             VideoHit(
                                 provider_key=mom["video_provider_key"],
                                 external_id=mom["id"],
-                                video_external_id=mom["video_external_id"],
-                                start_sec=float(mom["start_sec"]),
+                                video_external_id=vid,
+                                start_sec=t0,
                                 end_sec=float(mom["end_sec"]),
                                 face_external_id=mom.get("face_external_id"),
-                                label="face-appearance-moment",
+                                label=pname or "Video moment",
                                 play_url=play,
                                 identity_trust=(
                                     "confirmed"
@@ -897,13 +989,14 @@ def search_videos(
                                     else "candidate"
                                 ),
                                 mb_person_id=pid,
-                                mb_person_name=None,
+                                mb_person_name=pname,
                                 attribution=(
                                     f"face-appearance moment "
                                     f"({mom.get('method')}, {mom.get('confirmation_state')})"
                                 ),
                             )
                         )
+                        existing_keys.add(slot_key)
             except Exception:  # noqa: BLE001
                 pass
             if unmapped:
@@ -912,7 +1005,7 @@ def search_videos(
                     "Teach/confirm the video face onto the same MB Person in Review "
                     "(do not recreate the human in each provider)."
                 )
-            return hits[:limit], status
+            return _dedupe_video_hits(hits, limit=limit), status
 
         if ambiguous_names:
             status["identity_mode"] = "ambiguous_identity"
