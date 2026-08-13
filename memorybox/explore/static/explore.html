@@ -79,6 +79,7 @@
         </div>
         <button type="button" class="mb-tl-nudge" id="mb-tl-nudge-r" aria-label="Nudge later">›</button>
         <span class="mb-tl-range-label" id="mb-tl-range-label">—</span>
+        <span class="mb-tl-undated" id="mb-tl-undated" hidden>Undated: 0</span>
       </div>
       <div class="mb-tl-ticks" id="mb-tl-ticks"></div>
       <p class="mb-tl-hint">Drag timeline, move playhead, or resize range to explore your memories.</p>
@@ -95,8 +96,8 @@
         <button type="button" class="mb-modal-close" id="mb-modal-close">Close</button>
       </div>
       <div class="mb-modal-body" id="mb-modal-body"></div>
-      <div class="mb-modal-teach" id="mb-modal-teach">
-        Teach / Learn actions will attach here for confirmed people, faces (photos &amp; paused video frames), and voice evidence — without leaving this workspace.
+      <div class="mb-modal-teach" id="mb-modal-teach" data-teach-slot="1">
+        <!-- Filled when item is teachable (I1 identity correction) -->
       </div>
     </div>
   </div>

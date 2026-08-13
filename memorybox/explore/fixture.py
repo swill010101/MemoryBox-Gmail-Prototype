@@ -197,6 +197,17 @@ def peggy_christmas_fixture() -> dict[str, Any]:
             "people": ["Peggy", "Rick"],
         },
         {
+            "id": "ph-undated",
+            "kind": "photo",
+            "title": "Peggy at Christmas (scan, undated)",
+            "date": None,
+            "undated": True,
+            "people": ["Peggy"],
+            "excerpt": "Box of prints — year unknown",
+            "face_identity": "Unknown",
+            "teachable": True,
+        },
+        {
             "id": "em-04",
             "kind": "email",
             "title": "Next year at Oak Street",
@@ -206,12 +217,25 @@ def peggy_christmas_fixture() -> dict[str, Any]:
         },
     ]
 
+    # Enrich a dated photo for visible I1 Teach proof in demo.
+    for it in items:
+        if it["id"] == "ph-01":
+            it["teachable"] = True
+            it["face_identity"] = "Unknown"
+            it["face_box"] = {"x": 0.28, "y": 0.18, "w": 0.22, "h": 0.28}
+        if it["id"] == "vid-01":
+            it["teachable"] = True
+            it["face_identity"] = "Unknown"
+            it["paused_frame"] = True
+            it["face_box"] = {"x": 0.35, "y": 0.2, "w": 0.2, "h": 0.3}
+
     counts = {
         "photo": sum(1 for i in items if i["kind"] == "photo"),
         "video": sum(1 for i in items if i["kind"] == "video"),
         "email": sum(1 for i in items if i["kind"] == "email"),
         "artifact": sum(1 for i in items if i["kind"] == "artifact"),
         "story": sum(1 for i in items if i["kind"] == "story"),
+        "undated": sum(1 for i in items if i.get("undated") or not i.get("date")),
     }
     story_bit = (
         f"and a story Rick told"

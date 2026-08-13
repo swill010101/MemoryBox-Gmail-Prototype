@@ -1,6 +1,6 @@
 # MBBS-P2 Increment 4 — Mixed-Media Find / Explore
 
-**Status:** **REVISED FOR LOCK** · Combined functionality + UX · Incorporates founder clarifications (2026-08-13) · **NO BUILD** until this text is **LOCKED**  
+**Status:** **LOCKED** · Combined functionality + UX · Founder clarifications incorporated · **BUILD AUTHORIZED** (2026-08-13) · **Not ACCEPTED** until §8 + §8.1 pass on FlightSim  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX):** [MBUX-001 v0.4 I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md) — where more specific, the addendum governs UX detail  
@@ -9,7 +9,7 @@
 **CLI prove (assist only):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
 **ACCEPTED gate:** §8 + §8.1 manual cases. Structural prove does not equal ACCEPTED.
 
-**Founder direction (this revision):** Approve the combined I4 direction **subject to** the clarifications in §1.1 and §2 (Reset, undated, density, scrub, correction-aware restore) and the Teach acceptance change in §2.8 / §8. **No build** until this revised definition is returned and **LOCKED**.
+**Founder direction:** Combined I4 direction approved with clarifications. Top-level learn destination labeled **Review & Learn** (founder preference). **Build authorized** against this locked text.
 
 ---
 
@@ -60,9 +60,9 @@ Services and providers may remain modular underneath. **Visible accepted UX must
 - **MemoryBox** brand + tagline: **“Life doesn’t live in folders.”**
 - Family primary destinations (working set):
 
-  **Ask · People · Stories · Journal · Artifacts · Family Night · [Teach | Review & Learn]**
+  **Ask · People · Stories · Journal · Artifacts · Family Night · Review & Learn**
 
-- **Open founder decision (label only):** top-level destination remains **“Teach”** or becomes **“Review & Learn”** (founder preference leans **Review & Learn**). Function is the same entry: review / identity / learn paths (I1 Review surface is acceptable backing). **Lock this label before ACCEPTED nav walk.**
+- Top-level learn destination label: **Review & Learn** (founder preference; locked with this build authorization). Backing surface may remain `/review/ui` (I1 Review paths).
 - **Not** family primary: Archive Health / Status, provider admin, Timeline-as-app, Library-internals-as-app.
 - Stories remain reachable as **contextual meaning** tied to people / evidence / artifacts / events — not a disconnected story-writing product inside I4.
 - Family Night: honest **entry point** required; deep FN product **out of I4 acceptance** if thin stub.
@@ -320,7 +320,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | **Teach proof** | At least one visible contextual Teach/Learn affordance via existing **I1 identity-correction** path |
 | **Health** | Not top-level |
 | **Context** | Query/filter/date/gallery state remain coherent and reusable by Ask/STT |
-| **Nav label** | Family primary includes Teach **or** Review & Learn per founder lock |
+| **Nav label** | Family primary includes **Review & Learn** |
 
 ### 8.1 Five mandatory manual gate cases
 
@@ -392,11 +392,10 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | P2-I1..I3 | **ACCEPTED** |
 | MBUX-001 v0.4 | Approved UX direction (recorded) |
 | Mixed-Media Find mockup | Visual hierarchy anchor (not pixel spec) |
-| Combined I4 direction | **Approved subject to clarifications in this revision** |
-| **This revised definition** | **REVISED FOR LOCK** — returned for founder lock |
-| Teach vs Review & Learn label | **OPEN** — founder decides before ACCEPTED nav walk |
-| Build | **NO BUILD** until this text is **LOCKED** |
-| FlightSim ACCEPTED | **PENDING** — §8 + §8.1 after LOCK + Build |
+| Combined I4 direction | **Approved** with clarifications |
+| **This revised definition** | **LOCKED** |
+| Teach vs Review & Learn label | **Review & Learn** (locked) |
+| Build | **AUTHORIZED** (2026-08-13) |
+| FlightSim ACCEPTED | **PENDING** — §8 + §8.1 |
 
-**Review ask:** **LOCK** this revised definition (and choose **Teach** or **Review & Learn**), or amend further.  
-**Do not build** until LOCKED and an explicit Build (or continue-build) order is issued against the locked text.
+Build is authorized against this locked text. Do **not** mark ACCEPTED until §8 and §8.1 pass on FlightSim.

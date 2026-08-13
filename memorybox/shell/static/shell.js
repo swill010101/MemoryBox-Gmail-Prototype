@@ -3,7 +3,7 @@
  * Surfaces set data-mb-surface on <html> or body via inject.
  */
 (function () {
-  // MBUX-001 v0.4 family primary destinations (I4).
+  // MBUX-001 v0.4 family primary destinations (I4). Review & Learn label locked.
   const FAMILY = [
     { id: "ask", href: "/ask/ui", label: "Ask" },
     { id: "people", href: "/people/ui", label: "People" },
@@ -11,7 +11,7 @@
     { id: "journal", href: "/journal/ui", label: "Journal" },
     { id: "artifact", href: "/artifact/ui", label: "Artifacts" },
     { id: "family-night", href: "/family-night/ui", label: "Family Night" },
-    { id: "teach", href: "/review/ui", label: "Teach" },
+    { id: "teach", href: "/review/ui", label: "Review & Learn" },
   ];
   // System / internals — not family primary (Archive Health contextual / settings).
   const SYSTEM = [

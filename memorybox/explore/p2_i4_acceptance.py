@@ -48,6 +48,16 @@ def _assert_fixture(payload: dict[str, Any]) -> list[str]:
     for need in ("photo", "video", "email", "artifact", "story"):
         if need not in kinds:
             problems.append(f"fixture missing type: {need}")
+    undated = [
+        i
+        for i in items
+        if i.get("undated") or not (i.get("date") or "").strip()
+    ]
+    if not undated:
+        problems.append("fixture missing undated item")
+    teachable = [i for i in items if i.get("teachable") or i.get("face_box")]
+    if not teachable:
+        problems.append("fixture missing teachable photo/video for I1 proof")
     if "Peggy" not in str(payload.get("title") or ""):
         problems.append("fixture title missing Peggy")
     if not (payload.get("summary") or payload.get("curator")):
@@ -71,7 +81,8 @@ def _assert_explore_html(html: str) -> list[str]:
         "mb-tl-reset",
         "Reset",
         "mb-density-label",
-        "mb-modal",
+        "mb-tl-undated",
+        "mb-modal-teach",
         "/static/explore/explore.js",
         "data-mb-surface=\"explore\"",
     ):
@@ -97,7 +108,15 @@ def _assert_explore_css(css: str) -> list[str]:
 
 def _assert_shell_family(js: str) -> list[str]:
     problems: list[str] = []
-    for label in ("Ask", "People", "Stories", "Journal", "Artifacts", "Family Night", "Teach"):
+    for label in (
+        "Ask",
+        "People",
+        "Stories",
+        "Journal",
+        "Artifacts",
+        "Family Night",
+        "Review & Learn",
+    ):
         if label not in js:
             problems.append(f"shell family missing label: {label}")
     # Archive Health must not be in FAMILY primary block as first-class family nav —
@@ -176,6 +195,13 @@ def _prove_harness() -> dict[str, Any]:
             "typeFilter",
             "density",
             "Show 2005 through 2011",
+            "eligibleItems",
+            "isDateBounded",
+            "undatedEligible",
+            "applyCorrectionConsequences",
+            "confirmIdentityCorrection",
+            "syncTimelineToEligibleDatedExtent",
+            "Does NOT clear query/filters",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -196,7 +222,14 @@ def _prove_harness() -> dict[str, Any]:
         "problems": problems,
         "meta": meta,
         "acceptance_gate_authority": "docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md §8",
-        "note": "Harness is structural. ACCEPTED requires FlightSim manual pass of every §8 gate row.",
+        "manual_gate_cases": [
+            "A Filter + Timeline interaction",
+            "B Undated evidence",
+            "C Density independence",
+            "D Teach and return",
+            "E Ask command equivalence",
+        ],
+        "note": "Harness is structural. ACCEPTED requires FlightSim manual pass of every §8 row and §8.1 cases A–E.",
     }
 
 
@@ -264,15 +297,23 @@ def _prove_flightsim() -> dict[str, Any]:
             {"area": "Timeline", "criterion": "One unified graphical Timeline/scrubber", "automated": "structural"},
             {"area": "Banding", "criterion": "Dragging a period narrows result and increases precision", "automated": "manual"},
             {"area": "Handles", "criterion": "Widen/narrow current temporal range", "automated": "manual"},
-            {"area": "Reset", "criterion": "Restores complete result temporal range", "automated": "structural label"},
+            {"area": "Reset", "criterion": "Restores full temporal extent of current query+context+type-filter set; does not clear filters", "automated": "structural"},
+            {"area": "Undated", "criterion": "Matching undated discoverable unbounded; no fake date; excluded when date-bounded", "automated": "fixture+structural"},
             {"area": "Synchronization", "criterion": "Timeline changes immediately update Gallery", "automated": "manual"},
-            {"area": "Scrub", "criterion": "Timeline can navigate Gallery position", "automated": "manual"},
+            {"area": "Scrub", "criterion": "Playhead continuously moves Gallery through chronological neighborhood", "automated": "structural"},
             {"area": "Detail", "criterion": "Large modal, not new screen", "automated": "structural"},
-            {"area": "Return", "criterion": "Closing modal restores exact exploration context", "automated": "manual"},
+            {"area": "Return", "criterion": "Close restores prior state then applies correction consequences", "automated": "structural"},
             {"area": "Extensibility", "criterion": "Same modal shell supports mixed evidence types", "automated": "fixture types"},
-            {"area": "Teach-ready", "criterion": "Photo/paused-video face and transcript/voice learning can plug into modal", "automated": "structural slots"},
+            {"area": "Teach proof", "criterion": "Visible I1 identity-correction affordance in modal", "automated": "structural"},
             {"area": "Health", "criterion": "Not top-level", "automated": "shell FAMILY check"},
-            {"area": "Context", "criterion": "Query/filter/date/gallery state remain coherent and reusable by Ask/STT", "automated": "structural"},
+            {"area": "Context", "criterion": "Query/filter/date/gallery state coherent for Ask/STT", "automated": "structural"},
         ],
-        "note": "prove-p2-i4 is structural assist only. ACCEPTED requires manual pass of every §8 gate row on FlightSim.",
+        "manual_gate_cases": [
+            "A Filter + Timeline interaction",
+            "B Undated evidence",
+            "C Density independence",
+            "D Teach and return",
+            "E Ask command equivalence",
+        ],
+        "note": "prove-p2-i4 is structural assist only. ACCEPTED requires manual pass of every §8 row and §8.1 cases A–E on FlightSim.",
     }

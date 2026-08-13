@@ -18,7 +18,8 @@ def _normalize_item(raw: dict[str, Any]) -> dict[str, Any]:
     out["title"] = title
     out["preview"] = excerpt
     out["detail"] = detail
-    out["date"] = str(raw.get("date") or "")[:10]
+    out["date"] = str(raw.get("date") or "")[:10] if raw.get("date") else ""
+    out["undated"] = bool(raw.get("undated") or not raw.get("date"))
     return out
 
 

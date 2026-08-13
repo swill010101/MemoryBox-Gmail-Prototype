@@ -41,7 +41,7 @@
     { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
     { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
     { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
-    { id: "teach", label: "Teach", href: "/review/ui", ico: "✧" },
+    { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
   ];
 
   const DENSITY_LABEL = { 1: "Small", 2: "Medium", 3: "Large" };
@@ -68,10 +68,11 @@
    *     precision: 'years'|'months'|'days',
    *   },
    *   gallery: { density: number, scrollTop: number, sort: 'newest'|'oldest' },
-   *   modal: { openId: string|null, snapshot: object|null },
+   *   modal: { openId: string|null, snapshot: object|null, pendingCorrection: object|null },
    * }} */
   let state = null;
   let rawItems = [];
+  let peopleOptions = [];
   let bandDrag = null;
   let handleDrag = null;
   let scrubDrag = null;
@@ -81,9 +82,41 @@
   }
 
   function parseISO(s) {
+    if (!s) return NaN;
     const p = String(s || "").slice(0, 10).split("-");
-    if (p.length < 3) return NaN;
+    if (p.length < 3 || !p[0]) return NaN;
     return dayMs(+p[0], +p[1], +p[2]);
+  }
+
+  function isUndated(item) {
+    return Boolean(item && (item.undated || !item.date || !Number.isFinite(parseISO(item.date))));
+  }
+
+  function isDated(item) {
+    return !isUndated(item);
+  }
+
+  /** Eligible result set = query/context corpus ∩ type filter (not yet date-bounded). */
+  function eligibleItems() {
+    return rawItems.filter((it) => matchesType(it, state.domain.typeFilter));
+  }
+
+  function datedEligible() {
+    return eligibleItems().filter(isDated);
+  }
+
+  function undatedEligible() {
+    return eligibleItems().filter(isUndated);
+  }
+
+  /** True when active range is narrower than full dated extent of eligible set. */
+  function isDateBounded() {
+    const span = state.timeline.extentEnd - state.timeline.extentStart;
+    const eps = Math.max(span * 0.004, 86400000 * 0.5);
+    return (
+      state.timeline.rangeStart > state.timeline.extentStart + eps ||
+      state.timeline.rangeEnd < state.timeline.extentEnd - eps
+    );
   }
 
   function fmtDay(ms) {
@@ -116,13 +149,14 @@
   }
 
   function extentOf(items) {
-    if (!items.length) {
+    const dated = items.filter(isDated);
+    if (!dated.length) {
       const now = Date.now();
       return { start: now, end: now };
     }
     let lo = Infinity;
     let hi = -Infinity;
-    for (const it of items) {
+    for (const it of dated) {
       const t = parseISO(it.date);
       if (!Number.isFinite(t)) continue;
       lo = Math.min(lo, t);
@@ -132,7 +166,6 @@
       const now = Date.now();
       return { start: now, end: now };
     }
-    // pad slightly so edge items aren't on the rim
     const pad = Math.max((hi - lo) * 0.02, 86400000);
     return { start: lo - pad, end: hi + pad };
   }
@@ -144,21 +177,45 @@
     return t === filter;
   }
 
+  /**
+   * Gallery membership:
+   * - dated items in active Timeline range
+   * - undated items only when NOT date-bounded (unbounded / full-extent view)
+   */
   function visibleItems() {
-    const { typeFilter } = state.domain;
+    const eligible = eligibleItems();
     const { rangeStart, rangeEnd } = state.timeline;
     const sort = (state.gallery && state.gallery.sort) || "newest";
-    const list = rawItems
-      .filter((it) => matchesType(it, typeFilter))
-      .filter((it) => {
-        const t = parseISO(it.date);
-        return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
-      });
+    const bounded = isDateBounded();
+    const list = eligible.filter((it) => {
+      if (isUndated(it)) return !bounded;
+      const t = parseISO(it.date);
+      return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
+    });
     list.sort((a, b) => {
+      if (isUndated(a) && isUndated(b)) return 0;
+      if (isUndated(a)) return 1;
+      if (isUndated(b)) return -1;
       const d = parseISO(a.date) - parseISO(b.date);
       return sort === "oldest" ? d : -d;
     });
     return list;
+  }
+
+  /** After type-filter change: Timeline = dated portion of new eligible set (full extent). */
+  function syncTimelineToEligibleDatedExtent() {
+    const ext = extentOf(datedEligible());
+    state.timeline.extentStart = ext.start;
+    state.timeline.extentEnd = ext.end;
+    state.timeline.rangeStart = ext.start;
+    state.timeline.rangeEnd = ext.end;
+    state.timeline.precision = computePrecision(ext.start, ext.end);
+    state.timeline.playhead = ext.start;
+  }
+
+  function setTypeFilter(id) {
+    state.domain.typeFilter = id || "all";
+    syncTimelineToEligibleDatedExtent();
   }
 
   function snapshotExplore() {
@@ -231,41 +288,39 @@
     }
 
     if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
-      state.domain.typeFilter = "all";
-      resetTimelineExtent(false);
+      setTypeFilter("all");
       render();
       return;
     }
 
     if (/only photos?\.?/.test(lower) || /^photos?\.?$/.test(lower)) {
-      state.domain.typeFilter = "photo";
+      setTypeFilter("photo");
       render();
       return;
     }
     if (/only videos?\.?/.test(lower) || /add video/.test(lower)) {
       if (/add video/.test(lower) && state.domain.typeFilter === "photo") {
-        state.domain.typeFilter = "all"; // expand to include video among mixed
+        setTypeFilter("all");
       } else if (/only videos?/.test(lower)) {
-        state.domain.typeFilter = "video";
+        setTypeFilter("video");
       } else {
-        // "Add video" while filtered: clear to all so video appears with others
-        state.domain.typeFilter = "all";
+        setTypeFilter("all");
       }
       render();
       return;
     }
     if (/only (email|emails|text)/.test(lower)) {
-      state.domain.typeFilter = "email";
+      setTypeFilter("email");
       render();
       return;
     }
     if (/only artifacts?/.test(lower)) {
-      state.domain.typeFilter = "artifact";
+      setTypeFilter("artifact");
       render();
       return;
     }
     if (/only stories?/.test(lower)) {
-      state.domain.typeFilter = "story";
+      setTypeFilter("story");
       render();
       return;
     }
@@ -309,6 +364,7 @@
   }
 
   function resetTimelineExtent(andRender) {
+    // Reset = full temporal extent of current eligible set. Does NOT clear query/filters.
     state.timeline.rangeStart = state.timeline.extentStart;
     state.timeline.rangeEnd = state.timeline.extentEnd;
     state.timeline.precision = computePrecision(
@@ -366,7 +422,7 @@
     }).join("");
     el.querySelectorAll("button").forEach((btn) => {
       btn.addEventListener("click", () => {
-        state.domain.typeFilter = btn.getAttribute("data-filter");
+        setTypeFilter(btn.getAttribute("data-filter"));
         render();
       });
     });
@@ -377,8 +433,9 @@
   }
 
   function fmtCardDate(iso) {
+    if (!iso) return "Undated";
     const t = parseISO(iso);
-    if (!Number.isFinite(t)) return iso || "";
+    if (!Number.isFinite(t)) return "Undated";
     const d = new Date(t);
     const months = [
       "Jan",
@@ -433,9 +490,13 @@
         const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
         const date = escapeHtml(fmtCardDate(it.date));
+        const undatedBadge = isUndated(it)
+          ? `<span class="mb-card-undated-badge">Undated</span>`
+          : "";
         return `<button type="button" class="mb-card" data-id="${escapeAttr(
           it.id
         )}" data-type="${escapeAttr(it.type)}">
+          ${undatedBadge}
           <div class="mb-card-media" data-type="${escapeAttr(it.type)}">${cardMediaInner(
             it
           )}</div>
@@ -443,7 +504,9 @@
             <span class="mb-card-type" aria-hidden="true">${glyph}</span>
             <div>
               <div class="mb-card-title">${title}</div>
-              <div class="mb-card-sub">${date}</div>
+              <div class="mb-card-sub">${date}${
+          it.face_identity ? " · " + escapeHtml(it.face_identity) : ""
+        }</div>
             </div>
           </div>
         </button>`;
@@ -488,10 +551,23 @@
       precision
     );
 
-    // density dots from raw items (type-filtered but full extent for context)
+    const undatedEl = document.getElementById("mb-tl-undated");
+    const uCount = undatedEligible().length;
+    if (undatedEl) {
+      if (uCount > 0) {
+        undatedEl.hidden = false;
+        undatedEl.textContent = isDateBounded()
+          ? `Undated: ${uCount} (hidden while date-bounded)`
+          : `Undated: ${uCount}`;
+      } else {
+        undatedEl.hidden = true;
+      }
+    }
+
+    // density dots = dated portion of eligible set (not invented undated positions)
     const dotsEl = document.getElementById("mb-tl-dots");
-    const typed = rawItems.filter((it) => matchesType(it, state.domain.typeFilter));
-    dotsEl.innerHTML = typed
+    const typedDated = datedEligible();
+    dotsEl.innerHTML = typedDated
       .map((it) => {
         const t = parseISO(it.date);
         if (!Number.isFinite(t)) return "";
@@ -534,6 +610,7 @@
       document.getElementById("mb-explore-gallery").scrollTop || 0;
     state.modal.snapshot = snapshotExplore();
     state.modal.openId = id;
+    state.modal.pendingCorrection = null;
 
     const modal = document.getElementById("mb-modal");
     document.getElementById("mb-modal-kicker").textContent = String(
@@ -542,17 +619,24 @@
     document.getElementById("mb-modal-title").textContent = item.title || item.id;
     const body = document.getElementById("mb-modal-body");
     body.innerHTML = renderEvidenceBody(item);
+    renderTeachSlot(item);
     modal.hidden = false;
     document.getElementById("mb-modal-close").focus();
   }
 
   function closeModal() {
     const snap = state.modal.snapshot;
+    const pending = state.modal.pendingCorrection;
     state.modal.openId = null;
     state.modal.snapshot = null;
+    state.modal.pendingCorrection = null;
     document.getElementById("mb-modal-body").innerHTML = "";
+    document.getElementById("mb-modal-teach").innerHTML = "";
     document.getElementById("mb-modal").hidden = true;
+    // 1) Restore prior exploration state/position
     if (snap) restoreExplore(snap);
+    // 2) Then incorporate correction consequences without dumping to a new default
+    if (pending) applyCorrectionConsequences(pending);
     render();
     requestAnimationFrame(() => {
       const g = document.getElementById("mb-explore-gallery");
@@ -560,44 +644,157 @@
     });
   }
 
+  function applyCorrectionConsequences(pending) {
+    const item = rawItems.find((x) => x.id === pending.itemId);
+    if (!item) return;
+    item.face_identity = pending.personLabel;
+    item.people = Array.isArray(item.people) ? item.people.slice() : [];
+    if (pending.personLabel && !item.people.includes(pending.personLabel)) {
+      item.people.push(pending.personLabel);
+    }
+    // Soft curator note — do not reset filters/range/query
+    const note = `Identity updated: ${pending.personLabel}`;
+    if (state.domain.summary && !state.domain.summary.includes(note)) {
+      state.domain.summary = `${state.domain.summary} (${note})`;
+    }
+  }
+
+  function faceBoxStyle(item) {
+    const b = item.face_box || { x: 0.3, y: 0.2, w: 0.22, h: 0.28 };
+    return `left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%`;
+  }
+
+  function renderTeachSlot(item) {
+    const slot = document.getElementById("mb-modal-teach");
+    const t = String(item.type || "").toLowerCase();
+    const teachable =
+      item.teachable ||
+      t === "photo" ||
+      (t === "video" && (item.paused_frame !== false));
+    if (!teachable) {
+      slot.innerHTML =
+        "Contextual Review &amp; Learn attaches here for photos, paused video frames, and future voice/transcript teaching — same modal shell.";
+      return;
+    }
+    const opts = (peopleOptions.length ? peopleOptions : [
+      { id: "demo:peggy", label: "Peggy" },
+      { id: "demo:rick", label: "Rick" },
+      { id: "demo:tom", label: "Tom Will" },
+    ])
+      .map(
+        (p) =>
+          `<option value="${escapeAttr(p.id)}" data-label="${escapeAttr(p.label)}">${escapeHtml(
+            p.label
+          )}</option>`
+      )
+      .join("");
+    const current = escapeHtml(item.face_identity || "Unknown");
+    slot.innerHTML = `<div class="mb-teach-proof" data-i1-teach-proof="1">
+      <h3>Review &amp; Learn — face identity (I1 path)</h3>
+      <p class="mb-teach-status">Current assignment: <strong id="mb-teach-current">${current}</strong></p>
+      <div class="mb-teach-row">
+        <label for="mb-teach-person">Correct identity</label>
+        <select id="mb-teach-person">${opts}</select>
+        <button type="button" id="mb-teach-correct">Confirm identity</button>
+      </div>
+      <p class="mb-teach-status" id="mb-teach-status">Uses the owner identity-correction path. Close returns to the same exploration context.</p>
+    </div>`;
+    document.getElementById("mb-teach-correct").addEventListener("click", () => {
+      confirmIdentityCorrection(item);
+    });
+  }
+
+  async function confirmIdentityCorrection(item) {
+    const sel = document.getElementById("mb-teach-person");
+    const opt = sel.options[sel.selectedIndex];
+    const personId = sel.value;
+    const personLabel = opt.getAttribute("data-label") || opt.textContent || "Person";
+    const status = document.getElementById("mb-teach-status");
+    const current = document.getElementById("mb-teach-current");
+
+    state.modal.pendingCorrection = {
+      itemId: item.id,
+      personId,
+      personLabel,
+      at: Date.now(),
+    };
+    item.face_identity = personLabel;
+
+    // Live I1 API when we have a real person id + video moment coordinates
+    const livePerson = personId && !String(personId).startsWith("demo:");
+    const vid = item.video_external_id;
+    if (livePerson && vid) {
+      try {
+        const res = await fetch("/recognition/appearances/correct", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: personId,
+            video_provider_key: item.video_provider_key || "hvrt",
+            video_external_id: vid,
+            start_sec: Number(item.t != null ? item.t : 0),
+            end_sec: null,
+            face_external_id: item.face_external_id || null,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        if (status) status.textContent = "Identity corrected via I1 owner path. Close to return.";
+      } catch (err) {
+        if (status)
+          status.textContent =
+            "Local correction recorded; live I1 call: " + err + " — close still restores context.";
+      }
+    } else {
+      if (status)
+        status.textContent =
+          "Identity correction recorded (demo / photo path). Close returns to the same exploration context.";
+    }
+    if (current) current.textContent = personLabel;
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     if (t === "photo") {
       return `<div class="mb-ev-photo" aria-label="Photo workspace">${escapeHtml(
-        item.preview || "Photo"
+        item.preview || item.title || "Photo"
       )}
-        <div style="position:absolute;inset:12% 18%;border:2px dashed rgba(255,255,255,.45);border-radius:8px;display:flex;align-items:flex-end;justify-content:center;padding:8px;font-size:12px;color:#fff;background:rgba(0,0,0,.15)">
-          Face teach region (assign / reassign / Learn) — prepared, not full Teach product
-        </div>
+        <div class="mb-face-box" style="${faceBoxStyle(item)}" title="Face region"></div>
       </div>
-      <p class="mb-ev-meta">${escapeHtml(item.date || "")} · Photo evidence</p>
+      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Photo evidence · Face: ${escapeHtml(
+        item.face_identity || "Unknown"
+      )}</p>
       <p>${escapeHtml(item.detail || "")}</p>`;
     }
     if (t === "video") {
       return `<div class="mb-ev-video">
-        <div class="mb-ev-video-frame" id="mb-ev-video-frame">Paused frame · face teach applies here only (not during playback)</div>
+        <div class="mb-ev-video-frame" id="mb-ev-video-frame" style="position:relative">
+          Paused frame · face teach applies here only (not during playback)
+          <div class="mb-face-box" style="${faceBoxStyle(item)}"></div>
+        </div>
         <div class="mb-ev-transcript" aria-label="Time-aligned transcript (prepared)">
           <strong>Transcript (architecture)</strong><br/>
           [00:12] …speech span selectable for speaker ID / Learn from voice…<br/>
           ${escapeHtml(item.detail || "Video moment ready for time-aligned teaching.")}
         </div>
       </div>
-      <p class="mb-ev-meta">${escapeHtml(item.date || "")} · Video moment</p>`;
+      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Video moment · Face: ${escapeHtml(
+        item.face_identity || "Unknown"
+      )}</p>`;
     }
     if (t === "email" || t === "sms" || t === "text") {
       return `<div class="mb-ev-email">${escapeHtml(item.detail || item.preview || "")}</div>
-        <p class="mb-ev-meta">${escapeHtml(item.date || "")} · Email / text</p>`;
+        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text</p>`;
     }
     if (t === "story") {
-      return `<p class="mb-ev-meta">${escapeHtml(item.date || "")} · Story (contextual meaning)</p>
+      return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
         <p>${escapeHtml(item.detail || "")}</p>
         <p style="color:var(--mb-muted);font-size:13px">Stories stay tied to people / evidence / events — not a disconnected writing surface in I4.</p>`;
     }
-    // artifact / audio / calendar / recipe / document / default
     return `<div class="mb-ev-photo" data-type="${escapeAttr(t)}" style="min-height:160px">${escapeHtml(
       TYPE_GLYPH[t] || "•"
     )} ${escapeHtml(item.preview || t)}</div>
-      <p class="mb-ev-meta">${escapeHtml(item.date || "")} · ${escapeHtml(t)}</p>
+      <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(t)}</p>
       <p>${escapeHtml(item.detail || "")}</p>`;
   }
 
@@ -610,24 +807,44 @@
     return state.timeline.extentStart + x * (state.timeline.extentEnd - state.timeline.extentStart);
   }
 
-  function scrollGalleryToward(ms) {
+  /** Proportional scrub: playhead → chronological neighborhood without huge jumps. */
+  function scrollGalleryToward(ms, opts) {
+    opts = opts || {};
     const items = visibleItems();
     if (!items.length) return;
     const gallery = document.getElementById("mb-explore-gallery");
-    // find nearest item at/after playhead
-    let idx = 0;
-    for (let i = 0; i < items.length; i++) {
-      if (parseISO(items[i].date) >= ms) {
-        idx = i;
-        break;
-      }
-      idx = i;
+    const datedIdx = [];
+    items.forEach((it, i) => {
+      if (isDated(it)) datedIdx.push({ i, t: parseISO(it.date) });
+    });
+    if (!datedIdx.length) return;
+    datedIdx.sort((a, b) => a.t - b.t);
+
+    let best = datedIdx[0];
+    for (let k = 0; k < datedIdx.length; k++) {
+      if (datedIdx[k].t <= ms) best = datedIdx[k];
+      else break;
     }
-    const card = gallery.querySelectorAll(".mb-card")[idx];
-    if (card) {
-      card.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
-      state.gallery.scrollTop = gallery.scrollTop;
+    // If closer to next neighbor, ease toward it (continuous neighborhood)
+    const next = datedIdx.find((d) => d.t > best.t);
+    let cardIndex = best.i;
+    if (next && next.t !== best.t) {
+      const frac = (ms - best.t) / (next.t - best.t);
+      if (frac > 0.55) cardIndex = next.i;
     }
+
+    const cards = gallery.querySelectorAll(".mb-card");
+    const card = cards[cardIndex];
+    if (!card) return;
+    const behavior = opts.smooth ? "smooth" : "auto";
+    const target =
+      card.offsetTop - Math.max(0, (gallery.clientHeight - card.offsetHeight) / 3);
+    if (opts.smooth) {
+      card.scrollIntoView({ inline: "nearest", block: "nearest", behavior });
+    } else {
+      gallery.scrollTop = Math.max(0, target);
+    }
+    state.gallery.scrollTop = gallery.scrollTop;
   }
 
   function bindTimeline() {
@@ -684,16 +901,10 @@
       }
       if (scrubDrag) {
         const t = trackFrac(e.clientX);
-        const delta = t - scrubDrag.last;
         scrubDrag.last = t;
         state.timeline.playhead = t;
-        // Scrub mental model: small move = slow scroll, large = fast
-        const gallery = document.getElementById("mb-explore-gallery");
-        const span = state.timeline.extentEnd - state.timeline.extentStart;
-        const speed = Math.min(80, Math.abs(delta) / span * 4000);
-        gallery.scrollTop += (delta >= 0 ? 1 : -1) * Math.max(8, speed);
-        state.gallery.scrollTop = gallery.scrollTop;
-        scrollGalleryToward(t);
+        // Continuous proportional neighborhood sync (no huge jumps / no drift)
+        scrollGalleryToward(t, { smooth: false });
         renderTimeline();
         return;
       }
@@ -798,8 +1009,10 @@
   }
 
   function bootFromPayload(payload) {
-    rawItems = Array.isArray(payload.items) ? payload.items.slice() : [];
-    const ext = extentOf(rawItems);
+    rawItems = Array.isArray(payload.items)
+      ? payload.items.map((x) => Object.assign({}, x))
+      : [];
+    const ext = extentOf(rawItems.filter(isDated));
     state = {
       domain: {
         askText: payload.ask_text || "",
@@ -819,12 +1032,33 @@
         precision: computePrecision(ext.start, ext.end),
       },
       gallery: { density: 2, scrollTop: 0, sort: "newest" },
-      modal: { openId: null, snapshot: null },
+      modal: { openId: null, snapshot: null, pendingCorrection: null },
     };
     renderNav();
     bindChrome();
     bindTimeline();
     render();
+    loadPeopleOptions();
+  }
+
+  async function loadPeopleOptions() {
+    const fallback = [
+      { id: "demo:peggy", label: "Peggy" },
+      { id: "demo:rick", label: "Rick" },
+      { id: "demo:tom", label: "Tom Will" },
+    ];
+    try {
+      const res = await fetch("/people/picker-options");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const opts = (data.options || data.people || []).map((p) => ({
+        id: String(p.id || p.person_id || ""),
+        label: String(p.display_name || p.name || p.label || "Person"),
+      })).filter((p) => p.id);
+      peopleOptions = opts.length ? opts : fallback;
+    } catch (_) {
+      peopleOptions = fallback;
+    }
   }
 
   async function main() {
