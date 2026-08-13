@@ -175,40 +175,52 @@ Moments + jump `t=` · shell coherence · Archive Health remains owner/system (c
 
 ## 7. Acceptance corpus (minimum)
 
+Supporting scenarios (still required). **Pass/fail authority is §8.**
+
 | Case | Requirement |
 |------|-------------|
 | Loop | Ask→Refine→Browse→Modal→Close→Continue without context loss |
 | Curator + canvas | Concise curator; gallery is principal work surface |
-| Mixed gallery | Multiple media kinds together; ~12+ visible / 2-row target when practical |
-| Density | Independent of timeline/filters |
-| Unified timeline | One scrub/map control; sync with gallery; Reset = result extent |
-| Band / handles | Inward deepen; outward broaden; granularity adapts |
-| Modal restore | Exact prior explore state on close |
-| Teach | Contextual on inspect; video faces paused-frame only |
-| Ask commands | Typed (and STT when available) mutate same state; UI reflects |
-| Nav | Family primary matches MBUX working set direction |
-| Scale | Immich-scale navigable (windowed) |
-| Regression | I1–I3 `--flightsim` green |
+| Scale | Immich-scale navigable (windowed) when live corpus is used |
+| Regression | I1–I3 `--flightsim` green when claiming full FlightSim ACCEPTED |
 | Scope | No isolated timeline page ACCEPTED; no evidence-footnote find UX |
 
 ---
 
-## 8. Exact acceptance gate (proposed)
+## 8. Exact acceptance gate (authoritative pass/fail)
 
-Pass **all** on FlightSim for **ACCEPTED**:
+**This table is the I4 ACCEPTED gate** — separate from the long UX implementation directive.  
+All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEPTED.
 
-1. Visible explore UX conforms to **MBUX-001 v0.4** (curator + canvas, not evidence footnote).  
-2. Unified timeline/scrub synchronized with gallery; Reset restores result extent.  
-3. Band + handles + adaptive precision demonstrated.  
-4. Mixed-media gallery with density control; ~12+ / two-row target on laptop-class when practical.  
-5. Lightweight filters + chips; Ask command changes reflected immediately.  
-6. Evidence modal open/close restores exact explore state.  
-7. Video moment opens at timeslice; paused-frame face teach path available when evidence exists.  
-8. Family primary nav aligned to MBUX working set (system health not primary).  
-9. Immich-scale browsing remains usable.  
-10. No isolated Timeline-only ACCEPTED surface.  
-11. I1–I3 proves remain green.  
-12. `prove-p2-i4` / `--flightsim` passes.
+| Area | I4 acceptance |
+|------|----------------|
+| **Ask** | Prompt + entry on one line where practical; Ask remains visible but compact |
+| **Gallery** | Mixed-media, two rows, target 12+ visible objects at 13" class viewport |
+| **Density** | User can easily show more/smaller or fewer/larger cards |
+| **Filters** | Lightweight, immediately applied, common state for mouse/Ask/STT |
+| **Timeline** | One unified graphical Timeline/scrubber |
+| **Banding** | Dragging a period narrows result and increases precision |
+| **Handles** | Widen/narrow current temporal range |
+| **Reset** | Restores complete result temporal range |
+| **Synchronization** | Timeline changes immediately update Gallery |
+| **Scrub** | Timeline can navigate Gallery position |
+| **Detail** | Large modal, not new screen |
+| **Return** | Closing modal restores exact exploration context |
+| **Extensibility** | Same modal shell supports mixed evidence types |
+| **Teach-ready** | Photo/paused-video face and transcript/voice learning can plug into modal |
+| **Health** | Not top-level |
+| **Context** | Query/filter/date/gallery state remain coherent and reusable by Ask/STT |
+
+### 8.1 Demo path (FlightSim)
+
+1. Pull branch; **restart serve** (port **8790**).  
+2. Open `/explore/ui?demo=peggy-christmas` (or Ask → Peggy around Christmas).  
+3. Walk each §8 row; mark pass/fail.  
+4. Optional automated assist: `MEMORYBOX_P1_RUNTIME_HOST=1 python -m memorybox prove-p2-i4 --flightsim` (structural checks only — **manual §8 walk is required for ACCEPTED**).
+
+### 8.2 Out of gate (must not block ACCEPTED)
+
+Perfect visual polish · full Family Night · full Stories redesign · complete Teach product · every evidence-type renderer · full STT engine · full biometric recognition · Archive Health redesign.
 
 ---
 
@@ -234,6 +246,6 @@ Pass **all** on FlightSim for **ACCEPTED**:
 | MBUX-001 v0.4 I4 addendum | **Approved UX direction** (founder); recorded in-repo |
 | **This I4 definition (reworked to MBUX-001)** | **LOCKED** under MBUX-001 v0.4 + Implementation Directive |
 | Build / code | **AUTHORIZED** (2026-08-13 — I4 UX Implementation Directive) |
-| FlightSim ACCEPTED | **PENDING** — acceptance sequence in directive |
+| FlightSim ACCEPTED | **PENDING** — authoritative gate is **§8** (pass/fail table) |
 
 Build is authorized. Do **not** mark ACCEPTED until the Mixed-Media Find acceptance sequence passes.
