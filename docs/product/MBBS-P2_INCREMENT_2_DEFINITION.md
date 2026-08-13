@@ -1,11 +1,11 @@
 # MBBS-P2 Increment 2 — Product Shell & Context Maturation
 
-**Status:** **ACCEPTED** (FlightSim owner gate 2026-08-13: `prove-p2-i2 --flightsim` → `ok: true` · shell surfaces + static mount · I1 regression) · Definition **LOCKED**  
+**Status:** **FlightSim prove PASSED** (2026-08-13: `prove-p2-i2 --flightsim` → `ok: true`) · **Owner UX acceptance PENDING** (Tom flow review) · Definition **LOCKED** · **Not ACCEPTED** until Tom explicitly accepts  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · MBEVS-001 v1.0 · founder I2 clarifications below · prior I1 ACCEPTED baseline  
 **Depends on:** **P2-I1 ACCEPTED** (Show me Peggy / Person-in-Media)  
 **CLI prove:** `python -m memorybox prove-p2-i2` · `prove-p2-i2 --flightsim`  
-**Gate:** FlightSim owner gate passed 2026-08-13.
+**Gate:** Automated FlightSim prove passed; **ACCEPTED** only after founder UX acceptance.
 
 ---
 

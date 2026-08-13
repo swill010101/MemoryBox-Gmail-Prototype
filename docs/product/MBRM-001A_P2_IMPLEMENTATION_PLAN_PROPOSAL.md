@@ -81,7 +81,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | ID | Name | Kinds | Notes |
 |----|------|-------|-------|
 | **P2-I1** | Show me Peggy (Person-in-Media Vertical) | F+E | **ACCEPTED** (2026-08-13) |
-| **P2-I2** | Product Shell & Context Maturation | U | **ACCEPTED** (2026-08-13) |
+| **P2-I2** | Product Shell & Context Maturation | U | Prove **PASSED**; owner UX acceptance **PENDING** (2026-08-13) |
 | **P2-I3** | Archive Health & Provider Honesty | U+A | **TASK-004**; minimal status only in I1 if required |
 | **P2-I4** | Timeline-first High-Volume Explore | U | |
 | **P2-I5** | Universal Person Surfaces | F+U | Rest of TASK-001 |
