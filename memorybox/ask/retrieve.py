@@ -862,7 +862,10 @@ def search_videos(
             status["unmapped_person_names"] = list(unmapped)
             # Merge durable face_appearance_moments (P2-I1) with seek URLs
             try:
-                from memorybox.recognition.process import list_appearance_moments
+                from memorybox.recognition.process import (
+                    ensure_timeslot_play_url,
+                    list_appearance_moments,
+                )
 
                 person_ids = {
                     str(m.get("person_id"))
@@ -871,8 +874,10 @@ def search_videos(
                 }
                 for pid in person_ids:
                     for mom in list_appearance_moments(pid, limit=limit):
-                        play = mom.get("play_url") or (
-                            f"/review/ui?video={mom['video_external_id']}&t={mom['start_sec']}"
+                        play = ensure_timeslot_play_url(
+                            video_external_id=str(mom["video_external_id"]),
+                            start_sec=float(mom["start_sec"]),
+                            play_url=mom.get("play_url"),
                         )
                         hits.append(
                             VideoHit(

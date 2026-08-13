@@ -488,7 +488,10 @@ class Handler(BaseHTTPRequestHandler):
                 hits.append(
                     {
                         **sp,
-                        "play_url": f"/media/{sp['video_external_id']}",
+                        "play_url": (
+                            f"/media/{sp['video_external_id']}"
+                            f"?t={float(sp.get('start_sec') or 0)}"
+                        ),
                     }
                 )
             self._json(200, {"ok": True, "hits": hits[:limit]})

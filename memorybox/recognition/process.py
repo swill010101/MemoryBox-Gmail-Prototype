@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from memorybox.db import connection
 from memorybox.person import AUTHORITY_AI_INFERRED, list_provider_external_ids_for_person
@@ -13,6 +14,35 @@ from memorybox.recognition.queue import (
     claim_next_item,
     complete_item,
 )
+
+
+def ensure_timeslot_play_url(
+    *,
+    video_external_id: str,
+    start_sec: float,
+    play_url: str | None = None,
+) -> str:
+    """Return a seekable play URL (must include t= for jump-to-timeslot).
+
+    Prefer keeping a provider media path when present, but always attach t=.
+    Fall back to Review UI deep-link when no provider URL is given.
+    """
+    t = float(start_sec)
+    raw = (play_url or "").strip()
+    if not raw:
+        return f"/review/ui?video={video_external_id}&t={t}"
+    if "t=" in raw:
+        return raw
+    # Absolute or relative URL/path — append t=
+    if "://" in raw or raw.startswith("/"):
+        parts = urlparse(raw)
+        q = parse_qs(parts.query, keep_blank_values=True)
+        q["t"] = [str(t)]
+        new_query = urlencode(q, doseq=True)
+        return urlunparse(
+            (parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment)
+        )
+    return f"/review/ui?video={video_external_id}&t={t}"
 
 
 def upsert_appearance_moment(
@@ -83,6 +113,12 @@ def list_appearance_moments(
             d["created_at"] = d["created_at"].isoformat()
         if isinstance(d.get("meta_json"), str):
             d["meta_json"] = json.loads(d["meta_json"])
+        # Normalize legacy rows that stored media paths without t=
+        d["play_url"] = ensure_timeslot_play_url(
+            video_external_id=str(d.get("video_external_id") or ""),
+            start_sec=float(d.get("start_sec") or 0),
+            play_url=d.get("play_url"),
+        )
         out.append(d)
     return out
 
@@ -142,8 +178,11 @@ def process_one(
                 face_external_id=getattr(h, "face_external_id", None),
                 method="auto_associate",
                 confidence=getattr(h, "confidence", None) or 0.7,
-                play_url=getattr(h, "play_url", None)
-                or f"/review/ui?video={veid}&t={float(h.start_sec)}",
+                play_url=ensure_timeslot_play_url(
+                    video_external_id=veid,
+                    start_sec=float(h.start_sec),
+                    play_url=getattr(h, "play_url", None),
+                ),
                 meta={"queue_item_id": item["id"]},
             )
             moments.append(mid)
