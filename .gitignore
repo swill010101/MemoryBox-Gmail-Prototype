@@ -16,29 +16,27 @@ archive/**
 !archive/google-takout-original/**
 !archive/checksums/
 !archive/checksums/**
-
 # Credentials / secrets
 *.env
 config/immich.env
 config/secrets.json
 config/local.json
-
 # Python
 .venv/
 __pycache__/
 *.pyc
 *.pyo
-
 # Node / frontend build
 node_modules/
 application/**/dist/
 application/**/build/
-
 # Editors
 .vscode/
 .idea/
-
 # Operating system
 Thumbs.db
 .DS_Store
 Desktop.ini
+MemoryBox_P1_and_Mockup_Screens_PNG.zip
+ux-png-pack/
+mockups/MemoryBox_P1_and_Mockup_Screens_PNG.zip

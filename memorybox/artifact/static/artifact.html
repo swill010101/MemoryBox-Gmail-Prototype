@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Artifact</title>
+  <style>
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a564c; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, textarea, select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    textarea { min-height: 90px; }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a655c; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .reps { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .reps img { max-width: 140px; max-height: 140px; border: 1px solid var(--line); background: #fff; }
+    code, #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Artifact</h1>
+    <p class="sub">
+      One Artifact → many representations (pocket-watch pattern). MB-managed uploads preserve originals.
+      <a href="/library/ui?modalities=artifact&amp;bucket=all">Library (artifacts)</a> ·
+      <a href="/story/ui">Story</a> ·
+      <a href="/ask/ui">Ask</a>
+    </p>
+    <p class="warn">
+      Artifact ≠ file. Upload front/back as representations of one Artifact.
+      Unresolved Person/Place/Event stay explicit — never invented.
+      Voice testimony: Capture/STT via Story path, then Save + link here.
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Create Artifact</h2>
+      <div class="row">
+        <div>
+          <label for="kind">Kind</label>
+          <select id="kind">
+            <option value="keepsake_object">keepsake / object</option>
+            <option value="letter">letter</option>
+            <option value="document">document</option>
+            <option value="recipe_card">recipe card</option>
+            <option value="clipping">clipping</option>
+            <option value="photograph_of_object">photograph of object</option>
+            <option value="other">other</option>
+          </select>
+        </div>
+        <div>
+          <label for="label">Label</label>
+          <input id="label" placeholder="e.g. Grandpa’s pocket watch" />
+        </div>
+      </div>
+      <label for="description">Description (optional — not testimony)</label>
+      <textarea id="description" placeholder="Short description of the object…"></textarea>
+      <button id="createBtn" type="button">Create Artifact</button>
+      <p class="muted">Current id: <span id="lastId">(none)</span></p>
+      <p id="status" class="muted"></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Add representation(s)</h2>
+      <label for="repFile">File (MB-managed upload)</label>
+      <input id="repFile" type="file" accept="image/*,application/pdf,.pdf" />
+      <label for="repLabel">Representation label (front / back / engraving)</label>
+      <input id="repLabel" placeholder="front" />
+      <button id="uploadBtn" type="button">Upload representation</button>
+      <div id="reps" class="reps"></div>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Optional associations</h2>
+      <button class="secondary" id="refreshPeople" type="button">Refresh people</button>
+      <p id="peopleHint" class="muted">Loads MB People plus Immich names (lazy-create MB Person on associate).</p>
+      <label for="personSel">Associate Person (optional)</label>
+      <select id="personSel"><option value="">(none)</option></select>
+      <button id="assocPersonBtn" type="button">Associate Person</button>
+      <p class="muted">
+        Immich names you already created appear under <b>Immich</b>. Associating teaches/maps that name into MemoryBox (same I6/I7 lazy pattern), then links the Artifact — no separate /people/ui step required.
+      </p>
+
+      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Already linked to this Artifact</h3>
+      <p id="linkedPeople" class="muted">People: (load an Artifact)</p>
+      <div id="linkedStories"><p class="muted">Stories: (none loaded)</p></div>
+
+      <h3 style="font-size:0.95rem;margin:1rem 0 0.35rem">Add Story — why it matters (typed or in-app Capture/STT)</h3>
+      <p class="muted">
+        Uses the same MemoryBox <code>POST /capture/transcribe</code> path as Journal (I5A).
+        Record or upload → STT fills the Story body as a <b>draft</b> → review/edit → explicit <b>Save Story + link Artifact</b>.
+        No paste-from-elsewhere path required.
+      </p>
+      <p id="micHint" class="warn" style="display:none"></p>
+      <label for="micDevice">Microphone</label>
+      <select id="micDevice"><option value="">Loading devices…</option></select>
+      <button id="refreshMicsBtn" type="button" class="secondary">Refresh mic list</button>
+      <button id="recBtn" type="button" class="secondary">Record</button>
+      <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
+      <span id="recStatus" class="muted">Idle</span>
+      <p id="sttError" class="warn" style="display:none;white-space:pre-wrap"></p>
+      <label for="audioFile" style="margin-top:0.5rem">Or upload spoken audio (webm/wav/mp3)</label>
+      <input id="audioFile" type="file" accept="audio/*,.webm,.wav,.mp3,.m4a" />
+      <p class="muted">Audio id: <code id="audioId">(none)</code> · draft only until Save Story</p>
+
+      <label for="storyTitle">Story title (optional)</label>
+      <input id="storyTitle" placeholder="Story title (optional)" />
+      <label for="storyBody">Story body (STT draft lands here — edit before Save)</label>
+      <textarea id="storyBody" placeholder="Owner recollection…"></textarea>
+      <label for="narratorSel">Narrator (who spoke / wrote — MB Person)</label>
+      <select id="narratorSel"><option value="">(select narrator)</option></select>
+      <label for="narratorEnroll">Or enroll a <b>new</b> narrator name (exact spelling → new MB Person)</label>
+      <input id="narratorEnroll" placeholder="Only if not in list — exact spelling matters" autocomplete="off" />
+      <p class="warn" style="font-size:0.85rem">
+        Narrator ≠ About person on the Artifact. Prefer the list (MB or Immich lazy-teach).
+        Enrolling “Tom” vs “Tom W” creates two People — no fuzzy merge here; use /people/ui merge if needed.
+      </p>
+      <button id="storyBtn" type="button">Save Story + link Artifact</button>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">4. Provenance</h2>
+      <pre id="detail" class="muted" style="white-space:pre-wrap;margin:0"></pre>
+    </section>
+  </main>
+  <script>
+    let currentId = null;
+    let lastAudioId = null;
+    let activeRec = null;
+    let levelTimer = null;
+
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+    function errText(err) {
+      if (!err) return "unknown error";
+      if (typeof err === "string") return err;
+      if (err.detail) {
+        if (typeof err.detail === "string") return err.detail;
+        if (typeof err.detail === "object") {
+          return err.detail.message || err.detail.error || JSON.stringify(err.detail);
+        }
+      }
+      return err.message || String(err);
+    }
+    async function j(url, opts) {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data.detail;
+        if (typeof d === "string") throw new Error(d);
+        if (d && typeof d === "object") {
+          throw new Error(d.message || d.error || JSON.stringify(d));
+        }
+        throw new Error(res.status + " " + res.statusText);
+      }
+      return data;
+    }
+    function setStatus(msg, warn) {
+      const el = document.getElementById("status");
+      el.className = warn ? "warn" : "muted";
+      el.textContent = msg;
+    }
+    function setRecStatus(text, isWarn) {
+      const el = document.getElementById("recStatus");
+      el.textContent = text;
+      el.className = isWarn ? "warn" : "muted";
+    }
+    function stopLevelMeter() {
+      if (levelTimer) {
+        clearInterval(levelTimer);
+        levelTimer = null;
+      }
+    }
+
+    async function transcribeBlob(blob, filename) {
+      if (!blob || !blob.size) {
+        throw new Error("Empty recording (0 bytes). Hold Record a bit longer, then Stop.");
+      }
+      setRecStatus("Transcribing via MemoryBox Capture/STT…", false);
+      const fd = new FormData();
+      fd.append("file", blob, filename || "artifact-story.webm");
+      const r = await fetch("/capture/transcribe", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      const detail = data && data.detail;
+      const audioFromErr = detail && typeof detail === "object" ? detail.audio : null;
+      if (!r.ok) {
+        if (audioFromErr && audioFromErr.audio_id) {
+          lastAudioId = audioFromErr.audio_id;
+          document.getElementById("audioId").textContent = lastAudioId;
+          const msg = (detail && detail.message) ? detail.message : "STT failed";
+          setRecStatus("STT failed — draft not filled; fix Whisper then retry", true);
+          const errBox = document.getElementById("sttError");
+          errBox.style.display = "block";
+          errBox.textContent = msg;
+          throw new Error(msg);
+        }
+        throw new Error(typeof detail === "string" ? detail : (r.status + " STT failed"));
+      }
+      const draft = data.draft || data;
+      lastAudioId = draft.audio_id || null;
+      document.getElementById("audioId").textContent = lastAudioId || "(none)";
+      if (draft.text) {
+        document.getElementById("storyBody").value = draft.text;
+      }
+      const errBox = document.getElementById("sttError");
+      errBox.style.display = "none";
+      errBox.textContent = "";
+      const meta = [];
+      if (draft.duration_sec != null) meta.push(draft.duration_sec + "s");
+      if (draft.rms != null) meta.push("rms=" + draft.rms);
+      setRecStatus(
+        "STT draft in Story body — review, then Save Story" +
+          (meta.length ? " (" + meta.join(", ") + ")" : ""),
+        false
+      );
+      return data;
+    }
+
+    function preferMicId(devices) {
+      const saved = localStorage.getItem("mb_artifact_mic_id") || "";
+      if (saved && devices.some((d) => d.deviceId === saved)) return saved;
+      const logi = devices.find((d) => /logi|c615|webcam|microphone/i.test(d.label || "")
+        && !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      if (logi) return logi.deviceId;
+      const notVb = devices.find((d) => !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
+      return (notVb && notVb.deviceId) || (devices[0] && devices[0].deviceId) || "";
+    }
+
+    async function refreshMicList() {
+      const sel = document.getElementById("micDevice");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        sel.innerHTML = "<option value=\"\">Mic enumeration unavailable</option>";
+        return;
+      }
+      try {
+        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tmp.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const inputs = all.filter((d) => d.kind === "audioinput");
+      sel.innerHTML = "";
+      if (!inputs.length) {
+        sel.innerHTML = "<option value=\"\">No audio inputs found</option>";
+        return;
+      }
+      const preferred = preferMicId(inputs);
+      inputs.forEach((d) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ("Microphone " + d.deviceId.slice(0, 8));
+        if (d.deviceId === preferred) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (preferred) localStorage.setItem("mb_artifact_mic_id", preferred);
+    }
+
+    (function micProbe() {
+      const hint = document.getElementById("micHint");
+      const secure = window.isSecureContext;
+      const hasMd = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!secure || !hasMd) {
+        hint.style.display = "block";
+        hint.textContent =
+          "Browser mic needs localhost or HTTPS. On FlightSim use http://127.0.0.1:8790/artifact/ui, or upload an audio file below.";
+        setRecStatus("Mic blocked on this origin — use upload or localhost", true);
+      } else {
+        refreshMicList().catch(() => {});
+      }
+    })();
+
+    document.getElementById("refreshMicsBtn").onclick = () => {
+      refreshMicList().catch((e) => setRecStatus(errText(e), true));
+    };
+    document.getElementById("micDevice").onchange = (ev) => {
+      if (ev.target.value) localStorage.setItem("mb_artifact_mic_id", ev.target.value);
+    };
+
+    document.getElementById("recBtn").onclick = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Mic unavailable — use audio upload or open via http://127.0.0.1:8790/artifact/ui");
+        }
+        const deviceId = (document.getElementById("micDevice").value || "").trim();
+        const audioConstraint = {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        if (deviceId) audioConstraint.deviceId = { exact: deviceId };
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+        const track = stream.getAudioTracks()[0];
+        const trackLabel = (track && track.label) || "unknown mic";
+        const chunks = [];
+        const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+        let mime = "";
+        for (const m of mimeCandidates) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+            mime = m;
+            break;
+          }
+        }
+        const mediaRecorder = mime
+          ? new MediaRecorder(stream, { mimeType: mime })
+          : new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size) chunks.push(e.data);
+        };
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        await ctx.resume();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        let peak = 0;
+        stopLevelMeter();
+        levelTimer = setInterval(() => {
+          analyser.getByteTimeDomainData(data);
+          let maxDev = 0;
+          for (let i = 0; i < data.length; i++) {
+            const dev = Math.abs(data[i] - 128);
+            if (dev > maxDev) maxDev = dev;
+          }
+          const pct = Math.round((maxDev / 128) * 100);
+          if (pct > peak) peak = pct;
+          setRecStatus(
+            "Recording… mic=\"" + trackLabel + "\" level=" + pct + "% (peak " + peak + "%). Speak now.",
+            pct < 2
+          );
+        }, 200);
+
+        mediaRecorder.onstop = async () => {
+          stopLevelMeter();
+          try { source.disconnect(); } catch (_) {}
+          try { await ctx.close(); } catch (_) {}
+          stream.getTracks().forEach((t) => t.stop());
+          document.getElementById("recBtn").disabled = false;
+          document.getElementById("stopBtn").disabled = true;
+          activeRec = null;
+          const type = mediaRecorder.mimeType || mime || "audio/webm";
+          const blob = new Blob(chunks, { type: type });
+          const ext = type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+          try {
+            await transcribeBlob(blob, "artifact-story." + ext);
+          } catch (e) {
+            setRecStatus("STT failed: " + errText(e), true);
+          }
+        };
+
+        mediaRecorder.start(250);
+        activeRec = mediaRecorder;
+        document.getElementById("recBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+        setRecStatus("Recording… mic=\"" + trackLabel + "\"", false);
+      } catch (e) {
+        setRecStatus("Record failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("stopBtn").onclick = () => {
+      if (activeRec && activeRec.state !== "inactive") activeRec.stop();
+    };
+
+    document.getElementById("audioFile").onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        await transcribeBlob(file, file.name || "upload.webm");
+      } catch (e) {
+        setRecStatus("Upload STT failed: " + errText(e), true);
+      }
+      ev.target.value = "";
+    };
+
+    function renderArtifact(a) {
+      if (!a) return;
+      currentId = a.id;
+      document.getElementById("lastId").textContent = a.id;
+      document.getElementById("detail").textContent = JSON.stringify(a, null, 2);
+      // Prefill create form so Open Artifact doesn't look like a blank create page
+      const kindEl = document.getElementById("kind");
+      if (kindEl && a.kind) kindEl.value = a.kind;
+      const labelEl = document.getElementById("label");
+      if (labelEl) labelEl.value = a.label || "";
+      const descEl = document.getElementById("description");
+      if (descEl) descEl.value = a.description || "";
+      setStatus(
+        "Loaded Artifact " + a.id + " · " + (a.label || "") +
+        " · people=" + (a.person_ids || []).length +
+        " · stories=" + (a.story_ids || []).length
+      );
+      const reps = document.getElementById("reps");
+      reps.innerHTML = "";
+      (a.representations || []).forEach((r) => {
+        const wrap = document.createElement("div");
+        if (r.download_url && (r.mime_type || "").startsWith("image/")) {
+          wrap.innerHTML =
+            '<div class="muted">' + esc(r.label || r.original_filename || r.id) + "</div>" +
+            '<a href="' + esc(r.download_url) + '" target="_blank" rel="noopener">' +
+            '<img alt="" src="' + esc(r.download_url) + '" /></a>';
+        } else {
+          wrap.innerHTML =
+            '<div class="muted">' + esc(r.representation_kind) + " · " +
+            esc(r.label || r.evidence_id || r.id) + "</div>";
+        }
+        reps.appendChild(wrap);
+      });
+      // Linked people + stories are async (do not block paint)
+      renderLinkedAssociations(a).catch((e) => {
+        const box = document.getElementById("linkedStories");
+        if (box) {
+          box.innerHTML = '<p class="warn">Failed to load linked stories: ' + esc(errText(e)) + "</p>";
+        }
+      });
+    }
+
+    async function renderLinkedAssociations(a) {
+      const peopleEl = document.getElementById("linkedPeople");
+      const storiesEl = document.getElementById("linkedStories");
+      const pids = a.person_ids || [];
+      const sids = a.story_ids || [];
+
+      if (!pids.length) {
+        peopleEl.textContent = "People: (none associated yet)";
+        peopleEl.className = "muted";
+      } else {
+        const names = [];
+        for (const pid of pids) {
+          try {
+            const data = await j("/people/" + encodeURIComponent(pid));
+            const p = data.person || {};
+            names.push((p.display_name || "(unnamed)") + " · " + (p.status || "") + " · " + pid.slice(0, 8));
+          } catch (_) {
+            names.push(pid);
+          }
+        }
+        peopleEl.innerHTML =
+          "<strong>People (" + names.length + "):</strong><ul style=\"margin:0.35rem 0 0;padding-left:1.2rem\">" +
+          names.map((n) => "<li>" + esc(n) + "</li>").join("") +
+          "</ul>";
+        peopleEl.className = "";
+      }
+
+      if (!sids.length) {
+        storiesEl.innerHTML = '<p class="muted">Stories: (none linked yet — use Record/Save below to add one)</p>';
+        return;
+      }
+
+      storiesEl.innerHTML = "<p><strong>Stories (" + sids.length + ")</strong> — already saved &amp; linked</p>";
+      const list = document.createElement("div");
+      for (const sid of sids) {
+        const card = document.createElement("div");
+        card.style.cssText = "border:1px solid var(--line);padding:0.55rem;margin:0.4rem 0;background:#fff";
+        try {
+          const data = await j("/story/" + encodeURIComponent(sid));
+          const s = data.story || {};
+          // Body lives on current version, not top-level story fields
+          const body = String(
+            (s.version && s.version.body_text) ||
+            s.body_text ||
+            ""
+          ).trim();
+          const excerpt = body.length > 400 ? body.slice(0, 400) + "…" : body;
+          const storyUrl = "/story/ui?id=" + encodeURIComponent(sid);
+          card.innerHTML =
+            "<div><strong>" + esc(s.title || "(untitled Story)") + "</strong></div>" +
+            '<div class="muted">id=<code>' + esc(sid) + "</code>" +
+            (s.narrator_display_name ? (" · narrator=" + esc(s.narrator_display_name)) : "") +
+            (s.current_version != null ? (" · v" + esc(String(s.current_version))) : "") +
+            "</div>" +
+            '<div style="margin-top:0.35rem;white-space:pre-wrap">' +
+            esc(excerpt || "(empty body — no text on current version)") +
+            "</div>" +
+            '<div style="margin-top:0.35rem"><a href="' + esc(storyUrl) + '">Open this Story</a></div>';
+        } catch (e) {
+          card.innerHTML =
+            '<div class="warn">Story <code>' + esc(sid) + "</code> — load failed: " +
+            esc(errText(e)) + "</div>";
+        }
+        list.appendChild(card);
+      }
+      storiesEl.appendChild(list);
+    }
+
+    async function loadArtifact(id) {
+      setStatus("Loading Artifact " + id + "…");
+      const data = await j("/artifact/" + encodeURIComponent(id));
+      if (!data.artifact) throw new Error("artifact payload missing");
+      renderArtifact(data.artifact);
+    }
+    async function fillPersonSelect(sel, emptyLabel) {
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = emptyLabel;
+      sel.appendChild(none);
+
+      let mbPeople = [];
+      let immich = [];
+      let immichErr = null;
+      try {
+        const data = await j("/library/person-options?limit=200");
+        mbPeople = data.people || [];
+      } catch (_) {}
+      try {
+        const data = await j("/people/provider/immich");
+        if (data.unavailable || data.ok === false) {
+          immichErr = (data.provider_status && data.provider_status.detail) || "Immich unavailable";
+        } else {
+          immich = (data.people || []).filter((p) => (p.display_name || "").trim().length >= 2);
+        }
+      } catch (e) {
+        immichErr = errText(e);
+      }
+
+      const ogMb = document.createElement("optgroup");
+      ogMb.label = "MemoryBox People";
+      mbPeople.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = "mb:" + p.id;
+        opt.textContent = (p.display_name || "(unnamed)") + " · " + (p.status || "");
+        ogMb.appendChild(opt);
+      });
+      if (!mbPeople.length) {
+        const opt = document.createElement("option");
+        opt.disabled = true;
+        opt.textContent = "(none yet)";
+        ogMb.appendChild(opt);
+      }
+      sel.appendChild(ogMb);
+
+      const ogIm = document.createElement("optgroup");
+      ogIm.label = "Immich names (create/map MB on use)";
+      immich
+        .slice()
+        .sort((a, b) => String(a.display_name || "").localeCompare(String(b.display_name || "")))
+        .forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = "immich:" + encodeURIComponent(p.external_id) + ":" + encodeURIComponent(p.display_name || "");
+          opt.textContent = (p.display_name || "(unnamed)") + " · Immich";
+          ogIm.appendChild(opt);
+        });
+      if (!immich.length) {
+        const opt = document.createElement("option");
+        opt.disabled = true;
+        opt.textContent = immichErr
+          ? ("(Immich unavailable: " + immichErr + ")")
+          : "(no named Immich people)";
+        ogIm.appendChild(opt);
+      }
+      sel.appendChild(ogIm);
+      if (cur) sel.value = cur;
+      return { mbPeople, immich, immichErr };
+    }
+
+    async function loadPeople() {
+      const hint = document.getElementById("peopleHint");
+      const personStats = await fillPersonSelect(
+        document.getElementById("personSel"),
+        "(none)"
+      );
+      await fillPersonSelect(
+        document.getElementById("narratorSel"),
+        "(select narrator)"
+      );
+      if (hint) {
+        hint.textContent =
+          "MB=" + personStats.mbPeople.length +
+          " · Immich named=" + personStats.immich.length +
+          (personStats.immichErr ? (" · Immich: " + personStats.immichErr) : "");
+        hint.className = personStats.immichErr && !personStats.immich.length ? "warn" : "muted";
+      }
+    }
+
+    document.getElementById("createBtn").onclick = async () => {
+      try {
+        const body = {
+          kind: document.getElementById("kind").value,
+          label: document.getElementById("label").value,
+          description: document.getElementById("description").value || null,
+        };
+        const data = await j("/artifact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        renderArtifact(data.artifact);
+        setStatus("Created Artifact " + data.artifact.id);
+        history.replaceState(null, "", "/artifact/ui?id=" + encodeURIComponent(data.artifact.id));
+      } catch (e) {
+        setStatus("Create failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("uploadBtn").onclick = async () => {
+      if (!currentId) {
+        setStatus("Create or open an Artifact first.", true);
+        return;
+      }
+      const fileEl = document.getElementById("repFile");
+      if (!fileEl.files || !fileEl.files[0]) {
+        setStatus("Choose a file first.", true);
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append("file", fileEl.files[0]);
+        const lab = document.getElementById("repLabel").value;
+        if (lab) fd.append("label", lab);
+        const res = await fetch("/artifact/" + encodeURIComponent(currentId) + "/representations", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        renderArtifact(data.artifact);
+        setStatus("Uploaded representation (" + (data.artifact.representations || []).length + " total)");
+        fileEl.value = "";
+      } catch (e) {
+        setStatus("Upload failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("assocPersonBtn").onclick = async () => {
+      if (!currentId) return setStatus("No Artifact selected.", true);
+      const raw = document.getElementById("personSel").value;
+      if (!raw) return setStatus("Select a Person (MB or Immich name).", true);
+      try {
+        let data;
+        if (raw.startsWith("mb:")) {
+          const pid = raw.slice(3);
+          data = await j(
+            "/artifact/" + encodeURIComponent(currentId) + "/persons/" + encodeURIComponent(pid),
+            { method: "POST" }
+          );
+          renderArtifact(data.artifact);
+          setStatus("Associated MB Person " + pid);
+        } else if (raw.startsWith("immich:")) {
+          const parts = raw.split(":");
+          // immich:<encExternalId>:<encDisplayName> — display name may contain encoded chars only
+          const external_id = decodeURIComponent(parts[1] || "");
+          const display_name = decodeURIComponent(parts.slice(2).join(":") || "");
+          if (!external_id || !display_name) {
+            return setStatus("Invalid Immich person selection.", true);
+          }
+          data = await j(
+            "/artifact/" + encodeURIComponent(currentId) + "/persons/from-provider",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                provider_key: "immich",
+                external_id,
+                display_name,
+              }),
+            }
+          );
+          renderArtifact(data.artifact);
+          const pname = (data.person && data.person.display_name) || display_name;
+          setStatus("Taught/mapped Immich → MB Person “" + pname + "” and associated Artifact");
+          loadPeople().catch(() => {});
+        } else {
+          return setStatus("Unknown person selection.", true);
+        }
+      } catch (e) {
+        setStatus("Associate failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("storyBtn").onclick = async () => {
+      if (!currentId) return setStatus("No Artifact selected.", true);
+      const body_text = document.getElementById("storyBody").value.trim();
+      if (!body_text) return setStatus("Story body required (type or Record STT first).", true);
+
+      const narrRaw = document.getElementById("narratorSel").value;
+      const enroll = (document.getElementById("narratorEnroll").value || "").trim();
+      const payload = {
+        title: document.getElementById("storyTitle").value || null,
+        body_text,
+      };
+
+      if (narrRaw.startsWith("mb:")) {
+        payload.narrator_person_id = narrRaw.slice(3);
+      } else if (narrRaw.startsWith("immich:")) {
+        const parts = narrRaw.split(":");
+        payload.narrator_provider_key = "immich";
+        payload.narrator_external_id = decodeURIComponent(parts[1] || "");
+        payload.narrator_display_name = decodeURIComponent(parts.slice(2).join(":") || "");
+        if (!payload.narrator_external_id || !payload.narrator_display_name) {
+          return setStatus("Invalid Immich narrator selection.", true);
+        }
+      } else if (enroll.length >= 2) {
+        if (!confirm(
+          "Enroll new narrator \"" + enroll + "\" as an MB Person?\n\n" +
+          "Exact spelling only — a slight difference creates a second Person for the same human.\n" +
+          "Prefer picking an existing MB/Immich name when possible."
+        )) {
+          return;
+        }
+        payload.narrator_display_name = enroll;
+      } else {
+        return setStatus(
+          "Select a Narrator (MB or Immich), or enroll a new exact name.",
+          true
+        );
+      }
+
+      try {
+        const data = await j("/artifact/" + encodeURIComponent(currentId) + "/story", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        renderArtifact(data.artifact);
+        const n =
+          (data.story && (data.story.narrator_display_name || data.story.narrator_person_id)) || "";
+        setStatus("Story saved and linked" + (n ? (" · narrator=" + n) : "") +
+          ": " + ((data.story && data.story.id) || ""));
+        document.getElementById("narratorEnroll").value = "";
+        loadPeople().catch(() => {});
+      } catch (e) {
+        setStatus("Story save failed: " + errText(e), true);
+      }
+    };
+
+    document.getElementById("refreshPeople").onclick = () =>
+      loadPeople().catch((e) => setStatus(errText(e), true));
+
+    const boot = new URLSearchParams(location.search).get("id");
+    loadPeople().catch(() => {});
+    if (boot) {
+      loadArtifact(boot).catch((e) => setStatus("Load failed: " + errText(e), true));
+    }
+  </script>
+</body>
+</html>
