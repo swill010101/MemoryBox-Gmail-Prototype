@@ -282,7 +282,13 @@ def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
     return chips
 
 
-def curator_from_items(ask_text: str, items: list[dict[str, Any]], answer_text: str | None) -> tuple[str, str]:
+def curator_from_items(
+    ask_text: str,
+    items: list[dict[str, Any]],
+    answer_text: str | None,
+    *,
+    provider_status: dict[str, Any] | None = None,
+) -> tuple[str, str]:
     """Title + summary for Explore curator."""
     title = (ask_text or "Memories").strip()
     if len(title) > 64:
@@ -319,6 +325,27 @@ def curator_from_items(ask_text: str, items: list[dict[str, Any]], answer_text: 
         summary += "."
         if undated:
             summary += f" {undated} undated (not placed on the Timeline axis)."
+    # Honest photo-provider disclosure when Ask resolved a person but Immich returned none.
+    # Orchestrator stores health under "photo" and search outcome under "photo_search".
+    photos = sum(1 for i in items if i.get("type") == "photo")
+    if photos == 0 and provider_status:
+        photo_health = provider_status.get("photo") or {}
+        photo_search = provider_status.get("photo_search") or {}
+        if not isinstance(photo_health, dict):
+            photo_health = {}
+        if not isinstance(photo_search, dict):
+            photo_search = {}
+        if photo_search.get("unavailable") or (
+            photo_health and photo_health.get("ok") is False
+        ):
+            detail = str(
+                photo_search.get("detail") or photo_health.get("detail") or ""
+            ).strip()
+            summary += f" Photos unavailable from Immich ({detail or 'provider unhealthy'})."
+        else:
+            detail = str(photo_search.get("detail") or "").strip()
+            if detail and detail not in ("not_requested",):
+                summary += f" Immich photos: {detail}."
     return title, summary
 
 
@@ -369,7 +396,12 @@ def build_explore_find(
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     items = items_from_ask_result(result)
-    title, summary = curator_from_items(text, items, result.get("answer_text"))
+    title, summary = curator_from_items(
+        text,
+        items,
+        result.get("answer_text"),
+        provider_status=result.get("provider_status") or {},
+    )
     chips = chips_from_ask_result(result)
     rc = range_chip_for_items(items)
     if rc:

@@ -87,19 +87,19 @@ class ImmichPhotoProvider:
                 )
                 items = raw if isinstance(raw, list) else []
             else:
-                body: dict[str, Any] = {"size": query.limit, "withExif": True}
+                body: dict[str, Any] = {"size": min(int(query.limit), 250)}
                 if query.taken_after:
                     body["takenAfter"] = query.taken_after.isoformat()
                 if query.taken_before:
                     body["takenBefore"] = query.taken_before.isoformat()
                 if query.text:
                     body["query"] = query.text
-                try:
-                    data = self._client.search_metadata(body)
-                except Exception:  # noqa: BLE001
-                    body.pop("withExif", None)
-                    data = self._client.search_metadata(body)
+                data = self._client.search_metadata(body)
                 items = (data or {}).get("assets", {}).get("items", []) or []
+                if isinstance(items, list) and not items and isinstance(
+                    (data or {}).get("assets"), list
+                ):
+                    items = (data or {}).get("assets") or []
         except self._AuthError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -166,7 +166,9 @@ class ImmichPhotoProvider:
         loc_raw = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
         location = None
         # Immich puts GPS + reverse-geocode city/state/country on exifInfo when
-        # search was called with withExif=true (otherwise Map pins are empty).
+        # the asset payload includes EXIF (get_asset / withExif searches). Person
+        # library search stays without withExif for speed; Map may be sparse until
+        # a later enrichment pass.
         lat = self._coerce_coord(loc_raw.get("latitude"), kind="lat")
         lon = self._coerce_coord(loc_raw.get("longitude"), kind="lng")
         if lat is None:

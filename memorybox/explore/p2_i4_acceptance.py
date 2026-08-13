@@ -348,7 +348,6 @@ def _prove_harness() -> dict[str, Any]:
             ok_plan = (
                 plan.want_visual is True
                 and plan.want_still is True
-                and plan.want_story is False
                 and bool(plan.person_names)
             )
             if not ok_plan:
@@ -366,7 +365,7 @@ def _prove_harness() -> dict[str, Any]:
                 True,
                 checks,
                 problems,
-                "Show <Person> → broad visual, not stories-only",
+                "Show <Person> → broad visual (stories OK as secondary)",
             )
     except Exception as exc:  # noqa: BLE001
         _check("show_person_forces_visual", False, checks, problems, str(exc))
@@ -384,10 +383,12 @@ def _prove_harness() -> dict[str, Any]:
 
             def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
                 assert method == "POST" and path == "/search/metadata"
-                assert (body or {}).get("withExif") is True
+                # Person library fetch stays minimal (no withExif) so FlightSim
+                # Immich does not timeout and wipe Explore photos.
+                assert "withExif" not in (body or {})
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
-                size = int((body or {}).get("size") or 250)
+                size = int((body or {}).get("size") or 100)
                 taken_after = (body or {}).get("takenAfter")
                 self._calls.append(
                     {
@@ -439,8 +440,8 @@ def _prove_harness() -> dict[str, Any]:
             f"n={len(got)} calls={len(client._calls)}",
         )
         _check(
-            "immich_with_exif_requested",
-            any(c.get("withExif") is True for c in client._calls),
+            "immich_person_no_with_exif",
+            all(c.get("withExif") is None for c in client._calls),
             checks,
             problems,
             f"calls={len(client._calls)}",

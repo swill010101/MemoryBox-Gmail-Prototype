@@ -889,17 +889,28 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if want_video and not want_still:
         notes.append("video_intent_no_i4_provider")
 
-    # Story modality (I5): exploratory + default archive asks; not email/photo/video-only or said-about
+    # Story modality (I5): exploratory + default archive asks; not email/photo/video-only or said-about.
+    # Person "Show <Name>" asks stay visual-first but still pull stories as secondary meaning
+    # so Immich hangs/empties don't leave Explore at 0 (FlightSim: Tom Will stories gone).
     want_story = False
     if not requires_clarification:
         if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
             want_story = True
+        if any(
+            n in notes
+            for n in (
+                "visual_scope=broad_show_me_person",
+                "visual_scope=broad_show_person",
+                "show_me_person_forces_broad_visual",
+                "show_person_forces_broad_visual",
+                "show_me_kinship_forces_broad_visual",
+                "show_me_self_forces_broad_visual",
+            )
+        ):
+            want_story = True
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_story = False
         if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
-            want_story = False
-        if visual_scope in ("broad", "still_only", "video_only"):
-            # Person/picture show asks are visual-first — don't bury Immich in stories
             want_story = False
         if said_about:
             want_story = False
