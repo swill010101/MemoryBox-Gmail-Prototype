@@ -216,7 +216,7 @@ def _prove_harness() -> dict[str, Any]:
             "renderMap",
             "Show map",
             "Clear location",
-            "Only undated",
+            "only undated",
             "never exclude undated from gallery",
             "faceBoxHtml",
             "applyCorrectionConsequences",
