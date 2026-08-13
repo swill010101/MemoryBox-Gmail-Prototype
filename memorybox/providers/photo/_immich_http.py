@@ -153,49 +153,111 @@ class ImmichHttpClient:
         """Fetch Immich assets for person id(s).
 
         Immich metadata search is paginated. Do **not** trust ``assets.total`` to
-        stop early — on many Immich builds it mirrors the page count (~100–250),
-        which falsely capped Explore near 120 assets.
+        stop early — on many Immich builds it mirrors the page count (~100–250).
 
-        Always request ``withExif`` so city/GPS reach Explore Map pins.
-
-        Paginate newest-first until exhausted or the hard cap. Only if pagination
-        stalls (duplicate full page) while under the cap, run a bounded decade
-        backfill. Never throw away already-fetched assets on a later-pass error
-        (timeouts were wiping Tom Will / Eugene to empty Ask results).
+        Compatibility (FlightSim Immich variants):
+        - Prefer ``withExif`` for Map GPS; fall back if rejected.
+        - Prefer page size 100 (widely accepted); shrink from 250 if needed.
+        - ``order`` is optional — omit on retry if rejected.
+        - Never discard already-fetched pages on a later request failure.
         """
         if not person_ids:
             return []
         target = max(1, min(int(size), 5000))
-        page_size = 250  # Immich default; fewer round-trips for ~3k libraries
-        max_calls = max(30, (target // page_size) + 10)
+        page_size = int(getattr(self, "_person_page_size", 100) or 100)
+        use_exif = getattr(self, "_person_with_exif", True)
+        use_order = getattr(self, "_person_use_order", True)
+        max_calls = max(40, (target // max(page_size, 1)) + 15)
         calls = 0
-        stalled = False
 
-        def _search(body: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
-            nonlocal calls
-            if calls >= max_calls:
+        def _extract_items(data: Any) -> tuple[list[dict[str, Any]], str | None]:
+            if not isinstance(data, dict):
                 return [], None
-            calls += 1
-            req = dict(body)
-            # Immich omits exifInfo (city/GPS) unless withExif is true.
-            req["withExif"] = True
-            try:
-                status, data = self._request("POST", "/search/metadata", body=req)
-            except Exception:  # noqa: BLE001 — keep prior pages on network blip
-                return [], None
-            if status != 200 or not isinstance(data, dict):
-                return [], None
-            assets = data.get("assets") or {}
-            if not isinstance(assets, dict):
-                return [], None
-            items = assets.get("items") if isinstance(assets.get("items"), list) else []
-            next_page = assets.get("nextPage")
+            assets = data.get("assets")
+            items: list[Any] = []
+            next_page = None
+            if isinstance(assets, dict):
+                raw_items = assets.get("items")
+                if isinstance(raw_items, list):
+                    items = raw_items
+                next_page = assets.get("nextPage")
+            elif isinstance(assets, list):
+                items = assets
+            elif isinstance(data.get("items"), list):
+                items = list(data.get("items") or [])
+                next_page = data.get("nextPage")
             next_s = (
                 str(next_page).strip()
                 if next_page not in (None, "", 0, "0")
                 else None
             )
             return ([it for it in items if isinstance(it, dict)], next_s)
+
+        def _once(payload: dict[str, Any]) -> tuple[int, Any]:
+            nonlocal calls
+            if calls >= max_calls:
+                return 0, None
+            calls += 1
+            try:
+                return self._request("POST", "/search/metadata", body=payload)
+            except Exception:  # noqa: BLE001
+                return 0, None
+
+        def _search(page: int) -> tuple[list[dict[str, Any]], str | None]:
+            nonlocal page_size, use_exif, use_order
+            base: dict[str, Any] = {
+                "personIds": list(person_ids),
+                "size": page_size,
+                "page": max(1, int(page)),
+            }
+            variants: list[dict[str, Any]] = []
+            if use_exif and use_order:
+                variants.append({**base, "order": "desc", "withExif": True})
+            if use_exif:
+                variants.append({**base, "withExif": True})
+            if use_order:
+                variants.append({**base, "order": "desc"})
+            variants.append(dict(base))
+            seen_v: set[str] = set()
+            uniq: list[dict[str, Any]] = []
+            for v in variants:
+                key = json.dumps(v, sort_keys=True)
+                if key in seen_v:
+                    continue
+                seen_v.add(key)
+                uniq.append(v)
+
+            last_status = 0
+            for payload in uniq:
+                status, data = _once(payload)
+                last_status = status
+                if status == 200:
+                    use_exif = bool(payload.get("withExif"))
+                    use_order = "order" in payload
+                    self._person_with_exif = use_exif
+                    self._person_use_order = use_order
+                    self._person_page_size = page_size
+                    return _extract_items(data)
+                if status in (400, 422) and page_size > 100:
+                    page_size = 100
+                    self._person_page_size = 100
+                    base["size"] = 100
+            if last_status != 200:
+                status, data = _once(
+                    {
+                        "personIds": list(person_ids),
+                        "size": min(page_size, 100),
+                        "page": max(1, int(page)),
+                    }
+                )
+                if status == 200:
+                    use_exif = False
+                    use_order = False
+                    self._person_with_exif = False
+                    self._person_use_order = False
+                    self._person_page_size = min(page_size, 100)
+                    return _extract_items(data)
+            return [], None
 
         def _ingest(batch: list[dict[str, Any]], into: dict[str, dict[str, Any]]) -> int:
             added = 0
@@ -211,70 +273,24 @@ class ImmichHttpClient:
             return added
 
         by_id: dict[str, dict[str, Any]] = {}
-
-        # --- Newest-first pagination (ignore assets.total) ---
-        page: int = 1
-        for _ in range((target // page_size) + 5):
+        page = 1
+        for _ in range((target // max(page_size, 1)) + 8):
             if len(by_id) >= target or calls >= max_calls:
                 break
-            batch, next_page = _search(
-                {
-                    "personIds": person_ids,
-                    "size": page_size,
-                    "page": page,
-                    "order": "desc",
-                }
-            )
+            batch, next_page = _search(page)
             if not batch:
                 break
             added = _ingest(batch, by_id)
             if added == 0:
-                # Duplicate page while Immich still claims a full page → stalled
-                stalled = len(batch) >= page_size
                 break
             if len(by_id) >= target:
                 break
             if next_page and str(next_page).isdigit():
                 page = int(next_page)
             elif len(batch) < page_size:
-                break  # clean exhaustion
+                break
             else:
                 page += 1
-
-        # --- Bounded decade backfill only when pagination stalled early ---
-        if stalled and len(by_id) < min(target, 500) and calls < max_calls:
-            from datetime import datetime, timezone
-
-            year_now = datetime.now(timezone.utc).year
-            for y0 in range(1940, year_now + 1, 10):
-                if len(by_id) >= target or calls >= max_calls:
-                    break
-                y1 = min(y0 + 9, year_now)
-                page = 1
-                for _ in range(8):
-                    if len(by_id) >= target or calls >= max_calls:
-                        break
-                    batch, next_page = _search(
-                        {
-                            "personIds": person_ids,
-                            "size": page_size,
-                            "page": page,
-                            "order": "desc",
-                            "takenAfter": f"{y0}-01-01T00:00:00.000Z",
-                            "takenBefore": f"{y1}-12-31T23:59:59.999Z",
-                        }
-                    )
-                    if not batch:
-                        break
-                    added = _ingest(batch, by_id)
-                    if added == 0:
-                        break
-                    if next_page and str(next_page).isdigit():
-                        page = int(next_page)
-                    elif len(batch) < page_size:
-                        break
-                    else:
-                        page += 1
 
         return list(by_id.values())[:target]
 

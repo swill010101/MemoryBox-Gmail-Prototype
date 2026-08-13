@@ -87,20 +87,34 @@ class ImmichPhotoProvider:
                 )
                 items = raw if isinstance(raw, list) else []
             else:
-                body: dict[str, Any] = {"size": query.limit}
+                body: dict[str, Any] = {"size": query.limit, "withExif": True}
                 if query.taken_after:
                     body["takenAfter"] = query.taken_after.isoformat()
                 if query.taken_before:
                     body["takenBefore"] = query.taken_before.isoformat()
                 if query.text:
                     body["query"] = query.text
-                data = self._client.search_metadata(body)
+                try:
+                    data = self._client.search_metadata(body)
+                except Exception:  # noqa: BLE001
+                    body.pop("withExif", None)
+                    data = self._client.search_metadata(body)
                 items = (data or {}).get("assets", {}).get("items", []) or []
         except self._AuthError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(str(exc)) from exc
-        return [self._map_asset(a) for a in items if isinstance(a, dict)][: query.limit]
+        out: list[PhotoAssetDto] = []
+        for a in items:
+            if not isinstance(a, dict):
+                continue
+            try:
+                out.append(self._map_asset(a))
+            except Exception:  # noqa: BLE001 — skip corrupt Immich rows
+                continue
+            if len(out) >= query.limit:
+                break
+        return out
 
     def get_asset(self, external_asset_id: str) -> PhotoAssetDto | None:
         try:

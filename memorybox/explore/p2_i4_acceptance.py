@@ -340,6 +340,38 @@ def _prove_harness() -> dict[str, Any]:
         _check("show_me_myself_no_inherit_dad", False, checks, problems, str(exc))
 
     try:
+        from memorybox.context import AskContext
+        from memorybox.planner import plan_ask
+
+        for ask in ("Show Tom Will", "Show Anne Will", "Show Diane Scollay"):
+            plan = plan_ask(ask, AskContext.empty("prove-show-person"))
+            ok_plan = (
+                plan.want_visual is True
+                and plan.want_still is True
+                and plan.want_story is False
+                and bool(plan.person_names)
+            )
+            if not ok_plan:
+                _check(
+                    "show_person_forces_visual",
+                    False,
+                    checks,
+                    problems,
+                    f"{ask}: people={plan.person_names} visual={plan.want_visual} story={plan.want_story}",
+                )
+                break
+        else:
+            _check(
+                "show_person_forces_visual",
+                True,
+                checks,
+                problems,
+                "Show <Person> → broad visual, not stories-only",
+            )
+    except Exception as exc:  # noqa: BLE001
+        _check("show_person_forces_visual", False, checks, problems, str(exc))
+
+    try:
         from memorybox.providers.photo._immich_http import ImmichHttpClient
 
         class _FakeImmich(ImmichHttpClient):
@@ -408,7 +440,7 @@ def _prove_harness() -> dict[str, Any]:
         )
         _check(
             "immich_with_exif_requested",
-            all(c.get("withExif") is True for c in client._calls),
+            any(c.get("withExif") is True for c in client._calls),
             checks,
             problems,
             f"calls={len(client._calls)}",

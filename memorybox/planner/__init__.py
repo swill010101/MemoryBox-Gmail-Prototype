@@ -143,6 +143,13 @@ SHOW_ME_PERSON_RE = re.compile(
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
     rf"{_PERSON_NAME}\b"
 )
+# "Show Tom Will" / "Show Eugene" — owners often omit "me"; same person visual intent
+SHOW_PERSON_RE = re.compile(
+    r"(?i)\bshow\s+"
+    r"(?!me\b|myself\b|pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
+    r"everything\b|map\b|gallery\b|undated\b)"
+    rf"{_PERSON_NAME}\b"
+)
 
 # Places: geographic/locative — never "from <Person>" for email.
 PLACE_IN_AT_RE = re.compile(
@@ -356,6 +363,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         PERSON_OF_RE,
         PERSON_POSSESSIVE_RE,
         SHOW_ME_PERSON_RE,
+        SHOW_PERSON_RE,
         PERSON_EMAIL_FROM_RE,
         PERSON_SAID_RE,
     ]
@@ -477,6 +485,8 @@ def _resolve_visual_scope(
         return "broad", ["visual_scope=broad"]
     if show_me and people:
         return "broad", ["visual_scope=broad_show_me_person"]
+    if bool(SHOW_PERSON_RE.search(q)) and people:
+        return "broad", ["visual_scope=broad_show_person"]
     return "none", notes
 
 
@@ -575,6 +585,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         notes.append("said_about_communication_focus")
 
     show_me = bool(SHOW_ME_RE.search(q))
+    show_person = bool(SHOW_PERSON_RE.search(q)) and bool(u_people)
     # Owner self: "show me myself" / "show me me" — force broad visual and do
     # NOT inherit prior session person (dad/Eugene must not stick).
     self_show = bool(
@@ -591,10 +602,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_visual = True
         want_photo = True
         notes.append("show_me_self_forces_broad_visual")
-    # "show me <person>" (or show me + session person) → broad visual when no
-    # explicit media word already set scope (photos→still_only, videos→video_only).
+    # "show me <person>" / "show <person>" → broad visual
     elif (
-        show_me
+        (show_me or show_person)
         and visual_scope == "none"
         and not want_email
         and not want_cal
@@ -624,7 +634,11 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             notes.append(
                 "show_me_kinship_forces_broad_visual"
                 if kinship_show and not (u_people or ctx.person_names)
-                else "show_me_person_forces_broad_visual"
+                else (
+                    "show_person_forces_broad_visual"
+                    if show_person and not show_me
+                    else "show_me_person_forces_broad_visual"
+                )
             )
 
     ref_then = bool(AROUND_THEN_RE.search(q))
@@ -883,6 +897,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_story = False
         if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
+            want_story = False
+        if visual_scope in ("broad", "still_only", "video_only"):
+            # Person/picture show asks are visual-first — don't bury Immich in stories
             want_story = False
         if said_about:
             want_story = False
