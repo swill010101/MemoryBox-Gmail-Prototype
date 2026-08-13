@@ -22,24 +22,15 @@
 | 1 | Highlights v1 | **Real ranking** (not identical to All Memories) |
 | 2 | Theme | **Dark** Person surface |
 | 3 | Audio tab | **Show now; empty OK** |
-| 4 | Location pill | **Pending** — options below; provisional build = **D** |
+| 4 | Location pill | **D** — Location filter = has GPS/Place; Map toggle = spatial lens |
 | 5 | Mockup PNG | **Parked / sent** |
 | 6 | Route | **Evolve `/people/ui`** (`?person=` → Person Explorer) |
 
 ---
 
-## Location pill — need Tom pick
+## Location pill — locked
 
-Mockup shows **both** filter pill “Location” **and** Gallery | Map toggle — they should differ.
-
-| Option | Behavior |
-|--------|----------|
-| **A** | Has-location filter only (Gallery stays; hide items without GPS/Place) |
-| **B** | Location pill opens Map mode (redundant with Map toggle) |
-| **C** | Place picker / named Place refine |
-| **D (recommended)** | **Location filter** = has location evidence; **Map toggle** = spatial lens on current set |
-
-Reply `4=A|B|C|D` to lock. Building with **D** until then.
+**D:** Location filter = has location evidence; Map toggle = spatial lens on current set.
 
 ---
 
@@ -47,6 +38,10 @@ Reply `4=A|B|C|D` to lock. Building with **D** until then.
 
 Person context persists; Person-scoped Ask = I4 shared state; Highlights ranked; mixed-media gallery + Timeline + Map; Shared Evidence Viewer restore; About / Family / Learn honest; FlightSim cases 1–13.
 
+## Soft gap (not a hard blocker)
+
+Stories / emails / journals may still associate by **name tokens** rather than person id in some retrieve paths. Do **not** invent separate Person IDs per evidence type — keep one MB Person continuum; harden id-keyed joins later.
+
 ## Sign-off
 
-**Visual lock:** ACCEPTED · **Build:** APPROVED · **Pending:** Location letter A/B/C/D
+**Visual lock:** ACCEPTED · **Build:** APPROVED · **Location:** D locked

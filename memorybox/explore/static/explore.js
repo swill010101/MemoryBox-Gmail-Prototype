@@ -54,7 +54,7 @@
   const PERSON = window.MB_PERSON_SURFACE || null;
   const PERSON_MODE = Boolean(PERSON && PERSON.personId);
   if (PERSON_MODE) {
-    // I5: Audio empty-OK; Location = has-location filter (option D provisional)
+    // I5: Audio empty-OK; Location = has GPS/Place filter (locked option D)
     FILTERS.push({ id: "audio", label: "Audio" });
     FILTERS.push({ id: "location", label: "Location" });
   }
@@ -693,8 +693,20 @@
       const m = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
       const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
       if (who) {
-        window.location.href =
-          "/people/ui?person_name=" + encodeURIComponent(who.replace(/\b\w/g, (c) => c.toUpperCase()));
+        const whoL = who.toLowerCase();
+        const hit = (peopleOptions || []).find((p) => {
+          const lab = String(p.label || "").toLowerCase();
+          const first = lab.split(/\s+/)[0];
+          return lab === whoL || first === whoL || lab.includes(whoL);
+        });
+        if (hit && hit.id) {
+          window.location.href =
+            "/people/ui?person=" + encodeURIComponent(hit.id);
+        } else {
+          // Server resolves display name → MB Person id (same Person continuum)
+          window.location.href =
+            "/people/ui?person_name=" + encodeURIComponent(who);
+        }
         return;
       }
     }
@@ -856,13 +868,29 @@
     if (PERSON_MODE && /^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i.test(lower)) {
       const m = lower.match(/^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i);
       const token = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim().toLowerCase();
-      if (token && token !== "peggy" && !(PERSON.displayName || "").toLowerCase().includes(token)) {
+      const personL = (PERSON.displayName || "").toLowerCase();
+      const personFirst = personL.split(/\s+/)[0] || "";
+      // Locked Person cannot be removed via Ask — ignore attempts to strip them
+      if (
+        token &&
+        token !== personL &&
+        token !== personFirst &&
+        !personL.includes(token)
+      ) {
         // Drop matching event/time chips by re-asking without that token — clear temporal if holiday/season-like
-        if (/christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd/.test(token)) {
+        if (
+          /christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year/.test(
+            token
+          )
+        ) {
           state.domain.temporalWindows = null;
           resetTimelineExtent(false);
           const chips = (state.domain.chips || []).filter(
-            (c) => !(c.kind === "event" || c.kind === "time") || !String(c.label || "").toLowerCase().includes(token.split(/\s+/)[0])
+            (c) =>
+              !(c.kind === "event" || c.kind === "time") ||
+              !String(c.label || "")
+                .toLowerCase()
+                .includes(token.split(/\s+/)[0])
           );
           state.domain.chips = chips;
           ensureLockedPersonChip();
@@ -874,6 +902,12 @@
             });
           return;
         }
+      } else if (token && (token === personL || token === personFirst)) {
+        state.domain.summary =
+          (PERSON.displayName || "Person") +
+          " stays locked on this surface. Use “Go to … instead” to switch people, or People to leave.";
+        renderCurator();
+        return;
       }
     }
 

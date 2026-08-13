@@ -126,19 +126,34 @@
       <div class="mb-person-panel" id="mb-person-about">
         <h2>About <span data-person-first>them</span></h2>
         <dl class="mb-person-dl" id="mb-person-about-dl"></dl>
-        <a class="mb-person-panel-link" id="mb-person-about-edit" href="#">View / Edit details</a>
+        <button type="button" class="mb-person-panel-link" id="mb-person-about-edit">View / Edit details</button>
       </div>
       <div class="mb-person-panel" id="mb-person-family">
         <h2>Family</h2>
         <div class="mb-person-family-row" id="mb-person-family-row"></div>
-        <a class="mb-person-panel-link" id="mb-person-family-add" href="#">+ Add family</a>
+        <button type="button" class="mb-person-panel-link" id="mb-person-family-add">+ Add family</button>
+        <button type="button" class="mb-person-panel-link" id="mb-person-family-open">View relationships</button>
       </div>
       <div class="mb-person-panel" id="mb-person-learn">
         <h2>Learn about <span data-person-first>them</span></h2>
         <ul class="mb-person-learn-stats" id="mb-person-learn-stats"></ul>
-        <a class="mb-person-panel-link" id="mb-person-learn-explore" href="#">Explore</a>
+        <button type="button" class="mb-person-panel-link" id="mb-person-learn-explore">Explore</button>
       </div>
     </section>
+  </div>
+
+  <!-- Secondary Person surfaces (About / Relationships / Learn) — not the primary gallery -->
+  <div class="mb-person-drawer" id="mb-person-drawer" hidden>
+    <div class="mb-person-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="mb-person-drawer-title">
+      <header class="mb-person-drawer-head">
+        <h2 id="mb-person-drawer-title">Details</h2>
+        <button type="button" class="mb-person-drawer-close" id="mb-person-drawer-close">Close ✕</button>
+      </header>
+      <div class="mb-person-drawer-body" id="mb-person-drawer-body"></div>
+      <footer class="mb-person-drawer-foot">
+        <a class="mb-person-panel-link" id="mb-person-drawer-admin" href="#">Open full profile editor</a>
+      </footer>
+    </div>
   </div>
 
   <div class="mb-modal-backdrop" id="mb-modal" hidden>

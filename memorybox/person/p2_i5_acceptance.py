@@ -75,10 +75,33 @@ def run_p2_i5_acceptance() -> dict:
         "i5_person_panels_js",
         "loadProfile" in person_js
         and "mb-person-learn-stats" in person_js
-        and "mb-person-ready" in person_js,
+        and "mb-person-ready" in person_js
+        and "renderAboutDrawer" in person_js
+        and "renderFamilyDrawer" in person_js
+        and "renderLearnDrawer" in person_js
+        and "/review/ui" in person_js,
         checks,
         problems,
-        "About/Family/Learn bindings",
+        "About/Family/Learn drawers + Review deep link",
+    )
+    _check(
+        "i5_person_drawer_shell",
+        "mb-person-drawer" in person_html
+        and "Open full profile editor" in person_html
+        and "locationFilterMode" in person_html,
+        checks,
+        problems,
+        "secondary drawer + Location=D boot config",
+    )
+    _check(
+        "i5_ask_person_commands",
+        "go to" in explore_js
+        and "instead" in explore_js
+        and "stays locked" in explore_js
+        and "person_name=" in explore_js,
+        checks,
+        problems,
+        "Go to … instead + locked-person Ask guards",
     )
     _check(
         "i5_reuse_not_iframe",

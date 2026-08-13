@@ -222,9 +222,104 @@ html[data-mb-surface="people"] .mb-site-bar {
 .mb-person-panel-link {
   display: inline-block;
   margin-top: 0.65rem;
+  margin-right: 0.75rem;
   color: var(--mb-blue);
   text-decoration: none;
   font-size: 0.86rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.mb-person-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(4, 8, 14, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.mb-person-drawer[hidden] { display: none !important; }
+.mb-person-drawer-panel {
+  width: min(640px, 100%);
+  max-height: min(84vh, 820px);
+  overflow: auto;
+  background: #141b27;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: #e8edf5;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.mb-person-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.mb-person-drawer-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.mb-person-drawer-close {
+  border: 0;
+  background: transparent;
+  color: #9aa3b5;
+  cursor: pointer;
+  font: inherit;
+}
+.mb-person-drawer-body {
+  padding: 1rem 1.1rem 0.5rem;
+}
+.mb-person-drawer-foot {
+  padding: 0.75rem 1.1rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mb-person-sec {
+  margin: 0 0 1rem;
+}
+.mb-person-sec h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9aa3b5;
+}
+.mb-person-sec ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #d5dde9;
+  font-size: 0.9rem;
+}
+.mb-person-learn-item {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-decoration: none;
+  color: inherit;
+}
+.mb-person-learn-thumb {
+  width: 56px;
+  height: 42px;
+  border-radius: 8px;
+  background: #243044;
+  object-fit: cover;
+}
+.mb-person-learn-meta {
+  font-size: 0.82rem;
+  color: #c5cede;
+}
+.mb-person-learn-meta strong {
+  display: block;
+  color: #eef3fb;
+  font-weight: 600;
+  margin-bottom: 0.1rem;
 }
 .mb-person-family-row {
   display: flex;
