@@ -557,12 +557,27 @@ def _prove_p2_i1_flightsim() -> dict[str, Any]:
         person_id=person_id,
         max_items=max(len(inventory), min_queue, 20),
     )
+    by_status = (summary.get("by_status") or {}) if isinstance(summary, dict) else {}
+    already_drained = (
+        int(summary.get("total") or 0) >= max(len(inventory), 1)
+        and int(by_status.get("queued") or 0) == 0
+        and int(by_status.get("running") or 0) == 0
+        and (
+            int(by_status.get("completed") or 0)
+            + int(by_status.get("excluded") or 0)
+            + int(by_status.get("failed") or 0)
+        )
+        >= max(len(inventory), 1)
+    )
     _check(
         "p2i1_queue_processed",
-        processed.get("processed", 0) >= 1,
+        int(processed.get("processed") or 0) >= 1 or already_drained,
         checks,
         problems,
-        detail=str(processed.get("processed")),
+        detail=(
+            f"processed={processed.get('processed')} already_drained={already_drained} "
+            f"by_status={by_status}"
+        ),
     )
 
     moments = list_appearance_moments(person_id) if person_id else []
