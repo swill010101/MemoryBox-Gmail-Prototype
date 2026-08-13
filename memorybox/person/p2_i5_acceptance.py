@@ -57,7 +57,8 @@ def run_p2_i5_acceptance() -> dict:
         and "clear everything except" in explore_js
         and 'id: "audio"' in explore_js
         and 'id: "location"' in explore_js
-        and "has GPS/Place" in explore_js,
+        and "has GPS/Place" in explore_js
+        and "I5 visual lock order" in explore_js,
         checks,
         problems,
         "explore.js person mode hooks",

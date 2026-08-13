@@ -155,9 +155,60 @@ html[data-mb-surface="people"] .mb-site-bar {
   color: #e8f0ff;
 }
 .mb-person-view-toggle {
-  margin-left: auto;
   display: flex;
   gap: 0.35rem;
+}
+.mb-person-explore .mb-explore-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+.mb-person-explore .mb-explore-sort select {
+  background: #141b27;
+  color: #d5dde9;
+  border-color: var(--mb-line);
+}
+.mb-person-explore .mb-explore-density {
+  color: var(--mb-muted);
+}
+.mb-person-explore .mb-explore-density button {
+  background: #141b27;
+  border-color: var(--mb-line);
+  color: #d5dde9;
+}
+.mb-person-explore .mb-card-type {
+  color: #e8edf5;
+}
+.mb-person-explore .mb-card[data-type="photo"] .mb-card-type {
+  background: var(--mb-blue-soft);
+  color: #c9dbff;
+}
+.mb-person-explore .mb-card[data-type="video"] .mb-card-type {
+  background: var(--mb-purple-soft);
+  color: #ddd0ff;
+}
+.mb-person-explore .mb-card[data-type="email"] .mb-card-type,
+.mb-person-explore .mb-card[data-type="sms"] .mb-card-type,
+.mb-person-explore .mb-card[data-type="text"] .mb-card-type {
+  background: rgba(251, 146, 60, 0.18);
+  color: #fdba74;
+}
+.mb-person-explore .mb-card[data-type="artifact"] .mb-card-type {
+  background: rgba(251, 146, 60, 0.16);
+  color: #fdba74;
+}
+.mb-person-explore .mb-card[data-type="story"] .mb-card-type {
+  background: var(--mb-purple-soft);
+  color: #ddd0ff;
+}
+.mb-person-explore .mb-card[data-type="audio"] .mb-card-type {
+  background: var(--mb-green-soft);
+  color: #86efc5;
+}
+.mb-person-explore .mb-card-media[data-type="audio"] {
+  background: #1a2433;
+  color: #9aa3b5;
 }
 
 .mb-person-explore .mb-explore-toolbar {

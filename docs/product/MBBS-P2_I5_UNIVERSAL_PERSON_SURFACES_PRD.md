@@ -23,7 +23,7 @@
 | 2 | Theme | **Dark** Person surface |
 | 3 | Audio tab | **Show now; empty OK** |
 | 4 | Location pill | **D** — Location filter = has GPS/Place; Map toggle = spatial lens |
-| 5 | Mockup PNG | **Parked / sent** |
+| 5 | Mockup PNG | **RECEIVED** (Peggy Smith exemplar · dark Person Explorer) |
 | 6 | Route | **Evolve `/people/ui`** (`?person=` → Person Explorer) |
 
 ---
@@ -44,4 +44,4 @@ Stories / emails / journals may still associate by **name tokens** rather than p
 
 ## Sign-off
 
-**Visual lock:** ACCEPTED · **Build:** APPROVED · **Location:** D locked
+**Visual lock:** ACCEPTED (Peggy Smith mockup on file) · **Build:** APPROVED · **Location:** D locked

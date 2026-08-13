@@ -54,9 +54,12 @@
   const PERSON = window.MB_PERSON_SURFACE || null;
   const PERSON_MODE = Boolean(PERSON && PERSON.personId);
   if (PERSON_MODE) {
-    // I5: Audio empty-OK; Location = has GPS/Place filter (locked option D)
-    FILTERS.push({ id: "audio", label: "Audio" });
+    // I5 visual lock order: All · Photos · Video · Audio · Email/Text · Artifacts · Stories · Location
+    // Audio empty-OK; Location = has GPS/Place (locked option D); Map toggle stays separate.
+    FILTERS.splice(3, 0, { id: "audio", label: "Audio" });
     FILTERS.push({ id: "location", label: "Location" });
+    const teachNav = NAV.find((n) => n.id === "teach");
+    if (teachNav) teachNav.label = "Teach";
   }
 
   // Ask command examples (typed today; STT later shares applyAskCommand):
