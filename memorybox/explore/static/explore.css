@@ -1081,8 +1081,10 @@ body {
 .mb-modal-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .mb-viewer-footer {
@@ -1090,6 +1092,9 @@ body {
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
   padding: 0.55rem 0.75rem;
   border-top: 1px solid #1f2937;
   background: #0f172a;
@@ -1251,7 +1256,8 @@ body {
 
 .mb-ev-photo {
   position: relative;
-  min-height: 320px;
+  flex: 1;
+  min-height: 0;
   height: 100%;
   background: #020617;
   color: #e2e8f0;
@@ -1261,6 +1267,7 @@ body {
   text-align: center;
   border-radius: 10px;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .mb-ev-photo.is-zoomed {
@@ -1273,7 +1280,7 @@ body {
   max-width: 100%;
   max-height: min(62vh, 560px);
   object-fit: contain;
-  transition: transform 0.12s ease-out;
+  transition: width 0.12s ease-out;
 }
 
 .mb-ev-photo.is-zoomed img {

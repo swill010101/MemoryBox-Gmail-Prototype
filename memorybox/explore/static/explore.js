@@ -1449,7 +1449,7 @@
       </div>`);
       bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-inspect">Inspect</button>`);
       bits.push(`<button type="button" class="mb-viewer-footbtn" id="mb-viewer-share" title="Coming soon">Share</button>`);
-      bits.push(`<a class="mb-viewer-footbtn" href="/story/ui">Add to story</a>`);
+      bits.push(`<a class="mb-viewer-footbtn" href="/story/ui">Add story</a>`);
     } else if (t === "video") {
       const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
       bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
@@ -1485,14 +1485,14 @@
     const zout = document.getElementById("mb-zoom-out");
     if (zin) {
       zin.addEventListener("click", () => {
-        state.modal.zoom = Math.min(3, Math.round(((Number(state.modal.zoom) || 1) + 0.25) * 100) / 100);
+        state.modal.zoom = Math.min(3, Math.round(((Number(state.modal.zoom) || 1) + 0.05) * 100) / 100);
         const cur = rawItems.find((x) => x.id === state.modal.openId);
         if (cur) renderViewer(cur);
       });
     }
     if (zout) {
       zout.addEventListener("click", () => {
-        state.modal.zoom = Math.max(0.5, Math.round(((Number(state.modal.zoom) || 1) - 0.25) * 100) / 100);
+        state.modal.zoom = Math.max(0.5, Math.round(((Number(state.modal.zoom) || 1) - 0.05) * 100) / 100);
         const cur = rawItems.find((x) => x.id === state.modal.openId);
         if (cur) renderViewer(cur);
       });
@@ -1611,16 +1611,18 @@
     const media = item.media_url || item.thumb_url || "";
     if (t === "photo") {
       const zoom = Number(state.modal.zoom) || 1;
+      // Width-based zoom (not transform) so overflow scrolls inside the stage
+      // and never paints over the footer controls.
       const zoomStyle =
         zoom === 1
           ? ""
-          : ` style="transform:scale(${zoom});transform-origin:center center"`;
+          : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none;max-height:none;height:auto"`;
       const img = media
         ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(
             item.title || "Photo"
           )}"${zoomStyle} />`
         : escapeHtml(item.preview || item.title || "Photo");
-      return `<div class="mb-ev-photo${zoom > 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">${img}
+      return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">${img}
         ${faceBoxHtml(item)}
       </div>`;
     }
@@ -1699,7 +1701,7 @@
     </div>`;
   }
 
-  const QUICK_PREVIEW_DELAY_MS = 2000;
+  const QUICK_PREVIEW_DELAY_MS = 2500;
 
   function clearPreviewTimer() {
     if (state.preview && state.preview.timer) {

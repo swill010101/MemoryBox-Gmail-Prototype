@@ -10,7 +10,7 @@
 
 ### Chrome
 - Header: Previous / Next, position (`N of M`), Close
-- Footer (photo): **working zoom** `− % +`; **Inspect** → Source rail; **Share** (visible now, wiring later); Add to story; More later
+- Footer (photo): **working zoom** `− % +` (±5%); **Inspect** → Source rail; **Share** (visible now, wiring later); Add story; More later
 - Footer (video): play/pause, scrub, time, volume, captions/transcript toggle, expand — same shell proportions
 
 ### Media
@@ -38,7 +38,7 @@ Closing restores Ask / filters / timeline range & playhead / gallery density & b
 
 Derived from the full viewer; exists only to help decide whether to open.
 
-- **2 second** hover delay, then preview appears
+- **2.5 second** hover delay, then preview appears
 - **Upper-left of the preview** sits at the **pointer location at show time**; preview does **not** follow the mouse afterward
 - Keyboard focus uses the same delay; anchors at the card’s upper-left
 - Touch opens/selects the full viewer (no hover dependency)
@@ -71,10 +71,10 @@ Word master: [`docs/source/mockups/Screen_mockups_from_p2I4_shared_gallery.docx`
 ### Founder FlightSim notes → product answers
 | Note | Answer |
 |------|--------|
-| Zoom `− 100% +` dead | **Now** — wired (±25%, 50%–300%) |
+| Zoom `− 100% +` dead | **Now** — wired (±5%, 50%–300%); stage scrolls so footer stays visible |
 | Inspect? | **Now** — opens Source rail (face-overlay inspect later) |
 | Share loved | **Future** — button stays; stub alert |
 | Recent pic missing EXIF on right | **Now when Immich returns it**; honest empty copy when stripped |
-| Rollover position / timing | **Now** — 2s hover; UL at pointer; no follow |
+| Rollover position / timing | **Now** — 2.5s hover; UL at pointer; no follow |
 
 See [planning delta §7](../MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md).

@@ -81,7 +81,9 @@ Inventory + I4 mapping: [mockups/P2_SHARED_EVIDENCE_VIEWER_AND_PREVIEW.md](mocku
 - Right rail tabs People / Story / Artifact / Source / Learn — **contextual panels** with empty/link-out states; Learn reuses existing teach slot / Review paths
 - Gallery mouse hover + keyboard focus **quick preview** (lightweight; not mini-detail)
 - Photo footer: **zoom works**; **Inspect → Source**; **Share** visible stub; Source shows **EXIF when Immich provides it**
-- Rollover: **2s hover**, preview **UL at pointer**, does **not** track mouse
+- Rollover: **2.5s hover**, preview **UL at pointer**, does **not** track mouse
+- Photo zoom **±5%**; zoomed media scrolls inside the stage so footer controls stay usable
+- Footer label **Add story** (not “Add to story”)
 
 **Still out of I4**
 - Named Places / saved pins as durable domain objects
