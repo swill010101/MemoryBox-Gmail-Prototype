@@ -126,8 +126,14 @@
     const input = document.getElementById("mb-global-ask-input");
     const text = (input && input.value || "").trim();
     if (!text) return;
-    window.mbShell.pushContext({ label: "before Global Ask", surface: surface() });
     window.mbShell.rememberAsk(text);
+    // On Explore, typed/STT commands must share the same context/filter/timeline state.
+    if (surface() === "explore" && typeof window.mbExploreApplyAsk === "function") {
+      closeGlobalAsk();
+      window.mbExploreApplyAsk(text);
+      return;
+    }
+    window.mbShell.pushContext({ label: "before Global Ask", surface: surface() });
     const url = "/ask/ui?q=" + encodeURIComponent(text);
     location.href = url;
   }

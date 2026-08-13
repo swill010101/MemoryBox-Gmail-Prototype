@@ -315,12 +315,11 @@
   // ——— Render ———
 
   function renderNav() {
-    const el = document.getElementById("mb-explore-nav");
-    el.innerHTML = NAV.map(
-      (n) =>
-        `<a href="${n.href}" data-nav="${n.id}"${n.id === "ask" ? ' aria-current="page"' : ""}>${n.label}</a>`
-    ).join("");
+    // Family destinations come from the injected Product Shell (MBUX FAMILY).
   }
+
+  // Expose for shell Global Ask + future STT — same applyAskCommand path.
+  window.mbExploreApplyAsk = applyAskCommand;
 
   function renderCurator() {
     refreshCuratorFromVisible();
