@@ -1,11 +1,12 @@
 # MBBS-P2 Increment 4 — Timeline-first High-Volume Explore
 
-**Status:** **DRAFT for founder review** · **No build** until clarifications locked and explicit “Build P2-I4” authorization  
+**Status:** **DRAFT for founder review / approval** · **No build** until this definition is approved  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (sequencing authority)  
 **Authority:** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A sequencing · **P2-I1..I3 ACCEPTED**  
-**Depends on:** **P2-I1 ACCEPTED** (moments) · **P2-I2 ACCEPTED** (shell + context return) · **P2-I3 ACCEPTED** (honest coverage; undated gaps visible)  
-**CLI prove (proposed):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
-**Gate:** Build only after founder lock + authorization. Mark **ACCEPTED** only after FlightSim owner gate.
+**Depends on:** **P2-I1 ACCEPTED** (moments) · **P2-I2 ACCEPTED** (shell + context return) · **P2-I3 ACCEPTED** (honest coverage; undated gaps)  
+**UX canvas dependency:** Final I4 **UX acceptance is held** until the new **mixed-media curator / Library / timeline canvas** is incorporated (see §1)  
+**CLI prove (proposed):** `python -m memorybox prove-p2-i4` (functionality) · later UX gate after canvas incorporation  
+**Gate:** Definition approval → build authorization → functionality prove → **UX ACCEPTED only after canvas incorporation + founder UX pass**
 
 ---
 
@@ -17,190 +18,207 @@ I4 makes **large mixed-media exploration practical**:
 
 > **The owner can move through a large photo/video archive as a living timeline gallery — zoom and band by time, see where known media sit, open items without losing context — without confidence scores or provider folders becoming the primary interface.**
 
-End-to-end outcomes:
+I4 has **two tracks** that must not be conflated:
+
+| Track | Purpose | When “done enough” |
+|-------|---------|---------------------|
+| **A — Functionality** | Timeline/query/filter/open/return behaviors at Immich scale | Functionality prove / FlightSim capability gate |
+| **B — Final UX** | Curator-feel mixed-media canvas (Library + timeline as one composition) | **Held** until new canvas is incorporated + founder UX acceptance |
+
+**Do not mark I4 ACCEPTED on functionality alone.** Final acceptance requires Track B.
+
+---
+
+## 1. Locked directional decision (founder 2026-08-13)
+
+> Continue I4 **functionality**; **hold final UX acceptance** until the new **mixed-media curator / Library / timeline canvas** is incorporated.
+
+Implications:
+
+1. I4 may implement and prove **explore capabilities** (time index, band/zoom semantics, undated grouping, mixed result stream, open-at-moment, context return, scale) against current Library/shell as a **capability substrate**.  
+2. **Final UX ACCEPTED** waits for incorporation of the new canvas — the curator-facing composition that unifies Library + timeline + mixed-media gallery (MBUX quiet-curator; mockups/experience boards as feeling reference, not pixel-match).  
+3. Shipping a thin “admin timeline scrubber” on old Library chrome may satisfy **Track A** temporarily; it **cannot** alone satisfy **Track B / ACCEPTED**.  
+4. Canvas work may arrive from parallel UX / mockup / PRD streams; I4 definition treats **incorporation** as a hard acceptance prerequisite, not optional polish.
+
+---
+
+## 2. End-to-end outcomes
+
+### 2.A Functionality outcomes (Track A)
 
 1. **Timeline-first** navigation for large result sets (P2-UX-02).  
 2. **Adaptive zoom / clustering / banding** — year → month → day → dense bands as needed.  
-3. **Graphical timeline** (not a text date list): known dates indicated; **unknown dates grouped** together.  
-4. **Mouse click and band-select** to raise precision; the gallery adjusts to that period.  
-5. **Gallery-first** presentation of mixed media (photos + searchable video moments); admin codes / evidence dumps stay progressive-disclosure only.  
-6. **Preview**, filters, drill-down, and **return** preserve exploration context (I2 stack).  
-7. Natural-language / Ask refinement works **alongside** structured filters (P2-UX-03) without replacing the timeline.  
-8. Does **not** force provider structure or confidence-first UX.  
-9. I1 moments open at the right time; I3 honesty about undated gaps informs unknown-date grouping.  
-10. Ask/Home may deep-link into this explore surface later — **Ask polish is not the I4 rewrite** (separate UX-principles work may refine Ask after).
+3. Time model: known dates on a spine; **unknown dates grouped** (never fake-dated, never silently dropped).  
+4. **Click + band-select** (and accessible alternate) change the active period; the result set follows.  
+5. **Mixed stream**: photos + searchable video moments (source video files secondary / drill-through).  
+6. Open photo → detail/preview; open video moment → Review/jump `t=` (I1).  
+7. **Return** restores period / band / filters / scroll (I2).  
+8. Structured filters + Ask handoff/refine (P2-UX-03 slice) without replacing timeline.  
+9. Windowed/virtualized loading at Immich scale (tens of thousands).  
+10. No confidence-first or provider-folder-first default.
 
-I4 is the **high-volume explore engine**, not Archive Health, not Settings, not kinship, not speech moments.
+### 2.B Final UX outcomes (Track B — held for canvas)
+
+1. Explore reads as one **curator canvas**: Library + timeline + gallery as one composition (not a bolted scrubber on admin Library).  
+2. Gallery-first; evidence codes / provider internals progressive-disclosure only.  
+3. MBUX quiet-curator language; mockups / experience boards validate *feel*, not pixel slavery.  
+4. Living-room / shared viewing posture remains viable (no cast required).  
+5. Founder UX pass after canvas incorporation.
 
 ---
 
-## 1. Clarifications to lock (founder)
-
-Confirm or adjust before build authorization:
+## 3. Clarifications still to approve (founder)
 
 | # | Question | Proposed default |
 |---|----------|------------------|
-| Q1 | Primary surface for the timeline engine? | **Evolve Library** into timeline-first explore; Ask can deep-link results into it. Do not invent a third parallel explore app. |
-| Q2 | Mixed media in one gallery? | **Yes** — photos + searchable video moments in one timeline stream (source videos as files stay secondary / drill-through). |
-| Q3 | Unknown / undated media? | **Grouped bucket** (e.g. “Undated”) accessible from the timeline; never silently dropped; never fake-dated. |
-| Q4 | Band / zoom interaction? | Graphical timeline: click focus + drag band to set range; gallery follows. Keyboard/accessible alternate required. |
-| Q5 | Scale target for ACCEPTED? | FlightSim real Immich photo corpus (**tens of thousands**) must remain navigable (not “load all thumbs”). |
-| Q6 | Filters in I4? | Person, place (when known), modality (photo / video moment), dated vs undated — structured filters + Ask refinement. Heavy visual-attribute search may be thin/best-effort. |
-| Q7 | Ask rewrite? | **Out of I4** except deep-link / “Open in Timeline” from Ask results. Broader Ask polish stays UX-principles follow-on. |
-| Q8 | Saved views / “save this query”? | **Thin optional** if cheap (EVS-249); full Dynamic Views = **I13**. Default: OUT unless founder pulls thin save in. |
+| Q1 | Where does the canvas land? | **Library becomes the canvas host**; Ask deep-links “Open in Library / Timeline.” No third parallel explore app. |
+| Q2 | Mixed media in one stream? | **Yes** — photos + searchable video moments. |
+| Q3 | Undated media? | Explicit **Undated** group on/ beside the timeline spine. |
+| Q4 | Band / zoom? | Graphical axis: click focus + drag band; keyboard/accessible alternate required. |
+| Q5 | Scale for functionality prove? | FlightSim Immich corpus (**tens of thousands**) navigable (windowed). |
+| Q6 | Filters in I4? | Person, modality, dated/undated, place when known + Ask refine. Visual-attribute search thin/best-effort. |
+| Q7 | Ask rewrite? | **Out** except deep-link / handoff into canvas. Ask polish = separate UX-principles work. |
+| Q8 | Saved views? | **Out** → **I13** (unless founder later pulls thin save). |
+| Q9 | Canvas source of truth? | Incorporate the **new mixed-media curator/Library/timeline canvas** (from UX/mockup stream) before Track B / ACCEPTED. Exact artifact path/PR locked at incorporation time. |
+| Q10 | May Track A ship behind a flag before canvas? | **Yes for internal FlightSim prove**; **no ACCEPTED** and no claim of final explore UX until Track B. |
 
 ---
 
-## 2. IN scope
+## 4. IN scope
 
-### 2.1 Timeline-first explore (P2-UX-02)
+### 4.1 Track A — Functionality
 
-| Capability | I4 expectation |
-|------------|----------------|
-| Timeline chrome | Dominant graphical time axis for the current result set / library scope |
-| Adaptive zoom | Coarse → fine (e.g. years → months → days / dense bands) |
-| Clustering / banding | Dense periods compress; sparse periods expand |
-| Gallery | Large-set mixed-media thumbs; select → preview / open |
-| Unknown dates | Explicit undated group; not mixed falsely into dated spine |
-| Performance | Virtualized / windowed loading — no full-corpus dump |
+| Capability | Expectation |
+|------------|-------------|
+| Time index | Query/filter media by dated period + undated group |
+| Zoom levels | ≥2 coarse↔fine levels |
+| Band select | Range → result set updates |
+| Mixed stream API/UI substrate | Photos + moments with stable ids and open targets |
+| Open moment | Jump `t=` preserved |
+| Context return | Period/band/filters/scroll restore |
+| Scale | Windowed fetch; no full-corpus thumb dump |
+| Filters | Person / modality / dated|undated (+ place when known) |
+| Ask handoff | Apply filters / open canvas with context |
 
-### 2.2 Interaction
+### 4.2 Track B — Canvas incorporation (required for ACCEPTED)
 
-- Click timeline to focus a period.  
-- Band-select (drag) to set a range; gallery filters to that range.  
-- Open photo → Library/detail or lightbox; open video moment → Review/jump `t=` (I1).  
-- Return restores timeline position / band / filters / scroll (I2 context).
+| Capability | Expectation |
+|------------|-------------|
+| Curator canvas | Unified Library + timeline + mixed gallery composition |
+| Gallery-first | No admin evidence-primary layout |
+| MBUX feel | Quiet-curator; mockups as validation reference |
+| Shell fit | Remains I2 family exploration surface |
+| Founder UX pass | Explicit acceptance after incorporation |
 
-### 2.3 Refinement (P2-UX-03) — I4 slice
+### 4.3 Preserve prior increments
 
-- Structured filters: Person, modality, dated/undated, place when available.  
-- Ask / natural language may refine or hand off into the timeline with filters applied.  
-- Progressive disclosure for provider/confidence (P2-UX-04).
-
-### 2.4 Absorb founder Ask explore notes (parked → I4)
-
-From post-I2 flow review (held until after I3):
-
-- Results feel like a **gallery**, not administrative evidence lists.  
-- Timeline across the bottom (or equivalent dominant axis) with known dates marked.  
-- Unknown dates grouped.  
-- Click/band for higher precision.  
-- Evidence area / photo codes not primary UI.
-
-### 2.5 Preserve prior increments
-
-- I1 jump-to-moment and face evidence remain coherent inside timeline open.  
-- I2 shell + context return.  
-- I3 honesty: undated / unavailable never look like zero coverage elsewhere.
+I1 moments · I2 shell/context · I3 honesty (undated ≠ fake; unavailable ≠ 0 elsewhere).
 
 ---
 
-## 3. OUT of scope / deferred
+## 5. OUT of scope / deferred
 
 | Deferred | Home |
 |----------|------|
-| Archive Health redesign | **I3** (done) |
-| Ask/Home invitation polish, journey chips, viewer identity UX | UX-principles / Ask follow-on — not I4 body |
+| Final UX ACCEPTED without canvas | **Forbidden** (§1) |
+| Ask/Home invitation polish, journeys, viewer identity | UX-principles follow-on |
+| Archive Health changes | **I3** (done) |
 | Mature Settings | **I14** |
-| Kinship inference | **I6** |
+| Kinship | **I6** |
 | SMS / richer email | **I7–I8** |
-| Spoken-moment STT engine | **I9** |
-| Full Dynamic Views product | **I13** (thin save optional only if Q8 pulls in) |
-| Confidence- or provider-folder-first UX | Forbidden as default |
-| IQ / blur engines | Out |
-| Cast / Home Assistant | Deferred |
-| Multi-user | Late |
+| Spoken STT moments | **I9** |
+| Full Dynamic Views | **I13** |
+| Confidence- / provider-folder-first UX | Forbidden as default |
+| Cast / HA / multi-user | Deferred / late |
 
 ---
 
-## 4. MBPS / EVS / task traceability
+## 6. MBPS / EVS traceability
 
 | Source | I4 role |
 |--------|---------|
-| **P2-UX-02** Timeline-first high-volume explore | Primary IN |
-| **P2-UX-03** Natural + structured refinement | Primary IN (slice) |
-| **P2-UX-04** Progressive disclosure | Required |
-| **P2-VID-03** Searchable moments in results | Open-at-moment from gallery |
-| **EVS-002** Christmas / mixed-media timeline explore | Primary |
-| **EVS-081, 082, 095, 229** Photo find / attribute | Supporting (Person + time + gallery; attributes thin) |
-| **EVS-085, 086, 110, 111** Temporal / dated explore | Supporting |
-| **EVS-090, 105, 116, 119, 126, 128** Place-oriented explore | Supporting when place known |
-| **EVS-227, 249** Discovery / save query | 249 thin optional (Q8) |
-| **EVS-237** “Funniest video” | Out / later semantic ranking — not I4 gate |
-| **P2-AH-*** | Out (I3) |
+| **P2-UX-02** Timeline-first high-volume explore | Primary (A+B) |
+| **P2-UX-03** Natural + structured refinement | Track A slice |
+| **P2-UX-04** Progressive disclosure | Required (esp. Track B) |
+| **P2-VID-03** Searchable moments | Open-at-moment |
+| **EVS-002** Mixed-media timeline explore | Primary |
+| **EVS-081..229** (photo/place/time set per MBRM-001A) | Supporting |
+| **EVS-249** Save query | Out → I13 (Q8) |
+| **EVS-237** Funniest video | Out of I4 gate |
 
 ---
 
-## 5. Prerequisites
+## 7. Prerequisites
 
-- FlightSim P1 baseline.  
+- P1 FlightSim baseline.  
 - **P2-I1..I3 ACCEPTED**.  
-- Real Immich photo scale + HVRT moments available for mixed gallery.  
-- I2 shell context return working on Library ↔ Review ↔ Ask.
+- Immich-scale photos + HVRT moments for mixed stream.  
+- I2 context return on Library ↔ Review ↔ Ask.  
+- **For ACCEPTED:** new mixed-media curator/Library/timeline **canvas incorporated**.
 
 ---
 
-## 6. Acceptance corpus (minimum)
+## 8. Acceptance — split gates
 
-| Case | Requirement |
-|------|-------------|
-| Timeline-first | Large set navigated by graphical timeline, not folder/provider tree |
-| Zoom / band | At least two zoom levels + band-select changes gallery period |
-| Undated | Unknown dates grouped; not fake-dated; reachable |
-| Mixed media | Photos and video moments appear in one explore stream |
-| Open moment | Video moment opens with jump `t=` |
-| Context return | Open → return restores timeline/band/filter/scroll meaningfully |
-| Scale | Tens of thousands of Immich photos remain usable (windowed) |
-| Progressive disclosure | No confidence-first or evidence-code primary UI |
-| Refinement | Person (or equivalent) filter + Ask handoff/refine demonstrated |
-| Regression | `prove-p2-i1`, `prove-p2-i2`, `prove-p2-i3` `--flightsim` still green |
-| Scope | No Ask rewrite; no Settings; no I6 kinship; no I9 STT |
+### 8.A Functionality gate (Track A — not ACCEPTED)
 
----
+Pass on FlightSim when authorized:
 
-## 7. Exact acceptance gate (proposed)
+1. Time-bounded query + undated group work.  
+2. ≥2 zoom levels; band-select changes result set.  
+3. Mixed stream includes photos + video moments.  
+4. Moment open uses jump `t=`.  
+5. Return restores explore state.  
+6. Immich-scale navigation remains usable (windowed).  
+7. Person (or equivalent) filter + Ask handoff work.  
+8. I1–I3 proves still green.  
+9. `prove-p2-i4` functionality suite passes.
 
-Pass **all** on FlightSim before **ACCEPTED**:
+**Label:** Functionality **PROVED** / ready for canvas — **not** product ACCEPTED.
 
-1. Library (or chosen primary surface) is timeline-first for high-volume media.  
-2. Graphical timeline shows dated density; undated group exists.  
-3. Click focus works; band-select narrows gallery to that range.  
-4. Adaptive zoom demonstrated (coarse ↔ finer).  
-5. Mixed gallery includes photos + searchable video moments.  
-6. Opening a moment jumps to timeslot (`t=`).  
-7. Open → return restores explore context (I2).  
-8. Real Immich-scale corpus remains navigable (no full dump).  
-9. Structured Person (or equivalent) filter works with timeline.  
-10. Ask can hand off or refine into timeline without orphaning context.  
-11. Primary UI is gallery/timeline — not admin evidence codes.  
-12. No confidence-first / provider-folder-first default.  
-13. No Ask/Home full polish rewrite; no Settings rebuild; no kinship/STT engines.  
-14. I1–I3 FlightSim proves remain green.  
-15. Dedicated `prove-p2-i4` / `--flightsim` passes.
+### 8.B Final UX / ACCEPTED gate (Track B — held)
+
+Only after canvas incorporation:
+
+1. Explore is the **curator canvas** (Library + timeline + gallery one composition).  
+2. Gallery-first; no admin evidence-primary UI.  
+3. Graphical timeline with dated density + undated group is first-class in the canvas.  
+4. Click/band (and accessible alternate) feel native to the canvas.  
+5. MBUX quiet-curator feel validated (mockups/boards as reference).  
+6. Open → return still coherent inside canvas.  
+7. No Ask rewrite / Settings / kinship / STT scope leak.  
+8. Founder explicit UX acceptance.  
+9. Full `prove-p2-i4 --flightsim` (incl. UX markers) green.  
+
+**Only then:** mark I4 **ACCEPTED**.
 
 ---
 
-## 8. Risks & watch items
+## 9. Risks & watch items
 
 | Risk | Mitigation |
 |------|------------|
-| Load-all Immich thumbs | Windowed/virtualized fetch; prove scale case |
-| Fake dates for undated | Explicit undated bucket (Q3) |
-| Ask rewrite sneaks in | Q7 OUT; deep-link only |
-| Timeline becomes admin scrubber | Gallery-first; progressive disclosure |
-| Video file vs moment confusion | Moments in stream; source file secondary |
-| Scope creep to I13 saved views | Q8 default OUT |
+| ACCEPTED claimed on Track A alone | §1 + split gates; stop-line forbids it |
+| Canvas never arrives / slips | Hold ACCEPTED; functionality may stay PROVED only |
+| Thin scrubber on old Library becomes “good enough” | Track B explicitly requires curator canvas |
+| Load-all thumbs | Windowed fetch; scale case in 8.A |
+| Fake dates | Undated group only |
+| Ask rewrite sneaks in | Q7 OUT |
 
 ---
 
-## 9. Authorization stop-line
+## 10. Authorization stop-line
 
 | Step | Status |
 |------|--------|
 | MBRM-001A sequencing (I3→I4 Timeline) | Approved direction |
 | P2-I1..I3 | **ACCEPTED** |
-| Founder I4 clarifications (§1 Q1–Q8) | **AWAITING** Tom lock |
-| **This I4 definition** | **DRAFT — review only** |
-| Build / code / FlightSim implement | **NOT AUTHORIZED** until Tom locks Q1–Q8 and says **Build P2-I4** |
+| Direction: functionality continue; UX ACCEPTED hold for canvas | **STATED** (2026-08-13) |
+| Founder approval of **this reworked definition** (incl. Q1–Q10) | **AWAITING** |
+| **This I4 definition** | **DRAFT — review; wait for approval** |
+| Build / code | **NOT AUTHORIZED** until definition approved + “Build P2-I4” |
+| Track A functionality prove | After build auth |
+| Track B / product **ACCEPTED** | **HELD** until canvas incorporated + founder UX pass |
 
-**No code for I4 until explicit build approval.**
+**No I4 code until this definition is approved and build is explicitly authorized.**  
+**No I4 ACCEPTED until the mixed-media curator/Library/timeline canvas is incorporated.**
