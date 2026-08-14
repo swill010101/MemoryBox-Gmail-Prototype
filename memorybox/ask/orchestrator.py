@@ -783,7 +783,57 @@ class AskOrchestrator:
         rel = resolve_relational_ask(text)
         if rel.intent != "none":
             notes = list(plan.notes) + ["i9a_relational_resolve"]
-            if rel.ok and rel.person_id:
+            if rel.ok and rel.intent in (
+                "kinship_list",
+                "kinship_pictures",
+                "how_related",
+                "kinship_in_photo",
+            ):
+                notes = list(notes) + ["i6_kinship_resolve"]
+                hits = list(rel.kinship_hits or [])
+                hit_ids = tuple(
+                    dict.fromkeys(
+                        str(h.get("person_id"))
+                        for h in hits
+                        if h.get("person_id")
+                    )
+                )
+                hit_names = tuple(
+                    str(h.get("display_name") or "")
+                    for h in hits
+                    if h.get("display_name")
+                )
+                if rel.intent == "kinship_pictures" and hit_ids:
+                    plan = replace(
+                        plan,
+                        person_ids=hit_ids,
+                        person_names=hit_names,
+                        notes=tuple(notes),
+                        profile_intent=rel.intent,
+                        profile_answer=rel.to_dict(),
+                        want_photo=True,
+                        want_still=True,
+                        want_video=True,
+                        want_visual=True,
+                        visual_scope="broad",
+                    )
+                else:
+                    plan = replace(
+                        plan,
+                        person_ids=hit_ids if hit_ids else ((rel.person_id,) if rel.person_id else ()),
+                        person_names=hit_names
+                        if hit_names
+                        else ((rel.display_name,) if rel.display_name else ()),
+                        notes=tuple(notes),
+                        profile_intent=rel.intent,
+                        profile_answer=rel.to_dict(),
+                        want_photo=False,
+                        want_still=False,
+                        want_video=False,
+                        want_visual=False,
+                        visual_scope="none",
+                    )
+            elif rel.ok and rel.person_id:
                 # Replace context people entirely — never keep prior "father" in a
                 # follow-up "mother" / relational ask (that caused Eugene-as-mother).
                 names = (rel.display_name,) if rel.display_name else ()
@@ -861,16 +911,84 @@ class AskOrchestrator:
         artifacts: list[dict[str, Any]] = []
         guided_capture: list[dict[str, Any]] = []
 
-        # Profile-backed short-circuit (who / birth / anniversary)
+        # Profile-backed short-circuit (who / birth / anniversary / I6 kinship explain)
         if (
-            getattr(plan, "profile_intent", None) in ("who", "birth", "anniversary")
+            getattr(plan, "profile_intent", None)
+            in ("who", "birth", "anniversary", "kinship_list", "how_related", "kinship_in_photo")
             and getattr(plan, "profile_answer", None)
             and (plan.profile_answer or {}).get("ok")
         ):
             ans = plan.profile_answer or {}
             statements: list[dict[str, Any]] = []
             citations: list[dict[str, Any]] = []
-            if plan.profile_intent == "who":
+            if plan.profile_intent == "kinship_list":
+                hits = ans.get("kinship_hits") or []
+                role = ans.get("role_phrase") or "relative"
+                if not hits:
+                    text_out = ans.get("disclosure") or f"No {role}s found on the relationship graph."
+                else:
+                    lines = [
+                        f"{h.get('display_name') or h.get('person_id')} — {h.get('label') or role}"
+                        + (
+                            f" (Derived: {h.get('path_summary')})"
+                            if h.get("derived") and h.get("path_summary")
+                            else ""
+                        )
+                        for h in hits
+                    ]
+                    text_out = (
+                        f"Derived {role}s ({len(hits)}; not direct assertions):\n"
+                        + "\n".join(f"• {ln}" for ln in lines)
+                    )
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Kinship",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                    }
+                )
+            elif plan.profile_intent == "how_related":
+                a = ans.get("display_name") or "A"
+                b = ans.get("related_display_name") or "B"
+                label = ans.get("role_phrase") or "related"
+                path = ans.get("path_summary") or ""
+                text_out = f"{a} → {b}: {label}."
+                if path:
+                    text_out += f" Path: {path}."
+                if ans.get("derived"):
+                    text_out += " (Derived — correct an underlying direct relationship if this is wrong.)"
+                if ans.get("ambiguity"):
+                    text_out += f" Note: {ans['ambiguity']}."
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Kinship path",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                    }
+                )
+            elif plan.profile_intent == "kinship_in_photo":
+                hits = ans.get("kinship_hits") or []
+                text_out = ans.get("disclosure") or (
+                    f"{len(hits)} niece/nephew candidate(s) on the graph — "
+                    "open a photo with recognized People to filter."
+                )
+                statements.append(
+                    {
+                        "text": text_out,
+                        "label": "Kinship × photo",
+                        "evidence_ids": [],
+                        "photo_external_ids": [],
+                        "story_ids": [],
+                        "journal_ids": [],
+                    }
+                )
+            elif plan.profile_intent == "who":
                 name = ans.get("display_name") or ans.get("person_id")
                 role = ans.get("role_phrase") or "relative"
                 if role in ("self", "me"):
