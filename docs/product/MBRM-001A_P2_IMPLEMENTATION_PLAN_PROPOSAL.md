@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6 **ACCEPTED**; I4 build authorized / not ACCEPTED; I7 definition drafted — **no build** until authorized).
+**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6 **ACCEPTED**; I4 build authorized / not ACCEPTED; I7 lock-ready — Q1 file-open remaining; **no build** until authorized).
 
 ## 0. First-increment verdict (confirmed)
 
