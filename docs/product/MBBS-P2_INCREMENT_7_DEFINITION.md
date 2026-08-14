@@ -404,7 +404,7 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | Build | **AUTHORIZED** 2026-08-14 (Tom) |
 | Implementation | **THIS REVISION** (`ingest-sms`, `inspect-sms`, `prove-p2-i7`) |
 | FlightSim ingest | **DONE** 2026-08-14 — job `7f763b4e-7ef0-40b5-804b-07ca10e18c34`; inserted **90,784**; skipped **1,014** duplicate hashes; processed **91,798** (= inspect row_count); `original_untouched: true` |
-| Owner notes 2026-08-14 | §8 items **1–8 pass**. Item **10 understood**. Item **9 still the remaining gate** (confirmed phone must show on People). Year / Peggy / FL selection works. |
+| Owner notes 2026-08-14 | §8 items **1–8 pass**. Item **10 understood**. Item **9 still the remaining gate** (confirmed phone must show on People). Year / Peggy / FL selection works. Follow-up: Explore theme still mixed (shell `--mb-ink` overrode filters); All emptied texts; attachments listed but not viewable. |
 | FlightSim bugs this revision | Silent **5000 oldest-first** cap hid 2020–2025 and froze the header at 5000; mixed light/dark wiped SMS text; Ask→Explore/People dropped context; Email/Text filter stayed on All; hover did not expand text; no attachment indicator. |
 | ACCEPTED | **No** — §8 item 9 + remaining owner rows after this fix |
 
@@ -428,6 +428,6 @@ python -m memorybox repair-sms-identities
 
 Real export ingest on FlightSim **succeeded** 2026-08-14 (90,784 inserted / 1,014 hash-skips / original untouched).
 
-After this revision: SMS retrieve is year-fair up to 25,000 (no silent 2019 cutoff). Explore / Ask / People picker are dark with readable text. Explicit text asks select **Email/Text**. Hover expands the message. Paperclip **📎 N** on a card means that message has attachment(s) linked — not Immich photos. `repair-sms-identities` writes unique auto-mapped phones onto People as confirmed contacts.
+After this revision: Explore tokens are locked so shell `--mb-ink` cannot wipe filter labels. **All** keeps texts already in the result and can join Person photos. Open a text to **see** the attachment; **Add to MemoryBox library** copies it into Artifact storage (no Immich write). Ask fields keep the last **100** asks in `localStorage` (survives shutdown); Up/Down cycles them.
 
 Confirm the CLI lists `prove-p2-i7`, `ingest-sms`, `inspect-sms`, and `repair-sms-identities` before treating the tree as I7.

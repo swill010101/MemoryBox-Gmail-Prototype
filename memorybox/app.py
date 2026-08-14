@@ -514,6 +514,36 @@ def explore_photo_people(external_id: str) -> dict[str, Any]:
     return {"ok": True, "external_id": eid, "people": people, "faces": faces}
 
 
+@app.get("/explore/api/sms-attachment/{evidence_id}")
+def explore_sms_attachment(evidence_id: str, index: int = Query(0, ge=0, le=32)) -> Response:
+    """Preview an SMS/iMessage attachment from the staged export. No Immich write."""
+    from memorybox.explore.sms_attach import SmsAttachError, read_sms_attachment_bytes
+
+    try:
+        data, mime, name = read_sms_attachment_bytes(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    safe = name.replace('"', "")
+    return Response(
+        content=data,
+        media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{safe}"'},
+    )
+
+
+@app.post("/explore/api/sms-attachment/{evidence_id}/to-library")
+def explore_sms_attachment_to_library(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    """Copy attachment into MemoryBox Artifact storage. Never writes Immich."""
+    from memorybox.explore.sms_attach import SmsAttachError, add_sms_attachment_to_mb_library
+
+    try:
+        return add_sms_attachment_to_mb_library(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/family-night/ui")
 def family_night_ui() -> HTMLResponse:
     """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""

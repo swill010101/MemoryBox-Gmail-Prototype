@@ -155,20 +155,51 @@
       try {
         recent = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
       } catch (_) {}
-      recent = [t].concat(recent.filter((x) => x !== t)).slice(0, 6);
+      recent = [t].concat(recent.filter((x) => x !== t)).slice(0, 100);
       localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
     },
     recentAsks() {
       try {
-        return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        return Array.isArray(list) ? list.filter((x) => String(x || "").trim()).slice(0, 100) : [];
       } catch (_) {
         return [];
       }
+    },
+    bindAskHistory(input) {
+      if (!input || input.dataset.mbAskHistory === "1") return;
+      input.dataset.mbAskHistory = "1";
+      let histIndex = -1;
+      let draft = "";
+      input.addEventListener("keydown", (e) => {
+        if (e.isComposing) return;
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        const recent = window.mbShell.recentAsks();
+        if (!recent.length) return;
+        e.preventDefault();
+        if (e.key === "ArrowUp") {
+          if (histIndex < 0) draft = input.value;
+          if (histIndex < recent.length - 1) histIndex += 1;
+          input.value = recent[histIndex] || "";
+        } else {
+          if (histIndex < 0) return;
+          histIndex -= 1;
+          input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+        }
+        try {
+          const n = input.value.length;
+          input.setSelectionRange(n, n);
+        } catch (_) {}
+      });
+      input.addEventListener("input", () => {
+        histIndex = -1;
+      });
     },
     getActivePerson,
     setActivePerson,
     getActiveAsk,
     setActiveAsk,
+    bindAskHistory,
     peopleHref,
     refreshPeopleNavLinks,
   };
@@ -343,9 +374,11 @@
     document.getElementById("mb-open-global-ask").addEventListener("click", openGlobalAsk);
     document.getElementById("mb-global-ask-close").addEventListener("click", closeGlobalAsk);
     document.getElementById("mb-global-ask-go").addEventListener("click", submitGlobalAsk);
-    document.getElementById("mb-global-ask-input").addEventListener("keydown", (e) => {
+    const globalInput = document.getElementById("mb-global-ask-input");
+    globalInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitGlobalAsk();
     });
+    window.mbShell.bindAskHistory(globalInput);
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) closeGlobalAsk();
     });

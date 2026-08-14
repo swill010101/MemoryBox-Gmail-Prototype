@@ -24,11 +24,53 @@
 
 * { box-sizing: border-box; }
 
+/* Lock tokens on Explore so shell.css :root --mb-ink (#141816) cannot
+   paint dark text on dark pills (unreadable filters). */
+html[data-mb-surface="explore"],
+html[data-mb-surface="people"] {
+  --mb-ink: #e8edf5;
+  --mb-muted: #9aa3b5;
+  --mb-card: #1a2230;
+  --mb-page: #0f141c;
+  --mb-line: rgba(255, 255, 255, 0.14);
+  --mb-ask-band: linear-gradient(135deg, #162033 0%, #1a1e2e 55%, #1c1828 100%);
+}
+
 /* Dark canvas — same family as Person / shell so text stays readable */
 html[data-mb-surface="explore"] body.mb-shell,
 html[data-mb-surface="explore"] body {
-  background: var(--mb-page) !important;
-  color: var(--mb-ink) !important;
+  background: #0f141c !important;
+  color: #e8edf5 !important;
+}
+
+html[data-mb-surface="explore"] .mb-explore-ask-band,
+html[data-mb-surface="explore"] .mb-explore-curator,
+html[data-mb-surface="explore"] .mb-explore-timeline {
+  background: #141b27 !important;
+  color: #e8edf5 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+html[data-mb-surface="explore"] .mb-explore-ask-label,
+html[data-mb-surface="explore"] .mb-explore-curator-copy h1,
+html[data-mb-surface="explore"] .mb-explore-brand-name {
+  color: #f3f6fb !important;
+}
+html[data-mb-surface="explore"] .mb-explore-curator-copy p,
+html[data-mb-surface="explore"] .mb-explore-tagline,
+html[data-mb-surface="explore"] .mb-explore-meta,
+html[data-mb-surface="explore"] .mb-tl-hint,
+html[data-mb-surface="explore"] .mb-tl-range-label {
+  color: #b7c0d0 !important;
+}
+html[data-mb-surface="explore"] .mb-explore-filters button {
+  background: #1a2230 !important;
+  color: #e8edf5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+}
+html[data-mb-surface="explore"] .mb-explore-filters button[aria-pressed="true"] {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border-color: #3b82f6 !important;
 }
 html[data-mb-surface="explore"] .mb-site-bar {
   display: none; /* Explore page carries brand + family nav per mockup hierarchy */
@@ -279,13 +321,13 @@ body {
   font-weight: 600;
 }
 .mb-chip[data-kind="person"],
-.mb-chip:nth-child(1) { background: var(--mb-blue-soft); color: #1d4ed8; }
+.mb-chip:nth-child(1) { background: var(--mb-blue-soft); color: #c9dbff; }
 .mb-chip[data-kind="event"],
-.mb-chip:nth-child(2) { background: var(--mb-green-soft); color: #047857; }
+.mb-chip:nth-child(2) { background: var(--mb-green-soft); color: #b7f0d6; }
 .mb-chip[data-kind="place"] {
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
+  background: rgba(61, 207, 154, 0.16);
+  color: #b7f0d6;
+  border: 1px solid rgba(61, 207, 154, 0.35);
   cursor: pointer;
   font: inherit;
 }
@@ -295,7 +337,7 @@ body {
   border-color: #059669;
 }
 .mb-chip[data-kind="range"],
-.mb-chip:nth-child(3) { background: var(--mb-purple-soft); color: #6d28d9; }
+.mb-chip:nth-child(3) { background: var(--mb-purple-soft); color: #ddd0ff; }
 
 @media (max-width: 800px) {
   .mb-explore-curator {
@@ -375,9 +417,9 @@ body {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.38rem 0.75rem;
-  border: 1px solid #fcd34d;
-  background: #fffbeb;
-  color: #92400e;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: #243044;
+  color: #fde68a;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -409,9 +451,9 @@ body {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.38rem 0.75rem;
-  border: 1px solid #a7f3d0;
-  background: #ecfdf5;
-  color: #047857;
+  border: 1px solid rgba(61, 207, 154, 0.4);
+  background: #1a2230;
+  color: #b7f0d6;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -710,7 +752,7 @@ body {
   font-size: 0.65rem;
   margin-top: 0.1rem;
 }
-.mb-card[data-type="photo"] .mb-card-type { background: var(--mb-blue-soft); color: #1d4ed8; }
+.mb-card[data-type="photo"] .mb-card-type { background: var(--mb-blue-soft); color: #c9dbff; }
 .mb-card[data-type="video"] .mb-card-type { background: var(--mb-purple-soft); color: #6d28d9; }
 .mb-card[data-type="email"] .mb-card-type,
 .mb-card[data-type="sms"] .mb-card-type { background: #ffedd5; color: #c2410c; }
@@ -791,7 +833,7 @@ body {
   top: 22px;
   height: 10px;
   border-radius: 999px;
-  background: #e8eef7;
+  background: #243044;
 }
 
 .mb-tl-dots {
@@ -1532,6 +1574,26 @@ body {
 .mb-ev-attach ul {
   margin: 0.35rem 0 0;
   padding-left: 1.2rem;
+}
+.mb-ev-attach-preview {
+  margin: 0.45rem 0;
+  background: #0b1220;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 52vh;
+}
+.mb-ev-attach-preview img {
+  display: block;
+  width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+}
+.mb-sms-to-library-status {
+  display: inline-block;
+  margin-left: 0.45rem;
+  color: #b7c0d0;
+  font-size: 0.82rem;
 }
 
 .mb-ev-video-frame {

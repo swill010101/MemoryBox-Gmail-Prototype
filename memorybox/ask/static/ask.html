@@ -346,6 +346,15 @@
     document.getElementById("askInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter") doAsk();
     });
+    function wireAskHistory() {
+      const el = document.getElementById("askInput");
+      if (window.mbShell && window.mbShell.bindAskHistory && el) {
+        window.mbShell.bindAskHistory(el);
+        return true;
+      }
+      return false;
+    }
+    if (!wireAskHistory()) window.addEventListener("load", wireAskHistory);
     document.getElementById("clearBtn").addEventListener("click", clearContext);
     document.getElementById("changeBtn").addEventListener("click", changeContext);
     document.querySelectorAll(".mb-journey[data-ask]").forEach((btn) => {

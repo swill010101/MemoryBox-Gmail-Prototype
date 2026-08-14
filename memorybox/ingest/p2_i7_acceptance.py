@@ -38,6 +38,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     summary = (root / "status" / "summary.py").read_text(encoding="utf-8")
     main = (root / "__main__.py").read_text(encoding="utf-8")
     orch = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
+    app_py = (root / "app.py").read_text(encoding="utf-8")
+    shell_js = (root / "shell" / "static" / "shell.js").read_text(encoding="utf-8")
+    sms_attach = (root / "explore" / "sms_attach.py").read_text(encoding="utf-8")
 
     _check(
         "i7_parser_header_driven",
@@ -140,16 +143,19 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "i7_filter_sync_email_text",
         'nextType = "email"' in explore_js
         and "gallery_show_sms" in explore_js
-        and "setTypeFilter(\"all\")" not in explore_js.split("liveFind(text)")[-1][:400],
+        and "setTypeFilter(\"all\")" not in explore_js.split("liveFind(text)")[-1][:400]
+        and "maybeMergePersonVisuals" in explore_js
+        and "gallery_default_hidden && !includeTexts" in explore_js,
         checks,
         problems,
-        "Explicit text ask selects Email/Text filter",
+        "Explicit text ask selects Email/Text; All keeps texts and can join photos",
     )
     _check(
         "i7_dark_readable_explore",
         "--mb-page: #0f141c" in explore_css
         and ".mb-card-textbody" in explore_css
         and "#e8edf5" in explore_css
+        and 'html[data-mb-surface="explore"] .mb-explore-filters button' in explore_css
         and 'background: #f8fafc' not in explore_css.split(".mb-card-media[data-type=\"sms\"]")[1][:200],
         checks,
         problems,
@@ -159,7 +165,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "i7_hover_and_attach_indicator",
         "mb-qp-textbody" in explore_js
         and "mb-card-attach" in explore_js
-        and "linked to this message" in explore_js,
+        and "sms-attachment" in explore_js
+        and "to-library" in explore_js
+        and "immich" in explore_js.lower(),
         checks,
         problems,
         "Hover expands text; paperclip marks attachments",
@@ -183,6 +191,28 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "Ask → People keeps person + query; Person opens All Memories",
+    )
+    _check(
+        "i7_ask_history_100",
+        "bindAskHistory" in shell_js
+        and "slice(0, 100)" in shell_js
+        and "ArrowUp" in shell_js
+        and "localStorage" in shell_js
+        and "bindAskHistory" in explore_js,
+        checks,
+        problems,
+        "Last 100 asks persist in localStorage; Up/Down in all Ask fields",
+    )
+    _check(
+        "i7_sms_attach_mb_library",
+        "sms-attachment" in app_py
+        and "to-library" in app_py
+        and "add_sms_attachment_to_mb_library" in sms_attach
+        and "add_mb_managed_representation" in sms_attach
+        and "Never writes Immich" in sms_attach,
+        checks,
+        problems,
+        "View SMS attachment; add to MB Artifact store; no Immich write",
     )
     _check(
         "i7_no_i8_email_product",

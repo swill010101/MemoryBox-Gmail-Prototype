@@ -260,11 +260,14 @@
         filter === "email"
     );
     if (isSmsTextItem(item)) {
-      if (!includeTexts) return false;
-      if (!filter || filter === "all" || filter === "email") return true;
-      // "Add texts" joins the current Gallery (e.g. photos + texts) without
-      // clearing person/event/trip context or flipping to a full All mix.
-      return true;
+      if (filter === "email") return true;
+      // All = every item already in this result set, including texts.
+      // Hidden-by-default SMS stay out of All until Add texts / explicit ask.
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeTexts) return false;
+        return true;
+      }
+      return Boolean(includeTexts);
     }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
@@ -514,9 +517,41 @@
     );
   }
 
+  function maybeMergePersonVisuals() {
+    const hasVisual = rawItems.some((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video";
+    });
+    if (hasVisual) return;
+    const person = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    const name =
+      (person && person.label) ||
+      (PERSON && PERSON.displayName) ||
+      "";
+    if (!name || !liveMode) return;
+    liveFind("Show " + name)
+      .then((payload) => {
+        const extras = (payload.items || []).filter((it) => {
+          const t = String(it.type || "").toLowerCase();
+          return t === "photo" || t === "video";
+        });
+        extras.forEach((it) => {
+          if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
+        });
+        syncTimelineToEligibleDatedExtent();
+        render();
+      })
+      .catch(() => {});
+  }
+
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
     if (id === "email") state.domain.includeTexts = true;
+    // All keeps texts already in the result and can join photos for the same Person.
+    if (id === "all" && (state.domain.galleryShowSms || state.domain.includeTexts)) {
+      state.domain.includeTexts = true;
+      maybeMergePersonVisuals();
+    }
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -971,6 +1006,7 @@
   function applyAskCommand(raw) {
     const text = String(raw || "").trim();
     if (!text) return;
+    if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
     state.domain.askText = text;
     const lower = text.toLowerCase();
 
@@ -2006,6 +2042,7 @@
     if (prevBtn) prevBtn.disabled = idx <= 0;
     if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+    bindSmsAttachActions(item);
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
@@ -2469,6 +2506,45 @@
     if (current) current.textContent = personLabel;
   }
 
+  function bindSmsAttachActions(item) {
+    const eid = item && item.evidence_id;
+    if (!eid) return;
+    document.querySelectorAll(".mb-sms-to-library").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const idx = Number(btn.getAttribute("data-att-index") || 0);
+        const status = btn.parentElement && btn.parentElement.querySelector(".mb-sms-to-library-status");
+        btn.disabled = true;
+        if (status) {
+          status.hidden = false;
+          status.textContent = "Copying into MemoryBox…";
+        }
+        try {
+          const res = await fetch(
+            `/explore/api/sms-attachment/${encodeURIComponent(eid)}/to-library?index=${idx}`,
+            { method: "POST" }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || res.status);
+          if (status) {
+            status.textContent = "In MemoryBox library (not Immich).";
+          }
+          if (data.href) {
+            const a = document.createElement("a");
+            a.className = "mb-viewer-footbtn";
+            a.href = data.href;
+            a.textContent = "Open in Artifacts";
+            btn.replaceWith(a);
+          } else {
+            btn.textContent = "Added";
+          }
+        } catch (err) {
+          btn.disabled = false;
+          if (status) status.textContent = "Could not add: " + err;
+        }
+      });
+    });
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
@@ -2514,14 +2590,29 @@
     if (t === "email" || t === "sms" || t === "text") {
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
+      const eid = escapeAttr(item.evidence_id || "");
       const attHtml = atts.length
         ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
             atts.length === 1 ? "" : "s"
-          }</strong> — linked to this message, not added to the photo library.<ul>${atts
-            .map((a) => {
+          }</strong> — linked to this message. Preview below. Add copies into MemoryBox (not Immich).<ul>${atts
+            .map((a, i) => {
               const name = escapeHtml(a.filename || a.source_ref || "attachment");
               const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
-              return `<li>${name}${kind}</li>`;
+              const src = `/explore/api/sms-attachment/${eid}?index=${i}`;
+              const isImg = /image|jpe?g|png|gif|heic|webp/i.test(
+                String(a.attachment_type || a.filename || "")
+              );
+              const preview = isImg
+                ? `<div class="mb-ev-attach-preview"><img src="${escapeAttr(
+                    src
+                  )}" alt="${name}" /></div>`
+                : `<p><a class="mb-viewer-footbtn" href="${escapeAttr(
+                    src
+                  )}" target="_blank" rel="noopener">Open ${name}</a></p>`;
+              return `<li data-att-index="${i}">${name}${kind}${preview}
+                <button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="${i}">Add to MemoryBox library</button>
+                <span class="mb-sms-to-library-status" hidden></span>
+              </li>`;
             })
             .join("")}</ul></div>`
         : "";
@@ -3002,12 +3093,21 @@
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
-    document.getElementById("mb-explore-ask").addEventListener("keydown", (e) => {
+    const askInput = document.getElementById("mb-explore-ask");
+    askInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         applyAskCommand(e.target.value);
       }
     });
+    function wireExploreAskHistory() {
+      if (window.mbShell && window.mbShell.bindAskHistory && askInput) {
+        window.mbShell.bindAskHistory(askInput);
+        return true;
+      }
+      return false;
+    }
+    if (!wireExploreAskHistory()) window.addEventListener("load", wireExploreAskHistory);
     document.getElementById("mb-density-minus").addEventListener("click", () => {
       state.gallery.density = Math.max(1, state.gallery.density - 1);
       renderGallery();
