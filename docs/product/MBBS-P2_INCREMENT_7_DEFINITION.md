@@ -1,14 +1,14 @@
 # MBBS-P2 Increment 7 — SMS/Text Evidence
 
-**Status:** **LOCK-READY** for founder lock · **NO BUILD**  
-**Date:** 2026-08-14 (revised)  
+**Status:** **BUILD AUTHORIZED** (2026-08-14 — Tom: “approved to build”) · **not ACCEPTED** until §8  
+**Date:** 2026-08-14 (build)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I7 (SMS/Text · A)  
 **Authority:** Locked [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) P2-COM-01 / P2-COM-03 · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) CAP-P2-018 · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I6 **ACCEPTED**  
 **Thin PRD:** [MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md)  
 **Depends:** P2-I6 **ACCEPTED** · I4 Explore already has an SMS/text card type (engine not connected)  
 **Does not reopen / does not absorb:** I4 Explore redesign · I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · **I8 richer email** · I8.5 face-evidence · **I9 spoken** · **I10 cross-source correlation** · **I11 narrative** · I13/I14 Settings · multi-user
 
-This revision **does not start I7 runtime**. Parser must follow the **actual** staged bytes after the remaining Q1 file-open (this cloud agent cannot read `\\media-server`).
+Runtime is in this revision. The cloud agent **still cannot open** `\\media-server` bytes. The parser is **header-driven** (known aliases + `source_metadata` bag) and the harness uses an in-repo fixture. On FlightSim, run `python -m memorybox inspect-sms` and record real headers before treating the 1085-session file as fully understood. Do not commit message bodies.
 
 ---
 
@@ -43,7 +43,7 @@ Future use I7 must **enable**, not perform: *“Include all Alaska texts in the 
 | **Q5** | Phone/handle → Person | **LOCKED** | Normalize, then: unique confirmed match → auto-map; ambiguous → Review; no match → unmapped participant (source display name / raw handle). Never silent duplicate People. Never merge on similar display name alone. |
 | **Q6** | Summaries | **LOCKED** | Hard gate = retrieve / count / Person / date-window / keyword / date-order / open / scope disclosure. Summary EVSs = short **evidence-backed** summary or cited extract; underlying messages remain reachable. Full trip/year/multi-source narrative stays **I10/I11**. |
 
-**Build remains unauthorized** until Q1 file-open is recorded in this definition (or an addendum) and Tom authorizes.
+**Build authorized** 2026-08-14 with Q1 still **bytes-not-opened** in the cloud workspace. FlightSim `inspect-sms` is the remaining source-of-truth inspect (do not assume iMazing column names).
 
 ### 1.1 Q1 — what is known vs what is not
 
@@ -94,7 +94,7 @@ Record into an I7 Q1 addendum (or this §1.1 table) **before implementation**:
 11. Any explicit location fields (shared location, address text, attachment GPS).  
 12. Notable limitations (iCloud-offloaded attachments, truncated bodies, missing numbers, timezone).
 
-Until that addendum exists, **Q1 remains the only explicit pre-build inspect blocker.**
+Q1 addendum is still recommended on FlightSim (`inspect-sms`) so real headers/siblings/dates are recorded. It is **not** a remaining build blocker — Tom authorized 2026-08-14.
 
 ### 1.2 Q2 — real corpus selection (after Q1 sample)
 
@@ -331,18 +331,16 @@ Canonical homes from MBRM-001A Appendix A.1. Aliases are not separate acceptance
 
 ---
 
-## 7. Build plan (sequencing only — **not authorized**)
+## 7. Build plan (implemented this revision)
 
-1. Complete §1.1 Q1 inspect on FlightSim; write header/date/people/keyword addendum.  
-2. Choose §1.2 fixtures from **real** rows; map to EVSs.  
-3. Read-only parser **matching those headers** (not a guessed iMazing schema).  
-4. Ingest job mirroring email: Source + Evidence; preserve §2.C bag; hash skip; never rewrite export.  
-5. Phone/handle → Person (§2.E).  
-6. Ask retrieve / filter / count / open / disclose; short cited summaries.  
-7. Explore / Person cards via existing mapper; comms detail shell; attachments linked.  
-8. Archive Health staged vs ingested honesty.  
-9. Source-fidelity + correlation-readiness checks.  
-10. `prove-p2-i7` harness + FlightSim owner gate.
+1. Header-driven parser (`memorybox/ingest/sms_parse.py`) — aliases + full `source_metadata`.  
+2. Ingest (`ingest-sms`) — Source + communication Evidence; hash skip; originals untouched.  
+3. Phone/handle → Person (`memorybox/person/phone_map.py`) — unique auto / ambiguous Review / unmapped retained.  
+4. Ask retrieve / Person / date / keyword / outbound + bidirectional count / date order / scope disclosure.  
+5. Explore mapper: dated `sms` cards on existing Email/Text filter (no SMS app).  
+6. Archive Health: staged vs ingested vs unavailable (unavailable ≠ 0).  
+7. Fixture harness `prove-p2-i7` + FlightSim owner §8 gate.  
+8. FlightSim: `inspect-sms` the real 1085-session CSV; do not commit bodies.
 
 ---
 
@@ -386,9 +384,10 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | Q4 MMS / attachments | **LOCKED** (linked; no Immich/Explore auto-promote) |
 | Q5 Person mapping | **LOCKED** (unique auto-map / ambiguous Review / unmapped retained) |
 | Q6 summaries | **LOCKED** (retrieve/count/filter hard; cited extract OK; narrative later) |
-| Q1 file-open (headers, siblings, dates, people, keywords, location columns) | **OPEN — only pre-build inspect blocker** |
-| Q2 named fixtures | **RULES LOCKED; names after Q1 sample** |
-| Build | **NOT AUTHORIZED** |
-| Implementation | **NONE this revision** |
+| Q1 file-open (headers, siblings, dates, people, keywords, location columns) | **PATH DOCUMENTED; BYTES NOT OPENED here** — run `inspect-sms` on FlightSim |
+| Q2 named fixtures | **RULES LOCKED**; harness uses in-repo Peggy/Denny/2020/3D-printing fixture; remap if real export differs |
+| Build | **AUTHORIZED** 2026-08-14 (Tom) |
+| Implementation | **THIS REVISION** (`ingest-sms`, `inspect-sms`, `prove-p2-i7`) |
+| ACCEPTED | **No** — §8 FlightSim owner gate remains |
 
-**Do not write I7 runtime** until Q1 inspect is recorded and Tom explicitly authorizes build.
+`prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.

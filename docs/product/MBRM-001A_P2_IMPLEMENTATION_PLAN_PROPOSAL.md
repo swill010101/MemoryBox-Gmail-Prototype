@@ -87,7 +87,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **BUILD AUTHORIZED** / not ACCEPTED — [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md); UX: MBUX-001 v0.4 §22; caps: MBCAP CAP-P2-001/025/026 |
 | **P2-I5** | Universal Person Surfaces | F+U | **ACCEPTED** (2026-08-14) — rest of TASK-001 |
 | **P2-I6** | Kinship Inference | A | **ACCEPTED** (2026-08-14) — TASK-002 |
-| **P2-I7** | SMS/Text Evidence | A | **LOCK-READY** — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); Q1 file-open remaining; **no build** until authorized |
+| **P2-I7** | SMS/Text Evidence | A | **BUILD AUTHORIZED** (2026-08-14) / not ACCEPTED — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md) |
 | **P2-I8** | Richer Email | A | |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -153,7 +153,7 @@ P2-GRAPH-01; TASK-002. Disclosed inference; no tree viz. **ACCEPTED** 2026-08-14
 
 ### P2-I7 — SMS/Text Evidence · A
 
-P2-COM-01 · CAP-P2-018. **Lock-ready definition — no build.** Q1 = open staged CSV on FlightSim before parser. [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md).
+P2-COM-01 · CAP-P2-018. **BUILD AUTHORIZED** 2026-08-14 (Tom). Not ACCEPTED until definition §8. [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md).
 
 ### P2-I8 — Richer Email · A
 

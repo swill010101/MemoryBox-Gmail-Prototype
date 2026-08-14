@@ -715,7 +715,27 @@ def _build_answer(
         if photo_status.get("disclosure"):
             parts.append(str(photo_status["disclosure"]))
     if evidence:
-        parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
+        sms_n = sum(
+            1
+            for h in evidence
+            if (getattr(h, "source", "") == "sms_export")
+            or str(getattr(h, "channel", "") or "").lower()
+            in {"sms", "text", "imessage", "mms", "rcs"}
+        )
+        scope = next(
+            (getattr(h, "count_scope", None) for h in evidence if getattr(h, "count_scope", None)),
+            None,
+        )
+        if sms_n and sms_n == len(evidence):
+            if scope:
+                parts.append(f"Found {len(evidence)} text message(s) ({scope}).")
+            else:
+                parts.append(
+                    f"Found {len(evidence)} text message(s) "
+                    "(ingested SMS/iMessage/MMS export — not a complete phone history)."
+                )
+        else:
+            parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
     if plan.retrieval_constraints:
         parts.append(
             "Retrieval used context constraints: "
@@ -1100,8 +1120,12 @@ class AskOrchestrator:
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
-                qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
-                evidence = R.merge_evidence_hits(pg_hits, qd_hits)
+                if R._sms_ask(plan) and plan.want_communication:
+                    evidence = pg_hits
+                    qdrant_status = {"ok": True, "detail": "skipped_for_sms_ask"}
+                else:
+                    qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
+                    evidence = R.merge_evidence_hits(pg_hits, qd_hits)
                 if plan.retrieval_constraints:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints

@@ -23,10 +23,27 @@ class EvidenceHit:
     summary: str
     score: float
     excerpt: str
-    source: str  # qdrant | postgres_keyword
+    source: str  # qdrant | postgres_keyword | sms_export
+    sent_at: str | None = None
+    channel: str | None = None
+    people: list[str] | None = None
+    thread_id: str | None = None
+    direction: str | None = None
+    attachments: list[dict[str, Any]] | None = None
+    count_scope: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+SMS_ASK_RE = re.compile(
+    r"(?i)\b(sms|imessage|i-?message|mms|rcs|text(?:s|ed|ing)?(?:\s+messages?)?)\b"
+)
+SMS_COUNT_RE = re.compile(r"(?i)\bhow many\b|\bcount\b|\btimes did\b")
+SMS_OUTBOUND_RE = re.compile(
+    r"(?i)\b(i sent|have i sent|did i send|text messages did i send|total text)\b"
+)
+_SMS_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
 
 
 @dataclass
@@ -115,8 +132,146 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
     return text[:limit]
 
 
+def _sms_ask(plan: QueryPlan) -> bool:
+    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    return bool(SMS_ASK_RE.search(blob)) or "want_sms_modality" in (plan.notes or ())
+
+
+def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
+    people = [
+        str(p)
+        for p in (payload.get("participants") or [])
+        if str(p).strip()
+    ]
+    if payload.get("sender_name") and payload["sender_name"] not in people:
+        people.insert(0, str(payload["sender_name"]))
+    return EvidenceHit(
+        evidence_id=str(row["id"]),
+        evidence_kind=row["evidence_kind"],
+        summary=row["summary"] or (payload.get("body_text") or "text message")[:80],
+        score=score,
+        excerpt=_excerpt(payload, row["evidence_kind"]),
+        source="sms_export",
+        sent_at=payload.get("sent_at"),
+        channel=str(payload.get("evidence_channel") or payload.get("service") or "text"),
+        people=people or None,
+        thread_id=payload.get("thread_id") or payload.get("group_name"),
+        direction=payload.get("direction"),
+        attachments=list(payload.get("attachments") or []) or None,
+    )
+
+
+def search_sms_messages(plan: QueryPlan, *, limit: int = 5000) -> list[EvidenceHit]:
+    """Person / date / keyword retrieve over ingested SMS/iMessage Evidence."""
+    from memorybox.person.phone_map import normalize_handle
+
+    want_count = bool(SMS_COUNT_RE.search(plan.original_ask or ""))
+    outbound_only = bool(SMS_OUTBOUND_RE.search(plan.original_ask or ""))
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    person_names = [n.strip().lower() for n in (plan.person_names or ()) if n.strip()]
+    windows = list(plan.temporal_windows or ())
+    if not windows and plan.time_start and plan.time_end:
+        windows = [(plan.time_start, plan.time_end)]
+    keyword_stop = {
+        "the", "and", "for", "with", "from", "that", "this", "show", "me",
+        "just", "ones", "what", "else", "have", "how", "many", "times",
+        "did", "text", "texts", "texted", "sms", "imessage", "message",
+        "messages", "all", "my", "each", "other", "sent", "send", "total",
+        "summarize", "summary",
+    }
+    keywords = [
+        t.lower()
+        for t in re.findall(r"[A-Za-z0-9']{3,}", plan.original_ask or "")
+        if t.lower() not in keyword_stop
+    ]
+    # Drop person-name tokens from keyword filter (Person filter handles those)
+    keywords = [k for k in keywords if k not in {n.split()[0] for n in person_names} and k not in set(person_names)]
+
+    hits: list[EvidenceHit] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """
+        ).fetchall()
+    for r in rows:
+        payload = _payload_dict(r["payload_json"])
+        ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
+        if ch not in _SMS_CHANNELS:
+            continue
+        if outbound_only and not payload.get("from_owner"):
+            continue
+        sent = str(payload.get("sent_at") or "")
+        if windows:
+            day = sent[:10]
+            if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
+                continue
+        if person_ids:
+            have = {str(x) for x in (payload.get("person_ids") or [])}
+            if not (have & person_ids):
+                # name fallback on participants / thread
+                blob = " ".join(
+                    [
+                        str(payload.get("sender_name") or ""),
+                        str(payload.get("thread_id") or ""),
+                        " ".join(str(p) for p in (payload.get("participants") or [])),
+                    ]
+                ).lower()
+                if person_names and not any(n in blob for n in person_names):
+                    continue
+                if not person_names:
+                    continue
+        elif person_names:
+            blob = " ".join(
+                [
+                    str(payload.get("sender_name") or ""),
+                    str(payload.get("thread_id") or ""),
+                    str(payload.get("group_name") or ""),
+                    " ".join(str(p) for p in (payload.get("participants") or [])),
+                    json.dumps(payload.get("source_metadata") or {}),
+                ]
+            ).lower()
+            handles = " ".join(
+                normalize_handle(str(p)) for p in (payload.get("participants") or [])
+            )
+            if not any(n in blob or n in handles for n in person_names):
+                continue
+        if keywords:
+            blob = f"{r['summary'] or ''} {payload.get('body_text') or ''} {payload.get('thread_id') or ''}".lower()
+            if not any(k in blob for k in keywords):
+                continue
+        hits.append(_sms_hit(r, payload, score=1.0))
+    hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    scope_bits = [
+        "ingested SMS/iMessage/MMS export",
+        f"n={len(hits)}",
+    ]
+    if person_names:
+        scope_bits.append("person=" + ", ".join(plan.person_names))
+    if windows:
+        scope_bits.append("dates=" + ";".join(f"{a[:10]}..{b[:10]}" for a, b in windows))
+    if outbound_only:
+        scope_bits.append("outbound_only")
+    if keywords:
+        scope_bits.append("keyword=" + ",".join(keywords))
+    scope = "; ".join(scope_bits)
+    if want_count and hits:
+        hits[0].count_scope = scope
+        hits[0].summary = f"{len(hits)} text messages ({scope}). {hits[0].summary}"
+    return hits[: max(1, int(limit))]
+
+
 def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]:
     """Keyword search over authoritative PostgreSQL Evidence (always available)."""
+    if _sms_ask(plan) and plan.want_communication:
+        sms = search_sms_messages(plan, limit=max(limit, 5000))
+        # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
+        if sms or SMS_ASK_RE.search(plan.original_ask or ""):
+            return sms
     kinds: list[str] = []
     if plan.want_communication:
         kinds.append("communication")
@@ -267,7 +422,15 @@ def filter_hits_by_constraints(
         return hits
     kept: list[EvidenceHit] = []
     for h in hits:
-        blob = f"{h.summary} {h.excerpt}".lower()
+        blob = " ".join(
+            [
+                h.summary or "",
+                h.excerpt or "",
+                " ".join(h.people or []),
+                h.thread_id or "",
+                h.channel or "",
+            ]
+        ).lower()
         if any(c.lower() in blob for c in cons):
             kept.append(h)
     return kept

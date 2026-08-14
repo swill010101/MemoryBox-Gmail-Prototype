@@ -1,7 +1,7 @@
 # MBBS — P2-I7 SMS/Text Evidence · Product Request Document
 
-**Status:** **LOCK-READY** · **NO BUILD**  
-**Date:** 2026-08-14 (revised)  
+**Status:** **BUILD AUTHORIZED** (2026-08-14 — Tom: “approved to build”) · **not ACCEPTED**  
+**Date:** 2026-08-14 (build)  
 **Owner:** Tom  
 **Increment:** P2-I7 (MBRM-001A) — SMS/Text Evidence · A  
 **Definition (lock this):** [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md)  
@@ -23,7 +23,7 @@ IN/OUT as definition §§3–4. Explicitly **not** I8 richer email, I9 spoken, I
 
 ## Constraints
 
-- Parser follows **actual** source after Q1 file-open (this revision did not open the CSV bytes).  
+- Parser is header-driven (this cloud revision did not open the real CSV bytes). FlightSim `inspect-sms` records real headers.  
 - One communication Evidence model; preserve unused columns in source_metadata.  
 - Canonical MB Person IDs; phone/handle is mapping only.  
 - Unavailable ≠ 0.  
@@ -37,14 +37,14 @@ Definition §§1.1 and 6. Documented path from Sources checkpoint; **row-level f
 
 | # | Status |
 |---|--------|
-| Q1 | Path documented; **open the file on FlightSim** before parser |
+| Q1 | Path documented; **bytes not opened here** — `inspect-sms` on FlightSim |
 | Q2 | Real-corpus rules locked; names after sample |
 | Q3–Q6 | **LOCKED** (definition §1) |
 
 ## Build plan
 
-Definition §7 — **not authorized**. No runtime in this revision.
+Definition §7 — **authorized and implemented** this revision (`ingest-sms`, Ask/Explore/Archive Health, `prove-p2-i7`).
 
 ## Sign-off
 
-Tom: lock this definition (and the Q1 addendum once the CSV is opened), then explicitly authorize build. Until then: **no I7 runtime.**
+Tom authorized build 2026-08-14 (“approved to build”). ACCEPTED still requires definition §8 on FlightSim against the real staged export.

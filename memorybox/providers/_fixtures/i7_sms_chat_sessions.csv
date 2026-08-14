@@ -1,0 +1,11 @@
+Chat Session,Message Date,Delivered Date,Read Date,Edited Date,Service,Type,Sender ID,Sender Name,Recipients,Status,Replying to,Subject,Text,Attachment,Attachment type,Tapback,Unsend,Latitude,Longitude,Shared Location,Export Notes
+Peggy,2020-03-15 14:02:00,2020-03-15 14:02:01,2020-03-15 14:03:00,,iMessage,Outgoing,+15550101,Tom Will,+15550101,Read,,,Want to try 3D printing this weekend?,photo.jpg,image,,,,,keep-me
+Peggy,2020-03-15 14:10:00,2020-03-15 14:10:01,2020-03-15 14:11:00,,iMessage,Incoming,+15550101,Peggy,+15550000,Read,,,Yes! I have filament.,,,,,,,,keep-me
+Peggy,2020-03-16 09:00:00,2020-03-16 09:00:02,,,iMessage,Outgoing,+15550101,Tom Will,+15550101,Delivered,,,I'll bring the printer.,,,,,,,,keep-me
+Core 4,2021-07-04 12:00:00,2021-07-04 12:00:05,,,iMessage,Outgoing,+15550000,Tom Will,+15550101;+15550202;+15550404,Read,,,Happy 4th from the group chat.,,,,,,,,keep-me
+Unknown,2023-01-01 00:00:00,,,,,SMS,Incoming,+15559999,Mystery Number,,Read,,,Hello from an unmapped number.,,,,,,,,keep-me
+Denny,2024-06-01 11:00:00,2024-06-01 11:00:03,,,SMS,Outgoing,+15550202,Tom Will,+15550202,Delivered,,,Denny — still doing 3D printing?,,,,,,,,keep-me
+Denny,2024-06-01 11:05:00,2024-06-01 11:05:02,2024-06-01 11:06:00,,SMS,Incoming,+15550202,Denny Pizzani,+15550000,Read,,,Always. New nozzle this week.,,,,,,,,keep-me
+Peggy,2024-02-10 18:00:00,2024-02-10 18:00:01,,,iMessage,Outgoing,+15550101,Tom Will,+15550101,Delivered,,,Checking in 2024.,,,,,,,,keep-me
+Alaska cabin,2019-08-12 16:30:00,2019-08-12 16:30:04,,,iMessage,Incoming,+15558888,Traveler,+15550000,Read,,,Landed in Alaska — at the cabin.,,,,61.2181,-149.9003,Anchorage,keep-me
+Shared line,2022-05-05 08:00:00,,,,,SMS,Incoming,+15550303,Pat,,Read,,,Shared number hello.,,,,,,,,keep-me

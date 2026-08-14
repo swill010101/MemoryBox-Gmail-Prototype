@@ -59,6 +59,55 @@ def _metric(
     }
 
 
+def _sms_ingested_metric(
+    *,
+    count: int,
+    unmapped_rows: int,
+    date_min: str | None,
+    date_max: str | None,
+    staged: bool,
+    calculated_at: str,
+    pg: str,
+) -> dict[str, Any]:
+    """Staged vs ingested vs unavailable — never report missing source as 0."""
+    if count > 0:
+        return _metric(
+            "sms",
+            "SMS / Text Messages (ingested)",
+            value=count,
+            state="available",
+            source=f"{pg}:evidence.communication sms/imessage/mms/rcs",
+            last_updated=calculated_at,
+            note=(
+                "Ingested export only — not live Messages.app or a complete phone history. "
+                f"Coverage {date_min or 'unknown'} … {date_max or 'unknown'}. "
+                f"{unmapped_rows} message(s) have unmapped participants."
+            ),
+        )
+    if staged:
+        return _metric(
+            "sms",
+            "SMS / Text Messages (ingested)",
+            state="partial",
+            source="sms:ingest",
+            last_updated=calculated_at,
+            reason="Staged export not ingested yet",
+            note=(
+                "Sources/sms is present. Ingested count is unknown until ingest-sms. "
+                "This is not zero messages."
+            ),
+        )
+    return _metric(
+        "sms",
+        "SMS / Text Messages (ingested)",
+        state="unavailable",
+        source="sms:ingest",
+        last_updated=calculated_at,
+        reason="SMS export not available",
+        note="Missing source is not zero messages.",
+    )
+
+
 def _count(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> int:
     row = conn.execute(sql, params).fetchone()
     if not row:
@@ -375,7 +424,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
             state="available" if (Path(root) / "sms").is_dir() else "unavailable",
             source=str(Path(root) / "sms"),
             last_updated=calculated_at,
-            note="Staged for later ingest — SMS ingest still Not connected in P1",
+            note="Staged original (read-only). Ingested SMS count is a separate Evidence metric — missing ingest is not zero messages.",
             reason=None if (Path(root) / "sms").is_dir() else "Not available",
         )
     )
@@ -681,7 +730,53 @@ def build_status_summary() -> dict[str, Any]:
             """,
         )
         emails = _count(
-            conn, "SELECT COUNT(*) AS c FROM evidence WHERE evidence_kind = 'communication'"
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """,
+        )
+        sms_ingested = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """,
+        )
+        sms_unmapped = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND jsonb_typeof(payload_json->'identity_resolution'->'unmapped') = 'array'
+              AND jsonb_array_length(payload_json->'identity_resolution'->'unmapped') > 0
+            """,
+        )
+        sms_date_min = _scalar_ts(
+            conn,
+            """
+            SELECT MIN(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
+        )
+        sms_date_max = _scalar_ts(
+            conn,
+            """
+            SELECT MAX(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
         )
         calendars = _count(
             conn, "SELECT COUNT(*) AS c FROM evidence WHERE evidence_kind = 'calendar_event'"
@@ -691,6 +786,8 @@ def build_status_summary() -> dict[str, Any]:
             """
             SELECT COUNT(*) AS c FROM evidence
             WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
             """,
         )
@@ -747,6 +844,8 @@ def build_status_summary() -> dict[str, Any]:
             """
             SELECT MIN(payload_json->>'sent_at') AS t FROM evidence
             WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
             """,
         )
@@ -755,6 +854,8 @@ def build_status_summary() -> dict[str, Any]:
             """
             SELECT MAX(payload_json->>'sent_at') AS t FROM evidence
             WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
             """,
         )
@@ -1236,13 +1337,24 @@ def build_status_summary() -> dict[str, Any]:
             "Documents awaiting OCR — deferred",
             "Photo/video % linked to known People — deferred",
             "Provider face-cluster-not-linked exact count — unavailable (not synthesized)",
-            "SMS ingest — Not connected in P1",
+            "SMS ingest — use ingest-sms; staged vs ingested are separate metrics",
             "Source video dated/undated — unavailable until reliable date exposed",
             "High-leverage video dating task — omitted until source→moment dates computable",
         ]
     )
 
     pg = "postgresql"
+    _sms_root = _sources_root()
+    sms_staged = bool(_sms_root and (_sms_root / "sms").is_dir())
+    sms_metric = _sms_ingested_metric(
+        count=sms_ingested,
+        unmapped_rows=sms_unmapped,
+        date_min=sms_date_min,
+        date_max=sms_date_max,
+        staged=sms_staged,
+        calculated_at=calculated_at,
+        pg=pg,
+    )
     tabs = {
         "archive_summary": {
             "title": "Archive Summary",
@@ -1359,15 +1471,7 @@ def build_status_summary() -> dict[str, Any]:
                             source=f"{pg}:evidence.calendar_event",
                             last_updated=calculated_at,
                         ),
-                        _metric(
-                            "sms",
-                            "SMS / Text Messages",
-                            state="unavailable",
-                            source="sms:ingest",
-                            last_updated=calculated_at,
-                            reason="Not yet connected",
-                            note=r"Staged at \\media-server\photos\MemoryBox\Sources\sms — ingest deferred",
-                        ),
+                        sms_metric,
                         _metric(
                             "artifact_documents",
                             "Artifact-backed documents / letters",
@@ -2036,17 +2140,7 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "SMS",
                     "metrics": [
-                        _metric(
-                            "sms",
-                            "SMS / Text Messages (ingested)",
-                            state="unavailable",
-                            source="sms:ingest",
-                            last_updated=calculated_at,
-                            reason="Not yet connected",
-                            note=(
-                                "CSV is staged under Sources/sms — ingest still deferred in P1"
-                            ),
-                        ),
+                        sms_metric,
                     ],
                 },
             ],

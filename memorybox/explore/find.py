@@ -251,10 +251,15 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
     for e in result.get("evidence_hits") or []:
         kind = str(e.get("evidence_kind") or "document").lower()
-        # Map communication-ish kinds to email for Explore filters
-        type_ = "email" if kind in ("email", "sms", "text", "communication", "comms") else (
-            "document" if kind in ("document", "file") else kind
-        )
+        channel = str(e.get("channel") or "").lower()
+        sms_channels = {"sms", "text", "imessage", "mms", "rcs"}
+        # Map communication-ish kinds to email/sms for existing Explore filters
+        if channel in sms_channels or e.get("source") == "sms_export":
+            type_ = "sms"
+        elif kind in ("email", "sms", "text", "communication", "comms"):
+            type_ = "sms" if kind in ("sms", "text") else "email"
+        else:
+            type_ = "document" if kind in ("document", "file") else kind
         if type_ not in ("email", "sms", "text", "document", "calendar", "recipe"):
             # Keep as email/text bucket for unknown communication evidence
             if "mail" in kind or "sms" in kind or "message" in kind:
@@ -264,20 +269,26 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         eid = str(e.get("evidence_id") or "")
         if not eid:
             continue
-        add(
-            _item_base(
-                id=f"evidence:{eid}",
-                type_=type_ if type_ != "communication" else "email",
-                title=(e.get("summary") or kind or "Evidence")[:80],
-                date="",  # evidence often lacks browse date in Ask hit
-                undated=True,
-                preview=str(e.get("excerpt") or e.get("summary") or ""),
-                detail=str(e.get("excerpt") or e.get("summary") or ""),
-                evidence_id=eid,
-                evidence_kind=kind,
-                score=e.get("score"),
-            )
+        sent = _date_prefix(e.get("sent_at"))
+        people = [str(p) for p in (e.get("people") or []) if str(p).strip()]
+        item = _item_base(
+            id=f"evidence:{eid}",
+            type_=type_ if type_ != "communication" else "email",
+            title=(e.get("summary") or kind or "Evidence")[:80],
+            date=sent,
+            undated=not sent,
+            preview=str(e.get("excerpt") or e.get("summary") or ""),
+            detail=str(e.get("excerpt") or e.get("summary") or ""),
+            evidence_id=eid,
+            evidence_kind=kind,
+            score=e.get("score"),
+            people=people or None,
+            attachments=e.get("attachments") or None,
+            thread_id=e.get("thread_id"),
+            direction=e.get("direction"),
         )
+        item["from"] = people[0] if people else (e.get("thread_id") or "Message")
+        add(item)
 
     for a in result.get("artifact_hits") or []:
         aid = str(a.get("artifact_id") or a.get("id") or "")

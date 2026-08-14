@@ -62,6 +62,9 @@ ABOUT_SUBJECT_RE = re.compile(
 EMAIL_RE = re.compile(
     r"(?i)\b(emails?|e-mails?|mail|messages?|inbox|correspondence|wrote|signed\s+off)\b"
 )
+SMS_ASK_RE = re.compile(
+    r"(?i)\b(sms|imessage|i-?message|mms|rcs|text(?:s|ed|ing)?(?:\s+messages?)?)\b"
+)
 JOURNAL_INTENT_RE = re.compile(
     r"(?i)^\s*(?:i\s+(?:want|need)\s+to\s+journal|let\s+me\s+journal|"
     r"start\s+(?:a\s+)?journal|journal\s+now|open\s+journal|^journal)\s*[.!]?\s*$"
@@ -146,6 +149,7 @@ _PERSON_NAME = (
 PERSON_WITH_RE = re.compile(
     rf"(?i)\b(?:with|featuring|including)\s+{_PERSON_NAME}\b"
 )
+SMS_PERSON_AND_I_RE = re.compile(rf"(?i)\b{_PERSON_NAME}\s+and\s+I\b")
 PERSON_OF_RE = re.compile(
     rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
@@ -467,6 +471,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         PERSON_BARE_LEADING_RE,
         PERSON_EMAIL_FROM_RE,
         PERSON_SAID_RE,
+        SMS_PERSON_AND_I_RE,
     ]
     if want_email:
         # "from <Name>" in an email ask is a person, never a place
@@ -518,10 +523,10 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
         if ent:
             places.append(ent)
 
-    # Do NOT treat bare "from X" as place when email intent (person).
+    # Do NOT treat bare "from X" as place when email/SMS intent (person).
     if not want_email:
-        # Geographic "from Cascadia" without email/mail cue may be place
-        if not re.search(r"(?i)\b(emails?|mail|messages?)\b", q):
+        # Geographic "from Cascadia" without email/mail/SMS cue may be place
+        if not re.search(r"(?i)\b(emails?|mail|messages?|sms|texts?)\b", q):
             for m in re.finditer(
                 r"(?i)\bfrom\s+(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b", q
             ):
@@ -571,9 +576,10 @@ def _resolve_visual_scope(
     want_cal: bool,
     want_relationship: bool,
     people: list[str],
+    want_sms: bool = False,
 ) -> tuple[VisualScope, list[str]]:
     notes: list[str] = []
-    if want_email or want_cal or want_relationship:
+    if want_email or want_sms or want_cal or want_relationship:
         return "none", notes
     video_only = bool(VIDEO_ONLY_RE.search(q))
     still_only = bool(STILL_ONLY_RE.search(q))
@@ -624,12 +630,13 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     notes: list[str] = []
 
     want_email = bool(EMAIL_RE.search(q))
+    want_sms = bool(SMS_ASK_RE.search(q))
     want_cal = bool(CALENDAR_RE.search(q))
     want_relationship = bool(RELATIONSHIP_RE.search(q))
 
     # --- Utterance extractions (authoritative for present slots) ---
-    u_people = _extract_people(q, want_email=want_email)
-    u_places, u_trips = _extract_places_and_trips(q, want_email=want_email)
+    u_people = _extract_people(q, want_email=want_email or want_sms)
+    u_places, u_trips = _extract_places_and_trips(q, want_email=want_email or want_sms)
     u_events = _extract_events(q)
     temporal = parse_temporal(q)
     u_t0, u_t1 = temporal.time_start, temporal.time_end
@@ -651,7 +658,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     exploratory = bool(EXPLORATORY_RE.search(q))
     said_about = bool(SAID_ABOUT_RE.search(q))
     # Explicit modality narrowing always wins over exploratory multimodal.
-    narrowed_comms = bool(want_email or want_relationship or said_about)
+    narrowed_comms = bool(want_email or want_sms or want_relationship or said_about)
     narrowed_visual = bool(STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q) or BROAD_VISUAL_RE.search(q))
 
     visual_scope, vnotes = _resolve_visual_scope(
@@ -660,6 +667,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_cal=want_cal,
         want_relationship=want_relationship,
         people=u_people,
+        want_sms=want_sms,
     )
     notes.extend(vnotes)
     # Person + time/place/holiday compose → shared visual explore (Gallery path).
@@ -752,6 +760,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         (show_me or show_person)
         and visual_scope == "none"
         and not want_email
+        and not want_sms
         and not want_cal
         and not want_relationship
         and not about_trip
@@ -847,6 +856,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     should_inherit_missing = is_followup or (
         not want_visual
         and not want_email
+        and not want_sms
         and not want_cal
         and not want_relationship
         and not about_trip
@@ -1079,7 +1089,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     visual_ctx = any(
         m in (ctx.modalities_active or ()) for m in ("visual", "photo", "still", "video")
     )
-    if is_followup and not want_visual and not want_email and not want_cal and not about_trip:
+    if is_followup and not want_visual and not want_email and not want_sms and not want_cal and not about_trip:
         if visual_ctx and not ref_then:
             visual_scope = "broad"
             want_still = True
@@ -1102,7 +1112,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_email = True
         want_cal = True
 
-    if not want_visual and not want_email and not want_cal and not requires_clarification:
+    if not want_visual and not want_email and not want_sms and not want_cal and not requires_clarification:
         want_email = True
         want_cal = True
         notes.append("default_comms_calendar")
@@ -1219,12 +1229,17 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_guided_capture:
             notes.append("want_guided_capture_modality")
 
+    if want_sms:
+        notes.append("want_sms_modality")
+
     return QueryPlan(
         original_ask=q,
         effective_ask=effective if not journal_capture_intent else "journal_capture",
         is_followup=is_followup,
         want_photo=want_photo and not journal_capture_intent,
-        want_communication=want_email and not requires_clarification and not journal_capture_intent,
+        want_communication=(want_email or want_sms)
+        and not requires_clarification
+        and not journal_capture_intent,
         want_calendar=want_cal and not requires_clarification and not journal_capture_intent,
         want_story=want_story and not journal_capture_intent,
         want_journal=want_journal and not journal_capture_intent,

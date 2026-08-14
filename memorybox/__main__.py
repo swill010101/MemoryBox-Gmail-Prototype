@@ -25,6 +25,14 @@ def main(argv: list[str] | None = None) -> int:
     p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
     p_cal.add_argument("--uri", required=True)
     p_cal.add_argument("--limit", type=int, default=None)
+    p_sms = sub.add_parser("ingest-sms", help="Ingest SMS/iMessage CSV → Evidence")
+    p_sms.add_argument("--uri", default=None, help="Path to export CSV (default: staged Sources/sms)")
+    p_sms.add_argument("--limit", type=int, default=None)
+    p_inspect_sms = sub.add_parser(
+        "inspect-sms",
+        help="Read-only SMS export inventory (headers/counts; no ingest; no rewrite)",
+    )
+    p_inspect_sms.add_argument("--uri", default=None)
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
     p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
@@ -198,6 +206,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Reserved for FlightSim manual gate (structural+logic harness today)",
     )
+    p_prove_p2i7 = sub.add_parser(
+        "prove-p2-i7",
+        help="P2-I7 SMS/Text Evidence acceptance prove",
+    )
+    p_prove_p2i7.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim ACCEPTED gate remains manual (definition §8). "
+            "Harness uses the in-repo fixture; inspect-sms the real export separately."
+        ),
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -268,6 +288,20 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.comms_calendar import ingest_ics
 
         payload = ingest_ics(args.uri, limit=args.limit)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "ingest-sms":
+        from memorybox.ingest.comms_sms import ingest_sms
+
+        payload = ingest_sms(args.uri, limit=args.limit)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "inspect-sms":
+        from memorybox.ingest.comms_sms import inspect_default_or_uri
+
+        payload = inspect_default_or_uri(args.uri)
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
@@ -415,6 +449,17 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.person.p2_i6_acceptance import run_p2_i6_acceptance
 
         payload = run_p2_i6_acceptance()
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i7":
+        from memorybox.ingest.p2_i7_acceptance import run_p2_i7_acceptance
+
+        payload = run_p2_i7_acceptance(flightsim=bool(args.flightsim))
         out = {
             "ok": bool(payload.get("overall_ok")),
             **payload,

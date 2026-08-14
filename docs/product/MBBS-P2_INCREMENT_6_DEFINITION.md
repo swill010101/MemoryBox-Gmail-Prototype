@@ -45,4 +45,4 @@ python -m memorybox prove-p2-i5
 | Founder FlightSim acceptance | **ACCEPTED** (2026-08-14 — Tom: “i6 passes”) |
 | EVS-209 kinship-in-photo | **BACKLOG** P2-BL-I6-01 (not a reopen) |
 
-P2-I6 is **ACCEPTED**. Next increment is **P2-I7 SMS/Text Evidence** — [definition draft](MBBS-P2_INCREMENT_7_DEFINITION.md). **No I7 build** until Tom locks the open questions and authorizes.
+P2-I6 is **ACCEPTED**. Next increment is **P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) (**BUILD AUTHORIZED** 2026-08-14).
