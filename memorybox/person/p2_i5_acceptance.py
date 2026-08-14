@@ -173,8 +173,8 @@ def run_p2_i5_acceptance() -> dict:
         "problems": problems,
         "meta": {"increment": "P2-I5", "mode": "harness"},
         "note": (
-            "Harness is structural. ACCEPTED requires FlightSim manual pass "
-            "of I5 directive §31 cases 1–13."
+            "Harness is structural. P2-I5 ACCEPTED 2026-08-14 (Tom). "
+            "Immich preferred portrait = backlog P2-BL-I5-01 (not a reopen)."
         ),
     }
 

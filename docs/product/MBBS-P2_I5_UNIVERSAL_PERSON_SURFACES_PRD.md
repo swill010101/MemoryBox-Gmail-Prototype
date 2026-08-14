@@ -1,10 +1,11 @@
 # MBBS — P2-I5 Universal Person Surfaces · Product Request Document
 
-**Status:** BUILD APPROVED (Tom 2026-08-13) · answers locked below  
-**Date:** 2026-08-13  
+**Status:** **ACCEPTED** (Tom 2026-08-14) · answers locked below  
+**Date:** 2026-08-13 (build) · 2026-08-14 (accepted)  
 **Owner:** Tom  
 **Increment:** P2-I5 (MBRM-001A) — Universal Person Surfaces · F+U  
-**Branch:** `cursor/p2-i5-universal-person-surfaces-3061` (from I4)
+**Branch:** `cursor/p2-i5-universal-person-surfaces-3061` (from I4)  
+**Acceptance record:** [MBBS-P2_INCREMENT_5_DEFINITION.md](MBBS-P2_INCREMENT_5_DEFINITION.md)
 
 **Authority**
 - Visual / interaction lock: approved mockup *Universal Person Surfaces* (Peggy Smith exemplar)
@@ -54,6 +55,13 @@ Person context persists; Person-scoped Ask = I4 shared state; Highlights ranked;
 
 Stories / emails / journals may still associate by **name tokens** rather than person id in some retrieve paths. Do **not** invent separate Person IDs per evidence type — keep one MB Person continuum; harden id-keyed joins later.
 
+## Accepted with known backlog (Tom 2026-08-14)
+
+| ID | Gap | Disposition |
+|----|-----|-------------|
+| **P2-BL-I5-01** | Immich preferred person portrait not showing on Person Explorer (Sue Will has preferred face in Immich; MB still shows letter initial) | **Backlog** — not an I5 reopen. See [MBBS_P2_BACKLOG_PLANNING.md](MBBS_P2_BACKLOG_PLANNING.md). |
+
 ## Sign-off
 
-**Visual lock:** ACCEPTED (Peggy Smith mockup on file) · **Build:** APPROVED · **Location:** D locked
+**Visual lock:** ACCEPTED (Peggy Smith mockup on file) · **Build:** APPROVED · **Location:** D locked  
+**Increment:** **ACCEPTED** (2026-08-14 — Tom)
