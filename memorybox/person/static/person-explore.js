@@ -24,6 +24,10 @@
       if (portrait) {
         portrait.textContent = (bootName.charAt(0) || "?").toUpperCase();
       }
+      const curatorAv = document.getElementById("mb-explore-curator-avatar");
+      if (curatorAv && !curatorAv.classList.contains("has-photo")) {
+        curatorAv.textContent = (bootName.charAt(0) || "?").toUpperCase();
+      }
       const label = document.getElementById("mb-person-ask-label");
       if (label) label.textContent = "Ask about " + bootName.split(/\s+/)[0];
       document.title = "MemoryBox — " + bootName;
@@ -319,19 +323,47 @@
     setFirstSpans(name);
 
     const portrait = document.getElementById("mb-person-portrait");
-    portrait.textContent = initial(name);
-    portrait.style.backgroundImage = "";
-    // Preferred Immich / face portrait (server resolves)
+    const curatorAv = document.getElementById("mb-explore-curator-avatar");
+
+    function applyPortraitUrl(url) {
+      if (!url) return;
+      const css = "url(" + JSON.stringify(url) + ")";
+      if (portrait) {
+        portrait.textContent = "";
+        portrait.style.backgroundImage = css;
+        portrait.classList.add("has-photo");
+      }
+      if (curatorAv) {
+        curatorAv.textContent = "";
+        curatorAv.style.backgroundImage = css;
+        curatorAv.classList.add("has-photo");
+      }
+      cfg.portraitUrl = url;
+      if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.portraitUrl = url;
+    }
+
+    function clearPortraitToInitial() {
+      if (portrait) {
+        portrait.classList.remove("has-photo");
+        portrait.style.backgroundImage = "";
+        portrait.textContent = initial(name);
+      }
+      if (curatorAv) {
+        curatorAv.classList.remove("has-photo");
+        curatorAv.style.backgroundImage = "";
+        curatorAv.textContent = initial(name);
+      }
+    }
+
+    clearPortraitToInitial();
+    // Preferred Immich feature-face thumbnail (server: Immich first, then face evidence)
     const portraitUrl =
       personPayload.portrait_url ||
       "/people/" + encodeURIComponent(id) + "/portrait";
     const probe = new Image();
-    probe.onload = () => {
-      portrait.textContent = "";
-      portrait.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
-    };
+    probe.onload = () => applyPortraitUrl(portraitUrl);
     probe.onerror = () => {
-      /* keep initial; face-evidence path below may still fill */
+      /* keep initial letter; optional evidence fallback below */
     };
     probe.src = portraitUrl;
 
@@ -468,32 +500,11 @@
         );
       })
       .find(Boolean);
-    if (faceThumb) {
-      portrait.textContent = "";
-      portrait.style.backgroundImage = "url(" + JSON.stringify(faceThumb) + ")";
-    } else {
-      // Fall back to Immich provider projection thumbnail when present
-      try {
-        const projRes = await fetch(
-          "/people/" + encodeURIComponent(id) + "/provider-projection"
-        );
-        if (projRes.ok) {
-          const proj = await projRes.json();
-          const immich =
-            (proj.by_provider && proj.by_provider.immich) ||
-            proj.immich ||
-            [];
-          const firstImmich = Array.isArray(immich) ? immich[0] : null;
-          // Prefer an Immich face asset from evidence path; else leave initial
-          if (firstImmich && typeof firstImmich === "object" && firstImmich.thumb_url) {
-            portrait.textContent = "";
-            portrait.style.backgroundImage =
-              "url(" + JSON.stringify(firstImmich.thumb_url) + ")";
-          }
-        }
-      } catch (_) {
-        /* keep initial */
-      }
+    // Only use face-evidence thumbs if Immich preferred portrait did not load
+    if (faceThumb && !(portrait && portrait.classList.contains("has-photo"))) {
+      const fb = new Image();
+      fb.onload = () => applyPortraitUrl(faceThumb);
+      fb.src = faceThumb;
     }
 
     const faceN = cached.faces.length;

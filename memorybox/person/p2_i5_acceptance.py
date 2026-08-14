@@ -47,10 +47,12 @@ def run_p2_i5_acceptance() -> dict:
         and "#0f141c" in person_css
         and 'html[data-mb-surface="people"]' in person_css
         and ".mb-card-meta" in person_css
-        and "#141b27" in person_css,
+        and "#141b27" in person_css
+        and ".mb-explore-density" in person_css
+        and "#mb-density-label" in person_css,
         checks,
         problems,
-        "dark theme CSS (readable cards/filters)",
+        "dark theme CSS (readable cards/filters/density)",
     )
     _check(
         "i5_explore_person_mode",
@@ -148,6 +150,17 @@ def run_p2_i5_acceptance() -> dict:
         checks,
         problems,
         "shell People nav continues active person",
+    )
+    _check(
+        "i5_immich_preferred_portrait",
+        "/people/{person_id}/portrait" in app_py
+        and "fetch_person_thumbnail_bytes" in app_py
+        and "applyPortraitUrl" in person_js
+        and "has-photo" in person_js
+        and "portraitUrl" in explore_js,
+        checks,
+        problems,
+        "Immich preferred portrait endpoint + header/curator apply",
     )
 
     overall = not problems and all(c.get("ok") for c in checks.values())

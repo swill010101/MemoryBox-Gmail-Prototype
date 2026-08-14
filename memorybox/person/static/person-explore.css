@@ -113,6 +113,18 @@ html[data-mb-surface="people"] .mb-return-bar .mb-btn-secondary {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+.mb-person-portrait.has-photo {
+  color: transparent;
+  font-size: 0;
+}
+html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
 .mb-person-name {
   margin: 0;
   font-family: var(--mb-font-display);
@@ -314,13 +326,23 @@ html[data-mb-surface="people"] .mb-card-sub {
   color: #d5dde9 !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
 }
+/* Gallery size control — full dark pill (container was still Explore white) */
+html[data-mb-surface="people"] .mb-explore-density,
 .mb-person-explore .mb-explore-density {
-  color: #9aa3b5 !important;
-}
-.mb-person-explore .mb-explore-density button {
   background: #141b27 !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   color: #d5dde9 !important;
+}
+html[data-mb-surface="people"] .mb-explore-density button,
+.mb-person-explore .mb-explore-density button {
+  background: #1a2230 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #e8edf5 !important;
+}
+html[data-mb-surface="people"] .mb-explore-density #mb-density-label,
+.mb-person-explore .mb-explore-density #mb-density-label {
+  color: #e8edf5 !important;
+  font-weight: 600;
 }
 
 .mb-person-explore .mb-explore-gallery {

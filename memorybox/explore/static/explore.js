@@ -1413,9 +1413,21 @@
     });
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) {
-      const person = (state.domain.chips || []).find((c) => c.kind === "person");
-      const label = (person && person.label) || state.domain.title || "M";
-      av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+      const portraitUrl =
+        (PERSON && PERSON.portraitUrl) ||
+        (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
+        "";
+      if (portraitUrl && av.classList.contains("has-photo")) {
+        // Keep Immich preferred portrait; do not wipe to letter
+      } else if (portraitUrl) {
+        av.textContent = "";
+        av.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
+        av.classList.add("has-photo");
+      } else if (!av.classList.contains("has-photo")) {
+        const person = (state.domain.chips || []).find((c) => c.kind === "person");
+        const label = (person && person.label) || state.domain.title || "M";
+        av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+      }
     }
   }
 

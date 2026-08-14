@@ -1639,35 +1639,16 @@ def people_immich_list() -> dict[str, Any]:
 
 @app.get("/people/{person_id}/portrait")
 def people_portrait(person_id: str) -> Response:
-    """Preferred Immich (or face-evidence) portrait for Person Explorer header."""
+    """Preferred Immich person thumbnail (feature face), then face-evidence fallback."""
     from memorybox.person import list_immich_external_ids_for_person
     from memorybox.person.face_evidence import list_face_evidence
     from memorybox.providers.photo import build_photo
 
-    # 1) Face evidence with a concrete Immich asset id
-    for row in list_face_evidence(person_id):
-        asset = (row.get("source_asset_id") or "").strip()
-        if not asset:
-            meta = row.get("exemplar_meta_json") or {}
-            if isinstance(meta, dict):
-                asset = str(meta.get("source_asset_id") or meta.get("assetId") or "").strip()
-        if not asset:
-            continue
-        photo = build_photo()
-        try:
-            preview = photo.fetch_preview(asset)
-            return Response(
-                content=preview.data,
-                media_type=preview.content_type or "image/jpeg",
-                headers={"Cache-Control": "private, max-age=300"},
-            )
-        except Exception:  # noqa: BLE001
-            continue
-
-    # 2) Immich preferred person thumbnail for mapped Immich people
     photo = build_photo()
     client = getattr(photo, "_client", None)
     fetch_person = getattr(client, "fetch_person_thumbnail_bytes", None)
+
+    # 1) Immich preferred / feature-face person thumbnail (what Immich shows for the person)
     if callable(fetch_person):
         for ext in list_immich_external_ids_for_person(person_id):
             try:
@@ -1681,6 +1662,27 @@ def people_portrait(person_id: str) -> Response:
                     media_type=ctype or "image/jpeg",
                     headers={"Cache-Control": "private, max-age=300"},
                 )
+
+    # 2) Face evidence with a concrete Immich asset id
+    for row in list_face_evidence(person_id):
+        asset = (row.get("source_asset_id") or "").strip()
+        if not asset:
+            meta = row.get("exemplar_meta_json") or {}
+            if isinstance(meta, dict):
+                asset = str(
+                    meta.get("source_asset_id") or meta.get("assetId") or ""
+                ).strip()
+        if not asset:
+            continue
+        try:
+            preview = photo.fetch_preview(asset)
+            return Response(
+                content=preview.data,
+                media_type=preview.content_type or "image/jpeg",
+                headers={"Cache-Control": "private, max-age=300"},
+            )
+        except Exception:  # noqa: BLE001
+            continue
 
     raise HTTPException(status_code=404, detail="portrait unavailable")
 
