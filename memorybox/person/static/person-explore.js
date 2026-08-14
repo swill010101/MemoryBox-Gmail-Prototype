@@ -297,8 +297,10 @@
       ),
     ]);
     if (!personRes.ok) throw new Error("person " + personRes.status);
-    const person = await personRes.json();
-    const profile = profileRes.ok ? await profileRes.json() : {};
+    const personPayload = await personRes.json();
+    const person = personPayload.person || personPayload;
+    const profilePayload = profileRes.ok ? await profileRes.json() : {};
+    const profile = profilePayload.profile || profilePayload;
     const facesPayload = faceRes && faceRes.ok ? await faceRes.json() : {};
     const appsPayload = appRes && appRes.ok ? await appRes.json() : {};
 
@@ -319,6 +321,19 @@
     const portrait = document.getElementById("mb-person-portrait");
     portrait.textContent = initial(name);
     portrait.style.backgroundImage = "";
+    // Preferred Immich / face portrait (server resolves)
+    const portraitUrl =
+      personPayload.portrait_url ||
+      "/people/" + encodeURIComponent(id) + "/portrait";
+    const probe = new Image();
+    probe.onload = () => {
+      portrait.textContent = "";
+      portrait.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
+    };
+    probe.onerror = () => {
+      /* keep initial; face-evidence path below may still fill */
+    };
+    probe.src = portraitUrl;
 
     const facts = profile.facts || [];
     const birth = facts.find((f) => f.fact_kind === "birth_date");

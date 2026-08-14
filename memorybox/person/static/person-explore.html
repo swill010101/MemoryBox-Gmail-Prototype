@@ -64,8 +64,8 @@
     </section>
 
     <div class="mb-person-mode-row" role="tablist" aria-label="Memory mode">
-      <button type="button" class="mb-person-mode is-active" data-mode="highlights" id="mb-mode-highlights" aria-selected="true">Highlights</button>
-      <button type="button" class="mb-person-mode" data-mode="all" id="mb-mode-all" aria-selected="false">All Memories</button>
+      <button type="button" class="mb-person-mode" data-mode="highlights" id="mb-mode-highlights" aria-selected="false">Highlights</button>
+      <button type="button" class="mb-person-mode is-active" data-mode="all" id="mb-mode-all" aria-selected="true">All Memories</button>
     </div>
 
     <div class="mb-explore-toolbar">
@@ -201,7 +201,7 @@
       window.MB_PERSON_SURFACE = {
         personId: params.get("person") || params.get("person_id") || "",
         displayName: params.get("person_name") || "",
-        memoryMode: "highlights",
+        memoryMode: "all",
         locationFilterMode: "has_location",
       };
     })();
@@ -210,5 +210,7 @@
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
   <script src="/static/explore/explore.js"></script>
   <script src="/static/person/person-explore.js"></script>
+  <!-- Load dark overrides AFTER shell inject (shell.css is inserted before </head>) -->
+  <link rel="stylesheet" href="/static/person/person-explore.css" />
 </body>
 </html>

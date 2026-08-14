@@ -668,11 +668,12 @@
       if (window.mbShell && window.mbShell.setActivePerson) {
         window.mbShell.setActivePerson({ id: hit.id, name: hit.label || who });
       }
-      window.location.href =
+      window.location.replace(
         "/people/ui?person=" +
-        encodeURIComponent(hit.id) +
-        "&person_name=" +
-        encodeURIComponent(hit.label || who);
+          encodeURIComponent(hit.id) +
+          "&person_name=" +
+          encodeURIComponent(hit.label || who)
+      );
       return true;
     }
     // Ambiguous or unknown — let Ask clarify (do not navigate to a wrong Tom)
@@ -700,8 +701,9 @@
     if (window.mbShell && window.mbShell.setActivePerson) {
       window.mbShell.setActivePerson({ id: "", name: who });
     }
-    window.location.href =
-      "/people/ui?person_name=" + encodeURIComponent(who);
+    window.location.replace(
+      "/people/ui?person_name=" + encodeURIComponent(who)
+    );
     return true;
   }
 
@@ -2550,6 +2552,26 @@
     return state.timeline.extentStart + x * (state.timeline.extentEnd - state.timeline.extentStart);
   }
 
+  /** Handle drag may move past the visible axis toward the full archive span. */
+  function trackFracHandle(clientX) {
+    if (!hasDatedExtent()) return NaN;
+    const track = document.getElementById("mb-tl-track");
+    const r = track.getBoundingClientRect();
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    const extA = state.timeline.extentStart;
+    const extB = state.timeline.extentEnd;
+    const span = Math.max(extB - extA, 1);
+    // Allow overshoot past track edges so range can expand toward fullExtent
+    const x = (clientX - r.left) / r.width;
+    const t = extA + x * span;
+    return Math.min(fullB, Math.max(fullA, t));
+  }
+
   /** Proportional scrub: playhead → chronological neighborhood without huge jumps. */
   function scrollGalleryToward(ms, opts) {
     opts = opts || {};
@@ -2635,7 +2657,7 @@
 
     track.addEventListener("pointermove", (e) => {
       if (handleDrag) {
-        const t = trackFrac(e.clientX);
+        const t = trackFracHandle(e.clientX);
         if (handleDrag === "l") {
           setActiveRange(t, state.timeline.rangeEnd);
         } else {

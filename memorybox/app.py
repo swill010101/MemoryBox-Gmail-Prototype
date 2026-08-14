@@ -1637,12 +1637,63 @@ def people_immich_list() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/people/{person_id}/portrait")
+def people_portrait(person_id: str) -> Response:
+    """Preferred Immich (or face-evidence) portrait for Person Explorer header."""
+    from memorybox.person import list_immich_external_ids_for_person
+    from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.providers.photo import build_photo
+
+    # 1) Face evidence with a concrete Immich asset id
+    for row in list_face_evidence(person_id):
+        asset = (row.get("source_asset_id") or "").strip()
+        if not asset:
+            meta = row.get("exemplar_meta_json") or {}
+            if isinstance(meta, dict):
+                asset = str(meta.get("source_asset_id") or meta.get("assetId") or "").strip()
+        if not asset:
+            continue
+        photo = build_photo()
+        try:
+            preview = photo.fetch_preview(asset)
+            return Response(
+                content=preview.data,
+                media_type=preview.content_type or "image/jpeg",
+                headers={"Cache-Control": "private, max-age=300"},
+            )
+        except Exception:  # noqa: BLE001
+            continue
+
+    # 2) Immich preferred person thumbnail for mapped Immich people
+    photo = build_photo()
+    client = getattr(photo, "_client", None)
+    fetch_person = getattr(client, "fetch_person_thumbnail_bytes", None)
+    if callable(fetch_person):
+        for ext in list_immich_external_ids_for_person(person_id):
+            try:
+                got = fetch_person(ext)
+            except Exception:  # noqa: BLE001
+                got = None
+            if got:
+                data, ctype, _src = got
+                return Response(
+                    content=data,
+                    media_type=ctype or "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=300"},
+                )
+
+    raise HTTPException(status_code=404, detail="portrait unavailable")
+
+
 @app.get("/people/{person_id}")
 def people_get(person_id: str) -> dict[str, Any]:
     view = get_person(person_id)
     if not view:
         raise HTTPException(status_code=404, detail="person not found")
-    return {"ok": True, "person": view.to_dict()}
+    payload = {"ok": True, "person": view.to_dict()}
+    # Hint Person Explorer to load preferred Immich portrait
+    payload["portrait_url"] = f"/people/{person_id}/portrait"
+    return payload
 
 
 @app.get("/people/{person_id}/profile")

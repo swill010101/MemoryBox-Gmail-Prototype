@@ -244,6 +244,7 @@ html[data-mb-surface="people"] .mb-return-bar .mb-btn-secondary {
   align-items: center;
   gap: 0.55rem;
 }
+.mb-person-explore .mb-explore-filters button,
 .mb-person-explore .mb-filter-btn,
 .mb-person-explore .mb-filter-undated,
 .mb-person-explore .mb-filter-map,
@@ -252,6 +253,7 @@ html[data-mb-surface="people"] .mb-return-bar .mb-btn-secondary {
   color: #c5cede !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
 }
+.mb-person-explore .mb-explore-filters button[aria-pressed="true"],
 .mb-person-explore .mb-filter-btn.is-active,
 .mb-person-explore .mb-filter-undated.is-active,
 .mb-person-explore .mb-filter-map.is-active,
@@ -259,6 +261,53 @@ html[data-mb-surface="people"] .mb-return-bar .mb-btn-secondary {
   background: rgba(91, 140, 255, 0.22) !important;
   color: #eaf1ff !important;
   border-color: rgba(91, 140, 255, 0.45) !important;
+}
+
+/* Force dark panels — Explore light #fff rules lose to these */
+html[data-mb-surface="people"] .mb-person-header,
+html[data-mb-surface="people"] .mb-person-ask-band,
+html[data-mb-surface="people"] .mb-explore-curator,
+html[data-mb-surface="people"] .mb-person-footer,
+html[data-mb-surface="people"] .mb-person-panel,
+html[data-mb-surface="people"] .mb-explore-timeline {
+  background: #141b27 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+  color: #e8edf5 !important;
+}
+html[data-mb-surface="people"] .mb-person-name,
+html[data-mb-surface="people"] .mb-explore-curator-copy h1 {
+  color: #f3f6fb !important;
+}
+html[data-mb-surface="people"] .mb-person-sub,
+html[data-mb-surface="people"] .mb-person-summary,
+html[data-mb-surface="people"] .mb-explore-curator-copy p,
+html[data-mb-surface="people"] .mb-person-action {
+  color: #b7c0d0 !important;
+}
+html[data-mb-surface="people"] .mb-explore-ask-field {
+  background: rgba(8, 12, 20, 0.75) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+html[data-mb-surface="people"] .mb-explore-filters button {
+  background: #141b27 !important;
+  color: #d5dde9 !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+html[data-mb-surface="people"] .mb-explore-filters button[aria-pressed="true"] {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border-color: #3b82f6 !important;
+}
+html[data-mb-surface="people"] .mb-card-meta {
+  background: #141b27 !important;
+  border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+html[data-mb-surface="people"] .mb-card-title {
+  color: #f3f6fb !important;
+}
+html[data-mb-surface="people"] .mb-card-sub {
+  color: #b7c0d0 !important;
 }
 .mb-person-explore .mb-explore-sort select {
   background: #141b27 !important;

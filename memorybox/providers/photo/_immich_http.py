@@ -387,3 +387,37 @@ class ImmichHttpClient:
         raise FileNotFoundError(
             "No thumbnail available via Immich API (needs asset.view on API key)"
         )
+
+    def fetch_person_thumbnail_bytes(
+        self, person_id: str
+    ) -> tuple[bytes, str, str] | None:
+        """Immich preferred person thumbnail (feature face / person thumb)."""
+        pid = (person_id or "").strip()
+        if not pid:
+            return None
+        for path in (
+            f"/people/{pid}/thumbnail",
+            f"/people/{pid}/thumbnail?format=JPEG",
+        ):
+            url = f"{self.api_base}{path}"
+            got = self._fetch_api_image(url)
+            if got:
+                return got[0], got[1], "immich-person-thumb"
+        # Fall back: person payload feature face / thumbnail asset
+        faces = self.list_faces_for_person(pid)
+        for face in faces:
+            asset_id = str(
+                face.get("assetId")
+                or face.get("asset_id")
+                or face.get("id")
+                or ""
+            ).strip()
+            if not asset_id or asset_id.startswith("person-thumb-"):
+                # thumbnailPath is not always an asset id — try person thumb only
+                continue
+            try:
+                data, ctype, src = self.fetch_preview_bytes(asset_id)
+                return data, ctype, src
+            except Exception:  # noqa: BLE001
+                continue
+        return None
