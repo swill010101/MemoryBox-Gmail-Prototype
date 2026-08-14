@@ -167,6 +167,8 @@ Immich identities remain provider identities mapped to canonical MemoryBox Peopl
 
 MemoryBox should preserve provenance for each face example and use MB-owned recognition processing rather than making MemoryBox identity dependent upon Immich’s internal recognition model.
 
+**Operational increment:** [P2-I8.5 Face Evidence Ownership & Immich Decoupling](MBBS-P2_I8.5_FACE_EVIDENCE_OWNERSHIP_PRD.md) (after I8, before I9). Until I8.5 is ACCEPTED, Immich detections may be imported as evidence but must not remain the working authority for MB face overlays, owner corrections, or recognition input.
+
 ## CAP-P2-004 — Photo Face Identification & Face-Evidence Capture
 
 While viewing a photograph in MemoryBox, an owner should be able to draw/select a bounding box around a face.

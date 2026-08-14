@@ -83,6 +83,7 @@ The acceptance test must include at least:
 - Confirmed **Immich face assets** are usable as **provenance-preserved** recognition evidence (source, bounding region as available, provider ids, confidence, confirmation, timestamps).  
 - Owner confirmations/corrections in photo or video frames become reusable face evidence with provenance and **higher authority** than automated associations.  
 - Automated associations remain labeled with method/confidence/confirmation state.
+- **Carry-forward (not an I1 reopen):** live Immich face rows are not the long-term working authority. **P2-I8.5** imports eligible observations into MB-owned records and switches overlays/recognition reads. See [I8.5 PRD](MBBS-P2_I8.5_FACE_EVIDENCE_OWNERSHIP_PRD.md).
 
 ### 2.3 Video face-appearance timeslots (MBPS P2-VID-01..04)
 
@@ -134,6 +135,8 @@ On **later material exemplar additions/corrections**:
 | Universal Person pickers on all surfaces | P2-I5 (Ask path in I1 only) |
 | Kinship inference | P2-I6 |
 | SMS / richer email | P2-I7 / I8 |
+| Durable MB-owned face observations (Immich decoupling; working boxes/assignments) | **P2-I8.5** (after I8; not I7.5). I1 Immich face assets remain provenance-preserved earn-in. |
+| Learn-rail face editing (Assign / Reassign / Adjust / Unassign / Learn) | After **P2-I8.5** ACCEPTED |
 | Cross-source narrative / external history | P2-I11 / I12 |
 | Dynamic views, Settings maturity, campaigns, trust-private formalization, import-back | I13–I17 |
 | Multi-user / tone dial | Late |

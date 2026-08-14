@@ -1,6 +1,6 @@
 # MBRM-001A — P2 Implementation Plan
 
-**Status:** Planning direction **approved** · P2-I1 definition **LOCKED** · **Date:** 2026-08-12  
+**Status:** Planning direction **approved** · P2-I1 definition **LOCKED** · **Date:** 2026-08-12 (I8.5 inserted 2026-08-14)  
 **Locked inputs:** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · [`docs/source/`](../source/)  
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
@@ -89,6 +89,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I6** | Kinship Inference | A | TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | |
 | **P2-I8** | Richer Email | A | |
+| **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F+A | **Inserted** after I8 / before I9. ID is **I8.5** (not I7.5). [PRD](MBBS-P2_I8.5_FACE_EVIDENCE_OWNERSHIP_PRD.md) · **NO BUILD** until I8 ACCEPTED + explicit authorization. Blocks Learn-rail face editing. |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
 | **P2-I11** | Narrative & Summaries | E+A | Family evidence only |
@@ -106,7 +107,7 @@ Kinds: **F** foundational · **U** UX maturation · **A** archive understanding 
 I1 Show me Peggy
  → I2 Shell → I3 Archive Health (+004) → I4 Timeline explore
  → I5 Universal Person → I6 Kinship
- → I7 SMS → I8 Email → I9 Spoken → I10 Correlate
+ → I7 SMS → I8 Email → I8.5 Face evidence ownership → I9 Spoken → I10 Correlate
  → I11 Narrative → I12 External history → I13 Views
  → I14 Settings → I15 Campaigns → I16 Trust → I17 Portability
  → Late multi-user / tone
@@ -158,6 +159,22 @@ P2-COM-01.
 ### P2-I8 — Richer Email · A
 
 P2-COM-02/03.
+
+### P2-I8.5 — Face Evidence Ownership & Immich Decoupling · F+A
+
+| Field | Content |
+|-------|---------|
+| **Primary outcome** | MemoryBox owns durable active face observations; Immich remains a replaceable read-only media/face-evidence provider |
+| **MBPS** | P2-ID-01..05 (operationalizes **P2-ID-04**); Original Evidence Is Sacred |
+| **EVSs** | Refines EVS-250 (I1 earn-in remains); EVS-252 stays Person mapping (P1/I1). I8.5 imports face **observations**, not named People |
+| **Capabilities** | CAP-P2-003…006, 010, 016, 017 |
+| **Prerequisites** | I6 Person mapping stable; **I7 and I8 ACCEPTED** |
+| **Domain/services** | Face evidence / FaceObservation; provider sync (read-only); provenance; recognition exemplar selection; HVRT remains compute location |
+| **UX / Flows** | No redesign. Face overlays switch to MB working coordinates. Learn rail **not** in this increment |
+| **Acceptance** | [I8.5 definition](MBBS-P2_INCREMENT_8.5_DEFINITION.md) · [PRD](MBBS-P2_I8.5_FACE_EVIDENCE_OWNERSHIP_PRD.md) §27 |
+| **OUT** | Immich write-back; original media edits; Learn rail UI; new photo-recognition engine; Immich People editing; replacing Immich |
+| **Blocks** | Shared Evidence Viewer Learn-rail face editing is incomplete until I8.5 ACCEPTED |
+| **ID lock** | **P2-I8.5** — do not call this I7.5 |
 
 ### P2-I9 — Spoken Moments · F+A
 
@@ -216,7 +233,7 @@ P2-MU-*; **EVS-019** (EVS-201 alias).
 
 ### A. Sequence
 
-See §3 normalized table (I1→I17 + Late).
+See §3 normalized table (I1→I17 + Late). Inserted **P2-I8.5** between I8 and I9.
 
 ### B. EVS traceability
 
@@ -370,7 +387,7 @@ Appendix A — canonical homes + alias table.
 | EVS-247 | P2 | Stories & Narrative | P2-I11 Narrative & Summaries |
 | EVS-248 | P2 | Stories & Narrative | P2-I11 Narrative & Summaries |
 | EVS-249 | P2 | Discovery | P2-I4 Timeline-first High-Volume Explore |
-| EVS-250 | P2 | Corrections & Learning | P2-I1 Show me Peggy (Person-in-Media Vertical) |
+| EVS-250 | P2 | Corrections & Learning | P2-I1 Show me Peggy (Person-in-Media Vertical); durable MB-owned observation layer **P2-I8.5** (Learn-rail completion after I8.5) |
 | EVS-251 | P2 | Stories & Narrative | P2-I11 Narrative & Summaries |
 | EVS-254 | P2 | Discovery | P2-I12 External Historical Context |
 | EVS-255 | P2 | Discovery | P2-I12 External Historical Context |
