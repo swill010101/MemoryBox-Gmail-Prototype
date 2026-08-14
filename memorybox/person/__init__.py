@@ -1234,17 +1234,78 @@ def list_immich_external_ids_for_person(person_id: str) -> list[str]:
     return list_provider_external_ids_for_person(person_id, PROVIDER_IMMICH)
 
 
+def _immich_display_name_matches(photo: Any, external_id: str, display_name: str) -> bool:
+    """True only when Immich person's name equals the MB display name (exact)."""
+    needle = (display_name or "").strip().lower()
+    ext = (external_id or "").strip()
+    if not needle or not ext or photo is None:
+        return False
+    client = getattr(photo, "_client", None)
+    request = getattr(client, "_request", None) if client is not None else None
+    if callable(request):
+        try:
+            status, data = request("GET", f"/people/{ext}")
+        except Exception:  # noqa: BLE001
+            status, data = 0, None
+        if status == 200 and isinstance(data, dict):
+            return str(data.get("name") or "").strip().lower() == needle
+    try:
+        refs = photo.list_people(limit=500) or []
+    except Exception:  # noqa: BLE001
+        return False
+    for r in refs:
+        if str(getattr(r, "external_id", "") or "").strip() != ext:
+            continue
+        return (getattr(r, "display_name", None) or "").strip().lower() == needle
+    return False
+
+
+def portrait_immich_ids_for_name(
+    photo: Any | None,
+    display_name: str,
+    mapped_ids: list[str] | None = None,
+) -> list[str]:
+    """Immich person UUIDs safe for a portrait: exact display name only.
+
+    Never first-token / unique-hit fallback (that painted Tom Landzaat on Tom Will).
+    Mapped ids are kept only when they belong to an Immich person with the same name.
+    Exact-name Immich hits win over a stale or wrong provider_identities row.
+    """
+    mapped = [x for x in dict.fromkeys(mapped_ids or []) if x]
+    name = (display_name or "").strip()
+    exact_ids: list[str] = []
+    if photo is not None and name:
+        try:
+            refs = _exact_named_photo_people(photo, name)
+        except Exception:  # noqa: BLE001
+            refs = []
+        for r in refs:
+            ext = str(getattr(r, "external_id", "") or "").strip()
+            if ext:
+                exact_ids.append(ext)
+        exact_ids = list(dict.fromkeys(exact_ids))
+    if exact_ids:
+        agreed = [x for x in mapped if x in set(exact_ids)]
+        rest = [x for x in exact_ids if x not in agreed]
+        return agreed + rest
+    verified: list[str] = []
+    for ext in mapped:
+        if _immich_display_name_matches(photo, ext, name):
+            verified.append(ext)
+    return verified
+
+
 def resolve_immich_external_ids_for_person(
     person_id: str, *, photo: Any | None = None
 ) -> list[str]:
-    """Immich person UUIDs for an MB Person — mapped ids, then exact-name Immich match.
+    """Immich person UUIDs for an MB Person portrait / gallery join.
 
-    Gallery/Ask already resolve Sue Will via Immich name when provider_identities
-    is empty; portraits must use the same path so preferred Immich face shows.
+    Exact Immich display-name match first. Mapped provider_identities ids are
+    used only when that Immich person is named the same as the MB Person.
     """
-    out: list[str] = []
+    mapped: list[str] = []
     try:
-        out.extend(list_immich_external_ids_for_person(person_id))
+        mapped.extend(list_immich_external_ids_for_person(person_id))
     except PersonServiceError:
         return []
 
@@ -1264,44 +1325,18 @@ def resolve_immich_external_ids_for_person(
                 continue
             ext = str(m.get("external_id") or "").strip()
             if ext:
-                out.append(ext)
+                mapped.append(ext)
 
     name = (view.display_name if view else "") or ""
-    # Same path Gallery/Ask uses when provider_identities has no Immich row yet
-    if name and not out:
-        provider = photo
-        if provider is None:
-            try:
-                from memorybox.ask.deps import build_photo
+    provider = photo
+    if provider is None:
+        try:
+            from memorybox.ask.deps import build_photo
 
-                provider = build_photo()
-            except Exception:  # noqa: BLE001
-                provider = None
-        if provider is not None:
-            try:
-                refs = _exact_named_photo_people(provider, name)
-                if not refs:
-                    refs = _ask_named_photo_people(provider, name)
-            except Exception:  # noqa: BLE001
-                refs = []
-            # Exact name, or a single unambiguous Immich person hit
-            use_refs = []
-            needle = name.strip().lower()
-            exact = [
-                r
-                for r in refs
-                if (getattr(r, "display_name", None) or "").strip().lower() == needle
-            ]
-            if exact:
-                use_refs = exact
-            elif len(refs) == 1:
-                use_refs = refs
-            for r in use_refs:
-                ext = str(getattr(r, "external_id", "") or "").strip()
-                if ext:
-                    out.append(ext)
-
-    return list(dict.fromkeys(x for x in out if x))
+            provider = build_photo()
+        except Exception:  # noqa: BLE001
+            provider = None
+    return portrait_immich_ids_for_name(provider, name, mapped)
 
 
 def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:

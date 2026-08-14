@@ -81,6 +81,12 @@ def run_prove_person_profile(*, flightsim: bool = False) -> dict[str, Any]:
         )
         add_contact(eugene_id, contact_kind="email", value_text="eugene.i9a@example.test")
         add_fact(eugene_id, fact_kind="note", value_text="Harness note")
+        add_fact(
+            eugene_id,
+            fact_kind="residence",
+            value_text="Oak Street",
+            provenance={"source": "owner"},
+        )
         profile = get_person_profile(eugene_id)
         layered = (
             "identity" in profile
@@ -90,7 +96,7 @@ def run_prove_person_profile(*, flightsim: bool = False) -> dict[str, Any]:
             and "relationships" in profile
             and "life_events" in profile
             and len(profile["aliases"]) >= 1
-            and len(profile["facts"]) >= 2
+            and len(profile["facts"]) >= 3
             and len(profile["contacts"]) >= 1
         )
         _check("i9a_a_layered", layered, checks, problems, detail=str(list(profile.keys())))

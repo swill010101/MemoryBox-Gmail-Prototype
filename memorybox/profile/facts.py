@@ -184,17 +184,17 @@ def add_fact(
     kind = (fact_kind or "").strip().lower()
     if kind not in FACT_KINDS:
         raise ProfileServiceError(f"fact_kind must be one of {sorted(FACT_KINDS)}")
-    vd = parse_date(value_date, field="value_date") if kind != "note" else None
+    vd = parse_date(value_date, field="value_date") if kind not in ("note", "residence") else None
     vt = (value_text or "").strip() or None
     if kind in ("birth_date", "death_date"):
         if not vd:
             raise ProfileServiceError(f"{kind} requires value_date")
         vt = vt or vd.isoformat()
-    elif kind == "note" and not vt:
-        raise ProfileServiceError("note requires value_text")
+    elif kind in ("note", "residence") and not vt:
+        raise ProfileServiceError(f"{kind} requires value_text")
     fid = uuid4()
     with connection() as conn:
-        if supersede_current and kind in ("birth_date", "death_date"):
+        if supersede_current and kind in ("birth_date", "death_date", "residence"):
             for o in conn.execute(
                 """
                 SELECT id FROM person_facts

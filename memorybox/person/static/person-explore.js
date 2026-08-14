@@ -139,62 +139,206 @@
     document.getElementById("mb-person-drawer").hidden = true;
   }
 
+  function aboutFacts() {
+    const facts = (cached.profile && cached.profile.facts) || [];
+    return {
+      birth: facts.find((f) => f.fact_kind === "birth_date"),
+      residence: facts.find((f) => f.fact_kind === "residence"),
+    };
+  }
+
+  function relationToOwner() {
+    const profile = cached.profile || {};
+    const id = cfg.personId;
+    const owner = profile.owner || {};
+    const ownerId = owner.owner_person_id || "";
+    const ownerName = owner.display_name || "you";
+    if (profile.is_canonical_owner || (ownerId && ownerId === id)) {
+      return "This is you";
+    }
+    const direct = (profile.relationships && profile.relationships.direct) || {};
+    if (ownerId) {
+      const groups = [
+        ["spouse_partner", "Spouse of"],
+        ["parents", null],
+        ["children", null],
+        ["siblings", "Sibling of"],
+      ];
+      for (const [g, prefix] of groups) {
+        const hit = (direct[g] || []).find((h) => h.person_id === ownerId);
+        if (!hit) continue;
+        const other = hit.display_name || ownerName;
+        if (prefix) return prefix + " " + other;
+        if (g === "parents") return (hit.label || "Child") + " of " + other;
+        if (g === "children") {
+          return (
+            (hit.label === "Child"
+              ? "Parent of "
+              : (hit.label || "Related") + " of ") + other
+          );
+        }
+        return (hit.label || "Related") + " of " + other;
+      }
+      const ext = (profile.relationships && profile.relationships.extended) || [];
+      const eh = ext.find((h) => h.person_id === ownerId);
+      if (eh) {
+        return (eh.label || "Related") + " of " + (eh.display_name || ownerName);
+      }
+    }
+    return "";
+  }
+
+  let aboutSheetMode = "all";
+
+  function closeAboutSheet() {
+    const sheet = document.getElementById("mb-about-sheet");
+    if (sheet) sheet.hidden = true;
+  }
+
+  function openAboutSheet(mode) {
+    aboutSheetMode = mode || "all";
+    const sheet = document.getElementById("mb-about-sheet");
+    const title = document.getElementById("mb-about-sheet-title");
+    const body = document.getElementById("mb-about-sheet-body");
+    const err = document.getElementById("mb-about-sheet-err");
+    if (!sheet || !body) return;
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    const name = cfg.displayName || "";
+    const { birth, residence } = aboutFacts();
+    const birthVal = (birth && (birth.value_date || birth.value_text)) || "";
+    const livesVal = (residence && residence.value_text) || "";
+    const titles = {
+      all: "Edit details",
+      name: "Full name",
+      birth: "Born on",
+      residence: "Lives in",
+    };
+    if (title) title.textContent = titles[aboutSheetMode] || "Edit details";
+    const fields = [];
+    if (aboutSheetMode === "all" || aboutSheetMode === "name") {
+      fields.push(
+        '<label class="mb-rel-field"><span>Full name</span>' +
+          '<input type="text" id="mb-about-name" value="' +
+          escapeHtml(name) +
+          '" autocomplete="name" /></label>'
+      );
+    }
+    if (aboutSheetMode === "all" || aboutSheetMode === "birth") {
+      fields.push(
+        '<label class="mb-rel-field"><span>Born on</span>' +
+          '<input type="date" id="mb-about-birth" value="' +
+          escapeHtml(String(birthVal).slice(0, 10)) +
+          '" /></label>'
+      );
+    }
+    if (aboutSheetMode === "all" || aboutSheetMode === "residence") {
+      fields.push(
+        '<label class="mb-rel-field"><span>Lives in</span>' +
+          '<input type="text" id="mb-about-residence" value="' +
+          escapeHtml(livesVal) +
+          '" placeholder="City, region" autocomplete="address-level2" /></label>'
+      );
+    }
+    if (aboutSheetMode === "all") {
+      const rel = relationToOwner();
+      fields.push(
+        '<p class="mb-person-empty">Relationship to you: <strong>' +
+          escapeHtml(rel || "Not recorded") +
+          "</strong></p>" +
+          '<button type="button" class="mb-person-panel-link" id="mb-about-rel-open">Edit relationship</button>'
+      );
+    }
+    body.innerHTML = fields.join("");
+    const relBtn = document.getElementById("mb-about-rel-open");
+    if (relBtn) {
+      relBtn.onclick = () => {
+        closeAboutSheet();
+        if (typeof window.mbOpenRelationshipsModal === "function") {
+          window.mbOpenRelationshipsModal();
+        }
+      };
+    }
+    sheet.hidden = false;
+    const first = body.querySelector("input");
+    if (first) first.focus();
+  }
+
+  async function saveAboutSheet() {
+    const err = document.getElementById("mb-about-sheet-err");
+    function fail(msg) {
+      if (err) {
+        err.hidden = false;
+        err.textContent = msg;
+      }
+    }
+    const id = cfg.personId;
+    if (!id) return;
+    try {
+      if (aboutSheetMode === "all" || aboutSheetMode === "name") {
+        const next = (
+          document.getElementById("mb-about-name") || {}
+        ).value;
+        const name = String(next || "").trim();
+        if (!name) return fail("Full name is required.");
+        if (name !== (cfg.displayName || "").trim()) {
+          const res = await fetch("/people/" + encodeURIComponent(id) + "/name", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name: name }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || res.statusText);
+        }
+      }
+      if (aboutSheetMode === "all" || aboutSheetMode === "birth") {
+        const raw = (
+          document.getElementById("mb-about-birth") || {}
+        ).value;
+        const date = String(raw || "").trim();
+        const cur = aboutFacts().birth;
+        const curDate = cur && (cur.value_date || cur.value_text);
+        if (date && date !== String(curDate || "").slice(0, 10)) {
+          const res = await fetch("/people/" + encodeURIComponent(id) + "/facts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fact_kind: "birth_date", value_date: date }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || res.statusText);
+        }
+      }
+      if (aboutSheetMode === "all" || aboutSheetMode === "residence") {
+        const lives = String(
+          (document.getElementById("mb-about-residence") || {}).value || ""
+        ).trim();
+        const cur = aboutFacts().residence;
+        const curText = (cur && cur.value_text) || "";
+        if (lives && lives !== curText) {
+          const res = await fetch("/people/" + encodeURIComponent(id) + "/facts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fact_kind: "residence",
+              value_text: lives,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || res.statusText);
+        }
+      }
+      closeAboutSheet();
+      await loadProfile();
+    } catch (e) {
+      fail(String(e && e.message ? e.message : e));
+    }
+  }
+
+  /** View / Edit details — dark form (not the old Identity/Family dump). */
   function renderAboutDrawer() {
-    const p = cached.profile || {};
-    const facts = p.facts || [];
-    const aliases = p.aliases || [];
-    const birth = facts.find((f) => f.fact_kind === "birth_date");
-    const death = facts.find((f) => f.fact_kind === "death_date");
-    const notes = facts.filter((f) => f.fact_kind === "note");
-    const name = cfg.displayName || "Person";
-    const aliasText = aliases
-      .map((a) => a.alias_text || a.value || a.alias)
-      .filter(Boolean)
-      .join(", ");
-    let html = "";
-    html +=
-      '<section class="mb-person-sec"><h3>Identity</h3><ul>' +
-      "<li>Full name: " +
-      escapeHtml(name) +
-      "</li>" +
-      (aliasText
-        ? "<li>Also known as: " + escapeHtml(aliasText) + "</li>"
-        : "<li>No alternate names recorded.</li>") +
-      "</ul></section>";
-    html +=
-      '<section class="mb-person-sec"><h3>Life</h3><ul>' +
-      "<li>Born: " +
-      escapeHtml((birth && birth.value_date) || "Not recorded") +
-      "</li>" +
-      "<li>Died: " +
-      escapeHtml((death && death.value_date) || "Not recorded") +
-      "</li></ul></section>";
-    html +=
-      '<section class="mb-person-sec"><h3>Family</h3><ul>' +
-      (cached.family.length
-        ? cached.family
-            .map(
-              (f) =>
-                "<li>" +
-                escapeHtml(f.name) +
-                " — " +
-                escapeHtml(f.role) +
-                "</li>"
-            )
-            .join("")
-        : "<li>No relationships recorded yet.</li>") +
-      "</ul></section>";
-    html +=
-      '<section class="mb-person-sec"><h3>Places</h3><ul><li>Important Places can be linked as they are confirmed. No latitude/longitude shown here.</li></ul></section>';
-    html +=
-      '<section class="mb-person-sec"><h3>Notes</h3><ul>' +
-      (notes.length
-        ? notes
-            .map((n) => "<li>" + escapeHtml(n.value_text || n.note || "") + "</li>")
-            .join("")
-        : "<li>No owner notes yet.</li>") +
-      "</ul></section>";
-    openDrawer("About " + firstName(name), html);
+    openAboutSheet("all");
   }
 
   function renderFamilyDrawer() {
@@ -344,6 +488,8 @@
     const profile = profilePayload.profile || profilePayload;
     const facesPayload = faceRes && faceRes.ok ? await faceRes.json() : {};
     const appsPayload = appRes && appRes.ok ? await appRes.json() : {};
+    cached.person = person;
+    cached.profile = profile;
 
     const name =
       person.display_name ||
@@ -418,54 +564,7 @@
             ? "d. " + deathY
             : "";
 
-    function namesList(rows) {
-      return (rows || [])
-        .map((h) => h.display_name || h.name)
-        .filter(Boolean);
-    }
-    function familyHeadline() {
-      const rels = (profile.relationships || {});
-      const direct = rels.direct || {};
-      const spouses = direct.spouse_partner || [];
-      const children = direct.children || [];
-      const parents = direct.parents || [];
-      const siblings = direct.siblings || [];
-      const ownerId = (profile.owner && profile.owner.owner_person_id) || "";
-      if (ownerId && ownerId !== id) {
-        const groups = [
-          ["spouse_partner", "Spouse of"],
-          ["parents", null],
-          ["children", null],
-          ["siblings", "Sibling of"],
-        ];
-        for (const [g, prefix] of groups) {
-          const hit = (direct[g] || []).find((h) => h.person_id === ownerId);
-          if (!hit) continue;
-          const other = hit.display_name || "them";
-          if (prefix) return prefix + " " + other;
-          if (g === "parents")
-            return (hit.label || "Child") + " of " + other;
-          if (g === "children")
-            return (hit.label === "Child" ? "Parent of " : (hit.label || "Related") + " of ") + other;
-          return (hit.label || "Related") + " of " + other;
-        }
-      }
-      if (spouses.length)
-        return "Spouse of " + namesList(spouses).join(", ");
-      if (children.length) {
-        const lab =
-          children.some((c) => /father/i.test(c.role_kind || ""))
-            ? "Father of "
-            : children.some((c) => /mother/i.test(c.role_kind || ""))
-              ? "Mother of "
-              : "Parent of ";
-        return lab + namesList(children).join(", ");
-      }
-      if (parents.length) return "Child of " + namesList(parents).join(", ");
-      if (siblings.length) return "Sibling of " + namesList(siblings).join(", ");
-      return "";
-    }
-    const rel = familyHeadline();
+    const rel = relationToOwner();
     const subBits = [];
     if (rel) subBits.push(rel);
     if (life) subBits.push(life);
@@ -474,34 +573,51 @@
 
     const about = document.getElementById("mb-person-about-dl");
     about.innerHTML = "";
-    function row(k, v) {
-      if (!v) return;
+    function aboutValue(text, emptyLabel, addMode) {
+      const dd = document.createElement("dd");
+      if (text) {
+        dd.textContent = text;
+        return dd;
+      }
+      const empty = document.createElement("span");
+      empty.className = "mb-person-empty";
+      empty.textContent = emptyLabel || "Not recorded";
+      dd.appendChild(empty);
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "mb-person-about-add";
+      add.textContent = "Add";
+      add.onclick = () => {
+        if (addMode === "relationship") {
+          if (typeof window.mbOpenRelationshipsModal === "function") {
+            window.mbOpenRelationshipsModal();
+          }
+          return;
+        }
+        openAboutSheet(addMode);
+      };
+      dd.appendChild(add);
+      return dd;
+    }
+    function row(k, dd) {
       const dt = document.createElement("dt");
       dt.textContent = k;
-      const dd = document.createElement("dd");
-      dd.textContent = v;
       about.appendChild(dt);
       about.appendChild(dd);
     }
-    row("Full name", name);
-    const spouses = (profile.relationships && profile.relationships.direct && profile.relationships.direct.spouse_partner) || [];
-    const children = (profile.relationships && profile.relationships.direct && profile.relationships.direct.children) || [];
-    const parents = (profile.relationships && profile.relationships.direct && profile.relationships.direct.parents) || [];
-    const extendedKids = ((profile.relationships && profile.relationships.extended) || []).filter(
-      (h) => (h.role_kind || "") === "child_of" || (h.group || "") === "extended" && /child/i.test(h.label || "")
+    const aboutF = aboutFacts();
+    const birthText =
+      aboutF.birth && (aboutF.birth.value_date || aboutF.birth.value_text)
+        ? String(aboutF.birth.value_date || aboutF.birth.value_text)
+        : "";
+    const livesText = (aboutF.residence && aboutF.residence.value_text) || "";
+    row("Full name", aboutValue(name, "Not recorded", "name"));
+    row("Born on", aboutValue(birthText, "Not recorded", "birth"));
+    row(
+      "Relationship",
+      aboutValue(rel, "Not recorded", "relationship")
     );
-    if (spouses.length) row("Spouse of", namesList(spouses).join(", "));
-    const childNames = namesList(children).concat(
-      namesList(extendedKids).filter((n) => namesList(children).indexOf(n) < 0)
-    );
-    if (childNames.length) row("Parent of", childNames.join(", "));
-    if (parents.length) row("Child of", namesList(parents).join(", "));
-    row("Born", birth && birth.value_date);
-    row("Died", death && death.value_date);
-    if (!about.children.length) {
-      about.innerHTML =
-        '<p class="mb-person-empty">No profile details recorded yet.</p>';
-    }
+    row("Lives in", aboutValue(livesText, "Not recorded", "residence"));
 
     const familyRow = document.getElementById("mb-person-family-row");
     familyRow.innerHTML = "";
@@ -565,28 +681,26 @@
       [];
     cached.faces = Array.isArray(faceList) ? faceList : [];
     cached.appearances = Array.isArray(appList) ? appList : [];
-    cached.person = person;
-    cached.profile = profile;
 
-    const faceThumb = cached.faces
-      .map((f) => {
-        const meta = f.exemplar_meta_json || f.exemplar_meta || {};
-        const asset =
-          f.source_asset_id ||
-          (meta && (meta.source_asset_id || meta.assetId)) ||
-          "";
-        const fromAsset = photoProxyUrl(asset);
-        const existing =
-          f.thumb_url || f.media_url || f.preview_url || f.image_url || "";
-        if (existing && existing.indexOf("/library/media/photo//") === 0) {
-          return fromAsset;
-        }
-        if (existing && existing.indexOf("/data/thumbs/") !== -1) {
-          return fromAsset || photoProxyUrl(existing);
-        }
-        return existing || fromAsset;
-      })
-      .find(Boolean);
+    function faceThumbUrl(f) {
+      const meta = f.exemplar_meta_json || f.exemplar_meta || {};
+      const asset =
+        f.source_asset_id ||
+        (meta && (meta.source_asset_id || meta.assetId)) ||
+        "";
+      const fromAsset = photoProxyUrl(asset);
+      const existing =
+        f.thumb_url || f.media_url || f.preview_url || f.image_url || "";
+      if (existing && existing.indexOf("/library/media/photo//") === 0) {
+        return fromAsset;
+      }
+      if (existing && existing.indexOf("/data/thumbs/") !== -1) {
+        return fromAsset || photoProxyUrl(existing);
+      }
+      return existing || fromAsset;
+    }
+
+    const faceThumb = cached.faces.map(faceThumbUrl).find(Boolean);
     // Only use face-evidence thumbs if Immich preferred portrait did not load
     if (faceThumb && !(portrait && portrait.classList.contains("has-photo"))) {
       const fb = new Image();
@@ -596,6 +710,27 @@
 
     const faceN = cached.faces.length;
     const appN = cached.appearances.length;
+    const facesEl = document.getElementById("mb-person-learn-faces");
+    if (facesEl) {
+      const thumbs = cached.faces
+        .map(faceThumbUrl)
+        .filter(Boolean)
+        .slice(0, 8);
+      if (thumbs.length) {
+        facesEl.innerHTML = thumbs
+          .map(
+            (src) =>
+              '<button type="button" class="mb-person-learn-face" data-learn-open="1">' +
+              '<img src="' +
+              escapeHtml(src) +
+              '" alt="" /></button>'
+          )
+          .join("");
+      } else {
+        facesEl.innerHTML =
+          '<p class="mb-person-empty">No confirmed faces yet. Identify a face on a photo or video.</p>';
+      }
+    }
     document.getElementById("mb-person-learn-stats").innerHTML =
       "<li>" +
       faceN +
@@ -605,7 +740,7 @@
       appN +
       " video appearance" +
       (appN === 1 ? "" : "s") +
-      "</li><li>0 voice examples</li>";
+      "</li>";
 
     document.getElementById("mb-person-summary").textContent =
       "Memories load below — Ask, Gallery, Timeline and Map stay on this Person.";
@@ -620,28 +755,29 @@
     }
     const aboutEdit = document.getElementById("mb-person-about-edit");
     if (aboutEdit) aboutEdit.onclick = () => renderAboutDrawer();
-    const famAdd = document.getElementById("mb-person-family-add");
-    if (famAdd) {
-      famAdd.onclick = () => {
-        window.location.href = adminHref() + "#relationships";
+    function openLearnIdentify() {
+      if (
+        typeof window.mbExploreOpenLearnFromGallery === "function" &&
+        window.mbExploreOpenLearnFromGallery()
+      ) {
+        return;
+      }
+      window.location.href = "/review/ui";
+    }
+    const learnId = document.getElementById("mb-person-learn-identify");
+    if (learnId) learnId.onclick = openLearnIdentify;
+    const facesBox = document.getElementById("mb-person-learn-faces");
+    if (facesBox) {
+      facesBox.onclick = (ev) => {
+        if (ev.target.closest("[data-learn-open]")) openLearnIdentify();
       };
     }
-    const famOpen = document.getElementById("mb-person-family-open");
-    if (famOpen) famOpen.onclick = () => renderFamilyDrawer();
-    const learnEx = document.getElementById("mb-person-learn-explore");
-    if (learnEx) learnEx.onclick = () => renderLearnDrawer();
     const learnHeader = document.getElementById("mb-person-learn-link");
     if (learnHeader) {
       learnHeader.onclick = (e) => {
         e.preventDefault();
-        renderLearnDrawer();
-      };
-    }
-    const relHeader = document.getElementById("mb-person-relationships");
-    if (relHeader) {
-      relHeader.onclick = (e) => {
-        e.preventDefault();
-        renderFamilyDrawer();
+        const panel = document.getElementById("mb-person-learn");
+        if (panel) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       };
     }
 
@@ -662,8 +798,24 @@
   document.getElementById("mb-person-drawer").addEventListener("click", (e) => {
     if (e.target.id === "mb-person-drawer") closeDrawer();
   });
+  const aboutCancel = document.getElementById("mb-about-sheet-cancel");
+  const aboutSave = document.getElementById("mb-about-sheet-save");
+  const aboutSheet = document.getElementById("mb-about-sheet");
+  if (aboutCancel) aboutCancel.addEventListener("click", closeAboutSheet);
+  if (aboutSave) aboutSave.addEventListener("click", () => saveAboutSheet());
+  if (aboutSheet) {
+    aboutSheet.addEventListener("click", (e) => {
+      if (e.target.id === "mb-about-sheet") closeAboutSheet();
+    });
+  }
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDrawer();
+    if (e.key !== "Escape") return;
+    const sheet = document.getElementById("mb-about-sheet");
+    if (sheet && !sheet.hidden) {
+      closeAboutSheet();
+      return;
+    }
+    closeDrawer();
   });
 
   document.querySelectorAll(".mb-person-mode").forEach((btn) => {

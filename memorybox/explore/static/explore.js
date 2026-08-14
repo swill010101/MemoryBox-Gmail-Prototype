@@ -1289,17 +1289,14 @@
       (PERSON && PERSON.personId) ||
       "";
     const name = String(chip.label || "").trim();
+    // Exact full-name match only. First-token startsWith painted Tom Landzaat
+    // onto a "Tom Will" chip when Landzaat appeared first in picker-options.
     if (!id && name && peopleOptions && peopleOptions.length) {
       const nameL = name.toLowerCase();
-      const hit = peopleOptions.find((p) => {
-        const lab = String(p.label || "").toLowerCase();
-        return (
-          lab === nameL ||
-          lab.startsWith(nameL) ||
-          nameL.startsWith(lab.split(/\s+/)[0])
-        );
-      });
-      if (hit) id = hit.id;
+      const hit = peopleOptions.find(
+        (p) => String(p.label || "").toLowerCase() === nameL
+      );
+      if (hit) id = hit.personId || hit.id;
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
       window.mbShell.setActivePerson({ id: id || "", name: name });
@@ -1904,7 +1901,7 @@
     return visibleItems().map((x) => x.id);
   }
 
-  function openModal(id) {
+  function openModal(id, opts) {
     const item = rawItems.find((x) => x.id === id);
     if (!item) return;
     hideQuickPreview();
@@ -1913,7 +1910,11 @@
     if (!state.modal.snapshot) state.modal.snapshot = snapshotExplore();
     state.modal.openId = id;
     state.modal.pendingCorrection = null;
-    if (!state.modal.railTab) state.modal.railTab = "people";
+    if (opts && opts.preferLearnRail) {
+      state.modal.railTab = "learn";
+    } else if (!state.modal.railTab) {
+      state.modal.railTab = "people";
+    }
     state.modal.transcriptOn = false;
     state.modal.zoom = 1;
     state.modal.selectedFaceIndex = 0;
@@ -1921,6 +1922,17 @@
     document.getElementById("mb-modal").hidden = false;
     document.getElementById("mb-modal-close").focus();
   }
+
+  /** Person Explorer Learn: open first gallery photo/video on the Learn rail. */
+  window.mbExploreOpenLearnFromGallery = function () {
+    const vis = typeof visibleItems === "function" ? visibleItems() : [];
+    const prefer = (t) =>
+      vis.find((x) => String(x.type || "").toLowerCase() === t);
+    const item = prefer("photo") || prefer("video") || vis[0];
+    if (!item) return false;
+    openModal(item.id, { preferLearnRail: true });
+    return true;
+  };
 
   function renderViewer(item) {
     const ids = visibleIds();

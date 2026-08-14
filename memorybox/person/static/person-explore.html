@@ -136,8 +136,12 @@
       </div>
       <div class="mb-person-panel" id="mb-person-learn">
         <h2>Learn about <span data-person-first>them</span></h2>
+        <div class="mb-person-learn-faces" id="mb-person-learn-faces"></div>
         <ul class="mb-person-learn-stats" id="mb-person-learn-stats"></ul>
-        <button type="button" class="mb-person-panel-link" id="mb-person-learn-explore">Explore</button>
+        <div class="mb-person-learn-actions">
+          <button type="button" class="mb-person-panel-link" id="mb-person-learn-identify">Identify a face</button>
+          <a class="mb-person-panel-link" id="mb-person-learn-review" href="/review/ui">Open Review</a>
+        </div>
       </div>
     </section>
   </div>
@@ -178,6 +182,19 @@
       <footer class="mb-rel-foot">
         <button type="button" class="mb-rel-close-btn" id="mb-rel-close-btn">Close</button>
       </footer>
+    </div>
+  </div>
+
+  <!-- About field editor (Full name / Born on / Lives in) -->
+  <div class="mb-rel-sheet" id="mb-about-sheet" hidden>
+    <div class="mb-rel-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mb-about-sheet-title">
+      <h3 id="mb-about-sheet-title">Edit details</h3>
+      <div id="mb-about-sheet-body"></div>
+      <p class="mb-rel-sheet-err" id="mb-about-sheet-err" hidden></p>
+      <div class="mb-rel-sheet-actions">
+        <button type="button" class="mb-rel-sheet-cancel" id="mb-about-sheet-cancel">Cancel</button>
+        <button type="button" class="mb-rel-sheet-save" id="mb-about-sheet-save">Save</button>
+      </div>
     </div>
   </div>
 

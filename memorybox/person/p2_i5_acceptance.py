@@ -86,10 +86,20 @@ def run_p2_i5_acceptance() -> dict:
         and "renderAboutDrawer" in person_js
         and "renderFamilyDrawer" in person_js
         and "renderLearnDrawer" in person_js
-        and "/review/ui" in person_js,
+        and "/review/ui" in person_js
+        and "Born on" in person_js
+        and "Lives in" in person_js
+        and "relationToOwner" in person_js
+        and 'row("Parent of"' not in person_js
+        and 'row("Spouse of"' not in person_js
+        and "Identify a face" in person_html
+        and "mbExploreOpenLearnFromGallery" in explore_js
+        and "preferLearnRail" in explore_js
+        and "mb-person-learn-identify" in person_html
+        and "mb-about-sheet" in person_html,
         checks,
         problems,
-        "About/Family/Learn drawers + Review deep link",
+        "About compact (name/born/relationship/lives) + Learn Identify/Review",
     )
     _check(
         "i5_person_drawer_shell",
@@ -160,7 +170,7 @@ def run_p2_i5_acceptance() -> dict:
         ).read_text(encoding="utf-8")
         and "applyPortraitUrl" in person_js
         and "has-photo" in person_js
-        and "familyHeadline" in person_js
+        and "relationToOwner" in person_js
         and "applyPersonPortrait" in person_js
         and "PERSON_MODE" in explore_js,
         checks,
@@ -202,6 +212,36 @@ def run_p2_i5_acceptance() -> dict:
         checks,
         problems,
         "face-evidence thumbs use Immich asset UUID, not /data/thumbs path",
+    )
+
+    from memorybox.person import portrait_immich_ids_for_name
+    from memorybox.providers.photo.dto import PhotoPersonRef
+    from memorybox.providers.photo.fake import FakePhotoProvider
+
+    land = PhotoPersonRef(
+        provider_key="fake_photo",
+        external_id="11111111-1111-4111-8111-111111111111",
+        display_name="Tom Landzaat",
+    )
+    will = PhotoPersonRef(
+        provider_key="fake_photo",
+        external_id="22222222-2222-4222-8222-222222222222",
+        display_name="Tom Will",
+    )
+    both = FakePhotoProvider(extra_people=[land, will])
+    land_only = FakePhotoProvider(extra_people=[land])
+    _check(
+        "i5_portrait_exact_name_not_other_tom",
+        portrait_immich_ids_for_name(both, "Tom Will", [land.external_id])
+        == [will.external_id]
+        and portrait_immich_ids_for_name(land_only, "Tom Will", [land.external_id])
+        == []
+        and "_ask_named_photo_people(provider, name)" not in person_init
+        and "elif len(refs) == 1" not in person_init
+        and "nameL.startsWith(lab.split" not in explore_js,
+        checks,
+        problems,
+        "portrait + people-bar never attach another Tom via first-token match",
     )
 
     overall = not problems and all(c.get("ok") for c in checks.values())
