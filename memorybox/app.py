@@ -120,6 +120,7 @@ GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "gui
 EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
 STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
 SETTINGS_STATIC = Path(__file__).resolve().parent / "settings" / "static" / "settings.html"
+SETTINGS_STATIC_DIR = Path(__file__).resolve().parent / "settings" / "static"
 SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
 EXPLORE_STATIC = Path(__file__).resolve().parent / "explore" / "static" / "explore.html"
 EXPLORE_STATIC_DIR = Path(__file__).resolve().parent / "explore" / "static"
@@ -144,6 +145,12 @@ if PERSON_STATIC_DIR.is_dir():
         "/static/person",
         StaticFiles(directory=str(PERSON_STATIC_DIR)),
         name="person_static",
+    )
+if SETTINGS_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/settings",
+        StaticFiles(directory=str(SETTINGS_STATIC_DIR)),
+        name="settings_static",
     )
 
 
@@ -176,6 +183,7 @@ def get_capture_stt():
 class AskRequest(BaseModel):
     ask: str = Field(..., min_length=1)
     session_id: str | None = None
+    person_id: str | None = None
 
 
 class ContextChangeRequest(BaseModel):
@@ -457,6 +465,9 @@ def explore_demo(demo_id: str) -> dict[str, Any]:
 def explore_find(
     q: str = Query("", description="Natural-language Ask / find"),
     session_id: str | None = Query(None),
+    person_id: str | None = Query(
+        None, description="Locked MB Person id (Person Explorer)"
+    ),
 ) -> dict[str, Any]:
     """Live Mixed-Media Find → Explore item contract (I4 real path)."""
     from memorybox.explore.find import build_explore_find
@@ -465,6 +476,7 @@ def explore_find(
         return build_explore_find(
             ask_text=q,
             session_id=session_id,
+            person_id=person_id,
             orchestrator=get_orchestrator(),
         )
     except Exception as exc:  # noqa: BLE001
@@ -480,6 +492,7 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
         return build_explore_find(
             ask_text=body.ask,
             session_id=body.session_id,
+            person_id=body.person_id,
             orchestrator=get_orchestrator(),
         )
     except Exception as exc:  # noqa: BLE001
@@ -512,6 +525,50 @@ def explore_photo_people(external_id: str) -> dict[str, Any]:
         if name and name not in people:
             people.append(name)
     return {"ok": True, "external_id": eid, "people": people, "faces": faces}
+
+
+class ExploreTeachFaceBody(BaseModel):
+    person_id: str | None = None
+    person_key: str | None = None
+    display_name: str | None = None
+    provider_key: str = "immich"
+    asset_external_id: str | None = None
+    video_external_id: str | None = None
+    start_sec: float = 0.0
+    face_external_id: str | None = None
+    person_external_id: str | None = None
+    face_box: dict[str, Any] | None = None
+    media_type: str = "video"
+    action: str = "assign"
+    kick_recognition: bool | None = None
+
+
+@app.post("/explore/api/teach-face")
+def explore_teach_face(body: ExploreTeachFaceBody) -> dict[str, Any]:
+    """Select a face in the Shared Evidence Viewer and teach it to an MB Person."""
+    from memorybox.explore.teach import teach_face_from_viewer
+    from memorybox.person import PersonServiceError
+
+    try:
+        return teach_face_from_viewer(
+            person_id=body.person_id,
+            person_key=body.person_key,
+            display_name=body.display_name,
+            provider_key=body.provider_key,
+            asset_external_id=body.asset_external_id,
+            video_external_id=body.video_external_id,
+            start_sec=body.start_sec,
+            face_external_id=body.face_external_id,
+            person_external_id=body.person_external_id,
+            face_box=body.face_box,
+            media_type=body.media_type,
+            action=body.action,
+            kick_recognition=body.kick_recognition,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/family-night/ui")
@@ -712,8 +769,26 @@ def status_ui() -> HTMLResponse:
 
 @app.get("/settings/ui")
 def settings_ui() -> HTMLResponse:
-    """Settings stub entry (owner/system) — mature Settings deferred to I14."""
+    """Thin owner Settings (mature P2-SET-01 / I13 still later)."""
     return _html_ui(SETTINGS_STATIC, surface="settings", missing="Settings UI missing")
+
+
+@app.get("/settings/video-media-root")
+def settings_get_video_media_root() -> dict[str, Any]:
+    from memorybox.settings.video_root import describe_video_media_root
+
+    return describe_video_media_root()
+
+
+class VideoMediaRootBody(BaseModel):
+    path: str = ""
+
+
+@app.post("/settings/video-media-root")
+def settings_set_video_media_root(body: VideoMediaRootBody) -> dict[str, Any]:
+    from memorybox.settings.video_root import set_video_media_root
+
+    return set_video_media_root(body.path)
 
 
 @app.get("/status/summary")
@@ -795,18 +870,99 @@ def library_card_detail(
 
 @app.get("/library/media/photo/{external_id}")
 def library_photo_thumb(external_id: str) -> Response:
-    """Authenticated Immich (or fake) preview for Library cards — browser-safe."""
+    """Authenticated Immich (or fake) preview for Library cards — browser-safe.
+
+    Face-evidence sometimes stores an Immich *person* UUID where an asset id
+    is expected; if asset preview 404s, try the person thumbnail.
+    """
+    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
     photo = build_photo()
+    aid = photo_proxy_asset_id(external_id) or (external_id or "").strip()
+    preview = None
     try:
-        preview = photo.fetch_preview(external_id)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=404, detail=f"photo thumb unavailable: {exc}"
-        ) from exc
+        preview = photo.fetch_preview(aid)
+    except Exception:
+        preview = None
+    if preview is None or not getattr(preview, "data", None):
+        fetch_p = getattr(photo, "fetch_person_thumbnail", None)
+        if callable(fetch_p):
+            try:
+                preview = fetch_p(aid)
+            except Exception:
+                preview = None
+        if preview is None or not getattr(preview, "data", None):
+            client = getattr(photo, "_client", None)
+            fetch_c = getattr(client, "fetch_person_thumbnail_bytes", None)
+            if callable(fetch_c):
+                try:
+                    got = fetch_c(aid)
+                except Exception:
+                    got = None
+                if got and got[0]:
+                    from memorybox.providers.photo.dto import PhotoBytesDto
+
+                    preview = PhotoBytesDto(
+                        provider_key=getattr(photo, "provider_key", "immich"),
+                        external_id=aid,
+                        content_type=got[1] or "image/jpeg",
+                        data=got[0],
+                    )
+    if preview is None or not getattr(preview, "data", None):
+        raise HTTPException(status_code=404, detail="photo thumb unavailable")
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",
         headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+def _http_range_slice(data: bytes, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
+    from memorybox.providers.photo.http_range import apply_http_range
+
+    return apply_http_range(data, range_header)
+
+
+@app.get("/library/media/immich-video/{external_id}")
+def library_immich_video(external_id: str, request: Request) -> Response:
+    """Immich original / playback proxy for Explore Video cards (library videos)."""
+    photo = build_photo()
+    range_header = request.headers.get("range")
+    fetch_range = getattr(photo, "fetch_original_range", None)
+    status = 200
+    extra: dict[str, str] = {}
+    if callable(fetch_range):
+        try:
+            status, data, ctype, extra = fetch_range(
+                external_id, range_header=range_header
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=f"immich video unavailable: {exc}"
+            ) from exc
+    else:
+        fetch = getattr(photo, "fetch_original", None)
+        if not callable(fetch):
+            raise HTTPException(status_code=404, detail="video original not supported")
+        try:
+            original = fetch(external_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=f"immich video unavailable: {exc}"
+            ) from exc
+        data = original.data
+        ctype = original.content_type or "video/mp4"
+        status, data, extra = _http_range_slice(data, range_header)
+    ctype = ctype or "video/mp4"
+    if str(ctype).startswith("image/"):
+        ctype = "video/mp4"
+    headers = {"Cache-Control": "private, max-age=120", "Accept-Ranges": "bytes"}
+    headers.update(extra or {})
+    return Response(
+        content=data,
+        status_code=int(status or 200),
+        media_type=ctype,
+        headers=headers,
     )
 
 
@@ -1375,6 +1531,7 @@ def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, 
 @app.get("/people/{person_id}/face-evidence")
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.providers.photo.asset_ref import photo_proxy_url
 
     evidence = list_face_evidence(person_id)
     enriched: list[dict[str, Any]] = []
@@ -1394,8 +1551,10 @@ def people_face_evidence(person_id: str) -> dict[str, Any]:
             or (meta.get("assetId") if isinstance(meta, dict) else None)
         )
         if asset_id and not item.get("thumb_url"):
-            item["thumb_url"] = f"/library/media/photo/{asset_id}"
-            item["media_url"] = item["thumb_url"]
+            thumb = photo_proxy_url(asset_id)
+            if thumb:
+                item["thumb_url"] = thumb
+                item["media_url"] = thumb
         enriched.append(item)
     return {"ok": True, "person_id": person_id, "evidence": enriched}
 
@@ -1644,7 +1803,10 @@ def people_portrait(person_id: str) -> Response:
 
     if not get_person(person_id):
         raise HTTPException(status_code=404, detail="person not found")
-    got = fetch_person_portrait_bytes(person_id)
+    try:
+        got = fetch_person_portrait_bytes(person_id)
+    except Exception:  # noqa: BLE001 — letter initial is better than a 500
+        got = None
     if not got:
         raise HTTPException(status_code=404, detail="portrait unavailable")
     data, ctype = got

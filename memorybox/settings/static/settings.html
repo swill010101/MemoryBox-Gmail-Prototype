@@ -4,22 +4,56 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox Settings</title>
+  <link rel="stylesheet" href="/static/settings/settings.css" />
 </head>
 <body class="mb-shell">
   <main>
     <div class="mb-panel">
       <h1>Settings</h1>
       <p class="mb-invite-lede">
-        Owner / system destination. Mature Settings arrives in a later increment.
-        This entry exists so the product shell can reach Settings without mixing it
-        into primary family navigation.
+        Owner / system destination. This is a thin Settings surface for knobs
+        we have already decided — not the Mature Settings increment
+        (providers, processing, recognition, archive configuration).
       </p>
       <p class="mb-recent">
         For archive coverage and provider honesty, open
         <a href="/status/ui">Archive Health</a>.
-        For exploration, return to <a href="/ask/ui">Ask</a>.
+        For exploration, return to <a href="/ask/ui">Ask</a>
+        or <a href="/explore/ui">Explore</a>.
       </p>
     </div>
+
+    <div class="mb-panel mb-set-card">
+      <h2>Home Videos library path</h2>
+      <p class="mb-set-copy">
+        Physical files the Video Intelligence worker scans (HVRT moments).
+        Immich library videos are collected separately from Immich — they do
+        not use this path. Saved Settings override
+        <code>MEMORYBOX_VIDEO_MEDIA_ROOT</code> until you clear the field.
+      </p>
+      <form id="mb-set-video-root-form" class="mb-set-form">
+        <label class="mb-set-field" for="mb-set-video-root">
+          Folder or UNC path
+          <input
+            id="mb-set-video-root"
+            name="video_media_root"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="\\media-server\photos\home videos"
+          />
+        </label>
+        <p class="mb-set-meta" id="mb-set-video-root-meta">Loading…</p>
+        <div class="mb-set-actions">
+          <button type="submit" class="mb-set-save">Save path</button>
+          <button type="button" class="mb-set-clear" id="mb-set-video-root-clear">
+            Clear (use env default)
+          </button>
+        </div>
+        <p class="mb-set-status" id="mb-set-video-root-status" role="status"></p>
+      </form>
+    </div>
   </main>
+  <script src="/static/settings/settings.js"></script>
 </body>
 </html>

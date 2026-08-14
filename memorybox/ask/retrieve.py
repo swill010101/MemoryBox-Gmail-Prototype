@@ -55,6 +55,8 @@ class PhotoHit:
     exif: dict[str, str] | None = None
     # Immich-named faces on the asset (+ optional boxes)
     faces: list[dict[str, Any]] | None = None
+    # IMAGE | VIDEO — Immich library videos ride this channel then map to Explore video
+    asset_kind: str = "IMAGE"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -419,6 +421,7 @@ def search_photos(
     from memorybox.person import (
         AUTHORITY_TRUSTED_PROVIDER,
         AmbiguousIdentityError,
+        ask_immich_person_ids,
         find_ask_person_by_name,
         find_confirmed_person_by_name,
         is_negative,
@@ -442,7 +445,8 @@ def search_photos(
             windows = ((plan.time_start, plan.time_end),)
         places = [str(p).lower() for p in (plan.place_names or ()) if p]
         if not windows and not places:
-            return hits
+            scoped = _scope_asset_kind(hits)
+            return scoped
         out: list[PhotoHit] = []
         for h in hits:
             if windows and not date_in_windows(h.taken_at, windows):
@@ -470,22 +474,48 @@ def search_photos(
         if places:
             status["place_filter"] = list(plan.place_names)
             status["after_place_filter"] = len(out)
-        return out
+        return _scope_asset_kind(out)
+
+    def _scope_asset_kind(hits: list[PhotoHit]) -> list[PhotoHit]:
+        scope = str(getattr(plan, "visual_scope", "") or "").lower()
+        want_still = bool(getattr(plan, "want_still", False) or getattr(plan, "want_photo", False))
+        want_video = bool(getattr(plan, "want_video", False))
+        if scope == "still_only" or (want_still and not want_video):
+            return [h for h in hits if str(h.asset_kind or "IMAGE").upper() != "VIDEO"]
+        if scope == "video_only" or (want_video and not want_still):
+            return [h for h in hits if str(h.asset_kind or "").upper() == "VIDEO"]
+        return hits
 
     def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
         filtered = _filter_photo_hits(hits)
         return filtered[:limit], status
 
-    if not plan.want_still and not plan.want_photo:
+    # Immich VIDEO lives on the photo provider. Video-only asks must still search here.
+    if not plan.want_still and not plan.want_photo and not getattr(plan, "want_video", False):
         status["ok"] = True
         status["detail"] = "not_requested"
         return [], status
     try:
         health = photo.health()
         if not health.ok:
-            status["unavailable"] = True
-            status["detail"] = health.detail or "photo provider unhealthy"
-            return [], status
+            detail = str(health.detail or "")
+            soft = any(
+                n in detail.lower()
+                for n in (
+                    "remote end closed",
+                    "connection reset",
+                    "connection refused",
+                    "timed out",
+                    "timeout",
+                    "incomplete read",
+                    "broken pipe",
+                )
+            )
+            if not soft:
+                status["unavailable"] = True
+                status["detail"] = health.detail or "photo provider unhealthy"
+                return [], status
+            status["health_soft_fail"] = detail
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]
@@ -512,9 +542,10 @@ def search_photos(
                 continue
             resolved_by_id.add(person.id)
             name = person.display_name or pid
-            ids: list[str] = []
-            for pk in lookup_keys:
-                ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            ids: list[str] = list(ask_immich_person_ids(person.id, photo=photo))
+            if not ids:
+                for pk in lookup_keys:
+                    ids.extend(list_provider_external_ids_for_person(person.id, pk))
             ids = list(dict.fromkeys(ids))
             if ids:
                 mapped_names.append(name)
@@ -558,9 +589,10 @@ def search_photos(
             if person:
                 if person.id in resolved_by_id:
                     continue
-                ids: list[str] = []
-                for pk in lookup_keys:
-                    ids.extend(list_provider_external_ids_for_person(person.id, pk))
+                ids: list[str] = list(ask_immich_person_ids(person.id, photo=photo))
+                if not ids:
+                    for pk in lookup_keys:
+                        ids.extend(list_provider_external_ids_for_person(person.id, pk))
                 ids = list(dict.fromkeys(ids))
                 if ids:
                     mapped_names.append(name)
@@ -658,13 +690,13 @@ def search_photos(
             rows: list[dict[str, Any]] = []
             for face in getattr(a, "faces", ()) or ():
                 name = (getattr(face, "display_name", None) or "").strip()
-                if not name:
+                box = getattr(face, "face_box", None)
+                if not name and not box:
                     continue
                 row: dict[str, Any] = {
-                    "name": name,
+                    "name": name or "Unknown",
                     "person_external_id": getattr(face, "external_person_id", None),
                 }
-                box = getattr(face, "face_box", None)
                 if box and len(box) == 4:
                     row["face_box"] = {
                         "x": float(box[0]),
@@ -736,6 +768,7 @@ def search_photos(
                 original_filename=getattr(a, "original_filename", None),
                 exif=dict(getattr(a, "exif", ()) or ()) or None,
                 faces=_faces_for_hit(a),
+                asset_kind=str(getattr(a, "asset_kind", None) or "IMAGE").upper(),
             )
 
         if mapped_ext:
@@ -835,6 +868,9 @@ def search_photos(
             n = meta.get("name")
             if n and n not in name_queries:
                 name_queries.append(n)
+        for name in unmapped_resolvable_names:
+            if name and name not in name_queries:
+                name_queries.append(name)
         for name in name_queries:
             confirmed = find_confirmed_person_by_name(name)
             from memorybox.person import _ask_named_photo_people
@@ -881,7 +917,8 @@ def search_photos(
         person_ext = list(dict.fromkeys(person_ext))
         if not person_ext:
             status["ok"] = True
-            if plan.person_names and not hits:
+            locked = bool(getattr(plan, "person_ids", None) or ())
+            if plan.person_names and not hits and not locked:
                 who = list(plan.person_names)[0]
                 status["identity_mode"] = "unknown_person"
                 status["detail"] = f"unknown={list(plan.person_names)}"

@@ -940,10 +940,27 @@ body {
   color: #fff;
   cursor: pointer;
 }
-.mb-teach-status {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--mb-muted);
+.mb-teach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.mb-teach-actions .mb-teach-primary {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #fff;
+}
+.mb-teach-actions .mb-teach-danger {
+  border-color: #7f1d1d;
+  color: #fecaca;
+}
+.mb-box-draw {
+  position: absolute;
+  border: 2px dashed #fbbf24;
+  background: rgba(251, 191, 36, 0.18);
+  pointer-events: none;
+  z-index: 5;
 }
 .mb-card-undated-badge {
   position: absolute;
@@ -1339,11 +1356,50 @@ body {
   max-height: none;
 }
 
-.mb-ev-video-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  height: 100%;
+.mb-ev-video-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  background: #020617;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.mb-ev-video-player {
+  width: 100%;
+  max-height: min(70vh, 720px);
+  background: #020617;
+  border-radius: 10px;
+  display: block;
+}
+
+.mb-ev-face-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mb-ev-face-layer .mb-face-box {
+  pointer-events: auto;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.mb-face-box.is-selected {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.55);
+}
+
+.mb-qp-media video,
+.mb-qp-video {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  display: block;
+  background: #020617;
 }
 
 .mb-ev-video-frame {
@@ -1527,4 +1583,21 @@ body {
   font-size: 0.82rem;
   color: var(--mb-muted);
   margin: 0 0 0.5rem;
+}
+
+.mb-ev-video-shell .mb-ev-video-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  line-height: 0;
+  background: #020617;
+}
+
+.mb-face-box {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
 }

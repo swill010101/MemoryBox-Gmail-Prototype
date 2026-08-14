@@ -166,6 +166,31 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "w": float(face_box["w"]),
                 "h": float(face_box["h"]),
             }
+        kind = str(p.get("asset_kind") or "IMAGE").upper()
+        if kind in {"AUDIO", "OTHER"}:
+            continue
+        if kind == "VIDEO":
+            extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["stream_url"] = f"/library/media/immich-video/{eid}"
+            extra["video_external_id"] = eid
+            extra["video_provider_key"] = p.get("provider_key") or "immich"
+            extra["asset_kind"] = "VIDEO"
+            extra["clip_level"] = True
+            extra["paused_frame"] = False
+            extra["teachable"] = True
+            add(
+                _item_base(
+                    id=f"video:{p.get('provider_key') or 'immich'}:{eid}",
+                    type_="video",
+                    title=str(title)[:80],
+                    date=taken,
+                    undated=not taken,
+                    preview=str(p.get("attribution") or name or "Video"),
+                    detail=str(p.get("attribution") or "Library video"),
+                    **extra,
+                )
+            )
+            continue
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
@@ -218,6 +243,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             end_sec=t1,
             duration_sec=(float(t1) - t0) if t1 is not None else None,
             play_url=play,
+            stream_url=f"/review/media/{vid}",
             media_url=poster,
             thumb_url=poster,
             teachable=True,
@@ -407,8 +433,18 @@ def curator_from_items(
             photo_health = {}
         if not isinstance(photo_search, dict):
             photo_search = {}
+        searched = bool(photo_search) and photo_search.get("detail") not in (
+            None,
+            "",
+            "not_requested",
+        )
+        # A transient Immich RST on /server/ping must not hide a successful
+        # person-id search (Person Explorer Show Diane / Tom / Sue).
         if photo_search.get("unavailable") or (
-            photo_health and photo_health.get("ok") is False
+            not searched
+            and not photo_search.get("health_soft_fail")
+            and photo_health
+            and photo_health.get("ok") is False
         ):
             detail = str(
                 photo_search.get("detail") or photo_health.get("detail") or ""
@@ -440,9 +476,13 @@ def build_explore_find(
     *,
     ask_text: str,
     session_id: str | None = None,
+    person_id: str | None = None,
     orchestrator: Any | None = None,
 ) -> dict[str, Any]:
-    """Run Ask and return an Explore-ready payload (same shape as demo_payload)."""
+    """Run Ask and return an Explore-ready payload (same shape as demo_payload).
+
+    person_id locks retrieve to that MB Person's provider mappings (Person Explorer).
+    """
     text = (ask_text or "").strip()
     if not text:
         return {
@@ -465,7 +505,7 @@ def build_explore_find(
 
         orchestrator = AskOrchestrator(store=default_context_store)
 
-    result_obj = orchestrator.ask(text, session_id=session_id)
+    result_obj = orchestrator.ask(text, session_id=session_id, person_id=person_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     items = items_from_ask_result(result)
     title, summary = curator_from_items(

@@ -18,6 +18,76 @@ from memorybox.providers.llm.protocol import LlmProvider
 from memorybox.providers.photo.protocol import PhotoProvider
 from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
+_PROFILE_SHORT_CIRCUIT_INTENTS = frozenset(
+    {
+        "who",
+        "birth",
+        "anniversary",
+        "kinship_list",
+        "how_related",
+        "kinship_in_photo",
+    }
+)
+
+
+def _apply_locked_person_to_plan(
+    plan: QueryPlan, person_id: str | None
+) -> QueryPlan:
+    """Person Explorer: retrieve via MB person_id mappings, not name-string luck.
+
+    "Show Tom Will" without a locked id falls through to Immich exact-name lookup.
+    If Immich named that cluster something else (or the Ask session was stale),
+    photos come back empty and only token-matched stories remain (~5 vs ~3K).
+    """
+    from dataclasses import replace
+
+    pid = (person_id or "").strip()
+    if not pid:
+        return plan
+    try:
+        from memorybox.person import get_person
+
+        view = get_person(pid)
+    except Exception:  # noqa: BLE001
+        view = None
+    if not view or getattr(view, "status", "") == "merged_away":
+        return plan
+
+    display = (getattr(view, "display_name", None) or "").strip()
+    names = list(plan.person_names or ())
+    if display:
+        names = [display] + [n for n in names if n.lower() != display.lower()]
+    ids = [pid] + [i for i in (plan.person_ids or ()) if str(i) != pid]
+    notes = list(plan.notes or ()) + ["explore_locked_person_id"]
+    profile = getattr(plan, "profile_intent", None)
+    skip_visual = profile in _PROFILE_SHORT_CIRCUIT_INTENTS
+    kw: dict[str, Any] = {
+        "person_ids": tuple(ids),
+        "person_names": tuple(names),
+        "notes": tuple(notes),
+    }
+    if (
+        not skip_visual
+        and not plan.want_visual
+        and not plan.requires_clarification
+    ):
+        scope = plan.visual_scope if plan.visual_scope not in ("none", "", None) else "broad"
+        kw.update(
+            want_visual=True,
+            want_still=True,
+            want_video=True,
+            want_photo=True,
+            visual_scope=scope,
+            want_story=True,
+            notes=tuple(notes + ["explore_locked_person_forces_broad_visual"]),
+        )
+    elif not skip_visual and plan.want_visual and not plan.want_story:
+        kw.update(
+            want_story=True,
+            notes=tuple(notes + ["explore_locked_person_want_story"]),
+        )
+    return replace(plan, **kw)
+
 
 def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
     """Fill birthday/anniversary temporal windows from MB People when recorded.
@@ -771,7 +841,13 @@ class AskOrchestrator:
         self.llm = llm if llm is not None else build_llm()
         self.video = video if video is not None else build_video()
 
-    def ask(self, text: str, *, session_id: str | None = None) -> AskResult:
+    def ask(
+        self,
+        text: str,
+        *,
+        session_id: str | None = None,
+        person_id: str | None = None,
+    ) -> AskResult:
         ctx = self.store.get_or_create(session_id)
         plan = plan_ask(text, ctx)
 
@@ -896,6 +972,10 @@ class AskOrchestrator:
                     want_visual=False,
                     visual_scope="none",
                 )
+
+        # Person Explorer passes the locked MB person so retrieve uses mapped
+        # Immich ids even when the display name does not exactly match Immich.
+        plan = _apply_locked_person_to_plan(plan, person_id)
 
         # Birthday / anniversary Explore windows from MB People facts when present.
         plan = _apply_person_life_event_windows(plan)
@@ -1106,7 +1186,7 @@ class AskOrchestrator:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
-            if plan.want_still or plan.want_photo:
+            if plan.want_still or plan.want_photo or plan.want_video:
                 photos, photo_status = R.search_photos(plan, self.photo)
 
             if getattr(plan, "want_story", False):

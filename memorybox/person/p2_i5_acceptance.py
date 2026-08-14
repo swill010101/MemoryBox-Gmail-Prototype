@@ -69,6 +69,27 @@ def run_p2_i5_acceptance() -> dict:
         problems,
         "explore.js person mode hooks",
     )
+    orch_py = (
+        Path(__file__).resolve().parents[1] / "ask" / "orchestrator.py"
+    ).read_text(encoding="utf-8")
+    find_py = (
+        Path(__file__).resolve().parents[1] / "explore" / "find.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_person_find_locks_person_id",
+        "isLockedPersonLibraryAsk" in explore_js
+        and "freshSession" in explore_js
+        and "&person_id=" in explore_js
+        and "PERSON_MODE && PERSON.personId" in explore_js
+        and "explore_locked_person_id" in orch_py
+        and "_apply_locked_person_to_plan" in orch_py
+        and "person_id: str | None = None" in find_py
+        and "person_id=person_id" in find_py
+        and 'person_id: str | None = Query(' in app_py,
+        checks,
+        problems,
+        "Person Explorer find passes person_id; boot skips stale Ask session",
+    )
     _check(
         "i5_people_ui_route",
         "PERSON_EXPLORE_STATIC" in app_py
@@ -86,10 +107,20 @@ def run_p2_i5_acceptance() -> dict:
         and "renderAboutDrawer" in person_js
         and "renderFamilyDrawer" in person_js
         and "renderLearnDrawer" in person_js
-        and "/review/ui" in person_js,
+        and "/review/ui" in person_js
+        and "Born on" in person_js
+        and "Lives in" in person_js
+        and "relationToOwner" in person_js
+        and 'row("Parent of"' not in person_js
+        and 'row("Spouse of"' not in person_js
+        and "Identify a face" in person_html
+        and "mbExploreOpenLearnFromGallery" in explore_js
+        and "preferLearnRail" in explore_js
+        and "mb-person-learn-identify" in person_html
+        and "mb-about-sheet" in person_html,
         checks,
         problems,
-        "About/Family/Learn drawers + Review deep link",
+        "About compact (name/born/relationship/lives) + Learn Identify/Review",
     )
     _check(
         "i5_person_drawer_shell",
@@ -160,10 +191,97 @@ def run_p2_i5_acceptance() -> dict:
         ).read_text(encoding="utf-8")
         and "applyPortraitUrl" in person_js
         and "has-photo" in person_js
-        and "portraitUrl" in explore_js,
+        and "relationToOwner" in person_js
+        and "applyPersonPortrait" in person_js
+        and "PERSON_MODE" in explore_js,
         checks,
         problems,
-        "Immich preferred portrait endpoint + header/curator apply",
+        "Immich preferred portrait endpoint + header/family apply (not curator duplicate)",
+    )
+    person_init = (
+        Path(__file__).resolve().parent / "__init__.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_portrait_build_photo_import",
+        "from memorybox.providers.photo import build_photo" not in person_init
+        and "from memorybox.ask.deps import build_photo" in person_init
+        and "except Exception" in app_py
+        and "portrait unavailable" in app_py,
+        checks,
+        problems,
+        "portrait uses ask.deps.build_photo; endpoint must not 500",
+    )
+    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id, photo_proxy_url
+
+    thumb_path = (
+        "/data/thumbs/261e97ac-f93e-43b3-9b07-61782f14295f/02/2d/"
+        "022df03e-b045-4108-aeff-82808c817cbd.jpeg"
+    )
+    _check(
+        "i5_face_evidence_thumb_not_disk_path",
+        photo_proxy_asset_id(thumb_path)
+        == "022df03e-b045-4108-aeff-82808c817cbd"
+        and photo_proxy_url(thumb_path)
+        == "/library/media/photo/022df03e-b045-4108-aeff-82808c817cbd"
+        and photo_proxy_url("ec875510-6ad2-41e6-8e57-ad8ef09c8a64")
+        == "/library/media/photo/ec875510-6ad2-41e6-8e57-ad8ef09c8a64"
+        and photo_proxy_asset_id("") is None
+        and "photoProxyAssetId" in person_js
+        and "photoProxyUrl" in person_js
+        and "/library/media/photo/\" + asset" not in person_js
+        and "photo_proxy_url" in app_py,
+        checks,
+        problems,
+        "face-evidence thumbs use Immich asset UUID, not /data/thumbs path",
+    )
+
+    from memorybox.person import portrait_immich_ids_for_name
+    from memorybox.providers.photo.dto import PhotoPersonRef
+    from memorybox.providers.photo.fake import FakePhotoProvider
+
+    land = PhotoPersonRef(
+        provider_key="fake_photo",
+        external_id="11111111-1111-4111-8111-111111111111",
+        display_name="Tom Landzaat",
+    )
+    will = PhotoPersonRef(
+        provider_key="fake_photo",
+        external_id="22222222-2222-4222-8222-222222222222",
+        display_name="Tom Will",
+    )
+    both = FakePhotoProvider(extra_people=[land, will])
+    land_only = FakePhotoProvider(extra_people=[land])
+    _check(
+        "i5_portrait_exact_name_not_other_tom",
+        portrait_immich_ids_for_name(both, "Tom Will", [land.external_id])
+        == [will.external_id]
+        and portrait_immich_ids_for_name(land_only, "Tom Will", [land.external_id])
+        == []
+        and "_ask_named_photo_people(provider, name)" not in person_init
+        and "elif len(refs) == 1" not in person_init
+        and "nameL.startsWith(lab.split" not in explore_js,
+        checks,
+        problems,
+        "portrait + people-bar never attach another Tom via first-token match",
+    )
+    _check(
+        "i5_ask_immich_ids_keep_mapped",
+        "def ask_immich_person_ids" in person_init
+        and "_bare_first_name_photo_people" in person_init
+        and "ask_immich_person_ids" in (
+            Path(__file__).resolve().parents[1] / "ask" / "retrieve.py"
+        ).read_text(encoding="utf-8")
+        and "fetch_person_thumbnail" in (
+            Path(__file__).resolve().parents[1] / "providers" / "photo" / "immich.py"
+        ).read_text(encoding="utf-8")
+        and "try the person thumbnail" in app_py
+        and "do not dump Immich /people" in person_init
+        and "health_soft_fail" in (
+            Path(__file__).resolve().parents[1] / "ask" / "retrieve.py"
+        ).read_text(encoding="utf-8"),
+        checks,
+        problems,
+        "locked person Ask uses mappings/face/bare-first-name; photo proxy falls back to person thumb",
     )
 
     overall = not problems and all(c.get("ok") for c in checks.values())

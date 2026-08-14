@@ -198,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Reserved for FlightSim manual gate (structural+logic harness today)",
     )
+    sub.add_parser(
+        "prove-p2-settings-thin",
+        help="Thin Settings (video media root) + video-source helper acceptance",
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -421,6 +425,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-settings-thin":
+        from memorybox.settings.acceptance import prove_settings_thin
+
+        payload = prove_settings_thin()
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package

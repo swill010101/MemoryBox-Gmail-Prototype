@@ -60,6 +60,8 @@ class PhotoAssetDto:
     exif: tuple[tuple[str, str], ...] = ()
     # Named faces (+ boxes when Immich returned geometry)
     faces: tuple[PhotoFaceRef, ...] = ()
+    # Immich asset type: IMAGE | VIDEO | AUDIO | OTHER
+    asset_kind: str = "IMAGE"
 
 
 @dataclass(frozen=True)

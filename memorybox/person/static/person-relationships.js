@@ -98,7 +98,7 @@
           <button type="button" data-act="history" data-aid="${escapeHtml(aid)}">View History</button>
         </div>`;
     return `<div class="mb-rel-card${derived ? " is-derived" : ""}" data-menu-host="${menuId}">
-      <div class="mb-rel-av" aria-hidden="true">${escapeHtml(initial(name))}</div>
+      <div class="mb-rel-av" data-portrait="${escapeHtml(hit.person_id || "")}" aria-hidden="true">${escapeHtml(initial(name))}</div>
       <div class="mb-rel-card-text">
         <div class="mb-rel-card-name">${escapeHtml(name)}${badge}</div>
         <div class="mb-rel-card-role">${escapeHtml(role)}</div>
@@ -128,6 +128,7 @@
         ext.map((h) => cardHtml(h, { derived: true })).join("") +
         "</div></div>";
       bindCardMenus(body);
+      paintRelPortraits(body);
       return;
     }
 
@@ -150,6 +151,22 @@
     }
     body.innerHTML = html;
     bindCardMenus(body);
+    paintRelPortraits(body);
+  }
+
+  function paintRelPortraits(root) {
+    (root || document).querySelectorAll(".mb-rel-av[data-portrait]").forEach((el) => {
+      const pid = el.getAttribute("data-portrait") || "";
+      if (!pid) return;
+      const url = "/people/" + encodeURIComponent(pid) + "/portrait?v=rel";
+      const img = new Image();
+      img.onload = () => {
+        el.textContent = "";
+        el.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+        el.classList.add("has-photo");
+      };
+      img.src = url;
+    });
   }
 
   function closeMenus() {

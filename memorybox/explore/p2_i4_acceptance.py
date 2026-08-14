@@ -237,6 +237,9 @@ def _prove_harness() -> dict[str, Any]:
             "Does NOT clear query/filters",
             "liveFind",
             "/explore/api/find",
+            "freshSession",
+            "isLockedPersonLibraryAsk",
+            "&person_id=",
             "No dated memories on the Timeline",
             "renderViewer",
             "renderRailPanel",
@@ -253,6 +256,19 @@ def _prove_harness() -> dict[str, Any]:
             "bindPhotoPan",
             "renderRailTools",
             "Camera / EXIF",
+            "mb-ev-video-player",
+            "videoStreamUrl",
+            "mb-qp-video",
+            "/explore/api/teach-face",
+            "Assign",
+            "Reassign",
+            "Unassign",
+            "Add unknown",
+            "Learn from this face",
+            "Identify",
+            "Adjust box",
+            "bindFaceSelect",
+            "is-selected",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -319,6 +335,64 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(mapped)} titles={[m.get('title') for m in mapped]}",
+        )
+        immich_vid = items_from_ask_result(
+            {
+                "photo_hits": [
+                    {
+                        "provider_key": "immich",
+                        "external_id": "vid-immich-1",
+                        "taken_at": "2026-07-29T12:00:00",
+                        "people": ["Sue Will"],
+                        "mb_person_name": "Sue Will",
+                        "asset_kind": "VIDEO",
+                    }
+                ]
+            }
+        )
+        _check(
+            "immich_video_maps_to_explore_video",
+            len(immich_vid) == 1
+            and immich_vid[0]["type"] == "video"
+            and immich_vid[0].get("asset_kind") == "VIDEO"
+            and "/library/media/immich-video/" in str(immich_vid[0].get("play_url") or "")
+            and immich_vid[0].get("undated") is not True,
+            checks,
+            problems,
+            f"immich_vid={immich_vid[0] if immich_vid else None}",
+        )
+        mixed = items_from_ask_result(
+            {
+                "photo_hits": [
+                    {
+                        "provider_key": "immich",
+                        "external_id": "lib-clip",
+                        "taken_at": "2024-01-01T12:00:00",
+                        "asset_kind": "VIDEO",
+                    }
+                ],
+                "video_hits": [
+                    {
+                        "provider_key": "hvrt",
+                        "external_id": "hv-1",
+                        "video_external_id": "hv-1",
+                        "start_sec": 4,
+                        "label": "Home video moment",
+                    }
+                ],
+            }
+        )
+        types = [m.get("type") for m in mixed]
+        _check(
+            "videos_from_immich_and_hvrt",
+            types == ["video", "video"]
+            and any("/library/media/immich-video/" in str(m.get("play_url") or "") for m in mixed)
+            and any(str(m.get("stream_url") or "").startswith("/review/media/") for m in mixed)
+            and any(m.get("paused_frame") is True for m in mixed)
+            and any(m.get("clip_level") is True for m in mixed),
+            checks,
+            problems,
+            f"types={types} ids={[m.get('id') for m in mixed]}",
         )
         peggy = items_from_ask_result(
             {
@@ -583,13 +657,17 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"observance={ow}",
         )
-        # Missing MB People birth_date must not invent windows (orchestrator).
+        # Missing MB People birth_date must not invent windows.
+        # Do not use "Tom Will" here — FlightSim owner often has a recorded
+        # birth_date, which correctly fills windows (e.g. 2024-09-06..09-10).
         from memorybox.ask.orchestrator import _apply_person_life_event_windows
 
-        applied = _apply_person_life_event_windows(bday)
+        ghost = _plan("Zzxqv Nonesuch birthday 2024")
+        applied = _apply_person_life_event_windows(ghost)
         _check(
             "i4_compose_birthday_missing_data_no_invent",
-            applied.requires_clarification is True
+            ghost.life_event_kind == "birthday"
+            and applied.requires_clarification is True
             and not applied.temporal_windows
             and (
                 "birth_date" in (applied.ambiguity_message or "").lower()
@@ -600,6 +678,41 @@ def _prove_harness() -> dict[str, Any]:
             f"clarify={applied.requires_clarification} msg={applied.ambiguity_message} "
             f"windows={applied.temporal_windows}",
         )
+        # When a live person has birth_date, windows must match that month/day.
+        try:
+            from memorybox.person import find_ask_person_by_name
+            from memorybox.profile.facts import get_current_fact
+
+            view = find_ask_person_by_name("Tom Will", lazy_seed=False)
+            fact = get_current_fact(view.id, "birth_date") if view else None
+            rec = str(fact.value_date)[:10] if fact and getattr(fact, "value_date", None) else ""
+        except Exception:  # noqa: BLE001 — harness may have no People DB
+            rec = ""
+        live = _apply_person_life_event_windows(bday)
+        if rec:
+            try:
+                _y, m, d = [int(x) for x in rec.split("-")]
+                expected = observance_window_md(m, d, 2024)
+            except Exception:
+                expected = None
+            _check(
+                "i4_compose_birthday_uses_recorded_date",
+                expected is not None
+                and live.temporal_windows == (expected,)
+                and live.requires_clarification is not True,
+                checks,
+                problems,
+                f"recorded={rec} windows={live.temporal_windows} expected={expected}",
+            )
+        else:
+            _check(
+                "i4_compose_birthday_uses_recorded_date",
+                live.requires_clarification is True and not live.temporal_windows,
+                checks,
+                problems,
+                f"no recorded birth_date; clarify={live.requires_clarification} "
+                f"windows={live.temporal_windows}",
+            )
 
         js = (Path(__file__).resolve().parent / "static" / "explore.js").read_text(
             encoding="utf-8"
@@ -812,6 +925,174 @@ def _prove_harness() -> dict[str, Any]:
         _check("immich_person_full_page", False, checks, problems, str(exc))
 
     try:
+        from http.client import RemoteDisconnected
+
+        from memorybox.providers.photo._immich_http import (
+            _IMMICH_GATE,
+            _is_transient_immich_error,
+            ImmichHttpClient,
+        )
+
+        _check(
+            "immich_transient_error_detect",
+            _is_transient_immich_error(
+                RemoteDisconnected("Remote end closed connection without response")
+            )
+            and _is_transient_immich_error(
+                ConnectionResetError("Connection reset by peer")
+            )
+            and not _is_transient_immich_error(RuntimeError("API key invalid")),
+            checks,
+            problems,
+            "RST/remote-closed are retryable; auth errors are not",
+        )
+        _check(
+            "immich_socket_gate",
+            getattr(_IMMICH_GATE, "_value", 2) >= 1,
+            checks,
+            problems,
+            f"gate={getattr(_IMMICH_GATE, '_value', None)}",
+        )
+
+        class _RstExif(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self._calls: list[dict[str, Any]] = []
+
+            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+                payload = dict(body or {})
+                self._calls.append(payload)
+                if payload.get("withExif"):
+                    raise ConnectionResetError(
+                        "Remote end closed connection without response"
+                    )
+                return 200, {
+                    "assets": {
+                        "items": [{"id": "plain-1", "originalFileName": "a.jpg"}],
+                        "total": 1,
+                        "count": 1,
+                        "nextPage": None,
+                    }
+                }
+
+        rst = _RstExif()
+        rst_got = rst.search_by_person_ids(["person-1"], size=50)
+        with_exif_calls = [c for c in rst._calls if c.get("withExif")]
+        _check(
+            "immich_skip_second_with_exif_after_rst",
+            len(rst_got) == 1
+            and rst_got[0].get("id") == "plain-1"
+            and len(with_exif_calls) == 1
+            and len(rst._calls) >= 2,
+            checks,
+            problems,
+            f"n={len(rst_got)} calls={rst._calls}",
+        )
+
+        class _PeopleOnce(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self._people_cache = None
+                self._perm_cache = None
+                self._ping_cache = None
+                self._people_gets = 0
+
+            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+                if method == "GET" and str(path).startswith("/people"):
+                    self._people_gets += 1
+                    return 200, {"people": [{"id": "p1", "name": "Diane"}]}
+                return 200, {}
+
+        once = _PeopleOnce()
+        first = once.list_people()
+        second = once.list_people()
+        _check(
+            "immich_list_people_cached",
+            once._people_gets == 1 and first == second and first[0]["id"] == "p1",
+            checks,
+            problems,
+            f"gets={once._people_gets}",
+        )
+
+        tiny = _PeopleOnce()
+        perms = tiny.check_read_permissions()
+        people_paths_ok = tiny._people_gets == 1
+        _check(
+            "immich_permissions_tiny_people_probe",
+            perms.get("person.read") is True and people_paths_ok,
+            checks,
+            problems,
+            f"gets={tiny._people_gets} perms={perms}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_transient_error_detect", False, checks, problems, str(exc))
+
+    try:
+        from pathlib import Path
+
+        from memorybox.ask.deps import _photo_singletons
+        from memorybox.explore.find import curator_from_items
+
+        http_src = (
+            Path(__file__).resolve().parents[1]
+            / "providers"
+            / "photo"
+            / "_immich_http.py"
+        ).read_text(encoding="utf-8")
+        deps_src = (
+            Path(__file__).resolve().parents[1] / "ask" / "deps.py"
+        ).read_text(encoding="utf-8")
+        retrieve_src = (
+            Path(__file__).resolve().parents[1] / "ask" / "retrieve.py"
+        ).read_text(encoding="utf-8")
+        person_src = (
+            Path(__file__).resolve().parents[1] / "person" / "__init__.py"
+        ).read_text(encoding="utf-8")
+        _check(
+            "immich_stampede_guards",
+            "_IMMICH_GATE" in http_src
+            and "_photo_singletons" in deps_src
+            and "health_soft_fail" in retrieve_src
+            and "do not dump Immich /people" in person_src
+            and isinstance(_photo_singletons, dict),
+            checks,
+            problems,
+            "gate + singleton client + skip /people dump + health soft-fail",
+        )
+        _title, summary = curator_from_items(
+            "Show Diane Scollay",
+            [],
+            None,
+            provider_status={
+                "photo": {
+                    "ok": False,
+                    "detail": "Remote end closed connection without response",
+                },
+                "photo_search": {
+                    "ok": True,
+                    "unavailable": False,
+                    "health_soft_fail": "Remote end closed connection without response",
+                    "detail": "candidate_hits=0 person_ids=1",
+                },
+            },
+        )
+        _check(
+            "curator_soft_fail_not_unavailable",
+            "Photos unavailable from Immich" not in summary,
+            checks,
+            problems,
+            summary[:160],
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_stampede_guards", False, checks, problems, str(exc))
+
+    try:
         from memorybox.providers.photo.immich import ImmichPhotoProvider
 
         prov = object.__new__(ImmichPhotoProvider)
@@ -967,6 +1248,406 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("person_ask_no_library_pad", False, checks, problems, str(exc))
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        tom_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-immich-id",
+            display_name="Tom",
+        )
+        tom_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"tom-{i}",
+                taken_at=datetime(2015, 6, 1, tzinfo=timezone.utc),
+                people=(tom_ref,),
+            )
+            for i in range(12)
+        ]
+
+        class _TomPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                # Immich cluster is named "Tom", not "Tom Will" — exact full-name miss.
+                q = (query or "").strip().lower()
+                if q == "tom will":
+                    return []
+                return [tom_ref] if (not q or q == "tom") else []
+
+            def search_assets(self, query: PhotoSearchQuery):
+                if "tom-immich-id" in (query.person_external_ids or ()):
+                    return list(tom_assets)[: query.limit]
+                return []
+
+        class _FakeTom:
+            id = "mb-tom-will"
+            display_name = "Tom Will"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "tom-immich-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeTom() if str(pid) == "mb-tom-will" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: (
+                ["tom-immich-id"] if str(person_id) == "mb-tom-will" else []
+            )
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: None
+        )
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            name_only = QueryPlan(
+                original_ask="Show Tom Will",
+                effective_ask="Show Tom Will",
+                is_followup=False,
+                want_photo=True,
+                want_communication=False,
+                want_calendar=False,
+                want_still=True,
+                want_video=True,
+                want_visual=True,
+                visual_scope="broad",
+                person_names=("Tom Will",),
+                notes=("visual_scope=broad_show_person",),
+            )
+            miss, miss_st = R.search_photos(name_only, _TomPhoto(), limit=5000)
+            locked_plan = _apply_locked_person_to_plan(name_only, "mb-tom-will")
+            hit, hit_st = R.search_photos(locked_plan, _TomPhoto(), limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+
+        _check(
+            "person_explorer_locks_mapped_library",
+            "mb-tom-will" in (locked_plan.person_ids or ())
+            and "explore_locked_person_id" in (locked_plan.notes or ())
+            and len(miss) == 0
+            and len(hit) == 12
+            and (hit_st.get("identity_mode") or "") != "unknown_person"
+            and (miss_st.get("identity_mode") or "") != "ambiguous_identity",
+            checks,
+            problems,
+            (
+                f"ids={locked_plan.person_ids} miss={len(miss)}/{miss_st.get('identity_mode')} "
+                f"hit={len(hit)}/{hit_st.get('identity_mode')}"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_locks_mapped_library",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.person import (
+            _ask_named_photo_people,
+            _bare_first_name_photo_people,
+            _token_cover_photo_people,
+        )
+        from memorybox.person import face_evidence as fe_mod
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        land = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="landzaat-id",
+            display_name="Tom Landzaat",
+        )
+        bare = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-bare-id",
+            display_name="Tom",
+        )
+        thomas = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-q-will-id",
+            display_name="Tom Q Will",
+        )
+        bare_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"bare-{i}",
+                taken_at=datetime(2012, 3, 1, tzinfo=timezone.utc),
+                people=(bare,),
+            )
+            for i in range(8)
+        ]
+
+        class _MixedToms:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                rows = [land, bare]
+                if query:
+                    q = query.lower()
+                    rows = [p for p in rows if q in p.display_name.lower()]
+                return rows[:limit]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                wanted = set(query.person_external_ids or ())
+                if "tom-bare-id" in wanted:
+                    return list(bare_assets)[: query.limit]
+                return []
+
+        class _FakeTomEmpty:
+            id = "mb-tom-will"
+            display_name = "Tom Will"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings: list = []
+
+        photo = _MixedToms()
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        orig_fe = fe_mod.list_face_evidence
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeTomEmpty() if str(pid) == "mb-tom-will" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: []
+        )
+        person_mod.find_confirmed_person_by_name = lambda name: None  # type: ignore[assignment]
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        fe_mod.list_face_evidence = lambda pid: []  # type: ignore[assignment]
+        try:
+            named = _ask_named_photo_people(photo, "Tom Will")
+            named_ids = [str(getattr(r, "external_id", "")) for r in named]
+            bare_only = _bare_first_name_photo_people(photo, "Tom Will")
+
+            class _TokenPhoto:
+                def list_people(self, *, query=None, limit=50):
+                    return [land, thomas]
+
+            cover = _token_cover_photo_people(_TokenPhoto(), "Tom Will")
+            cover_ids = [str(getattr(r, "external_id", "")) for r in cover]
+            plan = _apply_locked_person_to_plan(
+                QueryPlan(
+                    original_ask="Show Tom Will",
+                    effective_ask="Show Tom Will",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Tom Will",),
+                    notes=("visual_scope=broad_show_person",),
+                ),
+                "mb-tom-will",
+            )
+            hits, st = R.search_photos(plan, photo, limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+            fe_mod.list_face_evidence = orig_fe
+
+        _check(
+            "person_explorer_bare_tom_not_landzaat",
+            "landzaat-id" not in named_ids
+            and cover_ids == ["tom-q-will-id"]
+            and len(bare_only) == 1
+            and str(getattr(bare_only[0], "external_id", "")) == "tom-bare-id"
+            and len(hits) == 8
+            and (st.get("identity_mode") or "") != "unknown_person",
+            checks,
+            problems,
+            (
+                f"named={named_ids} bare={[getattr(r, 'external_id', None) for r in bare_only]} "
+                f"hits={len(hits)} mode={st.get('identity_mode')}"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_bare_tom_not_landzaat",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        diane_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="diane-immich-id",
+            display_name="Diane Scollay",
+        )
+        diane_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"diane-{i}",
+                taken_at=datetime(2018, 4, 1, tzinfo=timezone.utc),
+                people=(diane_ref,),
+            )
+            for i in range(6)
+        ]
+
+        class _DianeSoftFailPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(
+                    provider_key=self.provider_key,
+                    ok=False,
+                    detail="Remote end closed connection without response",
+                )
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                raise AssertionError("mapped person must not dump /people")
+
+            def search_assets(self, query: PhotoSearchQuery):
+                if "diane-immich-id" in (query.person_external_ids or ()):
+                    return list(diane_assets)[: query.limit]
+                return []
+
+        class _FakeDiane:
+            id = "mb-diane"
+            display_name = "Diane Scollay"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "immich",
+                    "external_id": "diane-immich-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeDiane() if str(pid) == "mb-diane" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: (
+                ["diane-immich-id"] if str(person_id) == "mb-diane" else []
+            )
+        )
+        person_mod.find_confirmed_person_by_name = lambda name: None  # type: ignore[assignment]
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            plan = _apply_locked_person_to_plan(
+                QueryPlan(
+                    original_ask="Show Diane Scollay",
+                    effective_ask="Show Diane Scollay",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Diane Scollay",),
+                    notes=("visual_scope=broad_show_person",),
+                ),
+                "mb-diane",
+            )
+            hits, st = R.search_photos(plan, _DianeSoftFailPhoto(), limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+
+        _check(
+            "person_explorer_health_soft_fail_still_searches",
+            len(hits) == 6
+            and st.get("unavailable") is not True
+            and bool(st.get("health_soft_fail"))
+            and (st.get("identity_mode") or "") != "unknown_person",
+            checks,
+            problems,
+            f"n={len(hits)} unavail={st.get('unavailable')} soft={st.get('health_soft_fail')} mode={st.get('identity_mode')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_health_soft_fail_still_searches",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
 
     try:
         from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person

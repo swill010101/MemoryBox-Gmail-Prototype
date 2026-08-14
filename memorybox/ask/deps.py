@@ -50,11 +50,15 @@ def build_llm(cfg: Settings | None = None) -> LlmProvider:
     return FakeLlmProvider()
 
 
+_photo_singletons: dict[tuple[str, str], PhotoProvider] = {}
+
+
 def build_photo(cfg: Settings | None = None) -> PhotoProvider:
     """Select photo provider via MEMORYBOX_PHOTO_PROVIDER.
 
     Values: immich (default when immich.env present) | fake | unavailable
     Path to immich env: MEMORYBOX_IMMICH_ENV (optional).
+    Reuses one Immich client per process so /people cache and socket limits hold.
     """
     cfg = cfg or settings
     mode = (_env("MEMORYBOX_PHOTO_PROVIDER") or "").lower()
@@ -71,13 +75,19 @@ def build_photo(cfg: Settings | None = None) -> PhotoProvider:
         if env_path
         else Path(__file__).resolve().parents[2] / "config" / "immich.env"
     )
+    cache_key = (mode or "auto", str(path))
+    hit = _photo_singletons.get(cache_key)
+    if hit is not None:
+        return hit
 
     if mode in ("", "immich", "auto"):
         if path.is_file():
             try:
                 from memorybox.providers.photo.immich import ImmichPhotoProvider
 
-                return ImmichPhotoProvider(env_path=path)
+                p = ImmichPhotoProvider(env_path=path)
+                _photo_singletons[cache_key] = p
+                return p
             except Exception as exc:  # noqa: BLE001 — treat as unavailable, not empty
                 return UnavailablePhotoProvider(
                     f"Immich init failed ({path}): {exc}"

@@ -120,7 +120,7 @@ GENERIC_PARENT_ROLES: frozenset[str] = frozenset(
     }
 )
 
-FACT_KINDS = frozenset({"birth_date", "death_date", "note"})
+FACT_KINDS = frozenset({"birth_date", "death_date", "note", "residence"})
 ALIAS_KINDS = frozenset({"nickname", "alternate_name"})
 CONTACT_KINDS = frozenset({"email", "phone"})
 

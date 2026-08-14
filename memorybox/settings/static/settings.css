@@ -1,0 +1,109 @@
+/* Thin Settings — owner/system only; uses Product Shell tokens. */
+
+.mb-set-card h2 {
+  font-family: var(--mb-font-display);
+  font-weight: 500;
+  font-size: 1.15rem;
+  color: var(--mb-forest);
+  margin: 0 0 0.4rem;
+}
+
+.mb-set-copy {
+  color: var(--mb-ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin: 0 0 1rem;
+  max-width: 40rem;
+}
+
+.mb-set-copy code {
+  font-size: 0.86em;
+}
+
+.mb-set-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 42rem;
+}
+
+.mb-set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--mb-ink-soft);
+}
+
+.mb-set-field input {
+  font: inherit;
+  font-weight: 400;
+  font-size: 0.95rem;
+  color: var(--mb-ink);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(31, 77, 63, 0.28);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.mb-set-field input:focus {
+  outline: 2px solid rgba(31, 77, 63, 0.35);
+  outline-offset: 1px;
+}
+
+.mb-set-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--mb-ink-soft);
+  line-height: 1.4;
+}
+
+.mb-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mb-set-save,
+.mb-set-clear {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--mb-radius);
+  cursor: pointer;
+}
+
+.mb-set-save {
+  border: 1px solid var(--mb-forest);
+  background: var(--mb-forest);
+  color: var(--mb-paper);
+}
+
+.mb-set-save:hover {
+  background: var(--mb-forest-bright);
+}
+
+.mb-set-clear {
+  border: 1px solid rgba(31, 77, 63, 0.35);
+  background: transparent;
+  color: var(--mb-forest);
+}
+
+.mb-set-status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.85rem;
+}
+
+.mb-set-status.is-ok {
+  color: var(--mb-forest);
+}
+
+.mb-set-status.is-err {
+  color: var(--mb-danger);
+}
+
+.mb-panel + .mb-panel {
+  margin-top: 1rem;
+}

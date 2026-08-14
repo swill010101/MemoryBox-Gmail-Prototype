@@ -10,6 +10,7 @@ not flattened — owner-confirmed > trusted-provider > AI/inferred.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -684,12 +685,24 @@ def _exact_named_photo_people(photo: Any, display_name: str) -> list[Any]:
 
 
 def _ask_named_photo_people(photo: Any, display_name: str) -> list[Any]:
-    """Immich/photo people for Ask: exact name, else unique first-token match."""
+    """Immich/photo people for Ask: exact name, else unique token-cover, else unique first-token.
+
+    Multi-word names never use first-token-only (Tom Will must not become Tom Landzaat).
+    Token-cover requires every query token to appear in the Immich name
+    (Tom Will → Thomas Will; not Tom Landzaat; not a bare Tom).
+    """
     exact = _exact_named_photo_people(photo, display_name)
     if exact:
         return exact
     name = (display_name or "").strip()
-    if not photo or len(name) < 2 or " " in name:
+    if not photo or len(name) < 2:
+        return []
+    covered = _token_cover_photo_people(photo, name)
+    if len(covered) == 1:
+        return covered
+    if len(covered) > 1:
+        return covered
+    if " " in name:
         return []
     try:
         refs = photo.list_people(query=name, limit=50) or []
@@ -704,13 +717,232 @@ def _ask_named_photo_people(photo: Any, display_name: str) -> list[Any]:
         first = dn.split()[0].lower() if dn.split() else ""
         if first == token or dn.lower() == token:
             matched.append(r)
-    # De-dupe by external_id
     by_ext: dict[str, Any] = {}
     for r in matched:
         ext = str(getattr(r, "external_id", "") or "").strip()
         if ext and ext not in by_ext:
             by_ext[ext] = r
     return list(by_ext.values())
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [
+        t
+        for t in re.findall(r"[a-z0-9']+", (text or "").strip().lower())
+        if len(t) > 1
+    ]
+
+
+def _tokens_cover_name(query: str, candidate: str) -> bool:
+    """True when every query token appears as a token in the candidate name.
+
+    'Tom Will' matches 'Tom Q Will', not 'Tom Landzaat' and not a bare 'Tom'.
+    """
+    qtok = _name_tokens(query)
+    ctok = _name_tokens(candidate)
+    if len(qtok) < 2 or not ctok:
+        return False
+    return all(q in ctok for q in qtok)
+
+
+def _bare_first_name_photo_people(photo: Any, display_name: str) -> list[Any]:
+    """Unique Immich person named exactly the first token of a multi-word MB name.
+
+    'Tom Will' may be clustered in Immich as 'Tom' while 'Tom Landzaat' keeps
+    a last name. Only used when exactly one Immich person is that bare first name.
+    """
+    tokens = _name_tokens(display_name)
+    if not photo or len(tokens) < 2:
+        return []
+    first = tokens[0]
+    try:
+        refs = photo.list_people(query=first, limit=80) or []
+    except Exception:  # noqa: BLE001
+        return []
+    by_ext: dict[str, Any] = {}
+    for r in refs:
+        dn = (getattr(r, "display_name", None) or "").strip()
+        if _name_tokens(dn) != [first]:
+            continue
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext and ext not in by_ext:
+            by_ext[ext] = r
+    return list(by_ext.values())
+
+
+def _token_cover_photo_people(photo: Any, display_name: str) -> list[Any]:
+    name = (display_name or "").strip()
+    tokens = _name_tokens(name)
+    if not photo or len(tokens) < 2:
+        return []
+    try:
+        refs = photo.list_people(query=tokens[0], limit=80) or []
+    except Exception:  # noqa: BLE001
+        return []
+    by_ext: dict[str, Any] = {}
+    for r in refs:
+        dn = (getattr(r, "display_name", None) or "").strip()
+        if not _tokens_cover_name(name, dn):
+            continue
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext and ext not in by_ext:
+            by_ext[ext] = r
+    return list(by_ext.values())
+
+
+def _face_evidence_immich_ids(person_id: str) -> list[str]:
+    """Immich person UUIDs recorded on this MB Person's face evidence."""
+    try:
+        from memorybox.person.face_evidence import list_face_evidence
+
+        rows = list_face_evidence(person_id)
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in ("external_person_id",):
+            ext = str(row.get(key) or "").strip()
+            if ext and ext not in out:
+                out.append(ext)
+        meta = row.get("exemplar_meta_json") or row.get("exemplar_meta") or {}
+        if isinstance(meta, dict):
+            for key in ("external_person_id", "personId", "person_id"):
+                ext = str(meta.get(key) or "").strip()
+                if ext and ext not in out:
+                    out.append(ext)
+    return out
+
+
+def _mapping_immich_ids(person: PersonView) -> list[str]:
+    keys = {PROVIDER_IMMICH, "immich", "fake_photo"}
+    kinds = {"", KIND_EXTERNAL_PERSON, "external_person", "person"}
+    out: list[str] = []
+    for m in person.provider_mappings or []:
+        if not isinstance(m, dict):
+            continue
+        pk = str(m.get("provider_key") or "").strip().lower()
+        if pk not in keys:
+            continue
+        kind = str(m.get("identity_kind") or "").strip().lower()
+        if kind not in kinds:
+            continue
+        ext = str(m.get("external_id") or "").strip()
+        if ext and ext not in out:
+            out.append(ext)
+    return out
+
+
+def _birth_year_immich_ids(photo: Any, person: PersonView) -> list[str]:
+    """Unique Immich person sharing this person's first name + birth year."""
+    first = ((person.display_name or "").split() or [""])[0].strip().lower()
+    if len(first) < 2 or photo is None:
+        return []
+    year: str | None = None
+    try:
+        from memorybox.profile.facts import get_current_fact
+
+        fact = get_current_fact(person.id, "birth_date")
+        raw = ""
+        if fact is not None:
+            raw = str(getattr(fact, "value_date", None) or getattr(fact, "value_text", None) or "")
+        m = re.match(r"(19|20)\d{2}", raw.strip())
+        year = m.group(0) if m else None
+    except Exception:  # noqa: BLE001
+        year = None
+    if not year:
+        return []
+    client = getattr(photo, "_client", None)
+    raw_list = getattr(client, "list_people", None)
+    if not callable(raw_list):
+        return []
+    try:
+        rows = raw_list() or []
+    except Exception:  # noqa: BLE001
+        return []
+    hits: list[str] = []
+    for p in rows:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "").strip()
+        if not name or name.split()[0].lower() != first:
+            continue
+        bd = str(p.get("birthDate") or p.get("birth_date") or "")[:10]
+        if not bd.startswith(year):
+            continue
+        ext = str(p.get("id") or "").strip()
+        if ext and ext not in hits:
+            hits.append(ext)
+    return hits
+
+
+def ask_immich_person_ids(person_id: str, *, photo: Any | None = None) -> list[str]:
+    """Immich person UUIDs for Ask/portrait of a known MB Person.
+
+    Mapped provider_identities and face_evidence on THIS person stay, even when
+    Immich named the cluster something other than the MB display name (Tom vs
+    Tom Will). Name fallback is exact, then all-tokens, then first-name + birth
+    year. Never unique first-token (that painted Tom Landzaat on Tom Will).
+    """
+    view = get_person(person_id)
+    if not view:
+        return []
+    out = _mapping_immich_ids(view)
+    try:
+        out.extend(list_immich_external_ids_for_person(person_id))
+        out.extend(list_provider_external_ids_for_person(person_id, "fake_photo"))
+    except PersonServiceError:
+        pass
+    out.extend(_face_evidence_immich_ids(person_id))
+    out = list(dict.fromkeys(x for x in out if x))
+
+    if photo is None:
+        try:
+            from memorybox.ask.deps import build_photo
+
+            photo = build_photo()
+        except Exception:  # noqa: BLE001
+            photo = None
+    name = (view.display_name or "").strip()
+    # Mapped / face-evidence ids are enough — do not dump Immich /people
+    # (that payload + N family portraits closes Immich's socket).
+    if out or photo is None or not name:
+        return list(dict.fromkeys(x for x in out if x))
+    for r in _exact_named_photo_people(photo, name):
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext:
+            out.append(ext)
+    try:
+        from memorybox.profile.facts import list_aliases
+
+        for alias in list_aliases(person_id) or []:
+            text = str(getattr(alias, "alias_text", None) or "").strip()
+            if len(text) < 2:
+                continue
+            for r in _exact_named_photo_people(photo, text):
+                ext = str(getattr(r, "external_id", "") or "").strip()
+                if ext:
+                    out.append(ext)
+    except Exception:  # noqa: BLE001
+        pass
+    if not out:
+        covered = _token_cover_photo_people(photo, name)
+        if len(covered) == 1:
+            ext = str(getattr(covered[0], "external_id", "") or "").strip()
+            if ext:
+                out.append(ext)
+        if not out:
+            bare = _bare_first_name_photo_people(photo, name)
+            if len(bare) == 1:
+                ext = str(getattr(bare[0], "external_id", "") or "").strip()
+                if ext:
+                    out.append(ext)
+        if not out:
+            birth = _birth_year_immich_ids(photo, view)
+            if len(birth) == 1:
+                out.extend(birth)
+    return list(dict.fromkeys(x for x in out if x))
 
 
 def seed_person_from_trusted_provider(
@@ -1234,74 +1466,76 @@ def list_immich_external_ids_for_person(person_id: str) -> list[str]:
     return list_provider_external_ids_for_person(person_id, PROVIDER_IMMICH)
 
 
+def _immich_display_name_matches(photo: Any, external_id: str, display_name: str) -> bool:
+    """True only when Immich person's name equals the MB display name (exact)."""
+    needle = (display_name or "").strip().lower()
+    ext = (external_id or "").strip()
+    if not needle or not ext or photo is None:
+        return False
+    client = getattr(photo, "_client", None)
+    request = getattr(client, "_request", None) if client is not None else None
+    if callable(request):
+        try:
+            status, data = request("GET", f"/people/{ext}")
+        except Exception:  # noqa: BLE001
+            status, data = 0, None
+        if status == 200 and isinstance(data, dict):
+            return str(data.get("name") or "").strip().lower() == needle
+    try:
+        refs = photo.list_people(limit=500) or []
+    except Exception:  # noqa: BLE001
+        return False
+    for r in refs:
+        if str(getattr(r, "external_id", "") or "").strip() != ext:
+            continue
+        return (getattr(r, "display_name", None) or "").strip().lower() == needle
+    return False
+
+
+def portrait_immich_ids_for_name(
+    photo: Any | None,
+    display_name: str,
+    mapped_ids: list[str] | None = None,
+) -> list[str]:
+    """Immich person UUIDs safe for a portrait: exact display name only.
+
+    Never first-token / unique-hit fallback (that painted Tom Landzaat on Tom Will).
+    Mapped ids are kept only when they belong to an Immich person with the same name.
+    Exact-name Immich hits win over a stale or wrong provider_identities row.
+    """
+    mapped = [x for x in dict.fromkeys(mapped_ids or []) if x]
+    name = (display_name or "").strip()
+    exact_ids: list[str] = []
+    if photo is not None and name:
+        try:
+            refs = _exact_named_photo_people(photo, name)
+        except Exception:  # noqa: BLE001
+            refs = []
+        for r in refs:
+            ext = str(getattr(r, "external_id", "") or "").strip()
+            if ext:
+                exact_ids.append(ext)
+        exact_ids = list(dict.fromkeys(exact_ids))
+    if exact_ids:
+        agreed = [x for x in mapped if x in set(exact_ids)]
+        rest = [x for x in exact_ids if x not in agreed]
+        return agreed + rest
+    verified: list[str] = []
+    for ext in mapped:
+        if _immich_display_name_matches(photo, ext, name):
+            verified.append(ext)
+    return verified
+
+
 def resolve_immich_external_ids_for_person(
     person_id: str, *, photo: Any | None = None
 ) -> list[str]:
-    """Immich person UUIDs for an MB Person — mapped ids, then exact-name Immich match.
+    """Immich person UUIDs for an MB Person portrait / Ask retrieve.
 
-    Gallery/Ask already resolve Sue Will via Immich name when provider_identities
-    is empty; portraits must use the same path so preferred Immich face shows.
+    This person's mapped ids and face evidence are kept even when Immich named
+    the cluster differently. Name-only resolution stays exact (no first-token).
     """
-    out: list[str] = []
-    try:
-        out.extend(list_immich_external_ids_for_person(person_id))
-    except PersonServiceError:
-        return []
-
-    view = None
-    try:
-        view = get_person(person_id)
-    except Exception:  # noqa: BLE001
-        view = None
-    if view:
-        for m in view.provider_mappings or []:
-            if not isinstance(m, dict):
-                continue
-            if str(m.get("provider_key") or "").strip().lower() not in {
-                PROVIDER_IMMICH,
-                "immich",
-            }:
-                continue
-            ext = str(m.get("external_id") or "").strip()
-            if ext:
-                out.append(ext)
-
-    name = (view.display_name if view else "") or ""
-    # Same path Gallery/Ask uses when provider_identities has no Immich row yet
-    if name and not out:
-        provider = photo
-        if provider is None:
-            try:
-                from memorybox.providers.photo import build_photo
-
-                provider = build_photo()
-            except Exception:  # noqa: BLE001
-                provider = None
-        if provider is not None:
-            try:
-                refs = _exact_named_photo_people(provider, name)
-                if not refs:
-                    refs = _ask_named_photo_people(provider, name)
-            except Exception:  # noqa: BLE001
-                refs = []
-            # Exact name, or a single unambiguous Immich person hit
-            use_refs = []
-            needle = name.strip().lower()
-            exact = [
-                r
-                for r in refs
-                if (getattr(r, "display_name", None) or "").strip().lower() == needle
-            ]
-            if exact:
-                use_refs = exact
-            elif len(refs) == 1:
-                use_refs = refs
-            for r in use_refs:
-                ext = str(getattr(r, "external_id", "") or "").strip()
-                if ext:
-                    out.append(ext)
-
-    return list(dict.fromkeys(x for x in out if x))
+    return ask_immich_person_ids(person_id, photo=photo)
 
 
 def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
@@ -1309,8 +1543,9 @@ def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
 
     Order: Immich feature-face thumb (mapped or name-resolved) → face evidence asset.
     """
+    from memorybox.ask.deps import build_photo
     from memorybox.person.face_evidence import list_face_evidence
-    from memorybox.providers.photo import build_photo
+    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
 
     try:
         photo = build_photo()
@@ -1339,6 +1574,7 @@ def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
                 asset = str(
                     meta.get("source_asset_id") or meta.get("assetId") or ""
                 ).strip()
+        asset = photo_proxy_asset_id(asset)
         if not asset:
             continue
         try:

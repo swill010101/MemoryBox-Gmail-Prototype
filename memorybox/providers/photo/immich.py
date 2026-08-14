@@ -38,7 +38,10 @@ class ImmichPhotoProvider:
             ok = bool(self._client.ping())
             meta: dict[str, Any] = {}
             if ok:
-                meta["permissions"] = self._client.check_read_permissions()
+                try:
+                    meta["permissions"] = self._client.check_read_permissions()
+                except Exception as exc:  # noqa: BLE001
+                    meta["permissions"] = {"ok": False, "detail": str(exc)}
             return ProviderHealth(
                 provider_key=self.provider_key,
                 ok=ok,
@@ -190,7 +193,9 @@ class ImmichPhotoProvider:
             box: tuple[float, float, float, float] | None,
         ) -> None:
             n = (name or "").strip()
-            if not n or n.lower() == "unknown":
+            if n.lower() == "unknown":
+                n = ""
+            if not n and not box:
                 return
             key = f"{n}|{pid or ''}|{box}"
             if key in seen:
@@ -198,7 +203,7 @@ class ImmichPhotoProvider:
             seen.add(key)
             out.append(
                 PhotoFaceRef(
-                    display_name=n,
+                    display_name=n or "Unknown",
                     external_person_id=pid or None,
                     face_box=box,
                 )
@@ -224,17 +229,21 @@ class ImmichPhotoProvider:
             person = f.get("person") if isinstance(f.get("person"), dict) else {}
             name = str((person or {}).get("name") or f.get("name") or "").strip()
             pid = str((person or {}).get("id") or "") or None
-            if not name:
+            box = self._normalize_face_box(f)
+            if not name and not box:
                 continue
-            add(name, pid, self._normalize_face_box(f))
+            add(name, pid, box)
 
         return tuple(out)
 
     def fetch_preview(self, external_asset_id: str) -> PhotoBytesDto:
+        from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
+        aid = photo_proxy_asset_id(external_asset_id) or (
+            str(external_asset_id or "").strip()
+        )
         try:
-            data, content_type, _source = self._client.fetch_preview_bytes(
-                external_asset_id
-            )
+            data, content_type, _source = self._client.fetch_preview_bytes(aid)
         except self._AuthError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -243,6 +252,30 @@ class ImmichPhotoProvider:
             provider_key=self.provider_key,
             external_id=external_asset_id,
             content_type=content_type or "application/octet-stream",
+            data=data,
+        )
+
+    def fetch_person_thumbnail(self, person_id: str) -> PhotoBytesDto | None:
+        """Immich person feature-face thumbnail (not an asset preview)."""
+        pid = (person_id or "").strip()
+        if not pid:
+            return None
+        fetch = getattr(self._client, "fetch_person_thumbnail_bytes", None)
+        if not callable(fetch):
+            return None
+        try:
+            got = fetch(pid)
+        except Exception:  # noqa: BLE001
+            return None
+        if not got:
+            return None
+        data, content_type, _src = got
+        if not data:
+            return None
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=pid,
+            content_type=content_type or "image/jpeg",
             data=data,
         )
 
@@ -307,6 +340,9 @@ class ImmichPhotoProvider:
             if isinstance(a, dict)
         )
         exif_pairs = self._exif_pairs(loc_raw, raw)
+        kind = str(raw.get("type") or raw.get("assetType") or "IMAGE").strip().upper()
+        if kind not in {"IMAGE", "VIDEO", "AUDIO", "OTHER"}:
+            kind = "IMAGE"
         return PhotoAssetDto(
             provider_key=self.provider_key,
             external_id=ext,
@@ -319,7 +355,36 @@ class ImmichPhotoProvider:
             albums=albums,
             exif=exif_pairs,
             faces=faces,
+            asset_kind=kind,
         )
+
+    def fetch_original(self, external_asset_id: str) -> PhotoBytesDto:
+        try:
+            data, content_type, _source = self._client.fetch_original_bytes(
+                external_asset_id
+            )
+        except self._AuthError as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(str(exc)) from exc
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=external_asset_id,
+            content_type=content_type or "application/octet-stream",
+            data=data,
+        )
+
+    def fetch_original_range(
+        self, external_asset_id: str, *, range_header: str | None = None
+    ) -> tuple[int, bytes, str, dict[str, str]]:
+        try:
+            return self._client.fetch_original_range(
+                external_asset_id, range_header=range_header
+            )
+        except self._AuthError as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(str(exc)) from exc
 
     @staticmethod
     def _exif_pairs(exif: dict[str, Any], raw: dict[str, Any]) -> tuple[tuple[str, str], ...]:
@@ -411,6 +476,7 @@ class ImmichPhotoProvider:
     def list_face_assets(
         self, *, person_external_id: str, limit: int = 50
     ) -> list:
+        from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
         from memorybox.providers.photo.dto import PhotoFaceAssetRef
 
         try:
@@ -437,7 +503,11 @@ class ImmichPhotoProvider:
                     provider_key=self.provider_key,
                     external_face_id=fid,
                     external_person_id=person_external_id,
-                    source_asset_id=str(f.get("assetId") or f.get("imageId") or "") or None,
+                    source_asset_id=(
+                        photo_proxy_asset_id(
+                            f.get("assetId") or f.get("imageId") or ""
+                        )
+                    ),
                     bbox=bbox,
                     confidence=f.get("confidence") or f.get("score"),
                     thumb_url=None,
