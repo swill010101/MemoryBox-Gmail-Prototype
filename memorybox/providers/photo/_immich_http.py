@@ -489,14 +489,16 @@ class ImmichHttpClient:
                 except Exception:  # noqa: BLE001
                     continue
         # Fall back: faces list → asset preview
+        from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
         faces = self.list_faces_for_person(pid)
         for face in faces:
-            asset_id = str(
+            asset_id = photo_proxy_asset_id(
                 face.get("assetId")
                 or face.get("asset_id")
                 or face.get("id")
                 or ""
-            ).strip()
+            ) or ""
             if not asset_id or asset_id.startswith("person-thumb-"):
                 continue
             try:

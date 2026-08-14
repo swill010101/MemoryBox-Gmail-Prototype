@@ -234,10 +234,13 @@ class ImmichPhotoProvider:
         return tuple(out)
 
     def fetch_preview(self, external_asset_id: str) -> PhotoBytesDto:
+        from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
+        aid = photo_proxy_asset_id(external_asset_id) or (
+            str(external_asset_id or "").strip()
+        )
         try:
-            data, content_type, _source = self._client.fetch_preview_bytes(
-                external_asset_id
-            )
+            data, content_type, _source = self._client.fetch_preview_bytes(aid)
         except self._AuthError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -446,6 +449,7 @@ class ImmichPhotoProvider:
     def list_face_assets(
         self, *, person_external_id: str, limit: int = 50
     ) -> list:
+        from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
         from memorybox.providers.photo.dto import PhotoFaceAssetRef
 
         try:
@@ -472,7 +476,11 @@ class ImmichPhotoProvider:
                     provider_key=self.provider_key,
                     external_face_id=fid,
                     external_person_id=person_external_id,
-                    source_asset_id=str(f.get("assetId") or f.get("imageId") or "") or None,
+                    source_asset_id=(
+                        photo_proxy_asset_id(
+                            f.get("assetId") or f.get("imageId") or ""
+                        )
+                    ),
                     bbox=bbox,
                     confidence=f.get("confidence") or f.get("score"),
                     thumb_url=None,

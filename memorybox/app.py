@@ -1489,6 +1489,7 @@ def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, 
 @app.get("/people/{person_id}/face-evidence")
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.providers.photo.asset_ref import photo_proxy_url
 
     evidence = list_face_evidence(person_id)
     enriched: list[dict[str, Any]] = []
@@ -1508,8 +1509,10 @@ def people_face_evidence(person_id: str) -> dict[str, Any]:
             or (meta.get("assetId") if isinstance(meta, dict) else None)
         )
         if asset_id and not item.get("thumb_url"):
-            item["thumb_url"] = f"/library/media/photo/{asset_id}"
-            item["media_url"] = item["thumb_url"]
+            thumb = photo_proxy_url(asset_id)
+            if thumb:
+                item["thumb_url"] = thumb
+                item["media_url"] = thumb
         enriched.append(item)
     return {"ok": True, "person_id": person_id, "evidence": enriched}
 
@@ -1758,7 +1761,10 @@ def people_portrait(person_id: str) -> Response:
 
     if not get_person(person_id):
         raise HTTPException(status_code=404, detail="person not found")
-    got = fetch_person_portrait_bytes(person_id)
+    try:
+        got = fetch_person_portrait_bytes(person_id)
+    except Exception:  # noqa: BLE001 — letter initial is better than a 500
+        got = None
     if not got:
         raise HTTPException(status_code=404, detail="portrait unavailable")
     data, ctype = got

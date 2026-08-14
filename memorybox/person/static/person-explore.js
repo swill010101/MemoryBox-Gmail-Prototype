@@ -63,6 +63,31 @@
     return (String(name || "?").trim().charAt(0) || "?").toUpperCase();
   }
 
+  function photoProxyAssetId(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    const uuidRe =
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+    const path = s.replace(/\\/g, "/");
+    if (
+      !path.includes("/") &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+    ) {
+      return s;
+    }
+    const file = path.match(
+      /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(jpe?g|webp|png|gif)$/i
+    );
+    if (file) return file[1];
+    const all = path.match(uuidRe);
+    return all && all.length ? all[all.length - 1] : "";
+  }
+
+  function photoProxyUrl(raw) {
+    const id = photoProxyAssetId(raw);
+    return id ? "/library/media/photo/" + id : "";
+  }
+
   function roleLabel(edge) {
     return (
       edge.sot_role_kind ||
@@ -494,13 +519,16 @@
           f.source_asset_id ||
           (meta && (meta.source_asset_id || meta.assetId)) ||
           "";
-        return (
-          f.thumb_url ||
-          f.media_url ||
-          f.preview_url ||
-          f.image_url ||
-          (asset ? "/library/media/photo/" + asset : "")
-        );
+        const fromAsset = photoProxyUrl(asset);
+        const existing =
+          f.thumb_url || f.media_url || f.preview_url || f.image_url || "";
+        if (existing && existing.indexOf("/library/media/photo//") === 0) {
+          return fromAsset;
+        }
+        if (existing && existing.indexOf("/data/thumbs/") !== -1) {
+          return fromAsset || photoProxyUrl(existing);
+        }
+        return existing || fromAsset;
       })
       .find(Boolean);
     // Only use face-evidence thumbs if Immich preferred portrait did not load

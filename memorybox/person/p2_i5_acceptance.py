@@ -165,6 +165,42 @@ def run_p2_i5_acceptance() -> dict:
         problems,
         "Immich preferred portrait endpoint + header/curator apply",
     )
+    person_init = (
+        Path(__file__).resolve().parent / "__init__.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_portrait_build_photo_import",
+        "from memorybox.providers.photo import build_photo" not in person_init
+        and "from memorybox.ask.deps import build_photo" in person_init
+        and "except Exception" in app_py
+        and "portrait unavailable" in app_py,
+        checks,
+        problems,
+        "portrait uses ask.deps.build_photo; endpoint must not 500",
+    )
+    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id, photo_proxy_url
+
+    thumb_path = (
+        "/data/thumbs/261e97ac-f93e-43b3-9b07-61782f14295f/02/2d/"
+        "022df03e-b045-4108-aeff-82808c817cbd.jpeg"
+    )
+    _check(
+        "i5_face_evidence_thumb_not_disk_path",
+        photo_proxy_asset_id(thumb_path)
+        == "022df03e-b045-4108-aeff-82808c817cbd"
+        and photo_proxy_url(thumb_path)
+        == "/library/media/photo/022df03e-b045-4108-aeff-82808c817cbd"
+        and photo_proxy_url("ec875510-6ad2-41e6-8e57-ad8ef09c8a64")
+        == "/library/media/photo/ec875510-6ad2-41e6-8e57-ad8ef09c8a64"
+        and photo_proxy_asset_id("") is None
+        and "photoProxyAssetId" in person_js
+        and "photoProxyUrl" in person_js
+        and "/library/media/photo/\" + asset" not in person_js
+        and "photo_proxy_url" in app_py,
+        checks,
+        problems,
+        "face-evidence thumbs use Immich asset UUID, not /data/thumbs path",
+    )
 
     overall = not problems and all(c.get("ok") for c in checks.values())
     return {
