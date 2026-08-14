@@ -1,6 +1,7 @@
 # MBRM-001 — MemoryBox P2 Roadmap
 
 **Status:** Historical shell-first draft · **Superseded for sequencing by** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
+**Inserted later (001A only):** **P2-I8.5** Face Evidence Ownership & Immich Decoupling — after I8 Richer Email, before I9 Spoken Moments. Not I7.5. See [I8.5 PRD](MBBS-P2_I8.5_FACE_EVIDENCE_OWNERSHIP_PRD.md). Do not map I8.5 onto this file’s older I6=Email / I8=Video Moments numbering.  
 **ID:** MBRM-001  
 **Owner:** Tom  
 **Gate:** **No build** — see MBRM-001A + P2-I1 definition.

@@ -45,8 +45,9 @@ P2-AH-03 — High-leverage cleanup. Prioritize corrections whose value propagate
 4.3 Canonical People, Provider Identity & Continuous Learning
 P2-ID-01 — Canonical MemoryBox Person. MemoryBox continues to own canonical Person identity. Provider identities such as Immich People remain mapped provider records with provenance rather than becoming the canonical object themselves.
 P2-ID-02 — Known Immich people require no redundant enrollment. A named/confirmed Immich Person should automatically create or map to a canonical MB Person when no conflicting identity exists. The owner should not have to re-create a person already identified in Immich.
-P2-ID-03 — Continuous provider identity synchronization. This is not a one-time seed. If the owner later names, merges, splits or corrects a Person in Immich, MemoryBox must detect and reconcile the provider change. Ambiguous conflicts route to review rather than silent destructive updates.
+P2-ID-03 — Continuous provider identity synchronization. This is not a one-time seed. If the owner later names, merges, splits or corrects a Person in Immich, MemoryBox must detect and reconcile the provider change. Ambiguous conflicts route to review rather than silent destructive updates. After **P2-I8.5**, provider sync remains required but **must not overwrite or resurrect** owner-corrected MemoryBox face-observation state (assignment, working coordinates, withdrawal).
 P2-ID-04 — Face evidence ownership and provenance. MemoryBox may use confirmed Immich face assets, manually boxed photo/video faces and confirmed recognition results as reusable recognition evidence while preserving source, bounding box, confidence, confirmation and provenance.
+P2-ID-04a — MemoryBox owns active face observations (locked 2026-08-14 · **P2-I8.5**). Once a provider face observation is imported, MemoryBox owns the durable working record (assignment, working coordinates, confirmation/withdrawal). Immich remains a read-only provider of media and face/identity evidence. MemoryBox does not write face learning or identity corrections back to Immich. Owner-confirmed MB corrections outrank later provider state. Provider sync must not silently restore withdrawn or corrected MB face state. Replacing, upgrading, rebuilding, or disconnecting Immich must not erase MB-owned face evidence. Unknown provider faces do not silently create named canonical MB People. Original photos/videos are never altered. **P2-I8.5** is the operational increment (after I8, before I9). Learn-rail face editing is a follow-on after I8.5 is ACCEPTED. Do not use the retired ID I7.5.
 P2-ID-05 — Cross-modal identity. A Person may accumulate independently traceable identity evidence from face, voice, communications, owner confirmations, relationships, stories and other sources. No individual provider becomes the sole authority.
 4.4 Video Understanding & Searchable Moments
 P2-VID-01 — Source video versus derived moment. The source video remains immutable evidence. Derived face, speaker, transcript, scene and other time-based observations are rebuildable evidence layers.
@@ -104,6 +105,7 @@ Saved intent → Reopen → Refresh/Curate/Freeze — Saved exploration can rema
 The following boundaries protect P2 from becoming an unlimited technology program and preserve the product’s trust model.
 Do not turn every EVS or every MBCAP capability into its own implementation increment. Roadmap increments should cluster coherent user outcomes and reusable machinery.
 Do not replace canonical MemoryBox People with provider-specific identity records; improve synchronization and mapping instead.
+Do not write MemoryBox face-learning or identity corrections back to Immich; Immich is a read-only face/media provider after **P2-I8.5**.
 Do not make confidence-first or provider-first UX the default family experience.
 Do not treat AI-generated narrative, recognition, summaries or external web context as original family evidence.
 Do not silently create relationships, identities, dates or stories when evidence is uncertain.
@@ -118,7 +120,7 @@ P2-EVS-04 — Real family evidence. Acceptance should continue using real-family
 8. P2 Completion Criteria
 A new or returning owner can navigate MemoryBox as one coherent product rather than a set of P1 tools.
 High-volume photo/video exploration is practical at real archive scale.
-Known provider identities, especially Immich People, flow into canonical MB People continuously without redundant owner enrollment while retaining provider separation/provenance.
+Known provider identities, especially Immich People, flow into canonical MB People continuously without redundant owner enrollment while retaining provider separation/provenance. After **P2-I8.5**, MemoryBox owns the working face-observation layer used for overlays, teaching, and recognition input; Immich remains replaceable and read-only for that layer.
 Video can be searched at the meaningful moment/timeslot level using Person appearance and other supported time-based evidence.
 Authentic audio/video speech is transcribed, time-aligned, searchable, and can be linked to canonical People with correction/reuse loops.
 SMS/text and richer email participate in the same evidence and cross-source correlation model.

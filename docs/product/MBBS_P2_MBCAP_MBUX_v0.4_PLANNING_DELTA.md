@@ -26,7 +26,7 @@ Traceability reminder (MBCAP §1): **EVS → Experience Flow → Capability → 
 | Quick rollover / focus preview | MBUX §22.6 · mockup inventory | **I4 candidate** |
 | Named Places (family object; lat/lng detail) | MBUX §22.8 · CAP-P2-024 | **Post-I4** until definition change |
 | Living Album (saved intent, recomputes) | MBUX §22.9 · CAP-P2-014 | Map to **P2-I13 Dynamic Views** (or dedicated def) — **not I4** |
-| Face / video / speaker / cross-modal learning | CAP-P2-003…010 | Existing I1+ chains; no change without definition |
+| Face / video / speaker / cross-modal learning | CAP-P2-003…010 | Face **observation ownership** = **P2-I8.5** (after I8, before I9; not I7.5). Learn-rail face editing blocked until I8.5 ACCEPTED. Speaker/STT remains I9. |
 
 ## 3. CAP-P2 inventory (v0.2)
 
@@ -94,7 +94,7 @@ Inventory + I4 mapping: [mockups/P2_SHARED_EVIDENCE_VIEWER_AND_PREVIEW.md](mocku
 
 ## 8. Next decisions for Tom
 
-1. After FlightSim pass of viewer + preview, whether to expand Learn rail beyond existing I1 correction.  
+1. Learn-rail face editing is **blocked on P2-I8.5** (after I8). Do not expand Assign/Reassign/Adjust/Unassign against live Immich face rows.  
 2. Confirm Living Albums → **I13** (or new increment id).  
 3. Confirm Named Places increment home (with CAP-P2-024/025).  
 4. When Share should become real (family share vs export link).  
