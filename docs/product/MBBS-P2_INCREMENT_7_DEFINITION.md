@@ -1,188 +1,379 @@
 # MBBS-P2 Increment 7 — SMS/Text Evidence
 
-**Status:** **DRAFT for founder review** · **NO BUILD** until Tom locks §1 questions and authorizes  
-**Date:** 2026-08-14  
-**Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I7 (SMS/Text · A) — **not** the superseded MBRM-001 numbering (that file called SMS “I5”)  
-**Authority:** Locked [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) P2-COM-01 / P2-COM-03 · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) CAP-P2-018 · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md)  
+**Status:** **LOCK-READY** for founder lock · **NO BUILD**  
+**Date:** 2026-08-14 (revised)  
+**Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I7 (SMS/Text · A)  
+**Authority:** Locked [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) P2-COM-01 / P2-COM-03 · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) CAP-P2-018 · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I6 **ACCEPTED**  
 **Thin PRD:** [MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md)  
 **Depends:** P2-I6 **ACCEPTED** · I4 Explore already has an SMS/text card type (engine not connected)  
-**Does not reopen:** I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · I4 Explore UX · I8 richer email · I8.5 face-evidence ownership · I13/I14 Settings
+**Does not reopen / does not absorb:** I4 Explore redesign · I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · **I8 richer email** · I8.5 face-evidence · **I9 spoken** · **I10 cross-source correlation** · **I11 narrative** · I13/I14 Settings · multi-user
+
+This revision **does not start I7 runtime**. Parser must follow the **actual** staged bytes after the remaining Q1 file-open (this cloud agent cannot read `\\media-server`).
 
 ---
 
-## 0. Product intent (one sentence)
+## 0. Product intent
 
-> **Imported text messages become first-class MemoryBox evidence — searchable, Person-linked, dated, provenance-preserved — in the same Ask / Explore / Person surfaces we already have. Missing coverage is disclosed. Messages are never invented.**
+> **Imported SMS / iMessage / MMS / text messages become first-class MemoryBox communication evidence — searchable, Person-linked, dated, provenance-preserved — in the existing Ask / Explore / Person surfaces. Missing coverage is disclosed. Messages are never invented.**
 
-I7 is **archive understanding**, not a new messaging product and not a new family app.
+I7 is **archive understanding**, not a messaging application, not a new family nav item, and not a parallel SMS product.
 
-End-to-end outcomes:
+End-to-end:
 
-1. A staged SMS / iMessage / text export is **ingested** without rewriting the original files.  
-2. Each message is **Evidence** (`evidence_kind=communication`, channel `sms` / `text`) with participants, timestamp, thread/group metadata when present, and import provenance.  
-3. Participants resolve to **canonical MB People** via phone (or equivalent) identity — same Person continuum as photos/video.  
-4. Ask can **show**, **count**, and **summarize** texts for a Person / year / keyword, with the underlying messages reachable.  
-5. Explore / Person All Memories can show SMS cards on the existing mixed-media canvas (I4 type already reserved).  
-6. Archive Health stops saying “SMS ingest deferred” and reports **honest** staged vs ingested vs unavailable.
+1. The staged FlightSim export is **ingested without modifying originals**.  
+2. Each message is **Evidence** (`evidence_kind=communication`) with channel/service identifying sms / text / imessage / mms as the source allows.  
+3. **All meaningful source metadata is preserved** even when I7 UI does not show it (so later Place/Event/Trip/narrative work does not re-import).  
+4. Participants resolve to **canonical MB People** via normalized phone/handle identity.  
+5. Ask can retrieve, filter (Person / date window / keyword), count (outbound and bidirectional), date-order, and open evidence — with **scope disclosure**.  
+6. Explore / Person All Memories show SMS as **communication cards** on the existing mixed-media canvas; dated items participate in Timeline.  
+7. Archive Health distinguishes **staged vs ingested vs unavailable** (unavailable ≠ 0).
 
----
-
-## 1. Open questions for Tom (must lock before build)
-
-| # | Question | Proposed default (review) |
-|---|----------|---------------------------|
-| **Q1** | What is the **FlightSim export** — path and format? Archive Health already expects **CSV under `Sources/sms`**. | Confirm: path, filename(s), and whether this is iMessage, Android SMS backup, Google Voice, or a mixed CSV. **I7 cannot invent a format.** |
-| **Q2** | Acceptance **people / years** on FlightSim? | Propose: owner (Tom Will) ↔ **Peggy** for EVS-065 / 220 / 223 / 224; a **2020** window; outbound counts for EVS-221 / 222. Confirm whether **Denny Pizzani / “3D printing”** (EVS-118) exists in the export. |
-| **Q3** | **Group threads** (EVS-117 “Core 4”) in I7? | **Propose OUT of I7 ACCEPTED** unless the export clearly has that group. Retrieve group threads if the file has them; do not invent a Core 4 object. |
-| **Q4** | **MMS / attached images**? | **Propose:** keep attachments on the message (show-in-thread). Do **not** promote them into the Immich photo library. Not Explore photo cards. |
-| **Q5** | Phone number → Person: auto-map from Profile `phone` facts, or Review-confirm? | **Propose:** auto-map when the number uniquely matches one confirmed Person contact; otherwise Review / unmapped participant (name or raw number shown). No silent merge. |
-| **Q6** | Must I7 **LLM-summarize** texts to ACCEPTED, or is retrieve + count + cite enough? | **Propose:** retrieve / count / date-order are the hard gate (EVS-220–223). EVS-065 / 118 / 224 may be a **cited extract or short evidence-backed summary** — never a summary without reachable messages. Full narrative year/trip summaries stay **I11**. |
-
-**No build** until Q1–Q2 are answered and Tom says the rest of the defaults are good (or changes them).
+Future use I7 must **enable**, not perform: *“Include all Alaska texts in the narrative of my Alaska trip.”* That correlation/narrative is **I10/I11**. I7 must leave timestamp, text, thread, participants, attachments, and any explicit location metadata intact.
 
 ---
 
-## 2. Proposed locked rules (draft — not locked until Tom says so)
+## 1. Q1–Q6
+
+| # | Topic | Status | Resolution |
+|---|--------|--------|------------|
+| **Q1** | Export path / format | **DOCUMENTED PATH; BYTES NOT OPENED** | See §1.1. Remaining **pre-build inspect** is to open the real files on FlightSim (headers, sibling attachments, date range, people/keywords). **Do not assume a parser from Archive Health’s `sms/` probe or from the `.csv` suffix alone.** |
+| **Q2** | Acceptance people / years | **SELECTION RULES LOCKED; NAMES PENDING Q1 SAMPLE** | Prefer Peggy / 2020 / Denny Pizzani / “3D printing” **only if they exist in the real export**. Otherwise pick real equivalents and map them to EVS intent (§1.2). Do not invent a convenience corpus. |
+| **Q3** | Group threads | **LOCKED** | Ingest/preserve group threads when the source contains them. **No “Core 4” domain object.** EVS-117 is not a hard I7 gate unless the sampled corpus supports it. |
+| **Q4** | MMS / attachments | **LOCKED** | Preserve attachment references, metadata, and original bytes/files when the export provides them. Show in the message/thread evidence experience where practical. **Do not auto-promote to Immich or standalone Explore photo/video cards.** Later explicit promote/correlate is not I7. |
+| **Q5** | Phone/handle → Person | **LOCKED** | Normalize, then: unique confirmed match → auto-map; ambiguous → Review; no match → unmapped participant (source display name / raw handle). Never silent duplicate People. Never merge on similar display name alone. |
+| **Q6** | Summaries | **LOCKED** | Hard gate = retrieve / count / Person / date-window / keyword / date-order / open / scope disclosure. Summary EVSs = short **evidence-backed** summary or cited extract; underlying messages remain reachable. Full trip/year/multi-source narrative stays **I10/I11**. |
+
+**Build remains unauthorized** until Q1 file-open is recorded in this definition (or an addendum) and Tom authorizes.
+
+### 1.1 Q1 — what is known vs what is not
+
+This planning revision **cannot open** `\\media-server\photos\MemoryBox\Sources` (cloud agent; no FlightSim UNC). Findings below are from **in-repo ops checkpoint 2026-08-09** (`4c382b7`, *Media-Server Sources checkpoint* **PASSED**), not from reading message rows.
+
+| Item | Finding | Confidence |
+|------|---------|------------|
+| Canonical Sources root | `\\media-server\photos\MemoryBox\Sources` (also `P:\MemoryBox\Sources` when `P:` maps `\\media-server\photos`) | Documented |
+| SMS directory | `Sources\sms\` | Documented |
+| Filename recorded | `Messages - 1085 chat sessions.csv` | Documented |
+| Full UNC | `\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv` | Documented |
+| Checkpoint label | “iMessage/SMS export”; SHA256 verified against desktop copy; **SMS ingest deferred** | Documented |
+| Inventory file | `Sources\MANIFEST.json` (sizes/hashes/rules) | Documented |
+| CSV column headers | **Unknown this revision** | Must inspect |
+| Date coverage | **Unknown this revision** | Must inspect |
+| Participant / thread / group encoding | **Unknown this revision** | Must inspect |
+| Attachment files beside the CSV | **Unknown** (checkpoint lists the CSV only) | Must inspect directory + MANIFEST |
+| Service mix (SMS / iMessage / MMS / RCS) | Filename + checkpoint say iMessage/SMS; **row-level service unknown** | Must inspect |
+| Location / Tapback / edit / unsend / reply columns | **Unknown** | Must inspect |
+| Parser product (e.g. iMazing-style bulk “chat sessions” CSV) | **Hypothesis only — not locked** | Confirm from headers / sibling files / any exporter footer |
+
+**Adapter/parser follows the actual source after inspect.** Do not lock “CSV columns = …” until the header row is recorded.
+
+#### Q1 inspect protocol (FlightSim, read-only — not I7 ingest)
+
+Run on FlightSim **before writing a parser**. Do not modify files.
+
+```powershell
+$root = "\\media-server\photos\MemoryBox\Sources"
+Get-ChildItem -LiteralPath "$root\sms" -Force | Format-Table Name, Length, LastWriteTime
+Get-Content -LiteralPath "$root\MANIFEST.json" -TotalCount 80
+# Header + a few rows only — do not dump family message bodies into git:
+Get-Content -LiteralPath "$root\sms\Messages - 1085 chat sessions.csv" -TotalCount 3
+```
+
+Record into an I7 Q1 addendum (or this §1.1 table) **before implementation**:
+
+1. Exact path(s) and filename(s) actually present (CSV plus any attachments / HTML / DB / folders).  
+2. Format (delimiter, encoding, header names, whether one-row-per-message).  
+3. Source system if determinable (exporter name, Apple Messages, mixed).  
+4. Fields/columns available (full header list).  
+5. Date min/max (from timestamp column — no invented range).  
+6. How participants, phone numbers, and Apple-account handles are represented.  
+7. How thread / conversation / group name / group membership are represented.  
+8. How attachments are represented (filename, relative path, MIME, GPS-in-attachment).  
+9. Whether richer Apple metadata exists (service, reply, Tapback/reaction, edit, unsend, read/delivered).  
+10. Whether the export is SMS, iMessage, MMS, RCS, or mixed — **from a service/channel field or equivalent, not from the folder name**.  
+11. Any explicit location fields (shared location, address text, attachment GPS).  
+12. Notable limitations (iCloud-offloaded attachments, truncated bodies, missing numbers, timezone).
+
+Until that addendum exists, **Q1 remains the only explicit pre-build inspect blocker.**
+
+### 1.2 Q2 — real corpus selection (after Q1 sample)
+
+Do **not** require Peggy / 2020 / Denny if the export does not support them cleanly.
+
+After sampling (counts, not harvesting message bodies into git):
+
+| Fixture needed | Prefer if present | Else |
+|----------------|-------------------|------|
+| Known Person with a meaningful **two-way** thread | Peggy (EVS-220 / 223 / 224) | Another confirmed MB Person with real two-way texts |
+| Known **year/date window** | 2020 (EVS-065) | A year that actually has messages |
+| Known **keyword** in corpus | “3D printing” + Denny Pizzani (EVS-118) | A real keyword + Person pair |
+| Owner **outbound** count | Tom Will / active owner (EVS-221 / 222) | Same owner, state the year/scope used |
+| **Bidirectional** count | Peggy ↔ owner (EVS-220) | The two-way Person above |
+| EVS-106 earn-in | Sister + distinctive sign-off if present | Disclose gap; do not invent |
+
+Map whatever is chosen **back to EVS intent** in the Q1 addendum (table: EVS → fixture Person/year/keyword). That mapping is part of lock, not a silent substitution.
+
+---
+
+## 2. Locked product rules
 
 ### 2.A Import-only
 
-- I7 ingests a **configured export**. It does not replace Messages.app, carrier SMS, or live phone sync.  
+- I7 ingests the **staged export**. It does not replace Messages.app, carrier SMS, or live phone sync.  
 - Originals stay untouched (same rule as mbox email ingest).  
-- Multi-user / family-contributed SMS is **out** (late / I15).
+- Multi-user / family-contributed SMS is **out**.
 
-### 2.B One evidence model (do not invent a parallel SMS database)
+### 2.B One evidence model
 
-Already in the repo — **reuse, do not fork:**
+Do **not** invent a parallel `sms_messages` SoT unless communication Evidence **cannot** preserve required source/thread metadata. Default: it can.
 
-| Existing | How I7 uses it |
-|----------|----------------|
-| `evidence` + `evidence_kind=communication` | Email already writes this (`ingest/comms_email.py`). SMS adds `evidence_channel=sms` (or `text`) in `payload_json`. |
-| `provider_identities` `identity_kind=phone` | Map numbers → MB Person. |
-| Profile `CONTACT_KINDS` includes `phone` | Owner/Person contact facts for unique match. |
-| Ask `want_communication` → `search_evidence_pg` | Today this is email-shaped. I7 teaches it SMS channel + Person/year filters. |
-| Explore mapper already accepts `sms` / `text` types | Cards on the I4 canvas — **no SMS app, no new nav**. |
-| Archive Health `staged_sms` + “SMS ingest — Not connected in P1” | Flip to honest ingested counts; never show `0` for “not connected”. |
+| Existing | I7 use |
+|----------|--------|
+| `evidence` + `evidence_kind=communication` | One row (or equivalent) per source message |
+| `payload_json` | Normalized fields **plus** a preserved source-metadata bag for unused columns |
+| `sources` | Import source path/file, hash, account/scope |
+| `evidence_channel` / service | `sms` / `text` / `imessage` / `mms` (and RCS if present) as the **source** distinguishes — do not collapse everything to a single label if the export is richer |
+| `provider_identities` `identity_kind=phone` (and handle/email-as-handle if that is how Apple IDs appear) | Map to MB Person |
+| Profile `CONTACT_KINDS` includes `phone` | Unique confirmed contact match |
+| Ask `want_communication` → `search_evidence_pg` | Teach SMS/iMessage channel + Person/year/keyword/count |
+| Explore mapper `sms` / `text` | Communication cards — **no SMS app, no new nav** |
+| Archive Health `staged_sms` | Staged vs ingested vs unavailable; never `0` for “not connected” |
 
-### 2.C Person linking
+Email ingest (`memorybox/ingest/comms_email.py`) is the **pattern** (Source + Evidence, originals untouched, hash skip). I7 does not become I8 richer email.
 
-- Canonical MB Person IDs only. Phone / handle is a **provider identity**, never `people.id`.  
-- Ambiguous numbers → Review, not a silent second Peggy.  
-- Unmapped participants remain visible as number or export display name.
+### 2.C Preserve source fidelity (more than the first EVSs)
 
-### 2.D Honesty
+Normalize fields I7 needs now. **Do not discard** source metadata merely because I7 UI does not expose it.
 
-- Disclose source file, account/scope, date coverage, and unmapped participants.  
-- Counts (EVS-220–222) must state the scope used.  
-- Unavailable ingest ≠ zero messages (I3 rule).  
-- Do not invent missing texts, threads, or “they probably said…”.
+When the export provides them, preserve at least:
 
-### 2.E Surfaces
+- original / source message ID  
+- original text / body  
+- sent / received timestamp(s)  
+- direction / from-owner state  
+- sender handle  
+- recipient handles  
+- participants  
+- phone numbers and/or Apple-account handles  
+- service / channel: iMessage / SMS / MMS / text (and RCS if present)  
+- thread / conversation ID  
+- group name  
+- group participants / membership as available  
+- attachment references (and bytes/files when present and ingest can store them without rewriting the export)  
+- reply relationships  
+- reaction / Tapback metadata  
+- edit / unsend metadata if present  
+- import source path / file  
+- import provenance  
+- ingest timestamp  
+- source coverage / account scope  
 
-- **Ask** is the primary acceptance surface (show / count / summarize-with-cite).  
-- **Explore / Person Explorer** show SMS in the existing mixed-media Gallery + Timeline when dated.  
-- **Archive Health** reports staged vs ingested.  
-- Shared Evidence Viewer: SMS body uses the existing comms/detail shell (I4 already reserved the type). **Do not redesign Explore.**
+Store unused-but-present columns in a structured **source_metadata** object (names as in the file). Losing a column because “Ask doesn’t need it yet” is a defect.
+
+### 2.D Location / correlation readiness (not I10)
+
+Preserve any **explicit** location-related evidence in the source, including where present:
+
+- shared-location content  
+- place / address text  
+- attachment metadata  
+- location-bearing attachment metadata  
+- other source fields relevant to later Place / Event / Trip inference  
+
+Even when a message has **no GPS**, preserve timestamp, participants, thread, attachment, text, and source metadata so later increments can correlate.
+
+**Absence of direct SMS GPS does not prevent later inferred location through correlation.**
+
+Later increments may infer that a text belongs to a Place / Event / Trip using timestamp, message text, GPS-bearing photos/videos, calendar, known trip windows, and other evidence. That inferred location is **not source fact**: preserve method / provenance / confidence. It must **not overwrite** explicit source location evidence.
+
+I7 **does not** run Alaska (or any) Place/Event/Trip inference or narrative.
+
+### 2.E Person linking
+
+- Canonical **MB Person IDs** only.  
+- Phone number / Apple handle is a **provider/contact identity**, never `people.id`.  
+- Normalize phone numbers before matching.  
+- Unique normalized number/handle matching **one confirmed** Person contact → **auto-map**.  
+- Ambiguous matches → **Review**.  
+- No match → retain **unmapped** participant using source display name / raw handle.  
+- Never create silent duplicate People.  
+- Never merge based only on similar display name.
+
+### 2.F Group threads
+
+- **IN** when the source contains them.  
+- Preserve thread/conversation identity, participants, group name when present, group membership as available.  
+- Do **not** throw away group structure because EVS-117 Core 4 is not a hard gate.  
+- Do **not** create a special Core 4 domain object.
+
+### 2.G MMS / attachments
+
+- Attachments stay **linked to the source message**.  
+- Preserve reference + metadata; preserve original bytes/files when the export provides them and ingest can do so **without rewriting Sources**.  
+- Show attachments in the message/thread evidence experience where practical.  
+- **Do not** silently promote attached photos/videos into Immich.  
+- **Do not** automatically create standalone Explore photo/video cards solely because they were attached to an SMS.  
+- Later workflows may explicitly promote/correlate them as first-class MB objects — **not I7**.
+
+### 2.H Ask (hard vs summary)
+
+Hard I7 Ask:
+
+- retrieve messages  
+- Person filtering  
+- year / date-window filtering  
+- keyword filtering  
+- count messages  
+- outbound count  
+- bidirectional count  
+- date ordering  
+- evidence opening  
+- scope disclosure  
+
+Summary EVSs (065 / 118 / 224): short evidence-backed summary **or** cited extract. Underlying messages remain reachable. Never summarize without evidence access. Full trip/year/multi-source narrative stays later (**especially I10/I11**).
+
+### 2.I Surfaces (reuse, do not redesign)
+
+- Ask  
+- Explore mixed-media gallery  
+- Person All Memories  
+- shared communication / evidence detail shell  
+- Archive Health  
+
+SMS/text appears as **communication evidence** inside the existing mixed-media product. **Do not redesign I4 Explore.** No new top-level SMS navigation.
+
+### 2.J Archive Health honesty
+
+After ingestion:
+
+- staged vs ingested distinguishable  
+- unavailable ≠ zero  
+- missing source ≠ zero messages  
+- unsupported date range ≠ zero  
+- unmapped participants disclosed  
+- source / account / date coverage disclosed  
+- do not imply completeness beyond ingested source scope  
 
 ---
 
 ## 3. Scope IN
 
-- Ingest the **confirmed FlightSim export** (Q1) into communication Evidence.  
-- Preserve original text, timestamp, direction (in/out), thread/group id if present, participants, import provenance.  
-- Person association via phone identity (Q5).  
-- Ask: EVS-220, 221, 222, 223 as hard gates; EVS-065, 118, 224 per Q6.  
-- Explore / Person: SMS cards in the current type model; dated items on Timeline.  
-- Archive Health: SMS ingest connected; honest metrics.  
-- Prove harness `prove-p2-i7` (structural + fixture) and FlightSim owner gate.
+- Read-only ingest of the **actual** FlightSim staged export (after Q1 file-open).  
+- Communication Evidence + full source-metadata preservation (§2.C–2.D).  
+- Phone/handle → Person (§2.E).  
+- Group-thread structure when present (§2.F).  
+- Linked attachments, not Immich promotion (§2.G).  
+- Ask hard capabilities + short cited summaries (§2.H).  
+- Explore / Person communication cards + Timeline for dated messages.  
+- Archive Health staged / ingested / unavailable.  
+- Source-fidelity check of at least one real message against the export.  
+- Correlation-readiness check of preserved metadata (no Alaska inference).  
+- `prove-p2-i7` structural harness **plus** FlightSim owner ACCEPTED.
 
 ## 4. Scope OUT
 
 | Out | Home |
 |-----|------|
-| Richer email (threads, attachments-as-artifacts, places) | **P2-I8** |
-| Live carrier / iMessage sync, sending texts | Never I7 |
-| Replacing Messages / SMS apps | Never |
-| Core 4 group object unless Q3 flips | Later / unmapped EVS-117 |
-| MMS images as Immich/library photos | Out (Q4) |
-| Trip / year **narrative** using texts + photos | **P2-I10 / I11** (EVS-047, 070, 211–213) |
+| Richer email (threads-as-email-product, attachments-as-email-artifacts, email places) | **P2-I8** |
 | Spoken moments / STT | **P2-I9** |
-| Face-evidence ownership / Learn-rail Immich writes | **I8.5 after I8 ACCEPTED** — not I7 |
+| Inferring Place / Event / Trip from texts + photos/calendar; “Alaska texts in the Alaska trip” | **P2-I10** (correlation) then **I11** (narrative) |
+| Year / trip / person **multi-source narrative** (EVS-047, 070, 211–213, 235–236) | **I8 + I11** as mapped |
+| Live carrier / iMessage sync, sending texts | Never I7 |
+| Replacing Messages / SMS apps; new SMS nav | Never |
+| Core 4 special object | Out (group threads still preserved) |
+| Auto-promote MMS into Immich / Explore media library | Out |
 | I6 kinship reopen / family tree | Closed |
 | Immich preferred portrait | **P2-BL-I5-01** |
-| Mature Settings / provider catalog | **I13 / I14** (thin Settings path card is a side slice, not I7) |
-| I4 Explore chrome redesign | Closed unless Tom reopens I4 |
+| Face-evidence ownership / Learn-rail Immich writes | **I8.5 after I8** |
+| Mature Settings / provider catalog | **I13 / I14** |
+| I4 Explore chrome redesign | Closed |
 | Invented messages or silent completeness | Forbidden |
+| Multi-user SMS contribution | Late / I15 |
 
 ---
 
 ## 5. EVS coverage (I7 homes)
 
-Canonical homes from MBRM-001A Appendix A.1:
+Canonical homes from MBRM-001A Appendix A.1. Aliases are not separate acceptance.
 
 | EVS | Ask (short) | I7 bar |
 |-----|-------------|--------|
-| **EVS-220** | How many times did Peggy and I text each other? | Count + scope disclosure |
-| **EVS-221** | How many text messages did I send in 2024? | Outbound count for owner + year |
+| **EVS-220** | How many times did Peggy and I text each other? | Bidirectional count + scope; **or** mapped equivalent Person after Q1 sample |
+| **EVS-221** | How many text messages did I send in 2024? | Outbound count for owner + year that **exists** (2024 if present; else disclosed substitute year) |
 | **EVS-222** | How many total text messages have I sent? | Outbound count + coverage |
-| **EVS-223** | Show me all my text messages with Peggy. | Retrieve dated originals |
-| **EVS-224** | Summarize all my text messages with Peggy. | Cited summary or extract (Q6) |
-| **EVS-065** | Summarize texts Peggy and I sent in 2020 | Year window + cite (Q6) |
-| **EVS-118** | Summarize texts with “3D printing” and Denny Pizzani | Keyword + person if corpus has it (Q2) |
-| **EVS-106** | Find messages where my sister and I signed off with a funny name | **Earn-in if** sister + texts exist; else disclose gap — do not invent |
+| **EVS-223** | Show me all my text messages with Peggy. | Retrieve dated originals; **or** mapped equivalent Person |
+| **EVS-224** | Summarize all my text messages with Peggy. | Cited summary/extract; messages reachable |
+| **EVS-065** | Summarize texts Peggy and I sent in 2020 | Year window + cite if that year exists; else mapped year |
+| **EVS-118** | Summarize texts with “3D printing” and Denny Pizzani | Keyword + person **if corpus has it**; else mapped keyword fixture |
+| **EVS-106** | Find messages where my sister and I signed off with a funny name | **Earn-in if** corpus permits; else disclose gap — do not invent |
 
-**Not I7 ACCEPTED** (even if texts appear in the wording):
+**Not I7 ACCEPTED:**
 
-- EVS-047 / 070 — email **and** texts around events / year capsule → **I8 + I11**  
-- EVS-117 Core 4 → Q3; default later  
-- EVS-211–213 / 235–236 trip/year/person narratives → **I11**  
+- EVS-047 / 070 → richer communications + narrative (**I8 / I11**)  
+- EVS-117 Core 4 → not a hard gate; preserve groups anyway  
+- EVS-211–213 / 235–236 → **I11** narrative  
 - Email-only counts (EVS-107 / 108) → **I8**
-
-Aliases are not separate acceptance.
 
 ---
 
-## 6. Discovery (already in the tree — do not reinvent)
+## 6. Discovery (reuse — do not reinvent)
 
 | Area | Finding |
 |------|---------|
-| Email ingest | `memorybox/ingest/comms_email.py` — mbox → Source + Evidence; originals untouched; `evidence_channel=email`. **Copy this pattern.** |
-| Evidence schema | `evidence_kind=communication` already in `001_domain_v0.sql`. |
-| Phone identity | `provider_identities.identity_kind` includes `phone`; Profile contacts include `phone`. |
-| Ask | `want_communication` already searches PG communication Evidence (email-shaped today). |
-| Explore | `explore/find.py` already maps `sms` / `text` onto comms cards. |
-| Archive Health | `staged_sms` looks for `sms/`; ingested SMS metric is **unavailable** with note “CSV is staged under Sources/sms — ingest still deferred in P1”. |
-| I4 | Definition already defers “full SMS engine” to I7; display/link OK. |
-
-No new top-level product. No parallel `sms_messages` SoT unless ingest proves the communication payload cannot hold thread metadata (default: it can).
-
----
-
-## 7. Build plan (sequencing only — not authorized)
-
-1. Confirm Q1 export on FlightSim; write a read-only parser (CSV first if that is the file).  
-2. Ingest job mirroring email: Source + Evidence; hash skip; never rewrite export.  
-3. Phone → Person map (unique contact / Review).  
-4. Ask retrieve: channel=sms, Person, year, keyword; counts with scope.  
-5. Explore / Person cards via existing mapper; Evidence Viewer comms body.  
-6. Archive Health: staged vs ingested honesty.  
-7. `prove-p2-i7` harness + FlightSim owner gate.
+| Staged original | Checkpoint: `Sources\sms\Messages - 1085 chat sessions.csv` (iMessage/SMS export; ingest deferred 2026-08-09) |
+| Email ingest pattern | `memorybox/ingest/comms_email.py` — copy Source + Evidence, do not rewrite originals |
+| Evidence schema | `evidence_kind=communication` already in `001_domain_v0.sql` |
+| Phone identity | `provider_identities.identity_kind` includes `phone`; Profile contacts include `phone` |
+| Ask | `want_communication` already searches PG communication Evidence (email-shaped today) |
+| Explore | `explore/find.py` already maps `sms` / `text` onto comms cards |
+| Archive Health | `staged_sms` probes `sms/`; ingested SMS still **unavailable** / “CSV staged — ingest deferred in P1” |
+| I4 | Full SMS engine deferred to I7; display/link OK |
 
 ---
 
-## 8. Acceptance gate (draft — owner ACCEPTED later)
+## 7. Build plan (sequencing only — **not authorized**)
 
-Pass **all** on FlightSim after build is authorized:
+1. Complete §1.1 Q1 inspect on FlightSim; write header/date/people/keyword addendum.  
+2. Choose §1.2 fixtures from **real** rows; map to EVSs.  
+3. Read-only parser **matching those headers** (not a guessed iMazing schema).  
+4. Ingest job mirroring email: Source + Evidence; preserve §2.C bag; hash skip; never rewrite export.  
+5. Phone/handle → Person (§2.E).  
+6. Ask retrieve / filter / count / open / disclose; short cited summaries.  
+7. Explore / Person cards via existing mapper; comms detail shell; attachments linked.  
+8. Archive Health staged vs ingested honesty.  
+9. Source-fidelity + correlation-readiness checks.  
+10. `prove-p2-i7` harness + FlightSim owner gate.
 
-1. Export ingested; originals unchanged.  
-2. “Show me all my text messages with Peggy” returns **real dated messages**, not stories-only and not “provider unavailable”.  
-3. Peggy↔owner count and owner outbound counts match the ingested corpus and **state their scope**.  
-4. Unmapped numbers / missing years are **disclosed**, not zeroed.  
-5. SMS appears in Explore / Person when the find includes comms — no new app.  
-6. Archive Health no longer claims SMS ingest is P1-deferred if ingest ran.  
-7. I5 / I6 prove stay green. I6 kinship and I5 portrait are untouched.  
-8. Missing export or empty Person thread ≠ invented messages.
+---
 
-Structural `prove-p2-i7` does **not** equal ACCEPTED.
+## 8. ACCEPTED gate (FlightSim, after build is authorized)
+
+Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
+
+1. Real staged export is ingested **without modifying originals**.  
+2. At least one imported **real** message is fidelity-checked against the source export: displayed/normalized **text, timestamp, direction, participants, thread/conversation association** match the source.  
+3. “Show me all my text messages with **[known Person from Q2]**” returns **real dated messages**.  
+4. Person filtering works.  
+5. Year / date-window filtering works.  
+6. Keyword filtering works.  
+7. Bidirectional Person count matches the ingested corpus and **states scope**.  
+8. Owner outbound count matches the ingested corpus and **states scope**.  
+9. Unique phone/handle identity maps to canonical MB Person correctly.  
+10. Ambiguous / unmapped identities remain visible / reviewable and are **not silently merged**.  
+11. Group-thread structure is preserved when present in the source.  
+12. Attachments remain linked / provenance-preserved and are **not** silently promoted to Immich or standalone Explore media.  
+13. Rich source metadata useful for later correlation is preserved (§2.C).  
+14. At least one message demonstrates preserved metadata sufficient for later Place / Event / Trip correlation (§2.D). I7 does **not** infer Alaska (or any trip) to pass.  
+15. SMS appears as communication evidence in Ask / Explore / Person **without a new SMS app**.  
+16. Dated SMS participates in the existing Timeline / Explore model where applicable.  
+17. Archive Health reports staged / ingested / unavailable honestly.  
+18. Missing years, missing participants, unavailable source, or unsupported coverage **never** become false zero / completeness.  
+19. Short SMS summaries, if tested, are evidence-backed and underlying messages are reachable.  
+20. **No I8 richer-email work** is pulled into I7.  
+21. **No I10/I11 trip/year multi-source narrative** is pulled into I7.  
+22. **No I4 Explore redesign** is pulled into I7.  
+23. Existing accepted behavior from prior increments remains green (I1–I6 prove / owner surfaces).  
+24. Structural prove/harness passes, but **manual FlightSim owner acceptance remains required**.
 
 ---
 
@@ -190,11 +381,14 @@ Structural `prove-p2-i7` does **not** equal ACCEPTED.
 
 | Step | Status |
 |------|--------|
-| I6 ACCEPTED | **Yes** (2026-08-14 — Tom) |
-| I7 definition draft | **This document** — review |
-| Q1–Q2 (export + corpus) | **OPEN** |
-| Q3–Q6 defaults | **PROPOSED** |
+| I1–I6 ACCEPTED | **Yes** |
+| Q3 group threads | **LOCKED** (preserve when present; no Core 4 object) |
+| Q4 MMS / attachments | **LOCKED** (linked; no Immich/Explore auto-promote) |
+| Q5 Person mapping | **LOCKED** (unique auto-map / ambiguous Review / unmapped retained) |
+| Q6 summaries | **LOCKED** (retrieve/count/filter hard; cited extract OK; narrative later) |
+| Q1 file-open (headers, siblings, dates, people, keywords, location columns) | **OPEN — only pre-build inspect blocker** |
+| Q2 named fixtures | **RULES LOCKED; names after Q1 sample** |
 | Build | **NOT AUTHORIZED** |
-| Implementation | **NONE** |
+| Implementation | **NONE this revision** |
 
-**Do not write I7 runtime** until Tom locks the questions and explicitly authorizes build.
+**Do not write I7 runtime** until Q1 inspect is recorded and Tom explicitly authorizes build.

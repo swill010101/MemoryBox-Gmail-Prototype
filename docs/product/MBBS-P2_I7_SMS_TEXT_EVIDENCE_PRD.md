@@ -1,49 +1,50 @@
 # MBBS — P2-I7 SMS/Text Evidence · Product Request Document
 
-**Status:** **DRAFT for review** · **NO BUILD**  
-**Date:** 2026-08-14  
+**Status:** **LOCK-READY** · **NO BUILD**  
+**Date:** 2026-08-14 (revised)  
 **Owner:** Tom  
 **Increment:** P2-I7 (MBRM-001A) — SMS/Text Evidence · A  
-**Definition (review this):** [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md)  
-**Depends:** P2-I6 **ACCEPTED**
+**Definition (lock this):** [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md)  
+**Depends:** P2-I6 **ACCEPTED** · I1–I6 ACCEPTED
 
 ## Problem
 
-Text messages are staged (Archive Health: CSV under `Sources/sms`) but **ingest is still “Not connected in P1.”** Ask/Explore can talk about SMS as a type; they cannot search a real thread. Email already uses communication Evidence. SMS is the missing first-class channel (MBPS P2-COM-01 · CAP-P2-018).
+Text messages are staged on media-server (`Sources\sms\Messages - 1085 chat sessions.csv`, checkpoint 2026-08-09) but ingest is still deferred. Ask/Explore can name SMS as a type; they cannot search a real thread. Email already uses communication Evidence. SMS/iMessage is the missing first-class channel (MBPS P2-COM-01 · CAP-P2-018).
 
-This matters now because I6 is closed. MBRM-001A’s next increment is SMS, not another Person/kinship slice.
+This matters now because I6 is closed. I7 must ingest **and keep** enough source metadata that later “Alaska texts in the Alaska trip” work does not re-import the export — without doing that correlation in I7.
 
 ## Success criteria
 
-On FlightSim, after a later authorized build: imported texts for a known Person (propose Peggy) are **shown, counted, and citable** in Ask; dated SMS cards can appear on the existing Explore / Person canvas; Archive Health reports honest ingest; originals are untouched; gaps are disclosed. See definition §8.
+Definition §8 (24 FlightSim gates): real ingest, source-fidelity check, Person/date/keyword retrieve, outbound + bidirectional counts with scope, identity mapping without silent merge, group threads preserved when present, attachments linked not promoted, correlation metadata preserved, honesty in Archive Health, existing Ask/Explore/Person surfaces only.
 
-## Scope IN
+## Scope IN / OUT
 
-Ingest confirmed export · communication Evidence · phone→Person · Ask EVS-220–223 (and 065/118/224 per Q6) · existing Explore SMS type · Archive Health honesty.
-
-## Scope OUT
-
-Richer email (I8) · live phone sync · SMS app / new nav · I6 reopen · I5 portrait · I8.5 face evidence · trip/year narrative (I11) · inventing messages · Explore redesign.
+IN/OUT as definition §§3–4. Explicitly **not** I8 richer email, I9 spoken, I10 correlation, I11 narrative, I13/I14 Settings, multi-user, or I4 Explore redesign.
 
 ## Constraints
 
-- Reuse email ingest + `evidence_kind=communication`. Do not invent a second SoT.  
-- Canonical MB Person IDs; phone is a mapping.  
-- I3 honesty: unavailable ≠ 0.  
-- I4 canvas is the UX; do not fork a messaging UI.
+- Parser follows **actual** source after Q1 file-open (this revision did not open the CSV bytes).  
+- One communication Evidence model; preserve unused columns in source_metadata.  
+- Canonical MB Person IDs; phone/handle is mapping only.  
+- Unavailable ≠ 0.  
+- No new messaging product.
 
 ## Discovery
 
-See definition §6. Email ingest, phone identity, Ask `want_communication`, Explore `sms`/`text` types, and Archive Health `staged_sms` already exist.
+Definition §§1.1 and 6. Documented path from Sources checkpoint; **row-level format still uninspected** from this environment.
 
-## Open questions
+## Q1–Q6
 
-Definition §1 **Q1–Q6**. **Q1 (export path/format) and Q2 (acceptance people/years) block build.**
+| # | Status |
+|---|--------|
+| Q1 | Path documented; **open the file on FlightSim** before parser |
+| Q2 | Real-corpus rules locked; names after sample |
+| Q3–Q6 | **LOCKED** (definition §1) |
 
 ## Build plan
 
-Definition §7 — **not authorized**.
+Definition §7 — **not authorized**. No runtime in this revision.
 
 ## Sign-off
 
-**Review only.** Tom: lock Q1–Q2 (and accept or change Q3–Q6), then explicitly authorize build. Until then: **no I7 runtime.**
+Tom: lock this definition (and the Q1 addendum once the CSV is opened), then explicitly authorize build. Until then: **no I7 runtime.**

@@ -39,6 +39,6 @@ P2-I6 Relationship Graph & Derived Kinship is **ACCEPTED** (2026-08-14 — Tom: 
 
 Authority: [MBBS-P2_INCREMENT_6_DEFINITION.md](MBBS-P2_INCREMENT_6_DEFINITION.md).
 
-## Next increment (draft only)
+## Next increment (lock-ready, no build)
 
-**P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) · [PRD](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md). **No build** until Tom locks export/corpus questions and authorizes.
+**P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) · [PRD](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md). Q3–Q6 locked. **Q1 remaining:** open `Sources\sms\Messages - 1085 chat sessions.csv` on FlightSim (headers/siblings/dates/people) before any parser. **No build** until that inspect is recorded and Tom authorizes.
