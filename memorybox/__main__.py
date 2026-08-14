@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Read-only SMS export inventory (headers/counts; no ingest; no rewrite)",
     )
     p_inspect_sms.add_argument("--uri", default=None)
+    sub.add_parser(
+        "repair-sms-identities",
+        help="Backfill People confirmed phones from ingested unique SMS auto-maps",
+    )
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
     p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
@@ -302,6 +306,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.comms_sms import inspect_default_or_uri
 
         payload = inspect_default_or_uri(args.uri)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "repair-sms-identities":
+        from memorybox.person.phone_map import repair_sms_identity_contacts
+
+        payload = repair_sms_identity_contacts()
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

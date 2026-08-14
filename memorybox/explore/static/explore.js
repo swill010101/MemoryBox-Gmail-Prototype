@@ -516,6 +516,7 @@
 
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
+    if (id === "email") state.domain.includeTexts = true;
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -655,9 +656,13 @@
       }`;
       return;
     }
+    const trunc =
+      state.domain.smsTruncated && state.domain.smsMatchTotal
+        ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
+        : "";
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }`;
+    }${trunc}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -756,9 +761,10 @@
       return false;
     }
     if (
-      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4})/.test(
+      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4}|texts?|sms|imessage|messages?|all the|all my)/.test(
         whoL
-      )
+      ) ||
+      /\b(text|sms|imessage|i-?message|mms|message)s?\b/.test(whoL)
     ) {
       return false;
     }
@@ -849,11 +855,13 @@
     const includeTexts = keepPresentation && state
       ? Boolean(state.domain.includeTexts || galleryShowSms)
       : galleryShowSms;
-    if (!keepPresentation) {
+    if (galleryShowSms) {
+      // Text-only ask → Email/Text filter selected (stay in sync with gallery)
+      nextType = "email";
+    } else if (!keepPresentation) {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
       else if (vs === "video_only") nextType = "video";
-      else if (galleryShowSms) nextType = "all";
       else nextType = "all";
     }
     let temporalWindows = null;
@@ -912,6 +920,8 @@
         typeFilter: nextType,
         includeTexts: includeTexts,
         galleryShowSms: galleryShowSms,
+        smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
+        smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
@@ -1251,7 +1261,11 @@
         .then((payload) => {
           applyPayloadToState(payload, { keepPresentation: true });
           ensureLockedPersonChip();
-          setTypeFilter("all");
+          if (payload.explore_state && payload.explore_state.gallery_show_sms) {
+            setTypeFilter("email");
+            state.domain.includeTexts = true;
+            state.domain.galleryShowSms = true;
+          }
           render();
         })
         .catch((err) => {
@@ -1354,31 +1368,37 @@
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
       window.mbShell.setActivePerson({ id: id || "", name: name });
+      if (state.domain.askText && window.mbShell.setActiveAsk) {
+        window.mbShell.setActiveAsk(state.domain.askText);
+      }
       window.mbShell.refreshPeopleNavLinks();
     }
   }
 
   function peopleNavHref() {
+    let href = "/people/ui";
     if (window.mbShell && typeof window.mbShell.peopleHref === "function") {
-      return window.mbShell.peopleHref();
+      href = window.mbShell.peopleHref();
     }
     const chip =
       state &&
       state.domain &&
       (state.domain.chips || []).find((c) => c && c.kind === "person");
     if (PERSON_MODE && PERSON && PERSON.personId) {
-      return (
+      href =
         "/people/ui?person=" +
         encodeURIComponent(PERSON.personId) +
         (PERSON.displayName
           ? "&person_name=" + encodeURIComponent(PERSON.displayName)
-          : "")
-      );
+          : "");
+    } else if (chip && chip.label && href === "/people/ui") {
+      href = "/people/ui?person_name=" + encodeURIComponent(chip.label);
     }
-    if (chip && chip.label) {
-      return "/people/ui?person_name=" + encodeURIComponent(chip.label);
+    const ask = (state && state.domain && state.domain.askText) || "";
+    if (href && href !== "/people/ui" && ask) {
+      href += (href.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(ask);
     }
-    return "/people/ui";
+    return href;
   }
 
   function renderNav() {
@@ -1592,7 +1612,11 @@
     const media = it.thumb_url || it.media_url || "";
     if (t === "email" || t === "sms" || t === "text") {
       const from = escapeHtml(it.from || "Message");
-      return `<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      const nAtt = Array.isArray(it.attachments) ? it.attachments.length : Number(it.attachment_count || 0);
+      const att = nAtt
+        ? `<span class="mb-card-attach" title="${nAtt} attachment${nAtt === 1 ? "" : "s"} linked to this message">📎 ${nAtt}</span>`
+        : "";
+      return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
       return `<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
@@ -1687,9 +1711,13 @@
         : "";
     const viewBit =
       (state.gallery.viewMode || "gallery") === "map" ? " · map" : "";
+    const totalBit =
+      state.domain.smsTruncated && state.domain.smsMatchTotal
+        ? ` · ${state.domain.smsMatchTotal} matching texts (year-fair sample)`
+        : "";
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
-    }${placeBit}${undatedBit}${refineBit}${viewBit}`;
+    }${placeBit}${undatedBit}${refineBit}${viewBit}${totalBit}`;
   }
 
   function ensureMap() {
@@ -2484,8 +2512,30 @@
       </div>`;
     }
     if (t === "email" || t === "sms" || t === "text") {
+      const atts = Array.isArray(item.attachments) ? item.attachments : [];
+      const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
+      const attHtml = atts.length
+        ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
+            atts.length === 1 ? "" : "s"
+          }</strong> — linked to this message, not added to the photo library.<ul>${atts
+            .map((a) => {
+              const name = escapeHtml(a.filename || a.source_ref || "attachment");
+              const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
+              return `<li>${name}${kind}</li>`;
+            })
+            .join("")}</ul></div>`
+        : "";
+      const phoneHtml = mapped.length
+        ? `<p class="mb-ev-meta">Confirmed phone/handle: ${mapped
+            .map((m) => escapeHtml(m.handle || m.normalized || ""))
+            .filter(Boolean)
+            .join(", ")} — also shown on People.</p>`
+        : "";
       return `<div class="mb-ev-email">${escapeHtml(item.detail || item.preview || "")}</div>
-        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text</p>`;
+        ${attHtml}
+        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text${
+        item.direction ? " · " + escapeHtml(item.direction) : ""
+      }</p>${phoneHtml}`;
     }
     if (t === "story") {
       return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
@@ -2504,6 +2554,9 @@
     const media = item.thumb_url || item.media_url || "";
     const peeps = peopleList(item).slice(0, 4).join(", ");
     const place = item.place || item.location || item.city || "";
+    const isText = t === "email" || t === "sms" || t === "text";
+    const body = String(item.detail || item.preview || item.title || "");
+    const nAtt = Array.isArray(item.attachments) ? item.attachments.length : Number(item.attachment_count || 0);
     const dur =
       item.duration_sec != null
         ? `${Math.floor(item.duration_sec / 60)}:${String(
@@ -2512,6 +2565,17 @@
         : item.t != null
           ? `@ ${Number(item.t).toFixed(0)}s`
           : "";
+    if (isText) {
+      return `<div class="mb-qp-body mb-qp-text">
+      <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
+      <div class="mb-qp-title">${escapeHtml(item.from || item.title || "Message")}</div>
+      <div class="mb-qp-line">${escapeHtml(fmtCardDate(item.date))}${
+        item.direction ? " · " + escapeHtml(item.direction) : ""
+      }</div>
+      ${peeps ? `<div class="mb-qp-line">${escapeHtml(peeps)}</div>` : ""}
+      <div class="mb-qp-textbody">${escapeHtml(body)}</div>
+    </div>`;
+    }
     const mediaBlock = media
       ? `<div class="mb-qp-media"><img src="${escapeAttr(media)}" alt="" /></div>`
       : `<div class="mb-qp-media"><span>${escapeHtml(TYPE_GLYPH[t] || "•")}</span></div>`;
@@ -3081,6 +3145,10 @@
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
       } else if (PERSON_MODE) {
+        if (q.trim() && PERSON) {
+          PERSON.memoryMode = "all";
+          if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
+        }
         const seed = q || ("Show " + (PERSON.displayName || "person"));
         payload = await liveFind(seed);
         if (payload.session_id) {

@@ -118,11 +118,71 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "i7_cli",
         '"ingest-sms"' in main
         and '"inspect-sms"' in main
+        and '"repair-sms-identities"' in main
         and '"prove-p2-i7"' in main
         and "prove-video" in main,
         checks,
         problems,
         "CLI ingest/inspect/prove-p2-i7 (P1 prove-video unchanged)",
+    )
+    explore_css = (root / "explore" / "static" / "explore.css").read_text(encoding="utf-8")
+    _check(
+        "i7_no_silent_5000_oldest",
+        "SMS_RETRIEVE_CAP" in retrieve
+        and "_year_fair_slice" in retrieve
+        and "limit=max(limit, 5000)" not in retrieve
+        and "hits[: max(1, int(limit))]" not in retrieve,
+        checks,
+        problems,
+        "SMS retrieve is not a silent 5000 oldest-first cap",
+    )
+    _check(
+        "i7_filter_sync_email_text",
+        'nextType = "email"' in explore_js
+        and "gallery_show_sms" in explore_js
+        and "setTypeFilter(\"all\")" not in explore_js.split("liveFind(text)")[-1][:400],
+        checks,
+        problems,
+        "Explicit text ask selects Email/Text filter",
+    )
+    _check(
+        "i7_dark_readable_explore",
+        "--mb-page: #0f141c" in explore_css
+        and ".mb-card-textbody" in explore_css
+        and "#e8edf5" in explore_css
+        and 'background: #f8fafc' not in explore_css.split(".mb-card-media[data-type=\"sms\"]")[1][:200],
+        checks,
+        problems,
+        "Explore dark theme; SMS card text is light on dark",
+    )
+    _check(
+        "i7_hover_and_attach_indicator",
+        "mb-qp-textbody" in explore_js
+        and "mb-card-attach" in explore_js
+        and "linked to this message" in explore_js,
+        checks,
+        problems,
+        "Hover expands text; paperclip marks attachments",
+    )
+    _check(
+        "i7_people_confirmed_phone",
+        "ensure_confirmed_phone_contact" in phone
+        and "repair_sms_identity_contacts" in phone
+        and "Confirmed phone" in (root / "person" / "static" / "person-explore.js").read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+        "Unique SMS phone writes confirmed People contact",
+    )
+    _check(
+        "i7_ask_keeps_person_context",
+        "setActiveAsk" in explore_js
+        and "setActivePerson" in (root / "ask" / "static" / "ask.html").read_text(encoding="utf-8")
+        and 'PERSON.memoryMode = "all"' in explore_js,
+        checks,
+        problems,
+        "Ask → People keeps person + query; Person opens All Memories",
     )
     _check(
         "i7_no_i8_email_product",
@@ -159,7 +219,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
 
 
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:
-    from memorybox.ask.retrieve import search_sms_messages
+    from memorybox.ask.retrieve import EvidenceHit, _year_fair_slice, search_sms_messages
     from memorybox.context import AskContext
     from memorybox.explore.find import explicit_text_gallery, items_from_ask_result
     from memorybox.ingest import store as store
@@ -340,6 +400,32 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         f"plan notes={plan_all.notes} people={plan_all.person_names} scope={plan_all.visual_scope}",
+    )
+    fake_span = [
+        EvidenceHit(
+            evidence_id=f"y{year}-{i}",
+            evidence_kind="communication",
+            summary="x",
+            score=1.0,
+            excerpt="x",
+            source="sms_export",
+            sent_at=f"{year}-06-01T12:00:00",
+        )
+        for year in range(2008, 2026)
+        for i in range(400)
+    ]
+    sliced, truncated = _year_fair_slice(fake_span, 5000)
+    years_kept = { (h.sent_at or "")[:4] for h in sliced }
+    _check(
+        "i7_year_fair_keeps_recent",
+        truncated
+        and len(sliced) == 5000
+        and "2008" in years_kept
+        and "2019" in years_kept
+        and "2025" in years_kept,
+        checks,
+        problems,
+        f"year-fair years={sorted(years_kept)} n={len(sliced)}",
     )
     hits_peggy = search_sms_messages(plan_all, limit=5000)
     _check(

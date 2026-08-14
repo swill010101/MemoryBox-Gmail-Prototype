@@ -31,9 +31,18 @@ class EvidenceHit:
     direction: str | None = None
     attachments: list[dict[str, Any]] | None = None
     count_scope: str | None = None
+    match_total: int | None = None
+    truncated: bool = False
+    identity_mapped: list[dict[str, str]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# Hard ceiling so a 90k-row export cannot dump the whole archive into Explore.
+# Year-fair sampling keeps every year on the Timeline when we must truncate.
+# The old default of 5000 oldest-first silently dropped 2020–2025 on FlightSim.
+SMS_RETRIEVE_CAP = 25000
 
 
 SMS_ASK_RE = re.compile(
@@ -137,6 +146,30 @@ def _sms_ask(plan: QueryPlan) -> bool:
     return bool(SMS_ASK_RE.search(blob)) or "want_sms_modality" in (plan.notes or ())
 
 
+def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    atts = [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
+    if atts:
+        return atts
+    meta = payload.get("source_metadata") or {}
+    if not isinstance(meta, dict):
+        return []
+    raw = str(meta.get("Attachment") or meta.get("attachment") or "").strip()
+    if not raw:
+        return []
+    kind = str(meta.get("Attachment type") or meta.get("attachment_type") or "").strip()
+    name = raw.replace("\\", "/").rstrip("/").split("/")[-1] or raw
+    return [
+        {
+            "filename": name,
+            "source_ref": raw,
+            "attachment_type": kind or None,
+            "promoted_to_immich": False,
+            "standalone_explore_media": False,
+            "from_source_metadata": True,
+        }
+    ]
+
+
 def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
     people = [
         str(p)
@@ -145,23 +178,68 @@ def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> E
     ]
     if payload.get("sender_name") and payload["sender_name"] not in people:
         people.insert(0, str(payload["sender_name"]))
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    identity = [
+        {
+            "handle": str(m.get("handle") or m.get("normalized") or ""),
+            "normalized": str(m.get("normalized") or ""),
+            "person_id": str(m.get("person_id") or ""),
+            "status": str(m.get("status") or "auto_mapped"),
+        }
+        for m in mapped
+        if isinstance(m, dict) and (m.get("handle") or m.get("normalized"))
+    ]
     return EvidenceHit(
         evidence_id=str(row["id"]),
         evidence_kind=row["evidence_kind"],
         summary=row["summary"] or (payload.get("body_text") or "text message")[:80],
         score=score,
-        excerpt=_excerpt(payload, row["evidence_kind"]),
+        excerpt=_excerpt(payload, row["evidence_kind"], limit=800),
         source="sms_export",
         sent_at=payload.get("sent_at"),
         channel=str(payload.get("evidence_channel") or payload.get("service") or "text"),
         people=people or None,
         thread_id=payload.get("thread_id") or payload.get("group_name"),
         direction=payload.get("direction"),
-        attachments=list(payload.get("attachments") or []) or None,
+        attachments=_sms_attachments(payload) or None,
+        identity_mapped=identity or None,
     )
 
 
-def search_sms_messages(plan: QueryPlan, *, limit: int = 5000) -> list[EvidenceHit]:
+def _year_fair_slice(hits: list[EvidenceHit], limit: int) -> tuple[list[EvidenceHit], bool]:
+    """Keep every year represented when a retrieve cap would otherwise drop recent texts."""
+    cap = max(1, int(limit))
+    if len(hits) <= cap:
+        return hits, False
+    by_year: dict[str, list[EvidenceHit]] = {}
+    for h in hits:
+        year = (h.sent_at or "")[:4] or "undated"
+        by_year.setdefault(year, []).append(h)
+    years = sorted(by_year)
+    min_per = max(24, cap // max(len(years), 1))
+    selected: list[EvidenceHit] = []
+    leftovers: list[EvidenceHit] = []
+    budget = cap
+    for year in years:
+        group = sorted(
+            by_year[year],
+            key=lambda h: (h.sent_at or "", h.evidence_id),
+            reverse=True,
+        )
+        take = min(len(group), min_per, budget)
+        selected.extend(group[:take])
+        leftovers.extend(group[take:])
+        budget -= take
+        if budget <= 0:
+            break
+    leftovers.sort(key=lambda h: (h.sent_at or "", h.evidence_id), reverse=True)
+    if budget > 0:
+        selected.extend(leftovers[:budget])
+    selected.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    return selected, True
+
+
+def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date / keyword retrieve over ingested SMS/iMessage Evidence."""
     from memorybox.person.phone_map import normalize_handle
 
@@ -262,16 +340,35 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = 5000) -> list[EvidenceH
     if keywords:
         scope_bits.append("keyword=" + ",".join(keywords))
     scope = "; ".join(scope_bits)
-    if want_count and hits:
-        hits[0].count_scope = scope
-        hits[0].summary = f"{len(hits)} text messages ({scope}). {hits[0].summary}"
-    return hits[: max(1, int(limit))]
+    total = len(hits)
+    sliced, truncated = _year_fair_slice(hits, max(1, int(limit)))
+    if truncated:
+        years = sorted({(h.sent_at or "")[:4] for h in sliced if (h.sent_at or "")[:4]})
+        scope = (
+            f"{scope}; showing {len(sliced)} of {total} "
+            f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+        )
+    if sliced:
+        sliced[0].count_scope = scope
+        sliced[0].match_total = total
+        sliced[0].truncated = truncated
+        if want_count:
+            sliced[0].summary = f"{total} text messages ({scope}). {sliced[0].summary}"
+        elif truncated:
+            sliced[0].summary = (
+                f"Showing {len(sliced)} of {total} text messages ({scope}). "
+                f"{sliced[0].summary}"
+            )
+        for h in sliced:
+            h.match_total = total
+            h.truncated = truncated
+    return sliced
 
 
 def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]:
     """Keyword search over authoritative PostgreSQL Evidence (always available)."""
     if _sms_ask(plan) and plan.want_communication:
-        sms = search_sms_messages(plan, limit=max(limit, 5000))
+        sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
         # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
         if sms or SMS_ASK_RE.search(plan.original_ask or ""):
             return sms

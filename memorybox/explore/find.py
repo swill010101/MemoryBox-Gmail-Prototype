@@ -315,6 +315,14 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             direction=e.get("direction"),
         )
         item["from"] = people[0] if people else (e.get("thread_id") or "Message")
+        atts = e.get("attachments") or item.get("attachments") or []
+        item["attachments"] = atts
+        item["attachment_count"] = len(atts) if isinstance(atts, list) else 0
+        if e.get("identity_mapped"):
+            item["identity_mapped"] = e.get("identity_mapped")
+        if e.get("match_total") is not None:
+            item["match_total"] = e.get("match_total")
+            item["truncated"] = bool(e.get("truncated"))
         if _is_sms_type(item.get("type") or type_):
             item["gallery_default_hidden"] = not explicit_text_gallery(result)
         add(item)
@@ -618,6 +626,21 @@ def build_explore_find(
     counts["undated"] = sum(1 for i in visible_items if i.get("undated"))
     counts["sms_available"] = sms_available
     counts["sms_hidden"] = sms_hidden
+    sms_match_total = 0
+    sms_truncated = False
+    for e in result.get("evidence_hits") or []:
+        if e.get("match_total"):
+            sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
+        if e.get("truncated"):
+            sms_truncated = True
+    if sms_truncated and sms_match_total:
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" Showing {counts.get('sms', 0) or sms_available} of "
+                f"{sms_match_total} matching texts (every year kept on the Timeline)."
+            )
+        ).strip()
 
     plan = result.get("plan") or {}
     return {
@@ -651,5 +674,7 @@ def build_explore_find(
             "gallery_show_sms": show_sms,
             "sms_available": sms_available,
             "sms_hidden": sms_hidden,
+            "sms_match_total": sms_match_total,
+            "sms_truncated": sms_truncated,
         },
     }

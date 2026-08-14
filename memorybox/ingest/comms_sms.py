@@ -15,7 +15,11 @@ from memorybox.ingest.sms_parse import (
     inspect_sms_export,
     iter_sms_messages,
 )
-from memorybox.person.phone_map import _index_confirmed_handles, resolve_handles
+from memorybox.person.phone_map import (
+    _index_confirmed_handles,
+    ensure_confirmed_phone_contact,
+    resolve_handles,
+)
 
 
 def default_sms_export_path() -> Path | None:
@@ -143,8 +147,10 @@ def ingest_sms(
         )
         inserted = 0
         skipped = 0
+        contacts_upserted = 0
         evidence_ids: list[str] = []
         headers: list[str] = []
+        written_contacts: set[tuple[str, str]] = set()
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
         with connection() as conn:
@@ -164,6 +170,20 @@ def ingest_sms(
                     ingested_at=ingested_at,
                     handle_index=handle_index,
                 )
+                for mapped in (payload.get("identity_resolution") or {}).get("mapped") or []:
+                    pid = str(mapped.get("person_id") or "")
+                    handle = str(mapped.get("normalized") or mapped.get("handle") or "")
+                    key = (pid, handle)
+                    if not pid or not handle or key in written_contacts:
+                        continue
+                    written_contacts.add(key)
+                    if ensure_confirmed_phone_contact(
+                        pid,
+                        handle,
+                        conn=conn,
+                        provenance={"source": "sms_auto_map", "handle": handle},
+                    ):
+                        contacts_upserted += 1
                 summary = (
                     msg.body_text or msg.thread_id or msg.subject or "text message"
                 )[:500]
@@ -197,6 +217,7 @@ def ingest_sms(
             "headers": headers,
             "inserted": inserted,
             "skipped": skipped,
+            "contacts_upserted": contacts_upserted,
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,

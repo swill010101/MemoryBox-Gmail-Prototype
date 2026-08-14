@@ -25,6 +25,7 @@
   const STACK_KEY = "mb_shell_context_stack";
   const RECENT_KEY = "mb_shell_recent_asks";
   const ACTIVE_PERSON_KEY = "mb_active_person";
+  const ACTIVE_ASK_KEY = "mb_active_ask";
 
   function surface() {
     return (
@@ -73,18 +74,41 @@
     );
   }
 
+  function getActiveAsk() {
+    try {
+      return (sessionStorage.getItem(ACTIVE_ASK_KEY) || "").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function setActiveAsk(text) {
+    const t = String(text || "").trim();
+    try {
+      if (!t) sessionStorage.removeItem(ACTIVE_ASK_KEY);
+      else sessionStorage.setItem(ACTIVE_ASK_KEY, t);
+    } catch (_) {}
+  }
+
+  function withAsk(href) {
+    const ask = getActiveAsk();
+    if (!ask || !href || href === "/people/ui") return href;
+    if (/[?&]q=/.test(href)) return href;
+    return href + (href.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(ask);
+  }
+
   /** People destination: continue active person into Person Explorer when present. */
   function peopleHref() {
     const p = getActivePerson();
     if (p && p.id) {
-      return (
+      return withAsk(
         "/people/ui?person=" +
-        encodeURIComponent(p.id) +
-        (p.name ? "&person_name=" + encodeURIComponent(p.name) : "")
+          encodeURIComponent(p.id) +
+          (p.name ? "&person_name=" + encodeURIComponent(p.name) : "")
       );
     }
     if (p && p.name) {
-      return "/people/ui?person_name=" + encodeURIComponent(p.name);
+      return withAsk("/people/ui?person_name=" + encodeURIComponent(p.name));
     }
     return "/people/ui";
   }
@@ -143,6 +167,8 @@
     },
     getActivePerson,
     setActivePerson,
+    getActiveAsk,
+    setActiveAsk,
     peopleHref,
     refreshPeopleNavLinks,
   };

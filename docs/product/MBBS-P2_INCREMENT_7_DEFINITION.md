@@ -404,7 +404,9 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | Build | **AUTHORIZED** 2026-08-14 (Tom) |
 | Implementation | **THIS REVISION** (`ingest-sms`, `inspect-sms`, `prove-p2-i7`) |
 | FlightSim ingest | **DONE** 2026-08-14 — job `7f763b4e-7ef0-40b5-804b-07ca10e18c34`; inserted **90,784**; skipped **1,014** duplicate hashes; processed **91,798** (= inspect row_count); `original_untouched: true` |
-| ACCEPTED | **No** — §8 FlightSim owner gate remains |
+| Owner notes 2026-08-14 | §8 items **1–8 pass**. Item **10 understood**. Item **9 still the remaining gate** (confirmed phone must show on People). Year / Peggy / FL selection works. |
+| FlightSim bugs this revision | Silent **5000 oldest-first** cap hid 2020–2025 and froze the header at 5000; mixed light/dark wiped SMS text; Ask→Explore/People dropped context; Email/Text filter stayed on All; hover did not expand text; no attachment indicator. |
+| ACCEPTED | **No** — §8 item 9 + remaining owner rows after this fix |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
 
@@ -418,12 +420,14 @@ git fetch origin
 git checkout cursor/p2-i7-sms-definition-3061
 git pull origin cursor/p2-i7-sms-definition-3061
 python -m memorybox prove-p2-i7
-# optional real export (do not commit message bodies):
-python -m memorybox inspect-sms
-python -m memorybox ingest-sms
-# restart serve, then Ctrl+F5
+# Backfill People confirmed phones from the already-ingested unique auto-maps:
+python -m memorybox repair-sms-identities
+# do NOT re-run ingest-sms unless you want an idempotent skip of the same file
+# restart python -m memorybox serve, then Ctrl+F5
 ```
 
-Real export ingest on FlightSim **succeeded** 2026-08-14 (90,784 inserted / 1,014 hash-skips / original untouched). Restart serve before Ask / Explore / Archive Health.
+Real export ingest on FlightSim **succeeded** 2026-08-14 (90,784 inserted / 1,014 hash-skips / original untouched).
 
-Confirm the CLI lists `prove-p2-i7`, `ingest-sms`, and `inspect-sms` before treating the tree as I7.
+After this revision: SMS retrieve is year-fair up to 25,000 (no silent 2019 cutoff). Explore / Ask / People picker are dark with readable text. Explicit text asks select **Email/Text**. Hover expands the message. Paperclip **📎 N** on a card means that message has attachment(s) linked — not Immich photos. `repair-sms-identities` writes unique auto-mapped phones onto People as confirmed contacts.
+
+Confirm the CLI lists `prove-p2-i7`, `ingest-sms`, `inspect-sms`, and `repair-sms-identities` before treating the tree as I7.
