@@ -905,40 +905,43 @@ def ask_immich_person_ids(person_id: str, *, photo: Any | None = None) -> list[s
         except Exception:  # noqa: BLE001
             photo = None
     name = (view.display_name or "").strip()
-    if photo is not None and name:
-        for r in _exact_named_photo_people(photo, name):
-            ext = str(getattr(r, "external_id", "") or "").strip()
-            if ext:
-                out.append(ext)
-        try:
-            from memorybox.profile.facts import list_aliases
+    # Mapped / face-evidence ids are enough — do not dump Immich /people
+    # (that payload + N family portraits closes Immich's socket).
+    if out or photo is None or not name:
+        return list(dict.fromkeys(x for x in out if x))
+    for r in _exact_named_photo_people(photo, name):
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext:
+            out.append(ext)
+    try:
+        from memorybox.profile.facts import list_aliases
 
-            for alias in list_aliases(person_id) or []:
-                text = str(getattr(alias, "alias_text", None) or "").strip()
-                if len(text) < 2:
-                    continue
-                for r in _exact_named_photo_people(photo, text):
-                    ext = str(getattr(r, "external_id", "") or "").strip()
-                    if ext:
-                        out.append(ext)
-        except Exception:  # noqa: BLE001
-            pass
-        if not out:
-            covered = _token_cover_photo_people(photo, name)
-            if len(covered) == 1:
-                ext = str(getattr(covered[0], "external_id", "") or "").strip()
+        for alias in list_aliases(person_id) or []:
+            text = str(getattr(alias, "alias_text", None) or "").strip()
+            if len(text) < 2:
+                continue
+            for r in _exact_named_photo_people(photo, text):
+                ext = str(getattr(r, "external_id", "") or "").strip()
                 if ext:
                     out.append(ext)
-            if not out:
-                bare = _bare_first_name_photo_people(photo, name)
-                if len(bare) == 1:
-                    ext = str(getattr(bare[0], "external_id", "") or "").strip()
-                    if ext:
-                        out.append(ext)
-            if not out:
-                birth = _birth_year_immich_ids(photo, view)
-                if len(birth) == 1:
-                    out.extend(birth)
+    except Exception:  # noqa: BLE001
+        pass
+    if not out:
+        covered = _token_cover_photo_people(photo, name)
+        if len(covered) == 1:
+            ext = str(getattr(covered[0], "external_id", "") or "").strip()
+            if ext:
+                out.append(ext)
+        if not out:
+            bare = _bare_first_name_photo_people(photo, name)
+            if len(bare) == 1:
+                ext = str(getattr(bare[0], "external_id", "") or "").strip()
+                if ext:
+                    out.append(ext)
+        if not out:
+            birth = _birth_year_immich_ids(photo, view)
+            if len(birth) == 1:
+                out.extend(birth)
     return list(dict.fromkeys(x for x in out if x))
 
 

@@ -925,6 +925,174 @@ def _prove_harness() -> dict[str, Any]:
         _check("immich_person_full_page", False, checks, problems, str(exc))
 
     try:
+        from http.client import RemoteDisconnected
+
+        from memorybox.providers.photo._immich_http import (
+            _IMMICH_GATE,
+            _is_transient_immich_error,
+            ImmichHttpClient,
+        )
+
+        _check(
+            "immich_transient_error_detect",
+            _is_transient_immich_error(
+                RemoteDisconnected("Remote end closed connection without response")
+            )
+            and _is_transient_immich_error(
+                ConnectionResetError("Connection reset by peer")
+            )
+            and not _is_transient_immich_error(RuntimeError("API key invalid")),
+            checks,
+            problems,
+            "RST/remote-closed are retryable; auth errors are not",
+        )
+        _check(
+            "immich_socket_gate",
+            getattr(_IMMICH_GATE, "_value", 2) >= 1,
+            checks,
+            problems,
+            f"gate={getattr(_IMMICH_GATE, '_value', None)}",
+        )
+
+        class _RstExif(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self._calls: list[dict[str, Any]] = []
+
+            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+                payload = dict(body or {})
+                self._calls.append(payload)
+                if payload.get("withExif"):
+                    raise ConnectionResetError(
+                        "Remote end closed connection without response"
+                    )
+                return 200, {
+                    "assets": {
+                        "items": [{"id": "plain-1", "originalFileName": "a.jpg"}],
+                        "total": 1,
+                        "count": 1,
+                        "nextPage": None,
+                    }
+                }
+
+        rst = _RstExif()
+        rst_got = rst.search_by_person_ids(["person-1"], size=50)
+        with_exif_calls = [c for c in rst._calls if c.get("withExif")]
+        _check(
+            "immich_skip_second_with_exif_after_rst",
+            len(rst_got) == 1
+            and rst_got[0].get("id") == "plain-1"
+            and len(with_exif_calls) == 1
+            and len(rst._calls) >= 2,
+            checks,
+            problems,
+            f"n={len(rst_got)} calls={rst._calls}",
+        )
+
+        class _PeopleOnce(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self._people_cache = None
+                self._perm_cache = None
+                self._ping_cache = None
+                self._people_gets = 0
+
+            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+                if method == "GET" and str(path).startswith("/people"):
+                    self._people_gets += 1
+                    return 200, {"people": [{"id": "p1", "name": "Diane"}]}
+                return 200, {}
+
+        once = _PeopleOnce()
+        first = once.list_people()
+        second = once.list_people()
+        _check(
+            "immich_list_people_cached",
+            once._people_gets == 1 and first == second and first[0]["id"] == "p1",
+            checks,
+            problems,
+            f"gets={once._people_gets}",
+        )
+
+        tiny = _PeopleOnce()
+        perms = tiny.check_read_permissions()
+        people_paths_ok = tiny._people_gets == 1
+        _check(
+            "immich_permissions_tiny_people_probe",
+            perms.get("person.read") is True and people_paths_ok,
+            checks,
+            problems,
+            f"gets={tiny._people_gets} perms={perms}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_transient_error_detect", False, checks, problems, str(exc))
+
+    try:
+        from pathlib import Path
+
+        from memorybox.ask.deps import _photo_singletons
+        from memorybox.explore.find import curator_from_items
+
+        http_src = (
+            Path(__file__).resolve().parents[1]
+            / "providers"
+            / "photo"
+            / "_immich_http.py"
+        ).read_text(encoding="utf-8")
+        deps_src = (
+            Path(__file__).resolve().parents[1] / "ask" / "deps.py"
+        ).read_text(encoding="utf-8")
+        retrieve_src = (
+            Path(__file__).resolve().parents[1] / "ask" / "retrieve.py"
+        ).read_text(encoding="utf-8")
+        person_src = (
+            Path(__file__).resolve().parents[1] / "person" / "__init__.py"
+        ).read_text(encoding="utf-8")
+        _check(
+            "immich_stampede_guards",
+            "_IMMICH_GATE" in http_src
+            and "_photo_singletons" in deps_src
+            and "health_soft_fail" in retrieve_src
+            and "do not dump Immich /people" in person_src
+            and isinstance(_photo_singletons, dict),
+            checks,
+            problems,
+            "gate + singleton client + skip /people dump + health soft-fail",
+        )
+        _title, summary = curator_from_items(
+            "Show Diane Scollay",
+            [],
+            None,
+            provider_status={
+                "photo": {
+                    "ok": False,
+                    "detail": "Remote end closed connection without response",
+                },
+                "photo_search": {
+                    "ok": True,
+                    "unavailable": False,
+                    "health_soft_fail": "Remote end closed connection without response",
+                    "detail": "candidate_hits=0 person_ids=1",
+                },
+            },
+        )
+        _check(
+            "curator_soft_fail_not_unavailable",
+            "Photos unavailable from Immich" not in summary,
+            checks,
+            problems,
+            summary[:160],
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("immich_stampede_guards", False, checks, problems, str(exc))
+
+    try:
         from memorybox.providers.photo.immich import ImmichPhotoProvider
 
         prov = object.__new__(ImmichPhotoProvider)
@@ -1353,6 +1521,128 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check(
             "person_explorer_bare_tom_not_landzaat",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        diane_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="diane-immich-id",
+            display_name="Diane Scollay",
+        )
+        diane_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"diane-{i}",
+                taken_at=datetime(2018, 4, 1, tzinfo=timezone.utc),
+                people=(diane_ref,),
+            )
+            for i in range(6)
+        ]
+
+        class _DianeSoftFailPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(
+                    provider_key=self.provider_key,
+                    ok=False,
+                    detail="Remote end closed connection without response",
+                )
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                raise AssertionError("mapped person must not dump /people")
+
+            def search_assets(self, query: PhotoSearchQuery):
+                if "diane-immich-id" in (query.person_external_ids or ()):
+                    return list(diane_assets)[: query.limit]
+                return []
+
+        class _FakeDiane:
+            id = "mb-diane"
+            display_name = "Diane Scollay"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "immich",
+                    "external_id": "diane-immich-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeDiane() if str(pid) == "mb-diane" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: (
+                ["diane-immich-id"] if str(person_id) == "mb-diane" else []
+            )
+        )
+        person_mod.find_confirmed_person_by_name = lambda name: None  # type: ignore[assignment]
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            plan = _apply_locked_person_to_plan(
+                QueryPlan(
+                    original_ask="Show Diane Scollay",
+                    effective_ask="Show Diane Scollay",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Diane Scollay",),
+                    notes=("visual_scope=broad_show_person",),
+                ),
+                "mb-diane",
+            )
+            hits, st = R.search_photos(plan, _DianeSoftFailPhoto(), limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+
+        _check(
+            "person_explorer_health_soft_fail_still_searches",
+            len(hits) == 6
+            and st.get("unavailable") is not True
+            and bool(st.get("health_soft_fail"))
+            and (st.get("identity_mode") or "") != "unknown_person",
+            checks,
+            problems,
+            f"n={len(hits)} unavail={st.get('unavailable')} soft={st.get('health_soft_fail')} mode={st.get('identity_mode')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_health_soft_fail_still_searches",
             False,
             checks,
             problems,

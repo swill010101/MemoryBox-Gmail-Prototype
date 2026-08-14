@@ -433,8 +433,18 @@ def curator_from_items(
             photo_health = {}
         if not isinstance(photo_search, dict):
             photo_search = {}
+        searched = bool(photo_search) and photo_search.get("detail") not in (
+            None,
+            "",
+            "not_requested",
+        )
+        # A transient Immich RST on /server/ping must not hide a successful
+        # person-id search (Person Explorer Show Diane / Tom / Sue).
         if photo_search.get("unavailable") or (
-            photo_health and photo_health.get("ok") is False
+            not searched
+            and not photo_search.get("health_soft_fail")
+            and photo_health
+            and photo_health.get("ok") is False
         ):
             detail = str(
                 photo_search.get("detail") or photo_health.get("detail") or ""

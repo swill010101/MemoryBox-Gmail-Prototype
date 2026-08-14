@@ -498,9 +498,24 @@ def search_photos(
     try:
         health = photo.health()
         if not health.ok:
-            status["unavailable"] = True
-            status["detail"] = health.detail or "photo provider unhealthy"
-            return [], status
+            detail = str(health.detail or "")
+            soft = any(
+                n in detail.lower()
+                for n in (
+                    "remote end closed",
+                    "connection reset",
+                    "connection refused",
+                    "timed out",
+                    "timeout",
+                    "incomplete read",
+                    "broken pipe",
+                )
+            )
+            if not soft:
+                status["unavailable"] = True
+                status["detail"] = health.detail or "photo provider unhealthy"
+                return [], status
+            status["health_soft_fail"] = detail
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]

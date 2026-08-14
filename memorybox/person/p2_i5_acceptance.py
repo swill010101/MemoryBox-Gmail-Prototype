@@ -274,7 +274,11 @@ def run_p2_i5_acceptance() -> dict:
         and "fetch_person_thumbnail" in (
             Path(__file__).resolve().parents[1] / "providers" / "photo" / "immich.py"
         ).read_text(encoding="utf-8")
-        and "try the person thumbnail" in app_py,
+        and "try the person thumbnail" in app_py
+        and "do not dump Immich /people" in person_init
+        and "health_soft_fail" in (
+            Path(__file__).resolve().parents[1] / "ask" / "retrieve.py"
+        ).read_text(encoding="utf-8"),
         checks,
         problems,
         "locked person Ask uses mappings/face/bare-first-name; photo proxy falls back to person thumb",

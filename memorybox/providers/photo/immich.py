@@ -38,7 +38,10 @@ class ImmichPhotoProvider:
             ok = bool(self._client.ping())
             meta: dict[str, Any] = {}
             if ok:
-                meta["permissions"] = self._client.check_read_permissions()
+                try:
+                    meta["permissions"] = self._client.check_read_permissions()
+                except Exception as exc:  # noqa: BLE001
+                    meta["permissions"] = {"ok": False, "detail": str(exc)}
             return ProviderHealth(
                 provider_key=self.provider_key,
                 ok=ok,

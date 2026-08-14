@@ -5,6 +5,8 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -13,6 +15,43 @@ from typing import Any
 
 class ImmichAuthError(RuntimeError):
     pass
+
+
+# Cap concurrent Immich sockets. Person Explorer otherwise opens find + N
+# family portraits as separate clients and Immich RST ("Remote end closed").
+_IMMICH_GATE = threading.Semaphore(2)
+
+
+def _is_transient_immich_error(exc: BaseException) -> bool:
+    if isinstance(
+        exc,
+        (
+            TimeoutError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+            BrokenPipeError,
+            ConnectionError,
+        ),
+    ):
+        return True
+    name = type(exc).__name__
+    if name in {"RemoteDisconnected", "IncompleteRead", "BadStatusLine"}:
+        return True
+    reason = getattr(exc, "reason", None)
+    blob = f"{exc} {reason or ''}".lower()
+    needles = (
+        "remote end closed",
+        "connection reset",
+        "connection aborted",
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "incomplete read",
+        "broken pipe",
+        "eof occurred",
+        "connection refused",
+    )
+    return any(n in blob for n in needles)
 
 
 class ImmichHttpClient:
@@ -36,6 +75,9 @@ class ImmichHttpClient:
         self._key = key
         thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
+        self._people_cache: tuple[float, list[dict[str, Any]]] | None = None
+        self._perm_cache: tuple[float, dict[str, bool]] | None = None
+        self._ping_cache: tuple[float, bool] | None = None
 
     @staticmethod
     def _load_env(path: Path) -> dict[str, str]:
@@ -99,31 +141,68 @@ class ImmichHttpClient:
         }
         if data is not None:
             headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read().decode("utf-8", "replace")
-                return resp.status, (json.loads(raw) if raw else None)
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
             try:
-                parsed = json.loads(raw) if raw else None
-            except Exception:  # noqa: BLE001
-                parsed = raw
-            return e.code, parsed
+                with _IMMICH_GATE:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        raw = resp.read().decode("utf-8", "replace")
+                        return resp.status, (json.loads(raw) if raw else None)
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode("utf-8", "replace") if e.fp else ""
+                try:
+                    parsed = json.loads(raw) if raw else None
+                except Exception:  # noqa: BLE001
+                    parsed = raw
+                if e.code in (502, 503, 504) and attempt < 2:
+                    last_exc = e
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                return e.code, parsed
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt >= 2 or not _is_transient_immich_error(exc):
+                    raise
+                time.sleep(0.2 * (attempt + 1))
+        raise last_exc or RuntimeError("Immich request failed")
 
     def ping(self) -> bool:
-        status, body = self._request("GET", "/server/ping")
-        return status == 200 and isinstance(body, dict) and body.get("res") == "pong"
+        now = time.monotonic()
+        cached = self._ping_cache
+        if cached:
+            age = now - cached[0]
+            # Keep a healthy ping; cache a failed ping briefly so Person Explorer
+            # (find + N portraits + snapshot) does not stampede a dying socket.
+            if cached[1] and age < 60:
+                return True
+            if not cached[1] and age < 5:
+                return False
+        try:
+            status, body = self._request("GET", "/server/ping")
+            ok = status == 200 and isinstance(body, dict) and body.get("res") == "pong"
+            self._ping_cache = (time.monotonic(), ok)
+            return ok
+        except Exception:
+            self._ping_cache = (time.monotonic(), False)
+            raise
 
     def check_read_permissions(self) -> dict[str, bool]:
+        now = time.monotonic()
+        cached = self._perm_cache
+        if cached and (now - cached[0]) < 60:
+            return dict(cached[1])
         out = {"asset.read": False, "album.read": False, "person.read": False}
         status, _ = self._request("POST", "/search/metadata", body={"size": 1})
         out["asset.read"] = status == 200
         status, _ = self._request("GET", "/albums")
         out["album.read"] = status == 200
-        status, _ = self._request("GET", "/people?withHidden=false")
+        # Tiny people probe — never download the full /people dump on every Ask.
+        status, _ = self._request("GET", "/people?withHidden=false&page=1&size=1")
+        if status != 200:
+            status, _ = self._request("GET", "/people?withHidden=false")
         out["person.read"] = status == 200
+        self._perm_cache = (now, dict(out))
         return out
 
     def search_metadata(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -138,12 +217,19 @@ class ImmichHttpClient:
         return data
 
     def list_people(self) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        cached = self._people_cache
+        if cached and (now - cached[0]) < 60:
+            return list(cached[1])
         status, data = self._request("GET", "/people?withHidden=false")
         if status != 200:
             return []
         if isinstance(data, dict):
-            return list(data.get("people") or [])
-        return data if isinstance(data, list) else []
+            rows = list(data.get("people") or [])
+        else:
+            rows = data if isinstance(data, list) else []
+        self._people_cache = (now, rows)
+        return list(rows)
 
     def search_by_person_ids(
         self, person_ids: list[str], *, size: int = 50
@@ -236,13 +322,18 @@ class ImmichHttpClient:
             ]
             last_err: Exception | None = None
             last_status = 0
+            skip_exif = False
             for payload in probe_order:
+                if skip_exif and payload.get("withExif"):
+                    continue
                 status, data, err = _once(payload)
                 if err is not None:
                     last_err = err
                     if payload.get("withExif"):
-                        # Timeout/reject on EXIF — keep probing without it.
-                        continue
+                        # Immich often RST on withExif — do not probe it twice.
+                        skip_exif = True
+                        use_exif = False
+                        self._person_with_exif = False
                     continue
                 last_status = status
                 if status == 200:
@@ -252,6 +343,8 @@ class ImmichHttpClient:
                     self._person_use_order = use_order
                     return _extract_items(data)
                 if status in (400, 422):
+                    if payload.get("withExif"):
+                        skip_exif = True
                     continue
             if page == 1 and last_err is not None and last_status == 0:
                 raise last_err
@@ -372,22 +465,29 @@ class ImmichHttpClient:
         return None
 
     def _fetch_api_image(self, url: str, timeout: float = 30) -> tuple[bytes, str] | None:
-        req = urllib.request.Request(
-            url,
-            headers={"x-api-key": self._key, "Accept": "image/*,*/*"},
-            method="GET",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = resp.read()
-                if not data or len(data) < 24:
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            req = urllib.request.Request(
+                url,
+                headers={"x-api-key": self._key, "Accept": "image/*,*/*"},
+                method="GET",
+            )
+            try:
+                with _IMMICH_GATE:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        data = resp.read()
+                        if not data or len(data) < 24:
+                            return None
+                        ctype = resp.headers.get("Content-Type") or "image/jpeg"
+                        if "json" in ctype or data[:1] in (b"{", b"["):
+                            return None
+                        return data, ctype
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt >= 2 or not _is_transient_immich_error(exc):
                     return None
-                ctype = resp.headers.get("Content-Type") or "image/jpeg"
-                if "json" in ctype or data[:1] in (b"{", b"["):
-                    return None
-                return data, ctype
-        except Exception:  # noqa: BLE001
-            return None
+                time.sleep(0.2 * (attempt + 1))
+        return None
 
     def fetch_preview_bytes(self, asset_id: str) -> tuple[bytes, str, str]:
         for size in ("preview", "thumbnail"):
