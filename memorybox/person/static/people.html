@@ -83,10 +83,9 @@
   <main>
     <h1>People</h1>
     <p class="sub">
-      Pick a person by name. MemoryBox and photo-library names appear together — each name once.
-      Choosing a photo-library-only name adds them to MemoryBox automatically.
+      Choose a person to open their <strong>Person Explorer</strong> — Ask, Gallery, Timeline, and Map stay on that person.
+      MemoryBox and photo-library names appear together (each name once).
       You are: <span id="ownerStatus">(loading)</span>
-      · <a href="/ask/ui">Ask</a> · <a href="/library/ui">Library</a> · <a href="/artifact/ui">Artifact</a>
     </p>
     <p id="statusLine" class="muted"></p>
 
@@ -103,15 +102,20 @@
     </section>
 
     <section>
-      <h2>Who are you working on?</h2>
+      <h2>Open a person</h2>
       <p class="muted" id="pickerHint">Loading names…</p>
       <label for="profileSel">Person</label>
       <select id="profileSel"><option value="">(loading…)</option></select>
       <button id="refreshPicker" class="secondary" type="button">Refresh names</button>
-      <button id="loadProfile" type="button">Open profile</button>
-      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open profile.</div>
+      <button id="loadProfile" type="button">Open Person</button>
+      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open Person → Explorer.</div>
+      <p class="muted" style="margin-top:0.65rem">
+        Need the old profile editor (facts, contacts, merge)?
+        <a href="/people/ui?admin=1">Open admin editor</a>
+      </p>
     </section>
 
+    <div id="mb-people-admin" hidden>
     <section>
       <h2>Add or update details</h2>
       <p class="muted">Uses the person selected above. Birth dates replace the previous birth date; emails and phones can be corrected.</p>
@@ -236,6 +240,7 @@
       <input id="displayName" placeholder="Usually filled from the Immich name" />
       <button id="teachBtn" type="button">Teach / confirm</button>
     </section>
+    </div>
 
     <details class="tech">
       <summary class="muted">Technical detail (optional)</summary>
@@ -243,6 +248,15 @@
     </details>
   </main>
   <script>
+    const isPeopleAdmin =
+      new URLSearchParams(location.search).get("admin") === "1";
+    const adminRoot = document.getElementById("mb-people-admin");
+    if (adminRoot) adminRoot.hidden = !isPeopleAdmin;
+    if (isPeopleAdmin) {
+      document.title = "MemoryBox People — Admin";
+      const h1 = document.querySelector("main h1");
+      if (h1) h1.textContent = "People — Admin editor";
+    }
     const out = document.getElementById("out");
     let pickerOptions = [];
     let currentPersonId = null;
@@ -616,9 +630,8 @@
     async function openProfileForKey(key) {
       const person = await ensureFromKey(key);
       currentPersonId = person.id;
-      // I5: Person Explorer is the primary surface; admin form via ?admin=1
-      const params = new URLSearchParams(location.search);
-      if (params.get("admin") === "1") {
+      // I5: Person Explorer is primary; stay on this form only with ?admin=1
+      if (isPeopleAdmin) {
         const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
         currentProfile = data.profile;
         renderProfile(data.profile);

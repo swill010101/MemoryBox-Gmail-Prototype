@@ -112,6 +112,19 @@ def run_p2_i5_acceptance() -> dict:
         problems,
         "reuses explore.js (no iframe)",
     )
+    people_html = (
+        Path(__file__).resolve().parent / "static" / "people.html"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_people_picker_to_explorer",
+        "Open Person" in people_html
+        and 'id="mb-people-admin"' in people_html
+        and "Person Explorer" in people_html
+        and "?admin=1" in people_html,
+        checks,
+        problems,
+        "People picker → Explorer; admin gated",
+    )
 
     overall = not problems and all(c.get("ok") for c in checks.values())
     return {
