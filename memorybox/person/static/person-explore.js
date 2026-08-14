@@ -358,8 +358,11 @@
     clearPortraitToInitial();
     // Preferred Immich feature-face thumbnail (server: Immich first, then face evidence)
     const portraitUrl =
-      personPayload.portrait_url ||
-      "/people/" + encodeURIComponent(id) + "/portrait";
+      (personPayload.portrait_url ||
+        "/people/" + encodeURIComponent(id) + "/portrait") +
+      (personPayload.person && personPayload.person.updated_at
+        ? "?v=" + encodeURIComponent(String(personPayload.person.updated_at))
+        : "?v=" + Date.now());
     const probe = new Image();
     probe.onload = () => applyPortraitUrl(portraitUrl);
     probe.onerror = () => {

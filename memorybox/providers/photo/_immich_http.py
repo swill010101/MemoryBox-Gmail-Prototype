@@ -398,12 +398,33 @@ class ImmichHttpClient:
         for path in (
             f"/people/{pid}/thumbnail",
             f"/people/{pid}/thumbnail?format=JPEG",
+            f"/people/{pid}/thumbnail?format=WEBP",
         ):
             url = f"{self.api_base}{path}"
             got = self._fetch_api_image(url)
             if got:
                 return got[0], got[1], "immich-person-thumb"
-        # Fall back: person payload feature face / thumbnail asset
+        # Person payload may expose the feature-face asset id (varies by Immich version)
+        try:
+            status, data = self._request("GET", f"/people/{pid}")
+        except Exception:  # noqa: BLE001
+            status, data = 0, None
+        if status == 200 and isinstance(data, dict):
+            for key in (
+                "faceAssetId",
+                "featureFaceAssetId",
+                "thumbnailAssetId",
+                "faceAssetID",
+            ):
+                asset_id = str(data.get(key) or "").strip()
+                if not asset_id:
+                    continue
+                try:
+                    data_b, ctype, src = self.fetch_preview_bytes(asset_id)
+                    return data_b, ctype, src
+                except Exception:  # noqa: BLE001
+                    continue
+        # Fall back: faces list → asset preview
         faces = self.list_faces_for_person(pid)
         for face in faces:
             asset_id = str(
@@ -413,11 +434,10 @@ class ImmichHttpClient:
                 or ""
             ).strip()
             if not asset_id or asset_id.startswith("person-thumb-"):
-                # thumbnailPath is not always an asset id — try person thumb only
                 continue
             try:
-                data, ctype, src = self.fetch_preview_bytes(asset_id)
-                return data, ctype, src
+                data_b, ctype, src = self.fetch_preview_bytes(asset_id)
+                return data_b, ctype, src
             except Exception:  # noqa: BLE001
                 continue
         return None

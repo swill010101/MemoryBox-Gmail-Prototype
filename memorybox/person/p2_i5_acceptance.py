@@ -154,7 +154,10 @@ def run_p2_i5_acceptance() -> dict:
     _check(
         "i5_immich_preferred_portrait",
         "/people/{person_id}/portrait" in app_py
-        and "fetch_person_thumbnail_bytes" in app_py
+        and "fetch_person_portrait_bytes" in app_py
+        and "resolve_immich_external_ids_for_person" in (
+            Path(__file__).resolve().parent / "__init__.py"
+        ).read_text(encoding="utf-8")
         and "applyPortraitUrl" in person_js
         and "has-photo" in person_js
         and "portraitUrl" in explore_js,

@@ -1234,6 +1234,144 @@ def list_immich_external_ids_for_person(person_id: str) -> list[str]:
     return list_provider_external_ids_for_person(person_id, PROVIDER_IMMICH)
 
 
+def resolve_immich_external_ids_for_person(
+    person_id: str, *, photo: Any | None = None
+) -> list[str]:
+    """Immich person UUIDs for an MB Person — mapped ids, then exact-name Immich match.
+
+    Gallery/Ask already resolve Sue Will via Immich name when provider_identities
+    is empty; portraits must use the same path so preferred Immich face shows.
+    """
+    out: list[str] = []
+    try:
+        out.extend(list_immich_external_ids_for_person(person_id))
+    except PersonServiceError:
+        return []
+
+    view = None
+    try:
+        view = get_person(person_id)
+    except Exception:  # noqa: BLE001
+        view = None
+    if view:
+        for m in view.provider_mappings or []:
+            if not isinstance(m, dict):
+                continue
+            if str(m.get("provider_key") or "").strip().lower() not in {
+                PROVIDER_IMMICH,
+                "immich",
+            }:
+                continue
+            ext = str(m.get("external_id") or "").strip()
+            if ext:
+                out.append(ext)
+
+    name = (view.display_name if view else "") or ""
+    # Same path Gallery/Ask uses when provider_identities has no Immich row yet
+    if name and not out:
+        provider = photo
+        if provider is None:
+            try:
+                from memorybox.providers.photo import build_photo
+
+                provider = build_photo()
+            except Exception:  # noqa: BLE001
+                provider = None
+        if provider is not None:
+            try:
+                refs = _exact_named_photo_people(provider, name)
+                if not refs:
+                    refs = _ask_named_photo_people(provider, name)
+            except Exception:  # noqa: BLE001
+                refs = []
+            # Exact name, or a single unambiguous Immich person hit
+            use_refs = []
+            needle = name.strip().lower()
+            exact = [
+                r
+                for r in refs
+                if (getattr(r, "display_name", None) or "").strip().lower() == needle
+            ]
+            if exact:
+                use_refs = exact
+            elif len(refs) == 1:
+                use_refs = refs
+            for r in use_refs:
+                ext = str(getattr(r, "external_id", "") or "").strip()
+                if ext:
+                    out.append(ext)
+
+    return list(dict.fromkeys(x for x in out if x))
+
+
+def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
+    """Preferred Immich person thumbnail bytes for Person Explorer header.
+
+    Order: Immich feature-face thumb (mapped or name-resolved) → face evidence asset.
+    """
+    from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.providers.photo import build_photo
+
+    try:
+        photo = build_photo()
+    except Exception:  # noqa: BLE001
+        return None
+
+    client = getattr(photo, "_client", None)
+    fetch_person = getattr(client, "fetch_person_thumbnail_bytes", None)
+    for ext in resolve_immich_external_ids_for_person(person_id, photo=photo):
+        if not callable(fetch_person):
+            break
+        try:
+            got = fetch_person(ext)
+        except Exception:  # noqa: BLE001
+            got = None
+        if got:
+            data, ctype, _src = got
+            if data:
+                return data, ctype or "image/jpeg"
+
+    for row in list_face_evidence(person_id):
+        asset = (row.get("source_asset_id") or "").strip()
+        if not asset:
+            meta = row.get("exemplar_meta_json") or {}
+            if isinstance(meta, dict):
+                asset = str(
+                    meta.get("source_asset_id") or meta.get("assetId") or ""
+                ).strip()
+        if not asset:
+            continue
+        try:
+            preview = photo.fetch_preview(asset)
+        except Exception:  # noqa: BLE001
+            continue
+        if preview and preview.data:
+            return preview.data, preview.content_type or "image/jpeg"
+
+    # Last resort: one Immich asset for the resolved person (not preferred face, but better than letter)
+    client = getattr(photo, "_client", None)
+    search_by = getattr(client, "search_by_person_ids", None)
+    ext_ids = resolve_immich_external_ids_for_person(person_id, photo=photo)
+    if ext_ids and callable(search_by):
+        try:
+            items = search_by(ext_ids[:1], size=1) or []
+        except Exception:  # noqa: BLE001
+            items = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            aid = str(it.get("id") or "").strip()
+            if not aid:
+                continue
+            try:
+                preview = photo.fetch_preview(aid)
+            except Exception:  # noqa: BLE001
+                continue
+            if preview and preview.data:
+                return preview.data, preview.content_type or "image/jpeg"
+    return None
+
+
 def list_provider_external_ids_for_person(
     person_id: str, provider_key: str
 ) -> list[str]:
