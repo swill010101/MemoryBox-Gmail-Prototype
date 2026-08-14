@@ -335,11 +335,21 @@ class ImmichHttpClient:
                     faces = [f for f in raw_faces if isinstance(f, dict)]
                 # Some payloads embed thumbnail as person-level only
                 if not faces and data.get("id"):
+                    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
+                    asset_raw = (
+                        data.get("faceAssetId")
+                        or data.get("featureFaceAssetId")
+                        or data.get("thumbnailAssetId")
+                        or data.get("thumbnailPath")
+                        or ""
+                    )
+                    asset_id = photo_proxy_asset_id(asset_raw)
                     faces = [
                         {
                             "id": f"person-thumb-{pid}",
                             "personId": pid,
-                            "assetId": data.get("thumbnailPath") or data.get("id"),
+                            "assetId": asset_id,
                             "boundingBoxX1": None,
                         }
                     ]

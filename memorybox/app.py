@@ -870,14 +870,46 @@ def library_card_detail(
 
 @app.get("/library/media/photo/{external_id}")
 def library_photo_thumb(external_id: str) -> Response:
-    """Authenticated Immich (or fake) preview for Library cards — browser-safe."""
+    """Authenticated Immich (or fake) preview for Library cards — browser-safe.
+
+    Face-evidence sometimes stores an Immich *person* UUID where an asset id
+    is expected; if asset preview 404s, try the person thumbnail.
+    """
+    from memorybox.providers.photo.asset_ref import photo_proxy_asset_id
+
     photo = build_photo()
+    aid = photo_proxy_asset_id(external_id) or (external_id or "").strip()
+    preview = None
     try:
-        preview = photo.fetch_preview(external_id)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=404, detail=f"photo thumb unavailable: {exc}"
-        ) from exc
+        preview = photo.fetch_preview(aid)
+    except Exception:
+        preview = None
+    if preview is None or not getattr(preview, "data", None):
+        fetch_p = getattr(photo, "fetch_person_thumbnail", None)
+        if callable(fetch_p):
+            try:
+                preview = fetch_p(aid)
+            except Exception:
+                preview = None
+        if preview is None or not getattr(preview, "data", None):
+            client = getattr(photo, "_client", None)
+            fetch_c = getattr(client, "fetch_person_thumbnail_bytes", None)
+            if callable(fetch_c):
+                try:
+                    got = fetch_c(aid)
+                except Exception:
+                    got = None
+                if got and got[0]:
+                    from memorybox.providers.photo.dto import PhotoBytesDto
+
+                    preview = PhotoBytesDto(
+                        provider_key=getattr(photo, "provider_key", "immich"),
+                        external_id=aid,
+                        content_type=got[1] or "image/jpeg",
+                        data=got[0],
+                    )
+    if preview is None or not getattr(preview, "data", None):
+        raise HTTPException(status_code=404, detail="photo thumb unavailable")
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",

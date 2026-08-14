@@ -421,6 +421,7 @@ def search_photos(
     from memorybox.person import (
         AUTHORITY_TRUSTED_PROVIDER,
         AmbiguousIdentityError,
+        ask_immich_person_ids,
         find_ask_person_by_name,
         find_confirmed_person_by_name,
         is_negative,
@@ -526,9 +527,10 @@ def search_photos(
                 continue
             resolved_by_id.add(person.id)
             name = person.display_name or pid
-            ids: list[str] = []
-            for pk in lookup_keys:
-                ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            ids: list[str] = list(ask_immich_person_ids(person.id, photo=photo))
+            if not ids:
+                for pk in lookup_keys:
+                    ids.extend(list_provider_external_ids_for_person(person.id, pk))
             ids = list(dict.fromkeys(ids))
             if ids:
                 mapped_names.append(name)
@@ -572,9 +574,10 @@ def search_photos(
             if person:
                 if person.id in resolved_by_id:
                     continue
-                ids: list[str] = []
-                for pk in lookup_keys:
-                    ids.extend(list_provider_external_ids_for_person(person.id, pk))
+                ids: list[str] = list(ask_immich_person_ids(person.id, photo=photo))
+                if not ids:
+                    for pk in lookup_keys:
+                        ids.extend(list_provider_external_ids_for_person(person.id, pk))
                 ids = list(dict.fromkeys(ids))
                 if ids:
                     mapped_names.append(name)

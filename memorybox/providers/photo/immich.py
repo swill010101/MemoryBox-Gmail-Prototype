@@ -252,6 +252,30 @@ class ImmichPhotoProvider:
             data=data,
         )
 
+    def fetch_person_thumbnail(self, person_id: str) -> PhotoBytesDto | None:
+        """Immich person feature-face thumbnail (not an asset preview)."""
+        pid = (person_id or "").strip()
+        if not pid:
+            return None
+        fetch = getattr(self._client, "fetch_person_thumbnail_bytes", None)
+        if not callable(fetch):
+            return None
+        try:
+            got = fetch(pid)
+        except Exception:  # noqa: BLE001
+            return None
+        if not got:
+            return None
+        data, content_type, _src = got
+        if not data:
+            return None
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=pid,
+            content_type=content_type or "image/jpeg",
+            data=data,
+        )
+
     def _map_asset(self, raw: dict[str, Any]) -> PhotoAssetDto:
         ext = str(raw.get("id") or "")
         # Prefer EXIF / Immich display date over fileCreatedAt (often the Immich

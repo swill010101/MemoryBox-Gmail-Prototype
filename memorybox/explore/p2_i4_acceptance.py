@@ -1210,6 +1210,156 @@ def _prove_harness() -> dict[str, Any]:
         )
 
     try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.person import (
+            _ask_named_photo_people,
+            _bare_first_name_photo_people,
+            _token_cover_photo_people,
+        )
+        from memorybox.person import face_evidence as fe_mod
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        land = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="landzaat-id",
+            display_name="Tom Landzaat",
+        )
+        bare = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-bare-id",
+            display_name="Tom",
+        )
+        thomas = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-q-will-id",
+            display_name="Tom Q Will",
+        )
+        bare_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"bare-{i}",
+                taken_at=datetime(2012, 3, 1, tzinfo=timezone.utc),
+                people=(bare,),
+            )
+            for i in range(8)
+        ]
+
+        class _MixedToms:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                rows = [land, bare]
+                if query:
+                    q = query.lower()
+                    rows = [p for p in rows if q in p.display_name.lower()]
+                return rows[:limit]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                wanted = set(query.person_external_ids or ())
+                if "tom-bare-id" in wanted:
+                    return list(bare_assets)[: query.limit]
+                return []
+
+        class _FakeTomEmpty:
+            id = "mb-tom-will"
+            display_name = "Tom Will"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings: list = []
+
+        photo = _MixedToms()
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        orig_fe = fe_mod.list_face_evidence
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeTomEmpty() if str(pid) == "mb-tom-will" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: []
+        )
+        person_mod.find_confirmed_person_by_name = lambda name: None  # type: ignore[assignment]
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        fe_mod.list_face_evidence = lambda pid: []  # type: ignore[assignment]
+        try:
+            named = _ask_named_photo_people(photo, "Tom Will")
+            named_ids = [str(getattr(r, "external_id", "")) for r in named]
+            bare_only = _bare_first_name_photo_people(photo, "Tom Will")
+
+            class _TokenPhoto:
+                def list_people(self, *, query=None, limit=50):
+                    return [land, thomas]
+
+            cover = _token_cover_photo_people(_TokenPhoto(), "Tom Will")
+            cover_ids = [str(getattr(r, "external_id", "")) for r in cover]
+            plan = _apply_locked_person_to_plan(
+                QueryPlan(
+                    original_ask="Show Tom Will",
+                    effective_ask="Show Tom Will",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Tom Will",),
+                    notes=("visual_scope=broad_show_person",),
+                ),
+                "mb-tom-will",
+            )
+            hits, st = R.search_photos(plan, photo, limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+            fe_mod.list_face_evidence = orig_fe
+
+        _check(
+            "person_explorer_bare_tom_not_landzaat",
+            "landzaat-id" not in named_ids
+            and cover_ids == ["tom-q-will-id"]
+            and len(bare_only) == 1
+            and str(getattr(bare_only[0], "external_id", "")) == "tom-bare-id"
+            and len(hits) == 8
+            and (st.get("identity_mode") or "") != "unknown_person",
+            checks,
+            problems,
+            (
+                f"named={named_ids} bare={[getattr(r, 'external_id', None) for r in bare_only]} "
+                f"hits={len(hits)} mode={st.get('identity_mode')}"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_bare_tom_not_landzaat",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
         from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person
 
         a = PersonView(
