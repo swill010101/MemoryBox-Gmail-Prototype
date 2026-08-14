@@ -183,6 +183,7 @@ def get_capture_stt():
 class AskRequest(BaseModel):
     ask: str = Field(..., min_length=1)
     session_id: str | None = None
+    person_id: str | None = None
 
 
 class ContextChangeRequest(BaseModel):
@@ -464,6 +465,9 @@ def explore_demo(demo_id: str) -> dict[str, Any]:
 def explore_find(
     q: str = Query("", description="Natural-language Ask / find"),
     session_id: str | None = Query(None),
+    person_id: str | None = Query(
+        None, description="Locked MB Person id (Person Explorer)"
+    ),
 ) -> dict[str, Any]:
     """Live Mixed-Media Find → Explore item contract (I4 real path)."""
     from memorybox.explore.find import build_explore_find
@@ -472,6 +476,7 @@ def explore_find(
         return build_explore_find(
             ask_text=q,
             session_id=session_id,
+            person_id=person_id,
             orchestrator=get_orchestrator(),
         )
     except Exception as exc:  # noqa: BLE001
@@ -487,6 +492,7 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
         return build_explore_find(
             ask_text=body.ask,
             session_id=body.session_id,
+            person_id=body.person_id,
             orchestrator=get_orchestrator(),
         )
     except Exception as exc:  # noqa: BLE001

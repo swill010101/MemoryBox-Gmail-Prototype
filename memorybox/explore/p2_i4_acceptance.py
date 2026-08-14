@@ -237,6 +237,9 @@ def _prove_harness() -> dict[str, Any]:
             "Does NOT clear query/filters",
             "liveFind",
             "/explore/api/find",
+            "freshSession",
+            "isLockedPersonLibraryAsk",
+            "&person_id=",
             "No dated memories on the Timeline",
             "renderViewer",
             "renderRailPanel",
@@ -1077,6 +1080,134 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("person_ask_no_library_pad", False, checks, problems, str(exc))
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.ask.orchestrator import _apply_locked_person_to_plan
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        tom_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="tom-immich-id",
+            display_name="Tom",
+        )
+        tom_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id=f"tom-{i}",
+                taken_at=datetime(2015, 6, 1, tzinfo=timezone.utc),
+                people=(tom_ref,),
+            )
+            for i in range(12)
+        ]
+
+        class _TomPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                # Immich cluster is named "Tom", not "Tom Will" — exact full-name miss.
+                q = (query or "").strip().lower()
+                if q == "tom will":
+                    return []
+                return [tom_ref] if (not q or q == "tom") else []
+
+            def search_assets(self, query: PhotoSearchQuery):
+                if "tom-immich-id" in (query.person_external_ids or ()):
+                    return list(tom_assets)[: query.limit]
+                return []
+
+        class _FakeTom:
+            id = "mb-tom-will"
+            display_name = "Tom Will"
+            status = "confirmed"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "tom-immich-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "list_people_by_exact_name": person_mod.list_people_by_exact_name,
+            "list_people_by_first_token": person_mod.list_people_by_first_token,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = (  # type: ignore[assignment]
+            lambda pid: _FakeTom() if str(pid) == "mb-tom-will" else None
+        )
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: None
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: (
+                ["tom-immich-id"] if str(person_id) == "mb-tom-will" else []
+            )
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: None
+        )
+        person_mod.list_people_by_exact_name = lambda name: []  # type: ignore[assignment]
+        person_mod.list_people_by_first_token = lambda name: []  # type: ignore[assignment]
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            name_only = QueryPlan(
+                original_ask="Show Tom Will",
+                effective_ask="Show Tom Will",
+                is_followup=False,
+                want_photo=True,
+                want_communication=False,
+                want_calendar=False,
+                want_still=True,
+                want_video=True,
+                want_visual=True,
+                visual_scope="broad",
+                person_names=("Tom Will",),
+                notes=("visual_scope=broad_show_person",),
+            )
+            miss, miss_st = R.search_photos(name_only, _TomPhoto(), limit=5000)
+            locked_plan = _apply_locked_person_to_plan(name_only, "mb-tom-will")
+            hit, hit_st = R.search_photos(locked_plan, _TomPhoto(), limit=5000)
+        finally:
+            for k, v in orig.items():
+                setattr(person_mod, k, v)
+
+        _check(
+            "person_explorer_locks_mapped_library",
+            "mb-tom-will" in (locked_plan.person_ids or ())
+            and "explore_locked_person_id" in (locked_plan.notes or ())
+            and len(miss) == 0
+            and len(hit) == 12
+            and (hit_st.get("identity_mode") or "") != "unknown_person"
+            and (miss_st.get("identity_mode") or "") != "ambiguous_identity",
+            checks,
+            problems,
+            (
+                f"ids={locked_plan.person_ids} miss={len(miss)}/{miss_st.get('identity_mode')} "
+                f"hit={len(hit)}/{hit_st.get('identity_mode')}"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "person_explorer_locks_mapped_library",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
 
     try:
         from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person

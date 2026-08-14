@@ -466,9 +466,13 @@ def build_explore_find(
     *,
     ask_text: str,
     session_id: str | None = None,
+    person_id: str | None = None,
     orchestrator: Any | None = None,
 ) -> dict[str, Any]:
-    """Run Ask and return an Explore-ready payload (same shape as demo_payload)."""
+    """Run Ask and return an Explore-ready payload (same shape as demo_payload).
+
+    person_id locks retrieve to that MB Person's provider mappings (Person Explorer).
+    """
     text = (ask_text or "").strip()
     if not text:
         return {
@@ -491,7 +495,7 @@ def build_explore_find(
 
         orchestrator = AskOrchestrator(store=default_context_store)
 
-    result_obj = orchestrator.ask(text, session_id=session_id)
+    result_obj = orchestrator.ask(text, session_id=session_id, person_id=person_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     items = items_from_ask_result(result)
     title, summary = curator_from_items(

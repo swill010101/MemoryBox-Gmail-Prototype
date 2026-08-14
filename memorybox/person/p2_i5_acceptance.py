@@ -69,6 +69,27 @@ def run_p2_i5_acceptance() -> dict:
         problems,
         "explore.js person mode hooks",
     )
+    orch_py = (
+        Path(__file__).resolve().parents[1] / "ask" / "orchestrator.py"
+    ).read_text(encoding="utf-8")
+    find_py = (
+        Path(__file__).resolve().parents[1] / "explore" / "find.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_person_find_locks_person_id",
+        "isLockedPersonLibraryAsk" in explore_js
+        and "freshSession" in explore_js
+        and "&person_id=" in explore_js
+        and "PERSON_MODE && PERSON.personId" in explore_js
+        and "explore_locked_person_id" in orch_py
+        and "_apply_locked_person_to_plan" in orch_py
+        and "person_id: str | None = None" in find_py
+        and "person_id=person_id" in find_py
+        and 'person_id: str | None = Query(' in app_py,
+        checks,
+        problems,
+        "Person Explorer find passes person_id; boot skips stale Ask session",
+    )
     _check(
         "i5_people_ui_route",
         "PERSON_EXPLORE_STATIC" in app_py

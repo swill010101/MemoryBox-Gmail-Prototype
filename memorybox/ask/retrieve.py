@@ -850,6 +850,9 @@ def search_photos(
             n = meta.get("name")
             if n and n not in name_queries:
                 name_queries.append(n)
+        for name in unmapped_resolvable_names:
+            if name and name not in name_queries:
+                name_queries.append(name)
         for name in name_queries:
             confirmed = find_confirmed_person_by_name(name)
             from memorybox.person import _ask_named_photo_people
@@ -896,7 +899,8 @@ def search_photos(
         person_ext = list(dict.fromkeys(person_ext))
         if not person_ext:
             status["ok"] = True
-            if plan.person_names and not hits:
+            locked = bool(getattr(plan, "person_ids", None) or ())
+            if plan.person_names and not hits and not locked:
                 who = list(plan.person_names)[0]
                 status["identity_mode"] = "unknown_person"
                 status["detail"] = f"unknown={list(plan.person_names)}"

@@ -786,12 +786,35 @@
     return true;
   }
 
-  async function liveFind(askText) {
+  function isLockedPersonLibraryAsk(askText) {
+    if (!PERSON_MODE) return false;
+    const name = (PERSON.displayName || "").trim().toLowerCase();
+    if (!name) return false;
+    const qL = String(askText || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[.?!]+$/, "");
+    return (
+      qL === "show " + name ||
+      qL === "show me " + name ||
+      qL === name
+    );
+  }
+
+  async function liveFind(askText, opts) {
     const q = personScopedAsk(askText);
-    const url =
+    // Person library asks ("Show Tom Will") must not inherit a stale Ask session
+    // (time/place/story constraints) or they come back as ~5 undated stories.
+    const fresh =
+      Boolean(opts && opts.freshSession) || isLockedPersonLibraryAsk(askText);
+    const sid = fresh ? null : sessionId;
+    let url =
       "/explore/api/find?q=" +
       encodeURIComponent(q) +
-      (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
+      (sid ? "&session_id=" + encodeURIComponent(sid) : "");
+    if (PERSON_MODE && PERSON.personId) {
+      url += "&person_id=" + encodeURIComponent(PERSON.personId);
+    }
     const res = await fetch(url);
     if (!res.ok) throw new Error("find " + res.status);
     return res.json();
@@ -3427,10 +3450,10 @@
     const params = new URLSearchParams(location.search);
     const demo = params.get("demo");
     const q = params.get("q") || "";
-    sessionId =
-      params.get("session_id") ||
-      localStorage.getItem("mb_ask_session") ||
-      null;
+    sessionId = params.get("session_id") || null;
+    if (!PERSON_MODE && !sessionId) {
+      sessionId = localStorage.getItem("mb_ask_session") || null;
+    }
     try {
       let payload;
       if (demo) {
@@ -3440,7 +3463,9 @@
         payload = await res.json();
       } else if (PERSON_MODE) {
         const seed = q || ("Show " + (PERSON.displayName || "person"));
-        payload = await liveFind(seed);
+        payload = await liveFind(seed, {
+          freshSession: !params.get("session_id"),
+        });
         if (payload.session_id) {
           localStorage.setItem("mb_ask_session", payload.session_id);
         }
