@@ -404,3 +404,21 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | ACCEPTED | **No** — §8 FlightSim owner gate remains |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
+
+## 10. FlightSim deploy (this branch)
+
+`C:\memorybox` often tracks another increment (e.g. settings-thin). A plain `git pull` on that branch will **not** install `prove-p2-i7` / `ingest-sms` / `inspect-sms`. Check out this branch:
+
+```powershell
+cd C:\memorybox
+git fetch origin
+git checkout cursor/p2-i7-sms-definition-3061
+git pull origin cursor/p2-i7-sms-definition-3061
+python -m memorybox prove-p2-i7
+# optional real export (do not commit message bodies):
+python -m memorybox inspect-sms
+python -m memorybox ingest-sms
+# restart serve, then Ctrl+F5
+```
+
+Confirm the CLI lists `prove-p2-i7`, `ingest-sms`, and `inspect-sms` before treating the tree as I7.
