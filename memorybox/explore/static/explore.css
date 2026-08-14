@@ -765,6 +765,7 @@ body {
   touch-action: none;
   cursor: crosshair;
   min-width: 0;
+  overflow: hidden; /* indicators never exceed timeline bounds */
 }
 
 .mb-tl-rail {
@@ -781,6 +782,8 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  overflow: hidden;
+  contain: paint;
 }
 
 .mb-tl-dot {

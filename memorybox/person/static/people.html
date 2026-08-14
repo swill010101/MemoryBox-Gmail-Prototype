@@ -83,10 +83,9 @@
   <main>
     <h1>People</h1>
     <p class="sub">
-      Pick a person by name. MemoryBox and photo-library names appear together — each name once.
-      Choosing a photo-library-only name adds them to MemoryBox automatically.
+      Choose a person to open their <strong>Person Explorer</strong> — Ask, Gallery, Timeline, and Map stay on that person.
+      MemoryBox and photo-library names appear together (each name once).
       You are: <span id="ownerStatus">(loading)</span>
-      · <a href="/ask/ui">Ask</a> · <a href="/library/ui">Library</a> · <a href="/artifact/ui">Artifact</a>
     </p>
     <p id="statusLine" class="muted"></p>
 
@@ -103,15 +102,20 @@
     </section>
 
     <section>
-      <h2>Who are you working on?</h2>
+      <h2>Open a person</h2>
       <p class="muted" id="pickerHint">Loading names…</p>
       <label for="profileSel">Person</label>
       <select id="profileSel"><option value="">(loading…)</option></select>
       <button id="refreshPicker" class="secondary" type="button">Refresh names</button>
-      <button id="loadProfile" type="button">Open profile</button>
-      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open profile.</div>
+      <button id="loadProfile" type="button">Open Person</button>
+      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open Person → Explorer.</div>
+      <p class="muted" style="margin-top:0.65rem">
+        Need the old profile editor (facts, contacts, merge)?
+        <a href="/people/ui?admin=1">Open admin editor</a>
+      </p>
     </section>
 
+    <div id="mb-people-admin" hidden>
     <section>
       <h2>Add or update details</h2>
       <p class="muted">Uses the person selected above. Birth dates replace the previous birth date; emails and phones can be corrected.</p>
@@ -236,6 +240,7 @@
       <input id="displayName" placeholder="Usually filled from the Immich name" />
       <button id="teachBtn" type="button">Teach / confirm</button>
     </section>
+    </div>
 
     <details class="tech">
       <summary class="muted">Technical detail (optional)</summary>
@@ -243,6 +248,42 @@
     </details>
   </main>
   <script>
+    const isPeopleAdmin =
+      new URLSearchParams(location.search).get("admin") === "1";
+    const adminRoot = document.getElementById("mb-people-admin");
+    if (adminRoot) adminRoot.hidden = !isPeopleAdmin;
+    if (isPeopleAdmin) {
+      document.title = "MemoryBox People — Admin";
+      const h1 = document.querySelector("main h1");
+      if (h1) h1.textContent = "People — Admin editor";
+    }
+    // Explore → People with active person: continue into Person Explorer
+    (function continueActivePerson() {
+      if (isPeopleAdmin) return;
+      const params = new URLSearchParams(location.search);
+      if (params.get("person") || params.get("person_id") || params.get("person_name")) {
+        return;
+      }
+      // Only auto-continue when arriving from exploration (shell adds mb_return=1).
+      // Bare /people/ui stays the picker so you can choose someone else.
+      if (params.get("mb_return") !== "1") return;
+      let active = null;
+      try {
+        active =
+          (window.mbShell &&
+            window.mbShell.getActivePerson &&
+            window.mbShell.getActivePerson()) ||
+          JSON.parse(sessionStorage.getItem("mb_active_person") || "null");
+      } catch (_) {
+        active = null;
+      }
+      if (!active || (!active.id && !active.name)) return;
+      const q = new URLSearchParams();
+      if (active.id) q.set("person", active.id);
+      if (active.name) q.set("person_name", active.name);
+      q.set("mb_return", "1");
+      location.replace("/people/ui?" + q.toString());
+    })();
     const out = document.getElementById("out");
     let pickerOptions = [];
     let currentPersonId = null;
@@ -616,19 +657,27 @@
     async function openProfileForKey(key) {
       const person = await ensureFromKey(key);
       currentPersonId = person.id;
-      const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
-      currentProfile = data.profile;
-      renderProfile(data.profile);
-      show(data);
-      setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
-      // Keep profile select on MB key after lazy teach
-      const mbKey = "mb:" + person.id;
-      const sel = document.getElementById("profileSel");
-      if (![...sel.options].some((o) => o.value === mbKey)) {
-        await loadPicker();
+      // I5: Person Explorer is primary; stay on this form only with ?admin=1
+      if (isPeopleAdmin) {
+        const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
+        currentProfile = data.profile;
+        renderProfile(data.profile);
+        show(data);
+        setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
+        const mbKey = "mb:" + person.id;
+        const sel = document.getElementById("profileSel");
+        if (![...sel.options].some((o) => o.value === mbKey)) {
+          await loadPicker();
+        }
+        sel.value = mbKey;
+        document.getElementById("rejectPersonSel").value = mbKey;
+        return person;
       }
-      sel.value = mbKey;
-      document.getElementById("rejectPersonSel").value = mbKey;
+      window.location.href =
+        "/people/ui?person=" +
+        encodeURIComponent(person.id) +
+        "&person_name=" +
+        encodeURIComponent(person.display_name || "");
       return person;
     }
 

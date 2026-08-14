@@ -109,6 +109,10 @@ ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
 STORY_STATIC = Path(__file__).resolve().parent / "story" / "static" / "story.html"
 JOURNAL_STATIC = Path(__file__).resolve().parent / "journal" / "static" / "journal.html"
 PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.html"
+PERSON_EXPLORE_STATIC = (
+    Path(__file__).resolve().parent / "person" / "static" / "person-explore.html"
+)
+PERSON_STATIC_DIR = Path(__file__).resolve().parent / "person" / "static"
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
 ARTIFACT_STATIC = Path(__file__).resolve().parent / "artifact" / "static" / "artifact.html"
@@ -134,6 +138,12 @@ if EXPLORE_STATIC_DIR.is_dir():
         "/static/explore",
         StaticFiles(directory=str(EXPLORE_STATIC_DIR)),
         name="explore_static",
+    )
+if PERSON_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/person",
+        StaticFiles(directory=str(PERSON_STATIC_DIR)),
+        name="person_static",
     )
 
 
@@ -525,7 +535,60 @@ def journal_ui() -> HTMLResponse:
 
 
 @app.get("/people/ui")
-def people_ui() -> HTMLResponse:
+def people_ui(
+    person: str | None = Query(None, description="MB Person id → Person Explorer"),
+    person_id: str | None = Query(None),
+    person_name: str | None = Query(None),
+    admin: str | None = Query(None, description="1 = legacy profile admin form"),
+) -> HTMLResponse:
+    """P2-I5: Person Explorer (dark) when ?person= set; admin form with ?admin=1."""
+    pid = (person or person_id or "").strip()
+    # Resolve display name → id when only person_name provided
+    if not pid and person_name:
+        try:
+            from memorybox.person import find_ask_person_by_name
+
+            view = find_ask_person_by_name(person_name.strip(), lazy_seed=False)
+            if view:
+                pid = view.id
+        except Exception:
+            pid = ""
+    if pid and str(admin or "") not in ("1", "true", "yes"):
+        if not PERSON_EXPLORE_STATIC.is_file():
+            raise HTTPException(status_code=404, detail="Person Explorer UI missing")
+        # person-explore.html reads ?person= from the URL; rewrite if needed
+        html = read_and_inject(PERSON_EXPLORE_STATIC, surface="people")
+        boot_name = (person_name or "").strip()
+        if not boot_name:
+            try:
+                from memorybox.person import get_person
+
+                view = get_person(pid)
+                if view and getattr(view, "display_name", None):
+                    boot_name = str(view.display_name)
+            except Exception:
+                boot_name = ""
+        if f'personId: params.get("person") || params.get("person_id") || "{pid}"' not in html:
+            html = html.replace(
+                'personId: params.get("person") || params.get("person_id") || ""',
+                f'personId: params.get("person") || params.get("person_id") || "{pid}"',
+                1,
+            )
+        if boot_name:
+            safe = (
+                boot_name.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("<", "")
+            )
+            html = html.replace(
+                'displayName: params.get("person_name") || ""',
+                f'displayName: params.get("person_name") || "{safe}"',
+                1,
+            )
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+        )
     return _html_ui(PEOPLE_STATIC, surface="people", missing="People UI missing")
 
 
@@ -1313,7 +1376,28 @@ def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, 
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence
 
-    return {"ok": True, "person_id": person_id, "evidence": list_face_evidence(person_id)}
+    evidence = list_face_evidence(person_id)
+    enriched: list[dict[str, Any]] = []
+    for row in evidence:
+        item = dict(row)
+        meta = item.get("exemplar_meta_json") or item.get("exemplar_meta") or {}
+        if isinstance(meta, str):
+            try:
+                import json as _json
+
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        asset_id = (
+            item.get("source_asset_id")
+            or (meta.get("source_asset_id") if isinstance(meta, dict) else None)
+            or (meta.get("assetId") if isinstance(meta, dict) else None)
+        )
+        if asset_id and not item.get("thumb_url"):
+            item["thumb_url"] = f"/library/media/photo/{asset_id}"
+            item["media_url"] = item["thumb_url"]
+        enriched.append(item)
+    return {"ok": True, "person_id": person_id, "evidence": enriched}
 
 
 @app.get("/people/{person_id}/appearances")
@@ -1553,12 +1637,33 @@ def people_immich_list() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/people/{person_id}/portrait")
+def people_portrait(person_id: str) -> Response:
+    """Preferred Immich person thumbnail (feature face), then face-evidence fallback."""
+    from memorybox.person import fetch_person_portrait_bytes, get_person
+
+    if not get_person(person_id):
+        raise HTTPException(status_code=404, detail="person not found")
+    got = fetch_person_portrait_bytes(person_id)
+    if not got:
+        raise HTTPException(status_code=404, detail="portrait unavailable")
+    data, ctype = got
+    return Response(
+        content=data,
+        media_type=ctype or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @app.get("/people/{person_id}")
 def people_get(person_id: str) -> dict[str, Any]:
     view = get_person(person_id)
     if not view:
         raise HTTPException(status_code=404, detail="person not found")
-    return {"ok": True, "person": view.to_dict()}
+    payload = {"ok": True, "person": view.to_dict()}
+    # Hint Person Explorer to load preferred Immich portrait
+    payload["portrait_url"] = f"/people/{person_id}/portrait"
+    return payload
 
 
 @app.get("/people/{person_id}/profile")

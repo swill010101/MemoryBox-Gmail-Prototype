@@ -51,6 +51,17 @@
 
   const DENSITY_LABEL = { 1: "Small", 2: "Medium", 3: "Large" };
 
+  const PERSON = window.MB_PERSON_SURFACE || null;
+  const PERSON_MODE = Boolean(PERSON && PERSON.personId);
+  if (PERSON_MODE) {
+    // I5 visual lock order: All · Photos · Video · Audio · Email/Text · Artifacts · Stories · Location
+    // Audio empty-OK; Location = has GPS/Place (locked option D); Map toggle stays separate.
+    FILTERS.splice(3, 0, { id: "audio", label: "Audio" });
+    FILTERS.push({ id: "location", label: "Location" });
+    const teachNav = NAV.find((n) => n.id === "teach");
+    if (teachNav) teachNav.label = "Teach";
+  }
+
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
   // "Show 2005 through 2011." "Only Oak Street." "Near Cascadia."
@@ -87,6 +98,7 @@
   let sessionId = null;
   let bandDrag = null;
   let handleDrag = null;
+  let handleDragMeta = null;
   let scrubDrag = null;
   let mapInstance = null;
   let mapClusterLayer = null;
@@ -235,8 +247,14 @@
 
   function matchesType(item, filter) {
     if (!filter || filter === "all") return true;
+    if (filter === "location") {
+      // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
+      if (itemLatLng(item)) return true;
+      return Boolean(itemPlaceBlob(item).trim());
+    }
     const t = String(item.type || "").toLowerCase();
     if (filter === "email") return t === "email" || t === "sms" || t === "text";
+    if (filter === "audio") return t === "audio" || t === "voice";
     return t === filter;
   }
 
@@ -273,7 +291,136 @@
       const d = parseISO(a.date) - parseISO(b.date);
       return sort === "oldest" ? d : -d;
     });
+    if (PERSON_MODE && (PERSON.memoryMode || "highlights") === "highlights") {
+      if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
+      return rankHighlights(list);
+    }
+    if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
     return list;
+  }
+
+  /**
+   * I5 Highlights ranking (Person surface) — quality first, then year shape:
+   * 1) Clear, focused, face-forward pics (large/centered face, high identity score)
+   * 2) Bulk from recent years; still reach back ~10–20 years with best-per-era picks
+   * Not random / not “first 36”. All Memories shows the full set.
+   */
+  function highlightScore(it) {
+    if (!it) return -1e9;
+    let s = 0;
+    const t = String(it.type || "").toLowerCase();
+    // Photos dominate — Highlights are a visual best-of for the person
+    if (t === "photo") s += 25;
+    else if (t === "video") s += 8;
+    else if (t === "story") s += 5;
+    else if (t === "artifact") s += 3;
+    else if (t === "email" || t === "sms") s += 1;
+
+    const box = it.face_box;
+    if (
+      box &&
+      Number(box.w) > 0 &&
+      Number(box.h) > 0 &&
+      Number.isFinite(Number(box.x)) &&
+      Number.isFinite(Number(box.y))
+    ) {
+      const w = Number(box.w);
+      const h = Number(box.h);
+      const x = Number(box.x);
+      const y = Number(box.y);
+      const area = w * h; // Immich boxes normalized 0–1
+      // Large face ≈ clear full face / good framing (quality signal #1)
+      s += Math.min(90, area * 140);
+      if (area >= 0.08) s += 18; // close / portrait-scale
+      else if (area >= 0.04) s += 10;
+      else if (area < 0.012) s -= 28; // tiny distant face
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const centerDist = Math.hypot(cx - 0.5, cy - 0.5);
+      s += Math.max(0, 22 - centerDist * 44);
+      // Face fully in frame (not clipped) — proxy for cleaner crop / lighting room
+      if (x > 0.02 && y > 0.02 && x + w < 0.98 && y + h < 0.98) s += 10;
+      const aspect = w / h;
+      if (aspect > 0.55 && aspect < 1.75) s += 6;
+    } else if (t === "photo") {
+      s -= 12; // person photo without a face box is a weak Highlight
+    } else if (it.thumb_url || it.media_url) {
+      s += 1;
+    }
+
+    // Identity probability / retrieval confidence when present
+    if (typeof it.score === "number" && Number.isFinite(it.score)) {
+      let conf = Number(it.score);
+      if (conf > 1.5) conf = conf / 100; // allow 0–100 provider scales
+      s += Math.min(28, Math.max(0, conf * 28));
+    }
+    if (it.face_identity || it.mb_person_name) s += 8;
+    if (isDated(it)) s += 2;
+    return s;
+  }
+
+  function itemYear(it) {
+    if (!isDated(it)) return null;
+    const y = parseInt(String(it.date).slice(0, 4), 10);
+    return Number.isFinite(y) ? y : null;
+  }
+
+  function rankHighlights(items) {
+    const MAX = 36;
+    if (!items || items.length <= MAX) return items;
+    const scored = items
+      .map((it) => ({ it, s: highlightScore(it), y: itemYear(it) }))
+      .sort((a, b) => b.s - a.s || (b.y || 0) - (a.y || 0));
+
+    const years = scored.map((r) => r.y).filter((y) => y != null);
+    const maxY = years.length ? Math.max.apply(null, years) : new Date().getUTCFullYear();
+    const recentFloor = maxY - 10; // bulk = last ~10 years
+    const archiveFloor = maxY - 20; // reach back 10–20 years
+
+    const BULK = 24; // quality-first recent majority
+    const REACH = 10; // best picks spanning the prior decade
+    const out = [];
+    const seen = new Set();
+    function take(it) {
+      if (!it || seen.has(it.id) || out.length >= MAX) return false;
+      seen.add(it.id);
+      out.push(it);
+      return true;
+    }
+
+    // 1) Bulk: highest-quality from recent years (current era)
+    for (const row of scored) {
+      if (out.length >= BULK) break;
+      if (row.y != null && row.y < recentFloor) continue;
+      take(row.it);
+    }
+
+    // 2) Reach-back: best face/quality per year for ~10–20 years ago
+    const bestArchiveByYear = new Map();
+    for (const row of scored) {
+      if (row.y == null) continue;
+      if (row.y < archiveFloor || row.y >= recentFloor) continue;
+      if (!bestArchiveByYear.has(row.y)) bestArchiveByYear.set(row.y, row);
+    }
+    const archiveYears = Array.from(bestArchiveByYear.keys()).sort((a, b) => b - a);
+    let reachTaken = 0;
+    for (const y of archiveYears) {
+      if (reachTaken >= REACH || out.length >= MAX) break;
+      if (take(bestArchiveByYear.get(y).it)) reachTaken += 1;
+    }
+
+    // 3) Fill remainder with next-best quality overall (still face/quality ranked)
+    for (const row of scored) {
+      if (out.length >= MAX) break;
+      take(row.it);
+    }
+
+    out.sort((a, b) => {
+      if (isUndated(a) && !isUndated(b)) return 1;
+      if (!isUndated(a) && isUndated(b)) return -1;
+      return parseISO(b.date) - parseISO(a.date);
+    });
+    return out;
   }
 
   /**
@@ -294,6 +441,8 @@
   function syncTimelineToEligibleDatedExtent() {
     const ext = extentOf(datedEligible());
     if (ext.empty) {
+      state.timeline.fullExtentStart = NaN;
+      state.timeline.fullExtentEnd = NaN;
       state.timeline.extentStart = NaN;
       state.timeline.extentEnd = NaN;
       state.timeline.rangeStart = NaN;
@@ -304,12 +453,45 @@
       return;
     }
     state.timeline.empty = false;
+    state.timeline.fullExtentStart = ext.start;
+    state.timeline.fullExtentEnd = ext.end;
     state.timeline.extentStart = ext.start;
     state.timeline.extentEnd = ext.end;
     state.timeline.rangeStart = ext.start;
     state.timeline.rangeEnd = ext.end;
     state.timeline.precision = computePrecision(ext.start, ext.end);
     state.timeline.playhead = ext.start;
+  }
+
+  /** Zoom axis so the current range fills the track (higher precision). */
+  function zoomTimelineToRange() {
+    if (!hasDatedExtent()) return;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    let a = state.timeline.rangeStart;
+    let b = state.timeline.rangeEnd;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return;
+    a = Math.max(a, fullA);
+    b = Math.min(b, fullB);
+    const pad = Math.max((b - a) * 0.02, 86400000);
+    let viewA = Math.max(fullA, a - pad);
+    let viewB = Math.min(fullB, b + pad);
+    if (viewB <= viewA) {
+      viewA = fullA;
+      viewB = fullB;
+    }
+    state.timeline.extentStart = viewA;
+    state.timeline.extentEnd = viewB;
+    state.timeline.rangeStart = Math.max(a, viewA);
+    state.timeline.rangeEnd = Math.min(b, viewB);
+    state.timeline.precision = computePrecision(
+      state.timeline.rangeStart,
+      state.timeline.rangeEnd
+    );
   }
 
   function setTypeFilter(id) {
@@ -339,6 +521,22 @@
   function setViewMode(mode) {
     const m = mode === "map" ? "map" : "gallery";
     state.gallery.viewMode = m;
+  }
+
+  function syncPersonChrome() {
+    if (!PERSON_MODE) return;
+    const mode = PERSON.memoryMode === "all" ? "all" : "highlights";
+    PERSON.memoryMode = mode;
+    document.querySelectorAll(".mb-person-mode").forEach((b) => {
+      const on = (b.getAttribute("data-mode") || "") === mode;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const view = (state.gallery && state.gallery.viewMode) || "gallery";
+    document.querySelectorAll(".mb-person-view").forEach((b) => {
+      const on = (b.getAttribute("data-view") || "") === view;
+      b.classList.toggle("is-active", on);
+    });
   }
 
   function setMapRefine(ids) {
@@ -411,14 +609,26 @@
       FILTERS.find((f) => f.id === state.domain.typeFilter)?.label || "All";
     const undatedOnly = !hasDatedExtent() && vis.some(isUndated);
     const range = undatedOnly
-      ? "undated memories (off Timeline axis — use Undated filter)"
+      ? "undated"
       : hasDatedExtent()
         ? fmtRangeLabel(
             state.timeline.rangeStart,
             state.timeline.rangeEnd,
             state.timeline.precision
           )
-        : "no dated memories";
+        : "all dates";
+    if (
+      PERSON_MODE &&
+      (PERSON.memoryMode || "highlights") === "highlights" &&
+      Number(state.domain._eligibleBeforeHighlights || 0) > vis.length
+    ) {
+      const total = state.domain._eligibleBeforeHighlights;
+      state.domain.summary =
+        `Highlights · ${vis.length} of ${total} memories (${filterLabel}) for ${range}` +
+        (parts.length ? ": " + parts.join(", ") + "." : ".") +
+        " Ranked by picture quality first (clear full face, focused, high identity confidence), with most from recent years and a reach-back across the prior 10–20 years. Switch to All Memories for the full set.";
+      return;
+    }
     if (state.domain.undatedFilter) {
       state.domain.summary = `Showing ${vis.length} undated memories (${filterLabel})${
         parts.length ? ": " + parts.join(", ") + "." : "."
@@ -432,8 +642,152 @@
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
 
+  function personScopedAsk(askText) {
+    let q = String(askText || "").trim();
+    if (!PERSON_MODE) return q;
+    const name = (PERSON.displayName || "").trim();
+    if (!name) return q;
+    const lower = q.toLowerCase();
+    const nameL = name.toLowerCase();
+    const first = nameL.split(/\s+/)[0];
+    if (!q) return "Show " + name;
+    if (/^go to\b/.test(lower)) return q;
+    if (lower.includes(nameL) || (first && /\b/.test(first) && lower.includes(first))) {
+      // Already mentions locked person — don't double-prefix
+      if (/^show\b/.test(lower)) return q;
+      return q;
+    }
+    if (/^show\b/.test(lower)) {
+      // "Show Christmas" / "Show only video" → keep locked person in the query
+      const rest = q.replace(/^show\s+(?:me\s+)?/i, "").trim();
+      return "Show " + name + " " + rest;
+    }
+    // Bare refinements inherit Person ("Christmas." → "Show Peggy Christmas")
+    return "Show " + name + " " + q;
+  }
+
+  /** Resolve a person option carefully — avoid "Tom" → first Tom* in the list. */
+  function resolvePersonOption(who) {
+    const whoL = String(who || "")
+      .trim()
+      .toLowerCase();
+    if (!whoL) return null;
+    const opts = peopleOptions || [];
+    const exact = opts.filter(
+      (p) => String(p.label || "").toLowerCase() === whoL
+    );
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return exact[0];
+    const tokens = whoL.split(/\s+/).filter(Boolean);
+    if (tokens.length > 1) {
+      const multi = opts.filter((p) => {
+        const lab = String(p.label || "").toLowerCase();
+        const parts = lab.split(/\s+/);
+        return tokens.every((t) => parts.some((part) => part === t || part.startsWith(t)));
+      });
+      if (multi.length === 1) return multi[0];
+      if (multi.length > 1) {
+        // Prefer exact token-count / shortest full name
+        multi.sort(
+          (a, b) =>
+            String(a.label || "").length - String(b.label || "").length
+        );
+        return multi[0];
+      }
+    }
+    // Single token: unique first-name only
+    const firstHits = opts.filter(
+      (p) => String(p.label || "").toLowerCase().split(/\s+/)[0] === whoL
+    );
+    if (firstHits.length === 1) return firstHits[0];
+    // Ambiguous "Tom" with multiple people — do not guess
+    return null;
+  }
+
+  /** Person surface: "Show me Tom" / "Go to Tom instead" → open that Person Explorer. */
+  function trySwitchPersonFromAsk(raw) {
+    if (!PERSON_MODE) return false;
+    const text = String(raw || "").trim();
+    const lower = text.toLowerCase();
+    let who = "";
+    const go = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    const show = text.match(/^show\s+(?:me\s+)?(.+?)\.?$/i);
+    if (go) who = go[1].replace(/\.$/, "").trim();
+    else if (show) {
+      who = show[1].trim();
+      who = who
+        .replace(
+          /\s+(at|in|during|from|between|only|through|near|around)\b[\s\S]*$/i,
+          ""
+        )
+        .trim();
+    } else {
+      return false;
+    }
+    if (!who) return false;
+    const whoL = who.toLowerCase();
+    const locked = (PERSON.displayName || "").toLowerCase();
+    const lockedFirst = locked.split(/\s+/)[0] || "";
+    if (
+      whoL === locked ||
+      whoL === lockedFirst ||
+      (lockedFirst && whoL.startsWith(lockedFirst + " "))
+    ) {
+      return false;
+    }
+    if (
+      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4})/.test(
+        whoL
+      )
+    ) {
+      return false;
+    }
+    const hit = resolvePersonOption(who);
+    if (hit && hit.id) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson({ id: hit.id, name: hit.label || who });
+      }
+      window.location.replace(
+        "/people/ui?person=" +
+          encodeURIComponent(hit.id) +
+          "&person_name=" +
+          encodeURIComponent(hit.label || who)
+      );
+      return true;
+    }
+    // Ambiguous or unknown — let Ask clarify (do not navigate to a wrong Tom)
+    if (whoL.split(/\s+/).length === 1) {
+      const firstHits = (peopleOptions || []).filter(
+        (p) => String(p.label || "").toLowerCase().split(/\s+/)[0] === whoL
+      );
+      if (firstHits.length > 1) {
+        state.domain.summary =
+          "Which " +
+          who +
+          "? " +
+          firstHits
+            .slice(0, 6)
+            .map((p) => p.label)
+            .join(", ") +
+          (firstHits.length > 6 ? "…" : "") +
+          ". Try “Show " +
+          (firstHits[0].label || who) +
+          "” or “Go to … instead”.";
+        renderCurator();
+        return true;
+      }
+    }
+    if (window.mbShell && window.mbShell.setActivePerson) {
+      window.mbShell.setActivePerson({ id: "", name: who });
+    }
+    window.location.replace(
+      "/people/ui?person_name=" + encodeURIComponent(who)
+    );
+    return true;
+  }
+
   async function liveFind(askText) {
-    const q = String(askText || "").trim();
+    const q = personScopedAsk(askText);
     const url =
       "/explore/api/find?q=" +
       encodeURIComponent(q) +
@@ -535,6 +889,8 @@
         items: [],
       },
       timeline: {
+        fullExtentStart: emptyTl ? NaN : ext.start,
+        fullExtentEnd: emptyTl ? NaN : ext.end,
         extentStart: emptyTl ? NaN : ext.start,
         extentEnd: emptyTl ? NaN : ext.end,
         rangeStart: rangeStart,
@@ -578,10 +934,64 @@
     state.domain.askText = text;
     const lower = text.toLowerCase();
 
-    // Navigation / clear context
+    // Navigation / clear context — bare People picker (drop active person)
     if (/clear context.*people|go to people/.test(lower)) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson(null);
+      }
       window.location.href = "/people/ui";
       return;
+    }
+
+    if (trySwitchPersonFromAsk(text)) return;
+
+    if (
+      PERSON_MODE &&
+      (/^clear everything except\b/.test(lower) ||
+        /^reset to person\.?$/.test(lower) ||
+        /^clear all but person\.?$/.test(lower))
+    ) {
+      setTypeFilter("all");
+      clearPlaceFilter();
+      setUndatedFilter(false);
+      state.domain.temporalWindows = null;
+      resetTimelineExtent(false);
+      setViewMode("gallery");
+      if (PERSON.memoryMode) PERSON.memoryMode = PERSON.memoryMode;
+      liveFind("Show " + (PERSON.displayName || "person"))
+        .then((payload) => {
+          applyPayloadToState(payload, { keepPresentation: true });
+          // Re-assert locked person chip
+          ensureLockedPersonChip();
+          render();
+        })
+        .catch((err) => {
+          state.domain.summary = "Find failed: " + err;
+          renderCurator();
+        });
+      return;
+    }
+
+    if (PERSON_MODE && /^go to\s+(.+?)\s+instead\.?$/.test(lower)) {
+      const m = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+      const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
+      if (who) {
+        const whoL = who.toLowerCase();
+        const hit = (peopleOptions || []).find((p) => {
+          const lab = String(p.label || "").toLowerCase();
+          const first = lab.split(/\s+/)[0];
+          return lab === whoL || first === whoL || lab.includes(whoL);
+        });
+        if (hit && hit.id) {
+          window.location.href =
+            "/people/ui?person=" + encodeURIComponent(hit.id);
+        } else {
+          // Server resolves display name → MB Person id (same Person continuum)
+          window.location.href =
+            "/people/ui?person_name=" + encodeURIComponent(who);
+        }
+        return;
+      }
     }
 
     if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
@@ -738,11 +1148,58 @@
       return;
     }
 
+    if (PERSON_MODE && /^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i.test(lower)) {
+      const m = lower.match(/^remove\s+([a-z0-9][a-z0-9'’.\-\s]{1,40})\.?$/i);
+      const token = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim().toLowerCase();
+      const personL = (PERSON.displayName || "").toLowerCase();
+      const personFirst = personL.split(/\s+/)[0] || "";
+      // Locked Person cannot be removed via Ask — ignore attempts to strip them
+      if (
+        token &&
+        token !== personL &&
+        token !== personFirst &&
+        !personL.includes(token)
+      ) {
+        // Drop matching event/time chips by re-asking without that token — clear temporal if holiday/season-like
+        if (
+          /christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year/.test(
+            token
+          )
+        ) {
+          state.domain.temporalWindows = null;
+          resetTimelineExtent(false);
+          const chips = (state.domain.chips || []).filter(
+            (c) =>
+              !(c.kind === "event" || c.kind === "time") ||
+              !String(c.label || "")
+                .toLowerCase()
+                .includes(token.split(/\s+/)[0])
+          );
+          state.domain.chips = chips;
+          ensureLockedPersonChip();
+          liveFind("Show " + (PERSON.displayName || ""))
+            .then((payload) => {
+              applyPayloadToState(payload, { keepPresentation: true });
+              ensureLockedPersonChip();
+              render();
+            });
+          return;
+        }
+      } else if (token && (token === personL || token === personFirst)) {
+        state.domain.summary =
+          (PERSON.displayName || "Person") +
+          " stays locked on this surface. Use “Go to … instead” to switch people, or People to leave.";
+        renderCurator();
+        return;
+      }
+    }
+
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
       liveFind(text)
         .then((payload) => {
           applyPayloadToState(payload, { keepPresentation: true });
+          ensureLockedPersonChip();
           setTypeFilter("all");
           render();
         })
@@ -760,17 +1217,23 @@
 
   function setActiveRange(start, end) {
     if (!hasDatedExtent()) return;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
     let a = Math.min(start, end);
     let b = Math.max(start, end);
-    a = Math.max(a, state.timeline.extentStart);
-    b = Math.min(b, state.timeline.extentEnd);
-    if (b - a < 86400000) b = a + 86400000;
+    // Handles may move within the full data extent (zoom out by expanding)
+    a = Math.max(a, fullA);
+    b = Math.min(b, fullB);
+    if (b - a < 86400000) b = Math.min(fullB, a + 86400000);
     state.timeline.rangeStart = a;
     state.timeline.rangeEnd = b;
     state.timeline.precision = computePrecision(a, b);
     state.timeline.playhead = a;
     state.domain.mapRefineIds = null;
-    // Manual band replaces Ask multi-window holiday filter with contiguous range.
     state.domain.temporalWindows = null;
   }
 
@@ -780,31 +1243,128 @@
       if (andRender) render();
       return;
     }
-    state.timeline.rangeStart = state.timeline.extentStart;
-    state.timeline.rangeEnd = state.timeline.extentEnd;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    state.timeline.extentStart = fullA;
+    state.timeline.extentEnd = fullB;
+    state.timeline.rangeStart = fullA;
+    state.timeline.rangeEnd = fullB;
     state.timeline.precision = computePrecision(
       state.timeline.rangeStart,
       state.timeline.rangeEnd
     );
-    state.timeline.playhead = state.timeline.extentStart;
+    state.timeline.playhead = fullA;
     if (andRender) render();
   }
 
   // ——— Render ———
 
+  function ensureLockedPersonChip() {
+    if (!PERSON_MODE) return;
+    const name = (PERSON.displayName || "").trim();
+    if (!name || !state) return;
+    const chips = Array.isArray(state.domain.chips) ? state.domain.chips.slice() : [];
+    const without = chips.filter((c) => c.kind !== "person");
+    without.unshift({ kind: "person", label: name, locked: true, personId: PERSON.personId });
+    state.domain.chips = without;
+  }
+
+  /** Persist Explore person chip so shell People nav continues into Person Explorer. */
+  function syncActivePersonContext() {
+    if (!state || !state.domain) return;
+    const chip = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    if (!chip || !chip.label) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson(null);
+        window.mbShell.refreshPeopleNavLinks();
+      }
+      return;
+    }
+    let id =
+      chip.personId ||
+      (PERSON && PERSON.personId) ||
+      "";
+    const name = String(chip.label || "").trim();
+    if (!id && name && peopleOptions && peopleOptions.length) {
+      const nameL = name.toLowerCase();
+      const hit = peopleOptions.find((p) => {
+        const lab = String(p.label || "").toLowerCase();
+        return (
+          lab === nameL ||
+          lab.startsWith(nameL) ||
+          nameL.startsWith(lab.split(/\s+/)[0])
+        );
+      });
+      if (hit) id = hit.id;
+    }
+    if (window.mbShell && window.mbShell.setActivePerson) {
+      window.mbShell.setActivePerson({ id: id || "", name: name });
+      window.mbShell.refreshPeopleNavLinks();
+    }
+  }
+
+  function peopleNavHref() {
+    if (window.mbShell && typeof window.mbShell.peopleHref === "function") {
+      return window.mbShell.peopleHref();
+    }
+    const chip =
+      state &&
+      state.domain &&
+      (state.domain.chips || []).find((c) => c && c.kind === "person");
+    if (PERSON_MODE && PERSON && PERSON.personId) {
+      return (
+        "/people/ui?person=" +
+        encodeURIComponent(PERSON.personId) +
+        (PERSON.displayName
+          ? "&person_name=" + encodeURIComponent(PERSON.displayName)
+          : "")
+      );
+    }
+    if (chip && chip.label) {
+      return "/people/ui?person_name=" + encodeURIComponent(chip.label);
+    }
+    return "/people/ui";
+  }
+
   function renderNav() {
     const el = document.getElementById("mb-explore-nav");
     if (!el) return;
-    el.innerHTML = NAV.map(
-      (n) =>
-        `<a href="${n.href}" data-nav="${n.id}"${
-          n.id === "ask" ? ' aria-current="page"' : ""
-        }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
-    ).join("");
+    el.innerHTML = NAV.map((n) => {
+      const href = n.id === "people" ? peopleNavHref() : n.href;
+      return `<a href="${href}" data-nav="${n.id}"${
+        (PERSON_MODE ? n.id === "people" : n.id === "ask")
+          ? ' aria-current="page"'
+          : ""
+      }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`;
+    }).join("");
   }
 
   // Expose for shell Global Ask + future STT — same applyAskCommand path.
   window.mbExploreApplyAsk = applyAskCommand;
+  window.mbExploreSetViewMode = function (mode) {
+    setViewMode(mode === "map" ? "map" : "gallery");
+    render();
+  };
+  window.mbPersonSetMemoryMode = function (mode) {
+    if (!PERSON_MODE || !PERSON) return;
+    PERSON.memoryMode = mode === "all" ? "all" : "highlights";
+    if (window.MB_PERSON_SURFACE) {
+      window.MB_PERSON_SURFACE.memoryMode = PERSON.memoryMode;
+    }
+    syncPersonChrome();
+    render();
+  };
+  window.addEventListener("mb-person-ready", (ev) => {
+    if (!PERSON_MODE) return;
+    const d = (ev && ev.detail) || {};
+    if (d.displayName) PERSON.displayName = d.displayName;
+    ensureLockedPersonChip();
+    renderCurator();
+  });
 
   function renderCurator() {
     refreshCuratorFromVisible();
@@ -831,9 +1391,10 @@
             label
           )}</button>`;
         }
-        return `<span class="${cls}" data-kind="${escapeAttr(kind)}">${escapeHtml(
-          label
-        )}</span>`;
+        const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
+        return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
+          kind
+        )}">${escapeHtml(label)}</span>`;
       })
       .join("");
     chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
@@ -852,9 +1413,21 @@
     });
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) {
-      const person = (state.domain.chips || []).find((c) => c.kind === "person");
-      const label = (person && person.label) || state.domain.title || "M";
-      av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+      const portraitUrl =
+        (PERSON && PERSON.portraitUrl) ||
+        (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
+        "";
+      if (portraitUrl && av.classList.contains("has-photo")) {
+        // Keep Immich preferred portrait; do not wipe to letter
+      } else if (portraitUrl) {
+        av.textContent = "";
+        av.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
+        av.classList.add("has-photo");
+      } else if (!av.classList.contains("has-photo")) {
+        const person = (state.domain.chips || []).find((c) => c.kind === "person");
+        const label = (person && person.label) || state.domain.title || "M";
+        av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+      }
     }
   }
 
@@ -877,8 +1450,8 @@
         }${on ? " ×" : ""}</button>`
       );
     }
-    // Map is opt-in via filter bar (not a default Gallery|Map takeover)
-    {
+    // Map is opt-in via filter bar on Explore. Person surface uses Gallery|Map toggle only.
+    if (!PERSON_MODE) {
       const on = (state.gallery && state.gallery.viewMode) === "map";
       el.insertAdjacentHTML(
         "beforeend",
@@ -933,6 +1506,7 @@
     const mapPane = document.getElementById("mb-explore-map-pane");
     if (gallery) gallery.hidden = mode === "map";
     if (mapPane) mapPane.hidden = mode !== "map";
+    syncPersonChrome();
   }
 
   function densityLabel() {
@@ -982,6 +1556,18 @@
         ? `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" />`
         : "";
       return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
+        dur ? `<span class="mb-card-dur">${dur}</span>` : ""
+      }<span class="mb-card-preview">${prev}</span>`;
+    }
+    if (t === "audio" || t === "voice") {
+      const dur = it.duration_sec
+        ? `${Math.floor(it.duration_sec / 60)}:${String(
+            Math.floor(it.duration_sec % 60)
+          ).padStart(2, "0")}`
+        : "";
+      return `<div class="mb-card-textbody"><strong>Audio</strong>${
+        prev || escapeHtml(it.title || "Voice")
+      }</div>${
         dur ? `<span class="mb-card-dur">${dur}</span>` : ""
       }<span class="mb-card-preview">${prev}</span>`;
     }
@@ -1204,8 +1790,9 @@
         "No dated memories on the Timeline";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
-      const left = ((rangeStart - extentStart) / span) * 100;
-      const right = ((rangeEnd - extentStart) / span) * 100;
+      // Clamp chrome to the track — indicators/handles never paint outside the timeline
+      const left = Math.min(100, Math.max(0, ((rangeStart - extentStart) / span) * 100));
+      const right = Math.min(100, Math.max(0, ((rangeEnd - extentStart) / span) * 100));
       const width = Math.max(right - left, 0.5);
       band.style.left = `${left}%`;
       band.style.width = `${width}%`;
@@ -1242,18 +1829,27 @@
 
     const dotsEl = document.getElementById("mb-tl-dots");
     const typedDated = datedEligible();
-    if (empty) {
-      dotsEl.innerHTML = "";
-    } else {
+    // Always clear first — prevents leftover dots after zoom
+    if (dotsEl) dotsEl.innerHTML = "";
+    if (!empty && dotsEl) {
       const span = Math.max(extentEnd - extentStart, 1);
-      dotsEl.innerHTML = typedDated
-        .map((it) => {
-          const t = parseISO(it.date);
-          if (!Number.isFinite(t)) return "";
-          const x = ((t - extentStart) / span) * 100;
-          return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
-        })
-        .join("");
+      const parts = [];
+      for (const it of typedDated) {
+        const t = parseISO(it.date);
+        if (!Number.isFinite(t)) continue;
+        // Rule: timeline indicators never exceed the timeline track
+        if (t < extentStart || t > extentEnd) continue;
+        let x = ((t - extentStart) / span) * 100;
+        if (x < 0 || x > 100) continue;
+        // Keep dot centers inside the rail (avoid margin bleed past edges)
+        x = Math.min(99.2, Math.max(0.8, x));
+        parts.push(
+          `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
+            it.date
+          )}"></span>`
+        );
+      }
+      dotsEl.innerHTML = parts.join("");
     }
 
     const ticks = document.getElementById("mb-tl-ticks");
@@ -1279,6 +1875,10 @@
 
   function render() {
     document.getElementById("mb-explore-ask").value = state.domain.askText || "";
+    ensureLockedPersonChip();
+    syncActivePersonContext();
+    syncPersonChrome();
+    renderNav();
     renderCurator();
     renderFilters();
     renderViewMode();
@@ -2053,6 +2653,26 @@
     return state.timeline.extentStart + x * (state.timeline.extentEnd - state.timeline.extentStart);
   }
 
+  /** Handle drag may move past the visible axis toward the full archive span. */
+  function trackFracHandle(clientX) {
+    if (!hasDatedExtent()) return NaN;
+    const track = document.getElementById("mb-tl-track");
+    const r = track.getBoundingClientRect();
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    const extA = state.timeline.extentStart;
+    const extB = state.timeline.extentEnd;
+    const span = Math.max(extB - extA, 1);
+    // Allow overshoot past track edges so range can expand toward fullExtent
+    const x = (clientX - r.left) / r.width;
+    const t = extA + x * span;
+    return Math.min(fullB, Math.max(fullA, t));
+  }
+
   /** Proportional scrub: playhead → chronological neighborhood without huge jumps. */
   function scrollGalleryToward(ms, opts) {
     opts = opts || {};
@@ -2138,7 +2758,7 @@
 
     track.addEventListener("pointermove", (e) => {
       if (handleDrag) {
-        const t = trackFrac(e.clientX);
+        const t = trackFracHandle(e.clientX);
         if (handleDrag === "l") {
           setActiveRange(t, state.timeline.rangeEnd);
         } else {
@@ -2169,12 +2789,17 @@
     });
 
     track.addEventListener("pointerup", (e) => {
+      if (handleDrag) {
+        endHandle();
+        return;
+      }
       if (bandDrag) {
         const a = Math.min(bandDrag.a, bandDrag.b);
         const b = Math.max(bandDrag.a, bandDrag.b);
         bandDrag = null;
         if (b - a > (state.timeline.extentEnd - state.timeline.extentStart) * 0.01) {
           setActiveRange(a, b);
+          zoomTimelineToRange();
           render();
         } else {
           // tap: move playhead + scrub gallery
@@ -2185,26 +2810,77 @@
         return;
       }
       scrubDrag = null;
-      handleDrag = null;
     });
 
     hl.addEventListener("pointerdown", (e) => {
       if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "l";
+      handleDragMeta = {
+        side: "l",
+        startA: state.timeline.rangeStart,
+        startB: state.timeline.rangeEnd,
+      };
       hl.setPointerCapture(e.pointerId);
     });
     hr.addEventListener("pointerdown", (e) => {
       if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "r";
+      handleDragMeta = {
+        side: "r",
+        startA: state.timeline.rangeStart,
+        startB: state.timeline.rangeEnd,
+      };
       hr.setPointerCapture(e.pointerId);
     });
-    const endHandle = () => {
+    // Slight outward pull while zoomed → restore full archive span
+    function endHandle() {
+      if (!handleDrag) return;
+      const side = handleDrag;
+      const origin = handleDragMeta;
       handleDrag = null;
-    };
+      handleDragMeta = null;
+      if (!hasDatedExtent()) {
+        render();
+        return;
+      }
+      const fullA = Number.isFinite(state.timeline.fullExtentStart)
+        ? state.timeline.fullExtentStart
+        : state.timeline.extentStart;
+      const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+        ? state.timeline.fullExtentEnd
+        : state.timeline.extentEnd;
+      const extA = state.timeline.extentStart;
+      const extB = state.timeline.extentEnd;
+      const rA = state.timeline.rangeStart;
+      const rB = state.timeline.rangeEnd;
+      const viewSpan = Math.max(extB - extA, 1);
+      const zoomed =
+        extA > fullA + viewSpan * 0.005 || extB < fullB - viewSpan * 0.005;
+      const pulledLeftOut =
+        side === "l" &&
+        origin &&
+        Number.isFinite(origin.startA) &&
+        rA < origin.startA - 1;
+      const pulledRightOut =
+        side === "r" &&
+        origin &&
+        Number.isFinite(origin.startB) &&
+        rB > origin.startB + 1;
+      const pastViewEdge =
+        (side === "l" && rA < extA - 1) || (side === "r" && rB > extB + 1);
+      if (zoomed && (pulledLeftOut || pulledRightOut || pastViewEdge)) {
+        resetTimelineExtent(true);
+        return;
+      }
+      zoomTimelineToRange();
+      render();
+    }
     hl.addEventListener("pointerup", endHandle);
     hr.addEventListener("pointerup", endHandle);
+    hl.addEventListener("pointercancel", endHandle);
+    hr.addEventListener("pointercancel", endHandle);
   }
 
   function bindChrome() {
@@ -2305,11 +2981,16 @@
   function bootFromPayload(payload) {
     liveMode = !payload.demo;
     applyPayloadToState(payload, { keepPresentation: false });
+    ensureLockedPersonChip();
+    syncActivePersonContext();
     renderNav();
     bindChrome();
     bindTimeline();
     render();
-    loadPeopleOptions();
+    loadPeopleOptions().then(() => {
+      syncActivePersonContext();
+      renderNav();
+    });
   }
 
   async function loadPeopleOptions() {
@@ -2330,6 +3011,7 @@
     } catch (_) {
       peopleOptions = fallback;
     }
+    return peopleOptions;
   }
 
   async function main() {
@@ -2347,6 +3029,12 @@
         const res = await fetch(`/explore/api/demo/${encodeURIComponent(demo)}`);
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
+      } else if (PERSON_MODE) {
+        const seed = q || ("Show " + (PERSON.displayName || "person"));
+        payload = await liveFind(seed);
+        if (payload.session_id) {
+          localStorage.setItem("mb_ask_session", payload.session_id);
+        }
       } else {
         payload = await liveFind(q);
         if (payload.session_id) {
