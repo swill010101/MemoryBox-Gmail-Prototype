@@ -1106,7 +1106,7 @@ class AskOrchestrator:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
-            if plan.want_still or plan.want_photo:
+            if plan.want_still or plan.want_photo or plan.want_video:
                 photos, photo_status = R.search_photos(plan, self.photo)
 
             if getattr(plan, "want_story", False):

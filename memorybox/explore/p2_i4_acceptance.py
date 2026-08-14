@@ -253,6 +253,8 @@ def _prove_harness() -> dict[str, Any]:
             "bindPhotoPan",
             "renderRailTools",
             "Camera / EXIF",
+            "mb-ev-video-player",
+            "isLibraryClip",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -319,6 +321,63 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(mapped)} titles={[m.get('title') for m in mapped]}",
+        )
+        immich_vid = items_from_ask_result(
+            {
+                "photo_hits": [
+                    {
+                        "provider_key": "immich",
+                        "external_id": "vid-immich-1",
+                        "taken_at": "2026-07-29T12:00:00",
+                        "people": ["Sue Will"],
+                        "mb_person_name": "Sue Will",
+                        "asset_kind": "VIDEO",
+                    }
+                ]
+            }
+        )
+        _check(
+            "immich_video_maps_to_explore_video",
+            len(immich_vid) == 1
+            and immich_vid[0]["type"] == "video"
+            and immich_vid[0].get("asset_kind") == "VIDEO"
+            and "/library/media/immich-video/" in str(immich_vid[0].get("play_url") or "")
+            and immich_vid[0].get("undated") is not True,
+            checks,
+            problems,
+            f"immich_vid={immich_vid[0] if immich_vid else None}",
+        )
+        mixed = items_from_ask_result(
+            {
+                "photo_hits": [
+                    {
+                        "provider_key": "immich",
+                        "external_id": "lib-clip",
+                        "taken_at": "2024-01-01T12:00:00",
+                        "asset_kind": "VIDEO",
+                    }
+                ],
+                "video_hits": [
+                    {
+                        "provider_key": "hvrt",
+                        "external_id": "hv-1",
+                        "video_external_id": "hv-1",
+                        "start_sec": 4,
+                        "label": "Home video moment",
+                    }
+                ],
+            }
+        )
+        types = [m.get("type") for m in mixed]
+        _check(
+            "videos_from_immich_and_hvrt",
+            types == ["video", "video"]
+            and any("/library/media/immich-video/" in str(m.get("play_url") or "") for m in mixed)
+            and any(m.get("paused_frame") is True for m in mixed)
+            and any(m.get("clip_level") is True for m in mixed),
+            checks,
+            problems,
+            f"types={types} ids={[m.get('id') for m in mixed]}",
         )
         peggy = items_from_ask_result(
             {

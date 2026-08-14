@@ -1,8 +1,9 @@
 """Sibling Video Intelligence worker — derived evidence only; originals read-only.
 
 Run: python -m memorybox.video_worker
-Config (env only — no hard-coded hosts):
-  MEMORYBOX_VIDEO_MEDIA_ROOT   — media-server family-video library path (LAN)
+Config (env + thin Settings):
+  MEMORYBOX_VIDEO_MEDIA_ROOT   — bootstrap / fallback family-video library path
+  Settings → Home Videos library path overrides env (sidecar in derived dir)
   MEMORYBOX_VIDEO_DERIVED_DIR  — rebuildable derived detections store
   MEMORYBOX_VIDEO_PRESENCE_GAP_SEC — merge gap (default 60)
   MEMORYBOX_VIDEO_WORKER_HOST / MEMORYBOX_VIDEO_WORKER_PORT
@@ -54,7 +55,12 @@ def _gap_sec() -> float:
 
 
 def _media_root() -> Path | None:
-    raw = _env("MEMORYBOX_VIDEO_MEDIA_ROOT")
+    try:
+        from memorybox.settings.video_root import resolve_video_media_root
+
+        raw = resolve_video_media_root()
+    except Exception:  # noqa: BLE001 — worker must still boot if Settings import fails
+        raw = _env("MEMORYBOX_VIDEO_MEDIA_ROOT")
     if not raw:
         return None
     return Path(raw)

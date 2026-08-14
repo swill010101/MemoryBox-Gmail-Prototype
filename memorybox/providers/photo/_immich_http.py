@@ -388,6 +388,70 @@ class ImmichHttpClient:
             "No thumbnail available via Immich API (needs asset.view on API key)"
         )
 
+    def fetch_original_bytes(self, asset_id: str) -> tuple[bytes, str, str]:
+        """Original / playback bytes (Immich VIDEO and full IMAGE)."""
+        status, data, ctype, _extra = self.fetch_original_range(asset_id)
+        if status >= 400 or not data:
+            raise FileNotFoundError(
+                "No original/playback available via Immich API (needs asset.view / download)"
+            )
+        return data, ctype, "immich-original"
+
+    def fetch_original_range(
+        self, asset_id: str, range_header: str | None = None
+    ) -> tuple[int, bytes, str, dict[str, str]]:
+        """Forward Range to Immich so HTML5 video can scrub without a full download."""
+        aid = (asset_id or "").strip()
+        if not aid:
+            raise FileNotFoundError("asset id required")
+        last_err: Exception | None = None
+        for path in (
+            f"/assets/{aid}/video/playback",
+            f"/assets/{aid}/original",
+            f"/assets/{aid}/file",
+        ):
+            url = f"{self.api_base}{path}"
+            headers = {"x-api-key": self._key, "Accept": "*/*"}
+            if range_header:
+                headers["Range"] = range_header
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    data = resp.read()
+                    if not data or len(data) < 24:
+                        continue
+                    ctype = resp.headers.get("Content-Type") or "video/mp4"
+                    if "json" in ctype or data[:1] in (b"{", b"["):
+                        continue
+                    extra: dict[str, str] = {"Accept-Ranges": "bytes"}
+                    cr = resp.headers.get("Content-Range")
+                    if cr:
+                        extra["Content-Range"] = cr
+                    cl = resp.headers.get("Content-Length")
+                    if cl:
+                        extra["Content-Length"] = cl
+                    status = int(getattr(resp, "status", 200) or 200)
+                    if range_header and status == 200:
+                        from memorybox.providers.photo.http_range import apply_http_range
+
+                        status, data, sliced = apply_http_range(data, range_header)
+                        extra.update(sliced)
+                    return status, data, ctype, extra
+            except urllib.error.HTTPError as exc:
+                last_err = exc
+                if exc.code in (404, 405, 501):
+                    continue
+                if exc.code == 416:
+                    raise
+                continue
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                continue
+        raise FileNotFoundError(
+            "No original/playback available via Immich API (needs asset.view / download)"
+            + (f": {last_err}" if last_err else "")
+        )
+
     def fetch_person_thumbnail_bytes(
         self, person_id: str
     ) -> tuple[bytes, str, str] | None:

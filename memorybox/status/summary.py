@@ -383,13 +383,14 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
 
 
 def _count_media_root_videos() -> tuple[int | None, str]:
-    """Count video files under MEMORYBOX_VIDEO_MEDIA_ROOT (filesystem; not HVRT SoT)."""
-    import os
+    """Count video files under the effective Home Videos media root."""
     from pathlib import Path
 
-    raw = (os.environ.get("MEMORYBOX_VIDEO_MEDIA_ROOT") or "").strip()
+    from memorybox.settings.video_root import resolve_video_media_root
+
+    raw = resolve_video_media_root()
     if not raw:
-        return None, "MEMORYBOX_VIDEO_MEDIA_ROOT unset"
+        return None, "video media root unset (Settings or MEMORYBOX_VIDEO_MEDIA_ROOT)"
     root = Path(raw)
     if not root.is_dir():
         return None, f"media root not reachable: {raw}"

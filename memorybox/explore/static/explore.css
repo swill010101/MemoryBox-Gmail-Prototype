@@ -1339,11 +1339,11 @@ body {
   max-height: none;
 }
 
-.mb-ev-video-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  height: 100%;
+.mb-ev-video-player {
+  width: 100%;
+  max-height: min(70vh, 720px);
+  background: #020617;
+  border-radius: 10px;
 }
 
 .mb-ev-video-frame {

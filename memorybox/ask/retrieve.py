@@ -55,6 +55,8 @@ class PhotoHit:
     exif: dict[str, str] | None = None
     # Immich-named faces on the asset (+ optional boxes)
     faces: list[dict[str, Any]] | None = None
+    # IMAGE | VIDEO — Immich library videos ride this channel then map to Explore video
+    asset_kind: str = "IMAGE"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -442,7 +444,8 @@ def search_photos(
             windows = ((plan.time_start, plan.time_end),)
         places = [str(p).lower() for p in (plan.place_names or ()) if p]
         if not windows and not places:
-            return hits
+            scoped = _scope_asset_kind(hits)
+            return scoped
         out: list[PhotoHit] = []
         for h in hits:
             if windows and not date_in_windows(h.taken_at, windows):
@@ -470,13 +473,24 @@ def search_photos(
         if places:
             status["place_filter"] = list(plan.place_names)
             status["after_place_filter"] = len(out)
-        return out
+        return _scope_asset_kind(out)
+
+    def _scope_asset_kind(hits: list[PhotoHit]) -> list[PhotoHit]:
+        scope = str(getattr(plan, "visual_scope", "") or "").lower()
+        want_still = bool(getattr(plan, "want_still", False) or getattr(plan, "want_photo", False))
+        want_video = bool(getattr(plan, "want_video", False))
+        if scope == "still_only" or (want_still and not want_video):
+            return [h for h in hits if str(h.asset_kind or "IMAGE").upper() != "VIDEO"]
+        if scope == "video_only" or (want_video and not want_still):
+            return [h for h in hits if str(h.asset_kind or "").upper() == "VIDEO"]
+        return hits
 
     def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
         filtered = _filter_photo_hits(hits)
         return filtered[:limit], status
 
-    if not plan.want_still and not plan.want_photo:
+    # Immich VIDEO lives on the photo provider. Video-only asks must still search here.
+    if not plan.want_still and not plan.want_photo and not getattr(plan, "want_video", False):
         status["ok"] = True
         status["detail"] = "not_requested"
         return [], status
@@ -736,6 +750,7 @@ def search_photos(
                 original_filename=getattr(a, "original_filename", None),
                 exif=dict(getattr(a, "exif", ()) or ()) or None,
                 faces=_faces_for_hit(a),
+                asset_kind=str(getattr(a, "asset_kind", None) or "IMAGE").upper(),
             )
 
         if mapped_ext:

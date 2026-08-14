@@ -307,6 +307,9 @@ class ImmichPhotoProvider:
             if isinstance(a, dict)
         )
         exif_pairs = self._exif_pairs(loc_raw, raw)
+        kind = str(raw.get("type") or raw.get("assetType") or "IMAGE").strip().upper()
+        if kind not in {"IMAGE", "VIDEO", "AUDIO", "OTHER"}:
+            kind = "IMAGE"
         return PhotoAssetDto(
             provider_key=self.provider_key,
             external_id=ext,
@@ -319,7 +322,36 @@ class ImmichPhotoProvider:
             albums=albums,
             exif=exif_pairs,
             faces=faces,
+            asset_kind=kind,
         )
+
+    def fetch_original(self, external_asset_id: str) -> PhotoBytesDto:
+        try:
+            data, content_type, _source = self._client.fetch_original_bytes(
+                external_asset_id
+            )
+        except self._AuthError as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(str(exc)) from exc
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=external_asset_id,
+            content_type=content_type or "application/octet-stream",
+            data=data,
+        )
+
+    def fetch_original_range(
+        self, external_asset_id: str, *, range_header: str | None = None
+    ) -> tuple[int, bytes, str, dict[str, str]]:
+        try:
+            return self._client.fetch_original_range(
+                external_asset_id, range_header=range_header
+            )
+        except self._AuthError as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError(str(exc)) from exc
 
     @staticmethod
     def _exif_pairs(exif: dict[str, Any], raw: dict[str, Any]) -> tuple[tuple[str, str], ...]:

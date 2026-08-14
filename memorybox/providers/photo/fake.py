@@ -98,6 +98,15 @@ class FakePhotoProvider:
             data=png,
         )
 
+    def fetch_original(self, external_asset_id: str) -> PhotoBytesDto:
+        preview = self.fetch_preview(external_asset_id)
+        return PhotoBytesDto(
+            provider_key=self.provider_key,
+            external_id=external_asset_id,
+            content_type="video/mp4",
+            data=preview.data,
+        )
+
     def list_face_assets(
         self, *, person_external_id: str, limit: int = 50
     ) -> list:

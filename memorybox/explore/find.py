@@ -166,6 +166,29 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "w": float(face_box["w"]),
                 "h": float(face_box["h"]),
             }
+        kind = str(p.get("asset_kind") or "IMAGE").upper()
+        if kind in {"AUDIO", "OTHER"}:
+            continue
+        if kind == "VIDEO":
+            extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["video_external_id"] = eid
+            extra["video_provider_key"] = p.get("provider_key") or "immich"
+            extra["asset_kind"] = "VIDEO"
+            extra["clip_level"] = True
+            extra["paused_frame"] = False
+            add(
+                _item_base(
+                    id=f"video:{p.get('provider_key') or 'immich'}:{eid}",
+                    type_="video",
+                    title=str(title)[:80],
+                    date=taken,
+                    undated=not taken,
+                    preview=str(p.get("attribution") or name or "Video"),
+                    detail=str(p.get("attribution") or "Library video"),
+                    **extra,
+                )
+            )
+            continue
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",

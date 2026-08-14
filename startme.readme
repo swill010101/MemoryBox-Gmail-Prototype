@@ -102,7 +102,7 @@ python -m memorybox health
 - **Port in use / wrong process:** close old worker/serve windows, or reboot again.  
 - **Serve hangs with no “owner bootstrap”:** Postgres is down — fix `memorybox-pg` first.  
 - **Photos missing:** confirm `config\immich.env` and `MEMORYBOX_PHOTO_PROVIDER=immich`.  
-- **Videos missing:** confirm worker window is up and `MEMORYBOX_VIDEO_MEDIA_ROOT` points at the Home Videos share.
+- **Videos missing:** confirm worker window is up. Explore Video includes Immich library clips *and* HVRT moments. For HVRT files, set the folder in `/settings/ui` (Home Videos library path) or `MEMORYBOX_VIDEO_MEDIA_ROOT`. Settings overrides env until cleared.
 
 Pull latest I4 branch when you want new code:
 

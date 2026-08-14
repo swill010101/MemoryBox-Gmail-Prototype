@@ -120,6 +120,7 @@ GC_STATIC = Path(__file__).resolve().parent / "guided_capture" / "static" / "gui
 EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
 STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
 SETTINGS_STATIC = Path(__file__).resolve().parent / "settings" / "static" / "settings.html"
+SETTINGS_STATIC_DIR = Path(__file__).resolve().parent / "settings" / "static"
 SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
 EXPLORE_STATIC = Path(__file__).resolve().parent / "explore" / "static" / "explore.html"
 EXPLORE_STATIC_DIR = Path(__file__).resolve().parent / "explore" / "static"
@@ -144,6 +145,12 @@ if PERSON_STATIC_DIR.is_dir():
         "/static/person",
         StaticFiles(directory=str(PERSON_STATIC_DIR)),
         name="person_static",
+    )
+if SETTINGS_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/settings",
+        StaticFiles(directory=str(SETTINGS_STATIC_DIR)),
+        name="settings_static",
     )
 
 
@@ -712,8 +719,26 @@ def status_ui() -> HTMLResponse:
 
 @app.get("/settings/ui")
 def settings_ui() -> HTMLResponse:
-    """Settings stub entry (owner/system) — mature Settings deferred to I14."""
+    """Thin owner Settings (mature P2-SET-01 / I13 still later)."""
     return _html_ui(SETTINGS_STATIC, surface="settings", missing="Settings UI missing")
+
+
+@app.get("/settings/video-media-root")
+def settings_get_video_media_root() -> dict[str, Any]:
+    from memorybox.settings.video_root import describe_video_media_root
+
+    return describe_video_media_root()
+
+
+class VideoMediaRootBody(BaseModel):
+    path: str = ""
+
+
+@app.post("/settings/video-media-root")
+def settings_set_video_media_root(body: VideoMediaRootBody) -> dict[str, Any]:
+    from memorybox.settings.video_root import set_video_media_root
+
+    return set_video_media_root(body.path)
 
 
 @app.get("/status/summary")
@@ -807,6 +832,55 @@ def library_photo_thumb(external_id: str) -> Response:
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",
         headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+def _http_range_slice(data: bytes, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
+    from memorybox.providers.photo.http_range import apply_http_range
+
+    return apply_http_range(data, range_header)
+
+
+@app.get("/library/media/immich-video/{external_id}")
+def library_immich_video(external_id: str, request: Request) -> Response:
+    """Immich original / playback proxy for Explore Video cards (library videos)."""
+    photo = build_photo()
+    range_header = request.headers.get("range")
+    fetch_range = getattr(photo, "fetch_original_range", None)
+    status = 200
+    extra: dict[str, str] = {}
+    if callable(fetch_range):
+        try:
+            status, data, ctype, extra = fetch_range(
+                external_id, range_header=range_header
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=f"immich video unavailable: {exc}"
+            ) from exc
+    else:
+        fetch = getattr(photo, "fetch_original", None)
+        if not callable(fetch):
+            raise HTTPException(status_code=404, detail="video original not supported")
+        try:
+            original = fetch(external_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=404, detail=f"immich video unavailable: {exc}"
+            ) from exc
+        data = original.data
+        ctype = original.content_type or "video/mp4"
+        status, data, extra = _http_range_slice(data, range_header)
+    ctype = ctype or "video/mp4"
+    if str(ctype).startswith("image/"):
+        ctype = "video/mp4"
+    headers = {"Cache-Control": "private, max-age=120", "Accept-Ranges": "bytes"}
+    headers.update(extra or {})
+    return Response(
+        content=data,
+        status_code=int(status or 200),
+        media_type=ctype,
+        headers=headers,
     )
 
 

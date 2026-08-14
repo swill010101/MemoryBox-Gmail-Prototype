@@ -2269,16 +2269,25 @@
       // Photo tools live in the right rail (zoom / exif / share / add story).
     } else if (t === "video") {
       const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
-      bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
-      bits.push(
-        `<button type="button" class="mb-viewer-footbtn" id="mb-transcript-toggle" aria-pressed="${
-          state.modal.transcriptOn ? "true" : "false"
-        }">Transcript ${state.modal.transcriptOn ? "on" : "off"}</button>`
-      );
-      if (item.play_url) {
+      const isLibraryClip =
+        String(item.asset_kind || "").toUpperCase() === "VIDEO" ||
+        String(item.provider_key || item.video_provider_key || "") === "immich";
+      if (isLibraryClip) {
+          `<span class="mb-ev-meta">${escapeHtml(
+            String(item.video_provider_key || item.provider_key || "library")
+          )} library video</span>`
+      } else {
+        bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
         bits.push(
-          `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
+          `<button type="button" class="mb-viewer-footbtn" id="mb-transcript-toggle" aria-pressed="${
+            state.modal.transcriptOn ? "true" : "false"
+          }">Transcript ${state.modal.transcriptOn ? "on" : "off"}</button>`
         );
+        if (item.play_url) {
+          bits.push(
+            `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
+          );
+        }
       }
     } else {
       bits.push(
@@ -2411,6 +2420,24 @@
       </div>`;
     }
     if (t === "video") {
+      const isLibraryClip =
+        String(item.asset_kind || "").toUpperCase() === "VIDEO" ||
+        String(item.provider_key || item.video_provider_key || "") === "immich";
+      if (isLibraryClip && item.play_url) {
+        const poster = media
+          ? ` poster="${escapeAttr(media)}"`
+          : "";
+        return `<div class="mb-ev-video-shell">
+          <video class="mb-ev-video-player" controls playsinline src="${escapeAttr(
+            item.play_url
+          )}"${poster}></video>
+          <p class="mb-ev-meta">${escapeHtml(
+            fmtCardDate(item.date)
+          )} · ${escapeHtml(
+            String(item.video_provider_key || item.provider_key || "library")
+          )} library clip</p>
+        </div>`;
+      }
       const poster = media
         ? `<img src="${escapeAttr(media)}" alt="" />`
         : "Paused frame · face teach applies here only (not during playback)";
