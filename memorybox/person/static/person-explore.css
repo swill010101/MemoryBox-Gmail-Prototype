@@ -27,6 +27,22 @@ html[data-mb-surface="people"] .mb-site-bar {
   display: none;
 }
 
+html[data-mb-surface="people"] .mb-return-bar {
+  background: #141b27 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #c5cede !important;
+}
+html[data-mb-surface="people"] .mb-return-bar .mb-btn-secondary {
+  background: #1a2230 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #e8edf5 !important;
+}
+
+.mb-person-explore,
+.mb-person-footer {
+  background: #0f141c !important;
+}
+
 .mb-person-surface {
   --mb-ink: #e8edf5;
   --mb-muted: #9aa3b5;
@@ -273,10 +289,11 @@ html[data-mb-surface="people"] .mb-site-bar {
   color: #e8edf5 !important;
 }
 .mb-person-explore .mb-card-title {
-  color: #eef3fb !important;
+  color: #f3f6fb !important;
+  font-weight: 600;
 }
 .mb-person-explore .mb-card-sub {
-  color: #9aa3b5 !important;
+  color: #b7c0d0 !important;
 }
 .mb-person-explore .mb-card-preview {
   color: #c5cede !important;

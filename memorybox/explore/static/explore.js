@@ -291,8 +291,10 @@
       return sort === "oldest" ? d : -d;
     });
     if (PERSON_MODE && (PERSON.memoryMode || "highlights") === "highlights") {
+      if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
       return rankHighlights(list);
     }
+    if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
     return list;
   }
 
@@ -360,6 +362,8 @@
   function syncTimelineToEligibleDatedExtent() {
     const ext = extentOf(datedEligible());
     if (ext.empty) {
+      state.timeline.fullExtentStart = NaN;
+      state.timeline.fullExtentEnd = NaN;
       state.timeline.extentStart = NaN;
       state.timeline.extentEnd = NaN;
       state.timeline.rangeStart = NaN;
@@ -370,12 +374,45 @@
       return;
     }
     state.timeline.empty = false;
+    state.timeline.fullExtentStart = ext.start;
+    state.timeline.fullExtentEnd = ext.end;
     state.timeline.extentStart = ext.start;
     state.timeline.extentEnd = ext.end;
     state.timeline.rangeStart = ext.start;
     state.timeline.rangeEnd = ext.end;
     state.timeline.precision = computePrecision(ext.start, ext.end);
     state.timeline.playhead = ext.start;
+  }
+
+  /** Zoom axis so the current range fills the track (higher precision). */
+  function zoomTimelineToRange() {
+    if (!hasDatedExtent()) return;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    let a = state.timeline.rangeStart;
+    let b = state.timeline.rangeEnd;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return;
+    a = Math.max(a, fullA);
+    b = Math.min(b, fullB);
+    const pad = Math.max((b - a) * 0.02, 86400000);
+    let viewA = Math.max(fullA, a - pad);
+    let viewB = Math.min(fullB, b + pad);
+    if (viewB <= viewA) {
+      viewA = fullA;
+      viewB = fullB;
+    }
+    state.timeline.extentStart = viewA;
+    state.timeline.extentEnd = viewB;
+    state.timeline.rangeStart = Math.max(a, viewA);
+    state.timeline.rangeEnd = Math.min(b, viewB);
+    state.timeline.precision = computePrecision(
+      state.timeline.rangeStart,
+      state.timeline.rangeEnd
+    );
   }
 
   function setTypeFilter(id) {
@@ -405,6 +442,22 @@
   function setViewMode(mode) {
     const m = mode === "map" ? "map" : "gallery";
     state.gallery.viewMode = m;
+  }
+
+  function syncPersonChrome() {
+    if (!PERSON_MODE) return;
+    const mode = PERSON.memoryMode === "all" ? "all" : "highlights";
+    PERSON.memoryMode = mode;
+    document.querySelectorAll(".mb-person-mode").forEach((b) => {
+      const on = (b.getAttribute("data-mode") || "") === mode;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const view = (state.gallery && state.gallery.viewMode) || "gallery";
+    document.querySelectorAll(".mb-person-view").forEach((b) => {
+      const on = (b.getAttribute("data-view") || "") === view;
+      b.classList.toggle("is-active", on);
+    });
   }
 
   function setMapRefine(ids) {
@@ -477,14 +530,26 @@
       FILTERS.find((f) => f.id === state.domain.typeFilter)?.label || "All";
     const undatedOnly = !hasDatedExtent() && vis.some(isUndated);
     const range = undatedOnly
-      ? "undated memories (off Timeline axis — use Undated filter)"
+      ? "undated"
       : hasDatedExtent()
         ? fmtRangeLabel(
             state.timeline.rangeStart,
             state.timeline.rangeEnd,
             state.timeline.precision
           )
-        : "no dated memories";
+        : "all dates";
+    if (
+      PERSON_MODE &&
+      (PERSON.memoryMode || "highlights") === "highlights" &&
+      Number(state.domain._eligibleBeforeHighlights || 0) > vis.length
+    ) {
+      const total = state.domain._eligibleBeforeHighlights;
+      state.domain.summary =
+        `Highlights · ${vis.length} of ${total} memories (${filterLabel}) for ${range}` +
+        (parts.length ? ": " + parts.join(", ") + "." : ".") +
+        " Switch to All Memories for the full set.";
+      return;
+    }
     if (state.domain.undatedFilter) {
       state.domain.summary = `Showing ${vis.length} undated memories (${filterLabel})${
         parts.length ? ": " + parts.join(", ") + "." : "."
@@ -522,6 +587,44 @@
     return "Show " + name + " " + q;
   }
 
+  /** Resolve a person option carefully — avoid "Tom" → first Tom* in the list. */
+  function resolvePersonOption(who) {
+    const whoL = String(who || "")
+      .trim()
+      .toLowerCase();
+    if (!whoL) return null;
+    const opts = peopleOptions || [];
+    const exact = opts.filter(
+      (p) => String(p.label || "").toLowerCase() === whoL
+    );
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return exact[0];
+    const tokens = whoL.split(/\s+/).filter(Boolean);
+    if (tokens.length > 1) {
+      const multi = opts.filter((p) => {
+        const lab = String(p.label || "").toLowerCase();
+        const parts = lab.split(/\s+/);
+        return tokens.every((t) => parts.some((part) => part === t || part.startsWith(t)));
+      });
+      if (multi.length === 1) return multi[0];
+      if (multi.length > 1) {
+        // Prefer exact token-count / shortest full name
+        multi.sort(
+          (a, b) =>
+            String(a.label || "").length - String(b.label || "").length
+        );
+        return multi[0];
+      }
+    }
+    // Single token: unique first-name only
+    const firstHits = opts.filter(
+      (p) => String(p.label || "").toLowerCase().split(/\s+/)[0] === whoL
+    );
+    if (firstHits.length === 1) return firstHits[0];
+    // Ambiguous "Tom" with multiple people — do not guess
+    return null;
+  }
+
   /** Person surface: "Show me Tom" / "Go to Tom instead" → open that Person Explorer. */
   function trySwitchPersonFromAsk(raw) {
     if (!PERSON_MODE) return false;
@@ -533,7 +636,6 @@
     if (go) who = go[1].replace(/\.$/, "").trim();
     else if (show) {
       who = show[1].trim();
-      // Drop trailing place/time/filter clauses: "Tom Will at Christmas" → "Tom Will"
       who = who
         .replace(
           /\s+(at|in|during|from|between|only|through|near|around)\b[\s\S]*$/i,
@@ -547,15 +649,13 @@
     const whoL = who.toLowerCase();
     const locked = (PERSON.displayName || "").toLowerCase();
     const lockedFirst = locked.split(/\s+/)[0] || "";
-    // Same person — fall through to normal find
     if (
       whoL === locked ||
       whoL === lockedFirst ||
-      (lockedFirst && whoL.startsWith(lockedFirst) && locked.includes(whoL.split(/\s+/)[0]))
+      (lockedFirst && whoL.startsWith(lockedFirst + " "))
     ) {
       return false;
     }
-    // Not a person switch — holidays / filters / years
     if (
       /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4})/.test(
         whoL
@@ -563,11 +663,7 @@
     ) {
       return false;
     }
-    const hit = (peopleOptions || []).find((p) => {
-      const lab = String(p.label || "").toLowerCase();
-      const first = lab.split(/\s+/)[0];
-      return lab === whoL || first === whoL || lab.includes(whoL) || whoL.includes(lab);
-    });
+    const hit = resolvePersonOption(who);
     if (hit && hit.id) {
       if (window.mbShell && window.mbShell.setActivePerson) {
         window.mbShell.setActivePerson({ id: hit.id, name: hit.label || who });
@@ -578,6 +674,28 @@
         "&person_name=" +
         encodeURIComponent(hit.label || who);
       return true;
+    }
+    // Ambiguous or unknown — let Ask clarify (do not navigate to a wrong Tom)
+    if (whoL.split(/\s+/).length === 1) {
+      const firstHits = (peopleOptions || []).filter(
+        (p) => String(p.label || "").toLowerCase().split(/\s+/)[0] === whoL
+      );
+      if (firstHits.length > 1) {
+        state.domain.summary =
+          "Which " +
+          who +
+          "? " +
+          firstHits
+            .slice(0, 6)
+            .map((p) => p.label)
+            .join(", ") +
+          (firstHits.length > 6 ? "…" : "") +
+          ". Try “Show " +
+          (firstHits[0].label || who) +
+          "” or “Go to … instead”.";
+        renderCurator();
+        return true;
+      }
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
       window.mbShell.setActivePerson({ id: "", name: who });
@@ -690,6 +808,8 @@
         items: [],
       },
       timeline: {
+        fullExtentStart: emptyTl ? NaN : ext.start,
+        fullExtentEnd: emptyTl ? NaN : ext.end,
         extentStart: emptyTl ? NaN : ext.start,
         extentEnd: emptyTl ? NaN : ext.end,
         rangeStart: rangeStart,
@@ -1016,17 +1136,23 @@
 
   function setActiveRange(start, end) {
     if (!hasDatedExtent()) return;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
     let a = Math.min(start, end);
     let b = Math.max(start, end);
-    a = Math.max(a, state.timeline.extentStart);
-    b = Math.min(b, state.timeline.extentEnd);
-    if (b - a < 86400000) b = a + 86400000;
+    // Handles may move within the full data extent (zoom out by expanding)
+    a = Math.max(a, fullA);
+    b = Math.min(b, fullB);
+    if (b - a < 86400000) b = Math.min(fullB, a + 86400000);
     state.timeline.rangeStart = a;
     state.timeline.rangeEnd = b;
     state.timeline.precision = computePrecision(a, b);
     state.timeline.playhead = a;
     state.domain.mapRefineIds = null;
-    // Manual band replaces Ask multi-window holiday filter with contiguous range.
     state.domain.temporalWindows = null;
   }
 
@@ -1036,13 +1162,21 @@
       if (andRender) render();
       return;
     }
-    state.timeline.rangeStart = state.timeline.extentStart;
-    state.timeline.rangeEnd = state.timeline.extentEnd;
+    const fullA = Number.isFinite(state.timeline.fullExtentStart)
+      ? state.timeline.fullExtentStart
+      : state.timeline.extentStart;
+    const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+      ? state.timeline.fullExtentEnd
+      : state.timeline.extentEnd;
+    state.timeline.extentStart = fullA;
+    state.timeline.extentEnd = fullB;
+    state.timeline.rangeStart = fullA;
+    state.timeline.rangeEnd = fullB;
     state.timeline.precision = computePrecision(
       state.timeline.rangeStart,
       state.timeline.rangeEnd
     );
-    state.timeline.playhead = state.timeline.extentStart;
+    state.timeline.playhead = fullA;
     if (andRender) render();
   }
 
@@ -1135,8 +1269,12 @@
     render();
   };
   window.mbPersonSetMemoryMode = function (mode) {
-    if (!PERSON_MODE) return;
+    if (!PERSON_MODE || !PERSON) return;
     PERSON.memoryMode = mode === "all" ? "all" : "highlights";
+    if (window.MB_PERSON_SURFACE) {
+      window.MB_PERSON_SURFACE.memoryMode = PERSON.memoryMode;
+    }
+    syncPersonChrome();
     render();
   };
   window.addEventListener("mb-person-ready", (ev) => {
@@ -1219,8 +1357,8 @@
         }${on ? " ×" : ""}</button>`
       );
     }
-    // Map is opt-in via filter bar (not a default Gallery|Map takeover)
-    {
+    // Map is opt-in via filter bar on Explore. Person surface uses Gallery|Map toggle only.
+    if (!PERSON_MODE) {
       const on = (state.gallery && state.gallery.viewMode) === "map";
       el.insertAdjacentHTML(
         "beforeend",
@@ -1275,6 +1413,7 @@
     const mapPane = document.getElementById("mb-explore-map-pane");
     if (gallery) gallery.hidden = mode === "map";
     if (mapPane) mapPane.hidden = mode !== "map";
+    syncPersonChrome();
   }
 
   function densityLabel() {
@@ -1635,6 +1774,7 @@
     document.getElementById("mb-explore-ask").value = state.domain.askText || "";
     ensureLockedPersonChip();
     syncActivePersonContext();
+    syncPersonChrome();
     renderNav();
     renderCurator();
     renderFilters();
@@ -2526,12 +2666,19 @@
     });
 
     track.addEventListener("pointerup", (e) => {
+      if (handleDrag) {
+        handleDrag = null;
+        zoomTimelineToRange();
+        render();
+        return;
+      }
       if (bandDrag) {
         const a = Math.min(bandDrag.a, bandDrag.b);
         const b = Math.max(bandDrag.a, bandDrag.b);
         bandDrag = null;
         if (b - a > (state.timeline.extentEnd - state.timeline.extentStart) * 0.01) {
           setActiveRange(a, b);
+          zoomTimelineToRange();
           render();
         } else {
           // tap: move playhead + scrub gallery
@@ -2542,7 +2689,6 @@
         return;
       }
       scrubDrag = null;
-      handleDrag = null;
     });
 
     hl.addEventListener("pointerdown", (e) => {
@@ -2558,10 +2704,20 @@
       hr.setPointerCapture(e.pointerId);
     });
     const endHandle = () => {
+      if (handleDrag) {
+        handleDrag = null;
+        // Shrinking the range zooms the axis to that window (higher precision).
+        // Expanding handles back toward the full archive zooms out.
+        zoomTimelineToRange();
+        render();
+        return;
+      }
       handleDrag = null;
     };
     hl.addEventListener("pointerup", endHandle);
     hr.addEventListener("pointerup", endHandle);
+    hl.addEventListener("pointercancel", endHandle);
+    hr.addEventListener("pointercancel", endHandle);
   }
 
   function bindChrome() {

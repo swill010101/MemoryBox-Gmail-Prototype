@@ -1376,7 +1376,28 @@ def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, 
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence
 
-    return {"ok": True, "person_id": person_id, "evidence": list_face_evidence(person_id)}
+    evidence = list_face_evidence(person_id)
+    enriched: list[dict[str, Any]] = []
+    for row in evidence:
+        item = dict(row)
+        meta = item.get("exemplar_meta_json") or item.get("exemplar_meta") or {}
+        if isinstance(meta, str):
+            try:
+                import json as _json
+
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        asset_id = (
+            item.get("source_asset_id")
+            or (meta.get("source_asset_id") if isinstance(meta, dict) else None)
+            or (meta.get("assetId") if isinstance(meta, dict) else None)
+        )
+        if asset_id and not item.get("thumb_url"):
+            item["thumb_url"] = f"/library/media/photo/{asset_id}"
+            item["media_url"] = item["thumb_url"]
+        enriched.append(item)
+    return {"ok": True, "person_id": person_id, "evidence": enriched}
 
 
 @app.get("/people/{person_id}/appearances")

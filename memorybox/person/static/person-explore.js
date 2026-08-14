@@ -277,7 +277,7 @@
       "<li>Owner confirmation</li><li>Faces</li><li>Video appearances</li>" +
       "<li>Provider People mappings (Immich remains a provider identity)</li>" +
       "<li>Relationships, Stories, aliases when recorded</li>" +
-      "</ul><p class="mb-person-empty">Sources stay distinguishable — not flattened into one unexplained score.</p></section>";
+      '</ul><p class="mb-person-empty">Sources stay distinguishable — not flattened into one unexplained score.</p></section>';
     html +=
       '<p style="margin-top:0.75rem"><a class="mb-person-panel-link" href="/review/ui">Open Review</a> to correct face, video, or voice on evidence. Compact Learn stays honest; deep correction lives in Review.</p>';
 
@@ -438,14 +438,47 @@
     cached.profile = profile;
 
     const faceThumb = cached.faces
-      .map(
-        (f) =>
-          f.thumb_url || f.media_url || f.preview_url || f.image_url || ""
-      )
+      .map((f) => {
+        const meta = f.exemplar_meta_json || f.exemplar_meta || {};
+        const asset =
+          f.source_asset_id ||
+          (meta && (meta.source_asset_id || meta.assetId)) ||
+          "";
+        return (
+          f.thumb_url ||
+          f.media_url ||
+          f.preview_url ||
+          f.image_url ||
+          (asset ? "/library/media/photo/" + asset : "")
+        );
+      })
       .find(Boolean);
     if (faceThumb) {
       portrait.textContent = "";
       portrait.style.backgroundImage = "url(" + JSON.stringify(faceThumb) + ")";
+    } else {
+      // Fall back to Immich provider projection thumbnail when present
+      try {
+        const projRes = await fetch(
+          "/people/" + encodeURIComponent(id) + "/provider-projection"
+        );
+        if (projRes.ok) {
+          const proj = await projRes.json();
+          const immich =
+            (proj.by_provider && proj.by_provider.immich) ||
+            proj.immich ||
+            [];
+          const firstImmich = Array.isArray(immich) ? immich[0] : null;
+          // Prefer an Immich face asset from evidence path; else leave initial
+          if (firstImmich && typeof firstImmich === "object" && firstImmich.thumb_url) {
+            portrait.textContent = "";
+            portrait.style.backgroundImage =
+              "url(" + JSON.stringify(firstImmich.thumb_url) + ")";
+          }
+        }
+      } catch (_) {
+        /* keep initial */
+      }
     }
 
     const faceN = cached.faces.length;
@@ -522,24 +555,17 @@
 
   document.querySelectorAll(".mb-person-mode").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const mode = btn.getAttribute("data-mode") || "all";
-      window.MB_PERSON_SURFACE.memoryMode = mode;
-      document.querySelectorAll(".mb-person-mode").forEach((b) => {
-        const on = b === btn;
-        b.classList.toggle("is-active", on);
-        b.setAttribute("aria-selected", on ? "true" : "false");
-      });
+      const mode = btn.getAttribute("data-mode") === "all" ? "all" : "highlights";
       if (typeof window.mbPersonSetMemoryMode === "function") {
         window.mbPersonSetMemoryMode(mode);
+      } else if (window.MB_PERSON_SURFACE) {
+        window.MB_PERSON_SURFACE.memoryMode = mode;
       }
     });
   });
   document.querySelectorAll(".mb-person-view").forEach((btn) => {
     btn.addEventListener("click", () => {
       const view = btn.getAttribute("data-view") || "gallery";
-      document.querySelectorAll(".mb-person-view").forEach((b) => {
-        b.classList.toggle("is-active", b === btn);
-      });
       if (typeof window.mbExploreSetViewMode === "function") {
         window.mbExploreSetViewMode(view);
       }

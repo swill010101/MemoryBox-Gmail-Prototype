@@ -103,6 +103,9 @@ def run_p2_i5_acceptance() -> dict:
         "go to" in explore_js
         and "instead" in explore_js
         and "trySwitchPersonFromAsk" in explore_js
+        and "resolvePersonOption" in explore_js
+        and "zoomTimelineToRange" in explore_js
+        and "syncPersonChrome" in explore_js
         and "stays locked" in explore_js
         and "person_name=" in explore_js,
         checks,
