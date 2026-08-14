@@ -254,7 +254,12 @@ def _prove_harness() -> dict[str, Any]:
             "renderRailTools",
             "Camera / EXIF",
             "mb-ev-video-player",
-            "isLibraryClip",
+            "videoStreamUrl",
+            "mb-qp-video",
+            "/explore/api/teach-face",
+            "Teach",
+            "bindFaceSelect",
+            "is-selected",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -373,6 +378,7 @@ def _prove_harness() -> dict[str, Any]:
             "videos_from_immich_and_hvrt",
             types == ["video", "video"]
             and any("/library/media/immich-video/" in str(m.get("play_url") or "") for m in mixed)
+            and any(str(m.get("stream_url") or "").startswith("/review/media/") for m in mixed)
             and any(m.get("paused_frame") is True for m in mixed)
             and any(m.get("clip_level") is True for m in mixed),
             checks,

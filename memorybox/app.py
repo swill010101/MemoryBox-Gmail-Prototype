@@ -521,6 +521,46 @@ def explore_photo_people(external_id: str) -> dict[str, Any]:
     return {"ok": True, "external_id": eid, "people": people, "faces": faces}
 
 
+class ExploreTeachFaceBody(BaseModel):
+    person_id: str | None = None
+    person_key: str | None = None
+    display_name: str | None = None
+    provider_key: str = "immich"
+    asset_external_id: str | None = None
+    video_external_id: str | None = None
+    start_sec: float = 0.0
+    face_external_id: str | None = None
+    person_external_id: str | None = None
+    face_box: dict[str, Any] | None = None
+    media_type: str = "video"
+
+
+@app.post("/explore/api/teach-face")
+def explore_teach_face(body: ExploreTeachFaceBody) -> dict[str, Any]:
+    """Select a face in the Shared Evidence Viewer and teach it to an MB Person."""
+    from memorybox.explore.teach import teach_face_from_viewer
+    from memorybox.person import PersonServiceError
+
+    try:
+        return teach_face_from_viewer(
+            person_id=body.person_id,
+            person_key=body.person_key,
+            display_name=body.display_name,
+            provider_key=body.provider_key,
+            asset_external_id=body.asset_external_id,
+            video_external_id=body.video_external_id,
+            start_sec=body.start_sec,
+            face_external_id=body.face_external_id,
+            person_external_id=body.person_external_id,
+            face_box=body.face_box,
+            media_type=body.media_type,
+        )
+    except PersonServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/family-night/ui")
 def family_night_ui() -> HTMLResponse:
     """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""

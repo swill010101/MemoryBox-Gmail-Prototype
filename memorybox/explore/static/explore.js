@@ -1905,6 +1905,7 @@
     if (!state.modal.railTab) state.modal.railTab = "people";
     state.modal.transcriptOn = false;
     state.modal.zoom = 1;
+    state.modal.selectedFaceIndex = 0;
     renderViewer(item);
     document.getElementById("mb-modal").hidden = false;
     document.getElementById("mb-modal-close").focus();
@@ -1933,6 +1934,8 @@
     renderRailTools(item);
     renderTeachSlot(item);
     bindPhotoPan();
+    bindFaceSelect(item);
+    bindVideoSeek(item);
     enrichPhotoPeople(item);
   }
 
@@ -1948,6 +1951,7 @@
     state.modal.pendingCorrection = null;
     state.modal.transcriptOn = false;
     state.modal.zoom = 1;
+    state.modal.selectedFaceIndex = 0;
     renderViewer(item);
   }
 
@@ -2008,15 +2012,63 @@
     return `left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%`;
   }
 
+  function videoStreamUrl(item) {
+    if (!item) return "";
+    if (item.stream_url) return String(item.stream_url);
+    const play = String(item.play_url || "");
+    if (play.includes("/library/media/immich-video/")) return play;
+    if (play.includes("/review/media/")) return play;
+    const vid = item.video_external_id || "";
+    const pk = String(item.video_provider_key || item.provider_key || "");
+    if (vid && (pk === "hvrt" || pk === "fake_video")) {
+      return "/review/media/" + encodeURIComponent(vid);
+    }
+    if (item.external_id && String(item.asset_kind || "").toUpperCase() === "VIDEO") {
+      return "/library/media/immich-video/" + encodeURIComponent(item.external_id);
+    }
+    return "";
+  }
+
+  function currentPersonDefault() {
+    if (PERSON_MODE && PERSON && PERSON.personId) {
+      return {
+        id: PERSON.personId,
+        label: PERSON.displayName || "Current person",
+        key: "mb:" + PERSON.personId,
+      };
+    }
+    const chip =
+      state &&
+      state.domain &&
+      (state.domain.chips || []).find((c) => c && c.kind === "person");
+    if (chip && (chip.personId || chip.id)) {
+      const id = chip.personId || chip.id;
+      return { id, label: chip.label || "Person", key: "mb:" + id };
+    }
+    const first = (peopleOptions || []).find((p) => p.personId || (p.id && !String(p.id).startsWith("demo:")));
+    if (first) {
+      const id = first.personId || first.id;
+      return { id, label: first.label, key: first.key || ("mb:" + id) };
+    }
+    return null;
+  }
+
   function faceBoxesForItem(item) {
     const out = [];
     const faces = Array.isArray(item.faces) ? item.faces : [];
-    faces.forEach((f) => {
+    faces.forEach((f, i) => {
       if (!f || typeof f !== "object") return;
       const box = f.face_box || f.box;
       const style = faceBoxStyle(box);
       if (!style) return;
-      out.push({ style, name: f.name || f.display_name || "" });
+      out.push({
+        style,
+        name: f.name || f.display_name || "",
+        personExternalId: f.person_external_id || f.external_person_id || "",
+        faceExternalId: f.external_face_id || f.id || "",
+        box,
+        index: out.length,
+      });
     });
     if (!out.length && item.face_box) {
       const style = faceBoxStyle(item.face_box);
@@ -2024,6 +2076,10 @@
         out.push({
           style,
           name: item.face_identity || item.mb_person_name || "",
+          personExternalId: item.person_external_id || "",
+          faceExternalId: item.face_external_id || "",
+          box: item.face_box,
+          index: 0,
         });
       }
     }
@@ -2031,12 +2087,14 @@
   }
 
   function faceBoxHtml(item) {
+    const selected = Number(state.modal && state.modal.selectedFaceIndex);
     return faceBoxesForItem(item)
-      .map((f) => {
-        const label = escapeHtml(f.name || "");
-        return `<div class="mb-face-box" style="${f.style}" title="${label || "Face"}">${
-          label ? `<span class="mb-face-label">${label}</span>` : ""
-        }</div>`;
+      .map((f, i) => {
+        const label = escapeHtml(f.name || "Face");
+        const on = Number.isFinite(selected) && selected === i ? " is-selected" : "";
+        return `<button type="button" class="mb-face-box${on}" data-face-idx="${i}" style="${f.style}" title="${label}">${
+          f.name ? `<span class="mb-face-label">${label}</span>` : ""
+        }</button>`;
       })
       .join("");
   }
@@ -2256,7 +2314,7 @@
 
     if (tab === "learn") {
       panel.innerHTML = `<h3>Learn</h3>
-        <p class="mb-rail-empty">Teach / correct identity from this evidence. Actions appear below when this item is teachable.</p>`;
+        <p class="mb-rail-empty">Select a face on the video or photo, confirm or change the person, then Teach. Recognition for photos and video continues in the background.</p>`;
     }
   }
 
@@ -2268,26 +2326,16 @@
     if (t === "photo") {
       // Photo tools live in the right rail (zoom / exif / share / add story).
     } else if (t === "video") {
-      const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
-      const isLibraryClip =
-        String(item.asset_kind || "").toUpperCase() === "VIDEO" ||
-        String(item.provider_key || item.video_provider_key || "") === "immich";
-      if (isLibraryClip) {
-          `<span class="mb-ev-meta">${escapeHtml(
-            String(item.video_provider_key || item.provider_key || "library")
-          )} library video</span>`
-      } else {
-        bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
+      const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "";
+      bits.push(
+        `<span class="mb-ev-meta">${escapeHtml(
+          String(item.video_provider_key || item.provider_key || "video")
+        )}${t0 ? " · " + escapeHtml(t0) : ""}</span>`
+      );
+      if (item.play_url && String(item.play_url).includes("/review/ui")) {
         bits.push(
-          `<button type="button" class="mb-viewer-footbtn" id="mb-transcript-toggle" aria-pressed="${
-            state.modal.transcriptOn ? "true" : "false"
-          }">Transcript ${state.modal.transcriptOn ? "on" : "off"}</button>`
+          `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
         );
-        if (item.play_url) {
-          bits.push(
-            `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
-          );
-        }
       }
     } else {
       bits.push(
@@ -2313,40 +2361,40 @@
   function renderTeachSlot(item) {
     const slot = document.getElementById("mb-modal-teach");
     if (!slot) return;
-    const t = String(item.type || "").toLowerCase();
-    const teachable =
-      item.teachable ||
-      t === "photo" ||
-      (t === "video" && item.paused_frame !== false);
-    if (!teachable) {
-      slot.innerHTML =
-        "Contextual Review &amp; Learn attaches here for photos, paused video frames, and future voice/transcript teaching — same viewer shell.";
-      return;
-    }
-    const opts = (peopleOptions.length
+    const faces = faceBoxesForItem(item);
+    const selected = faces[Number(state.modal.selectedFaceIndex)] || faces[0] || null;
+    const selectedLabel = (selected && selected.name) || item.face_identity || "Unknown";
+    const def = currentPersonDefault();
+    const optsSrc = peopleOptions.length
       ? peopleOptions
       : [
-          { id: "demo:peggy", label: "Peggy" },
-          { id: "demo:rick", label: "Rick" },
-          { id: "demo:tom", label: "Tom Will" },
-        ]
-    )
-      .map(
-        (p) =>
-          `<option value="${escapeAttr(p.id)}" data-label="${escapeAttr(
-            p.label
-          )}">${escapeHtml(p.label)}</option>`
-      )
+          { id: "demo:peggy", label: "Peggy", key: "demo:peggy" },
+          { id: "demo:rick", label: "Rick", key: "demo:rick" },
+          { id: "demo:tom", label: "Tom Will", key: "demo:tom" },
+        ];
+    const opts = optsSrc
+      .map((p) => {
+        const id = p.personId || p.id || "";
+        const key = p.key || (id ? "mb:" + id : "");
+        const sel =
+          def && (key === def.key || id === def.id) ? " selected" : "";
+        return `<option value="${escapeAttr(id)}" data-key="${escapeAttr(
+          key
+        )}" data-label="${escapeAttr(p.label)}"${sel}>${escapeHtml(p.label)}</option>`;
+      })
       .join("");
     slot.innerHTML = `
-      <div><strong>Selected face:</strong> <span id="mb-teach-current">${escapeHtml(
-        item.face_identity || "Unknown"
-      )}</span></div>
-      <label style="display:block;margin:0.4rem 0 0.25rem">Assign / reassign
-        <select id="mb-teach-person">${opts}</select>
-      </label>
-      <button type="button" class="mb-viewer-footbtn" id="mb-teach-confirm">Learn from this face</button>
-      <div id="mb-teach-status" style="margin-top:0.35rem"></div>`;
+      <div class="mb-teach-proof">
+        <div><strong>Selected face:</strong> <span id="mb-teach-current">${escapeHtml(
+          selectedLabel
+        )}</span></div>
+        <p class="mb-rail-empty" style="margin:0.2rem 0 0">Click a face box on the media. Person defaults to the current person — change it before Teach if needed.</p>
+        <label style="display:block;margin:0.4rem 0 0.25rem">Person
+          <select id="mb-teach-person">${opts}</select>
+        </label>
+        <button type="button" class="mb-viewer-footbtn" id="mb-teach-confirm">Teach</button>
+        <div id="mb-teach-status" class="mb-teach-status" style="margin-top:0.35rem"></div>
+      </div>`;
     const btn = document.getElementById("mb-teach-confirm");
     if (btn) btn.addEventListener("click", () => confirmIdentityCorrection(item));
   }
@@ -2356,9 +2404,18 @@
     if (!sel) return;
     const opt = sel.options[sel.selectedIndex];
     const personId = sel.value;
-    const personLabel = opt.getAttribute("data-label") || opt.textContent || "Person";
+    const personKey = (opt && opt.getAttribute("data-key")) || "";
+    const personLabel = (opt && opt.getAttribute("data-label")) || (opt && opt.textContent) || "Person";
     const status = document.getElementById("mb-teach-status");
     const current = document.getElementById("mb-teach-current");
+    const faces = faceBoxesForItem(item);
+    const face = faces[Number(state.modal.selectedFaceIndex)] || faces[0] || null;
+    const t = String(item.type || "").toLowerCase();
+    const videoEl = document.getElementById("mb-ev-video-el");
+    const startSec =
+      videoEl && Number.isFinite(videoEl.currentTime)
+        ? videoEl.currentTime
+        : Number(item.t != null ? item.t : 0);
 
     state.modal.pendingCorrection = {
       itemId: item.id,
@@ -2369,34 +2426,41 @@
     item.face_identity = personLabel;
 
     const livePerson = personId && !String(personId).startsWith("demo:");
-    const vid = item.video_external_id;
-    if (livePerson && vid) {
+    if (livePerson || (personKey && personKey.startsWith("immich:"))) {
       try {
-        const res = await fetch("/recognition/appearances/correct", {
+        const res = await fetch("/explore/api/teach-face", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            person_id: personId,
-            video_provider_key: item.video_provider_key || "hvrt",
-            video_external_id: vid,
-            start_sec: Number(item.t != null ? item.t : 0),
-            end_sec: null,
-            face_external_id: item.face_external_id || null,
+            person_id: livePerson ? personId : null,
+            person_key: personKey || (livePerson ? "mb:" + personId : null),
+            display_name: personLabel,
+            provider_key: item.video_provider_key || item.provider_key || "immich",
+            asset_external_id: item.external_id || null,
+            video_external_id: item.video_external_id || (t === "video" ? item.external_id : null),
+            start_sec: startSec,
+            face_external_id: (face && face.faceExternalId) || item.face_external_id || null,
+            person_external_id: (face && face.personExternalId) || null,
+            face_box: (face && face.box) || item.face_box || null,
+            media_type: t === "photo" ? "photo" : "video",
           }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || res.statusText);
-        if (status) status.textContent = "Identity corrected via I1 owner path. Close to return.";
+        if (status)
+          status.textContent =
+            data.note ||
+            "Taught. Photo mapping is live; video recognition is running in the background.";
       } catch (err) {
         if (status)
           status.textContent =
-            "Local correction recorded; live I1 call: " + err + " — close still restores context.";
+            "Local correction recorded; teach call: " + err + " — close still restores context.";
       }
     } else if (status) {
       status.textContent =
-        "Identity correction recorded (demo / photo path). Close returns to the same exploration context.";
+        "Identity correction recorded (demo path). Close returns to the same exploration context.";
     }
-    if (current) current.textContent = personLabel;
+    if (current) current.textContent = (face && face.name) || personLabel;
   }
 
   function renderEvidenceBody(item) {
@@ -2420,42 +2484,29 @@
       </div>`;
     }
     if (t === "video") {
-      const isLibraryClip =
-        String(item.asset_kind || "").toUpperCase() === "VIDEO" ||
-        String(item.provider_key || item.video_provider_key || "") === "immich";
-      if (isLibraryClip && item.play_url) {
-        const poster = media
-          ? ` poster="${escapeAttr(media)}"`
-          : "";
+      const src = videoStreamUrl(item);
+      const poster = media ? ` poster="${escapeAttr(media)}"` : "";
+      const t0 = item.t != null ? Number(item.t) : 0;
+      if (src) {
         return `<div class="mb-ev-video-shell">
-          <video class="mb-ev-video-player" controls playsinline src="${escapeAttr(
-            item.play_url
-          )}"${poster}></video>
-          <p class="mb-ev-meta">${escapeHtml(
-            fmtCardDate(item.date)
-          )} · ${escapeHtml(
-            String(item.video_provider_key || item.provider_key || "library")
-          )} library clip</p>
+          <div class="mb-ev-video-frame" id="mb-ev-video-frame">
+            <video id="mb-ev-video-el" class="mb-ev-video-player" controls playsinline src="${escapeAttr(
+              src
+            )}"${poster}></video>
+            <div class="mb-ev-face-layer">${faceBoxHtml(item)}</div>
+          </div>
+          <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · video${
+            t0 ? " · start " + t0.toFixed(1) + "s" : ""
+          }</p>
         </div>`;
       }
-      const poster = media
+      const posterImg = media
         ? `<img src="${escapeAttr(media)}" alt="" />`
-        : "Paused frame · face teach applies here only (not during playback)";
-      const t0 = item.t != null ? Number(item.t) : 0;
+        : "Video";
       return `<div class="mb-ev-video-shell">
         <div class="mb-ev-video-frame" id="mb-ev-video-frame">
-          ${poster}
-          ${faceBoxHtml(item)}
-        </div>
-        <div class="mb-ev-video-transport" aria-label="Video transport">
-          <span>▶︎</span>
-          <span>${t0.toFixed(1)}s · paused frame</span>
-        </div>
-        <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
-          <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>
-          <div>[${t0.toFixed(0)}] ${escapeHtml(
-        item.detail || "Video moment ready for time-aligned teaching."
-      )}</div>
+          ${posterImg}
+          <div class="mb-ev-face-layer">${faceBoxHtml(item)}</div>
         </div>
       </div>`;
     }
@@ -2488,9 +2539,15 @@
         : item.t != null
           ? `@ ${Number(item.t).toFixed(0)}s`
           : "";
-    const mediaBlock = media
-      ? `<div class="mb-qp-media"><img src="${escapeAttr(media)}" alt="" /></div>`
-      : `<div class="mb-qp-media"><span>${escapeHtml(TYPE_GLYPH[t] || "•")}</span></div>`;
+    const stream = String(item.type || "").toLowerCase() === "video" ? videoStreamUrl(item) : "";
+    const t0 = item.t != null ? Number(item.t) : 0;
+    const mediaBlock = stream
+      ? `<div class="mb-qp-media"><video class="mb-qp-video" muted autoplay playsinline loop src="${escapeAttr(
+          stream
+        )}"${media ? ` poster="${escapeAttr(media)}"` : ""} data-start="${t0}"></video></div>`
+      : media
+        ? `<div class="mb-qp-media"><img src="${escapeAttr(media)}" alt="" /></div>`
+        : `<div class="mb-qp-media"><span>${escapeHtml(TYPE_GLYPH[t] || "•")}</span></div>`;
     return `${mediaBlock}<div class="mb-qp-body">
       <div class="mb-qp-type">${escapeHtml(t)}</div>
       <div class="mb-qp-title">${escapeHtml(item.title || t)}</div>
@@ -2514,9 +2571,12 @@
 
 
   async function enrichPhotoPeople(item) {
-    if (!item || String(item.type || "").toLowerCase() !== "photo") return;
-    const eid = item.external_id;
+    if (!item) return;
+    const t = String(item.type || "").toLowerCase();
+    if (t !== "photo" && t !== "video") return;
+    const eid = item.external_id || (t === "video" && item.asset_kind === "VIDEO" ? item.video_external_id : "");
     if (!eid || item._facesLoaded) return;
+    if (t === "video" && String(item.provider_key || item.video_provider_key || "") === "hvrt") return;
     try {
       const res = await fetch(
         `/explore/api/photo/${encodeURIComponent(eid)}/people`
@@ -2538,10 +2598,58 @@
       document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
       renderRailPanel(item);
       renderRailTools(item);
+      renderTeachSlot(item);
       bindPhotoPan();
+      bindFaceSelect(item);
+      bindVideoSeek(item);
     } catch (_err) {
       /* keep ask-scoped people */
     }
+  }
+
+  function bindFaceSelect(item) {
+    document.querySelectorAll(".mb-face-box[data-face-idx]").forEach((el) => {
+      el.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(el.getAttribute("data-face-idx"));
+        if (!Number.isFinite(idx)) return;
+        state.modal.selectedFaceIndex = idx;
+        const faces = faceBoxesForItem(item);
+        const face = faces[idx];
+        if (face && face.name) item.face_identity = face.name;
+        document.querySelectorAll(".mb-face-box").forEach((b) => {
+          b.classList.toggle(
+            "is-selected",
+            Number(b.getAttribute("data-face-idx")) === idx
+          );
+        });
+        const cur = document.getElementById("mb-teach-current");
+        if (cur) cur.textContent = (face && face.name) || "Face";
+        if (state.modal.railTab !== "learn") {
+          state.modal.railTab = "learn";
+          syncRailTabs();
+          renderRailPanel(item);
+        }
+        renderTeachSlot(item);
+      });
+    });
+  }
+
+  function bindVideoSeek(item) {
+    const el = document.getElementById("mb-ev-video-el");
+    if (!el || item.t == null) return;
+    const start = Number(item.t);
+    if (!Number.isFinite(start) || start <= 0) return;
+    const seek = () => {
+      try {
+        el.currentTime = start;
+      } catch (_e) {
+        /* ignore */
+      }
+    };
+    if (el.readyState >= 1) seek();
+    else el.addEventListener("loadedmetadata", seek, { once: true });
   }
 
   function bindPhotoPan() {
@@ -2632,6 +2740,22 @@
     state.preview.visible = true;
     state.preview.itemId = item.id;
     positionQuickPreviewAtPointer();
+    const vid = el.querySelector("video.mb-qp-video");
+    if (vid) {
+      const start = Number(vid.getAttribute("data-start") || 0);
+      const seek = () => {
+        if (Number.isFinite(start) && start > 0.2) {
+          try {
+            vid.currentTime = start;
+          } catch (_e) {
+            /* ignore */
+          }
+        }
+        vid.play().catch(() => {});
+      };
+      if (vid.readyState >= 1) seek();
+      else vid.addEventListener("loadedmetadata", seek, { once: true });
+    }
   }
 
   function scheduleQuickPreview(item, clientX, clientY) {
@@ -3031,9 +3155,13 @@
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       const opts = (data.options || data.people || []).map((p) => ({
-        id: String(p.id || p.person_id || ""),
+        id: String(p.person_id || p.id || p.key || ""),
+        personId: p.person_id || null,
+        key: String(p.key || (p.person_id ? "mb:" + p.person_id : "")),
         label: String(p.display_name || p.name || p.label || "Person"),
-      })).filter((p) => p.id);
+        source: p.source || "",
+        externalId: p.external_id || "",
+      })).filter((p) => p.id || p.key);
       peopleOptions = opts.length ? opts : fallback;
     } catch (_) {
       peopleOptions = fallback;

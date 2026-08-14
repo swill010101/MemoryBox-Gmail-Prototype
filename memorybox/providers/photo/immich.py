@@ -190,7 +190,9 @@ class ImmichPhotoProvider:
             box: tuple[float, float, float, float] | None,
         ) -> None:
             n = (name or "").strip()
-            if not n or n.lower() == "unknown":
+            if n.lower() == "unknown":
+                n = ""
+            if not n and not box:
                 return
             key = f"{n}|{pid or ''}|{box}"
             if key in seen:
@@ -198,7 +200,7 @@ class ImmichPhotoProvider:
             seen.add(key)
             out.append(
                 PhotoFaceRef(
-                    display_name=n,
+                    display_name=n or "Unknown",
                     external_person_id=pid or None,
                     face_box=box,
                 )
@@ -224,9 +226,10 @@ class ImmichPhotoProvider:
             person = f.get("person") if isinstance(f.get("person"), dict) else {}
             name = str((person or {}).get("name") or f.get("name") or "").strip()
             pid = str((person or {}).get("id") or "") or None
-            if not name:
+            box = self._normalize_face_box(f)
+            if not name and not box:
                 continue
-            add(name, pid, self._normalize_face_box(f))
+            add(name, pid, box)
 
         return tuple(out)
 

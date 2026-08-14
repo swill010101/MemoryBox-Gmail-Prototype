@@ -672,13 +672,13 @@ def search_photos(
             rows: list[dict[str, Any]] = []
             for face in getattr(a, "faces", ()) or ():
                 name = (getattr(face, "display_name", None) or "").strip()
-                if not name:
+                box = getattr(face, "face_box", None)
+                if not name and not box:
                     continue
                 row: dict[str, Any] = {
-                    "name": name,
+                    "name": name or "Unknown",
                     "person_external_id": getattr(face, "external_person_id", None),
                 }
-                box = getattr(face, "face_box", None)
                 if box and len(box) == 4:
                     row["face_box"] = {
                         "x": float(box[0]),

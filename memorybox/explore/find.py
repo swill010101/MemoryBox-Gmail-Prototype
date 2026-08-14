@@ -171,11 +171,13 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if kind == "VIDEO":
             extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["stream_url"] = f"/library/media/immich-video/{eid}"
             extra["video_external_id"] = eid
             extra["video_provider_key"] = p.get("provider_key") or "immich"
             extra["asset_kind"] = "VIDEO"
             extra["clip_level"] = True
             extra["paused_frame"] = False
+            extra["teachable"] = True
             add(
                 _item_base(
                     id=f"video:{p.get('provider_key') or 'immich'}:{eid}",
@@ -241,6 +243,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             end_sec=t1,
             duration_sec=(float(t1) - t0) if t1 is not None else None,
             play_url=play,
+            stream_url=f"/review/media/{vid}",
             media_url=poster,
             thumb_url=poster,
             teachable=True,
