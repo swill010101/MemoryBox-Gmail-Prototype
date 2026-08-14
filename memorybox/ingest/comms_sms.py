@@ -7,9 +7,15 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from memorybox.db import connection
 from memorybox.ingest import store as store
-from memorybox.ingest.sms_parse import PARSER_VERSION, SmsMessage, inspect_sms_export, iter_sms_rows
-from memorybox.person.phone_map import resolve_handles
+from memorybox.ingest.sms_parse import (
+    PARSER_VERSION,
+    SmsMessage,
+    inspect_sms_export,
+    iter_sms_messages,
+)
+from memorybox.person.phone_map import _index_confirmed_handles, resolve_handles
 
 
 def default_sms_export_path() -> Path | None:
@@ -42,9 +48,16 @@ def default_sms_export_path() -> Path | None:
     return None
 
 
-def _payload(msg: SmsMessage, *, job_id: UUID, source_uri: str, ingested_at: str) -> dict[str, Any]:
+def _payload(
+    msg: SmsMessage,
+    *,
+    job_id: UUID,
+    source_uri: str,
+    ingested_at: str,
+    handle_index: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
     handles = [msg.sender_handle, *msg.recipients, *msg.participants]
-    resolved = resolve_handles(handles)
+    resolved = resolve_handles(handles, index=handle_index)
     person_ids = [m["person_id"] for m in resolved["mapped"]]
     return {
         "evidence_channel": msg.service or "text",
@@ -56,6 +69,7 @@ def _payload(msg: SmsMessage, *, job_id: UUID, source_uri: str, ingested_at: str
         "delivered_at": msg.delivered_at,
         "read_at": msg.read_at,
         "edited_at": msg.edited_at,
+        "deleted_at": msg.deleted_at,
         "direction": msg.direction,
         "from_owner": msg.from_owner,
         "sender_handle": msg.sender_handle,
@@ -114,43 +128,62 @@ def ingest_sms(
                 "SMS export not found. Set MEMORYBOX_SMS_URI or place the file at "
                 r"\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv"
             )
-        before = path.read_bytes()
-        size = path.stat().st_size
+        before = path.stat()
+        size = before.st_size
         ingested_at = datetime.now(timezone.utc).isoformat()
         source_id = store.upsert_source(
             source_kind="sms_export",
             label=label or f"sms:{path.name}",
-            uri=str(path.resolve()) if path.exists() else str(path),
+            uri=str(path),
             metadata={
                 "byte_size": size,
                 "original_untouched": True,
                 "parser_version": PARSER_VERSION,
             },
         )
-        headers, rows = iter_sms_rows(path, limit=limit)
         inserted = 0
         skipped = 0
         evidence_ids: list[str] = []
-        for msg in rows:
-            existing = store.evidence_exists_by_hash(source_id, msg.content_hash)
-            if existing:
-                skipped += 1
-                evidence_ids.append(str(existing))
-                continue
-            payload = _payload(
-                msg, job_id=job_id, source_uri=str(path), ingested_at=ingested_at
-            )
-            summary = (msg.body_text or msg.thread_id or msg.subject or "text message")[:500]
-            eid = store.insert_evidence(
-                evidence_kind="communication",
-                source_id=source_id,
-                summary=summary,
-                payload=payload,
-            )
-            inserted += 1
-            evidence_ids.append(str(eid))
-        after = path.read_bytes()
-        untouched = before == after
+        headers: list[str] = []
+        # One PG connection for the 90k-row FlightSim export. Opening a socket
+        # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
+        with connection() as conn:
+            handle_index = _index_confirmed_handles(conn)
+            known = store.hashes_for_source(source_id, conn=conn)
+            for headers, msg in iter_sms_messages(path, limit=limit):
+                existing = known.get(msg.content_hash)
+                if existing:
+                    skipped += 1
+                    if len(evidence_ids) < 64:
+                        evidence_ids.append(str(existing))
+                    continue
+                payload = _payload(
+                    msg,
+                    job_id=job_id,
+                    source_uri=str(path),
+                    ingested_at=ingested_at,
+                    handle_index=handle_index,
+                )
+                summary = (
+                    msg.body_text or msg.thread_id or msg.subject or "text message"
+                )[:500]
+                eid = store.insert_evidence(
+                    evidence_kind="communication",
+                    source_id=source_id,
+                    summary=summary,
+                    payload=payload,
+                    conn=conn,
+                )
+                known[msg.content_hash] = eid
+                inserted += 1
+                if len(evidence_ids) < 64:
+                    evidence_ids.append(str(eid))
+                if inserted % 1000 == 0:
+                    conn.commit()
+        after = path.stat()
+        untouched = (
+            before.st_mtime_ns == after.st_mtime_ns and before.st_size == after.st_size
+        )
         store.finish_job(
             job_id,
             status="done",

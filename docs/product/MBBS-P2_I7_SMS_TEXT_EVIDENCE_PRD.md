@@ -38,7 +38,7 @@ Definition §§1.1 and 6. Documented path from Sources checkpoint; **row-level f
 
 | # | Status |
 |---|--------|
-| Q1 | Path documented; **bytes not opened here** — `inspect-sms` on FlightSim |
+| Q1 | **Opened** FlightSim 2026-08-14 — 91,798 rows; headers recorded in definition §1.1 |
 | Q2 | Real-corpus rules locked; names after sample |
 | Q3–Q6 | **LOCKED** (definition §1) |
 

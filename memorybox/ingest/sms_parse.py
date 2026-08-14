@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import io
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -49,6 +48,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "delivered_at": ("delivereddate", "deliveredat", "delivered"),
     "read_at": ("readdate", "readat", "read"),
     "edited_at": ("editeddate", "editedat", "edited"),
+    "deleted_at": ("deleteddate", "deletedat"),
     "service": ("service", "channel", "messagetype", "protocol"),
     "direction": ("type", "direction", "inout", "sentreceived"),
     "sender_handle": ("senderid", "sender", "from", "fromid", "handle", "phone"),
@@ -62,7 +62,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "attachment_type": ("attachmenttype", "atttype", "mimetype"),
     "message_id": ("messageid", "guid", "rowid", "id"),
     "tapback": ("tapback", "reaction", "reactions"),
-    "unsend": ("unsend", "unsent", "deleted"),
+    "unsend": ("unsend", "unsent", "deleted", "deleteddate"),
     "latitude": ("latitude", "lat"),
     "longitude": ("longitude", "lng", "lon"),
     "shared_location": ("sharedlocation", "location", "place", "address"),
@@ -81,6 +81,7 @@ class SmsMessage:
     delivered_at: str | None = None
     read_at: str | None = None
     edited_at: str | None = None
+    deleted_at: str | None = None
     service: str = "text"
     direction: str = ""
     sender_handle: str = ""
@@ -235,85 +236,100 @@ def resolve_attachment_paths(
     return out
 
 
+def _message_from_row(
+    row: dict[str, Any], *, headers: list[str], source_row: int, export_path: Path
+) -> SmsMessage:
+    raw = {str(k or ""): "" if v is None else str(v) for k, v in (row or {}).items()}
+    raw_norm = {_norm_header(k): (v or "").strip() for k, v in raw.items()}
+    type_val = raw_norm.get("type") or ""
+    service_val = _pick(raw_norm, "service")
+    if _norm_header(service_val) in {"incoming", "outgoing", "sent", "received"}:
+        direction = _direction(service_val, "")
+        if _norm_header(type_val) in _SMS_CHANNELS or service_val == type_val:
+            service_val = type_val if _norm_header(type_val) in _SMS_CHANNELS else ""
+    else:
+        direction = _direction(_pick(raw_norm, "direction") or type_val, "")
+    attach_raw = _pick(raw_norm, "attachment")
+    if attach_raw and not _looks_like_filename(attach_raw):
+        attach_raw = ""
+    attach_type = _pick(raw_norm, "attachment_type")
+    thread = _pick(raw_norm, "thread_id")
+    sender_handle = _pick(raw_norm, "sender_handle")
+    sender_name = _pick(raw_norm, "sender_name")
+    recipients = _split_handles(_pick(raw_norm, "recipients"))
+    participants: list[str] = []
+    for part in [sender_name, sender_handle, thread, *recipients]:
+        if part and part not in participants:
+            participants.append(part)
+    body = _pick(raw_norm, "body_text")
+    sent = _parse_when(_pick(raw_norm, "sent_at"))
+    mid = _pick(raw_norm, "message_id") or f"{thread}|{sent or ''}|{body[:48]}|{source_row}"
+    blob = "\n".join(f"{k}={raw.get(k, '')}" for k in headers)
+    digest = hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
+    attachments = resolve_attachment_paths(
+        _split_handles(attach_raw) or ([attach_raw] if attach_raw else []),
+        export_path=export_path,
+    )
+    if attach_type and attachments:
+        attachments[0]["attachment_type"] = attach_type
+    return SmsMessage(
+        source_row=source_row,
+        headers=headers,
+        raw=raw,
+        source_metadata=dict(raw),
+        thread_id=thread,
+        group_name=_pick(raw_norm, "group_name") or "",
+        sent_at=sent,
+        delivered_at=_parse_when(_pick(raw_norm, "delivered_at")),
+        read_at=_parse_when(_pick(raw_norm, "read_at")),
+        edited_at=_parse_when(_pick(raw_norm, "edited_at")),
+        deleted_at=_parse_when(_pick(raw_norm, "deleted_at")),
+        service=_channel(service_val, attach_raw, attach_type),
+        direction=direction,
+        sender_handle=sender_handle,
+        sender_name=sender_name,
+        recipients=recipients,
+        participants=participants,
+        status=_pick(raw_norm, "status"),
+        reply_to=_pick(raw_norm, "reply_to"),
+        subject=_pick(raw_norm, "subject"),
+        body_text=body,
+        attachments=attachments,
+        message_id=mid,
+        tapback=_pick(raw_norm, "tapback"),
+        unsend=_pick(raw_norm, "unsend") or _pick(raw_norm, "deleted_at"),
+        latitude=_coord(_pick(raw_norm, "latitude")),
+        longitude=_coord(_pick(raw_norm, "longitude")),
+        shared_location=_pick(raw_norm, "shared_location"),
+        content_hash=digest,
+    )
+
+
+def iter_sms_messages(path: Path, *, limit: int | None = None):
+    """Stream export rows read-only. Yields (headers, SmsMessage)."""
+    with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        sample = fh.read(4096)
+        fh.seek(0)
+        dialect = sniff_dialect(sample)
+        reader = csv.DictReader(fh, dialect=dialect)
+        headers = list(reader.fieldnames or [])
+        n = 0
+        for i, row in enumerate(reader, start=2):
+            if limit is not None and n >= limit:
+                break
+            yield headers, _message_from_row(
+                row, headers=headers, source_row=i, export_path=path
+            )
+            n += 1
+
+
 def iter_sms_rows(
     path: Path, *, limit: int | None = None
 ) -> tuple[list[str], list[SmsMessage]]:
     """Read export read-only. Returns (headers, messages)."""
-    data = path.read_bytes()
-    text = data.decode("utf-8-sig", errors="replace")
-    sample = text[:4096]
-    dialect = sniff_dialect(sample)
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
-    headers = list(reader.fieldnames or [])
+    headers: list[str] = []
     messages: list[SmsMessage] = []
-    for i, row in enumerate(reader, start=2):
-        if limit is not None and len(messages) >= limit:
-            break
-        raw = {str(k or ""): "" if v is None else str(v) for k, v in (row or {}).items()}
-        raw_norm = {_norm_header(k): (v or "").strip() for k, v in raw.items()}
-        # Prefer dedicated direction column; if Type is Incoming/Outgoing use it
-        # and do not treat it as service.
-        type_val = raw_norm.get("type") or ""
-        service_val = _pick(raw_norm, "service")
-        if _norm_header(service_val) in {"incoming", "outgoing", "sent", "received"}:
-            direction = _direction(service_val, "")
-            if _norm_header(type_val) in _SMS_CHANNELS or service_val == type_val:
-                service_val = type_val if _norm_header(type_val) in _SMS_CHANNELS else ""
-        else:
-            direction = _direction(_pick(raw_norm, "direction") or type_val, "")
-        attach_raw = _pick(raw_norm, "attachment")
-        if attach_raw and not _looks_like_filename(attach_raw):
-            attach_raw = ""
-        attach_type = _pick(raw_norm, "attachment_type")
-        thread = _pick(raw_norm, "thread_id")
-        sender_handle = _pick(raw_norm, "sender_handle")
-        sender_name = _pick(raw_norm, "sender_name")
-        recipients = _split_handles(_pick(raw_norm, "recipients"))
-        participants: list[str] = []
-        for part in [sender_name, sender_handle, thread, *recipients]:
-            if part and part not in participants:
-                participants.append(part)
-        body = _pick(raw_norm, "body_text")
-        sent = _parse_when(_pick(raw_norm, "sent_at"))
-        mid = _pick(raw_norm, "message_id") or f"{thread}|{sent or ''}|{body[:48]}|{i}"
-        blob = "\n".join(f"{k}={raw[k]}" for k in headers)
-        digest = hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
-        attachments = resolve_attachment_paths(
-            _split_handles(attach_raw) or ([attach_raw] if attach_raw else []),
-            export_path=path,
-        )
-        if attach_type and attachments:
-            attachments[0]["attachment_type"] = attach_type
-        msg = SmsMessage(
-            source_row=i,
-            headers=headers,
-            raw=raw,
-            source_metadata=dict(raw),
-            thread_id=thread,
-            group_name=_pick(raw_norm, "group_name") or "",
-            sent_at=sent,
-            delivered_at=_parse_when(_pick(raw_norm, "delivered_at")),
-            read_at=_parse_when(_pick(raw_norm, "read_at")),
-            edited_at=_parse_when(_pick(raw_norm, "edited_at")),
-            service=_channel(service_val, attach_raw, attach_type),
-            direction=direction,
-            sender_handle=sender_handle,
-            sender_name=sender_name,
-            recipients=recipients,
-            participants=participants,
-            status=_pick(raw_norm, "status"),
-            reply_to=_pick(raw_norm, "reply_to"),
-            subject=_pick(raw_norm, "subject"),
-            body_text=body,
-            attachments=attachments,
-            message_id=mid,
-            tapback=_pick(raw_norm, "tapback"),
-            unsend=_pick(raw_norm, "unsend"),
-            latitude=_coord(_pick(raw_norm, "latitude")),
-            longitude=_coord(_pick(raw_norm, "longitude")),
-            shared_location=_pick(raw_norm, "shared_location"),
-            content_hash=digest,
-        )
+    for headers, msg in iter_sms_messages(path, limit=limit):
         messages.append(msg)
     return headers, messages
 

@@ -25,12 +25,13 @@ def normalize_handle(raw: str | None) -> str:
     return digits
 
 
-def _index_confirmed_handles() -> dict[str, list[str]]:
+def _index_confirmed_handles(conn: Any | None = None) -> dict[str, list[str]]:
     """normalized handle -> list of person_id (confirmed contacts + phone identities)."""
     out: dict[str, list[str]] = {}
-    with connection() as conn:
+
+    def _run(c: Any) -> None:
         try:
-            rows = conn.execute(
+            rows = c.execute(
                 """
                 SELECT person_id, value_text
                 FROM person_contact_points
@@ -49,7 +50,7 @@ def _index_confirmed_handles() -> dict[str, list[str]]:
             if pid not in out[key]:
                 out[key].append(pid)
         try:
-            ids = conn.execute(
+            ids = c.execute(
                 """
                 SELECT person_id, external_id
                 FROM provider_identities
@@ -66,14 +67,22 @@ def _index_confirmed_handles() -> dict[str, list[str]]:
             out.setdefault(key, [])
             if pid not in out[key]:
                 out[key].append(pid)
+
+    if conn is not None:
+        _run(conn)
+        return out
+    with connection() as c:
+        _run(c)
     return out
 
 
 def resolve_handles(
     handles: list[str],
+    *,
+    index: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """Map handles to people. Unique confirmed → auto; ambiguous → review; else unmapped."""
-    index = _index_confirmed_handles()
+    index = index if index is not None else _index_confirmed_handles()
     mapped: list[dict[str, str]] = []
     ambiguous: list[dict[str, Any]] = []
     unmapped: list[dict[str, str]] = []

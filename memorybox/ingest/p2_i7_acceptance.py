@@ -60,7 +60,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     )
     _check(
         "i7_no_sms_table",
-        "sms_messages" not in comms and "CREATE TABLE sms" not in comms,
+        "CREATE TABLE sms" not in comms
+        and "sms_messages" not in comms.replace("iter_sms_messages", ""),
         checks,
         problems,
         "No parallel sms_messages SoT",

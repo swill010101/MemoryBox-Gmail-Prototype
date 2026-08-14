@@ -36,34 +36,36 @@ Future use I7 must **enable**, not perform: *“Include all Alaska texts in the 
 
 | # | Topic | Status | Resolution |
 |---|--------|--------|------------|
-| **Q1** | Export path / format | **DOCUMENTED PATH; BYTES NOT OPENED** | See §1.1. Remaining **pre-build inspect** is to open the real files on FlightSim (headers, sibling attachments, date range, people/keywords). **Do not assume a parser from Archive Health’s `sms/` probe or from the `.csv` suffix alone.** |
+| **Q1** | Export path / format | **OPENED ON FLIGHTSIM 2026-08-14** | `inspect-sms` on `\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv`. See §1.1. Header-driven parser matches these columns. |
 | **Q2** | Acceptance people / years | **SELECTION RULES LOCKED; NAMES PENDING Q1 SAMPLE** | Prefer Peggy / 2020 / Denny Pizzani / “3D printing” **only if they exist in the real export**. Otherwise pick real equivalents and map them to EVS intent (§1.2). Do not invent a convenience corpus. |
 | **Q3** | Group threads | **LOCKED** | Ingest/preserve group threads when the source contains them. **No “Core 4” domain object.** EVS-117 is not a hard I7 gate unless the sampled corpus supports it. |
 | **Q4** | MMS / attachments | **LOCKED** | Preserve attachment references, metadata, and original bytes/files when the export provides them. Show in the message/thread evidence experience where practical. **Do not auto-promote to Immich or standalone Explore photo/video cards.** Later explicit promote/correlate is not I7. |
 | **Q5** | Phone/handle → Person | **LOCKED** | Normalize, then: unique confirmed match → auto-map; ambiguous → Review; no match → unmapped participant (source display name / raw handle). Never silent duplicate People. Never merge on similar display name alone. |
 | **Q6** | Summaries | **LOCKED** | Hard gate = retrieve / count / Person / date-window / keyword / date-order / open / scope disclosure. Summary EVSs = short **evidence-backed** summary or cited extract; underlying messages remain reachable. Full trip/year/multi-source narrative stays **I10/I11**. |
 
-**Build authorized** 2026-08-14 with Q1 still **bytes-not-opened** in the cloud workspace. FlightSim `inspect-sms` is the remaining source-of-truth inspect (do not assume iMazing column names).
+**Build authorized** 2026-08-14. Q1 file-open recorded from FlightSim `inspect-sms` (same day). Message bodies were not copied into git.
 
-### 1.1 Q1 — what is known vs what is not
+### 1.1 Q1 — FlightSim inspect-sms (2026-08-14)
 
-This planning revision **cannot open** `\\media-server\photos\MemoryBox\Sources` (cloud agent; no FlightSim UNC). Findings below are from **in-repo ops checkpoint 2026-08-09** (`4c382b7`, *Media-Server Sources checkpoint* **PASSED**), not from reading message rows.
+`original_untouched: true`. Parser version `i7-sms-1`. No sample bodies returned.
 
 | Item | Finding | Confidence |
 |------|---------|------------|
-| Canonical Sources root | `\\media-server\photos\MemoryBox\Sources` (also `P:\MemoryBox\Sources` when `P:` maps `\\media-server\photos`) | Documented |
-| SMS directory | `Sources\sms\` | Documented |
-| Filename recorded | `Messages - 1085 chat sessions.csv` | Documented |
-| Full UNC | `\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv` | Documented |
-| Checkpoint label | “iMessage/SMS export”; SHA256 verified against desktop copy; **SMS ingest deferred** | Documented |
-| Inventory file | `Sources\MANIFEST.json` (sizes/hashes/rules) | Documented |
-| CSV column headers | **Unknown this revision** | Must inspect |
-| Date coverage | **Unknown this revision** | Must inspect |
-| Participant / thread / group encoding | **Unknown this revision** | Must inspect |
-| Attachment files beside the CSV | **Unknown** (checkpoint lists the CSV only) | Must inspect directory + MANIFEST |
-| Service mix (SMS / iMessage / MMS / RCS) | Filename + checkpoint say iMessage/SMS; **row-level service unknown** | Must inspect |
-| Location / Tapback / edit / unsend / reply columns | **Unknown** | Must inspect |
-| Parser product (e.g. iMazing-style bulk “chat sessions” CSV) | **Hypothesis only — not locked** | Confirm from headers / sibling files / any exporter footer |
+| Canonical Sources root | `\\media-server\photos\MemoryBox\Sources` | Documented |
+| Full UNC | `\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv` | **Opened** |
+| Bytes | 15,903,315 | Inspect |
+| Format | Comma CSV, one row per message, UTF-8 | Inspect |
+| Headers | Chat Session, Message Date, Delivered Date, Read Date, Edited Date, Deleted Date, Service, Type, Sender ID, Sender Name, Status, Replying to, Subject, Text, Reactions, Attachment, Attachment type | **Opened** |
+| Row count | 91,798 | Inspect |
+| Thread count | 1,036 (filename says 1085 sessions — empty/omitted sessions possible) | Inspect |
+| Date min / max | 2008-12-14 … 2026-07-26 (UTC ISO from Message Date) | Inspect |
+| Services | `imessage`, `mms`, `sms`, `text` (no RCS in this file) | Inspect |
+| Attachment rows | 8,644 (filename/type columns; not auto-promoted) | Inspect |
+| Location columns | **None** (`location_rows: 0`). No Latitude / Longitude / Shared Location headers. Later Alaska-style correlation uses time/thread/text/attachments, not SMS GPS. | Inspect |
+| Thread encoding | `Chat Session` — sample values are E.164 phone handles. No separate Recipients / Group Name column. Group threads still preserved as a Chat Session id when the source uses one. | Inspect |
+| Participants | Sender ID + Sender Name + Chat Session (phone/handle). No Recipients column. | Inspect |
+| Richer Apple fields | Service, Type (Incoming/Outgoing), Delivered/Read/Edited/Deleted Date, Replying to, Reactions, Attachment + type | Inspect |
+| Not in this export | Recipients, Group Name, Tapback-as-own-column (Reactions instead), lat/lng, Shared Location | Inspect |
 
 **Adapter/parser follows the actual source after inspect.** Do not lock “CSV columns = …” until the header row is recorded.
 
@@ -94,7 +96,7 @@ Record into an I7 Q1 addendum (or this §1.1 table) **before implementation**:
 11. Any explicit location fields (shared location, address text, attachment GPS).  
 12. Notable limitations (iCloud-offloaded attachments, truncated bodies, missing numbers, timezone).
 
-Q1 addendum is still recommended on FlightSim (`inspect-sms`) so real headers/siblings/dates are recorded. It is **not** a remaining build blocker — Tom authorized 2026-08-14.
+Q1 file-open is **recorded** (inspect-sms 2026-08-14). Do not commit message bodies. Sibling attachment files on disk were not inventoried by inspect-sms (CSV attachment *columns* only).
 
 ### 1.2 Q2 — real corpus selection (after Q1 sample)
 
@@ -397,7 +399,7 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | Q4 MMS / attachments | **LOCKED** (linked; no Immich/Explore auto-promote) |
 | Q5 Person mapping | **LOCKED** (unique auto-map / ambiguous Review / unmapped retained) |
 | Q6 summaries | **LOCKED** (retrieve/count/filter hard; cited extract OK; narrative later) |
-| Q1 file-open (headers, siblings, dates, people, keywords, location columns) | **PATH DOCUMENTED; BYTES NOT OPENED here** — run `inspect-sms` on FlightSim |
+| Q1 file-open (headers, siblings, dates, people, keywords, location columns) | **OPENED** 2026-08-14 via `inspect-sms` — §1.1. No GPS columns. 91,798 rows. |
 | Q2 named fixtures | **RULES LOCKED**; harness uses in-repo Peggy/Denny/2020/3D-printing fixture; remap if real export differs |
 | Build | **AUTHORIZED** 2026-08-14 (Tom) |
 | Implementation | **THIS REVISION** (`ingest-sms`, `inspect-sms`, `prove-p2-i7`) |
