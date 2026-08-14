@@ -257,6 +257,33 @@
       const h1 = document.querySelector("main h1");
       if (h1) h1.textContent = "People — Admin editor";
     }
+    // Explore → People with active person: continue into Person Explorer
+    (function continueActivePerson() {
+      if (isPeopleAdmin) return;
+      const params = new URLSearchParams(location.search);
+      if (params.get("person") || params.get("person_id") || params.get("person_name")) {
+        return;
+      }
+      // Only auto-continue when arriving from exploration (shell adds mb_return=1).
+      // Bare /people/ui stays the picker so you can choose someone else.
+      if (params.get("mb_return") !== "1") return;
+      let active = null;
+      try {
+        active =
+          (window.mbShell &&
+            window.mbShell.getActivePerson &&
+            window.mbShell.getActivePerson()) ||
+          JSON.parse(sessionStorage.getItem("mb_active_person") || "null");
+      } catch (_) {
+        active = null;
+      }
+      if (!active || (!active.id && !active.name)) return;
+      const q = new URLSearchParams();
+      if (active.id) q.set("person", active.id);
+      if (active.name) q.set("person_name", active.name);
+      q.set("mb_return", "1");
+      location.replace("/people/ui?" + q.toString());
+    })();
     const out = document.getElementById("out");
     let pickerOptions = [];
     let currentPersonId = null;

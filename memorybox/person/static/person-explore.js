@@ -482,6 +482,10 @@
         detail: { personId: id, displayName: name },
       })
     );
+    if (window.mbShell && window.mbShell.setActivePerson) {
+      window.mbShell.setActivePerson({ id: id, name: name });
+      window.mbShell.refreshPeopleNavLinks();
+    }
   }
 
   document

@@ -24,6 +24,7 @@
 
   const STACK_KEY = "mb_shell_context_stack";
   const RECENT_KEY = "mb_shell_recent_asks";
+  const ACTIVE_PERSON_KEY = "mb_active_person";
 
   function surface() {
     return (
@@ -43,6 +44,58 @@
 
   function writeStack(stack) {
     sessionStorage.setItem(STACK_KEY, JSON.stringify(stack.slice(-12)));
+  }
+
+  function getActivePerson() {
+    try {
+      const raw = sessionStorage.getItem(ACTIVE_PERSON_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (!p || (!p.id && !p.name)) return null;
+      return p;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setActivePerson(person) {
+    if (!person || (!person.id && !person.name)) {
+      sessionStorage.removeItem(ACTIVE_PERSON_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      ACTIVE_PERSON_KEY,
+      JSON.stringify({
+        id: String(person.id || ""),
+        name: String(person.name || ""),
+        at: Date.now(),
+      })
+    );
+  }
+
+  /** People destination: continue active person into Person Explorer when present. */
+  function peopleHref() {
+    const p = getActivePerson();
+    if (p && p.id) {
+      return (
+        "/people/ui?person=" +
+        encodeURIComponent(p.id) +
+        (p.name ? "&person_name=" + encodeURIComponent(p.name) : "")
+      );
+    }
+    if (p && p.name) {
+      return "/people/ui?person_name=" + encodeURIComponent(p.name);
+    }
+    return "/people/ui";
+  }
+
+  function refreshPeopleNavLinks() {
+    const href = peopleHref();
+    document.querySelectorAll('a[href^="/people/ui"]').forEach((a) => {
+      const cur = a.getAttribute("href") || "";
+      if (cur.includes("admin=")) return;
+      a.setAttribute("href", href);
+    });
   }
 
   window.mbShell = {
@@ -88,6 +141,10 @@
         return [];
       }
     },
+    getActivePerson,
+    setActivePerson,
+    peopleHref,
+    refreshPeopleNavLinks,
   };
 
   function inheritHint() {
@@ -168,9 +225,29 @@
     document.addEventListener("click", (e) => {
       const a = e.target.closest("a[href]");
       if (!a) return;
-      const href = a.getAttribute("href") || "";
+      let href = a.getAttribute("href") || "";
       if (!href.startsWith("/")) return;
       if (href.startsWith("/ask/ui") && surface() === "ask") return;
+
+      // Explore → People: continue active person into Person Explorer
+      try {
+        const uPeople = new URL(href, location.origin);
+        if (
+          uPeople.pathname === "/people/ui" &&
+          !uPeople.searchParams.get("person") &&
+          !uPeople.searchParams.get("person_id") &&
+          !uPeople.searchParams.get("person_name") &&
+          uPeople.searchParams.get("admin") !== "1"
+        ) {
+          const next = peopleHref();
+          if (next !== "/people/ui") {
+            const uNext = new URL(next, location.origin);
+            a.setAttribute("href", uNext.pathname + uNext.search + uNext.hash);
+            href = a.getAttribute("href") || next;
+          }
+        }
+      } catch (_) {}
+
       // Leaving exploration with a drill-down
       if (
         href.includes("/review/ui") ||
@@ -203,8 +280,9 @@
     bar.setAttribute("role", "banner");
 
     const family = FAMILY.map((item) => {
+      const href = item.id === "people" ? peopleHref() : item.href;
       const curAttr = item.id === cur ? ' aria-current="page"' : "";
-      return `<a href="${item.href}"${curAttr}>${item.label}</a>`;
+      return `<a href="${href}"${curAttr}>${item.label}</a>`;
     }).join("");
 
     const system = SYSTEM.map((item) => {

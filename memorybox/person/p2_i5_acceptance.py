@@ -120,10 +120,25 @@ def run_p2_i5_acceptance() -> dict:
         "Open Person" in people_html
         and 'id="mb-people-admin"' in people_html
         and "Person Explorer" in people_html
-        and "?admin=1" in people_html,
+        and "?admin=1" in people_html
+        and "continueActivePerson" in people_html
+        and "mb_active_person" in people_html,
         checks,
         problems,
-        "People picker → Explorer; admin gated",
+        "People picker → Explorer; admin gated; Explore context continue",
+    )
+    shell_js = (
+        Path(__file__).resolve().parents[1] / "shell" / "static" / "shell.js"
+    ).read_text(encoding="utf-8")
+    _check(
+        "i5_shell_people_continues_person",
+        "peopleHref" in shell_js
+        and "setActivePerson" in shell_js
+        and "mb_active_person" in shell_js
+        and "syncActivePersonContext" in explore_js,
+        checks,
+        problems,
+        "shell People nav continues active person",
     )
 
     overall = not problems and all(c.get("ok") for c in checks.values())

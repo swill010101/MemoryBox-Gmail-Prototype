@@ -659,8 +659,11 @@
     state.domain.askText = text;
     const lower = text.toLowerCase();
 
-    // Navigation / clear context
+    // Navigation / clear context — bare People picker (drop active person)
     if (/clear context.*people|go to people/.test(lower)) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson(null);
+      }
       window.location.href = "/people/ui";
       return;
     }
@@ -979,18 +982,67 @@
     state.domain.chips = without;
   }
 
+  /** Persist Explore person chip so shell People nav continues into Person Explorer. */
+  function syncActivePersonContext() {
+    if (!state || !state.domain) return;
+    const chip = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    if (!chip || !chip.label) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson(null);
+        window.mbShell.refreshPeopleNavLinks();
+      }
+      return;
+    }
+    let id = chip.personId || PERSON.personId || "";
+    const name = String(chip.label || "").trim();
+    if (!id && name && peopleOptions && peopleOptions.length) {
+      const nameL = name.toLowerCase();
+      const hit = peopleOptions.find((p) => {
+        const lab = String(p.label || "").toLowerCase();
+        return lab === nameL || lab.startsWith(nameL) || nameL.startsWith(lab.split(/\s+/)[0]);
+      });
+      if (hit) id = hit.id;
+    }
+    if (window.mbShell && window.mbShell.setActivePerson) {
+      window.mbShell.setActivePerson({ id: id || "", name: name });
+      window.mbShell.refreshPeopleNavLinks();
+    }
+  }
+
+  function peopleNavHref() {
+    if (window.mbShell && typeof window.mbShell.peopleHref === "function") {
+      return window.mbShell.peopleHref();
+    }
+    const chip =
+      state &&
+      state.domain &&
+      (state.domain.chips || []).find((c) => c && c.kind === "person");
+    if (PERSON_MODE && PERSON.personId) {
+      return (
+        "/people/ui?person=" +
+        encodeURIComponent(PERSON.personId) +
+        (PERSON.displayName
+          ? "&person_name=" + encodeURIComponent(PERSON.displayName)
+          : "")
+      );
+    }
+    if (chip && chip.label) {
+      return "/people/ui?person_name=" + encodeURIComponent(chip.label);
+    }
+    return "/people/ui";
+  }
 
   function renderNav() {
     const el = document.getElementById("mb-explore-nav");
     if (!el) return;
-    el.innerHTML = NAV.map(
-      (n) =>
-        `<a href="${n.href}" data-nav="${n.id}"${
-          (PERSON_MODE ? n.id === "people" : n.id === "ask")
-            ? ' aria-current="page"'
-            : ""
-        }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
-    ).join("");
+    el.innerHTML = NAV.map((n) => {
+      const href = n.id === "people" ? peopleNavHref() : n.href;
+      return `<a href="${href}" data-nav="${n.id}"${
+        (PERSON_MODE ? n.id === "people" : n.id === "ask")
+          ? ' aria-current="page"'
+          : ""
+      }><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`;
+    }).join("");
   }
 
   // Expose for shell Global Ask + future STT — same applyAskCommand path.
@@ -1498,6 +1550,9 @@
 
   function render() {
     document.getElementById("mb-explore-ask").value = state.domain.askText || "";
+    ensureLockedPersonChip();
+    syncActivePersonContext();
+    renderNav();
     renderCurator();
     renderFilters();
     renderViewMode();
@@ -2525,11 +2580,15 @@
     liveMode = !payload.demo;
     applyPayloadToState(payload, { keepPresentation: false });
     ensureLockedPersonChip();
+    syncActivePersonContext();
     renderNav();
     bindChrome();
     bindTimeline();
     render();
-    loadPeopleOptions();
+    loadPeopleOptions().then(() => {
+      syncActivePersonContext();
+      renderNav();
+    });
   }
 
   async function loadPeopleOptions() {
@@ -2550,6 +2609,7 @@
     } catch (_) {
       peopleOptions = fallback;
     }
+    return peopleOptions;
   }
 
   async function main() {
