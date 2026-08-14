@@ -26,6 +26,18 @@
 | 5 | Mockup PNG | **RECEIVED** (Peggy Smith exemplar · dark Person Explorer) |
 | 6 | Route | **Evolve `/people/ui`** (`?person=` → Person Explorer) |
 
+### Highlights ranking (locked refinement · Tom 2026-08-14)
+
+**Quality first**, then year shape:
+1. Prefer clear, focused, face-forward photos (large/centered face box when known; high identity/confidence score when present).
+2. Bulk of the set from recent years (~last 10).
+3. Still reach back ~10–20 years with best-per-year picks from that archive window.
+4. All Memories remains the full eligible set (no ranking cull).
+
+### Timeline indicators (locked rule · Tom 2026-08-14)
+
+Timeline density dots / indicators **must never exceed the timeline track**. Zoom clears and re-plots only in-view markers. While zoomed, a slight outward pull on the left or right handle restores the full archive span (Reset does the same).
+
 ---
 
 ## Location pill — locked

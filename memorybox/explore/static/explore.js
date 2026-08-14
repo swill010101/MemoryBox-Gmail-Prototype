@@ -98,6 +98,7 @@
   let sessionId = null;
   let bandDrag = null;
   let handleDrag = null;
+  let handleDragMeta = null;
   let scrubDrag = null;
   let mapInstance = null;
   let mapClusterLayer = null;
@@ -298,44 +299,122 @@
     return list;
   }
 
-  /** I5 Highlights: real ranking — prefer stories/artifacts, year coverage, then recent photos/video. */
+  /**
+   * I5 Highlights ranking (Person surface) — quality first, then year shape:
+   * 1) Clear, focused, face-forward pics (large/centered face, high identity score)
+   * 2) Bulk from recent years; still reach back ~10–20 years with best-per-era picks
+   * Not random / not “first 36”. All Memories shows the full set.
+   */
+  function highlightScore(it) {
+    if (!it) return -1e9;
+    let s = 0;
+    const t = String(it.type || "").toLowerCase();
+    // Photos dominate — Highlights are a visual best-of for the person
+    if (t === "photo") s += 25;
+    else if (t === "video") s += 8;
+    else if (t === "story") s += 5;
+    else if (t === "artifact") s += 3;
+    else if (t === "email" || t === "sms") s += 1;
+
+    const box = it.face_box;
+    if (
+      box &&
+      Number(box.w) > 0 &&
+      Number(box.h) > 0 &&
+      Number.isFinite(Number(box.x)) &&
+      Number.isFinite(Number(box.y))
+    ) {
+      const w = Number(box.w);
+      const h = Number(box.h);
+      const x = Number(box.x);
+      const y = Number(box.y);
+      const area = w * h; // Immich boxes normalized 0–1
+      // Large face ≈ clear full face / good framing (quality signal #1)
+      s += Math.min(90, area * 140);
+      if (area >= 0.08) s += 18; // close / portrait-scale
+      else if (area >= 0.04) s += 10;
+      else if (area < 0.012) s -= 28; // tiny distant face
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const centerDist = Math.hypot(cx - 0.5, cy - 0.5);
+      s += Math.max(0, 22 - centerDist * 44);
+      // Face fully in frame (not clipped) — proxy for cleaner crop / lighting room
+      if (x > 0.02 && y > 0.02 && x + w < 0.98 && y + h < 0.98) s += 10;
+      const aspect = w / h;
+      if (aspect > 0.55 && aspect < 1.75) s += 6;
+    } else if (t === "photo") {
+      s -= 12; // person photo without a face box is a weak Highlight
+    } else if (it.thumb_url || it.media_url) {
+      s += 1;
+    }
+
+    // Identity probability / retrieval confidence when present
+    if (typeof it.score === "number" && Number.isFinite(it.score)) {
+      let conf = Number(it.score);
+      if (conf > 1.5) conf = conf / 100; // allow 0–100 provider scales
+      s += Math.min(28, Math.max(0, conf * 28));
+    }
+    if (it.face_identity || it.mb_person_name) s += 8;
+    if (isDated(it)) s += 2;
+    return s;
+  }
+
+  function itemYear(it) {
+    if (!isDated(it)) return null;
+    const y = parseInt(String(it.date).slice(0, 4), 10);
+    return Number.isFinite(y) ? y : null;
+  }
+
   function rankHighlights(items) {
     const MAX = 36;
     if (!items || items.length <= MAX) return items;
-    const byYear = new Map();
-    const preferred = [];
-    const rest = [];
-    for (const it of items) {
-      const t = String(it.type || "");
-      if (t === "story" || t === "artifact" || t === "email" || t === "sms") {
-        preferred.push(it);
-      } else {
-        rest.push(it);
-      }
-      if (isDated(it)) {
-        const y = String(it.date).slice(0, 4);
-        if (!byYear.has(y)) byYear.set(y, []);
-        byYear.get(y).push(it);
-      }
-    }
+    const scored = items
+      .map((it) => ({ it, s: highlightScore(it), y: itemYear(it) }))
+      .sort((a, b) => b.s - a.s || (b.y || 0) - (a.y || 0));
+
+    const years = scored.map((r) => r.y).filter((y) => y != null);
+    const maxY = years.length ? Math.max.apply(null, years) : new Date().getUTCFullYear();
+    const recentFloor = maxY - 10; // bulk = last ~10 years
+    const archiveFloor = maxY - 20; // reach back 10–20 years
+
+    const BULK = 24; // quality-first recent majority
+    const REACH = 10; // best picks spanning the prior decade
     const out = [];
     const seen = new Set();
     function take(it) {
-      if (!it || seen.has(it.id) || out.length >= MAX) return;
+      if (!it || seen.has(it.id) || out.length >= MAX) return false;
       seen.add(it.id);
       out.push(it);
+      return true;
     }
-    // One representative per year (coverage)
-    const years = Array.from(byYear.keys()).sort();
-    for (const y of years) {
-      const bucket = byYear.get(y) || [];
-      const story = bucket.find((x) => x.type === "story");
-      take(story || bucket[0]);
+
+    // 1) Bulk: highest-quality from recent years (current era)
+    for (const row of scored) {
+      if (out.length >= BULK) break;
+      if (row.y != null && row.y < recentFloor) continue;
+      take(row.it);
+    }
+
+    // 2) Reach-back: best face/quality per year for ~10–20 years ago
+    const bestArchiveByYear = new Map();
+    for (const row of scored) {
+      if (row.y == null) continue;
+      if (row.y < archiveFloor || row.y >= recentFloor) continue;
+      if (!bestArchiveByYear.has(row.y)) bestArchiveByYear.set(row.y, row);
+    }
+    const archiveYears = Array.from(bestArchiveByYear.keys()).sort((a, b) => b - a);
+    let reachTaken = 0;
+    for (const y of archiveYears) {
+      if (reachTaken >= REACH || out.length >= MAX) break;
+      if (take(bestArchiveByYear.get(y).it)) reachTaken += 1;
+    }
+
+    // 3) Fill remainder with next-best quality overall (still face/quality ranked)
+    for (const row of scored) {
       if (out.length >= MAX) break;
+      take(row.it);
     }
-    for (const it of preferred) take(it);
-    for (const it of rest) take(it);
-    // Preserve newest-first among selected
+
     out.sort((a, b) => {
       if (isUndated(a) && !isUndated(b)) return 1;
       if (!isUndated(a) && isUndated(b)) return -1;
@@ -547,7 +626,7 @@
       state.domain.summary =
         `Highlights · ${vis.length} of ${total} memories (${filterLabel}) for ${range}` +
         (parts.length ? ": " + parts.join(", ") + "." : ".") +
-        " Switch to All Memories for the full set.";
+        " Ranked by picture quality first (clear full face, focused, high identity confidence), with most from recent years and a reach-back across the prior 10–20 years. Switch to All Memories for the full set.";
       return;
     }
     if (state.domain.undatedFilter) {
@@ -1699,8 +1778,9 @@
         "No dated memories on the Timeline";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
-      const left = ((rangeStart - extentStart) / span) * 100;
-      const right = ((rangeEnd - extentStart) / span) * 100;
+      // Clamp chrome to the track — indicators/handles never paint outside the timeline
+      const left = Math.min(100, Math.max(0, ((rangeStart - extentStart) / span) * 100));
+      const right = Math.min(100, Math.max(0, ((rangeEnd - extentStart) / span) * 100));
       const width = Math.max(right - left, 0.5);
       band.style.left = `${left}%`;
       band.style.width = `${width}%`;
@@ -1737,18 +1817,27 @@
 
     const dotsEl = document.getElementById("mb-tl-dots");
     const typedDated = datedEligible();
-    if (empty) {
-      dotsEl.innerHTML = "";
-    } else {
+    // Always clear first — prevents leftover dots after zoom
+    if (dotsEl) dotsEl.innerHTML = "";
+    if (!empty && dotsEl) {
       const span = Math.max(extentEnd - extentStart, 1);
-      dotsEl.innerHTML = typedDated
-        .map((it) => {
-          const t = parseISO(it.date);
-          if (!Number.isFinite(t)) return "";
-          const x = ((t - extentStart) / span) * 100;
-          return `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(it.date)}"></span>`;
-        })
-        .join("");
+      const parts = [];
+      for (const it of typedDated) {
+        const t = parseISO(it.date);
+        if (!Number.isFinite(t)) continue;
+        // Rule: timeline indicators never exceed the timeline track
+        if (t < extentStart || t > extentEnd) continue;
+        let x = ((t - extentStart) / span) * 100;
+        if (x < 0 || x > 100) continue;
+        // Keep dot centers inside the rail (avoid margin bleed past edges)
+        x = Math.min(99.2, Math.max(0.8, x));
+        parts.push(
+          `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
+            it.date
+          )}"></span>`
+        );
+      }
+      dotsEl.innerHTML = parts.join("");
     }
 
     const ticks = document.getElementById("mb-tl-ticks");
@@ -2689,9 +2778,7 @@
 
     track.addEventListener("pointerup", (e) => {
       if (handleDrag) {
-        handleDrag = null;
-        zoomTimelineToRange();
-        render();
+        endHandle();
         return;
       }
       if (bandDrag) {
@@ -2717,25 +2804,67 @@
       if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "l";
+      handleDragMeta = {
+        side: "l",
+        startA: state.timeline.rangeStart,
+        startB: state.timeline.rangeEnd,
+      };
       hl.setPointerCapture(e.pointerId);
     });
     hr.addEventListener("pointerdown", (e) => {
       if (!hasDatedExtent()) return;
       e.stopPropagation();
       handleDrag = "r";
+      handleDragMeta = {
+        side: "r",
+        startA: state.timeline.rangeStart,
+        startB: state.timeline.rangeEnd,
+      };
       hr.setPointerCapture(e.pointerId);
     });
-    const endHandle = () => {
-      if (handleDrag) {
-        handleDrag = null;
-        // Shrinking the range zooms the axis to that window (higher precision).
-        // Expanding handles back toward the full archive zooms out.
-        zoomTimelineToRange();
+    // Slight outward pull while zoomed → restore full archive span
+    function endHandle() {
+      if (!handleDrag) return;
+      const side = handleDrag;
+      const origin = handleDragMeta;
+      handleDrag = null;
+      handleDragMeta = null;
+      if (!hasDatedExtent()) {
         render();
         return;
       }
-      handleDrag = null;
-    };
+      const fullA = Number.isFinite(state.timeline.fullExtentStart)
+        ? state.timeline.fullExtentStart
+        : state.timeline.extentStart;
+      const fullB = Number.isFinite(state.timeline.fullExtentEnd)
+        ? state.timeline.fullExtentEnd
+        : state.timeline.extentEnd;
+      const extA = state.timeline.extentStart;
+      const extB = state.timeline.extentEnd;
+      const rA = state.timeline.rangeStart;
+      const rB = state.timeline.rangeEnd;
+      const viewSpan = Math.max(extB - extA, 1);
+      const zoomed =
+        extA > fullA + viewSpan * 0.005 || extB < fullB - viewSpan * 0.005;
+      const pulledLeftOut =
+        side === "l" &&
+        origin &&
+        Number.isFinite(origin.startA) &&
+        rA < origin.startA - 1;
+      const pulledRightOut =
+        side === "r" &&
+        origin &&
+        Number.isFinite(origin.startB) &&
+        rB > origin.startB + 1;
+      const pastViewEdge =
+        (side === "l" && rA < extA - 1) || (side === "r" && rB > extB + 1);
+      if (zoomed && (pulledLeftOut || pulledRightOut || pastViewEdge)) {
+        resetTimelineExtent(true);
+        return;
+      }
+      zoomTimelineToRange();
+      render();
+    }
     hl.addEventListener("pointerup", endHandle);
     hr.addEventListener("pointerup", endHandle);
     hl.addEventListener("pointercancel", endHandle);
