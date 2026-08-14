@@ -642,13 +642,17 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"observance={ow}",
         )
-        # Missing MB People birth_date must not invent windows (orchestrator).
+        # Missing MB People birth_date must not invent windows.
+        # Do not use "Tom Will" here — FlightSim owner often has a recorded
+        # birth_date, which correctly fills windows (e.g. 2024-09-06..09-10).
         from memorybox.ask.orchestrator import _apply_person_life_event_windows
 
-        applied = _apply_person_life_event_windows(bday)
+        ghost = _plan("Zzxqv Nonesuch birthday 2024")
+        applied = _apply_person_life_event_windows(ghost)
         _check(
             "i4_compose_birthday_missing_data_no_invent",
-            applied.requires_clarification is True
+            ghost.life_event_kind == "birthday"
+            and applied.requires_clarification is True
             and not applied.temporal_windows
             and (
                 "birth_date" in (applied.ambiguity_message or "").lower()
@@ -659,6 +663,41 @@ def _prove_harness() -> dict[str, Any]:
             f"clarify={applied.requires_clarification} msg={applied.ambiguity_message} "
             f"windows={applied.temporal_windows}",
         )
+        # When a live person has birth_date, windows must match that month/day.
+        try:
+            from memorybox.person import find_ask_person_by_name
+            from memorybox.profile.facts import get_current_fact
+
+            view = find_ask_person_by_name("Tom Will", lazy_seed=False)
+            fact = get_current_fact(view.id, "birth_date") if view else None
+            rec = str(fact.value_date)[:10] if fact and getattr(fact, "value_date", None) else ""
+        except Exception:  # noqa: BLE001 — harness may have no People DB
+            rec = ""
+        live = _apply_person_life_event_windows(bday)
+        if rec:
+            try:
+                _y, m, d = [int(x) for x in rec.split("-")]
+                expected = observance_window_md(m, d, 2024)
+            except Exception:
+                expected = None
+            _check(
+                "i4_compose_birthday_uses_recorded_date",
+                expected is not None
+                and live.temporal_windows == (expected,)
+                and live.requires_clarification is not True,
+                checks,
+                problems,
+                f"recorded={rec} windows={live.temporal_windows} expected={expected}",
+            )
+        else:
+            _check(
+                "i4_compose_birthday_uses_recorded_date",
+                live.requires_clarification is True and not live.temporal_windows,
+                checks,
+                problems,
+                f"no recorded birth_date; clarify={live.requires_clarification} "
+                f"windows={live.temporal_windows}",
+            )
 
         js = (Path(__file__).resolve().parent / "static" / "explore.js").read_text(
             encoding="utf-8"
