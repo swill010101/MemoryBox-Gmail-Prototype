@@ -403,6 +403,7 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | Q2 named fixtures | **RULES LOCKED**; harness uses in-repo Peggy/Denny/2020/3D-printing fixture; remap if real export differs |
 | Build | **AUTHORIZED** 2026-08-14 (Tom) |
 | Implementation | **THIS REVISION** (`ingest-sms`, `inspect-sms`, `prove-p2-i7`) |
+| FlightSim ingest | **DONE** 2026-08-14 — job `7f763b4e-7ef0-40b5-804b-07ca10e18c34`; inserted **90,784**; skipped **1,014** duplicate hashes; processed **91,798** (= inspect row_count); `original_untouched: true` |
 | ACCEPTED | **No** — §8 FlightSim owner gate remains |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
@@ -422,5 +423,7 @@ python -m memorybox inspect-sms
 python -m memorybox ingest-sms
 # restart serve, then Ctrl+F5
 ```
+
+Real export ingest on FlightSim **succeeded** 2026-08-14 (90,784 inserted / 1,014 hash-skips / original untouched). Restart serve before Ask / Explore / Archive Health.
 
 Confirm the CLI lists `prove-p2-i7`, `ingest-sms`, and `inspect-sms` before treating the tree as I7.
