@@ -88,6 +88,18 @@
     return id ? "/library/media/photo/" + id : "";
   }
 
+  function applyPersonPortrait(el, personId) {
+    if (!el || !personId) return;
+    const url = "/people/" + encodeURIComponent(personId) + "/portrait?v=fam";
+    const img = new Image();
+    img.onload = () => {
+      el.textContent = "";
+      el.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      el.classList.add("has-photo");
+    };
+    img.src = url;
+  }
+
   function roleLabel(edge) {
     return (
       edge.sot_role_kind ||
@@ -358,11 +370,6 @@
         portrait.style.backgroundImage = css;
         portrait.classList.add("has-photo");
       }
-      if (curatorAv) {
-        curatorAv.textContent = "";
-        curatorAv.style.backgroundImage = css;
-        curatorAv.classList.add("has-photo");
-      }
       cfg.portraitUrl = url;
       if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.portraitUrl = url;
     }
@@ -411,20 +418,56 @@
             ? "d. " + deathY
             : "";
 
-    let rel = "";
-    const derived =
-      (profile.relationships && profile.relationships.derived_edges) || [];
-    const owner = profile.owner || {};
-    if (owner.owner_person_id && derived.length) {
-      const hit = derived.find(
-        (e) =>
-          e.from_person_id === owner.owner_person_id ||
-          e.to_person_id === owner.owner_person_id
-      );
-      if (hit) rel = roleLabel(hit);
+    function namesList(rows) {
+      return (rows || [])
+        .map((h) => h.display_name || h.name)
+        .filter(Boolean);
     }
+    function familyHeadline() {
+      const rels = (profile.relationships || {});
+      const direct = rels.direct || {};
+      const spouses = direct.spouse_partner || [];
+      const children = direct.children || [];
+      const parents = direct.parents || [];
+      const siblings = direct.siblings || [];
+      const ownerId = (profile.owner && profile.owner.owner_person_id) || "";
+      if (ownerId && ownerId !== id) {
+        const groups = [
+          ["spouse_partner", "Spouse of"],
+          ["parents", null],
+          ["children", null],
+          ["siblings", "Sibling of"],
+        ];
+        for (const [g, prefix] of groups) {
+          const hit = (direct[g] || []).find((h) => h.person_id === ownerId);
+          if (!hit) continue;
+          const other = hit.display_name || "them";
+          if (prefix) return prefix + " " + other;
+          if (g === "parents")
+            return (hit.label || "Child") + " of " + other;
+          if (g === "children")
+            return (hit.label === "Child" ? "Parent of " : (hit.label || "Related") + " of ") + other;
+          return (hit.label || "Related") + " of " + other;
+        }
+      }
+      if (spouses.length)
+        return "Spouse of " + namesList(spouses).join(", ");
+      if (children.length) {
+        const lab =
+          children.some((c) => /father/i.test(c.role_kind || ""))
+            ? "Father of "
+            : children.some((c) => /mother/i.test(c.role_kind || ""))
+              ? "Mother of "
+              : "Parent of ";
+        return lab + namesList(children).join(", ");
+      }
+      if (parents.length) return "Child of " + namesList(parents).join(", ");
+      if (siblings.length) return "Sibling of " + namesList(siblings).join(", ");
+      return "";
+    }
+    const rel = familyHeadline();
     const subBits = [];
-    if (rel) subBits.push(rel.charAt(0).toUpperCase() + rel.slice(1));
+    if (rel) subBits.push(rel);
     if (life) subBits.push(life);
     document.getElementById("mb-person-sub").textContent =
       subBits.join(" · ") || "Canonical MemoryBox Person";
@@ -441,7 +484,18 @@
       about.appendChild(dd);
     }
     row("Full name", name);
-    row("Relationship", rel ? rel.charAt(0).toUpperCase() + rel.slice(1) : null);
+    const spouses = (profile.relationships && profile.relationships.direct && profile.relationships.direct.spouse_partner) || [];
+    const children = (profile.relationships && profile.relationships.direct && profile.relationships.direct.children) || [];
+    const parents = (profile.relationships && profile.relationships.direct && profile.relationships.direct.parents) || [];
+    const extendedKids = ((profile.relationships && profile.relationships.extended) || []).filter(
+      (h) => (h.role_kind || "") === "child_of" || (h.group || "") === "extended" && /child/i.test(h.label || "")
+    );
+    if (spouses.length) row("Spouse of", namesList(spouses).join(", "));
+    const childNames = namesList(children).concat(
+      namesList(extendedKids).filter((n) => namesList(children).indexOf(n) < 0)
+    );
+    if (childNames.length) row("Parent of", childNames.join(", "));
+    if (parents.length) row("Child of", namesList(parents).join(", "));
     row("Born", birth && birth.value_date);
     row("Died", death && death.value_date);
     if (!about.children.length) {
@@ -451,31 +505,27 @@
 
     const familyRow = document.getElementById("mb-person-family-row");
     familyRow.innerHTML = "";
-    const assertions =
-      (profile.relationships && profile.relationships.assertions_sot) || [];
     const seen = new Set();
     const family = [];
-    for (const a of assertions.concat(derived)) {
-      const otherId =
-        a.from_person_id === id
-          ? a.to_person_id
-          : a.to_person_id === id
-            ? a.from_person_id
-            : a.from_person_id || a.to_person_id;
-      const otherName =
-        a.from_person_id === id
-          ? a.to_display_name || a.to_name
-          : a.to_person_id === id
-            ? a.from_display_name || a.from_name
-            : a.from_display_name || a.display_name;
-      if (!otherId || seen.has(otherId) || otherId === id) continue;
+    function pushHit(h, derived) {
+      const otherId = h.person_id;
+      const otherName = h.display_name || h.name || "Person";
+      if (!otherId || seen.has(otherId) || otherId === id) return;
       seen.add(otherId);
       family.push({
         id: otherId,
-        name: otherName || "Person",
-        role: roleLabel(a),
+        name: otherName,
+        role: (h.label || roleLabel(h) || "family").toString(),
+        derived: Boolean(derived),
       });
     }
+    const direct = (profile.relationships && profile.relationships.direct) || {};
+    ["parents", "siblings", "spouse_partner", "children"].forEach((g) => {
+      (direct[g] || []).forEach((h) => pushHit(h, false));
+    });
+    ((profile.relationships && profile.relationships.extended) || []).forEach((h) =>
+      pushHit(h, true)
+    );
     cached.family = family;
     if (!family.length) {
       familyRow.innerHTML =
@@ -486,14 +536,20 @@
         a.className = "mb-person-fam";
         a.href = "/people/ui?person=" + encodeURIComponent(f.id);
         a.innerHTML =
-          '<div class="mb-person-fam-av">' +
+          '<div class="mb-person-fam-av" data-portrait="' +
+          encodeURIComponent(f.id) +
+          '">' +
           initial(f.name) +
           '</div><div class="mb-person-fam-label">' +
           escapeHtml(f.name.split(/\s+/)[0]) +
           '</div><div class="mb-person-fam-role">' +
-          escapeHtml(f.role) +
+          escapeHtml(f.derived ? "Derived · " + f.role : f.role) +
           "</div>";
         familyRow.appendChild(a);
+        applyPersonPortrait(
+          a.querySelector(".mb-person-fam-av"),
+          f.id
+        );
       }
     }
 

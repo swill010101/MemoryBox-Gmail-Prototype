@@ -160,10 +160,12 @@ def run_p2_i5_acceptance() -> dict:
         ).read_text(encoding="utf-8")
         and "applyPortraitUrl" in person_js
         and "has-photo" in person_js
-        and "portraitUrl" in explore_js,
+        and "familyHeadline" in person_js
+        and "applyPersonPortrait" in person_js
+        and "PERSON_MODE" in explore_js,
         checks,
         problems,
-        "Immich preferred portrait endpoint + header/curator apply",
+        "Immich preferred portrait endpoint + header/family apply (not curator duplicate)",
     )
     person_init = (
         Path(__file__).resolve().parent / "__init__.py"

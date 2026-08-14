@@ -1413,6 +1413,16 @@
     });
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) {
+      // Person Explorer: Immich portrait lives on the header only — not again under Ask.
+      if (PERSON_MODE) {
+        av.style.backgroundImage = "";
+        av.classList.remove("has-photo");
+        const label =
+          (PERSON && PERSON.displayName) ||
+          (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.displayName) ||
+          "P";
+        av.textContent = String(label).trim().charAt(0).toUpperCase() || "P";
+      } else {
       const portraitUrl =
         (PERSON && PERSON.portraitUrl) ||
         (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
@@ -1427,6 +1437,7 @@
         const person = (state.domain.chips || []).find((c) => c.kind === "person");
         const label = (person && person.label) || state.domain.title || "M";
         av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
+      }
       }
     }
   }
@@ -2313,8 +2324,9 @@
 
 
     if (tab === "learn") {
+      pauseVideoForLearn();
       panel.innerHTML = `<h3>Learn</h3>
-        <p class="mb-rail-empty">Select a face on the video or photo, confirm or change the person, then Teach. Recognition for photos and video continues in the background.</p>`;
+        <p class="mb-rail-empty">Select a face, then Assign / Reassign / Unassign / Add unknown. Learn from this face starts recognition in the background. Video: pause first; Identify, Adjust box, and Remove apply to this frame.</p>`;
     }
   }
 
@@ -2358,12 +2370,39 @@
   }
 
 
+  function videoIsPaused() {
+    const el = document.getElementById("mb-ev-video-el");
+    if (!el) return true;
+    return Boolean(el.paused);
+  }
+
+  function pauseVideoForLearn() {
+    const el = document.getElementById("mb-ev-video-el");
+    if (el && !el.paused) {
+      try {
+        el.pause();
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    return videoIsPaused();
+  }
+
   function renderTeachSlot(item) {
     const slot = document.getElementById("mb-modal-teach");
     if (!slot) return;
+    const t = String(item.type || "").toLowerCase();
+    const isVideo = t === "video";
     const faces = faceBoxesForItem(item);
     const selected = faces[Number(state.modal.selectedFaceIndex)] || faces[0] || null;
     const selectedLabel = (selected && selected.name) || item.face_identity || "Unknown";
+    const named = Boolean(
+      selected &&
+        selected.name &&
+        String(selected.name).trim() &&
+        String(selected.name).toLowerCase() !== "unknown"
+    );
+    const paused = !isVideo || videoIsPaused();
     const def = currentPersonDefault();
     const optsSrc = peopleOptions.length
       ? peopleOptions
@@ -2383,27 +2422,213 @@
         )}" data-label="${escapeAttr(p.label)}"${sel}>${escapeHtml(p.label)}</option>`;
       })
       .join("");
+    const needPause = isVideo && !paused;
+    const faceOk = Boolean(selected);
     slot.innerHTML = `
       <div class="mb-teach-proof">
         <div><strong>Selected face:</strong> <span id="mb-teach-current">${escapeHtml(
           selectedLabel
         )}</span></div>
-        <p class="mb-rail-empty" style="margin:0.2rem 0 0">Click a face box on the media. Person defaults to the current person — change it before Teach if needed.</p>
-        <label style="display:block;margin:0.4rem 0 0.25rem">Person
+        <p class="mb-rail-empty" style="margin:0.2rem 0 0">${
+          needPause
+            ? "Pause the video to identify, assign, or learn from this frame."
+            : "Click a face box on the media. Person defaults to the current person."
+        }</p>
+        <label class="mb-teach-row" style="display:block;margin:0.4rem 0 0.25rem">Person
           <select id="mb-teach-person">${opts}</select>
         </label>
-        <button type="button" class="mb-viewer-footbtn" id="mb-teach-confirm">Teach</button>
+        <div class="mb-teach-actions" role="group" aria-label="Learn actions">
+          ${
+            isVideo
+              ? `<button type="button" class="mb-viewer-footbtn" id="mb-teach-identify" ${
+                  faceOk && !needPause ? "" : "disabled"
+                }>Identify</button>`
+              : ""
+          }
+          <button type="button" class="mb-viewer-footbtn" id="mb-teach-assign" ${
+            faceOk && !needPause ? "" : "disabled"
+          }>Assign</button>
+          <button type="button" class="mb-viewer-footbtn" id="mb-teach-reassign" ${
+            named && !needPause ? "" : "disabled"
+          }>Reassign</button>
+          <button type="button" class="mb-viewer-footbtn" id="mb-teach-unassign" ${
+            named ? "" : "disabled"
+          }>Unassign</button>
+          <button type="button" class="mb-viewer-footbtn" id="mb-teach-unknown" ${
+            faceOk ? "" : "disabled"
+          }>Add unknown</button>
+          ${
+            isVideo
+              ? `<button type="button" class="mb-viewer-footbtn" id="mb-teach-adjust" ${
+                  paused ? "" : "disabled"
+                }>Adjust box</button>
+          <button type="button" class="mb-viewer-footbtn mb-teach-danger" id="mb-teach-remove" ${
+            faceOk ? "" : "disabled"
+          }>Remove</button>`
+              : ""
+          }
+          <button type="button" class="mb-viewer-footbtn mb-teach-primary" id="mb-teach-learn" ${
+            faceOk && !needPause ? "" : "disabled"
+          }>Learn from this face</button>
+        </div>
         <div id="mb-teach-status" class="mb-teach-status" style="margin-top:0.35rem"></div>
       </div>`;
-    const btn = document.getElementById("mb-teach-confirm");
-    if (btn) btn.addEventListener("click", () => confirmIdentityCorrection(item));
+    const bind = (id, action) => {
+      const btn = document.getElementById(id);
+      if (btn)
+        btn.addEventListener("click", () => confirmIdentityCorrection(item, action));
+    };
+    bind("mb-teach-identify", "identify");
+    bind("mb-teach-assign", "assign");
+    bind("mb-teach-reassign", "reassign");
+    bind("mb-teach-unassign", "unassign");
+    bind("mb-teach-unknown", "add_unknown");
+    bind("mb-teach-learn", "learn");
+    const adj = document.getElementById("mb-teach-adjust");
+    if (adj) adj.addEventListener("click", () => startAdjustBox(item));
+    const rem = document.getElementById("mb-teach-remove");
+    if (rem) rem.addEventListener("click", () => removeSelectedFace(item));
+    const vid = document.getElementById("mb-ev-video-el");
+    if (vid && !vid._mbLearnPauseBound) {
+      vid._mbLearnPauseBound = true;
+      vid.addEventListener("pause", () => {
+        if (item.id === state.modal.openId) renderTeachSlot(item);
+      });
+      vid.addEventListener("play", () => {
+        if (item.id === state.modal.openId) renderTeachSlot(item);
+      });
+    }
   }
 
-  async function confirmIdentityCorrection(item) {
+  function applyFaceName(item, name) {
+    const idx = Number(state.modal.selectedFaceIndex) || 0;
+    const faces = Array.isArray(item.faces) ? item.faces : [];
+    if (faces[idx] && typeof faces[idx] === "object") {
+      faces[idx].name = name;
+      faces[idx].display_name = name;
+    }
+    item.face_identity = name;
+    if (item.faces && item.faces.length) item.faces = faces;
+  }
+
+  function removeSelectedFace(item) {
+    const idx = Number(state.modal.selectedFaceIndex) || 0;
+    if (Array.isArray(item.faces) && item.faces.length) {
+      item.faces.splice(idx, 1);
+    } else {
+      item.face_box = null;
+      item.face_identity = "";
+    }
+    state.modal.selectedFaceIndex = 0;
+    const body = document.getElementById("mb-modal-body");
+    if (body) body.innerHTML = renderEvidenceBody(item);
+    bindFaceSelect(item);
+    bindVideoSeek(item);
+    renderTeachSlot(item);
+    const status = document.getElementById("mb-teach-status");
+    if (status) status.textContent = "Face box removed from this frame.";
+  }
+
+  function startAdjustBox(item) {
+    pauseVideoForLearn();
+    const frame =
+      document.getElementById("mb-ev-video-frame") ||
+      document.querySelector(".mb-ev-photo-frame");
+    if (!frame) return;
+    const status = document.getElementById("mb-teach-status");
+    if (status)
+      status.textContent = "Drag on the media to adjust the face box, then release.";
+    let overlay = document.getElementById("mb-box-draw");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "mb-box-draw";
+      overlay.className = "mb-box-draw";
+      frame.appendChild(overlay);
+    }
+    overlay.hidden = false;
+    overlay.style.left = "0";
+    overlay.style.top = "0";
+    overlay.style.width = "0";
+    overlay.style.height = "0";
+    const rect0 = frame.getBoundingClientRect();
+    let x0 = 0;
+    let y0 = 0;
+    const onMove = (ev) => {
+      const r = frame.getBoundingClientRect();
+      const x = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
+      const y = Math.min(Math.max(ev.clientY - r.top, 0), r.height);
+      const l = Math.min(x0, x);
+      const t = Math.min(y0, y);
+      overlay.style.left = (l / r.width) * 100 + "%";
+      overlay.style.top = (t / r.height) * 100 + "%";
+      overlay.style.width = (Math.abs(x - x0) / r.width) * 100 + "%";
+      overlay.style.height = (Math.abs(y - y0) / r.height) * 100 + "%";
+    };
+    const onUp = (ev) => {
+      frame.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const r = frame.getBoundingClientRect();
+      const x = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
+      const y = Math.min(Math.max(ev.clientY - r.top, 0), r.height);
+      const l = Math.min(x0, x) / r.width;
+      const t = Math.min(y0, y) / r.height;
+      const w = Math.abs(x - x0) / r.width;
+      const h = Math.abs(y - y0) / r.height;
+      overlay.hidden = true;
+      if (w < 0.02 || h < 0.02) {
+        if (status) status.textContent = "Box too small — try again.";
+        return;
+      }
+      const box = {
+        x: l,
+        y: t,
+        w,
+        h,
+        x1: l,
+        y1: t,
+        x2: l + w,
+        y2: t + h,
+      };
+      const idx = Number(state.modal.selectedFaceIndex) || 0;
+      if (Array.isArray(item.faces) && item.faces[idx]) {
+        item.faces[idx].face_box = box;
+        item.faces[idx].box = box;
+      } else {
+        item.face_box = box;
+      }
+      const face = faceBoxesForItem(item)[idx];
+      const fid = face && face.faceExternalId;
+      if (fid) {
+        fetch("/review/faces/" + encodeURIComponent(fid), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bbox: box }),
+        }).catch(() => {});
+      }
+      const body = document.getElementById("mb-modal-body");
+      if (body) body.innerHTML = renderEvidenceBody(item);
+      bindFaceSelect(item);
+      bindVideoSeek(item);
+      renderTeachSlot(item);
+      if (status) status.textContent = "Face box updated.";
+    };
+    const onDown = (ev) => {
+      ev.preventDefault();
+      const r = rect0;
+      x0 = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
+      y0 = Math.min(Math.max(ev.clientY - r.top, 0), r.height);
+      frame.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+    frame.addEventListener("mousedown", onDown, { once: true });
+  }
+
+  async function confirmIdentityCorrection(item, action) {
+    const act = action || "assign";
+    if (String(item.type || "").toLowerCase() === "video") pauseVideoForLearn();
     const sel = document.getElementById("mb-teach-person");
-    if (!sel) return;
-    const opt = sel.options[sel.selectedIndex];
-    const personId = sel.value;
+    const opt = sel && sel.options[sel.selectedIndex];
+    const personId = sel ? sel.value : "";
     const personKey = (opt && opt.getAttribute("data-key")) || "";
     const personLabel = (opt && opt.getAttribute("data-label")) || (opt && opt.textContent) || "Person";
     const status = document.getElementById("mb-teach-status");
@@ -2417,24 +2642,33 @@
         ? videoEl.currentTime
         : Number(item.t != null ? item.t : 0);
 
+    if (act === "unassign" || act === "add_unknown") {
+      applyFaceName(item, act === "add_unknown" ? "Unknown" : "");
+    } else {
+      applyFaceName(item, personLabel);
+    }
+
     state.modal.pendingCorrection = {
       itemId: item.id,
-      personId,
-      personLabel,
+      personId: act === "unassign" || act === "add_unknown" ? "" : personId,
+      personLabel: act === "unassign" || act === "add_unknown" ? "Unknown" : personLabel,
       at: Date.now(),
+      action: act,
     };
-    item.face_identity = personLabel;
 
     const livePerson = personId && !String(personId).startsWith("demo:");
-    if (livePerson || (personKey && personKey.startsWith("immich:"))) {
+    const needsPerson = act !== "unassign" && act !== "add_unknown";
+    if (
+      (!needsPerson || livePerson || (personKey && personKey.startsWith("immich:"))) 
+    ) {
       try {
         const res = await fetch("/explore/api/teach-face", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            person_id: livePerson ? personId : null,
-            person_key: personKey || (livePerson ? "mb:" + personId : null),
-            display_name: personLabel,
+            person_id: needsPerson && livePerson ? personId : null,
+            person_key: needsPerson ? personKey || (livePerson ? "mb:" + personId : null) : null,
+            display_name: needsPerson ? personLabel : "Unknown",
             provider_key: item.video_provider_key || item.provider_key || "immich",
             asset_external_id: item.external_id || null,
             video_external_id: item.video_external_id || (t === "video" ? item.external_id : null),
@@ -2443,14 +2677,13 @@
             person_external_id: (face && face.personExternalId) || null,
             face_box: (face && face.box) || item.face_box || null,
             media_type: t === "photo" ? "photo" : "video",
+            action: act,
+            kick_recognition: act === "learn",
           }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || res.statusText);
-        if (status)
-          status.textContent =
-            data.note ||
-            "Taught. Photo mapping is live; video recognition is running in the background.";
+        if (status) status.textContent = data.note || "Saved.";
       } catch (err) {
         if (status)
           status.textContent =
@@ -2460,7 +2693,16 @@
       status.textContent =
         "Identity correction recorded (demo path). Close returns to the same exploration context.";
     }
-    if (current) current.textContent = (face && face.name) || personLabel;
+    if (current)
+      current.textContent =
+        act === "unassign" ? "Unknown" : (face && face.name) || personLabel;
+    renderTeachSlot(item);
+    const body = document.getElementById("mb-modal-body");
+    if (body) {
+      body.innerHTML = renderEvidenceBody(item);
+      bindFaceSelect(item);
+      bindVideoSeek(item);
+    }
   }
 
   function renderEvidenceBody(item) {

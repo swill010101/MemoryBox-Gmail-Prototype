@@ -533,6 +533,8 @@ class ExploreTeachFaceBody(BaseModel):
     person_external_id: str | None = None
     face_box: dict[str, Any] | None = None
     media_type: str = "video"
+    action: str = "assign"
+    kick_recognition: bool | None = None
 
 
 @app.post("/explore/api/teach-face")
@@ -554,6 +556,8 @@ def explore_teach_face(body: ExploreTeachFaceBody) -> dict[str, Any]:
             person_external_id=body.person_external_id,
             face_box=body.face_box,
             media_type=body.media_type,
+            action=body.action,
+            kick_recognition=body.kick_recognition,
         )
     except PersonServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

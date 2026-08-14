@@ -596,6 +596,13 @@ html[data-mb-surface="people"] .mb-explore-density #mb-density-label,
   font-weight: 700;
   color: #c9d4e6;
 }
+.mb-person-fam-av.has-photo,
+.mb-rel-av.has-photo {
+  background-size: cover;
+  background-position: center;
+  color: transparent;
+  font-size: 0;
+}
 .mb-person-fam-label {
   font-size: 0.72rem;
   text-align: center;

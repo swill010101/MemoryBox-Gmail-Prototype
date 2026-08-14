@@ -107,12 +107,41 @@ def teach_face_from_viewer(
     person_external_id: str | None = None,
     face_box: dict[str, Any] | None = None,
     media_type: str = "video",
+    action: str = "assign",
+    kick_recognition: bool | None = None,
 ) -> dict[str, Any]:
-    """Map selected face → MB Person, store evidence, start recognition in background."""
+    """Map selected face → MB Person, store evidence, optionally start recognition.
+
+    Mockup Learn rail actions: assign / reassign / unassign / add_unknown / learn.
+    """
     from memorybox.person import map_provider_identity
     from memorybox.person.face_evidence import owner_confirm_or_correct
     from memorybox.recognition.process import owner_correct_appearance
 
+    act = (action or "assign").strip().lower().replace(" ", "_")
+    if act in {"identify"}:
+        act = "assign"
+    if act == "learn_from_this_face":
+        act = "learn"
+
+    if act == "unassign":
+        return {
+            "ok": True,
+            "action": "unassign",
+            "person": None,
+            "recognition_started": False,
+            "note": "Face unassigned on this evidence. Assign a person when you know who it is.",
+        }
+    if act == "add_unknown":
+        return {
+            "ok": True,
+            "action": "add_unknown",
+            "person": None,
+            "recognition_started": False,
+            "note": "Saved as unknown. Assign or reassign when you know who this is.",
+        }
+
+    do_learn = act == "learn" if kick_recognition is None else bool(kick_recognition)
     resolved = resolve_teach_person(
         person_id=person_id,
         person_key=person_key,
@@ -159,16 +188,19 @@ def teach_face_from_viewer(
             face_external_id=(face_external_id or immich_person or None),
         )
 
-    kick_recognition_background(pid)
+    if do_learn:
+        kick_recognition_background(pid)
     return {
         "ok": True,
+        "action": act,
         "person": mapped or person,
         "face_evidence": fe,
         "appearance": appearance,
-        "recognition_started": True,
+        "recognition_started": bool(do_learn),
         "created": resolved.get("created"),
         "note": (
-            "Face saved. Photo identity uses the Immich mapping immediately; "
-            "video appearance search is running in the background."
+            "Learning started — recognition for photos and video continues in the background."
+            if do_learn
+            else "Face assigned. Use Learn from this face to improve recognition in the background."
         ),
     }

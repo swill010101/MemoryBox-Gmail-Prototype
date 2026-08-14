@@ -69,7 +69,8 @@ def run_p2_i6_acceptance() -> dict:
         "derive_kinship_for_person" in kinship_py
         and "cousin_of" in kinship_py
         and "how_related" in kinship_py
-        and "niece_or_nephew_of" in kinship_py,
+        and "niece_or_nephew_of" in kinship_py
+        and "Spouse's children" in kinship_py,
         checks,
         problems,
         "Kinship derivation module",
@@ -158,6 +159,38 @@ def run_p2_i6_acceptance() -> dict:
             checks,
             problems,
             "how_related(Peggy, Dan) returns path",
+        )
+
+        sue = resolve_person_by_name(
+            f"I6 Sue {uuid4().hex[:6]}", create_if_missing=True, confirm=True
+        )
+        laura = resolve_person_by_name(
+            f"I6 Laura {uuid4().hex[:6]}", create_if_missing=True, confirm=True
+        )
+        assert_relationship(
+            from_person_id=tom.person_id,
+            to_person_id=sue.person_id,
+            role_kind=normalize_ux_role("spouse"),
+        )
+        assert_relationship(
+            from_person_id=sue.person_id,
+            to_person_id=laura.person_id,
+            role_kind=normalize_ux_role("parent"),
+        )
+        bundle_tom = derive_kinship_for_person(tom.person_id)
+        ext_tom = bundle_tom.get("extended") or []
+        derived_child = [
+            h
+            for h in ext_tom
+            if h.get("person_id") == laura.person_id
+            and h.get("role_kind") in ("child_of", "daughter_of", "son_of")
+        ]
+        _check(
+            "i6_derive_spouse_child",
+            bool(derived_child) and "partner of" in str(derived_child[0].get("path_summary") or ""),
+            checks,
+            problems,
+            "Spouse's child is derived (Sue's Laura → Tom's child) with path",
         )
 
         rows = list_relationship_assertions(tom.person_id)

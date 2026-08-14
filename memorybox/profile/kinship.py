@@ -75,7 +75,7 @@ ROLE_DISPLAY: dict[str, str] = {
     ROLE_PARENT_OF: "Parent",
     ROLE_BIOLOGICAL_PARENT_OF: "Parent",
     ROLE_ADOPTIVE_PARENT_OF: "Parent",
-    ROLE_STEP_PARENT_OF: "Parent",
+    ROLE_STEP_PARENT_OF: "Step-parent",
     ROLE_CHILD_OF: "Child",
     ROLE_SON_OF: "Son",
     ROLE_DAUGHTER_OF: "Daughter",
@@ -255,36 +255,39 @@ def _hop(e: _Edge, *, forward: bool = True) -> PathHop:
 
 
 def _path_summary(hops: list[PathHop], names: dict[str, str | None], subject: str) -> str:
+    """Explain hops from the subject's perspective (never 'Tom → parent of Tom')."""
     if not hops:
         return ""
-    parts = [names.get(subject) or subject]
+    cur_id = subject
+    bits = [names.get(subject) or subject]
     for h in hops:
-        rel = ROLE_DISPLAY.get(h.role_kind, h.role_kind.replace("_", " "))
-        # "Peggy → sibling of Tom → parent of Dan"
-        if h.role_kind in PARENT_ROLES or h.role_kind == ROLE_PARENT_OF:
-            parts.append(f"parent of {h.to_display_name or h.to_person_id}")
-        elif h.role_kind in SIBLING_ROLES:
-            parts.append(f"sibling of {h.to_display_name or h.to_person_id}")
-        elif h.role_kind in SPOUSE_ROLES:
-            parts.append(f"spouse/partner of {h.to_display_name or h.to_person_id}")
-        elif h.role_kind in CHILD_ROLES:
-            parts.append(f"child of {h.to_display_name or h.to_person_id}")
+        if h.from_person_id == cur_id:
+            nxt_id = h.to_person_id
+            nxt = h.to_display_name or names.get(nxt_id) or nxt_id
+            role = h.role_kind
+            leaving = True
+        elif h.to_person_id == cur_id:
+            nxt_id = h.from_person_id
+            nxt = h.from_display_name or names.get(nxt_id) or nxt_id
+            role = h.role_kind
+            leaving = False
         else:
-            parts.append(f"{rel.lower()} → {h.to_display_name or h.to_person_id}")
-    # Rebuild cleaner: subject — hop — hop
-    cur = names.get(subject) or subject
-    bits = [cur]
-    for h in hops:
-        nxt = h.to_display_name or names.get(h.to_person_id) or h.to_person_id
-        if h.role_kind in PARENT_ROLES or h.role_kind == ROLE_PARENT_OF:
-            bits.append(f"parent of {nxt}")
-        elif h.role_kind in SIBLING_ROLES:
+            nxt_id = h.to_person_id
+            nxt = h.to_display_name or names.get(nxt_id) or nxt_id
+            role = h.role_kind
+            leaving = True
+        if role in PARENT_ROLES or role == ROLE_PARENT_OF:
+            bits.append(f"parent of {nxt}" if leaving else f"child of {nxt}")
+        elif role in CHILD_ROLES:
+            bits.append(f"child of {nxt}" if leaving else f"parent of {nxt}")
+        elif role in SIBLING_ROLES:
             bits.append(f"sibling of {nxt}")
-        elif h.role_kind in SPOUSE_ROLES:
+        elif role in SPOUSE_ROLES:
             bits.append(f"partner of {nxt}")
         else:
-            lab = ROLE_DISPLAY.get(h.role_kind, h.role_kind).lower()
+            lab = ROLE_DISPLAY.get(role, role).lower()
             bits.append(f"{lab} → {nxt}")
+        cur_id = nxt_id
     return " → ".join(bits)
 
 
@@ -512,6 +515,45 @@ def derive_kinship_for_person(person_id: str) -> dict[str, Any]:
                     [pe.assertion_id, se.assertion_id, sp.assertion_id],
                     name=sp.b_name if sp.b == inlaw else sp.a_name,
                 )
+
+    # Spouse's children who are not already yours → derived children
+    for sp in idx["spouses"].get(sid, []):
+        spouse = sp.b if sp.a == sid else sp.a
+        spouse_name = sp.b_name if sp.a == sid else sp.a_name
+        for ce in idx["children_of"].get(spouse, []):
+            if ce.b == sid:
+                continue
+            hops = [
+                PathHop(sid, spouse, sp.role, None, spouse_name),
+                PathHop(spouse, ce.b, ce.role, spouse_name, ce.b_name),
+            ]
+            add_ext(
+                ce.b,
+                ROLE_CHILD_OF,
+                hops,
+                [sp.assertion_id, ce.assertion_id],
+                name=ce.b_name,
+            )
+
+    # Parent's spouse who is not already a parent → derived parent
+    known_parents = {h.person_id for h in direct if h.group == "parents"}
+    for pe in parent_edges:
+        for sp in idx["spouses"].get(pe.a, []):
+            other = sp.b if sp.a == pe.a else sp.a
+            if other == sid or other in known_parents:
+                continue
+            other_name = sp.b_name if sp.b == other else sp.a_name
+            hops = [
+                PathHop(sid, pe.a, ROLE_CHILD_OF, None, pe.a_name),
+                PathHop(pe.a, other, sp.role, pe.a_name, other_name),
+            ]
+            add_ext(
+                other,
+                ROLE_STEP_PARENT_OF,
+                hops,
+                [pe.assertion_id, sp.assertion_id],
+                name=other_name,
+            )
 
     # Nieces/nephews: children of siblings
     sib_assertion: dict[str, str] = {}

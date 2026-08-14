@@ -940,10 +940,27 @@ body {
   color: #fff;
   cursor: pointer;
 }
-.mb-teach-status {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--mb-muted);
+.mb-teach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.mb-teach-actions .mb-teach-primary {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #fff;
+}
+.mb-teach-actions .mb-teach-danger {
+  border-color: #7f1d1d;
+  color: #fecaca;
+}
+.mb-box-draw {
+  position: absolute;
+  border: 2px dashed #fbbf24;
+  background: rgba(251, 191, 36, 0.18);
+  pointer-events: none;
+  z-index: 5;
 }
 .mb-card-undated-badge {
   position: absolute;
