@@ -1192,6 +1192,18 @@
         dur ? `<span class="mb-card-dur">${dur}</span>` : ""
       }<span class="mb-card-preview">${prev}</span>`;
     }
+    if (t === "audio" || t === "voice") {
+      const dur = it.duration_sec
+        ? `${Math.floor(it.duration_sec / 60)}:${String(
+            Math.floor(it.duration_sec % 60)
+          ).padStart(2, "0")}`
+        : "";
+      return `<div class="mb-card-textbody"><strong>Audio</strong>${
+        prev || escapeHtml(it.title || "Voice")
+      }</div>${
+        dur ? `<span class="mb-card-dur">${dur}</span>` : ""
+      }<span class="mb-card-preview">${prev}</span>`;
+    }
     if (t === "photo" && media) {
       return `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
     }
