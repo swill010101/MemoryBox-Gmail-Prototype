@@ -27,7 +27,8 @@ IN/OUT as definition §§3–4. Explicitly **not** I8 richer email, I9 spoken, I
 - One communication Evidence model; preserve unused columns in source_metadata.  
 - Canonical MB Person IDs; phone/handle is mapping only.  
 - Unavailable ≠ 0.  
-- No new messaging product.
+- No new messaging product.  
+- Default Gallery hides SMS/Text on broad memory asks; “Add texts” / “Only texts” / explicit text asks override. Visibility ≠ exclusion. Query language = **MBQL-001 after I7 ACCEPTED**, not this increment.
 
 ## Discovery
 

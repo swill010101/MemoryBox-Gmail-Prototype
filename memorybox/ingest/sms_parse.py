@@ -107,10 +107,34 @@ class SmsMessage:
 
 
 def sniff_dialect(sample: str) -> csv.Dialect:
+    """Prefer comma CSV. Only sniff when the header is clearly tab/semicolon."""
+    header = (sample.splitlines() or [""])[0]
+    if header.count("\t") > header.count(",") and header.count("\t") >= 2:
+        return csv.excel_tab
+    if header.count(";") > header.count(",") and header.count(";") >= 2:
+        class _Semi(csv.excel):
+            delimiter = ";"
+
+        return _Semi()
+    return csv.excel
+
+
+def _looks_like_filename(raw: str) -> bool:
+    name = Path(raw or "").name.strip()
+    return bool(name) and bool(re.search(r"\.[A-Za-z0-9]{2,5}$", name))
+
+
+def _coord(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
     try:
-        return csv.Sniffer().sniff(sample, delimiters=",\t;")
-    except csv.Error:
-        return csv.excel
+        val = float(text)
+    except ValueError:
+        return ""
+    if not (-180.0 <= val <= 180.0):
+        return ""
+    return text
 
 
 def _pick(raw_norm: dict[str, str], field: str) -> str:
@@ -238,6 +262,8 @@ def iter_sms_rows(
         else:
             direction = _direction(_pick(raw_norm, "direction") or type_val, "")
         attach_raw = _pick(raw_norm, "attachment")
+        if attach_raw and not _looks_like_filename(attach_raw):
+            attach_raw = ""
         attach_type = _pick(raw_norm, "attachment_type")
         thread = _pick(raw_norm, "thread_id")
         sender_handle = _pick(raw_norm, "sender_handle")
@@ -283,8 +309,8 @@ def iter_sms_rows(
             message_id=mid,
             tapback=_pick(raw_norm, "tapback"),
             unsend=_pick(raw_norm, "unsend"),
-            latitude=_pick(raw_norm, "latitude"),
-            longitude=_pick(raw_norm, "longitude"),
+            latitude=_coord(_pick(raw_norm, "latitude")),
+            longitude=_coord(_pick(raw_norm, "longitude")),
             shared_location=_pick(raw_norm, "shared_location"),
             content_hash=digest,
         )

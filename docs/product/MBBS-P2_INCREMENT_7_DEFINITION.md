@@ -242,6 +242,19 @@ Summary EVSs (065 / 118 / 224): short evidence-backed summary **or** cited extra
 
 SMS/text appears as **communication evidence** inside the existing mixed-media product. **Do not redesign I4 Explore.** No new top-level SMS navigation.
 
+**Gallery default (I7 clarification, 2026-08-14):** SMS/Text is first-class evidence after ingest, but it is **not** automatically visible in the default Gallery for broad Person / Event / Trip / ordinary memory queries. High-volume communications stay eligible for retrieve, counts, correlation, summaries, and later narrative even when cards are visually suppressed. Gallery visibility is **not** evidence exclusion.
+
+Explicit communication intent overrides the default (existing Explore refine style — not a query language):
+
+| Ask / refine | Gallery |
+|--------------|---------|
+| “Show me Peggy” | Normal memory Gallery; Text **hidden** by default |
+| “Add texts” | Text **joins** the current Gallery without clearing context |
+| “Only texts” | Text-only Gallery |
+| “Show me all my texts with Peggy” | Text **automatically visible** |
+
+A separate **MBQL-001** specification will follow after I7 ACCEPTED. Do not broaden I7 into that work.
+
 ### 2.J Archive Health honesty
 
 After ingestion:
@@ -362,8 +375,8 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 12. Attachments remain linked / provenance-preserved and are **not** silently promoted to Immich or standalone Explore media.  
 13. Rich source metadata useful for later correlation is preserved (§2.C).  
 14. At least one message demonstrates preserved metadata sufficient for later Place / Event / Trip correlation (§2.D). I7 does **not** infer Alaska (or any trip) to pass.  
-15. SMS appears as communication evidence in Ask / Explore / Person **without a new SMS app**.  
-16. Dated SMS participates in the existing Timeline / Explore model where applicable.  
+15. SMS appears as communication evidence in Ask / Explore / Person **without a new SMS app**. Default Gallery **hides Text** on broad Person/Event/Trip/ordinary memory asks; **Add texts** / **Only texts** / explicit text asks override. Hidden cards are not evidence exclusion.  
+16. Dated SMS participates in the existing Timeline / Explore model **when visible** (explicit text ask, Add texts, Only texts, or Email/Text filter).  
 17. Archive Health reports staged / ingested / unavailable honestly.  
 18. Missing years, missing participants, unavailable source, or unsupported coverage **never** become false zero / completeness.  
 19. Short SMS summaries, if tested, are evidence-backed and underlying messages are reachable.  

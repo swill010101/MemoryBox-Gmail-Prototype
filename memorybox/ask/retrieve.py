@@ -186,6 +186,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = 5000) -> list[EvidenceH
     ]
     # Drop person-name tokens from keyword filter (Person filter handles those)
     keywords = [k for k in keywords if k not in {n.split()[0] for n in person_names} and k not in set(person_names)]
+    # Year tokens belong to the date window, not the body-text keyword filter
+    if windows:
+        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
 
     hits: list[EvidenceHit] = []
     with connection() as conn:

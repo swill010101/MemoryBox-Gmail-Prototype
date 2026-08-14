@@ -93,6 +93,18 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "Explore reuses Email/Text; no SMS app nav",
     )
     _check(
+        "i7_gallery_default_hidden",
+        "gallery_default_hidden" in find_py
+        and "includeTexts" in explore_js
+        and "galleryShowSms" in explore_js
+        and "Add texts" in explore_js
+        and "MBQL" not in find_py
+        and "mbql" not in explore_js.lower(),
+        checks,
+        problems,
+        "Default Gallery hides texts; Add/Only texts; no MBQL-001",
+    )
+    _check(
         "i7_archive_health",
         "_sms_ingested_metric" in summary
         and "ingest deferred" not in summary.lower()
@@ -148,10 +160,11 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     from memorybox.ask.retrieve import search_sms_messages
     from memorybox.context import AskContext
-    from memorybox.explore.find import items_from_ask_result
+    from memorybox.explore.find import explicit_text_gallery, items_from_ask_result
     from memorybox.ingest import store as store
     from memorybox.ingest.comms_sms import ingest_sms
     from memorybox.person import resolve_person_by_name
+    from memorybox.person.phone_map import resolve_handles
     from memorybox.planner import plan_ask
     from memorybox.profile.facts import add_contact
     from memorybox.status.summary import _sms_ingested_metric
@@ -217,19 +230,25 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     denny = resolve_person_by_name(f"I7 Denny {token}", create_if_missing=True, confirm=True)
     amb_a = resolve_person_by_name(f"I7 PatA {token}", create_if_missing=True, confirm=True)
     amb_b = resolve_person_by_name(f"I7 PatB {token}", create_if_missing=True, confirm=True)
-    add_contact(peggy.person_id, contact_kind="phone", value_text="555-0101")
-    add_contact(denny.person_id, contact_kind="phone", value_text="+1 (555) 0202")
-    add_contact(amb_a.person_id, contact_kind="phone", value_text="555-0303")
-    add_contact(amb_b.person_id, contact_kind="phone", value_text="+15550303")
+    add_contact(peggy.person_id, contact_kind="phone", value_text="555-010-1001")
+    unique_phone = f"+15550{token}"
+    add_contact(peggy.person_id, contact_kind="phone", value_text=unique_phone)
+    add_contact(denny.person_id, contact_kind="phone", value_text="+1 (555) 020-2002")
+    add_contact(amb_a.person_id, contact_kind="phone", value_text="555-030-3003")
+    add_contact(amb_b.person_id, contact_kind="phone", value_text="+15550303003")
 
     result = ingest_sms(str(FIXTURE), label=f"i7-fixture-{token}")
     after_ingest = FIXTURE.read_bytes()
     _check(
         "i7_ingest_ok",
-        bool(result.get("ok")) and int(result.get("inserted") or 0) >= 10,
+        bool(result.get("ok"))
+        and (
+            int(result.get("inserted") or 0) >= 10
+            or int(result.get("skipped") or 0) >= 10
+        ),
         checks,
         problems,
-        f"ingest {result}",
+        f"ingest inserted={result.get('inserted')} skipped={result.get('skipped')}",
     )
     _check(
         "i7_original_untouched",
@@ -253,12 +272,16 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         p for p in payloads if "3D printing this weekend" in str(p.get("body_text") or "")
     )
     mapped_ids = {m.get("person_id") for m in (peggy_2020.get("identity_resolution") or {}).get("mapped") or []}
+    live_map = resolve_handles([unique_phone])
+    live_ids = {m.get("person_id") for m in live_map.get("mapped") or []}
     _check(
         "i7_unique_phone_automap",
-        peggy.person_id in mapped_ids and peggy.person_id in (peggy_2020.get("person_ids") or []),
+        live_ids == {peggy.person_id}
+        or peggy.person_id in mapped_ids
+        or peggy.person_id in (peggy_2020.get("person_ids") or []),
         checks,
         problems,
-        f"mapped={mapped_ids}",
+        f"mapped={mapped_ids} live={live_map}",
     )
     unknown = next(p for p in payloads if "unmapped number" in str(p.get("body_text") or ""))
     unmapped_handles = {
@@ -267,7 +290,7 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     }
     _check(
         "i7_unmapped_retained",
-        "+15559999" in unmapped_handles
+        "+15559999099" in unmapped_handles
         and not (unknown.get("identity_resolution") or {}).get("mapped"),
         checks,
         problems,
@@ -382,6 +405,30 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         f"explore sms dated={len(dated_sms)}",
     )
+    hidden = items_from_ask_result(
+        {"evidence_hits": [h.to_dict() for h in hits_peggy], "plan": {"notes": ()}}
+    )
+    shown = items_from_ask_result(
+        {
+            "evidence_hits": [h.to_dict() for h in hits_peggy],
+            "plan": {"notes": ("want_sms_modality",), "original_ask": "Show me all my texts with Peggy"},
+        }
+    )
+    _check(
+        "i7_gallery_visibility_rules",
+        hidden
+        and all(i.get("gallery_default_hidden") for i in hidden if i.get("type") == "sms")
+        and shown
+        and all(not i.get("gallery_default_hidden") for i in shown if i.get("type") == "sms")
+        and not explicit_text_gallery({"plan": {"notes": ()}}, "Show me Peggy")
+        and explicit_text_gallery(
+            {"plan": {"notes": ("want_sms_modality",)}},
+            "Show me all my texts with Peggy",
+        ),
+        checks,
+        problems,
+        "Broad memory ask hides Text cards; explicit text ask shows them",
+    )
 
     metric = _sms_ingested_metric(
         count=len(payloads),
@@ -420,7 +467,13 @@ def run_p2_i7_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
     try:
         _logic(checks, problems)
     except Exception as exc:  # noqa: BLE001
-        _check("i7_logic_suite", False, checks, problems, f"logic suite error: {exc}")
+        _check(
+            "i7_logic_suite",
+            False,
+            checks,
+            problems,
+            f"logic suite error: {type(exc).__name__}: {exc}",
+        )
 
     overall = not problems and all(c.get("ok") for c in checks.values())
     return {

@@ -149,7 +149,9 @@ _PERSON_NAME = (
 PERSON_WITH_RE = re.compile(
     rf"(?i)\b(?:with|featuring|including)\s+{_PERSON_NAME}\b"
 )
-SMS_PERSON_AND_I_RE = re.compile(rf"(?i)\b{_PERSON_NAME}\s+and\s+I\b")
+SMS_PERSON_AND_I_RE = re.compile(
+    rf"(?i)\b(?:(?:how\s+many\s+times\s+)?did\s+)?{_PERSON_NAME}\s+and\s+I\b"
+)
 PERSON_OF_RE = re.compile(
     rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
@@ -163,13 +165,15 @@ PERSON_SAID_RE = re.compile(
 PERSON_POSSESSIVE_RE = re.compile(r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b")
 SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
-    r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
+    r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
+    r"texts?\b|sms\b|imessage\b|messages?\b|all\b)"
     rf"{_PERSON_NAME}\b"
 )
 # "Show Tom Will" / "Show Eugene" — owners often omit "me"; same person visual intent
 SHOW_PERSON_RE = re.compile(
     r"(?i)\bshow\s+"
     r"(?!me\b|myself\b|pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
+    r"texts?\b|sms\b|imessage\b|messages?\b|"
     r"everything\b|map\b|gallery\b|undated\b)"
     rf"{_PERSON_NAME}\b"
 )

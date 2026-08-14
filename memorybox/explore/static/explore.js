@@ -64,6 +64,7 @@
 
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
+  // "Add texts." "Only texts." — I7: texts join / text-only; default Gallery hides SMS
   // "Show 2005 through 2011." "Only Oak Street." "Near Cascadia."
   // "Clear location." "Show map." "Show gallery."
   // "Clear context and go to People."
@@ -245,7 +246,26 @@
     );
   }
 
-  function matchesType(item, filter) {
+  function isSmsTextItem(item) {
+    const t = String((item && item.type) || "").toLowerCase();
+    return t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs";
+  }
+
+  function matchesType(item, filter, opts) {
+    const d = (opts && opts.domain) || (state && state.domain) || {};
+    const includeTexts = Boolean(
+      (opts && opts.includeTexts) ||
+        d.includeTexts ||
+        d.galleryShowSms ||
+        filter === "email"
+    );
+    if (isSmsTextItem(item)) {
+      if (!includeTexts) return false;
+      if (!filter || filter === "all" || filter === "email") return true;
+      // "Add texts" joins the current Gallery (e.g. photos + texts) without
+      // clearing person/event/trip context or flipping to a full All mix.
+      return true;
+    }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
       // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
@@ -825,10 +845,15 @@
       placeFilter = null;
     }
     let nextType = typeFilter;
+    const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
+    const includeTexts = keepPresentation && state
+      ? Boolean(state.domain.includeTexts || galleryShowSms)
+      : galleryShowSms;
     if (!keepPresentation) {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
       else if (vs === "video_only") nextType = "video";
+      else if (galleryShowSms) nextType = "all";
       else nextType = "all";
     }
     let temporalWindows = null;
@@ -850,7 +875,10 @@
       rawItems.filter(
         (it) =>
           isDated(it) &&
-          matchesType(it, nextType) &&
+          matchesType(it, nextType, {
+            includeTexts,
+            domain: { includeTexts, galleryShowSms, typeFilter: nextType },
+          }) &&
           matchesPlace(it, placeFilter)
       )
     );
@@ -882,6 +910,8 @@
         _askKind: payload.answer_kind || "",
         chips: chips,
         typeFilter: nextType,
+        includeTexts: includeTexts,
+        galleryShowSms: galleryShowSms,
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
@@ -994,11 +1024,21 @@
       }
     }
 
-    if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
+    if (/^clear filters\.?$/.test(lower)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
       setViewMode("gallery");
+      state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      render();
+      return;
+    }
+    if (/^show everything\.?$/.test(lower)) {
+      setTypeFilter("all");
+      clearPlaceFilter();
+      setUndatedFilter(false);
+      setViewMode("gallery");
+      state.domain.includeTexts = true;
       render();
       return;
     }
@@ -1046,6 +1086,7 @@
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
+      state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
       state.domain.temporalWindows = null;
       resetTimelineExtent(false);
       setViewMode("gallery");
@@ -1112,7 +1153,17 @@
       render();
       return;
     }
-    if (/only (email|emails|text)/.test(lower)) {
+    if (
+      /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$/.test(lower) ||
+      /^add texts?\.?$/.test(lower)
+    ) {
+      state.domain.includeTexts = true;
+      syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (/only (email|emails|texts?|sms|imessage)\b/.test(lower)) {
+      state.domain.includeTexts = true;
       setTypeFilter("email");
       render();
       return;
