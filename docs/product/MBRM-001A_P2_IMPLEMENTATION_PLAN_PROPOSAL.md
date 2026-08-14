@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I3 ACCEPTED; I4 build authorized separately).
+**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6 **ACCEPTED**; I4 build authorized / not ACCEPTED; I7 definition drafted — **no build** until authorized).
 
 ## 0. First-increment verdict (confirmed)
 
@@ -85,9 +85,9 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I2** | Product Shell & Context Maturation | U | **ACCEPTED** (2026-08-13) |
 | **P2-I3** | Archive Health & Provider Honesty | U+A | **ACCEPTED** (2026-08-13) |
 | **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **BUILD AUTHORIZED** / not ACCEPTED — [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md); UX: MBUX-001 v0.4 §22; caps: MBCAP CAP-P2-001/025/026 |
-| **P2-I5** | Universal Person Surfaces | F+U | Rest of TASK-001 |
-| **P2-I6** | Kinship Inference | A | TASK-002 |
-| **P2-I7** | SMS/Text Evidence | A | |
+| **P2-I5** | Universal Person Surfaces | F+U | **ACCEPTED** (2026-08-14) — rest of TASK-001 |
+| **P2-I6** | Kinship Inference | A | **ACCEPTED** (2026-08-14) — TASK-002 |
+| **P2-I7** | SMS/Text Evidence | A | **DRAFT** — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); **no build** until authorized |
 | **P2-I8** | Richer Email | A | |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -149,11 +149,11 @@ Remainder of TASK-001 across Story/Journal/Library/Artifact/etc.
 
 ### P2-I6 — Kinship Inference · A
 
-P2-GRAPH-01; TASK-002. Disclosed inference; no tree viz.
+P2-GRAPH-01; TASK-002. Disclosed inference; no tree viz. **ACCEPTED** 2026-08-14 — [I6 definition](MBBS-P2_INCREMENT_6_DEFINITION.md).
 
 ### P2-I7 — SMS/Text Evidence · A
 
-P2-COM-01.
+P2-COM-01 · CAP-P2-018. **Definition draft for review — no build.** [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md).
 
 ### P2-I8 — Richer Email · A
 
