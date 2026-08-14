@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -40,7 +41,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     orch = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
     app_py = (root / "app.py").read_text(encoding="utf-8")
     shell_js = (root / "shell" / "static" / "shell.js").read_text(encoding="utf-8")
+    shell_css = (root / "shell" / "static" / "shell.css").read_text(encoding="utf-8")
     sms_attach = (root / "explore" / "sms_attach.py").read_text(encoding="utf-8")
+    ask_hist = (root / "ask" / "history.py").read_text(encoding="utf-8")
 
     _check(
         "i7_parser_header_driven",
@@ -145,7 +148,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "gallery_show_sms" in explore_js
         and "setTypeFilter(\"all\")" not in explore_js.split("liveFind(text)")[-1][:400]
         and "maybeMergePersonVisuals" in explore_js
-        and "gallery_default_hidden && !includeTexts" in explore_js,
+        and "gallery_default_hidden && !includeTexts" in explore_js
+        and "keepTexts" in explore_js,
         checks,
         problems,
         "Explicit text ask selects Email/Text; All keeps texts and can join photos",
@@ -156,7 +160,10 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and ".mb-card-textbody" in explore_css
         and "#e8edf5" in explore_css
         and 'html[data-mb-surface="explore"] .mb-explore-filters button' in explore_css
-        and 'background: #f8fafc' not in explore_css.split(".mb-card-media[data-type=\"sms\"]")[1][:200],
+        and 'background: #f8fafc' not in explore_css.split(".mb-card-media[data-type=\"sms\"]")[1][:200]
+        and 'html[data-mb-surface="explore"]' in shell_css
+        and "section:not([class*=\"mb-explore\"])" in shell_css
+        and "body.mb-shell .mb-explore-filters button" in shell_css,
         checks,
         problems,
         "Explore dark theme; SMS card text is light on dark",
@@ -198,7 +205,11 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "slice(0, 100)" in shell_js
         and "ArrowUp" in shell_js
         and "localStorage" in shell_js
-        and "bindAskHistory" in explore_js,
+        and "bindAskHistory" in explore_js
+        and "hydrateAskHistory" in shell_js
+        and "/ask/api/history" in shell_js
+        and "HISTORY_MAX = 100" in ask_hist
+        and "/ask/api/history" in app_py,
         checks,
         problems,
         "Last 100 asks persist in localStorage; Up/Down in all Ask fields",
@@ -209,7 +220,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "to-library" in app_py
         and "add_sms_attachment_to_mb_library" in sms_attach
         and "add_mb_managed_representation" in sms_attach
-        and "Never writes Immich" in sms_attach,
+        and "Never writes Immich" in sms_attach
+        and "_dir_candidates" in sms_attach,
         checks,
         problems,
         "View SMS attachment; add to MB Artifact store; no Immich write",
@@ -575,6 +587,34 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         "ingested has a count; unavailable is not 0",
     )
+
+    from memorybox.ask import history as ask_history
+
+    hist_path = FIXTURE.parent / "ask_history_test.json"
+    prev = os.environ.get("MEMORYBOX_ASK_HISTORY_PATH")
+    os.environ["MEMORYBOX_ASK_HISTORY_PATH"] = str(hist_path)
+    try:
+        if hist_path.exists():
+            hist_path.unlink()
+        ask_history.remember_ask("show me texts with Peggy")
+        ask_history.remember_ask("show me Peggy George")
+        stored = ask_history.read_asks()
+        _check(
+            "i7_ask_history_persist",
+            stored[:2] == ["show me Peggy George", "show me texts with Peggy"]
+            and hist_path.is_file(),
+            checks,
+            problems,
+            f"asks={stored}",
+        )
+    finally:
+        if prev is None:
+            os.environ.pop("MEMORYBOX_ASK_HISTORY_PATH", None)
+        else:
+            os.environ["MEMORYBOX_ASK_HISTORY_PATH"] = prev
+        if hist_path.exists():
+            hist_path.unlink()
+
 
 
 def run_p2_i7_acceptance(*, flightsim: bool = False) -> dict[str, Any]:

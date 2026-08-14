@@ -370,17 +370,17 @@ body {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.38rem 0.75rem;
-  border: 1px solid var(--mb-line);
-  background: #141b27;
-  color: var(--mb-ink);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: #1a2230 !important;
+  color: #e8edf5 !important;
   border-radius: 999px;
   cursor: pointer;
 }
 
 .mb-explore-filters button[aria-pressed="true"] {
-  background: var(--mb-blue);
-  color: #fff;
-  border-color: var(--mb-blue);
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border-color: #3b82f6 !important;
 }
 
 .mb-explore-toolbar-right {

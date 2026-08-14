@@ -45,6 +45,9 @@ def _attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _search_roots() -> list[Path]:
     roots: list[Path] = []
+    extra = (os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR") or "").strip()
+    if extra:
+        roots.append(Path(extra))
     export = default_sms_export_path()
     if export is not None:
         roots.append(export.parent)
@@ -61,6 +64,33 @@ def _search_roots() -> list[Path]:
         seen.add(key)
         out.append(r)
     return out
+
+
+def _dir_candidates(root: Path, name: str) -> list[Path]:
+    hits = [
+        root / name,
+        root / "attachments" / name,
+        root / "Attachments" / name,
+        root / "SMS Attachments" / name,
+    ]
+    try:
+        if not root.is_dir():
+            return hits
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            hits.append(child / name)
+            hits.append(child / "attachments" / name)
+            hits.append(child / "Attachments" / name)
+            try:
+                for grand in child.iterdir():
+                    if grand.is_dir():
+                        hits.append(grand / name)
+            except OSError:
+                continue
+    except OSError:
+        return hits
+    return hits
 
 
 def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
@@ -80,19 +110,7 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
                 continue
         except OSError:
             continue
-        candidates = [
-            root / name,
-            root / "attachments" / name,
-            root / "Attachments" / name,
-        ]
-        if root.is_dir():
-            try:
-                for child in root.iterdir():
-                    if child.is_dir():
-                        candidates.append(child / name)
-            except OSError:
-                pass
-        for hit in candidates:
+        for hit in _dir_candidates(root, name):
             try:
                 if hit.is_file():
                     return hit

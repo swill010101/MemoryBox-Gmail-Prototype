@@ -17,6 +17,51 @@
 
 html { scroll-behavior: smooth; }
 
+/* Explore / People are dark canvases. shell :root --mb-ink (#141816) and
+   --mb-paper (#eef1ef) would otherwise paint near-black filter labels and
+   white <section> panels (ask / curator / timeline) on a dark page. */
+html[data-mb-surface="explore"],
+html[data-mb-surface="people"] {
+  --mb-ink: #e8edf5;
+  --mb-ink-soft: #b7c0d0;
+  --mb-paper: #141b27;
+  --mb-paper-deep: #1a2230;
+  --mb-mist: #9aa3b5;
+  --mb-voice: #c5d0e0;
+}
+
+html[data-mb-surface="explore"] section.mb-explore-ask-band,
+html[data-mb-surface="explore"] section.mb-explore-curator,
+html[data-mb-surface="explore"] section.mb-explore-timeline,
+html[data-mb-surface="people"] section.mb-explore-ask-band,
+html[data-mb-surface="people"] section.mb-explore-curator,
+html[data-mb-surface="people"] section.mb-explore-timeline,
+html[data-mb-surface="people"] section.mb-person-header,
+html[data-mb-surface="people"] section.mb-person-footer,
+body.mb-shell section.mb-explore-ask-band,
+body.mb-shell section.mb-explore-curator,
+body.mb-shell section.mb-explore-timeline {
+  background: #141b27 !important;
+  color: #e8edf5 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-mb-surface="explore"] .mb-explore-filters button,
+html[data-mb-surface="people"] .mb-explore-filters button,
+body.mb-shell .mb-explore-filters button {
+  background: #1a2230 !important;
+  color: #e8edf5 !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+}
+
+html[data-mb-surface="explore"] .mb-explore-filters button[aria-pressed="true"],
+html[data-mb-surface="people"] .mb-explore-filters button[aria-pressed="true"],
+body.mb-shell .mb-explore-filters button[aria-pressed="true"] {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border-color: #3b82f6 !important;
+}
+
 body.mb-shell {
   margin: 0;
   min-height: 100vh;
@@ -289,7 +334,7 @@ body.mb-shell main > h1:first-child {
 
 body.mb-shell .sub { color: var(--mb-mist) !important; }
 
-body.mb-shell section,
+body.mb-shell section:not([class*="mb-explore"]):not([class*="mb-person"]):not(.ask-section),
 body.mb-shell .card,
 body.mb-shell .panel {
   background: var(--mb-paper) !important;

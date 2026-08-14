@@ -27,6 +27,48 @@
   const ACTIVE_PERSON_KEY = "mb_active_person";
   const ACTIVE_ASK_KEY = "mb_active_ask";
 
+  function readRecent() {
+    try {
+      const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      return Array.isArray(list)
+        ? list.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 100)
+        : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeRecent(list) {
+    const uniq = [];
+    const seen = {};
+    (list || []).forEach((item) => {
+      const t = String(item || "").trim();
+      if (!t || seen[t]) return;
+      seen[t] = 1;
+      uniq.push(t);
+    });
+    const out = uniq.slice(0, 100);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(out));
+    } catch (_) {}
+    return out;
+  }
+
+  function hydrateAskHistory() {
+    fetch("/ask/api/history")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
+      })
+      .catch(() => {});
+  }
+
+  function bindAllAskInputs() {
+    document
+      .querySelectorAll("#mb-explore-ask, #askInput, #mb-global-ask-input")
+      .forEach((el) => window.mbShell.bindAskHistory(el));
+  }
+
   function surface() {
     return (
       document.documentElement.getAttribute("data-mb-surface") ||
@@ -151,20 +193,20 @@
     rememberAsk(text) {
       const t = (text || "").trim();
       if (!t) return;
-      let recent = [];
-      try {
-        recent = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-      } catch (_) {}
-      recent = [t].concat(recent.filter((x) => x !== t)).slice(0, 100);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+      writeRecent([t].concat(readRecent().filter((x) => x !== t)));
+      fetch("/ask/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
+        })
+        .catch(() => {});
     },
     recentAsks() {
-      try {
-        const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-        return Array.isArray(list) ? list.filter((x) => String(x || "").trim()).slice(0, 100) : [];
-      } catch (_) {
-        return [];
-      }
+      return readRecent();
     },
     bindAskHistory(input) {
       if (!input || input.dataset.mbAskHistory === "1") return;
@@ -388,6 +430,8 @@
     injectChrome();
     renderReturnBar();
     wireOutboundContext();
+    hydrateAskHistory();
+    bindAllAskInputs();
   }
 
   if (document.readyState === "loading") {

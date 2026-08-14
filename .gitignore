@@ -1,4 +1,5 @@
 ﻿# Derived / private runtime data (never sync via git)
+.memorybox_ask_history.json
 working/
 attachments/
 database/

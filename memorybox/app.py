@@ -178,6 +178,10 @@ class AskRequest(BaseModel):
     session_id: str | None = None
 
 
+class AskHistoryRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
 class ContextChangeRequest(BaseModel):
     person_names: list[str] | None = None
     place_names: list[str] | None = None
@@ -887,6 +891,21 @@ def library_video_poster(
 def ask_endpoint(body: AskRequest) -> dict[str, Any]:
     result = get_orchestrator().ask(body.ask, session_id=body.session_id)
     return result.to_dict()
+
+
+@app.get("/ask/api/history")
+def ask_history_get() -> dict[str, Any]:
+    """Last 100 asks on this machine. Survives serve shutdown."""
+    from memorybox.ask.history import read_asks
+
+    return {"ok": True, "asks": read_asks()}
+
+
+@app.post("/ask/api/history")
+def ask_history_post(body: AskHistoryRequest) -> dict[str, Any]:
+    from memorybox.ask.history import remember_ask
+
+    return {"ok": True, "asks": remember_ask(body.text)}
 
 
 @app.get("/ask/context/{session_id}")

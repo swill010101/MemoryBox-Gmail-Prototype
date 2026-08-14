@@ -261,8 +261,9 @@
     );
     if (isSmsTextItem(item)) {
       if (filter === "email") return true;
-      // All = every item already in this result set, including texts.
-      // Hidden-by-default SMS stay out of All until Add texts / explicit ask.
+      // All = every type already in this result, including texts that are
+      // on-screen or explicitly requested. Hidden-by-default SMS stay out
+      // until Add texts / an explicit text ask — never empty a text result.
       if (!filter || filter === "all") {
         if (item.gallery_default_hidden && !includeTexts) return false;
         return true;
@@ -545,13 +546,21 @@
   }
 
   function setTypeFilter(id) {
+    const prev = state.domain.typeFilter;
+    const keepTexts = Boolean(
+      prev === "email" ||
+        id === "email" ||
+        state.domain.galleryShowSms ||
+        state.domain.includeTexts ||
+        rawItems.some((it) => isSmsTextItem(it) && !it.gallery_default_hidden)
+    );
     state.domain.typeFilter = id || "all";
-    if (id === "email") state.domain.includeTexts = true;
-    // All keeps texts already in the result and can join photos for the same Person.
-    if (id === "all" && (state.domain.galleryShowSms || state.domain.includeTexts)) {
+    if (id === "email" || (id === "all" && keepTexts)) {
       state.domain.includeTexts = true;
-      maybeMergePersonVisuals();
     }
+    // All stays clickable and keeps texts; merge Person photos/videos in
+    // without replacing the current text result (no Immich write).
+    if (id === "all") maybeMergePersonVisuals();
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -2509,6 +2518,14 @@
   function bindSmsAttachActions(item) {
     const eid = item && item.evidence_id;
     if (!eid) return;
+    document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
+      img.addEventListener("error", () => {
+        const box = img.parentElement;
+        if (!box) return;
+        box.innerHTML =
+          "<p>Could not load this file from the SMS export folder. It stays linked to the message. Add to MemoryBox library needs the file on this machine.</p>";
+      });
+    });
     document.querySelectorAll(".mb-sms-to-library").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const idx = Number(btn.getAttribute("data-att-index") || 0);
@@ -2587,23 +2604,23 @@
         </div>
       </div>`;
     }
-    if (t === "email" || t === "sms" || t === "text") {
+    if (t === "email" || isSmsTextItem(item)) {
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
       const eid = escapeAttr(item.evidence_id || "");
       const attHtml = atts.length
         ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
             atts.length === 1 ? "" : "s"
-          }</strong> — linked to this message. Preview below. Add copies into MemoryBox (not Immich).<ul>${atts
+          }</strong> — linked to this message. Preview below. Add a copy into the MemoryBox library (Artifacts). Does not write to Immich.<ul>${atts
             .map((a, i) => {
               const name = escapeHtml(a.filename || a.source_ref || "attachment");
               const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
               const src = `/explore/api/sms-attachment/${eid}?index=${i}`;
-              const isImg = /image|jpe?g|png|gif|heic|webp/i.test(
+              const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
                 String(a.attachment_type || a.filename || "")
               );
               const preview = isImg
-                ? `<div class="mb-ev-attach-preview"><img src="${escapeAttr(
+                ? `<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="${escapeAttr(
                     src
                   )}" alt="${name}" /></div>`
                 : `<p><a class="mb-viewer-footbtn" href="${escapeAttr(
@@ -2645,7 +2662,7 @@
     const media = item.thumb_url || item.media_url || "";
     const peeps = peopleList(item).slice(0, 4).join(", ");
     const place = item.place || item.location || item.city || "";
-    const isText = t === "email" || t === "sms" || t === "text";
+    const isText = t === "email" || isSmsTextItem(item);
     const body = String(item.detail || item.preview || item.title || "");
     const nAtt = Array.isArray(item.attachments) ? item.attachments.length : Number(item.attachment_count || 0);
     const dur =
