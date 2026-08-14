@@ -47,6 +47,13 @@ from memorybox.profile.relationships import (
     supersede_relationship,
     withdraw_relationship,
 )
+from memorybox.profile.kinship import (
+    derive_kinship_for_person,
+    how_related,
+    normalize_ux_role,
+    relatives_of_kind,
+    relationship_history,
+)
 
 __all__ = [
     "ALLOWED_ROLES",
@@ -61,6 +68,7 @@ __all__ = [
     "add_fact",
     "assert_relationship",
     "create_marriage_event",
+    "derive_kinship_for_person",
     "ensure_person_named",
     "ensure_default_owner_session",
     "find_marriage_between",
@@ -69,13 +77,17 @@ __all__ = [
     "get_life_event",
     "get_owner_person_id",
     "get_person_profile",
+    "how_related",
     "list_aliases",
     "list_contacts",
     "list_facts",
     "list_life_events_for_person",
     "list_relationship_assertions",
+    "normalize_ux_role",
     "owner_config_status",
     "project_derived_edges",
+    "relatives_of_kind",
+    "relationship_history",
     "require_owner_person_id",
     "set_current_person_id",
     "set_owner_person_id",

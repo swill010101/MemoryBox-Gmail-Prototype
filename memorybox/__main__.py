@@ -189,6 +189,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Reserved for FlightSim manual gate (structural harness today)",
     )
+    p_prove_p2i6 = sub.add_parser(
+        "prove-p2-i6",
+        help="P2-I6 Relationship Graph & Derived Kinship acceptance prove",
+    )
+    p_prove_p2i6.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Reserved for FlightSim manual gate (structural+logic harness today)",
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -395,6 +404,17 @@ def main(argv: list[str] | None = None) -> int:
 
         payload = run_p2_i5_acceptance()
         # Normalize to {ok: bool} for CLI
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i6":
+        from memorybox.person.p2_i6_acceptance import run_p2_i6_acceptance
+
+        payload = run_p2_i6_acceptance()
         out = {
             "ok": bool(payload.get("overall_ok")),
             **payload,

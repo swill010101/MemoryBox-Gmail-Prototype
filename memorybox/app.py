@@ -1767,15 +1767,53 @@ def people_add_contact(person_id: str, body: ProfileContactBody) -> dict[str, An
     return {"ok": True, "contact": contact.to_dict()}
 
 
-@app.post("/people/relationships")
-def people_assert_relationship(body: ProfileRelationshipBody) -> dict[str, Any]:
-    from memorybox.profile import ProfileServiceError, assert_relationship
+@app.get("/people/{person_id}/relationships")
+def people_relationships_bundle(person_id: str) -> dict[str, Any]:
+    """I6: Direct groups + extended derived kinship + history for Person modal."""
+    from memorybox.person import get_person
+    from memorybox.profile import (
+        ProfileServiceError,
+        derive_kinship_for_person,
+        relationship_history,
+    )
+
+    view = get_person(person_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="person not found")
+    try:
+        bundle = derive_kinship_for_person(person_id)
+        hist = relationship_history(person_id)
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "person": view.to_dict(),
+        **bundle,
+        "history": hist,
+    }
+
+
+@app.get("/people/relationships/how-related")
+def people_how_related(a: str, b: str) -> dict[str, Any]:
+    """I6: How is person A related to person B (shortest supported path)."""
+    from memorybox.profile import ProfileServiceError, how_related
 
     try:
+        return how_related(a, b)
+    except ProfileServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/people/relationships")
+def people_assert_relationship(body: ProfileRelationshipBody) -> dict[str, Any]:
+    from memorybox.profile import ProfileServiceError, assert_relationship, normalize_ux_role
+
+    try:
+        role = normalize_ux_role(body.role_kind)
         rel = assert_relationship(
             from_person_id=body.from_person_id,
             to_person_id=body.to_person_id,
-            role_kind=body.role_kind,
+            role_kind=role,
             note=body.note,
         )
     except ProfileServiceError as exc:
@@ -1798,14 +1836,14 @@ def people_withdraw_relationship(assertion_id: str, note: str | None = None) -> 
 def people_supersede_relationship(
     assertion_id: str, body: ProfileSupersedeRelBody
 ) -> dict[str, Any]:
-    from memorybox.profile import ProfileServiceError, supersede_relationship
+    from memorybox.profile import ProfileServiceError, normalize_ux_role, supersede_relationship
 
     try:
         rel = supersede_relationship(
             assertion_id,
             from_person_id=body.from_person_id,
             to_person_id=body.to_person_id,
-            role_kind=body.role_kind,
+            role_kind=normalize_ux_role(body.role_kind),
             note=body.note,
         )
     except ProfileServiceError as exc:

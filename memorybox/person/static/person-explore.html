@@ -156,6 +156,71 @@
     </div>
   </div>
 
+  <!-- P2-I6 Relationships modal over Person (not a new shell) -->
+  <div class="mb-rel-modal" id="mb-rel-modal" hidden>
+    <div class="mb-rel-dialog" role="dialog" aria-modal="true" aria-labelledby="mb-rel-title">
+      <header class="mb-rel-head">
+        <h2 id="mb-rel-title">Relationships</h2>
+        <button type="button" class="mb-rel-close" id="mb-rel-close" aria-label="Close">✕</button>
+      </header>
+      <div class="mb-rel-tabs" role="tablist">
+        <button type="button" class="mb-rel-tab is-active" data-rel-tab="direct" id="mb-rel-tab-direct" aria-selected="true">Direct Relationships</button>
+        <button type="button" class="mb-rel-tab" data-rel-tab="extended" id="mb-rel-tab-extended" aria-selected="false">Extended (Derived) <span id="mb-rel-ext-count">0</span></button>
+      </div>
+      <div class="mb-rel-toolbar">
+        <button type="button" class="mb-rel-add" id="mb-rel-add">+ Add Relationship</button>
+      </div>
+      <div class="mb-rel-body" id="mb-rel-body"></div>
+      <aside class="mb-rel-about" id="mb-rel-about">
+        <h3>About relationships</h3>
+        <p>Direct relationships are ones you teach MemoryBox. Extended kinship is derived from those facts and stays labeled Derived.</p>
+      </aside>
+      <footer class="mb-rel-foot">
+        <button type="button" class="mb-rel-close-btn" id="mb-rel-close-btn">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Add / Edit relationship sheet -->
+  <div class="mb-rel-sheet" id="mb-rel-sheet" hidden>
+    <div class="mb-rel-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mb-rel-sheet-title">
+      <h3 id="mb-rel-sheet-title">Add Relationship</h3>
+      <label class="mb-rel-field">
+        <span>Person</span>
+        <input type="text" id="mb-rel-person-q" list="mb-rel-people-list" placeholder="Search people…" autocomplete="off" />
+        <datalist id="mb-rel-people-list"></datalist>
+        <input type="hidden" id="mb-rel-person-id" />
+      </label>
+      <label class="mb-rel-field">
+        <span>Relationship to <span data-person-first>them</span></span>
+        <select id="mb-rel-role">
+          <option value="mother">Mother</option>
+          <option value="father">Father</option>
+          <option value="parent">Parent</option>
+          <option value="son">Son</option>
+          <option value="daughter">Daughter</option>
+          <option value="child">Child</option>
+          <option value="brother">Brother</option>
+          <option value="sister">Sister</option>
+          <option value="sibling">Sibling</option>
+          <option value="husband">Husband</option>
+          <option value="wife">Wife</option>
+          <option value="spouse">Spouse</option>
+          <option value="partner">Partner</option>
+        </select>
+      </label>
+      <label class="mb-rel-field">
+        <span>Note (optional)</span>
+        <input type="text" id="mb-rel-note" placeholder="Optional note" />
+      </label>
+      <p class="mb-rel-sheet-err" id="mb-rel-sheet-err" hidden></p>
+      <div class="mb-rel-sheet-actions">
+        <button type="button" class="mb-rel-sheet-cancel" id="mb-rel-sheet-cancel">Cancel</button>
+        <button type="button" class="mb-rel-sheet-save" id="mb-rel-sheet-save">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="mb-modal-backdrop" id="mb-modal" hidden>
     <div class="mb-viewer" role="dialog" aria-modal="true" aria-labelledby="mb-modal-title">
       <header class="mb-viewer-chrome">
@@ -210,6 +275,7 @@
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
   <script src="/static/explore/explore.js"></script>
   <script src="/static/person/person-explore.js"></script>
+  <script src="/static/person/person-relationships.js"></script>
   <!-- Load dark overrides AFTER shell inject (shell.css is inserted before </head>) -->
   <link rel="stylesheet" href="/static/person/person-explore.css" />
 </body>
