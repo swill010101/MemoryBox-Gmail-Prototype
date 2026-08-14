@@ -135,7 +135,8 @@ def run_p2_i5_acceptance() -> dict:
         "peopleHref" in shell_js
         and "setActivePerson" in shell_js
         and "mb_active_person" in shell_js
-        and "syncActivePersonContext" in explore_js,
+        and "syncActivePersonContext" in explore_js
+        and "(PERSON && PERSON.personId)" in explore_js,
         checks,
         problems,
         "shell People nav continues active person",

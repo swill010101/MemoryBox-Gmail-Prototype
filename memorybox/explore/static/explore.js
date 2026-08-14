@@ -993,13 +993,20 @@
       }
       return;
     }
-    let id = chip.personId || PERSON.personId || "";
+    let id =
+      chip.personId ||
+      (PERSON && PERSON.personId) ||
+      "";
     const name = String(chip.label || "").trim();
     if (!id && name && peopleOptions && peopleOptions.length) {
       const nameL = name.toLowerCase();
       const hit = peopleOptions.find((p) => {
         const lab = String(p.label || "").toLowerCase();
-        return lab === nameL || lab.startsWith(nameL) || nameL.startsWith(lab.split(/\s+/)[0]);
+        return (
+          lab === nameL ||
+          lab.startsWith(nameL) ||
+          nameL.startsWith(lab.split(/\s+/)[0])
+        );
       });
       if (hit) id = hit.id;
     }
@@ -1017,7 +1024,7 @@
       state &&
       state.domain &&
       (state.domain.chips || []).find((c) => c && c.kind === "person");
-    if (PERSON_MODE && PERSON.personId) {
+    if (PERSON_MODE && PERSON && PERSON.personId) {
       return (
         "/people/ui?person=" +
         encodeURIComponent(PERSON.personId) +
