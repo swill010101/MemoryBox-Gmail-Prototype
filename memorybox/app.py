@@ -558,11 +558,31 @@ def people_ui(
             raise HTTPException(status_code=404, detail="Person Explorer UI missing")
         # person-explore.html reads ?person= from the URL; rewrite if needed
         html = read_and_inject(PERSON_EXPLORE_STATIC, surface="people")
-        if f"person={pid}" not in html and "MB_PERSON_SURFACE" in html:
-            # Ensure boot config even if client URL used person_id only
+        boot_name = (person_name or "").strip()
+        if not boot_name:
+            try:
+                from memorybox.person import get_person
+
+                view = get_person(pid)
+                if view and getattr(view, "display_name", None):
+                    boot_name = str(view.display_name)
+            except Exception:
+                boot_name = ""
+        if f'personId: params.get("person") || params.get("person_id") || "{pid}"' not in html:
             html = html.replace(
                 'personId: params.get("person") || params.get("person_id") || ""',
                 f'personId: params.get("person") || params.get("person_id") || "{pid}"',
+                1,
+            )
+        if boot_name:
+            safe = (
+                boot_name.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("<", "")
+            )
+            html = html.replace(
+                'displayName: params.get("person_name") || ""',
+                f'displayName: params.get("person_name") || "{safe}"',
                 1,
             )
         return HTMLResponse(

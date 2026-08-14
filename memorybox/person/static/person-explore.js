@@ -14,6 +14,28 @@
     return;
   }
 
+  // Paint header immediately from URL / boot config (profile fetch fills details)
+  (function seedHeader() {
+    const bootName = (cfg.displayName || "").trim();
+    if (bootName) {
+      const nameEl = document.getElementById("mb-person-name");
+      if (nameEl) nameEl.textContent = bootName;
+      const portrait = document.getElementById("mb-person-portrait");
+      if (portrait) {
+        portrait.textContent = (bootName.charAt(0) || "?").toUpperCase();
+      }
+      const label = document.getElementById("mb-person-ask-label");
+      if (label) label.textContent = "Ask about " + bootName.split(/\s+/)[0];
+      document.title = "MemoryBox — " + bootName;
+      document.querySelectorAll("[data-person-first]").forEach((el) => {
+        el.textContent = bootName.split(/\s+/)[0] || "them";
+      });
+    } else {
+      const nameEl = document.getElementById("mb-person-name");
+      if (nameEl) nameEl.textContent = "Loading…";
+    }
+  })();
+
   let cached = {
     person: null,
     profile: null,

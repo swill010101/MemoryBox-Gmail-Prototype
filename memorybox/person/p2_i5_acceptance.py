@@ -43,10 +43,14 @@ def run_p2_i5_acceptance() -> dict:
     )
     _check(
         "i5_person_dark_theme",
-        "mb-person-surface" in person_css and "#0f141c" in person_css,
+        "mb-person-surface" in person_css
+        and "#0f141c" in person_css
+        and 'html[data-mb-surface="people"]' in person_css
+        and ".mb-card-meta" in person_css
+        and "#141b27" in person_css,
         checks,
         problems,
-        "dark theme CSS",
+        "dark theme CSS (readable cards/filters)",
     )
     _check(
         "i5_explore_person_mode",
@@ -98,6 +102,7 @@ def run_p2_i5_acceptance() -> dict:
         "i5_ask_person_commands",
         "go to" in explore_js
         and "instead" in explore_js
+        and "trySwitchPersonFromAsk" in explore_js
         and "stays locked" in explore_js
         and "person_name=" in explore_js,
         checks,

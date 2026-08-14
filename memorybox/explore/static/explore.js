@@ -506,11 +506,85 @@
     const lower = q.toLowerCase();
     const nameL = name.toLowerCase();
     const first = nameL.split(/\s+/)[0];
-    // Keep Person locked: ensure name present unless empty Ask means "show person".
     if (!q) return "Show " + name;
-    if (lower.includes(nameL) || (first && lower.includes(first))) return q;
+    if (/^go to\b/.test(lower)) return q;
+    if (lower.includes(nameL) || (first && /\b/.test(first) && lower.includes(first))) {
+      // Already mentions locked person — don't double-prefix
+      if (/^show\b/.test(lower)) return q;
+      return q;
+    }
+    if (/^show\b/.test(lower)) {
+      // "Show Christmas" / "Show only video" → keep locked person in the query
+      const rest = q.replace(/^show\s+(?:me\s+)?/i, "").trim();
+      return "Show " + name + " " + rest;
+    }
     // Bare refinements inherit Person ("Christmas." → "Show Peggy Christmas")
     return "Show " + name + " " + q;
+  }
+
+  /** Person surface: "Show me Tom" / "Go to Tom instead" → open that Person Explorer. */
+  function trySwitchPersonFromAsk(raw) {
+    if (!PERSON_MODE) return false;
+    const text = String(raw || "").trim();
+    const lower = text.toLowerCase();
+    let who = "";
+    const go = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    const show = text.match(/^show\s+(?:me\s+)?(.+?)\.?$/i);
+    if (go) who = go[1].replace(/\.$/, "").trim();
+    else if (show) {
+      who = show[1].trim();
+      // Drop trailing place/time/filter clauses: "Tom Will at Christmas" → "Tom Will"
+      who = who
+        .replace(
+          /\s+(at|in|during|from|between|only|through|near|around)\b[\s\S]*$/i,
+          ""
+        )
+        .trim();
+    } else {
+      return false;
+    }
+    if (!who) return false;
+    const whoL = who.toLowerCase();
+    const locked = (PERSON.displayName || "").toLowerCase();
+    const lockedFirst = locked.split(/\s+/)[0] || "";
+    // Same person — fall through to normal find
+    if (
+      whoL === locked ||
+      whoL === lockedFirst ||
+      (lockedFirst && whoL.startsWith(lockedFirst) && locked.includes(whoL.split(/\s+/)[0]))
+    ) {
+      return false;
+    }
+    // Not a person switch — holidays / filters / years
+    if (
+      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4})/.test(
+        whoL
+      )
+    ) {
+      return false;
+    }
+    const hit = (peopleOptions || []).find((p) => {
+      const lab = String(p.label || "").toLowerCase();
+      const first = lab.split(/\s+/)[0];
+      return lab === whoL || first === whoL || lab.includes(whoL) || whoL.includes(lab);
+    });
+    if (hit && hit.id) {
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson({ id: hit.id, name: hit.label || who });
+      }
+      window.location.href =
+        "/people/ui?person=" +
+        encodeURIComponent(hit.id) +
+        "&person_name=" +
+        encodeURIComponent(hit.label || who);
+      return true;
+    }
+    if (window.mbShell && window.mbShell.setActivePerson) {
+      window.mbShell.setActivePerson({ id: "", name: who });
+    }
+    window.location.href =
+      "/people/ui?person_name=" + encodeURIComponent(who);
+    return true;
   }
 
   async function liveFind(askText) {
@@ -667,6 +741,8 @@
       window.location.href = "/people/ui";
       return;
     }
+
+    if (trySwitchPersonFromAsk(text)) return;
 
     if (
       PERSON_MODE &&
