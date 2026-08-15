@@ -215,11 +215,89 @@ def parse_export_filename(name: str) -> ParsedExportName | None:
     )
 
 
-def attachment_search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
+def _clean_dir_arg(raw: str | None) -> str:
+    text = (raw or "").strip().strip('"').strip("'")
+    return text
+
+
+def probe_attachments_dir(raw: str | None) -> dict[str, Any]:
+    """Read-only listing of an Export Attachments folder. Never invents messages."""
+    text = _clean_dir_arg(raw)
+    out: dict[str, Any] = {
+        "path": text or None,
+        "exists": False,
+        "is_dir": False,
+        "child_count": 0,
+        "file_sample": [],
+        "dir_sample": [],
+        "error": None,
+    }
+    if not text:
+        out["error"] = "empty attachments-dir"
+        return out
+    path = Path(text).expanduser()
+    out["path"] = str(path)
+    try:
+        out["exists"] = path.exists()
+        out["is_dir"] = path.is_dir()
+    except OSError as exc:
+        out["error"] = f"exists/is_dir: {exc}"
+        return out
+    if not out["is_dir"]:
+        out["error"] = "not a directory"
+        return out
+    try:
+        children = list(path.iterdir())
+    except OSError as exc:
+        try:
+            children = [path / name for name in os.listdir(path)]
+        except OSError as exc2:
+            out["error"] = f"iterdir: {exc}; listdir: {exc2}"
+            return out
+    out["child_count"] = len(children)
+    dirs = [c.name for c in children if _is_dir(c)]
+    files = [c.name for c in children if _is_file(c)]
+    out["dir_sample"] = dirs[:8]
+    out["file_sample"] = files[:8]
+    nested: list[str] = []
+    for child in children:
+        if not _is_dir(child) or len(nested) >= 8:
+            continue
+        try:
+            for grand in child.iterdir():
+                if _is_file(grand):
+                    nested.append(f"{child.name}/{grand.name}")
+                    break
+        except OSError:
+            continue
+    if nested:
+        out["file_sample"] = nested
+    return out
+
+
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def attachment_search_roots(
+    payload: dict[str, Any] | None = None,
+    *,
+    attachments_dir: str | None = None,
+) -> list[Path]:
+    forced = _clean_dir_arg(attachments_dir or os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR"))
+    if forced:
+        return [Path(forced).expanduser()]
     roots: list[Path] = []
-    extra = (os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR") or "").strip()
-    if extra:
-        roots.append(Path(extra).expanduser())
     src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
     if src:
         roots.append(Path(src) / "sms-attachments")
@@ -277,13 +355,16 @@ def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttach
                 continue
         except OSError:
             continue
-        stack: list[tuple[Path, int, str]] = [(root, 0, "")]
+        stack: list[tuple[Path, int]] = [(root, 0)]
         while stack:
-            cur, level, folder_chat = stack.pop()
+            cur, level = stack.pop()
             try:
                 children = list(cur.iterdir())
             except OSError:
-                continue
+                try:
+                    children = [cur / name for name in os.listdir(cur)]
+                except OSError:
+                    continue
             for child in children:
                 try:
                     loc = str(child.resolve()) if child.exists() else str(child)
@@ -300,6 +381,11 @@ def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttach
                         parsed = parse_export_filename(child.name)
                         if parsed is None:
                             continue
+                        try:
+                            parent_is_root = child.parent.resolve() == root.resolve()
+                        except OSError:
+                            parent_is_root = child.parent == root
+                        folder_chat = "" if parent_is_root else child.parent.name
                         chat = folder_chat or parsed.chat
                         index.files.append(
                             ExportFile(
@@ -315,10 +401,7 @@ def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttach
                     elif child.is_dir() and level < depth:
                         if child.name.casefold() in _SKIP_DIR_NAMES:
                             continue
-                        next_chat = folder_chat
-                        if level == 0:
-                            next_chat = child.name
-                        stack.append((child, level + 1, next_chat))
+                        stack.append((child, level + 1))
                 except OSError:
                     continue
     return index
@@ -520,6 +603,19 @@ def backfill_unique_export_attachments(
         "unmatched_slots": stats["unmatched_slots"],
         "still_missing": still_missing,
         "export_files_indexed": len(index.files),
+        "open_slots": len(slots),
+        "file_sample": [
+            {"chat": f.chat, "wall_clock": f.wall_clock, "name": f.name}
+            for f in index.files[:8]
+        ],
+        "slot_sample": [
+            {
+                "thread_id": s.thread_id,
+                "wall_clock": s.wall_clock,
+                "filename": s.filename,
+            }
+            for s in slots[:8]
+        ],
     }
 
 

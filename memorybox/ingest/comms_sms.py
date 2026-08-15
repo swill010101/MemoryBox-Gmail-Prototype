@@ -19,7 +19,9 @@ from memorybox.ingest.sms_export_attach import (
     attachment_search_roots,
     backfill_unique_export_attachments,
     get_export_index,
+    probe_attachments_dir,
     reset_export_index,
+    _clean_dir_arg,
 )
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
@@ -258,10 +260,21 @@ def ingest_sms(
     label: str | None = None,
     attachments_dir: str | None = None,
 ) -> dict[str, Any]:
-    if attachments_dir:
-        os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(
-            Path(attachments_dir).expanduser()
-        )
+    requested_dir = _clean_dir_arg(
+        attachments_dir or os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR")
+    )
+    attach_probe = probe_attachments_dir(requested_dir) if requested_dir else {}
+    if attachments_dir and not attach_probe.get("is_dir"):
+        return {
+            "ok": False,
+            "error": (
+                "attachments-dir is not a readable folder. "
+                f"{attach_probe.get('error') or 'not a directory'}"
+            ),
+            "attachments_dir_probe": attach_probe,
+        }
+    if attach_probe.get("is_dir") and attach_probe.get("path"):
+        os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(attach_probe["path"])
     reset_export_index()
     path = Path(uri) if uri else default_sms_export_path()
     job_id = store.start_job(
@@ -299,9 +312,15 @@ def ingest_sms(
         evidence_ids: list[str] = []
         headers: list[str] = []
         written_contacts: set[tuple[str, str]] = set()
-        hunt_attach = sms_folder_has_attachment_bytes(path)
+        export_roots = attachment_search_roots(
+            {"source_coverage": {"import_path": str(path)}},
+            attachments_dir=requested_dir or None,
+        )
+        hunt_attach = bool(attach_probe.get("is_dir")) or sms_folder_has_attachment_bytes(
+            path
+        )
         if hunt_attach:
-            get_export_index(attachment_search_roots({"source_coverage": {"import_path": str(path)}}))
+            get_export_index(export_roots)
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
         with connection() as conn:
@@ -385,9 +404,7 @@ def ingest_sms(
                 export_stats = backfill_unique_export_attachments(
                     source_id,
                     conn=conn,
-                    roots=attachment_search_roots(
-                        {"source_coverage": {"import_path": str(path)}}
-                    ),
+                    roots=export_roots,
                 )
                 attachments_stored += int(export_stats.get("stored") or 0)
                 attachments_ambiguous = int(export_stats.get("ambiguous_slots") or 0)
@@ -422,6 +439,7 @@ def ingest_sms(
             "attachments_ambiguous": attachments_ambiguous,
             "attachment_orphan_files": attachment_orphan_files,
             "attachment_export_stats": export_stats,
+            "attachments_dir_probe": attach_probe or None,
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,
@@ -447,3 +465,22 @@ def inspect_default_or_uri(uri: str | None = None) -> dict[str, Any]:
             "tried": uri or str(default_sms_export_path()),
         }
     return inspect_sms_export(path, sample_rows=0)
+
+
+def inspect_sms_attachments_dir(uri: str | None = None) -> dict[str, Any]:
+    """Read-only probe of an Export Attachments folder. No ingest. No rewrite."""
+    probe = probe_attachments_dir(uri)
+    if not probe.get("is_dir"):
+        return {"ok": False, "error": probe.get("error") or "not a directory", **probe}
+    reset_export_index()
+    index = get_export_index([Path(str(probe["path"]))])
+    parsed = index.files[:12]
+    return {
+        "ok": True,
+        **probe,
+        "export_files_indexed": len(index.files),
+        "parsed_sample": [
+            {"chat": f.chat, "wall_clock": f.wall_clock, "name": f.name, "type": f.attach_type}
+            for f in parsed
+        ],
+    }

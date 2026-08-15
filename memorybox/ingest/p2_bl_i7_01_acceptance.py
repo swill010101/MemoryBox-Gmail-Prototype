@@ -204,16 +204,20 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     before = csv_path.read_bytes()
 
     index = build_export_index([attach_dir])
+    nested_root = tmp / "wrapper"
+    shutil.copytree(attach_dir / "I701 Unique", nested_root / "Export Attachments" / "I701 Unique")
+    nested_index = build_export_index([nested_root])
     _check(
         "i7_01_index_export_names",
         len(index.files) >= 5
         and index.lookup_uuid_or_name(
             "78715179111__AF89223C-3F6A-417B-A3C2-485DF14A8835.JPG"
         )
-        is None,
+        is None
+        and any(f.folder_chat == "I701 Unique" for f in nested_index.files),
         checks,
         problems,
-        f"indexed={len(index.files)}",
+        f"indexed={len(index.files)} nested={len(nested_index.files)}",
     )
 
     prev_dir = os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR")
@@ -252,9 +256,20 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
             problems,
             f"inserted={second.get('inserted')} skipped={second.get('skipped')}",
         )
+        missing = ingest_sms(str(csv_path), attachments_dir=str(tmp / "no-such-folder"))
+        _check(
+            "i7_01_missing_dir_fails_loud",
+            missing.get("ok") is False
+            and "attachments-dir" in str(missing.get("error") or "").lower(),
+            checks,
+            problems,
+            f"missing_dir={missing.get('error')}",
+        )
         _check(
             "i7_01_unique_backfill_and_collisions",
-            int(second.get("attachments_stored") or 0) == 1
+            bool(second.get("attachment_bytes_hunted"))
+            and int((second.get("attachment_export_stats") or {}).get("export_files_indexed") or 0) >= 5
+            and int(second.get("attachments_stored") or 0) == 1
             and int(second.get("attachments_ambiguous") or 0) == 2
             and int(second.get("attachment_orphan_files") or 0) == 2
             and int(second.get("attachments_missing") or 0) == 3,
@@ -347,6 +362,8 @@ def run_p2_bl_i7_01_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
         and "unique_export_pairs" in export_mod
         and "never invents messages" in export_mod
         and "--attachments-dir" in main
+        and "inspect-sms-attachments" in main
+        and "probe_attachments_dir" in export_mod
         and "wipe" not in comms.lower(),
         checks,
         problems,

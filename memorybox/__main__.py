@@ -38,6 +38,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Read-only SMS export inventory (headers/counts; no ingest; no rewrite)",
     )
     p_inspect_sms.add_argument("--uri", default=None)
+    p_inspect_att = sub.add_parser(
+        "inspect-sms-attachments",
+        help="Read-only probe of an Export Attachments folder (no ingest)",
+    )
+    p_inspect_att.add_argument(
+        "--dir",
+        required=True,
+        dest="attachments_dir",
+        help="Folder of per-chat Export Attachments",
+    )
     sub.add_parser(
         "repair-sms-identities",
         help="Backfill People confirmed phones from ingested unique SMS auto-maps",
@@ -343,6 +353,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.comms_sms import inspect_default_or_uri
 
         payload = inspect_default_or_uri(args.uri)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "inspect-sms-attachments":
+        from memorybox.ingest.comms_sms import inspect_sms_attachments_dir
+
+        payload = inspect_sms_attachments_dir(args.attachments_dir)
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
