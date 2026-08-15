@@ -1013,6 +1013,16 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
         )
+        client8._circuit_open = True
+        named_open = client8.find_people_by_name("Peggy George")
+        _check(
+            "immich_name_search_survives_mapped_circuit",
+            client8._circuit_allows("/search/person")
+            and not client8._circuit_allows("/people/stale-id"),
+            checks,
+            problems,
+            f"named={named_open} allows_search={client8._circuit_allows('/search/person')}",
+        )
 
         from memorybox.person import _ask_named_photo_people
         from memorybox.providers.photo.dto import PhotoPersonRef
@@ -1310,6 +1320,124 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check(
             "christmas_keeps_undated_drops_off_season",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        live = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="immich-live-peggy",
+            display_name="Peggy",
+        )
+        live_asset = PhotoAssetDto(
+            provider_key="scripted_photo",
+            external_id="live-face-1",
+            taken_at=datetime(2021, 12, 20, tzinfo=timezone.utc),
+            people=(live,),
+        )
+
+        class _StaleThenName:
+            provider_key = "scripted_photo"
+
+            def __init__(self) -> None:
+                self._client = type(
+                    "C",
+                    (),
+                    {
+                        "_last_person_source": "timeout",
+                        "_reset_person_circuit": lambda self=None: None,
+                    },
+                )()
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                return [live]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                ids = list(query.person_external_ids or ())
+                if ids == ["stale-mapped-id"]:
+                    self._client._last_person_source = "timeout"
+                    return []
+                if "immich-live-peggy" in ids:
+                    self._client._last_person_source = "faces_or_timeline"
+                    return [live_asset]
+                return []
+
+        class _MappedStale:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "stale-mapped-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig_s = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _MappedStale()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["stale-mapped-id"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _MappedStale()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            shits, sst = R.search_photos(
+                QueryPlan(
+                    original_ask="show me Peggy George",
+                    effective_ask="show me Peggy George",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Peggy George",),
+                ),
+                _StaleThenName(),
+                limit=50,
+            )
+        finally:
+            for k, v in orig_s.items():
+                setattr(person_mod, k, v)
+        _check(
+            "stale_mapped_id_falls_back_to_immich_name",
+            len(shits) == 1
+            and shits[0].external_id == "live-face-1"
+            and sst.get("unavailable") is not True,
+            checks,
+            problems,
+            f"n={len(shits)} ids={[h.external_id for h in shits]} detail={sst.get('detail')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "stale_mapped_id_falls_back_to_immich_name",
             False,
             checks,
             problems,

@@ -1375,6 +1375,11 @@ def search_photos(
             return [], status
 
         person_ext: list[str] = []
+        # Mapped-id RST must not block Immich name lookup (stale UUID / circuit).
+        _client = getattr(photo, "_client", None)
+        _reset = getattr(_client, "_reset_person_circuit", None)
+        if callable(_reset):
+            _reset()
         # Prefer resolved MB display names (Peggy → Peggy George) for Immich lookup
         name_queries: list[str] = []
         for name in plan.person_names:
@@ -1423,7 +1428,9 @@ def search_photos(
                     person_id=confirmed.id,
                 ):
                     continue
-                if r.external_id in mapped_ext and hits:
+                if r.external_id in mapped_ext:
+                    # Already searched (including timeout). Retrying the same
+                    # id just re-opens the 6s RST and skips a live Immich name.
                     continue
                 person_ext.append(r.external_id)
 

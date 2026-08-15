@@ -95,7 +95,7 @@ class ImmichHttpClient:
         timeout: float = 60,
         retries: int = 2,
     ) -> tuple[int, Any]:
-        if getattr(self, "_circuit_open", False) and path != "/server/ping":
+        if getattr(self, "_circuit_open", False) and not self._circuit_allows(path):
             raise TimeoutError("immich circuit open")
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -155,6 +155,16 @@ class ImmichHttpClient:
 
     def _circuit(self) -> bool:
         return bool(getattr(self, "_circuit_open", False))
+
+    @staticmethod
+    def _circuit_allows(path: str) -> bool:
+        """Name lookup stays open after a mapped-id RST (stale Immich UUID)."""
+        p = path or ""
+        return (
+            p == "/server/ping"
+            or p == "/search/person"
+            or p.startswith("/people?name=")
+        )
 
     def ping(self) -> bool:
         status, body = self._request("GET", "/server/ping", timeout=8, retries=1)
@@ -636,8 +646,6 @@ class ImmichHttpClient:
         from urllib.parse import quote
 
         for token in tokens:
-            if self._circuit():
-                break
             try:
                 status, data = self._request(
                     "POST",
@@ -650,7 +658,7 @@ class ImmichHttpClient:
                     _add(data)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
-            if hits or self._circuit():
+            if hits:
                 break
             try:
                 status, data = self._request(
@@ -663,7 +671,7 @@ class ImmichHttpClient:
                     _add(data)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
-            if hits or self._circuit():
+            if hits:
                 break
         if hits:
             ql = q.lower()
