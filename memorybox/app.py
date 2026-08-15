@@ -1008,10 +1008,11 @@ def library_photo_thumb(external_id: str) -> Response:
         raise HTTPException(status_code=503, detail="immich circuit open")
     try:
         preview = photo.fetch_preview(external_id)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=404, detail=f"photo thumb unavailable: {exc}"
-        ) from exc
+    except Exception:  # noqa: BLE001 — miss is normal; do not 404-storm the console
+        return Response(
+            status_code=204,
+            headers={"Cache-Control": "private, max-age=120"},
+        )
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",

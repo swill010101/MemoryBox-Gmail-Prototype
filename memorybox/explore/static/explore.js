@@ -1874,8 +1874,7 @@
         };
         img.onerror = () => {
           inFlight = Math.max(0, inFlight - 1);
-          paused = true;
-          queue.length = 0;
+          pump();
         };
         img.setAttribute("src", src);
         img.removeAttribute("data-src");
@@ -2736,6 +2735,24 @@
     const eid = item && item.evidence_id;
     if (!eid) return;
     document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
+      const li = img.closest("li");
+      const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
+      const pending = img.getAttribute("data-src");
+      if (pending) {
+        fetch(
+          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data && data.bytes_present) {
+              img.setAttribute("src", pending);
+              img.removeAttribute("data-src");
+              return;
+            }
+            img.dispatchEvent(new Event("error"));
+          })
+          .catch(() => img.dispatchEvent(new Event("error")));
+      }
       img.addEventListener("error", () => {
         const box = img.parentElement;
         if (!box) return;
@@ -2861,7 +2878,7 @@
             String(a.attachment_type || a.filename || "")
           );
           const preview = isImg
-            ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="' +
+            ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" data-src="' +
               escapeAttr(src) +
               '" alt="' +
               name +
@@ -2937,13 +2954,10 @@
           : "";
     if (isText && state.preview && state.preview.attach) {
       const att = (item.attachments || [])[0] || {};
-      const eid = escapeAttr(item.evidence_id || "");
       const name = escapeHtml(att.filename || att.source_ref || "attachment");
-      const src = `/explore/api/sms-attachment/${eid}?index=0`;
       return `<div class="mb-qp-body mb-qp-attach">
       <div class="mb-qp-type">Attachment</div>
-      <div class="mb-qp-media"><img class="mb-qp-attach-img" src="${src}" alt="${name}" /></div>
-      <div class="mb-qp-line">${name}</div>
+      <div class="mb-qp-line">${name} — open the card to preview if the file was stored at ingest</div>
     </div>`;
     }
     if (isText) {

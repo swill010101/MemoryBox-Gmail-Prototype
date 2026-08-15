@@ -1042,6 +1042,84 @@ class ImmichHttpClient:
             return data
         return None
 
+    def _thumb_paths(self, asset_id: str) -> tuple[str, ...]:
+        aid = (asset_id or "").strip()
+        sticky = getattr(self, "_thumb_tmpl", None)
+        tmpls = (
+            "/assets/{id}/thumbnail?size=thumbnail",
+            "/assets/{id}/thumbnail?size=preview",
+            "/assets/{id}/thumbnail?size=WEB",
+            "/asset/thumbnail/{id}",
+        )
+        if sticky in tmpls:
+            return (sticky.format(id=aid),)
+        return tuple(t.format(id=aid) for t in tmpls)
+
+    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
+        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
+        root = self.thumbs_root
+        aid = (asset_id or "").strip()
+        if root is None or not aid or not root.is_dir():
+            return None
+        prefix = aid[:2]
+        names = (
+            f"{aid}-thumbnail.webp",
+            f"{aid}-preview.webp",
+            f"{aid}-thumbnail.jpeg",
+            f"{aid}-preview.jpeg",
+            f"{aid}.webp",
+            f"{aid}.jpeg",
+            f"{aid}.jpg",
+        )
+        candidates: list[Path] = []
+        for name in names:
+            candidates.append(root / prefix / name)
+            candidates.append(root / prefix / aid / name)
+        try:
+            users = [p for p in root.iterdir() if p.is_dir()][:12]
+        except OSError:
+            users = []
+        for user in users:
+            for name in names[:4]:
+                candidates.append(user / prefix / name)
+                candidates.append(user / prefix / aid / name)
+        for path in candidates:
+            try:
+                if not path.is_file() or path.stat().st_size < 24:
+                    continue
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if not data or data[:1] in (b"{", b"["):
+                continue
+            suf = path.suffix.lower()
+            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+            return data, ctype
+        return None
+
+    def _thumb_missed(self, asset_id: str) -> bool:
+        store = getattr(self, "_thumb_miss", None)
+        if not isinstance(store, dict):
+            return False
+        ts = store.get(asset_id)
+        if ts is None:
+            return False
+        if time.time() - float(ts) > 300:
+            store.pop(asset_id, None)
+            return False
+        return True
+
+    def _mark_thumb_miss(self, asset_id: str) -> None:
+        store = getattr(self, "_thumb_miss", None)
+        if store is None:
+            self._thumb_miss = {}
+            store = self._thumb_miss
+        store[asset_id] = time.time()
+        if len(store) > 4000:
+            oldest = sorted(store.items(), key=lambda kv: kv[1])[:2000]
+            for key, _ in oldest:
+                store.pop(key, None)
+
     def _fetch_api_image(self, url: str, timeout: float = 3) -> tuple[bytes, str] | None:
         if self._circuit():
             return None
@@ -1051,6 +1129,7 @@ class ImmichHttpClient:
             method="GET",
         )
         t0 = time.monotonic()
+        path = url.split("/api", 1)[-1][:160]
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
@@ -1060,21 +1139,32 @@ class ImmichHttpClient:
                 ctype = resp.headers.get("Content-Type") or "image/jpeg"
                 if "json" in ctype or data[:1] in (b"{", b"["):
                     return None
-                self._record_call("GET", url.split("/api", 1)[-1][:160], status=200, ms=ms)
+                self._record_call("GET", path, status=200, ms=ms)
                 return data, ctype
-        except Exception as exc:  # noqa: BLE001
+        except urllib.error.HTTPError as exc:
             ms = (time.monotonic() - t0) * 1000
-            self._record_call(
-                "GET",
-                url.split("/api", 1)[-1][:160],
-                status=0,
-                ms=ms,
-                err=str(exc)[:160],
-            )
+            self._record_call("GET", path, status=int(exc.code), ms=ms, err=str(exc)[:160])
+            if int(exc.code) in (401, 403):
+                self._thumb_forbidden = True
+            # 4xx means Immich answered. Do not open the transport circuit.
+            return None
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            ms = (time.monotonic() - t0) * 1000
+            self._record_call("GET", path, status=0, ms=ms, err=str(exc)[:160])
             self._note_transport_fail(exc)
             return None
 
     def fetch_preview_bytes(self, asset_id: str) -> tuple[bytes, str, str]:
+        aid = (asset_id or "").strip()
+        if not aid:
+            raise FileNotFoundError("missing asset id")
+        local = self._read_local_thumb(aid)
+        if local:
+            return local[0], local[1], "immich-thumbs-path"
+        if self._thumb_missed(aid):
+            raise FileNotFoundError("immich thumb miss cached")
+        if getattr(self, "_thumb_forbidden", False):
+            raise FileNotFoundError("immich API key lacks asset.view")
         if self._circuit():
             raise FileNotFoundError("immich circuit open")
         sem = getattr(self, "_thumb_sema", None)
@@ -1084,13 +1174,17 @@ class ImmichHttpClient:
         if not sem.acquire(timeout=1.0):
             raise FileNotFoundError("immich thumb backlog")
         try:
-            got = self._fetch_api_image(
-                self.thumb_url(asset_id, size="thumbnail"), timeout=3
-            )
-            if got:
-                return got[0], got[1], "immich-api"
+            for path in self._thumb_paths(aid):
+                if self._circuit() or getattr(self, "_thumb_forbidden", False):
+                    break
+                got = self._fetch_api_image(self.api_base + path, timeout=3)
+                if got:
+                    raw_tmpl = path.replace(aid, "{id}")
+                    self._thumb_tmpl = raw_tmpl
+                    return got[0], got[1], "immich-api"
         finally:
             sem.release()
+        self._mark_thumb_miss(aid)
         raise FileNotFoundError(
             "No thumbnail available via Immich API (needs asset.view on API key)"
         )

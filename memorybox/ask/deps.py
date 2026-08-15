@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -52,27 +53,47 @@ def build_llm(cfg: Settings | None = None) -> LlmProvider:
     return trace_llm(FakeLlmProvider())
 
 
+_photo_lock = threading.Lock()
+_photo_singletons: dict[str, PhotoProvider] = {}
+
+
 def build_photo(cfg: Settings | None = None) -> PhotoProvider:
     """Select photo provider via MEMORYBOX_PHOTO_PROVIDER.
 
     Values: immich (default when immich.env present) | fake | unavailable
     Path to immich env: MEMORYBOX_IMMICH_ENV (optional).
+
+    Immich is process-singleton so the circuit, person-library cache, and
+    thumb miss-cache survive across /library/media/photo requests. A new
+    client per thumb was why the NAS bounced after every gallery paint.
     """
     cfg = cfg or settings
     mode = (_env("MEMORYBOX_PHOTO_PROVIDER") or "").lower()
-    if mode == "unavailable":
-        return UnavailablePhotoProvider(
-            "MEMORYBOX_PHOTO_PROVIDER=unavailable (deliberate I4-G mode)"
-        )
-    if mode == "fake":
-        return FakePhotoProvider()
-
     env_path = _env("MEMORYBOX_IMMICH_ENV")
     path = (
         Path(env_path)
         if env_path
         else Path(__file__).resolve().parents[2] / "config" / "immich.env"
     )
+    cache_key = f"{mode}|{path}"
+    with _photo_lock:
+        hit = _photo_singletons.get(cache_key)
+        if hit is not None:
+            return hit
+        provider = _build_photo_uncached(cfg, mode, path)
+        _photo_singletons[cache_key] = provider
+        return provider
+
+
+def _build_photo_uncached(
+    cfg: Settings, mode: str, path: Path
+) -> PhotoProvider:
+    if mode == "unavailable":
+        return UnavailablePhotoProvider(
+            "MEMORYBOX_PHOTO_PROVIDER=unavailable (deliberate I4-G mode)"
+        )
+    if mode == "fake":
+        return FakePhotoProvider()
 
     if mode in ("", "immich", "auto"):
         if path.is_file():

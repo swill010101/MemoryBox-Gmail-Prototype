@@ -1234,6 +1234,55 @@ def _prove_harness() -> dict[str, Any]:
             f"named={named_open} allows_search={client8._circuit_allows('/search/person')}",
         )
 
+        import tempfile
+        from pathlib import Path as _Path
+
+        local_aid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        tmp_thumbs = _Path(tempfile.mkdtemp())
+        (tmp_thumbs / local_aid[:2]).mkdir()
+        (tmp_thumbs / local_aid[:2] / f"{local_aid}-thumbnail.webp").write_bytes(
+            b"RIFF" + b"\x00" * 40
+        )
+        disk_c = object.__new__(_ImmichIds)
+        disk_c.thumbs_root = tmp_thumbs
+        local_got = _ImmichIds._read_local_thumb(disk_c, local_aid)
+        _check(
+            "immich_thumb_from_local_thumbs_path",
+            bool(local_got and local_got[0] and local_got[1] == "image/webp"),
+            checks,
+            problems,
+            f"got={None if not local_got else (len(local_got[0]), local_got[1])}",
+        )
+        miss_c = object.__new__(_ImmichIds)
+        miss_c.thumbs_root = None
+        miss_c.api_base = "http://immich.test/api"
+        miss_c._key = "test"
+        miss_c._circuit_open = False
+        miss_c._fetch_api_image = lambda *a, **k: None
+        try:
+            _ImmichIds.fetch_preview_bytes(miss_c, local_aid)
+            thumb_err = None
+        except FileNotFoundError as exc:
+            thumb_err = exc
+        _check(
+            "immich_http_thumb_miss_does_not_open_circuit",
+            thumb_err is not None and not bool(getattr(miss_c, "_circuit_open", False)),
+            checks,
+            problems,
+            f"err={thumb_err} circuit={getattr(miss_c, '_circuit_open', None)}",
+        )
+        from memorybox.ask import deps as ask_deps
+
+        p_a = ask_deps.build_photo()
+        p_b = ask_deps.build_photo()
+        _check(
+            "photo_provider_is_process_singleton",
+            p_a is p_b,
+            checks,
+            problems,
+            f"a={type(p_a).__name__} b={type(p_b).__name__}",
+        )
+
         from memorybox.person import _ask_named_photo_people
         from memorybox.providers.photo.dto import PhotoPersonRef
 
