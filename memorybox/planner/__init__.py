@@ -1022,13 +1022,20 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             t0 = ctx.time_start
         if t1 is None and not show_me:
             t1 = ctx.time_end
-    # show me + partial name: keep context people that contain the uttered token
+    # show me + partial name: upgrade to the longer related form only.
+    # Do not keep "Peggy" as a second person next to "Peggy George" — that
+    # resolved two MB Person ids and searched Immich twice (FlightSim 129s).
     if show_me and u_people and ctx.person_names and not self_show:
         merged = list(u_people)
         for cp in ctx.person_names:
-            if any(u.lower() in cp.lower() or cp.lower() in u.lower() for u in u_people):
-                if cp not in merged:
-                    merged.append(cp)
+            for i, u in enumerate(merged):
+                ul, cl = u.lower(), cp.lower()
+                if ul == cl:
+                    break
+                if ul in cl or cl in ul:
+                    if len(cp) > len(u):
+                        merged[i] = cp
+                    break
         people = merged
         notes.append("show_me_merged_context_person_names")
 

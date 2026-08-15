@@ -888,7 +888,13 @@ class AskOrchestrator:
 
             pids: list[str] = []
             labels: list[str] = []
-            for name in plan.person_names:
+            for name in sorted(plan.person_names, key=lambda n: (-len(n), n.lower())):
+                nl = name.lower()
+                if any(
+                    nl == lab.lower() or nl in lab.lower() or lab.lower() in nl
+                    for lab in labels
+                ):
+                    continue
                 try:
                     view = find_ask_person_by_name(name, photo=self.photo, lazy_seed=True)
                 except Exception:  # noqa: BLE001
@@ -1233,8 +1239,24 @@ class AskOrchestrator:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
-            if plan.want_still or plan.want_photo:
+            want_photos = bool(plan.want_still or plan.want_photo)
+            want_vids = bool(plan.want_video)
+            if want_photos and want_vids:
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    photo_fut = pool.submit(R.search_photos, plan, self.photo)
+                    video_fut = pool.submit(
+                        lambda: R.search_videos(plan, self.video, photo=self.photo)
+                    )
+                    photos, photo_status = photo_fut.result()
+                    videos, video_status = video_fut.result()
+            elif want_photos:
                 photos, photo_status = R.search_photos(plan, self.photo)
+            elif want_vids:
+                videos, video_status = R.search_videos(
+                    plan, self.video, photo=self.photo
+                )
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)
@@ -1244,11 +1266,6 @@ class AskOrchestrator:
                 artifacts = R.search_artifacts(plan)
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
-
-            if plan.want_video:
-                videos, video_status = R.search_videos(
-                    plan, self.video, photo=self.photo
-                )
 
         # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
         # many→Please specify which X you would like.

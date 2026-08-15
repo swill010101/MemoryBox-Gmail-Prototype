@@ -295,7 +295,9 @@
         if (item.gallery_default_hidden && !includeTexts) return false;
         return true;
       }
-      return Boolean(includeTexts);
+      // Photos / video / artifact / story are not texts. includeTexts must
+      // not leak SMS into the Photos pill (FlightSim: All texts + Photos on).
+      return false;
     }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
@@ -966,9 +968,9 @@
     }
     let nextType = typeFilter;
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
-    const includeTexts = keepPresentation && state
-      ? Boolean(state.domain.includeTexts || galleryShowSms)
-      : galleryShowSms;
+    // New find owns visibility. Do not keep includeTexts from a prior SMS ask
+    // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
+    const includeTexts = galleryShowSms;
     if (galleryShowSms) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";

@@ -87,6 +87,14 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "Explore MBQL_VERBS matches server VERB_IDS",
     )
     _check(
+        "new_find_resets_include_texts",
+        "const includeTexts = galleryShowSms" in explore_js
+        and "not leak SMS" in explore_js,
+        checks,
+        problems,
+        "New find does not inherit includeTexts; Photos pill hides SMS",
+    )
+    _check(
         "compile_api",
         "/ask/api/compile" in app_py and "/ask/api/mbql-verbs" in app_py,
         checks,
@@ -164,6 +172,28 @@ def _phrases(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         f"act={p2.act} people={p2.person_names}",
+    )
+
+    ctx_alias = AskContext(session_id="prove-mbql-alias", person_names=("Peggy",))
+    p_alias = compile_ask("Show me Peggy George", ctx_alias, llm=None)
+    alias_names = [n.lower() for n in p_alias.person_names]
+    _check(
+        "phrase_no_second_peggy_alias",
+        p_alias.act == "find"
+        and any("peggy george" in n for n in alias_names)
+        and "peggy" not in alias_names,
+        checks,
+        problems,
+        f"people={p_alias.person_names}",
+    )
+    ctx_upgrade = AskContext(session_id="prove-mbql-up", person_names=("Peggy George",))
+    p_up = compile_ask("Show me Peggy", ctx_upgrade, llm=None)
+    _check(
+        "phrase_upgrade_peggy_to_full",
+        p_up.person_names == ("Peggy George",),
+        checks,
+        problems,
+        f"people={p_up.person_names}",
     )
 
     p3 = compile_ask("Show me Peggy Christmas", ctx, llm=None)
