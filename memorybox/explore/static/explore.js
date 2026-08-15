@@ -575,21 +575,16 @@
   }
 
   function setTypeFilter(id) {
-    const prev = state.domain.typeFilter;
-    const keepTexts = Boolean(
-      prev === "email" ||
-        id === "email" ||
-        state.domain.galleryShowSms ||
-        state.domain.includeTexts ||
-        rawItems.some((it) => isSmsTextItem(it) && !it.gallery_default_hidden)
-    );
     state.domain.typeFilter = id || "all";
-    if (id === "email" || (id === "all" && keepTexts)) {
+    if (id === "email") {
       state.domain.includeTexts = true;
+    } else if (id === "all") {
+      // Filter-only Email/Text must not pin SMS onto All. I7 hides texts
+      // on All unless this find was an explicit text ask or Add texts.
+      if (!state.domain.galleryShowSms && !state.domain.textsPinned) {
+        state.domain.includeTexts = false;
+      }
     }
-    // All stays clickable and keeps texts; merge Person photos/videos in
-    // without replacing the current text result (no Immich write).
-    if (id === "all") maybeMergePersonVisuals();
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -1064,6 +1059,7 @@
         typeFilter: nextType,
         includeTexts: includeTexts,
         galleryShowSms: galleryShowSms,
+        textsPinned: Boolean(galleryShowSms),
         smsAvailable: Number(exploreHint.sms_available || 0) || 0,
         smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
@@ -1246,6 +1242,7 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       render();
       return;
     }
@@ -1358,12 +1355,14 @@
     }
     if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
     if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       setTypeFilter("email");
       render();
       return;

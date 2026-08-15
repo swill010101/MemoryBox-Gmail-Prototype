@@ -255,6 +255,7 @@ def _prove_harness() -> dict[str, Any]:
             "Camera / EXIF",
             "smsHidden",
             "hidden in Gallery — say Add texts to show them",
+            "textsPinned",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -370,6 +371,43 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             (_ps or "")[:160],
+        )
+        from memorybox.explore.find import _sms_attach_windows
+
+        xmas_windows = _sms_attach_windows(
+            {
+                "temporal_windows": [
+                    ["2023-12-04", "2024-01-01"],
+                    ["2024-12-04", "2025-01-01"],
+                ],
+                "time_start": "1950-12-04",
+                "time_end": "2027-01-01",
+                "temporal_label": "Christmas",
+            }
+        )
+        _check(
+            "christmas_sms_uses_holiday_windows_not_lifetime",
+            xmas_windows == (
+                ("2023-12-04", "2024-01-01"),
+                ("2024-12-04", "2025-01-01"),
+            ),
+            checks,
+            problems,
+            f"windows={xmas_windows}",
+        )
+        _check(
+            "christmas_sms_no_lifetime_fallback",
+            _sms_attach_windows(
+                {
+                    "temporal_label": "Christmas",
+                    "time_start": "1950-01-01",
+                    "time_end": "2027-12-31",
+                }
+            )
+            == (),
+            checks,
+            problems,
+            "holiday label without windows must not attach all-time texts",
         )
     except Exception as exc:  # noqa: BLE001
         _check("ask_to_explore_mapper", False, checks, problems, str(exc))
@@ -1028,6 +1066,18 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(got_peggy)} tl_calls={client_peggy.timeline_calls} "
+            f"src={getattr(client_peggy, '_last_person_source', None)}",
+        )
+        tl_before = client_peggy.timeline_calls
+        got_cached = client_peggy.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_person_library_cached_on_reask",
+            len(got_cached) == len(got_peggy)
+            and client_peggy.timeline_calls == tl_before
+            and getattr(client_peggy, "_last_person_source", "") == "cache",
+            checks,
+            problems,
+            f"n={len(got_cached)} tl={client_peggy.timeline_calls} "
             f"src={getattr(client_peggy, '_last_person_source', None)}",
         )
 

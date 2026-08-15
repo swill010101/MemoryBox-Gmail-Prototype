@@ -229,6 +229,13 @@ class ImmichHttpClient:
             return []
         self._reset_person_circuit()
         target = max(1, min(int(size), 5000))
+        cache_key = ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
+        cache = getattr(self, "_person_lib_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            rows, ts = cache[cache_key]
+            if time.time() - float(ts) < 900 and isinstance(rows, list) and rows:
+                self._last_person_source = "cache"
+                return list(rows)[:target]
         by_id: dict[str, dict[str, Any]] = {}
 
         def _add(rows: list[dict[str, Any]]) -> None:
@@ -246,7 +253,13 @@ class ImmichHttpClient:
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
             self._last_person_source = "faces_or_timeline"
-            return list(by_id.values())[:target]
+            out = list(by_id.values())[:target]
+            store = getattr(self, "_person_lib_cache", None)
+            if store is None:
+                self._person_lib_cache = {}
+                store = self._person_lib_cache
+            store[cache_key] = (out, time.time())
+            return out
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -306,10 +319,11 @@ class ImmichHttpClient:
             if self._circuit():
                 break
             buckets = self._list_person_time_buckets(pid)
-            # Walk the full person timeline. A 24-bucket cap is ~2 years of
-            # MONTH buckets and drops the rest of the Immich person page.
-            for bucket in buckets[:480]:
-                if self._circuit():
+            # YEAR buckets first (one GET per year). Cap HTTP so a MONTH
+            # fallback cannot issue hundreds of calls and RST Immich.
+            self._timeline_http = 0
+            for bucket in buckets[:120]:
+                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= 80:
                     break
                 if len(by_id) >= target:
                     return list(by_id.values())[:target]
@@ -330,15 +344,23 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
+        cached = getattr(self, "_person_buckets_path", None)
         paths = (
-            f"/timeline/buckets?personId={pid}&size=YEAR",
-            f"/timeline/buckets?personId={pid}&size=MONTH",
-            f"/timeline/buckets?personIds={pid}&size=MONTH",
-            f"/assets/time-buckets?personId={pid}&size=MONTH",
-            f"/asset/time-buckets?personId={pid}&size=MONTH",
-            f"/timeline/buckets?personId={pid}",
+            (
+                cached,
+                f"/timeline/buckets?personId={pid}&size=YEAR",
+                f"/timeline/buckets?personId={pid}&size=MONTH",
+                f"/timeline/buckets?personIds={pid}&size=MONTH",
+                f"/assets/time-buckets?personId={pid}&size=MONTH",
+                f"/asset/time-buckets?personId={pid}&size=MONTH",
+                f"/timeline/buckets?personId={pid}",
+            )
+            if not cached
+            else (cached,)
         )
         for path in paths:
+            if not path:
+                continue
             if self._circuit():
                 break
             try:
@@ -371,6 +393,7 @@ class ImmichHttpClient:
                 if tb:
                     out.append(str(tb).strip())
             if out:
+                self._person_buckets_path = path
                 # Newest first when Immich sent oldest-first.
                 return list(reversed(out)) if len(out) > 1 else out
         return []
@@ -385,16 +408,20 @@ class ImmichHttpClient:
         from urllib.parse import quote
 
         qtb = quote(tb, safe=":-T.Z")
-        paths = (
-            f"/timeline/bucket?timeBucket={qtb}&personId={pid}",
-            f"/timeline/bucket?timeBucket={qtb}&personIds={pid}",
-            f"/assets/time-bucket?timeBucket={qtb}&personId={pid}",
-            f"/asset/time-bucket?timeBucket={qtb}&personId={pid}",
+        tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}",
+            "/assets/time-bucket?timeBucket={qtb}&personId={pid}",
+            "/asset/time-bucket?timeBucket={qtb}&personId={pid}",
         )
-        for path in paths:
+        sticky = getattr(self, "_person_bucket_tmpl", None)
+        use = (sticky,) if sticky in tmpls else tmpls
+        for tmpl in use:
+            path = tmpl.format(qtb=qtb, pid=pid)
             if self._circuit():
                 break
             try:
+                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 status, data = self._request("GET", path, timeout=6, retries=1)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
@@ -405,6 +432,7 @@ class ImmichHttpClient:
                 continue
             items = self._normalize_timeline_assets(data)
             if items:
+                self._person_bucket_tmpl = tmpl
                 return items
         return []
 

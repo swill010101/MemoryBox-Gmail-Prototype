@@ -18,6 +18,19 @@ _SMS_ASK_RE = re.compile(
     r")\b"
 )
 _HIDDEN_SMS_GALLERY_CAP = 500
+_HOLIDAY_WINDOW_MARKERS = (
+    "christmas",
+    "xmas",
+    "thanksgiving",
+    "easter",
+    "halloween",
+    "holiday",
+    "nye",
+    "nyd",
+    "memorial",
+    "labor",
+    "juneteenth",
+)
 
 
 def _is_sms_type(type_: str) -> bool:
@@ -496,6 +509,34 @@ def range_chip_for_items(items: list[dict[str, Any]]) -> dict[str, str] | None:
     return {"kind": "range", "label": f"{dates[0]}–{dates[-1]}"}
 
 
+def _sms_attach_windows(plan: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Prefer holiday/event windows. Never treat a lifetime span as the SMS set."""
+    raw = plan.get("temporal_windows") or ()
+    out: list[tuple[str, str]] = []
+    for w in raw:
+        if not isinstance(w, (list, tuple)) or len(w) < 2:
+            continue
+        a, b = str(w[0] or "")[:10], str(w[1] or "")[:10]
+        if a and b:
+            out.append((a, b))
+    if out:
+        return tuple(out)
+    blob = " ".join(
+        [
+            str(plan.get("temporal_label") or ""),
+            " ".join(str(x) for x in (plan.get("notes") or ())),
+            str(plan.get("original_ask") or ""),
+            str(plan.get("effective_ask") or ""),
+        ]
+    ).lower()
+    if any(m in blob for m in _HOLIDAY_WINDOW_MARKERS):
+        return ()
+    t0, t1 = plan.get("time_start"), plan.get("time_end")
+    if t0 and t1:
+        return ((str(t0)[:10], str(t1)[:10]),)
+    return ()
+
+
 def _attach_hidden_sms(
     items: list[dict[str, Any]],
     result: dict[str, Any],
@@ -522,13 +563,34 @@ def _attach_hidden_sms(
         hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
         return items, len(sms_already), hidden
 
+    tw = _sms_attach_windows(plan)
+    holiday_blob = " ".join(
+        [
+            ask_text or "",
+            str(plan.get("temporal_label") or ""),
+            " ".join(str(x) for x in (plan.get("notes") or ())),
+        ]
+    ).lower()
+    holiday_ask = any(m in holiday_blob for m in _HOLIDAY_WINDOW_MARKERS)
+    # Retrieve already scoped holiday SMS. Do not pad with the person-wide cap
+    # (Peggy Christmas curator was 500 all-time texts).
+    if sms_already and (tw or holiday_ask):
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        return items, len(sms_already), len(sms_already)
+    if holiday_ask and not tw:
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
+        return items, len(sms_already), hidden
+
     extra: list[dict[str, Any]] = []
     try:
         from memorybox.ask.retrieve import search_sms_messages
         from memorybox.planner import QueryPlan
 
-        windows = plan.get("temporal_windows") or ()
-        tw = tuple(tuple(w) for w in windows) if windows else ()
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
         sms_plan = QueryPlan(
             original_ask=ask_text or plan.get("original_ask") or "",
             effective_ask=plan.get("effective_ask") or ask_text or "",
@@ -538,8 +600,8 @@ def _attach_hidden_sms(
             want_calendar=False,
             person_names=tuple(people),
             person_ids=tuple(pids),
-            time_start=plan.get("time_start"),
-            time_end=plan.get("time_end"),
+            time_start=t0,
+            time_end=t1,
             temporal_windows=tw,
             notes=("gallery_sms_eligible",),
         )
@@ -562,6 +624,10 @@ def _attach_hidden_sms(
         extra = []
 
     out = list(items) + extra
+    if not show_sms:
+        for i in out:
+            if _is_sms_type(i.get("type")):
+                i["gallery_default_hidden"] = True
     sms_n = sum(1 for i in out if _is_sms_type(i.get("type")))
     hidden_n = sum(
         1
