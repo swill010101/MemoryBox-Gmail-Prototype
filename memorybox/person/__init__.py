@@ -683,6 +683,62 @@ def _exact_named_photo_people(photo: Any, display_name: str) -> list[Any]:
     ]
 
 
+def asked_name_matches_person(asked: str, person_name: str) -> bool:
+    """True when Ask 'Peggy George' and Immich/MB 'Peggy' are the same person."""
+    from memorybox.providers.photo._immich_http import ImmichHttpClient
+
+    a = (asked or "").strip()
+    n = (person_name or "").strip()
+    if not a or not n:
+        return False
+    return ImmichHttpClient._name_matches_person(a, n) or ImmichHttpClient._name_matches_person(
+        n, a
+    )
+
+
+def immich_ids_matching_asked_name(
+    photo: Any, asked_name: str, mapped_ids: list[str]
+) -> list[str]:
+    """Keep only Immich person UUIDs whose Immich name matches the Ask.
+
+    Stale provider_identities (Peggy MB Person → Tom's Immich UUID) were
+    loading Tom's library and then stamping the asked name on every card.
+    """
+    asked = (asked_name or "").strip()
+    ids = [str(x).strip() for x in (mapped_ids or []) if str(x).strip()]
+    if not asked:
+        return list(dict.fromkeys(ids))
+    client = getattr(photo, "_client", None)
+    get_fn = getattr(client, "get_person", None)
+    kept: list[str] = []
+    if callable(get_fn):
+        for eid in ids:
+            try:
+                row = get_fn(eid)
+            except Exception:  # noqa: BLE001
+                row = None
+            name = ""
+            if isinstance(row, dict):
+                name = str(row.get("name") or "").strip()
+            if name and asked_name_matches_person(asked, name):
+                kept.append(eid)
+    elif ids:
+        # Tests / providers without Immich person GET keep mapped ids.
+        kept = list(ids)
+    if kept:
+        return list(dict.fromkeys(kept))
+    try:
+        refs = _ask_named_photo_people(photo, asked)
+    except Exception:  # noqa: BLE001
+        refs = []
+    out: list[str] = []
+    for r in refs or []:
+        ext = str(getattr(r, "external_id", "") or "").strip()
+        if ext:
+            out.append(ext)
+    return list(dict.fromkeys(out))
+
+
 def _ask_named_photo_people(photo: Any, display_name: str) -> list[Any]:
     """Immich/photo people for Ask: exact name, else unique related first-token.
 

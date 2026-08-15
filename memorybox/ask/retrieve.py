@@ -905,6 +905,8 @@ def search_photos(
         is_negative,
         list_provider_external_ids_for_person,
         resolve_immich_external_ids_for_person,
+        asked_name_matches_person,
+        immich_ids_matching_asked_name,
     )
 
     status: dict[str, Any] = {
@@ -994,10 +996,19 @@ def search_photos(
         # I9A: prefer MB Person ids from relational resolve (owner ? Relationship ? id)
         from memorybox.person import get_person as _get_person_by_id
 
+        asked_names = [n for n in (plan.person_names or ()) if str(n).strip()]
+
+        def _person_name_is_asked(display: str) -> bool:
+            if not asked_names:
+                return True
+            return any(asked_name_matches_person(a, display) for a in asked_names)
+
         resolved_by_id: set[str] = set()
         for pid in getattr(plan, "person_ids", ()) or ():
             person = _get_person_by_id(pid)
             if not person:
+                continue
+            if asked_names and not _person_name_is_asked(person.display_name or ""):
                 continue
             resolved_by_id.add(person.id)
             name = person.display_name or pid
@@ -1148,6 +1159,10 @@ def search_photos(
                     out.append(n)
             pn = (person_name or "").strip()
             if pn and pn.lower() != "unknown" and pn not in out:
+                # Do not relabel Tom's stills as Peggy/Dan when people[] already
+                # names someone else.
+                if out and not any(asked_name_matches_person(pn, existing) for existing in out):
+                    return out
                 out.insert(0, pn)
             return out
 
@@ -1290,6 +1305,18 @@ def search_photos(
                 exif=dict(getattr(a, "exif", ()) or ()) or None,
                 faces=_faces_for_hit(a),
             )
+
+        if mapped_ext and asked_names:
+            verified: list[str] = []
+            for name in asked_names:
+                verified.extend(immich_ids_matching_asked_name(photo, name, mapped_ext))
+            verified = list(dict.fromkeys(verified))
+            status["mapped_immich_ids_before_verify"] = list(dict.fromkeys(mapped_ext))
+            status["mapped_immich_ids"] = list(verified)
+            if verified != list(dict.fromkeys(mapped_ext)):
+                status["stale_immich_mapping_dropped"] = True
+            mapped_ext = verified
+            mapped_meta = [m for m in mapped_meta if m.get("external_id") in set(mapped_ext)]
 
         if mapped_ext:
             trusts = {m.get("trust") for m in mapped_meta}
@@ -1602,10 +1629,21 @@ def search_videos(
 
         from memorybox.person import get_person as _get_person_by_id
 
+        asked_video_names = [n for n in (plan.person_names or ()) if str(n).strip()]
+
+        def _video_person_is_asked(display: str) -> bool:
+            if not asked_video_names:
+                return True
+            from memorybox.person import asked_name_matches_person as _nm
+
+            return any(_nm(a, display) for a in asked_video_names)
+
         seen_pids: set[str] = set()
         for pid in getattr(plan, "person_ids", ()) or ():
             person = _get_person_by_id(pid)
             if not person:
+                continue
+            if asked_video_names and not _video_person_is_asked(person.display_name or ""):
                 continue
             seen_pids.add(person.id)
             ids: list[str] = []

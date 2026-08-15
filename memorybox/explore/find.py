@@ -152,6 +152,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             fn = str(face.get("name") or "").strip()
             if fn and fn.lower() != "unknown" and fn not in people:
                 people.append(fn)
+        if mb_name and people:
+            from memorybox.person import asked_name_matches_person
+
+            if not any(asked_name_matches_person(mb_name, n) for n in people):
+                mb_name = None
         if not people:
             for n in ask_people:
                 if n not in people:

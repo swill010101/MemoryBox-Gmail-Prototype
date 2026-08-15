@@ -1061,9 +1061,8 @@ def _prove_harness() -> dict[str, Any]:
         got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_library_unions_faces_and_full_timeline",
-            len(got_peggy) >= 480
-            and client_peggy.timeline_calls >= 20
-            and client_peggy.timeline_calls <= 24
+            len(got_peggy) >= 598
+            and client_peggy.timeline_calls >= 30
             and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
             checks,
             problems,
@@ -1228,7 +1227,8 @@ def _prove_harness() -> dict[str, Any]:
         _check(
             "immich_name_search_survives_mapped_circuit",
             client8._circuit_allows("/search/person")
-            and not client8._circuit_allows("/people/stale-id"),
+            and client8._circuit_allows("/people/stale-id")
+            and not client8._circuit_allows("/timeline/buckets"),
             checks,
             problems,
             f"named={named_open} allows_search={client8._circuit_allows('/search/person')}",
@@ -1697,6 +1697,146 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check(
             "stale_mapped_id_falls_back_to_immich_name",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        tom_ref = PhotoPersonRef(
+            provider_key="immich", external_id="tom-immich", display_name="Tom Will"
+        )
+        peggy_live = PhotoPersonRef(
+            provider_key="immich", external_id="peggy-immich", display_name="Peggy George"
+        )
+        tom_pic = PhotoAssetDto(
+            provider_key="immich",
+            external_id="tom-2026",
+            taken_at=datetime(2026, 8, 5, tzinfo=timezone.utc),
+            people=(tom_ref,),
+        )
+        peggy_pic = PhotoAssetDto(
+            provider_key="immich",
+            external_id="peggy-2010",
+            taken_at=datetime(2010, 6, 1, tzinfo=timezone.utc),
+            people=(peggy_live,),
+        )
+
+        class _WrongMapPhoto:
+            provider_key = "immich"
+
+            def __init__(self) -> None:
+                self._client = type(
+                    "C",
+                    (),
+                    {
+                        "get_person": staticmethod(
+                            lambda eid: (
+                                {"id": eid, "name": "Tom Will"}
+                                if eid == "tom-immich"
+                                else {"id": eid, "name": "Peggy George"}
+                            )
+                        ),
+                        "diag_snapshot": lambda *a, **k: {},
+                    },
+                )()
+                self.calls: list[tuple[str, ...]] = []
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return [peggy_live]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                ids = tuple(query.person_external_ids or ())
+                self.calls.append(ids)
+                if "tom-immich" in ids:
+                    return [tom_pic]
+                if "peggy-immich" in ids:
+                    return [peggy_pic]
+                return []
+
+        class _PeggyMappedToTom:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "immich",
+                    "external_id": "tom-immich",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig_w = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "resolve_immich_external_ids_for_person": person_mod.resolve_immich_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _PeggyMappedToTom()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["tom-immich"]
+        )
+        person_mod.resolve_immich_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, photo=None: ["tom-immich"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _PeggyMappedToTom()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        photo_w = _WrongMapPhoto()
+        try:
+            whits, wst = R.search_photos(
+                QueryPlan(
+                    original_ask="Show me Peggy",
+                    effective_ask="Show me Peggy",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    person_names=("Peggy",),
+                    person_ids=("mb-tom-owner",),
+                ),
+                photo_w,
+                limit=50,
+            )
+        finally:
+            for k, v in orig_w.items():
+                setattr(person_mod, k, v)
+        _check(
+            "peggy_ask_rejects_toms_immich_mapping",
+            len(whits) == 1
+            and whits[0].external_id == "peggy-2010"
+            and "tom-2026" not in {h.external_id for h in whits}
+            and wst.get("stale_immich_mapping_dropped") is True
+            and photo_w.calls
+            and all("tom-immich" not in c for c in photo_w.calls),
+            checks,
+            problems,
+            f"ids={[h.external_id for h in whits]} calls={photo_w.calls} st={wst.get('stale_immich_mapping_dropped')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "peggy_ask_rejects_toms_immich_mapping",
             False,
             checks,
             problems,

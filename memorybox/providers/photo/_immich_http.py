@@ -17,8 +17,9 @@ _LOG = logging.getLogger("memorybox.immich")
 _CIRCUIT_COOLDOWN_SEC = 300
 _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
-_PERSON_TIMELINE_YEAR_BUDGET = 24
+_PERSON_TIMELINE_YEAR_BUDGET = 40
 _PERSON_TIMELINE_MONTH_BUDGET = 18
+_PERSON_LIB_CACHE_VER = "v3"
 
 
 class ImmichAuthError(RuntimeError):
@@ -324,7 +325,7 @@ class ImmichHttpClient:
         disk = self._person_lib_disk_dir()
         if disk is None:
             return None
-        path = disk / f"{cache_key.replace('/', '_')[:80]}.json"
+        path = disk / f"{_PERSON_LIB_CACHE_VER}-{cache_key.replace('/', '_')[:80]}.json"
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -353,7 +354,7 @@ class ImmichHttpClient:
             return
         try:
             disk.mkdir(parents=True, exist_ok=True)
-            path = disk / f"{cache_key.replace('/', '_')[:80]}.json"
+            path = disk / f"{_PERSON_LIB_CACHE_VER}-{cache_key.replace('/', '_')[:80]}.json"
             path.write_text(
                 json.dumps({"ts": time.time(), "assets": rows}, default=str),
                 encoding="utf-8",
@@ -369,6 +370,12 @@ class ImmichHttpClient:
             p == "/server/ping"
             or p == "/search/person"
             or p.startswith("/people?name=")
+            or (
+                p.startswith("/people/")
+                and "?" not in p
+                and "/thumbnail" not in p
+                and "/faces" not in p
+            )
         )
 
     def ping(self) -> bool:
@@ -397,6 +404,20 @@ class ImmichHttpClient:
         if status != 200 or not isinstance(data, dict):
             raise RuntimeError(f"Immich search/metadata failed HTTP {status}")
         return data
+
+    def get_person(self, person_id: str) -> dict[str, Any] | None:
+        """Cheap Immich person record (name + id). Used to reject stale mappings."""
+        pid = (person_id or "").strip()
+        if not pid:
+            return None
+        try:
+            status, data = self._request("GET", f"/people/{pid}", timeout=6, retries=1)
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+            return None
+        if status == 200 and isinstance(data, dict) and data.get("id"):
+            return data
+        return None
 
     def list_people(self) -> list[dict[str, Any]]:
         try:
@@ -436,7 +457,10 @@ class ImmichHttpClient:
         self._reset_call_log()
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
-        cache_key = ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
+        cache_key = (
+            f"{_PERSON_LIB_CACHE_VER}:"
+            + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
+        )
         cached = self._read_person_lib_cache(
             cache_key, allow_stale=self._circuit()
         )
@@ -464,9 +488,10 @@ class ImmichHttpClient:
         if by_id:
             self._last_person_source = "faces_or_timeline"
             out = list(by_id.values())[:target]
-            # Cache newest-year walks even when the year budget truncated older
-            # decades. Re-walking a recovering NAS is how Immich bounces again.
-            if not self._circuit():
+            if (
+                not getattr(self, "_person_lib_incomplete", False)
+                and not self._circuit()
+            ):
                 self._write_person_lib_cache(cache_key, out)
             return out
         if self._circuit():
