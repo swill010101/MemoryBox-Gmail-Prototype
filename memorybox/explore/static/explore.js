@@ -663,11 +663,12 @@
   }
 
   function countByType(items) {
-    const c = { photo: 0, video: 0, email: 0, artifact: 0, story: 0, other: 0 };
+    const c = { photo: 0, video: 0, email: 0, text: 0, artifact: 0, story: 0, other: 0 };
     for (const it of items) {
       const t = String(it.type || "").toLowerCase();
-      if (t in c) c[t] += 1;
-      else if (t === "sms" || t === "text") c.email += 1;
+      if (t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs") {
+        c.text += 1;
+      } else if (t in c) c[t] += 1;
       else c.other += 1;
     }
     return c;
@@ -692,10 +693,21 @@
       state.domain.summary = state.domain._askSummary;
       return;
     }
+    const hiddenSms = Number(state.domain.smsHidden || 0) || 0;
+    const availableSms = Number(state.domain.smsAvailable || 0) || 0;
+    const includeTexts = Boolean(
+      state.domain.includeTexts || state.domain.galleryShowSms
+    );
+    const allAsk =
+      !state.domain.typeFilter || state.domain.typeFilter === "all";
     const c = countByType(vis);
+    if (allAsk && !includeTexts && (hiddenSms || availableSms)) {
+      c.text = Math.max(c.text, availableSms || hiddenSms);
+    }
     const parts = [];
     if (c.photo) parts.push(`${c.photo} photo${c.photo === 1 ? "" : "s"}`);
     if (c.video) parts.push(`${c.video} video moment${c.video === 1 ? "" : "s"}`);
+    if (c.text) parts.push(`${c.text} text${c.text === 1 ? "" : "s"}`);
     if (c.email) parts.push(`${c.email} email${c.email === 1 ? "" : "s"}`);
     if (c.artifact) parts.push(`${c.artifact} artifact${c.artifact === 1 ? "" : "s"}`);
     if (c.story) parts.push(`${c.story} stor${c.story === 1 ? "y" : "ies"}`);
@@ -741,9 +753,17 @@
     ) {
       extra = " " + String(state.domain._askSummary).trim();
     }
-    state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
+    const archiveN =
+      allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
+    let hideNote = "";
+    if (allAsk && !includeTexts && (hiddenSms || availableSms)) {
+      hideNote =
+        ` ${availableSms || hiddenSms} text message(s) are in the archive ` +
+        "(hidden in Gallery — say Add texts to show them).";
+    }
+    state.domain.summary = `Showing ${archiveN} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}${extra}`;
+    }${trunc}${extra}${hideNote}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -1044,6 +1064,8 @@
         typeFilter: nextType,
         includeTexts: includeTexts,
         galleryShowSms: galleryShowSms,
+        smsAvailable: Number(exploreHint.sms_available || 0) || 0,
+        smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,

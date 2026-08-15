@@ -215,12 +215,15 @@ class ImmichHttpClient:
         FlightSim POST /search/metadata often RST on personIds (Show me Peggy
         George = 0 photos / 1 video). Prefer GET paths the Immich UI uses:
 
-        1. ``GET /people/{id}?withFaces=true`` — one call, asset UUIDs
-        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId
+        1. ``GET /people/{id}`` faces — often a subset (feature faces), not
+           the person library (Peggy: 131 faces vs 598 Immich assets)
+        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId —
+           the Immich person-page source; always union with faces
         3. POST /search/metadata last, short timeout, never the first probe
 
         Prefer ``withExif: true`` on the metadata path so Map gets GPS, but
         learn once per client. Do not trust ``assets.total`` as an early-stop.
+        Do not treat a non-empty face list as a complete library.
         """
         if not person_ids:
             return []
@@ -238,9 +241,7 @@ class ImmichHttpClient:
                 by_id[eid] = it
 
         _add(self._assets_from_person_faces(person_ids, target))
-        # withFaces often IS the person library (all assigned faces). Only
-        # hit timeline when faces were sparse and Immich is still answering.
-        if len(by_id) < min(target, 20) and not self._circuit():
+        if not self._circuit():
             _add(self._assets_from_person_timeline(person_ids, target))
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
@@ -305,7 +306,9 @@ class ImmichHttpClient:
             if self._circuit():
                 break
             buckets = self._list_person_time_buckets(pid)
-            for bucket in buckets[:24]:
+            # Walk the full person timeline. A 24-bucket cap is ~2 years of
+            # MONTH buckets and drops the rest of the Immich person page.
+            for bucket in buckets[:480]:
                 if self._circuit():
                     break
                 if len(by_id) >= target:

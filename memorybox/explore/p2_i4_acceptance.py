@@ -253,6 +253,8 @@ def _prove_harness() -> dict[str, Any]:
             "bindPhotoPan",
             "renderRailTools",
             "Camera / EXIF",
+            "smsHidden",
+            "hidden in Gallery — say Add texts to show them",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -350,6 +352,25 @@ def _prove_harness() -> dict[str, Any]:
         )
         _t, _s = curator_from_items("Show me Test", mapped, None)
         _check("curator_builder", bool(_s), checks, problems, (_s or "")[:80])
+        all_ask_items = (
+            [{"type": "photo"} for _ in range(131)]
+            + [{"type": "video"}]
+            + [
+                {"type": "sms", "gallery_default_hidden": True}
+                for _ in range(500)
+            ]
+        )
+        _pt, _ps = curator_from_items("Show me Peggy George", all_ask_items, None)
+        _check(
+            "all_ask_curator_counts_hidden_texts",
+            "632" in _ps
+            and "131 photo" in _ps
+            and "500 text" in _ps
+            and "1 video" in _ps,
+            checks,
+            problems,
+            (_ps or "")[:160],
+        )
     except Exception as exc:  # noqa: BLE001
         _check("ask_to_explore_mapper", False, checks, problems, str(exc))
 
@@ -950,6 +971,64 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(got_tl)} ids={[x.get('id') for x in got_tl]}",
+        )
+
+        class _FacesSubsetTimelineLibraryImmich(ImmichHttpClient):
+            """Peggy bug: faces return 131; Immich person page is timeline 598."""
+
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.timeline_calls = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                p = str(path)
+                if method == "GET" and p.startswith("/people/person-1"):
+                    faces = [
+                        {
+                            "id": f"f{i}",
+                            "assetId": f"{i:08d}-aaaa-bbbb-cccc-dddddddddddd",
+                        }
+                        for i in range(131)
+                    ]
+                    return 200, {"id": "person-1", "name": "Peggy George", "faces": faces}
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": f"{2000 + y}-01-01", "count": 20}
+                        for y in range(30)
+                    ]
+                if "timeline/bucket" in p:
+                    self.timeline_calls += 1
+                    # 30 year buckets × 20 assets = 600 (Immich person page).
+                    import re
+
+                    m = re.search(r"timeBucket=(\d{4})", p)
+                    year = int(m.group(1)) if m else 2000
+                    yoff = year - 2000
+                    return 200, [
+                        {
+                            "id": f"{yoff:02d}{i:02d}cccc-1111-2222-3333-444444444444",
+                            "isImage": True,
+                        }
+                        for i in range(20)
+                    ]
+                return 404, None
+
+        client_peggy = _FacesSubsetTimelineLibraryImmich()
+        got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_person_library_unions_faces_and_full_timeline",
+            len(got_peggy) >= 598
+            and client_peggy.timeline_calls >= 30
+            and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
+            checks,
+            problems,
+            f"n={len(got_peggy)} tl_calls={client_peggy.timeline_calls} "
+            f"src={getattr(client_peggy, '_last_person_source', None)}",
         )
 
         _check(

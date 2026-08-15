@@ -424,7 +424,8 @@ def curator_from_items(
         counts = {
             "photo": sum(1 for i in items if i.get("type") == "photo"),
             "video": sum(1 for i in items if i.get("type") == "video"),
-            "email": sum(1 for i in items if i.get("type") in ("email", "sms", "text")),
+            "sms": sum(1 for i in items if _is_sms_type(i.get("type"))),
+            "email": sum(1 for i in items if i.get("type") == "email"),
             "artifact": sum(1 for i in items if i.get("type") == "artifact"),
             "story": sum(1 for i in items if i.get("type") == "story"),
         }
@@ -435,8 +436,10 @@ def curator_from_items(
             parts.append(
                 f"{counts['video']} video moment{'s' if counts['video'] != 1 else ''}"
             )
+        if counts["sms"]:
+            parts.append(f"{counts['sms']} text{'s' if counts['sms'] != 1 else ''}")
         if counts["email"]:
-            parts.append(f"{counts['email']} email/text")
+            parts.append(f"{counts['email']} email{'s' if counts['email'] != 1 else ''}")
         if counts["artifact"]:
             parts.append(
                 f"{counts['artifact']} artifact{'s' if counts['artifact'] != 1 else ''}"
@@ -607,10 +610,15 @@ def build_explore_find(
     visible_items = [
         i for i in items if not (i.get("gallery_default_hidden") and _is_sms_type(i.get("type")))
     ]
+    # All-ask curator counts the archive (photos + hidden texts + video).
+    # Gallery still hides SMS until Add texts / an explicit text ask.
+    answer_for_curator = result.get("answer_text")
+    if result.get("answer_kind") != "clarification":
+        answer_for_curator = None
     title, summary = curator_from_items(
         text,
-        visible_items,
-        result.get("answer_text"),
+        items,
+        answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
     if sms_hidden and not show_sms:
