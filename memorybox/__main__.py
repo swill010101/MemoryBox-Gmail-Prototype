@@ -234,6 +234,15 @@ def main(argv: list[str] | None = None) -> int:
             "Harness remains a regression check; /dev/ai-trace is developer-only."
         ),
     )
+    p_prove_mbql = sub.add_parser(
+        "prove-mbql-001",
+        help="MBQL-001 Ask/query/command compile acceptance prove",
+    )
+    p_prove_mbql.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="FlightSim ACCEPTED gate remains manual (definition §6 phrases).",
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -494,6 +503,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ai_trace.p2_i7a_acceptance import prove_p2_i7a
 
         payload = prove_p2_i7a(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-mbql-001":
+        from memorybox.mbql.p2_mbql_acceptance import prove_p2_mbql_001
+
+        payload = prove_p2_mbql_001(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

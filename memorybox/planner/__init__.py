@@ -28,6 +28,8 @@ from memorybox.planner.temporal import (
 )
 
 VisualScope = Literal["none", "broad", "still_only", "video_only"]
+MbqlAct = Literal["find", "refine", "navigate", "clarify"]
+MbqlProvenance = Literal["deterministic", "model_fill", "mixed"]
 
 STILL_ONLY_RE = re.compile(r"(?i)\b(photos?|stills?)\b")
 VIDEO_ONLY_RE = re.compile(
@@ -438,6 +440,12 @@ class QueryPlan:
     # I9A profile-backed intents (who / birth / anniversary) — set by orchestrator
     profile_intent: str | None = None
     profile_answer: dict | None = None
+    # MBQL-001 — same record, extra compile fields (defaults keep I4–I7 callers valid)
+    act: MbqlAct = "find"
+    compile_provenance: MbqlProvenance = "deterministic"
+    refine_verb: str | None = None
+    navigate_target: str | None = None
+    gallery_show_sms: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1365,4 +1373,6 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         reference_resolved=reference_resolved,
         subject_changed=subject_changed,
         retrieval_constraints=tuple(constraints),
+        act="clarify" if requires_clarification else "find",
+        compile_provenance="deterministic",
     )

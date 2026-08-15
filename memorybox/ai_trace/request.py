@@ -79,6 +79,8 @@ class RequestTrace:
                 "want_communication": plan.get("want_communication"),
                 "want_visual": plan.get("want_visual"),
                 "person_names": plan.get("person_names"),
+                "act": plan.get("act"),
+                "compile_provenance": plan.get("compile_provenance"),
             },
         )
 

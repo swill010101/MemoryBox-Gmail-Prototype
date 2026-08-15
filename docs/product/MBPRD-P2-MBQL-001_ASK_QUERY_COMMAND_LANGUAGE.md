@@ -1,12 +1,12 @@
 # MBPRD-P2-MBQL-001 — Ask, Query & Command Language
 
-**Status:** **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · definition **LOCKED** · **NO BUILD** until explicit authorization  
+**Status:** **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · definition **LOCKED** · **BUILD AUTHORIZED** 2026-08-15  
 **Date:** 2026-08-15  
 **Increment definition:** [MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md)  
 **Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
 **Does not start:** I8 email · I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user
 
-PRD accepted. Definition locked. This document does **not** authorize implementation (Q8).
+PRD accepted. Definition locked. Build authorized 2026-08-15. Do not start I8.
 
 ---
 
@@ -29,7 +29,7 @@ Today that job is split and brittle:
 
 ## 2. Success criteria (how we’ll know it works)
 
-After a future authorized build (not this draft):
+After this authorized build:
 
 1. **One contract.** Ask, Explore refine, Person-scoped Ask, and filter chips describe the same typed intent (person / place / time / modality / communication / navigation).
 2. **One compiler entry.** Typed Ask and the equivalent click produce the same plan fields and the same visible filter/result interpretation (I4 equivalence preserved).
@@ -43,7 +43,7 @@ After a future authorized build (not this draft):
 
 ## 3. Scope
 
-### IN (this increment, if later authorized)
+### IN (this increment)
 
 - Name and freeze the **MBQL intent record** (extend today’s `QueryPlan`, do not invent a parallel object).
 - Classify every current Ask/Explore phrase as: **new find** · **refine current set** · **navigate** · **clarify**.
@@ -99,16 +99,16 @@ After a future authorized build (not this draft):
 
 ---
 
-## 5. Build plan (sequencing only — not authorized)
+## 5. Build plan (authorized 2026-08-15)
 
-Do **not** execute until Tom explicitly authorizes MBQL-001 build (Q8). Q1–Q8 are locked.
+Q8 is open. Q1–Q7 stay locked.
 
 1. Freeze the intent record (fields, enums, refine vs find vs navigate).
 2. Inventory every `plan_ask` path and every `applyAskCommand` phrase; map each to the record.
 3. Single compile function used by Ask + Explore (+ Person scope).
-4. If Q1 = model residual only: traced fill + schema validate + fail back.
+4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Do not start I8.
+6. **Stop.** Do not start I8. ACCEPTED remains a FlightSim owner pass of definition §6 phrases.
 
 ---
 
@@ -123,10 +123,10 @@ Do **not** execute until Tom explicitly authorizes MBQL-001 build (Q8). Q1–Q8 
 | **Q5** | Speech | **Confirm.** STT-ready. **I9 stays in its position** (after I8.5). Do not build I9 here. |
 | **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. I8.5 remains after I8. |
 | **Q7** | I4 Explore | **Confirm.** Do not redesign. |
-| **Q8** | Build gate | **Confirm.** **No runtime** until explicit MBQL-001 build authorization. |
+| **Q8** | Build gate | **Confirm, then authorized** 2026-08-15 (“approved to build”). |
 
 ---
 
 ## 7. Decision status
 
-PRD **ACCEPTED**. Increment definition **LOCKED** for review. **Build is not authorized.** Do not implement until Tom explicitly authorizes MBQL-001.
+PRD **ACCEPTED**. Increment definition **LOCKED**. **Build authorized** 2026-08-15. Do not start I8.

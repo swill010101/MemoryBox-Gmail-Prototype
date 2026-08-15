@@ -121,11 +121,10 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "includeTexts" in explore_js
         and "galleryShowSms" in explore_js
         and "Add texts" in explore_js
-        and "MBQL" not in find_py
-        and "mbql" not in explore_js.lower(),
+        and "MBQL" not in find_py,
         checks,
         problems,
-        "Default Gallery hides texts; Add/Only texts; no MBQL-001",
+        "Default Gallery hides texts; Add/Only texts stay; MBQL lives outside find.py",
     )
     _check(
         "i7_archive_health",

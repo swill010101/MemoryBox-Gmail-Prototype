@@ -1,6 +1,6 @@
 # MBBS-P2 Increment MBQL-001 — Ask, Query & Command Language
 
-**Status:** **DEFINITION LOCKED** 2026-08-15 (Tom Q1–Q8) · PRD **ACCEPTED** · **NO BUILD** until explicit authorization  
+**Status:** **BUILD AUTHORIZED** 2026-08-15 (Tom: “approved to build”) · definition **LOCKED** · PRD **ACCEPTED**  
 **Date:** 2026-08-15  
 **PRD:** [MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md)  
 **Authority:** Tom lock 2026-08-15 · [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · I7A **ACCEPTED**  
@@ -8,7 +8,7 @@
 **Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I8 email / **P2-BL-I8-01** · I8.5 · **I9 spoken product** (stays after I8.5) · I10 · I11 · I13/I14 · family nav · multi-user · Explore redesign
 
-**I7A is ACCEPTED. MBQL-001 definition is locked. MBQL-001 build is NOT authorized.** Do not implement until Tom explicitly authorizes build.
+**I7A is ACCEPTED. MBQL-001 definition is locked. MBQL-001 build is AUTHORIZED.** Q1 residual · Q2 shared Explore contract · Q8 was the gate — now open.
 
 ---
 
@@ -41,7 +41,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 | 6 | **P2-I9** Spoken Moments | **Stays here.** STT-ready contract only in MBQL-001; no I9 product |
 | 7+ | I10 / I11 | Same contract; do not pull them into MBQL-001 |
 
-**Build rule:** Definition is locked. **No runtime** until explicit MBQL-001 build authorization (Q8).
+**Build rule:** Definition locked. Build authorized 2026-08-15. Do not start I8.
 
 ---
 
@@ -56,7 +56,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 | **Q5** | Speech | **Confirm.** STT-ready contract. **I9 stays in its position** (after I8.5). Do not build spoken moments in MBQL-001. Later STT must call the same compile. |
 | **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. I8.5 remains after I8. |
 | **Q7** | Explore UX | **Confirm.** Do not redesign I4. MBQL sits under the current Explore Ask row. |
-| **Q8** | Build gate | **Confirm.** Definition may be locked now. **No runtime** until explicit MBQL-001 build authorization. |
+| **Q8** | Build gate | **Confirm, then authorized.** Tom 2026-08-15: “approved to build.” |
 
 ### Additional locked rules (same day)
 
@@ -70,7 +70,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 
 ---
 
-## 3. Current code (inspect only — do not implement)
+## 3. Current code (build authorized)
 
 | Boundary | Path | Locked role when built |
 |----------|------|------------------------|
@@ -84,7 +84,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 
 `QueryPlan` already has: `person_names` / `person_ids`, `place_names`, `event_labels`, `trip_labels`, `time_start` / `time_end` / `temporal_windows`, `visual_scope`, `want_communication`, story/journal/artifact flags, follow-up / clarification / inheritance.
 
-**Add at build (not now):**
+**Added this build:**
 
 - **act:** `find` · `refine` · `navigate` · `clarify`  
 - **compile_provenance:** `deterministic` · `model_fill` · `mixed`  
@@ -112,7 +112,7 @@ Residual means: a slot the deterministic compiler could not fill, or an ambiguit
 
 ## 5. Scope
 
-### IN (when build is authorized)
+### IN (this authorized build)
 
 - Freeze the intent record and act enum on `QueryPlan`.  
 - One compile entry for Ask + Explore + Person inherit.  
@@ -135,9 +135,9 @@ Residual means: a slot the deterministic compiler could not fill, or an ambiguit
 
 ---
 
-## 6. Acceptance intent (after a future build — not now)
+## 6. Acceptance intent (FlightSim owner pass)
 
-Pass **all** on FlightSim. Harness ≠ ACCEPTED.
+Pass **all** on FlightSim. `prove-mbql-001` is a harness, not ACCEPTED.
 
 | # | Gate |
 |---|------|
@@ -161,7 +161,7 @@ Pass **all** on FlightSim. Harness ≠ ACCEPTED.
 7. `Go to Tom instead.` on a Person surface — navigate, not a find  
 8. One residual/ambiguous follow-up (`what did she say` / `the other trip`) — clarify or traced residual fill  
 
-`prove-mbql-001` (when it exists) is a harness, not ACCEPTED.
+`prove-mbql-001` is a harness, not ACCEPTED.
 
 ---
 
@@ -178,7 +178,7 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 | I7A ACCEPTED | **Yes** 2026-08-15 |
 | MBQL-001 PRD | **ACCEPTED** 2026-08-15 (Tom Q1–Q8) |
 | MBQL-001 definition | **LOCKED** this revision — review stamp |
-| MBQL-001 build | **NOT AUTHORIZED** (Q8) |
+| MBQL-001 build | **AUTHORIZED** 2026-08-15 — implementing |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** Definition is locked for your review. Do not implement until you explicitly authorize MBQL-001 build.
+**Stop.** Do not start I8. ACCEPTED is a FlightSim owner pass of §6 phrases with `/dev/ai-trace` available.

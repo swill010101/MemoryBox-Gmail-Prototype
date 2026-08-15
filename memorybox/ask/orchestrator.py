@@ -13,6 +13,7 @@ from memorybox.context import (
     apply_patch,
     default_context_store,
 )
+from memorybox.mbql import compile_ask
 from memorybox.planner import QueryPlan, plan_ask
 from memorybox.providers.llm.protocol import LlmProvider
 from memorybox.providers.photo.protocol import PhotoProvider
@@ -864,7 +865,10 @@ class AskOrchestrator:
 
     def _ask_impl(self, text: str, *, session_id: str | None = None) -> AskResult:
         ctx = self.store.get_or_create(session_id)
-        plan = plan_ask(text, ctx)
+        try:
+            plan = compile_ask(text, ctx, llm=self.llm)
+        except Exception:  # noqa: BLE001 — Q4: never fail Ask because MBQL failed
+            plan = plan_ask(text, ctx)
 
         # I9A: owner → Relationship service → Person id (no display_name string hacks)
         from dataclasses import replace

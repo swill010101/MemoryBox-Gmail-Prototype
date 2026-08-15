@@ -69,6 +69,29 @@
   // "Clear location." "Show map." "Show gallery."
   // "Clear context and go to People."
 
+  // MBQL-001 shared verb ids — must match memorybox/mbql/verbs.py VERB_IDS
+  const MBQL_VERBS = {
+    clear_filters: /^clear filters\.?$/i,
+    show_everything: /^show everything\.?$/i,
+    only_undated: /^only undated\.?$|^undated\.?$|^show undated\.?$/i,
+    clear_undated: /^clear undated\.?$|^include dated\.?$/i,
+    show_map: /^show map\.?$|^map view\.?$|^on the map\.?$/i,
+    show_gallery: /^show gallery\.?$|^gallery view\.?$|^list view\.?$/i,
+    clear_place: /^clear location\.?$|^clear place\.?$|^clear map selection\.?$/i,
+    clear_time: /^clear date\.?$|^clear time\.?$|^clear timeline\.?$/i,
+    reset: /^reset\.?$/i,
+    reset_timeline: /^reset timeline\.?$|^full result range\.?$|^reset range\.?$/i,
+    only_photos: /^only photos?\.?$|^photos?\.?$/i,
+    only_video: /^only videos?\.?$/i,
+    add_video: /^add video\.?$/i,
+    add_texts: /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$|^add texts?\.?$/i,
+    only_texts: /^only (email|emails|texts?|sms|imessage)\b/i,
+    only_artifacts: /^only artifacts?\.?$/i,
+    only_stories: /^only stories?\.?$/i,
+    go_to_people: /clear context.*people|go to people/i,
+    go_to_person: /^go to\s+(.+?)\s+instead\.?$/i,
+  };
+
   /** @type {{
    *   domain: {
    *     askText: string,
@@ -1114,7 +1137,7 @@
     const lower = text.toLowerCase();
 
     // Navigation / clear context — bare People picker (drop active person)
-    if (/clear context.*people|go to people/.test(lower)) {
+    if (MBQL_VERBS.go_to_people.test(text)) {
       if (window.mbShell && window.mbShell.setActivePerson) {
         window.mbShell.setActivePerson(null);
       }
@@ -1154,8 +1177,8 @@
       return;
     }
 
-    if (PERSON_MODE && /^go to\s+(.+?)\s+instead\.?$/.test(lower)) {
-      const m = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    if (PERSON_MODE && MBQL_VERBS.go_to_person.test(text)) {
+      const m = String(text).match(MBQL_VERBS.go_to_person);
       const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
       if (who) {
         const whoL = who.toLowerCase();
@@ -1176,7 +1199,7 @@
       }
     }
 
-    if (/^clear filters\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_filters.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1185,7 +1208,7 @@
       render();
       return;
     }
-    if (/^show everything\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_everything.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1195,46 +1218,42 @@
       return;
     }
 
-    if (/^only undated\.?$|^undated\.?$|^show undated\.?$/.test(lower)) {
+    if (MBQL_VERBS.only_undated.test(text)) {
       setUndatedFilter(true);
       render();
       return;
     }
-    if (/^clear undated\.?$|^include dated\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_undated.test(text)) {
       setUndatedFilter(false);
       render();
       return;
     }
 
-    if (/^show map\.?$|^map view\.?$|^on the map\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_map.test(text)) {
       setViewMode("map");
       render();
       return;
     }
-    if (/^show gallery\.?$|^gallery view\.?$|^list view\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_gallery.test(text)) {
       setViewMode("gallery");
       render();
       return;
     }
 
-    if (
-      /^clear location\.?$/.test(lower) ||
-      /^clear place\.?$/.test(lower) ||
-      /^clear map selection\.?$/.test(lower)
-    ) {
+    if (MBQL_VERBS.clear_place.test(text)) {
       clearPlaceFilter();
       render();
       return;
     }
 
-    if (/^clear date\.?$|^clear time\.?$|^clear timeline\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_time.test(text)) {
       state.domain.temporalWindows = null;
       resetTimelineExtent(true);
       render();
       return;
     }
 
-    if (/^reset\.?$/.test(lower)) {
+    if (MBQL_VERBS.reset.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1289,15 +1308,15 @@
       }
     }
 
-    if (/only photos?\.?/.test(lower) || /^photos?\.?$/.test(lower)) {
+    if (MBQL_VERBS.only_photos.test(text) || /only photos?\.?/.test(lower)) {
       setTypeFilter("photo");
       render();
       return;
     }
-    if (/only videos?\.?/.test(lower) || /add video/.test(lower)) {
-      if (/add video/.test(lower) && state.domain.typeFilter === "photo") {
+    if (MBQL_VERBS.only_video.test(text) || MBQL_VERBS.add_video.test(text)) {
+      if (MBQL_VERBS.add_video.test(text) && state.domain.typeFilter === "photo") {
         setTypeFilter("all");
-      } else if (/only videos?/.test(lower)) {
+      } else if (MBQL_VERBS.only_video.test(text)) {
         setTypeFilter("video");
       } else {
         setTypeFilter("all");
@@ -1305,27 +1324,24 @@
       render();
       return;
     }
-    if (
-      /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$/.test(lower) ||
-      /^add texts?\.?$/.test(lower)
-    ) {
+    if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
-    if (/only (email|emails|texts?|sms|imessage)\b/.test(lower)) {
+    if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
       setTypeFilter("email");
       render();
       return;
     }
-    if (/only artifacts?/.test(lower)) {
+    if (MBQL_VERBS.only_artifacts.test(text)) {
       setTypeFilter("artifact");
       render();
       return;
     }
-    if (/only stories?/.test(lower)) {
+    if (MBQL_VERBS.only_stories.test(text)) {
       setTypeFilter("story");
       render();
       return;
@@ -1345,7 +1361,7 @@
       return;
     }
 
-    if (/reset timeline|full result range|reset range/.test(lower)) {
+    if (MBQL_VERBS.reset_timeline.test(text) || /reset timeline|full result range|reset range/.test(lower)) {
       resetTimelineExtent(true);
       render();
       return;
