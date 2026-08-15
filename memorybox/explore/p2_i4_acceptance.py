@@ -759,7 +759,7 @@ def _prove_harness() -> dict[str, Any]:
                 self.thumbs_root = None
                 self._calls: list[dict[str, Any]] = []
 
-            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
                 assert method == "POST" and path == "/search/metadata"
                 # Prefer withExif for Map GPS; fake Immich accepts it.
                 page = int((body or {}).get("page") or 1)
@@ -841,6 +841,22 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(got_trap)} (must exceed fake page total)",
+        )
+
+        class _ExifTimeoutImmich(_FakeImmich):
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if (body or {}).get("withExif"):
+                    raise TimeoutError("withExif RST")
+                return super()._request(method, path, body=body, timeout=timeout, retries=retries)
+
+        client4 = _ExifTimeoutImmich()
+        got_no_exif = client4.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_survives_exif_timeout",
+            len(got_no_exif) >= 50,
+            checks,
+            problems,
+            f"n={len(got_no_exif)} calls={len(client4._calls)}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))

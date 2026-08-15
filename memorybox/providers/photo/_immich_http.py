@@ -91,6 +91,7 @@ class ImmichHttpClient:
         *,
         body: dict[str, Any] | None = None,
         timeout: float = 60,
+        retries: int = 2,
     ) -> tuple[int, Any]:
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -102,7 +103,8 @@ class ImmichHttpClient:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         last_err: Exception | None = None
-        for attempt in range(3):
+        attempts = max(1, int(retries))
+        for attempt in range(attempts):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     raw = resp.read().decode("utf-8", "replace")
@@ -118,7 +120,7 @@ class ImmichHttpClient:
                 # FlightSim Immich often RST/times out on person library search.
                 # Retry — do not treat a dropped socket as "this person has no photos".
                 last_err = exc
-                if attempt < 2:
+                if attempt < attempts - 1:
                     time.sleep(0.35 * (attempt + 1))
                     continue
                 raise
@@ -127,12 +129,14 @@ class ImmichHttpClient:
         raise RuntimeError("Immich request failed")
 
     def ping(self) -> bool:
-        status, body = self._request("GET", "/server/ping")
+        status, body = self._request("GET", "/server/ping", timeout=8, retries=1)
         return status == 200 and isinstance(body, dict) and body.get("res") == "pong"
 
     def check_read_permissions(self) -> dict[str, bool]:
         out = {"asset.read": False, "album.read": False, "person.read": False}
-        status, _ = self._request("POST", "/search/metadata", body={"size": 1})
+        status, _ = self._request(
+            "POST", "/search/metadata", body={"size": 1}, timeout=8, retries=1
+        )
         out["asset.read"] = status == 200
         status, _ = self._request("GET", "/albums")
         out["album.read"] = status == 200
@@ -203,10 +207,19 @@ class ImmichHttpClient:
             )
             return ([it for it in items if isinstance(it, dict)], next_s)
 
-        def _once(payload: dict[str, Any]) -> tuple[int, Any, Exception | None]:
+        def _once(
+            payload: dict[str, Any],
+            *,
+            timeout: float = 25,
+            retries: int = 2,
+        ) -> tuple[int, Any, Exception | None]:
             try:
                 status, data = self._request(
-                    "POST", "/search/metadata", body=payload, timeout=25
+                    "POST",
+                    "/search/metadata",
+                    body=payload,
+                    timeout=timeout,
+                    retries=retries,
                 )
                 return status, data, None
             except Exception as exc:  # noqa: BLE001
@@ -241,35 +254,39 @@ class ImmichHttpClient:
                         return _extract_items(data)
                 return [], None
 
-            # First page(s): probe withExif once, then fall back — never wipe library.
-            probe_order: list[dict[str, Any]] = [
-                {**base, "order": "desc", "withExif": True},
-                {**base, "withExif": True},
-                {**base, "order": "desc"},
-                dict(base),
-            ]
+            # Library first (no withExif). FlightSim personIds+withExif often
+            # RST for 25s × retries and never reaches the working path — that
+            # was Show me Peggy George = 1 video / 0 photos / ~129s.
             last_err: Exception | None = None
-            last_status = 0
-            for payload in probe_order:
-                status, data, err = _once(payload)
+            for payload in ({**base, "order": "desc"}, dict(base)):
+                status, data, err = _once(payload, timeout=25, retries=1)
                 if err is not None:
                     last_err = err
-                    if payload.get("withExif"):
-                        # Timeout/reject on EXIF — keep probing without it.
-                        continue
                     continue
-                last_status = status
                 if status == 200:
-                    use_exif = bool(payload.get("withExif"))
+                    items, nxt = _extract_items(data)
+                    st_x, data_x, _err_x = _once(
+                        {**base, "order": "desc", "withExif": True},
+                        timeout=8,
+                        retries=1,
+                    )
+                    if st_x == 200:
+                        items_x, nxt_x = _extract_items(data_x)
+                        if items_x:
+                            use_exif = True
+                            use_order = True
+                            self._person_with_exif = True
+                            self._person_use_order = True
+                            return items_x, nxt_x
+                    use_exif = False
                     use_order = "order" in payload
-                    self._person_with_exif = use_exif
+                    self._person_with_exif = False
                     self._person_use_order = use_order
-                    return _extract_items(data)
+                    return items, nxt
                 if status in (400, 422):
                     continue
-            if page == 1 and last_err is not None and last_status == 0:
+            if page == 1 and last_err is not None:
                 raise last_err
-            # All probes failed without a transport error — no assets.
             use_exif = False
             self._person_with_exif = False
             return [], None
