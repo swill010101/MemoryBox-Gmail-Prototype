@@ -5,6 +5,7 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import urllib.error
@@ -12,9 +13,58 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+_LOG = logging.getLogger("memorybox.immich")
+
 
 class ImmichAuthError(RuntimeError):
     pass
+
+
+def immich_activity_path() -> Path:
+    """Ask-side Immich call log (not Immich's own server log). No API keys."""
+    import os
+
+    raw = (os.environ.get("MEMORYBOX_IMMICH_ACTIVITY_PATH") or "").strip()
+    if raw:
+        return Path(raw)
+    home = (
+        os.environ.get("MEMORYBOX_HOME")
+        or os.environ.get("MEMORYBOX_DATA_DIR")
+        or ""
+    ).strip()
+    if home:
+        return Path(home) / "immich-activity.jsonl"
+    return Path(__file__).resolve().parents[2] / "immich-activity.jsonl"
+
+
+def _append_immich_activity(rec: dict[str, Any]) -> None:
+    try:
+        path = immich_activity_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, default=str) + "\n")
+    except Exception:  # noqa: BLE001 — never fail a photo ask because the log disk hiccuped
+        return
+
+
+def read_immich_activity(*, limit: int = 200) -> list[dict[str, Any]]:
+    path = immich_activity_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for line in lines[-max(1, int(limit)) :]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out
 
 
 class ImmichHttpClient:
@@ -96,6 +146,7 @@ class ImmichHttpClient:
         retries: int = 2,
     ) -> tuple[int, Any]:
         if getattr(self, "_circuit_open", False) and not self._circuit_allows(path):
+            self._record_call(method, path, status=0, ms=0, err="circuit_open")
             raise TimeoutError("immich circuit open")
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -114,20 +165,27 @@ class ImmichHttpClient:
             lock = self._lock
         with lock:
             for attempt in range(attempts):
+                t0 = time.monotonic()
                 try:
                     with urllib.request.urlopen(req, timeout=timeout) as resp:
                         raw = resp.read().decode("utf-8", "replace")
+                        ms = (time.monotonic() - t0) * 1000
+                        self._record_call(method, path, status=int(resp.status), ms=ms)
                         return resp.status, (json.loads(raw) if raw else None)
                 except urllib.error.HTTPError as e:
+                    ms = (time.monotonic() - t0) * 1000
                     raw = e.read().decode("utf-8", "replace") if e.fp else ""
                     try:
                         parsed = json.loads(raw) if raw else None
                     except Exception:  # noqa: BLE001
                         parsed = raw
+                    self._record_call(method, path, status=int(e.code), ms=ms)
                     return e.code, parsed
                 except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
                     # FlightSim Immich often RST/times out on person library search.
+                    ms = (time.monotonic() - t0) * 1000
                     last_err = exc
+                    self._record_call(method, path, status=0, ms=ms, err=str(exc)[:160])
                     self._note_transport_fail(exc)
                     if attempt < attempts - 1 and not getattr(self, "_circuit_open", False):
                         time.sleep(0.35 * (attempt + 1))
@@ -136,6 +194,63 @@ class ImmichHttpClient:
         if last_err is not None:
             raise last_err
         raise RuntimeError("Immich request failed")
+
+    def _record_call(
+        self,
+        method: str,
+        path: str,
+        *,
+        status: int,
+        ms: float,
+        err: str | None = None,
+    ) -> None:
+        rec = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+            "method": str(method or "GET"),
+            "path": str(path or "")[:160],
+            "status": int(status or 0),
+            "ms": int(ms),
+            "err": (err or "")[:160] or None,
+            "circuit": self._circuit(),
+        }
+        log = getattr(self, "_call_log", None)
+        if log is None:
+            self._call_log = []
+            log = self._call_log
+        log.append(rec)
+        if len(log) > 48:
+            del log[:-48]
+        _LOG.info(
+            "immich %s %s status=%s ms=%s err=%s circuit=%s",
+            rec["method"],
+            rec["path"],
+            rec["status"],
+            rec["ms"],
+            rec["err"],
+            rec["circuit"],
+        )
+        _append_immich_activity(rec)
+
+    def diag_snapshot(self) -> dict[str, Any]:
+        """Last Immich HTTP calls for curator / /dev/ai-trace (no secrets)."""
+        rows = list(getattr(self, "_call_log", None) or [])
+        fails = [
+            r
+            for r in rows
+            if r.get("err") or int(r.get("status") or 0) in (0, 500, 502, 503, 504)
+        ]
+        return {
+            "calls": len(rows),
+            "fails": len(fails),
+            "circuit": self._circuit(),
+            "source": getattr(self, "_last_person_source", None),
+            "incomplete": bool(getattr(self, "_person_lib_incomplete", False)),
+            "total_ms": int(sum(int(r.get("ms") or 0) for r in rows)),
+            "last": rows[-8:],
+        }
+
+    def _reset_call_log(self) -> None:
+        self._call_log = []
 
     def _reset_person_circuit(self) -> None:
         self._transport_fails = 0
@@ -228,6 +343,7 @@ class ImmichHttpClient:
         if not person_ids:
             return []
         self._reset_person_circuit()
+        self._reset_call_log()
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
         cache_key = ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
@@ -480,9 +596,10 @@ class ImmichHttpClient:
             key = str(aid or "").strip()
             if not key:
                 continue
-            if i < len(is_image) and is_image[i] is False:
-                continue
             row: dict[str, Any] = {"id": key}
+            if i < len(is_image) and is_image[i] is False:
+                row["type"] = "video"
+                row["isVideo"] = True
             if i < len(created) and created[i]:
                 row["localDateTime"] = created[i]
                 row["fileCreatedAt"] = created[i]

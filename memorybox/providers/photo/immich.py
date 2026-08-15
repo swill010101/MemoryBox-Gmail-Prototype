@@ -360,6 +360,8 @@ class ImmichPhotoProvider:
         if w and h:
             add("Dimensions", f"{w} × {h}")
         add("Description", exif.get("description") or exif.get("imageDescription"))
+        if raw.get("isVideo") or str(raw.get("type") or "").lower() == "video":
+            add("media", "video")
         return tuple(rows)
 
     @staticmethod

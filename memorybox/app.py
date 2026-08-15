@@ -539,6 +539,39 @@ def ai_trace_scenario(body: AiTraceScenarioRequest) -> dict[str, Any]:
     return run_scenario(body.scenario)
 
 
+@app.get("/dev/api/immich-activity")
+def immich_activity(limit: int = Query(200, ge=1, le=2000)) -> dict[str, Any]:
+    """Ask-side Immich HTTP activity (up/down correlation). No API keys."""
+    from memorybox.providers.photo._immich_http import (
+        immich_activity_path,
+        read_immich_activity,
+    )
+    from memorybox.ask.deps import build_photo
+
+    live: dict[str, Any] = {}
+    try:
+        photo = build_photo()
+        snap = getattr(getattr(photo, "_client", None), "diag_snapshot", None)
+        if callable(snap):
+            live = snap()
+    except Exception as exc:  # noqa: BLE001
+        live = {"error": str(exc)[:200]}
+    rows = read_immich_activity(limit=limit)
+    fails = [
+        r
+        for r in rows
+        if r.get("err") or int(r.get("status") or 0) in (0, 500, 502, 503, 504)
+    ]
+    return {
+        "ok": True,
+        "path": str(immich_activity_path()),
+        "live": live,
+        "n": len(rows),
+        "fails": len(fails),
+        "rows": rows,
+    }
+
+
 @app.get("/explore/ui")
 def explore_ui() -> HTMLResponse:
     """P2-I4 Mixed-Media Find / Explore surface (MBUX-001 v0.4)."""
@@ -994,6 +1027,8 @@ def library_video_poster(
     import urllib.parse
     import urllib.request
 
+    if str(video).startswith(("video-peggy-", "video-library-")):
+        return Response(status_code=204)
     base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
     if not base:
         raise HTTPException(

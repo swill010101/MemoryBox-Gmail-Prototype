@@ -17,7 +17,10 @@ _SMS_ASK_RE = re.compile(
     r"from\s+and\s+to|last\s+\d+\s+messages?"
     r")\b"
 )
-_HIDDEN_SMS_GALLERY_CAP = 5000
+# All-ask: small hidden sample so Email/Text works. Count is the real archive.
+# Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
+_HIDDEN_SMS_CARD_SAMPLE = 800
+_VISIBLE_SMS_GALLERY_CAP = 10000
 _HOLIDAY_WINDOW_MARKERS = (
     "christmas",
     "xmas",
@@ -212,10 +215,16 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "w": float(face_box["w"]),
                 "h": float(face_box["h"]),
             }
+        exif_d = p.get("exif") if isinstance(p.get("exif"), dict) else {}
+        photo_type = (
+            "video"
+            if str((exif_d or {}).get("media") or "").lower() == "video"
+            else "photo"
+        )
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
-                type_="photo",
+                type_=photo_type,
                 title=str(title)[:80],
                 date=taken,
                 undated=not taken,
@@ -237,7 +246,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             f"/review/ui?video={vid}&t={t0}"
             + (f"&face={face}" if face else "")
         )
-        poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
+        poster = ""
+        if not str(vid).startswith(("video-peggy-", "video-library-")):
+            poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
         # Appearance moments are in-video spans — calendar undated unless known
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
         if label == "face-appearance-moment":
@@ -421,6 +432,33 @@ def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
     return chips
 
 
+def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
+    photo_search = (provider_status or {}).get("photo_search") or {}
+    if not isinstance(photo_search, dict):
+        return ""
+    diag = photo_search.get("immich_diag") or {}
+    if not isinstance(diag, dict) or not diag:
+        return ""
+    last = (diag.get("last") or [{}])[-1] if diag.get("last") else {}
+    if not isinstance(last, dict):
+        last = {}
+    bits = [
+        f"{int(diag.get('calls') or 0)} calls",
+        f"{int(diag.get('fails') or 0)} fail",
+        f"{int(diag.get('total_ms') or 0)}ms",
+    ]
+    if diag.get("circuit"):
+        bits.append("circuit open")
+    if diag.get("source"):
+        bits.append(f"src={diag.get('source')}")
+    if last.get("path"):
+        bits.append(
+            f"last {last.get('method') or 'GET'} {last.get('path')} "
+            f"{last.get('err') or last.get('status')}"
+        )
+    return " Immich diag: " + ", ".join(bits) + "."
+
+
 def curator_from_items(
     ask_text: str,
     items: list[dict[str, Any]],
@@ -492,6 +530,7 @@ def curator_from_items(
                 f" Photos unavailable from Immich "
                 f"({health_detail or 'provider unhealthy'})."
             )
+        summary += _immich_diag_line(provider_status)
     return title, summary
 
 
@@ -552,7 +591,7 @@ def _attach_hidden_sms(
     """
     existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
     sms_already = [i for i in items if _is_sms_type(i.get("type"))]
-    if show_sms:
+    if show_sms and sms_already:
         for i in sms_already:
             i["gallery_default_hidden"] = False
         return items, len(sms_already), 0
@@ -586,6 +625,7 @@ def _attach_hidden_sms(
         return items, len(sms_already), hidden
 
     extra: list[dict[str, Any]] = []
+    match_total = 0
     try:
         from memorybox.ask.retrieve import search_sms_messages
         from memorybox.planner import QueryPlan
@@ -606,7 +646,10 @@ def _attach_hidden_sms(
             temporal_windows=tw,
             notes=("gallery_sms_eligible",),
         )
-        hits = search_sms_messages(sms_plan, limit=_HIDDEN_SMS_GALLERY_CAP)
+        cap = _VISIBLE_SMS_GALLERY_CAP if show_sms else _HIDDEN_SMS_CARD_SAMPLE
+        hits = search_sms_messages(sms_plan, limit=cap)
+        if hits:
+            match_total = int(getattr(hits[0], "match_total", None) or len(hits))
         mapped = items_from_ask_result(
             {
                 "evidence_hits": [h.to_dict() for h in hits],
@@ -635,6 +678,10 @@ def _attach_hidden_sms(
         for i in out
         if _is_sms_type(i.get("type")) and i.get("gallery_default_hidden")
     )
+    if match_total > sms_n:
+        sms_n = match_total
+        if not show_sms:
+            hidden_n = match_total
     return out, sms_n, hidden_n
 
 
@@ -684,11 +731,11 @@ def build_explore_find(
         answer_for_curator = None
     title, summary = curator_from_items(
         text,
-        items,
+        visible_items,
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
-    if sms_hidden and not show_sms:
+    if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
         summary = (
             (summary or "").rstrip()
             + (

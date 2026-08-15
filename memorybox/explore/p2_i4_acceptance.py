@@ -1185,6 +1185,30 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
         )
+        diag_c = object.__new__(_ImmichIds)
+        diag_c._call_log = [
+            {
+                "ts": "2026-08-15T18:00:00",
+                "method": "GET",
+                "path": "/server/ping",
+                "status": 0,
+                "ms": 8000,
+                "err": "timed out",
+                "circuit": True,
+            }
+        ]
+        diag_c._circuit_open = True
+        diag_c._last_person_source = "timeout"
+        snap = _ImmichIds.diag_snapshot(diag_c)
+        _check(
+            "immich_activity_diag_snapshot",
+            int(snap.get("fails") or 0) >= 1
+            and snap.get("circuit") is True
+            and snap.get("source") == "timeout",
+            checks,
+            problems,
+            f"snap={snap}",
+        )
         client8._circuit_open = True
         named_open = client8.find_people_by_name("Peggy George")
         _check(

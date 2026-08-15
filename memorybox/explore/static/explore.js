@@ -751,7 +751,10 @@
     const archiveN =
       allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
     let hideNote = "";
-    if (allAsk && !includeTexts && (hiddenSms || availableSms)) {
+    const alreadyHid = /are in the archive/.test(
+      String(state.domain._askSummary || "") + extra
+    );
+    if (allAsk && !includeTexts && (hiddenSms || availableSms) && !alreadyHid) {
       hideNote =
         ` ${availableSms || hiddenSms} text message(s) are in the archive ` +
         "(hidden in Gallery — say Add texts to show them).";

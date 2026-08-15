@@ -958,6 +958,10 @@ def search_photos(
         return out
 
     def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
+        client = getattr(photo, "_client", None)
+        snap = getattr(client, "diag_snapshot", None)
+        if callable(snap):
+            status["immich_diag"] = snap()
         filtered = _filter_photo_hits(hits)
         return filtered[:limit], status
 
@@ -1509,15 +1513,15 @@ def search_photos(
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
     except ProviderError as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
     except Exception as exc:  # noqa: BLE001
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
 
 
 def _dedupe_video_hits(
