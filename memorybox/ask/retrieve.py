@@ -927,7 +927,10 @@ def search_photos(
             return hits
         out: list[PhotoHit] = []
         for h in hits:
-            if windows and not date_in_windows(h.taken_at, windows):
+            # Explore keeps undated in Gallery (off the Timeline). Dropping
+            # them here emptied Christmas / year asks: face stubs have no EXIF,
+            # so "Peggy during Christmas" showed 0 cards ("gallery is lost").
+            if windows and h.taken_at and not date_in_windows(h.taken_at, windows):
                 continue
             if places:
                 blob = " ".join(

@@ -1828,6 +1828,7 @@
 
   function renderGallery() {
     const gallery = document.getElementById("mb-explore-gallery");
+    if (!gallery) return;
     const items = visibleItems();
     state.domain.items = items;
     gallery.dataset.density = String(state.gallery.density);
@@ -2034,13 +2035,15 @@
     const empty = !hasDatedExtent();
 
     if (empty) {
-      band.style.left = "0%";
-      band.style.width = "100%";
-      hl.style.left = "0%";
-      hr.style.left = "100%";
-      ph.style.left = "0%";
-      document.getElementById("mb-tl-range-label").textContent =
-        "No dated memories on the Timeline";
+      if (band) {
+        band.style.left = "0%";
+        band.style.width = "100%";
+      }
+      if (hl) hl.style.left = "0%";
+      if (hr) hr.style.left = "100%";
+      if (ph) ph.style.left = "0%";
+      const rangeLab = document.getElementById("mb-tl-range-label");
+      if (rangeLab) rangeLab.textContent = "No dated memories on the Timeline";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
       // Clamp chrome to the track — indicators/handles never paint outside the timeline
@@ -2107,8 +2110,8 @@
 
     const ticks = document.getElementById("mb-tl-ticks");
     if (empty) {
-      ticks.innerHTML = "";
-    } else {
+      if (ticks) ticks.innerHTML = "";
+    } else if (ticks) {
       const span = Math.max(extentEnd - extentStart, 1);
       const years = [];
       const y0 = new Date(extentStart).getUTCFullYear();

@@ -1197,6 +1197,126 @@ def _prove_harness() -> dict[str, Any]:
         _check("person_ask_no_library_pad", False, checks, problems, str(exc))
 
     try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        peggy_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="peggy-immich",
+            display_name="Peggy George",
+        )
+        mixed_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="xmas-dated",
+                taken_at=datetime(2021, 12, 20, tzinfo=timezone.utc),
+                people=(peggy_ref,),
+            ),
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="july-dated",
+                taken_at=datetime(2021, 7, 4, tzinfo=timezone.utc),
+                people=(peggy_ref,),
+            ),
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="undated-face",
+                taken_at=None,
+                people=(peggy_ref,),
+            ),
+        ]
+
+        class _XmasPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                return [peggy_ref]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                return list(mixed_assets)
+
+        class _XmasPerson:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "peggy-immich",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        xmas_plan = QueryPlan(
+            original_ask="show me Peggy George during Christmas time",
+            effective_ask="show me Peggy George during Christmas time",
+            is_followup=False,
+            want_photo=True,
+            want_communication=False,
+            want_calendar=False,
+            want_still=True,
+            want_video=True,
+            want_visual=True,
+            visual_scope="broad",
+            person_names=("Peggy George",),
+            event_labels=("Christmas",),
+            temporal_label="Christmas",
+            temporal_windows=(("2021-12-04", "2022-01-01"),),
+            time_start="2021-12-04",
+            time_end="2022-01-01",
+            notes=("holiday_all_years", "visual_scope=broad_show_me_person"),
+        )
+        orig_x = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _XmasPerson()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["peggy-immich"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _XmasPerson()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            xhits, _xst = R.search_photos(xmas_plan, _XmasPhoto(), limit=50)
+        finally:
+            for k, v in orig_x.items():
+                setattr(person_mod, k, v)
+        xids = {h.external_id for h in xhits}
+        _check(
+            "christmas_keeps_undated_drops_off_season",
+            "xmas-dated" in xids
+            and "undated-face" in xids
+            and "july-dated" not in xids,
+            checks,
+            problems,
+            f"ids={sorted(xids)}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "christmas_keeps_undated_drops_off_season",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
         from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person
 
         a = PersonView(
