@@ -2566,8 +2566,35 @@
       img.addEventListener("error", () => {
         const box = img.parentElement;
         if (!box) return;
+        const name = img.getAttribute("alt") || "attachment";
+        const li = img.closest("li");
+        if (li) {
+          const extra = li.querySelector(".mb-sms-optional-artifact");
+          if (extra) extra.remove();
+        }
         box.innerHTML =
-          "<p>This attachment is already MemoryBox evidence on the message. The image file was not found next to the SMS export (or in MEMORYBOX_SMS_ATTACHMENTS_DIR), so it cannot be previewed on this machine.</p>";
+          "<p>This file is already on the SMS in MemoryBox. Preview needs the image next to the export (or in MEMORYBOX_SMS_ATTACHMENTS_DIR / working/sms-attachments).</p>" +
+          "<p class=\"mb-ev-meta\">Missing file: " +
+          escapeHtml(name) +
+          "</p>";
+        const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
+        fetch(
+          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (!data || data.bytes_present) return;
+            const bits = [];
+            if (data.import_path) bits.push("export: " + data.import_path);
+            if (data.attachments_dir) bits.push("attachments dir: " + data.attachments_dir);
+            if (bits.length) {
+              const p = document.createElement("p");
+              p.className = "mb-ev-meta";
+              p.textContent = bits.join(" · ");
+              box.appendChild(p);
+            }
+          })
+          .catch(() => {});
       });
     });
     document.querySelectorAll(".mb-sms-to-library").forEach((btn) => {
@@ -3185,69 +3212,12 @@
   }
 
   function bindExploreAskHistory(input) {
+    // PowerShell-style: empty Ask, Up = last command in the box, Up again = previous. No dropdown.
     if (!input || input.dataset.mbExploreHist === "1") return;
     input.dataset.mbExploreHist = "1";
     let histIndex = -1;
     let draft = "";
     let applying = false;
-    let panel = document.getElementById("mb-ask-history-panel");
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.id = "mb-ask-history-panel";
-      panel.className = "mb-ask-history";
-      panel.hidden = true;
-      panel.setAttribute("role", "listbox");
-      panel.setAttribute("aria-label", "Recent Ask commands");
-      document.body.appendChild(panel);
-    }
-    const histBtn = document.getElementById("mb-explore-ask-hist");
-
-    const placePanel = () => {
-      const field = input.closest(".mb-explore-ask-field") || input;
-      const r = field.getBoundingClientRect();
-      panel.style.position = "fixed";
-      panel.style.left = `${Math.round(r.left)}px`;
-      panel.style.width = `${Math.round(r.width)}px`;
-      panel.style.top = `${Math.round(r.bottom + 6)}px`;
-      panel.style.right = "auto";
-    };
-
-    const hidePanel = () => {
-      panel.hidden = true;
-      if (histBtn) histBtn.setAttribute("aria-expanded", "false");
-    };
-
-    const showList = (recent, selected) => {
-      const list = recent || [];
-      if (!list.length) {
-        panel.innerHTML =
-          "<p class=\"mb-ask-history-empty\">No saved Ask commands yet. Type an Ask, press Enter, then open Recent or press Up/Down.</p>";
-      } else {
-        panel.innerHTML = list
-          .map((text, i) => {
-            const on = i === selected ? "true" : "false";
-            return `<button type="button" role="option" aria-selected="${on}" data-hist="${i}">${escapeHtml(
-              text
-            )}</button>`;
-          })
-          .join("");
-        panel.querySelectorAll("button").forEach((btn) => {
-          btn.addEventListener("mousedown", (ev) => {
-            ev.preventDefault();
-            const i = Number(btn.getAttribute("data-hist") || 0);
-            applying = true;
-            histIndex = i;
-            input.value = list[i] || "";
-            applying = false;
-            hidePanel();
-            applyAskCommand(input.value);
-          });
-        });
-      }
-      placePanel();
-      panel.hidden = false;
-      if (histBtn) histBtn.setAttribute("aria-expanded", "true");
-    };
 
     const loadRecent = () =>
       fetch("/ask/api/history")
@@ -3259,42 +3229,29 @@
         .catch(() => readAskHistory());
 
     const cycle = (key, recent) => {
-      if (!recent.length) {
-        showList([], -1);
-        return;
-      }
+      if (!recent.length) return;
       applying = true;
       if (histIndex < 0) draft = input.value;
       if (key === "ArrowUp") {
-        if (histIndex < 0 && recent[0] === draft && recent.length > 1) histIndex = 1;
-        else if (histIndex < recent.length - 1) histIndex += 1;
+        if (histIndex < recent.length - 1) histIndex += 1;
       } else if (histIndex < 0) {
-        histIndex = recent[0] === draft && recent.length > 1 ? 1 : 0;
+        applying = false;
+        return;
       } else {
         histIndex -= 1;
       }
       input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+      try {
+        const n = input.value.length;
+        input.setSelectionRange(n, n);
+      } catch (_) {}
       applying = false;
-      showList(recent, histIndex);
     };
 
-    const openHistory = () => {
-      loadRecent().then((recent) => {
-        histIndex = recent[0] === input.value && recent.length > 1 ? 1 : 0;
-        if (!recent.length) histIndex = -1;
-        if (histIndex >= 0) input.value = recent[histIndex] || input.value;
-        showList(recent, histIndex);
-      });
-    };
-
-    input.addEventListener("focus", () => {
-      loadRecent().then((recent) => showList(recent, histIndex));
-    });
-    input.addEventListener("blur", () => window.setTimeout(hidePanel, 200));
     input.addEventListener(
       "keydown",
       (e) => {
-        if (e.key === "Escape") hidePanel();
+        if (e.isComposing) return;
         if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
         e.preventDefault();
         e.stopPropagation();
@@ -3309,16 +3266,6 @@
     );
     input.addEventListener("input", () => {
       if (!applying) histIndex = -1;
-    });
-    if (histBtn) {
-      histBtn.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        if (panel.hidden) openHistory();
-        else hidePanel();
-      });
-    }
-    window.addEventListener("resize", () => {
-      if (!panel.hidden) placePanel();
     });
     loadRecent();
   }

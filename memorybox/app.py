@@ -549,6 +549,28 @@ def explore_sms_attachment(evidence_id: str, index: int = Query(0, ge=0, le=32))
     )
 
 
+@app.get("/explore/api/sms-attachment/{evidence_id}/meta")
+def explore_sms_attachment_meta(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    """Where Ask will look for SMS attachment bytes. No Immich write."""
+    from memorybox.explore.sms_attach import SmsAttachError, load_sms_attachment
+
+    try:
+        info = load_sms_attachment(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "filename": info.get("filename"),
+        "bytes_present": bool(info.get("bytes_present")),
+        "import_path": info.get("import_path"),
+        "attachments_dir": info.get("attachments_dir"),
+        "search_roots": info.get("search_roots") or [],
+        "immich_write": False,
+    }
+
+
 @app.post("/explore/api/sms-attachment/{evidence_id}/to-library")
 def explore_sms_attachment_to_library(
     evidence_id: str, index: int = Query(0, ge=0, le=32)

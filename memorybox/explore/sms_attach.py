@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from memorybox.ingest.comms_sms import default_sms_export_path
+from memorybox.ingest.sms_attach_cache import cache_get, cache_put, cache_root
 from memorybox.ingest.store import get_evidence
 
 _UUID_IN_NAME = re.compile(
@@ -48,21 +49,32 @@ def _attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _search_roots() -> list[Path]:
-    roots: list[Path] = []
+def _search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
+    roots: list[Path] = [cache_root()]
     extra = (os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR") or "").strip()
     if extra:
-        roots.append(Path(extra))
+        roots.append(Path(extra).expanduser())
     export = default_sms_export_path()
     if export is not None:
-        roots.append(export.parent)
-        roots.append(export.parent / export.stem)
+        parent = export.parent
+        stem = export.stem
+        roots.extend(
+            [
+                parent,
+                parent / stem,
+                parent / f"{stem} Attachments",
+                parent / "Messages Attachments",
+                parent / "attachments",
+                parent / "Attachments",
+            ]
+        )
     src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
     if src:
         roots.append(Path(src) / "sms")
         roots.append(Path(src))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
+    roots.extend(_payload_roots(payload))
     out: list[Path] = []
     seen: set[str] = set()
     for r in roots:
@@ -74,40 +86,71 @@ def _search_roots() -> list[Path]:
     return out
 
 
+def _name_forms(name: str) -> list[str]:
+    forms = [name]
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    if "__" in stem:
+        after = stem.split("__", 1)[1]
+        forms.extend([after + suffix, after])
+    uuid_m = _UUID_IN_NAME.search(name)
+    if uuid_m:
+        u = uuid_m.group(1)
+        forms.extend([u + suffix, u + suffix.lower(), u + suffix.upper(), u.replace("-", "") + suffix])
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in forms:
+        key = item.casefold()
+        if not item or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
 def _dir_candidates(root: Path, name: str) -> list[Path]:
-    hits = [
-        root / name,
-        root / "attachments" / name,
-        root / "Attachments" / name,
-        root / "SMS Attachments" / name,
-        root / "iMessage Attachments" / name,
-    ]
-    prefix = name.split("__", 1)[0] if "__" in name else ""
-    if prefix:
+    names = _name_forms(name)
+    hits: list[Path] = []
+    for item in names:
         hits.extend(
             [
-                root / prefix / name,
-                root / prefix / "attachments" / name,
-                root / prefix / "Attachments" / name,
-                root / f"+{prefix}" / name,
-                root / f"+1{prefix}" / name,
+                root / item,
+                root / "attachments" / item,
+                root / "Attachments" / item,
+                root / "SMS Attachments" / item,
+                root / "iMessage Attachments" / item,
+                root / "iMazing Attachments" / item,
             ]
         )
+    prefix = name.split("__", 1)[0] if "__" in name else ""
+    if prefix:
+        for item in names:
+            hits.extend(
+                [
+                    root / prefix / item,
+                    root / prefix / "attachments" / item,
+                    root / prefix / "Attachments" / item,
+                    root / f"+{prefix}" / item,
+                    root / f"+1{prefix}" / item,
+                ]
+            )
     try:
         if not root.is_dir():
             return hits
         for child in root.iterdir():
             if not child.is_dir():
                 continue
-            hits.append(child / name)
-            hits.append(child / "attachments" / name)
-            hits.append(child / "Attachments" / name)
+            for item in names:
+                hits.append(child / item)
+                hits.append(child / "attachments" / item)
+                hits.append(child / "Attachments" / item)
             try:
                 for grand in child.iterdir():
                     if grand.is_dir():
-                        hits.append(grand / name)
-                        hits.append(grand / "attachments" / name)
-                        hits.append(grand / "Attachments" / name)
+                        for item in names:
+                            hits.append(grand / item)
+                            hits.append(grand / "attachments" / item)
+                            hits.append(grand / "Attachments" / item)
             except OSError:
                 continue
     except OSError:
@@ -173,9 +216,18 @@ def _payload_roots(payload: dict[str, Any] | None) -> list[Path]:
         import_path = loc.split("#row=", 1)[0]
     if import_path:
         p = Path(import_path)
-        roots.append(p.parent if p.suffix.lower() == ".csv" else p)
-        if p.suffix.lower() == ".csv":
-            roots.append(p.parent / p.stem)
+        parent = p.parent if p.suffix.lower() == ".csv" else p
+        stem = p.stem
+        roots.extend(
+            [
+                parent,
+                parent / stem,
+                parent / f"{stem} Attachments",
+                parent / "Messages Attachments",
+                parent / "attachments",
+                parent / "Attachments",
+            ]
+        )
     return roots
 
 
@@ -266,9 +318,19 @@ def _build_attach_index(roots: list[Path], *, depth: int = 6) -> None:
         pass
 
 
+def _keep_found(path: Path, filename: str) -> Path:
+    _index_file_entry(path)
+    return cache_put(path, filename) or path
+
+
 def resolve_attachment_file(
     att: dict[str, Any], payload: dict[str, Any] | None = None
 ) -> Path | None:
+    raw_ref = str(att.get("source_ref") or att.get("filename") or "").strip()
+    name = Path(raw_ref).name
+    cached = cache_get(name) if name else None
+    if cached is not None:
+        return cached
     for key in ("resolved_path", "source_ref", "filename"):
         raw = str(att.get(key) or "").strip()
         if not raw:
@@ -276,46 +338,42 @@ def resolve_attachment_file(
         p = Path(raw)
         try:
             if p.is_file():
-                return p
+                return _keep_found(p, name or p.name)
         except OSError:
             continue
-    raw_ref = str(att.get("source_ref") or att.get("filename") or "").strip()
-    name = Path(raw_ref).name
     if not name:
         return None
     if raw_ref and raw_ref not in {name}:
-        for root in _search_roots():
+        for root in _search_roots(payload):
             rel = root / raw_ref.replace("\\", "/").lstrip("/")
             try:
                 if rel.is_file():
-                    return rel
+                    return _keep_found(rel, name)
             except OSError:
                 continue
     uuid_m = _UUID_IN_NAME.search(name)
     uuid = uuid_m.group(1) if uuid_m else None
     indexed = _lookup_index(name, uuid)
     if indexed is not None:
-        return indexed
-    roots = list(_payload_roots(payload)) + _search_roots()
+        return _keep_found(indexed, name)
+    roots = _search_roots(payload)
     for root in roots:
-        try:
-            if not root.exists():
-                continue
-        except OSError:
-            continue
+        # Try known filenames even when the share folder will not list
+        # (exists()/is_dir() can fail on UNC while a direct file open works).
         for hit in _dir_candidates(root, name):
             try:
                 if hit.is_file():
-                    _index_file_entry(hit)
-                    return hit
+                    return _keep_found(hit, name)
             except OSError:
                 continue
-        found = _walk_match(root, name, uuid, depth=5)
+        found = _walk_match(root, name, uuid, depth=6)
         if found is not None:
-            _index_file_entry(found)
-            return found
+            return _keep_found(found, name)
     _build_attach_index(roots, depth=6)
-    return _lookup_index(name, uuid)
+    indexed = _lookup_index(name, uuid)
+    if indexed is not None:
+        return _keep_found(indexed, name)
+    return None
 
 
 def load_sms_attachment(evidence_id: str, index: int = 0) -> dict[str, Any]:
@@ -341,6 +399,13 @@ def load_sms_attachment(evidence_id: str, index: int = 0) -> dict[str, Any]:
     kind = str(att.get("attachment_type") or "").lower()
     if kind in {"image", "jpeg", "jpg", "png", "gif", "heic"} and not mime.startswith("image/"):
         mime = "image/jpeg"
+    cov = payload.get("source_coverage") or {}
+    import_path = str(cov.get("import_path") or "")
+    if not import_path:
+        loc = str(payload.get("source_locator") or "")
+        if "#row=" in loc:
+            import_path = loc.split("#row=", 1)[0]
+    extra = (os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR") or "").strip()
     return {
         "evidence_id": str(eid),
         "index": index,
@@ -351,6 +416,9 @@ def load_sms_attachment(evidence_id: str, index: int = 0) -> dict[str, Any]:
         "attachment": att,
         "person_ids": [str(p) for p in (payload.get("person_ids") or []) if p],
         "payload": payload,
+        "import_path": import_path or None,
+        "attachments_dir": extra or None,
+        "search_roots": [str(p) for p in _search_roots(payload)[:16]],
     }
 
 
@@ -358,7 +426,9 @@ def read_sms_attachment_bytes(evidence_id: str, index: int = 0) -> tuple[bytes, 
     info = load_sms_attachment(evidence_id, index)
     if not info["bytes_present"] or not info["path"]:
         raise SmsAttachError(
-            f"Attachment file not found next to the SMS export: {info['filename']}"
+            f"Attachment file not found: {info['filename']}. "
+            "Looked next to the SMS export, working/sms-attachments, "
+            "and MEMORYBOX_SMS_ATTACHMENTS_DIR."
         )
     data = Path(info["path"]).read_bytes()
     if not data:

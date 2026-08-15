@@ -206,26 +206,46 @@ def _direction(raw: str, service_field: str) -> str:
 def resolve_attachment_paths(
     names: Iterable[str], *, export_path: Path
 ) -> list[dict[str, Any]]:
+    from memorybox.ingest.sms_attach_cache import cache_get, cache_put
+
     parent = export_path.parent
-    stems = [parent, parent / "attachments", parent / "Attachments"]
+    stem = export_path.stem
+    stems = [
+        parent,
+        parent / "attachments",
+        parent / "Attachments",
+        parent / stem,
+        parent / f"{stem} Attachments",
+        parent / "Messages Attachments",
+    ]
     out: list[dict[str, Any]] = []
     for name in names:
         raw = (name or "").strip()
         if not raw:
             continue
+        filename = Path(raw).name
         found: str | None = None
+        cached = cache_get(filename)
+        if cached is not None:
+            found = str(cached)
         candidate = Path(raw)
-        if candidate.is_file():
-            found = str(candidate)
-        else:
+        if not found and candidate.is_file():
+            found = str(cache_put(candidate, filename) or candidate)
+        if not found:
+            forms = [filename]
+            if "__" in Path(filename).stem:
+                forms.append(Path(filename).stem.split("__", 1)[1] + Path(filename).suffix)
             for root in stems:
-                hit = root / Path(raw).name
-                if hit.is_file():
-                    found = str(hit)
+                for form in forms:
+                    hit = root / form
+                    if hit.is_file():
+                        found = str(cache_put(hit, filename) or hit)
+                        break
+                if found:
                     break
         out.append(
             {
-                "filename": Path(raw).name,
+                "filename": filename,
                 "source_ref": raw,
                 "resolved_path": found,
                 "bytes_present": bool(found),

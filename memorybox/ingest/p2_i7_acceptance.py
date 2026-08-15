@@ -44,6 +44,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     shell_css = (root / "shell" / "static" / "shell.css").read_text(encoding="utf-8")
     sms_attach = (root / "explore" / "sms_attach.py").read_text(encoding="utf-8")
     ask_hist = (root / "ask" / "history.py").read_text(encoding="utf-8")
+    attach_cache = (root / "ingest" / "sms_attach_cache.py").read_text(encoding="utf-8")
+    explore_html = (root / "explore" / "static" / "explore.html").read_text(encoding="utf-8")
 
     _check(
         "i7_parser_header_driven",
@@ -225,13 +227,15 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "/ask/api/history" in app_py
         and "applyHistory" in shell_js
         and "ArrowDown" in shell_js
-        and "mb-ask-history" in shell_js
+        and "histIndex" in shell_js
         and "parents[2]" in ask_hist
         and "bindExploreAskHistory" in explore_js
-        and "mb-explore-ask-hist" in explore_js,
+        and "histIndex" in explore_js
+        and "mb-explore-ask-hist" not in explore_html
+        and "mb-explore-ask-hist" not in explore_js,
         checks,
         problems,
-        "Last 100 asks persist in localStorage; Up or Down starts history in all Ask fields",
+        "Last 100 asks persist; empty Ask + Up/Down cycles one command in the box (no dropdown)",
     )
     _check(
         "i7_sms_attach_mb_library",
@@ -243,7 +247,11 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "_dir_candidates" in sms_attach
         and "first-class" in explore_js
         and "_build_attach_index" in sms_attach
-        and "ATTACH_PREVIEW_DELAY_MS" in explore_js,
+        and "ATTACH_PREVIEW_DELAY_MS" in explore_js
+        and "cache_get" in attach_cache
+        and "cache_put" in sms_attach
+        and "sms-attachment/{evidence_id}/meta" in app_py
+        and "_name_forms" in sms_attach,
         checks,
         problems,
         "SMS attachment is first-class on the message; optional Artifact copy; no Immich write",
@@ -450,6 +458,39 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "Attachment linked, not Immich/Explore-promoted",
+    )
+    from memorybox.explore.sms_attach import _name_forms, resolve_attachment_file
+    from memorybox.ingest.sms_attach_cache import cache_get, cache_put
+
+    prev_cache = os.environ.get("MEMORYBOX_SMS_ATTACH_CACHE")
+    tmp_cache = Path(os.environ.get("TMPDIR") or "/tmp") / f"mb-sms-attach-{token}"
+    tmp_cache.mkdir(parents=True, exist_ok=True)
+    os.environ["MEMORYBOX_SMS_ATTACH_CACHE"] = str(tmp_cache)
+    cache_ok = False
+    try:
+        ima_name = "78715179111__AF89223C-3F6A-417B-A3C2-485DF14A8835.JPG"
+        cached = cache_put(ATTACHMENT, ima_name)
+        forms = _name_forms(ima_name)
+        resolved = resolve_attachment_file({"filename": ima_name, "source_ref": ima_name})
+        cache_ok = (
+            cached is not None
+            and cache_get(ima_name) is not None
+            and cache_get("AF89223C-3F6A-417B-A3C2-485DF14A8835.JPG") is not None
+            and "AF89223C-3F6A-417B-A3C2-485DF14A8835.JPG" in forms
+            and resolved is not None
+            and resolved.is_file()
+        )
+    finally:
+        if prev_cache is None:
+            os.environ.pop("MEMORYBOX_SMS_ATTACH_CACHE", None)
+        else:
+            os.environ["MEMORYBOX_SMS_ATTACH_CACHE"] = prev_cache
+    _check(
+        "i7_sms_attach_cache_and_uuid_names",
+        cache_ok,
+        checks,
+        problems,
+        "Local SMS attach cache + iMazing UUID filename forms",
     )
 
     ctx = AskContext(session_id=f"i7-{token}")

@@ -210,95 +210,21 @@
       return readRecent();
     },
     bindAskHistory(input) {
+      // PowerShell-style: Up/Down replace the Ask box one command at a time. No dropdown.
       if (!input || input.dataset.mbAskHistory === "1") return;
       input.dataset.mbAskHistory = "1";
       let histIndex = -1;
       let draft = "";
       let applying = false;
-      let panel = null;
-
-      const host =
-        input.closest(".mb-explore-ask-band") ||
-        input.closest(".mb-ask-bar") ||
-        input.closest(".mb-global-ask-card") ||
-        input.parentElement;
-      if (host && !host.style.position) host.style.position = "relative";
-
-      const ensurePanel = () => {
-        if (panel && panel.isConnected) return panel;
-        panel = document.createElement("div");
-        panel.className = "mb-ask-history";
-        panel.hidden = true;
-        panel.setAttribute("role", "listbox");
-        panel.setAttribute("aria-label", "Recent Ask commands");
-        document.body.appendChild(panel);
-        return panel;
-      };
-
-      const hidePanel = () => {
-        if (panel) panel.hidden = true;
-      };
-
-      const placePanel = (el) => {
-        const field = input.closest(".mb-explore-ask-field") || input;
-        const r = field.getBoundingClientRect();
-        el.style.position = "fixed";
-        el.style.left = `${Math.round(r.left)}px`;
-        el.style.width = `${Math.round(Math.max(r.width, 280))}px`;
-        el.style.top = `${Math.round(r.bottom + 6)}px`;
-        el.style.right = "auto";
-        el.style.zIndex = "90";
-      };
-
-      const renderPanel = (recent, selected) => {
-        const el = ensurePanel();
-        if (!recent.length) {
-          el.innerHTML = `<p class="mb-ask-history-empty">No saved Ask commands yet. After you Ask, Up/Down cycles them here.</p>`;
-          placePanel(el);
-          el.hidden = false;
-          return;
-        }
-        el.innerHTML = recent
-          .map((text, i) => {
-            const on = i === selected ? "true" : "false";
-            return `<button type="button" role="option" aria-selected="${on}" data-hist="${i}">${String(
-              text
-            )
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/"/g, "&quot;")}</button>`;
-          })
-          .join("");
-        placePanel(el);
-        el.hidden = false;
-        el.querySelectorAll("button").forEach((btn) => {
-          btn.addEventListener("mousedown", (ev) => {
-            ev.preventDefault();
-            const i = Number(btn.getAttribute("data-hist") || 0);
-            applying = true;
-            histIndex = i;
-            input.value = recent[i] || "";
-            applying = false;
-            hidePanel();
-            if (window.mbExploreApplyAsk) window.mbExploreApplyAsk(input.value);
-          });
-        });
-        const active = el.querySelector('button[aria-selected="true"]');
-        if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
-      };
-
       const applyHistory = (recent, key) => {
-        if (!recent.length) {
-          renderPanel([], -1);
-          return;
-        }
+        if (!recent.length) return;
         applying = true;
         if (histIndex < 0) draft = input.value;
         if (key === "ArrowUp") {
-          if (histIndex < 0 && recent[0] === draft && recent.length > 1) histIndex = 1;
-          else if (histIndex < recent.length - 1) histIndex += 1;
+          if (histIndex < recent.length - 1) histIndex += 1;
         } else if (histIndex < 0) {
-          histIndex = recent[0] === draft && recent.length > 1 ? 1 : 0;
+          applying = false;
+          return;
         } else {
           histIndex -= 1;
         }
@@ -308,36 +234,22 @@
           input.setSelectionRange(n, n);
         } catch (_) {}
         applying = false;
-        renderPanel(recent, histIndex);
       };
-
-      input.addEventListener("focus", () => {
-        hydrateAskHistory().then((list) => {
-          const recent = list || window.mbShell.recentAsks();
-          if (recent.length) renderPanel(recent, histIndex);
-        });
-      });
-      input.addEventListener("blur", () => {
-        window.setTimeout(hidePanel, 180);
-      });
       input.addEventListener(
         "keydown",
         (e) => {
           if (e.isComposing) return;
-          if (e.key === "Escape") {
-            hidePanel();
-            return;
-          }
           if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
           e.preventDefault();
           e.stopPropagation();
-          const go = (recent) => applyHistory(recent || [], e.key);
           const recent = window.mbShell.recentAsks();
           if (recent.length) {
-            go(recent);
+            applyHistory(recent, e.key);
             return;
           }
-          hydrateAskHistory().then((list) => go(list || window.mbShell.recentAsks()));
+          hydrateAskHistory().then((list) =>
+            applyHistory(list || window.mbShell.recentAsks(), e.key)
+          );
         },
         true
       );
@@ -350,7 +262,6 @@
     setActivePerson,
     getActiveAsk,
     setActiveAsk,
-    bindAskHistory,
     peopleHref,
     refreshPeopleNavLinks,
   };

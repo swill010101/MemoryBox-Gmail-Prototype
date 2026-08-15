@@ -239,24 +239,6 @@ body {
   color: var(--mb-ink);
 }
 
-.mb-explore-ask-hist {
-  flex: 0 0 auto;
-  height: 2.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  background: #1e293b;
-  color: #e8edf5;
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 0 0.75rem;
-  cursor: pointer;
-}
-.mb-explore-ask-hist[aria-expanded="true"] {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-}
-
 .mb-explore-ask-go {
   flex: 0 0 auto;
   width: 2.35rem;

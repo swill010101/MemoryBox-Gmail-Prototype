@@ -15,7 +15,7 @@ _FONT_LINK = (
 )
 
 _SHELL_CSS = '<link rel="stylesheet" href="/static/shell/shell.css" />'
-_SHELL_JS = '<script src="/static/shell/shell.js?v=i7hist3" defer></script>'
+_SHELL_JS = '<script src="/static/shell/shell.js?v=i7hist5" defer></script>'
 
 
 def inject_shell(html: str, *, surface: str) -> str:
