@@ -1003,6 +1003,9 @@ def library_card_detail(
 def library_photo_thumb(external_id: str) -> Response:
     """Authenticated Immich (or fake) preview for Library cards — browser-safe."""
     photo = build_photo()
+    client = getattr(photo, "_client", None)
+    if client is not None and getattr(client, "_circuit", lambda: False)():
+        raise HTTPException(status_code=503, detail="immich circuit open")
     try:
         preview = photo.fetch_preview(external_id)
     except Exception as exc:  # noqa: BLE001
@@ -1012,7 +1015,7 @@ def library_photo_thumb(external_id: str) -> Response:
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",
-        headers={"Cache-Control": "private, max-age=300"},
+        headers={"Cache-Control": "private, max-age=3600"},
     )
 
 

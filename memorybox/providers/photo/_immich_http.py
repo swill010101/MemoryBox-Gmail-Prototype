@@ -441,7 +441,7 @@ class ImmichHttpClient:
             # Newest years first so a budget stop cannot drop 1984–now.
             # YEAR = one GET/year (allow a lifetime). MONTH is the RST risk.
             year_mode = "size=YEAR" in str(getattr(self, "_person_buckets_tmpl", "") or "")
-            budget = 160 if year_mode else 48
+            budget = 80 if year_mode else 36
             self._timeline_http = 0
             self._person_lib_incomplete = False
             if len(buckets) > budget:
@@ -945,7 +945,7 @@ class ImmichHttpClient:
             return data
         return None
 
-    def _fetch_api_image(self, url: str, timeout: float = 30) -> tuple[bytes, str] | None:
+    def _fetch_api_image(self, url: str, timeout: float = 4) -> tuple[bytes, str] | None:
         req = urllib.request.Request(
             url,
             headers={"x-api-key": self._key, "Accept": "image/*,*/*"},
@@ -964,10 +964,23 @@ class ImmichHttpClient:
             return None
 
     def fetch_preview_bytes(self, asset_id: str) -> tuple[bytes, str, str]:
-        for size in ("preview", "thumbnail"):
-            got = self._fetch_api_image(self.thumb_url(asset_id, size=size))
-            if got:
-                return got[0], got[1], "immich-api"
+        if self._circuit():
+            raise FileNotFoundError("immich circuit open")
+        sem = getattr(self, "_thumb_sema", None)
+        if sem is None:
+            self._thumb_sema = threading.Semaphore(3)
+            sem = self._thumb_sema
+        if not sem.acquire(timeout=2.0):
+            raise FileNotFoundError("immich thumb backlog")
+        try:
+            for size in ("thumbnail", "preview"):
+                got = self._fetch_api_image(
+                    self.thumb_url(asset_id, size=size), timeout=4
+                )
+                if got:
+                    return got[0], got[1], "immich-api"
+        finally:
+            sem.release()
         raise FileNotFoundError(
             "No thumbnail available via Immich API (needs asset.view on API key)"
         )

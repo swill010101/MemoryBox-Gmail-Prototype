@@ -1826,7 +1826,7 @@
           ? `@ ${Number(it.t).toFixed(0)}s`
           : "";
       const bg = media
-        ? `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" />`
+        ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
         : "";
       return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
         dur ? `<span class="mb-card-dur">${dur}</span>` : ""
@@ -1845,9 +1845,47 @@
       }<span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "photo" && media) {
-      return `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
+      return `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
     }
     return `<span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
+  }
+
+  function bindLazyThumbs(root) {
+    if (!root) return;
+    if (root._mbLazyIo) {
+      try {
+        root._mbLazyIo.disconnect();
+      } catch (_) {}
+      root._mbLazyIo = null;
+    }
+    const imgs = root.querySelectorAll("img.mb-card-thumb[data-src]");
+    const load = (img) => {
+      const src = img.getAttribute("data-src");
+      if (!src || img.getAttribute("src")) return;
+      img.setAttribute("src", src);
+      img.removeAttribute("data-src");
+    };
+    imgs.forEach((img, i) => {
+      if (i < 18) load(img);
+    });
+    if (!("IntersectionObserver" in window)) {
+      imgs.forEach(load);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (ents) => {
+        ents.forEach((e) => {
+          if (!e.isIntersecting) return;
+          load(e.target);
+          io.unobserve(e.target);
+        });
+      },
+      { root: root, rootMargin: "240px" }
+    );
+    imgs.forEach((img, i) => {
+      if (i >= 18) io.observe(img);
+    });
+    root._mbLazyIo = io;
   }
 
   function renderGallery() {
@@ -1894,6 +1932,7 @@
       card.addEventListener("click", () => openModal(id));
       bindCardPreview(card, id);
     });
+    bindLazyThumbs(gallery);
 
     requestAnimationFrame(() => {
       gallery.scrollTop = state.gallery.scrollTop || 0;

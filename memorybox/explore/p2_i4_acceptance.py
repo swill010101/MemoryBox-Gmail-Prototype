@@ -256,6 +256,7 @@ def _prove_harness() -> dict[str, Any]:
             "smsHidden",
             "hidden in Gallery — say Add texts to show them",
             "textsPinned",
+            "bindLazyThumbs",
         ):
             if marker not in js:
                 missing.append(marker)
