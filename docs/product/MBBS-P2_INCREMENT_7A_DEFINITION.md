@@ -1,6 +1,6 @@
 # MBBS-P2 Increment 7A — AI Model Trace & Observability
 
-**Status:** **BUILD AUTHORIZED** 2026-08-15 (Tom: “P2-I7A is approved to build”) · definition remains locked  
+**Status:** **ACCEPTED** (2026-08-15 — Tom FlightSim owner pass: history keys + real Ask + `/dev/ai-trace`)  
 **Date:** 2026-08-15  
 **Schema / live-update:** [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md)  
 **Authority:** Tom Word uploads 2026-08-15 — [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) (v0.1 ingest) · [MBRM-001 v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · **Q1–Q6 + extra rules locked 2026-08-15**  
@@ -8,7 +8,15 @@
 **Depends:** P2-I7 **ACCEPTED** (2026-08-15) · I1–I6 **ACCEPTED**  
 **Does not reopen / does not absorb:** I7 SMS/text · SMS attachment bytes **P2-BL-I7-01** · I8 email **P2-BL-I8-01** · **MBQL-001 language** · I8 richer email · I8.5 face-evidence · I9 spoken · I10 correlation · I11 narrative · I13/I14 Settings product · family nav · multi-user
 
-**I7 is ACCEPTED. I7A definition is locked. I7A build is AUTHORIZED.** Schema/live-update contract is in [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL implementation starts as part of I7A.**
+**I7A is ACCEPTED.** Schema/live-update contract is in [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL implementation starts as part of I7A.** Next: **MBQL-001** (not started until explicitly authorized).
+
+## What shipped (ACCEPTED)
+
+- Provider-neutral wrap of shared `LlmProvider.chat` / `embed`
+- Every Ask, including deterministic / zero-model paths, writes an end-to-end trace
+- `/dev/ai-trace` (poll ~750 ms; not in family nav)
+- Retention 500 traces or 7 days; redact before persist; store failure never fails Ask
+- T1–T10 harness via `prove-p2-i7a` and page buttons
 
 ---
 
@@ -37,14 +45,14 @@ MBRM-001 v0.2 (2026-08-15) **supersedes** any earlier sequence that jumped from 
 | Order | Artifact | Role |
 |-------|----------|------|
 | 1 | **P2-I7** SMS/Text | **ACCEPTED** 2026-08-15. Attachment bytes parked **P2-BL-I7-01**. |
-| 2 | **P2-I7A** AI Model Trace | This definition. Observability **before** model workload grows |
-| 3 | **MBQL-001** | Ask / query / command language — **not started until I7A is ACCEPTED** |
+| 2 | **P2-I7A** AI Model Trace | **ACCEPTED** 2026-08-15. Observability **before** model workload grows |
+| 3 | **MBQL-001** | Ask / query / command language — **not started until explicitly authorized** |
 | 4 | **P2-I8** Richer Email | Shared MBQL communication semantics + existing trace. Attachment files up front = **P2-BL-I8-01**. |
 | 5 | **P2-I8.5** Face Evidence Ownership | Already inserted; **unchanged** by I7A |
 | 6 | **P2-I9** Spoken Moments | Same trace contract |
 | 7+ | I10 / I11 / later VLM | Trace becomes more valuable; do not pull them into I7A |
 
-**Build rule:** I7A code starts only after (a) I7 is **ACCEPTED** (done) and (b) Tom explicitly authorizes I7A build. Definition is finalized. Runtime is not.
+**Build rule (historical):** I7A code started only after I7 ACCEPTED and explicit I7A build authorization. Both gates passed. Runtime shipped and ACCEPTED.
 
 ---
 
@@ -116,11 +124,13 @@ Handoff after build auth (from the PRD): propose schema + live-update **before c
 
 ---
 
-## 5. Acceptance intent (after build — not now)
+## 5. Acceptance (passed)
 
 Pass the PRD §10 list and T1–T10. Visual polish may be thin. **Gating:** request → raw response → parsed/validated → MB disposition, plus error class that does not say “AI error” for a Python bug. Zero-model Asks must still appear as complete request traces.
 
-`prove-p2-i7a` (when it exists) is a harness, not ACCEPTED. ACCEPTED is a FlightSim owner pass with `/dev/ai-trace` open on a second display.
+`prove-p2-i7a` is a harness / regression check. **ACCEPTED** is the FlightSim owner pass (2026-08-15): Explore history keys, real Ask results, `/dev/ai-trace` on a second display.
+
+**Ask-path persist overhead (measured, warm store):** about **80 ms** for a zero-model Ask (median 78 ms; 75–83 ms). One extra chat/embed span is about **+20 ms**. Closing `/dev/ai-trace` stops poll traffic; it does **not** remove this persist cost. That ~80 ms is ~1% of a 6 s warm SMS Ask and is not the 60 s first-Ask cold start.
 
 ---
 
@@ -138,9 +148,10 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | I7A increment definition | **LOCKED** 2026-08-15 (Q1–Q6 + extra rules) |
 | I7 SMS/Text | **ACCEPTED** 2026-08-15 — attachment bytes **P2-BL-I7-01** |
 | I7A build | **AUTHORIZED** 2026-08-15 |
-| MBQL-001 | **NOT STARTED** — blocked on I7A acceptance |
+| I7A ACCEPTED | **Yes** (2026-08-15 — Tom FlightSim owner pass) |
+| MBQL-001 | **NOT STARTED** — waits on explicit authorization |
 
-**Build authorized and implemented this revision.** `prove-p2-i7a` is a harness, not ACCEPTED. ACCEPTED remains a FlightSim owner pass with `/dev/ai-trace` open on a second display. **No MBQL implementation starts as part of I7A.**
+**I7A ACCEPTED.** Keep `/dev/ai-trace` off when not diagnosing; emission stays on for later increments. **No MBQL implementation starts without a new authorization.**
 
 ## 8. FlightSim deploy (this branch)
 

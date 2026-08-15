@@ -1,6 +1,6 @@
 # P2-I7A — Trace persistence schema and live-update (build proposal)
 
-**Status:** BUILD AUTHORIZED 2026-08-15 · this is the pre-code contract  
+**Status:** **ACCEPTED** 2026-08-15 (shipped contract; I7A owner pass)  
 **Authority:** Locked [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) §2  
 **Not:** MBQL · family nav · SSE/WebSocket · full embedding vectors
 

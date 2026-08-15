@@ -1,6 +1,6 @@
 # MBRM-001 v0.2 — AI Trace insertion (ingested)
 
-**Status:** Ingested planning note · I7A definition **LOCKED** 2026-08-15 · **no I7A build**  
+**Status:** Ingested planning note · I7A definition **LOCKED** 2026-08-15 · I7A **ACCEPTED** 2026-08-15  
 **Source:** `MBRM-001_MemoryBox_Roadmap_and_P2_Backlog_Notes_v0.2_AI_Trace_Insertion.docx` · 2026-08-15  
 **Supersedes:** any earlier sequence that placed **MBQL-001 immediately after I7**  
 **Does not rewrite:** the rest of the historical MBRM-001 / P2 backlog notes (P1 path, post-P1 validation loop, UX stubs, Late-P2 multi-user, P3 boundary)
@@ -22,7 +22,7 @@ Increment definition (**locked**): [MBBS-P2_INCREMENT_7A_DEFINITION.md](MBBS-P2_
 |----------|----------------------|-----------------|
 | 1 | P2-I6 — Relationships | **ACCEPTED** |
 | 2 | P2-I7 — SMS/Text | **ACCEPTED** 2026-08-15. Attachment bytes **P2-BL-I7-01**. |
-| 3 | **P2-I7A — AI Model Trace & Observability** | **DEFINITION LOCKED.** No build until explicit I7A authorization. |
+| 3 | **P2-I7A — AI Model Trace & Observability** | **ACCEPTED** 2026-08-15. |
 | 4 | MBQL-001 — Ask, Query & Command Language | Implement/adopt **after I7A**; MBQL remains the semantic contract for Query Planner / Experience Orchestrator |
 | 5 | P2-I8 — Richer Email | Apply shared MBQL communication semantics |
 | 6 | P2-I8.5 — MB Face Evidence Ownership & Immich Decoupling | Existing inserted increment; **unchanged** |

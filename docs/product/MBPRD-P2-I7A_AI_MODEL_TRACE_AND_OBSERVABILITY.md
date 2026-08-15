@@ -211,7 +211,7 @@ P2-I7A is inserted **after I7 and before MBQL**. It is provider-neutral, develop
 | Primary user | Founder/developer/tester; **not** a normal Family Historian surface |
 | Core question | Was a bad result caused by orchestration/Python, the model call, parse/validation, or downstream application logic? |
 | Provider scope | Provider-neutral. Ollama is the current local model provider; future providers use the same contract |
-| Status | Definition **LOCKED** 2026-08-15. I7 is ACCEPTED. **No I7A build** until explicit authorization. See definition §2. |
+| Status | Definition **LOCKED** 2026-08-15. I7A **ACCEPTED** 2026-08-15 (Tom FlightSim owner pass). See [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md). |
 
 ## 15. Founder lock (2026-08-15) — does not rewrite §§1–14
 

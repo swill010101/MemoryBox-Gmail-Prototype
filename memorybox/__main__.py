@@ -230,8 +230,8 @@ def main(argv: list[str] | None = None) -> int:
         "--flightsim",
         action="store_true",
         help=(
-            "FlightSim ACCEPTED gate remains manual (definition §5). "
-            "Open /dev/ai-trace on a second display; harness is not ACCEPTED."
+            "P2-I7A ACCEPTED 2026-08-15 (Tom). "
+            "Harness remains a regression check; /dev/ai-trace is developer-only."
         ),
     )
     p_export = sub.add_parser(

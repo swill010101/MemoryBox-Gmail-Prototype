@@ -1,4 +1,4 @@
-"""P2-I7A AI Model Trace — structural + T1–T10 harness. Not ACCEPTED."""
+"""P2-I7A AI Model Trace — structural + T1–T10 harness. Increment ACCEPTED 2026-08-15."""
 from __future__ import annotations
 
 import json
@@ -400,8 +400,8 @@ def prove_p2_i7a(*, flightsim: bool = False) -> dict[str, Any]:
         "increment": "P2-I7A",
         "flightsim": bool(flightsim),
         "note": (
-            "prove-p2-i7a is a harness, not ACCEPTED. "
-            "ACCEPTED is a FlightSim owner pass with /dev/ai-trace open on a second display."
+            "P2-I7A ACCEPTED 2026-08-15 (Tom FlightSim owner pass). "
+            "prove-p2-i7a remains a regression harness."
         ),
         "checks": checks,
         "problems": problems,
