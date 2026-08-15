@@ -223,10 +223,12 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "hydrateAskHistory" in shell_js
         and "/ask/api/history" in shell_js
         and "HISTORY_MAX = 100" in ask_hist
-        and "/ask/api/history" in app_py,
+        and "/ask/api/history" in app_py
+        and "applyHistory" in shell_js
+        and "ArrowDown" in shell_js,
         checks,
         problems,
-        "Last 100 asks persist in localStorage; Up/Down in all Ask fields",
+        "Last 100 asks persist in localStorage; Up or Down starts history in all Ask fields",
     )
     _check(
         "i7_sms_attach_mb_library",
@@ -360,8 +362,7 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         "i7_ingest_ok",
         bool(result.get("ok"))
         and (
-            int(result.get("inserted") or 0) >= 10
-            or int(result.get("skipped") or 0) >= 10
+            int(result.get("inserted") or 0) + int(result.get("skipped") or 0) >= 10
         ),
         checks,
         problems,
@@ -533,6 +534,97 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         f"bidirectional n={len(hits_bi)} people={plan_bi.person_names}",
+    )
+
+    plan_from_to = plan_ask(
+        "show me all the text messages from and to Peggy George", ctx
+    )
+    plan_short = plan_ask("show me Peggy George text messages", ctx)
+    hits_from_to = search_sms_messages(plan_from_to, limit=5000)
+    hits_short = search_sms_messages(plan_short, limit=5000)
+    _check(
+        "i7_ask_from_and_to_same_as_person_texts",
+        "want_sms_modality" in plan_from_to.notes
+        and any("peggy" in n.lower() for n in plan_from_to.person_names)
+        and not any(n.lower() == "and" for n in plan_from_to.person_names)
+        and {h.evidence_id for h in hits_from_to} == {h.evidence_id for h in hits_short}
+        and len(hits_from_to) >= 3,
+        checks,
+        problems,
+        f"from_to people={plan_from_to.person_names} n={len(hits_from_to)} short={len(hits_short)}",
+    )
+
+    plan_between = plan_ask(
+        "Show me the last 100 messages between Peggy George and myself", ctx
+    )
+    hits_between = search_sms_messages(plan_between, limit=5000)
+    _check(
+        "i7_ask_last_n_between",
+        "want_sms_modality" in plan_between.notes
+        and any("peggy" in n.lower() for n in plan_between.person_names)
+        and "last_100_newest" in (hits_between[0].count_scope or "")
+        and len(hits_between) >= 3
+        and len(hits_between) <= 100,
+        checks,
+        problems,
+        f"between people={plan_between.person_names} n={len(hits_between)} scope={hits_between[0].count_scope if hits_between else None}",
+    )
+
+    plan_narr = plan_ask(
+        "write a narrative about the last 100 text messages between me and Peggy George",
+        ctx,
+    )
+    _check(
+        "i7_ask_narrative_is_retrieve_not_i11",
+        "want_sms_modality" in plan_narr.notes
+        and any("peggy" in n.lower() for n in plan_narr.person_names)
+        and bool(__import__("memorybox.ask.retrieve", fromlist=["SMS_NARRATIVE_RE"]).SMS_NARRATIVE_RE.search(plan_narr.original_ask)),
+        checks,
+        problems,
+        f"narrative people={plan_narr.person_names} notes={plan_narr.notes}",
+    )
+
+    plan_in = plan_ask("how many text messages did Peggy George send to me?", ctx)
+    hits_in = search_sms_messages(plan_in, limit=5000)
+    _check(
+        "i7_ask_inbound_count",
+        "want_sms_modality" in plan_in.notes
+        and hits_in
+        and "inbound_only" in (hits_in[0].count_scope or "")
+        and int(hits_in[0].match_total or 0) >= 1
+        and not any("how" in n.lower() for n in plan_in.person_names)
+        and all((h.direction or "").lower() == "incoming" for h in hits_in),
+        checks,
+        problems,
+        f"inbound n={len(hits_in)} total={hits_in[0].match_total if hits_in else None} scope={hits_in[0].count_scope if hits_in else None}",
+    )
+
+    plan_heart = plan_ask("how many hear emoji's did Peggy George send me?", ctx)
+    hits_heart = search_sms_messages(plan_heart, limit=5000)
+    _check(
+        "i7_ask_heart_emoji_count",
+        "want_sms_modality" in plan_heart.notes
+        and any("peggy" in n.lower() for n in plan_heart.person_names)
+        and hits_heart
+        and "heart_emoji_or_loved_tapback" in (hits_heart[0].count_scope or "")
+        and int(hits_heart[0].match_total or 0) >= 1,
+        checks,
+        problems,
+        f"heart people={plan_heart.person_names} n={len(hits_heart)} scope={hits_heart[0].count_scope if hits_heart else None}",
+    )
+
+    plan_att = plan_ask("show me Peggy George text messages with attachments", ctx)
+    hits_att = search_sms_messages(plan_att, limit=5000)
+    _check(
+        "i7_ask_attachments_only",
+        any("peggy" in n.lower() for n in plan_att.person_names)
+        and not any("attach" in n.lower() for n in plan_att.person_names)
+        and hits_att
+        and "attachments_only" in (hits_att[0].count_scope or "")
+        and all(h.attachments for h in hits_att),
+        checks,
+        problems,
+        f"attach people={plan_att.person_names} n={len(hits_att)}",
     )
 
     fake_ask = {

@@ -4,12 +4,17 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from memorybox.ingest.comms_sms import default_sms_export_path
 from memorybox.ingest.store import get_evidence
+
+_UUID_IN_NAME = re.compile(
+    r"([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
+)
 
 
 class SmsAttachError(Exception):
@@ -72,6 +77,7 @@ def _dir_candidates(root: Path, name: str) -> list[Path]:
         root / "attachments" / name,
         root / "Attachments" / name,
         root / "SMS Attachments" / name,
+        root / "iMessage Attachments" / name,
     ]
     try:
         if not root.is_dir():
@@ -86,11 +92,50 @@ def _dir_candidates(root: Path, name: str) -> list[Path]:
                 for grand in child.iterdir():
                     if grand.is_dir():
                         hits.append(grand / name)
+                        hits.append(grand / "attachments" / name)
+                        hits.append(grand / "Attachments" / name)
             except OSError:
                 continue
     except OSError:
         return hits
     return hits
+
+
+def _name_matches(found: str, wanted: str, uuid: str | None) -> bool:
+    a = found.casefold()
+    b = wanted.casefold()
+    if a == b:
+        return True
+    if a.endswith(b) or b.endswith(a):
+        return True
+    if uuid and uuid.casefold() in a:
+        return True
+    return False
+
+
+def _walk_match(root: Path, name: str, uuid: str | None, *, depth: int = 3) -> Path | None:
+    """Bounded directory walk — do not recurse a whole NAS share."""
+    try:
+        if not root.is_dir():
+            return None
+    except OSError:
+        return None
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        cur, level = stack.pop()
+        try:
+            children = list(cur.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_file() and _name_matches(child.name, name, uuid):
+                    return child
+                if child.is_dir() and level < depth:
+                    stack.append((child, level + 1))
+            except OSError:
+                continue
+    return None
 
 
 def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
@@ -99,11 +144,16 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
         if not raw:
             continue
         p = Path(raw)
-        if p.is_file():
-            return p
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
     name = Path(str(att.get("filename") or att.get("source_ref") or "")).name
     if not name:
         return None
+    uuid_m = _UUID_IN_NAME.search(name)
+    uuid = uuid_m.group(1) if uuid_m else None
     for root in _search_roots():
         try:
             if not root.exists():
@@ -116,6 +166,9 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
                     return hit
             except OSError:
                 continue
+        found = _walk_match(root, name, uuid, depth=3)
+        if found is not None:
+            return found
     return None
 
 

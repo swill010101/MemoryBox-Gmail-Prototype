@@ -46,13 +46,75 @@ SMS_RETRIEVE_CAP = 25000
 
 
 SMS_ASK_RE = re.compile(
-    r"(?i)\b(sms|imessage|i-?message|mms|rcs|text(?:s|ed|ing)?(?:\s+messages?)?)\b"
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"(?:text\s+)?messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|to\s+and\s+from|"
+    r"last\s+\d+\s+(?:text\s+)?messages?|"
+    r"how\s+many\s+(?:text\s+)?messages?"
+    r")\b"
 )
 SMS_COUNT_RE = re.compile(r"(?i)\bhow many\b|\bcount\b|\btimes did\b")
 SMS_OUTBOUND_RE = re.compile(
     r"(?i)\b(i sent|have i sent|did i send|text messages did i send|total text)\b"
 )
+SMS_INBOUND_RE = re.compile(
+    r"(?i)\b("
+    r"(?:send|sent|text(?:ed|s)?)\s+to\s+me|"
+    r"did\s+.+\s+send\s+(?:to\s+)?me|"
+    r"how\s+many.+\s+send\s+(?:to\s+)?me|"
+    r"emojis?\s+did\s+.+\s+send\s+me"
+    r")\b"
+)
+SMS_LAST_N_RE = re.compile(r"(?i)\blast\s+(\d+)")
+SMS_ATTACH_ASK_RE = re.compile(
+    r"(?i)\bwith\s+attachments?\b|\bhas\s+attachments?\b|\bthat\s+have\s+attachments?\b"
+)
+SMS_HEART_ASK_RE = re.compile(
+    r"(?i)\bhear(?:t)?\s+emojis?|\bheart\s+emojis?|❤️|❤|♥️"
+)
+SMS_NARRATIVE_RE = re.compile(
+    r"(?i)\b(write\s+a\s+narrative|write\s+a\s+story|narrate|narrative\s+about)\b"
+)
+_HEART_MARK_RE = re.compile(
+    r"(?i)❤️|❤|♥️|💕|💖|💗|💓|💞|💘|💝|"
+    r"\b(loved|hearted|tapback\s*loved)\b"
+)
 _SMS_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+_SMS_FAKE_PEOPLE = frozenset(
+    {
+        "attachments",
+        "attachment",
+        "unknown",
+        "photo",
+        "image",
+        "messages",
+        "message",
+        "and",
+    }
+)
+_SMS_KEYWORD_EXTRA_STOP = frozenset(
+    {
+        "about",
+        "between",
+        "myself",
+        "narrative",
+        "write",
+        "hear",
+        "heart",
+        "emoji",
+        "emojis",
+        "attachment",
+        "attachments",
+        "only",
+        "last",
+        "involving",
+        "library",
+        "visible",
+        "gallery",
+    }
+)
 
 
 @dataclass
@@ -143,7 +205,15 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
 
 def _sms_ask(plan: QueryPlan) -> bool:
     blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
-    return bool(SMS_ASK_RE.search(blob)) or "want_sms_modality" in (plan.notes or ())
+    return (
+        bool(SMS_ASK_RE.search(blob))
+        or "want_sms_modality" in (plan.notes or ())
+        or bool(SMS_INBOUND_RE.search(blob))
+        or bool(SMS_HEART_ASK_RE.search(blob))
+        or bool(SMS_NARRATIVE_RE.search(blob))
+        or bool(SMS_LAST_N_RE.search(blob))
+        or bool(SMS_ATTACH_ASK_RE.search(blob))
+    )
 
 
 def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -170,11 +240,66 @@ def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _sms_name_match(blob: str, names: list[str]) -> bool:
+    text = (blob or "").lower()
+    if not text or not names:
+        return False
+    for n in names:
+        if not n:
+            continue
+        if n in text or (text.strip() and text.strip() in n):
+            return True
+        parts = [p for p in re.findall(r"[a-z0-9']+", n) if len(p) > 2]
+        if parts and all(re.search(rf"\b{re.escape(p)}\b", text) for p in parts):
+            return True
+        if parts and re.search(rf"\b{re.escape(parts[0])}\b", text):
+            return True
+    return False
+
+
+def _sms_has_heart(payload: dict[str, Any], summary: str = "") -> bool:
+    blob = f"{summary} {payload.get('body_text') or ''}"
+    meta = payload.get("source_metadata") or {}
+    if isinstance(meta, dict):
+        for key, val in meta.items():
+            if re.search(r"(?i)react|tapback|loved|heart", str(key)):
+                blob += f" {val}"
+        blob += " " + str(meta.get("Reactions") or meta.get("Reaction") or "")
+        blob += " " + str(meta.get("Tapback") or "")
+    return bool(_HEART_MARK_RE.search(blob))
+
+
+def _sms_sender_matches_person(
+    payload: dict[str, Any],
+    *,
+    person_ids: set[str],
+    person_names: list[str],
+) -> bool:
+    sender = str(payload.get("sender_name") or "").strip().lower()
+    handle = str(payload.get("sender_handle") or "").strip().lower()
+    if person_names and _sms_name_match(f"{sender} {handle}", person_names):
+        return True
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    for m in mapped:
+        if not isinstance(m, dict):
+            continue
+        pid = str(m.get("person_id") or "")
+        h = str(m.get("handle") or m.get("normalized") or "").lower()
+        if person_ids and pid in person_ids and h and (h in handle or handle in h or h in sender):
+            return True
+    if person_ids and not payload.get("from_owner"):
+        have = {str(x) for x in (payload.get("person_ids") or [])}
+        participants = [str(p).strip() for p in (payload.get("participants") or []) if str(p).strip()]
+        if have & person_ids and len(participants) <= 3:
+            return True
+    return False
+
+
 def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
     people = [
         str(p)
         for p in (payload.get("participants") or [])
-        if str(p).strip()
+        if str(p).strip() and str(p).strip().lower() not in _SMS_FAKE_PEOPLE
     ]
     if payload.get("sender_name") and payload["sender_name"] not in people:
         people.insert(0, str(payload["sender_name"]))
@@ -243,10 +368,27 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     """Person / date / keyword retrieve over ingested SMS/iMessage Evidence."""
     from memorybox.person.phone_map import normalize_handle
 
-    want_count = bool(SMS_COUNT_RE.search(plan.original_ask or ""))
-    outbound_only = bool(SMS_OUTBOUND_RE.search(plan.original_ask or ""))
+    ask = plan.original_ask or ""
+    want_count = bool(SMS_COUNT_RE.search(ask))
+    outbound_only = bool(SMS_OUTBOUND_RE.search(ask))
+    inbound_only = bool(SMS_INBOUND_RE.search(ask)) and not outbound_only
+    attach_only = bool(SMS_ATTACH_ASK_RE.search(ask))
+    heart_only = bool(SMS_HEART_ASK_RE.search(ask))
+    last_n_m = SMS_LAST_N_RE.search(ask)
+    last_n = int(last_n_m.group(1)) if last_n_m else None
+    if last_n is not None and last_n < 1:
+        last_n = None
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
-    person_names = [n.strip().lower() for n in (plan.person_names or ()) if n.strip()]
+    person_names = [
+        n.strip().lower()
+        for n in (plan.person_names or ())
+        if n.strip() and n.strip().lower() not in _SMS_FAKE_PEOPLE
+    ]
+    name_tokens = {
+        tok
+        for n in person_names
+        for tok in re.findall(r"[a-z0-9']{2,}", n)
+    }
     windows = list(plan.temporal_windows or ())
     if not windows and plan.time_start and plan.time_end:
         windows = [(plan.time_start, plan.time_end)]
@@ -256,17 +398,24 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         "did", "text", "texts", "texted", "sms", "imessage", "message",
         "messages", "all", "my", "each", "other", "sent", "send", "total",
         "summarize", "summary",
-    }
+    } | _SMS_KEYWORD_EXTRA_STOP | name_tokens | set(person_names)
     keywords = [
-        t.lower()
-        for t in re.findall(r"[A-Za-z0-9']{3,}", plan.original_ask or "")
-        if t.lower() not in keyword_stop
+        t.lower().replace("'", "")
+        for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
+        if t.lower().replace("'", "") not in keyword_stop
     ]
-    # Drop person-name tokens from keyword filter (Person filter handles those)
-    keywords = [k for k in keywords if k not in {n.split()[0] for n in person_names} and k not in set(person_names)]
     # Year tokens belong to the date window, not the body-text keyword filter
     if windows:
         keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    if last_n is not None:
+        keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
+    if heart_only or attach_only:
+        keywords = [
+            k
+            for k in keywords
+            if k not in {"hear", "heart", "emoji", "emojis", "attachment", "attachments"}
+            and not k.startswith(("emoji", "hear", "heart", "attach"))
+        ]
 
     hits: list[EvidenceHit] = []
     with connection() as conn:
@@ -286,6 +435,13 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             continue
         if outbound_only and not payload.get("from_owner"):
             continue
+        if inbound_only:
+            if payload.get("from_owner"):
+                continue
+            if (person_ids or person_names) and not _sms_sender_matches_person(
+                payload, person_ids=person_ids, person_names=person_names
+            ):
+                continue
         sent = str(payload.get("sent_at") or "")
         if windows:
             day = sent[:10]
@@ -302,7 +458,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
                         " ".join(str(p) for p in (payload.get("participants") or [])),
                     ]
                 ).lower()
-                if person_names and not any(n in blob for n in person_names):
+                if person_names and not _sms_name_match(blob, person_names):
                     continue
                 if not person_names:
                     continue
@@ -313,14 +469,17 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
                     str(payload.get("thread_id") or ""),
                     str(payload.get("group_name") or ""),
                     " ".join(str(p) for p in (payload.get("participants") or [])),
-                    json.dumps(payload.get("source_metadata") or {}),
                 ]
             ).lower()
             handles = " ".join(
                 normalize_handle(str(p)) for p in (payload.get("participants") or [])
             )
-            if not any(n in blob or n in handles for n in person_names):
+            if not _sms_name_match(f"{blob} {handles}", person_names):
                 continue
+        if attach_only and not _sms_attachments(payload):
+            continue
+        if heart_only and not _sms_has_heart(payload, str(r["summary"] or "")):
+            continue
         if keywords:
             blob = f"{r['summary'] or ''} {payload.get('body_text') or ''} {payload.get('thread_id') or ''}".lower()
             if not any(k in blob for k in keywords):
@@ -332,28 +491,49 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         f"n={len(hits)}",
     ]
     if person_names:
-        scope_bits.append("person=" + ", ".join(plan.person_names))
+        scope_bits.append("person=" + ", ".join(n for n in plan.person_names if str(n).lower() not in _SMS_FAKE_PEOPLE))
     if windows:
         scope_bits.append("dates=" + ";".join(f"{a[:10]}..{b[:10]}" for a, b in windows))
     if outbound_only:
         scope_bits.append("outbound_only")
+    if inbound_only:
+        scope_bits.append("inbound_only")
+    if attach_only:
+        scope_bits.append("attachments_only")
+    if heart_only:
+        scope_bits.append("heart_emoji_or_loved_tapback")
+    if last_n is not None:
+        scope_bits.append(f"last_{last_n}_newest")
     if keywords:
         scope_bits.append("keyword=" + ",".join(keywords))
     scope = "; ".join(scope_bits)
     total = len(hits)
-    sliced, truncated = _year_fair_slice(hits, max(1, int(limit)))
-    if truncated:
-        years = sorted({(h.sent_at or "")[:4] for h in sliced if (h.sent_at or "")[:4]})
-        scope = (
-            f"{scope}; showing {len(sliced)} of {total} "
-            f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
-        )
+    if last_n is not None:
+        newest = sorted(hits, key=lambda h: (h.sent_at or "", h.evidence_id), reverse=True)
+        sliced = list(reversed(newest[: last_n]))
+        truncated = total > len(sliced)
+        if truncated:
+            scope = f"{scope}; showing newest {len(sliced)} of {total}"
+    else:
+        sliced, truncated = _year_fair_slice(hits, max(1, int(limit)))
+        if truncated:
+            years = sorted({(h.sent_at or "")[:4] for h in sliced if (h.sent_at or "")[:4]})
+            scope = (
+                f"{scope}; showing {len(sliced)} of {total} "
+                f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+            )
     if sliced:
         sliced[0].count_scope = scope
         sliced[0].match_total = total
         sliced[0].truncated = truncated
         if want_count:
-            sliced[0].summary = f"{total} text messages ({scope}). {sliced[0].summary}"
+            label = "heart emoji / Loved tapbacks" if heart_only else "text messages"
+            sliced[0].summary = f"{total} {label} ({scope}). {sliced[0].summary}"
+        elif last_n is not None:
+            sliced[0].summary = (
+                f"Last {len(sliced)} of {total} text messages ({scope}). "
+                f"{sliced[0].summary}"
+            )
         elif truncated:
             sliced[0].summary = (
                 f"Showing {len(sliced)} of {total} text messages ({scope}). "
@@ -362,6 +542,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         for h in sliced:
             h.match_total = total
             h.truncated = truncated
+            h.count_scope = scope
     return sliced
 
 
@@ -370,7 +551,7 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
     if _sms_ask(plan) and plan.want_communication:
         sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
         # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
-        if sms or SMS_ASK_RE.search(plan.original_ask or ""):
+        if sms or _sms_ask(plan):
             return sms
     kinds: list[str] = []
     if plan.want_communication:

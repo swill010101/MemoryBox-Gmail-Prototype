@@ -2173,6 +2173,7 @@
       if (!s) return;
       if (s.toLowerCase() === "unknown") return;
       if (s.toLowerCase() === "photo") return;
+      if (["attachments", "attachment", "image", "messages", "message", "and"].includes(s.toLowerCase())) return;
       if (!seen.includes(s)) seen.push(s);
     };
     if (Array.isArray(item.people)) item.people.forEach(push);

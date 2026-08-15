@@ -10,7 +10,12 @@ from typing import Any
 
 _SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
 _SMS_ASK_RE = re.compile(
-    r"(?i)\b(sms|imessage|i-?message|mms|rcs|text(?:s|ed|ing)?(?:\s+messages?)?)\b"
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|last\s+\d+\s+messages?"
+    r")\b"
 )
 _HIDDEN_SMS_GALLERY_CAP = 500
 

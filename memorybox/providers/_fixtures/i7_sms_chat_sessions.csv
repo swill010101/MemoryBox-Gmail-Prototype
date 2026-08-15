@@ -1,6 +1,6 @@
 Chat Session,Message Date,Delivered Date,Read Date,Edited Date,Service,Type,Sender ID,Sender Name,Recipients,Status,Replying to,Subject,Text,Attachment,Attachment type,Tapback,Unsend,Latitude,Longitude,Shared Location,Export Notes
 Peggy,2020-03-15 14:02:00,2020-03-15 14:02:01,2020-03-15 14:03:00,,iMessage,Outgoing,+15550101001,Tom Will,+15550101001,Read,,,Want to try 3D printing this weekend?,photo.jpg,image,,,,,,keep-me
-Peggy,2020-03-15 14:10:00,2020-03-15 14:10:01,2020-03-15 14:11:00,,iMessage,Incoming,+15550101001,Peggy,+15550000000,Read,,,Yes! I have filament.,,,,,,,,keep-me
+Peggy,2020-03-15 14:10:00,2020-03-15 14:10:01,2020-03-15 14:11:00,,iMessage,Incoming,+15550101001,Peggy,+15550000000,Read,,,Yes! I have filament.,,,Loved,,,,,keep-me
 Peggy,2020-03-16 09:00:00,2020-03-16 09:00:02,,,iMessage,Outgoing,+15550101001,Tom Will,+15550101001,Delivered,,,I'll bring the printer.,,,,,,,,keep-me
 Core 4,2021-07-04 12:00:00,2021-07-04 12:00:05,,,iMessage,Outgoing,+15550000000,Tom Will,+15550101001;+15550202002;+15550404004,Read,,,Happy 4th from the group chat.,,,,,,,,keep-me
 Unknown,2023-01-01 00:00:00,,,,SMS,Incoming,+15559999099,Mystery Number,,Read,,,Hello from an unmapped number.,,,,,,,,keep-me

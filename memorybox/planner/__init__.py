@@ -63,7 +63,28 @@ EMAIL_RE = re.compile(
     r"(?i)\b(emails?|e-mails?|mail|messages?|inbox|correspondence|wrote|signed\s+off)\b"
 )
 SMS_ASK_RE = re.compile(
-    r"(?i)\b(sms|imessage|i-?message|mms|rcs|text(?:s|ed|ing)?(?:\s+messages?)?)\b"
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"(?:text\s+)?messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|to\s+and\s+from|"
+    r"last\s+\d+\s+(?:text\s+)?messages?|"
+    r"how\s+many\s+(?:text\s+)?messages?"
+    r")\b"
+)
+SMS_PERSON_CONVERSATION_RE = re.compile(
+    r"(?i)\b("
+    r"from\s+and\s+to|to\s+and\s+from|"
+    r"between\s+(?:me|myself|i)|"
+    r"(?:me|myself)\s+and|"
+    r"last\s+\d+\s+(?:text\s+)?messages?|"
+    r"how\s+many\s+(?:text\s+)?messages?|"
+    r"did\s+.+\s+send|"
+    r"send(?:t)?\s+to\s+me|"
+    r"hear(?:t)?\s+emojis?|"
+    r"emojis?\s+did|"
+    r"with\s+attachments?"
+    r")\b"
 )
 JOURNAL_INTENT_RE = re.compile(
     r"(?i)^\s*(?:i\s+(?:want|need)\s+to\s+journal|let\s+me\s+journal|"
@@ -88,7 +109,10 @@ GUIDED_CAPTURE_ASK_RE = re.compile(
 CALENDAR_RE = re.compile(
     r"(?i)\b(calendar|appointment|schedule|event|meeting|ics)\b"
 )
-RELATIONSHIP_RE = re.compile(r"(?i)\brelationship\b|\bbetween\b.+\band\b")
+# Kinship / I6 only. SMS/text "between me and <person>" is not a relationship ask.
+RELATIONSHIP_RE = re.compile(
+    r"(?i)\brelationship\b|\bkinship\b|\bhow\s+(?:are|is)\s+.+\s+related\b|\brelated\s+to\b"
+)
 FOLLOWUP_RE = re.compile(
     r"(?i)^\s*("
     r"just\s+the\s+ones?\b|"
@@ -137,6 +161,8 @@ YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 _PERSON_NAME_STOP2 = (
     r"in|at|on|near|around|during|from|with|for|to|and|or|of|the|a|an|"
     r"only|just|through|thru|"
+    r"last|first|next|recent|past|myself|my|how|many|all|"
+    r"attachments?|messages?|texts?|emails?|"
     r"summer|winter|spring|fall|autumn|"
     r"christmas|xmas|easter|thanksgiving|halloween|birthday|bday|anniversary|"
     r"january|february|march|april|may|june|july|august|september|october|november|december|"
@@ -157,16 +183,31 @@ PERSON_OF_RE = re.compile(
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
 )
 PERSON_EMAIL_FROM_RE = re.compile(
-    rf"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+{_PERSON_NAME}\b"
+    rf"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+(?!and\b){_PERSON_NAME}\b"
 )
 PERSON_SAID_RE = re.compile(
     rf"(?i)\bwhat\s+did\s+{_PERSON_NAME}\s+say\b"
+)
+SMS_FROM_AND_TO_RE = re.compile(
+    rf"(?i)\b(?:from\s+and\s+to|to\s+and\s+from)\s+{_PERSON_NAME}\b"
+)
+SMS_BETWEEN_ME_RE = re.compile(
+    rf"(?i)\bbetween\s+(?:me|myself|i)\s+and\s+{_PERSON_NAME}\b"
+    rf"|\bbetween\s+{_PERSON_NAME}\s+and\s+(?:me|myself|i)\b"
+)
+SMS_DID_SEND_RE = re.compile(
+    rf"(?i)\b(?:did|has|have)\s+{_PERSON_NAME}\s+send"
+)
+SMS_NAME_TEXTS_RE = re.compile(
+    rf"(?i)\b(?!how\b|all\b|my\b|the\b|last\b|show\b|write\b|did\b)"
+    rf"{_PERSON_NAME}\s+(?:text|sms|imessage)(?:s|ed|ing)?\b"
 )
 PERSON_POSSESSIVE_RE = re.compile(r"(?-i:\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'s)\b")
 SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
-    r"texts?\b|sms\b|imessage\b|messages?\b|all\b)"
+    r"texts?\b|sms\b|imessage\b|messages?\b|all\b|"
+    r"the\b|last\b|first\b|next\b|recent\b|how\b|write\b|attachments?\b)"
     rf"{_PERSON_NAME}\b"
 )
 # "Show Tom Will" / "Show Eugene" — owners often omit "me"; same person visual intent
@@ -310,6 +351,18 @@ _ENTITY_STOP = frozenset(
         "years",
         "last",
         "past",
+        "and",
+        "or",
+        "how",
+        "many",
+        "all",
+        "i",
+        "attachments",
+        "attachment",
+        "messages",
+        "message",
+        "texts",
+        "narrative",
         "just",
         "only",
         "what",
@@ -418,6 +471,9 @@ def _clean_entity(name: str) -> str | None:
     n = (name or "").strip()
     if not n or n.lower() in _ENTITY_STOP:
         return None
+    tokens = [t for t in re.split(r"\s+", n.lower()) if t]
+    if tokens and all(t in _ENTITY_STOP for t in tokens):
+        return None
     if len(n) < 2:
         return None
     # Normalize casing for display / Immich name match (owner often types lowercase)
@@ -476,15 +532,20 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         PERSON_EMAIL_FROM_RE,
         PERSON_SAID_RE,
         SMS_PERSON_AND_I_RE,
+        SMS_FROM_AND_TO_RE,
+        SMS_BETWEEN_ME_RE,
+        SMS_DID_SEND_RE,
+        SMS_NAME_TEXTS_RE,
     ]
     if want_email:
         # "from <Name>" in an email ask is a person, never a place
         patterns.append(
-            re.compile(rf"(?i)\bfrom\s+{_PERSON_NAME}\b")
+            re.compile(rf"(?i)\bfrom\s+(?!and\b){_PERSON_NAME}\b")
         )
     for rx in patterns:
         for m in rx.finditer(text or ""):
-            ent = _clean_entity(m.group(1))
+            raw_name = next((g for g in m.groups() if g and str(g).strip()), None)
+            ent = _clean_entity(raw_name or "")
             if not ent:
                 continue
             # "my dad" / "our mother" are kinship, not display names
@@ -636,10 +697,18 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     want_email = bool(EMAIL_RE.search(q))
     want_sms = bool(SMS_ASK_RE.search(q))
     want_cal = bool(CALENDAR_RE.search(q))
-    want_relationship = bool(RELATIONSHIP_RE.search(q))
 
     # --- Utterance extractions (authoritative for present slots) ---
     u_people = _extract_people(q, want_email=want_email or want_sms)
+    if not want_sms and u_people and SMS_PERSON_CONVERSATION_RE.search(q):
+        if not (
+            re.search(r"(?i)\b(emails?|e-mails?|gmail|inbox|imap)\b", q)
+            and not re.search(r"(?i)\b(text|sms|imessage|mms)\b", q)
+        ):
+            want_sms = True
+            notes.append("sms_person_conversation")
+    # SMS/text conversation "between me and X" is not I6 kinship.
+    want_relationship = bool(RELATIONSHIP_RE.search(q)) and not want_sms
     u_places, u_trips = _extract_places_and_trips(q, want_email=want_email or want_sms)
     u_events = _extract_events(q)
     temporal = parse_temporal(q)

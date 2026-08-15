@@ -55,12 +55,13 @@
   }
 
   function hydrateAskHistory() {
-    fetch("/ask/api/history")
+    return fetch("/ask/api/history")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
+        return readRecent();
       })
-      .catch(() => {});
+      .catch(() => readRecent());
   }
 
   function bindAllAskInputs() {
@@ -213,27 +214,46 @@
       input.dataset.mbAskHistory = "1";
       let histIndex = -1;
       let draft = "";
-      input.addEventListener("keydown", (e) => {
-        if (e.isComposing) return;
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        const recent = window.mbShell.recentAsks();
+      let applying = false;
+      const applyHistory = (recent, key) => {
         if (!recent.length) return;
-        e.preventDefault();
-        if (e.key === "ArrowUp") {
-          if (histIndex < 0) draft = input.value;
+        applying = true;
+        if (histIndex < 0) draft = input.value;
+        if (key === "ArrowUp") {
           if (histIndex < recent.length - 1) histIndex += 1;
-          input.value = recent[histIndex] || "";
+        } else if (histIndex < 0) {
+          histIndex = 0;
         } else {
-          if (histIndex < 0) return;
           histIndex -= 1;
-          input.value = histIndex < 0 ? draft : recent[histIndex] || "";
         }
+        input.value = histIndex < 0 ? draft : recent[histIndex] || "";
         try {
           const n = input.value.length;
           input.setSelectionRange(n, n);
         } catch (_) {}
+        applying = false;
+      };
+      input.addEventListener("focus", () => {
+        hydrateAskHistory();
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.isComposing) return;
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        let recent = window.mbShell.recentAsks();
+        if (!recent.length) {
+          e.preventDefault();
+          hydrateAskHistory().then((list) => {
+            recent = list || window.mbShell.recentAsks();
+            if (!recent.length) return;
+            applyHistory(recent, e.key);
+          });
+          return;
+        }
+        e.preventDefault();
+        applyHistory(recent, e.key);
       });
       input.addEventListener("input", () => {
+        if (applying) return;
         histIndex = -1;
       });
     },

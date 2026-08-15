@@ -631,6 +631,53 @@ def _build_answer(
         )
         return "insufficient", missing, statements, citations, missing
 
+    ask = getattr(plan, "original_ask", "") or ""
+    sms_hits = [
+        h
+        for h in evidence
+        if (getattr(h, "source", "") == "sms_export")
+        or str(getattr(h, "channel", "") or "").lower()
+        in {"sms", "text", "imessage", "mms", "rcs"}
+    ]
+    if sms_hits and R.SMS_NARRATIVE_RE.search(ask):
+        who = ", ".join(
+            n
+            for n in (plan.person_names or ())
+            if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
+        ) or "the named person"
+        n = len(sms_hits)
+        total = getattr(sms_hits[0], "match_total", None) or n
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        text = (
+            f"Retrieved the last {n} of {total} text messages between you and {who} "
+            f"({scope}). Writing a narrative from those messages is I11 and is not "
+            "generated here. The gallery shows the retrieved messages."
+        )
+        return "evidence_backed", text, statements, citations, None
+    if sms_hits and R.SMS_COUNT_RE.search(ask):
+        total = getattr(sms_hits[0], "match_total", None)
+        if total is None:
+            total = len(sms_hits)
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        label = (
+            "heart emoji / Loved tapbacks"
+            if R.SMS_HEART_ASK_RE.search(ask)
+            else "text messages"
+        )
+        text = f"{total} {label} ({scope})."
+        return "evidence_backed", text, statements, citations, None
+    if sms_hits and R.SMS_LAST_N_RE.search(ask):
+        who = ", ".join(
+            n
+            for n in (plan.person_names or ())
+            if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
+        ) or "the named person"
+        n = len(sms_hits)
+        total = getattr(sms_hits[0], "match_total", None) or n
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        text = f"Last {n} of {total} text messages between you and {who} ({scope})."
+        return "evidence_backed", text, statements, citations, None
+
     parts = []
     if guided_capture:
         parts.append(
