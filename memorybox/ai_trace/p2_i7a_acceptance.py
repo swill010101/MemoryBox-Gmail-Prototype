@@ -131,6 +131,15 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     )
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")
     _check(
+        "explore_js_parses",
+        "<ul>${atts}" not in explore_js
+        and "mbExploreApplyAsk" in explore_js
+        and "sms-attachment" in explore_js,
+        checks,
+        problems,
+        "Nested backticks in SMS attach HTML must not kill the whole Explore script",
+    )
+    _check(
         "explore_chrome_before_find",
         "Bind Ask chrome before any find" in explore_js
         and "chromeBound" in explore_js

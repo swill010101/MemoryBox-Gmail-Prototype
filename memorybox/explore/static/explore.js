@@ -2742,31 +2742,48 @@
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
       const eid = escapeAttr(item.evidence_id || "");
+      const attItems = atts
+        .map((a, i) => {
+          const name = escapeHtml(a.filename || a.source_ref || "attachment");
+          const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
+          const src = "/explore/api/sms-attachment/" + eid + "?index=" + i;
+          const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
+            String(a.attachment_type || a.filename || "")
+          );
+          const preview = isImg
+            ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="' +
+              escapeAttr(src) +
+              '" alt="' +
+              name +
+              '" /></div>'
+            : '<p><a class="mb-viewer-footbtn" href="' +
+              escapeAttr(src) +
+              '" target="_blank" rel="noopener">Open ' +
+              name +
+              "</a></p>";
+          return (
+            '<li data-att-index="' +
+            i +
+            '">' +
+            name +
+            kind +
+            preview +
+            '<details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>' +
+            '<button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="' +
+            i +
+            '">Copy to Artifacts</button>' +
+            '<span class="mb-sms-to-library-status" hidden></span></details></li>'
+          );
+        })
+        .join("");
       const attHtml = atts.length
-        ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
-            atts.length === 1 ? "" : "s"
-          }</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>${atts}
-            .map((a, i) => {
-              const name = escapeHtml(a.filename || a.source_ref || "attachment");
-              const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
-              const src = `/explore/api/sms-attachment/${eid}?index=${i}`;
-              const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
-                String(a.attachment_type || a.filename || "")
-              );
-              const preview = isImg
-                ? `<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="${escapeAttr(
-                    src
-                  )}" alt="${name}" /></div>`
-                : `<p><a class="mb-viewer-footbtn" href="${escapeAttr(
-                    src
-                  )}" target="_blank" rel="noopener">Open ${name}</a></p>`;
-              return `<li data-att-index="${i}">${name}${kind}${preview}
-                <details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>
-                <button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="${i}">Copy to Artifacts</button>
-                <span class="mb-sms-to-library-status" hidden></span></details>
-              </li>`;
-            })
-            .join("")}</ul></div>`
+        ? '<div class="mb-ev-attach"><strong>📎 ' +
+          atts.length +
+          " attachment" +
+          (atts.length === 1 ? "" : "s") +
+          "</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>" +
+          attItems +
+          "</ul></div>"
         : "";
       const phoneHtml = mapped.length
         ? `<p class="mb-ev-meta">Confirmed phone/handle: ${mapped
