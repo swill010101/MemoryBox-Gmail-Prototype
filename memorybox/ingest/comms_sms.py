@@ -36,6 +36,30 @@ from memorybox.person.phone_map import (
 )
 
 
+def _os_error_detail(exc: BaseException) -> str:
+    parts = [str(exc) or type(exc).__name__]
+    filename = getattr(exc, "filename", None) or getattr(exc, "filename2", None)
+    if filename:
+        parts.append(f"path={filename}")
+    winerror = getattr(exc, "winerror", None)
+    if winerror is not None:
+        parts.append(f"winerror={winerror}")
+    return " ".join(parts)
+
+
+def _csv_is_readable(path: Path | None) -> bool:
+    if path is None:
+        return False
+    try:
+        if not path.is_file():
+            return False
+        with path.open("rb") as fh:
+            fh.read(1)
+            return True
+    except OSError:
+        return False
+
+
 def default_sms_export_path() -> Path | None:
     env = (
         os.environ.get("MEMORYBOX_SMS_URI")
@@ -326,10 +350,11 @@ def backfill_existing_sms_attachments(
             "original_untouched": True,
         }
     except Exception as exc:  # noqa: BLE001
+        detail = _os_error_detail(exc)
         store.finish_job(
-            job_id, status="error", message="attachment backfill failed", error_message=str(exc)
+            job_id, status="error", message="attachment backfill failed", error_message=detail
         )
-        return {"ok": False, "job_id": str(job_id), "error": str(exc)}
+        return {"ok": False, "job_id": str(job_id), "error": detail}
 
 
 def ingest_sms(
@@ -355,8 +380,22 @@ def ingest_sms(
     if attach_probe.get("is_dir") and attach_probe.get("path"):
         os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(attach_probe["path"])
     reset_export_index()
-    path = Path(uri) if uri else default_sms_export_path()
-    csv_ok = path is not None and path.is_file()
+    try:
+        path = Path(uri) if uri else default_sms_export_path()
+    except OSError:
+        path = Path(uri) if uri else None
+    csv_ok = _csv_is_readable(path)
+    if attach_probe.get("is_dir") and not uri:
+        existing = store.find_sms_export_source(
+            uri=str(path) if csv_ok and path is not None else None
+        )
+        if existing:
+            return backfill_existing_sms_attachments(
+                attachments_dir=requested_dir,
+                attach_probe=attach_probe,
+                source_id=existing.get("id"),
+                source_uri=str(existing.get("uri") or "") or None,
+            )
     if not csv_ok:
         if attach_probe.get("is_dir"):
             return backfill_existing_sms_attachments(
@@ -537,10 +576,7 @@ def ingest_sms(
             "attachment_bytes_hunted": hunt_attach,
         }
     except Exception as exc:  # noqa: BLE001
-        detail = str(exc)
-        filename = getattr(exc, "filename", None)
-        if filename:
-            detail = f"{detail} ({filename})"
+        detail = _os_error_detail(exc)
         store.finish_job(
             job_id, status="error", message="ingest failed", error_message=detail
         )

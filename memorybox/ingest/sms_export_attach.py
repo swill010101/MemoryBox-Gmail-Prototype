@@ -362,6 +362,13 @@ def _remember_name(index: ExportAttachIndex, path: Path) -> None:
         index.by_uuid[uuid_m.group(1).replace("-", "").casefold()] = path
 
 
+def _safe_listdir(cur: Path) -> list[Path]:
+    try:
+        return [cur / name for name in os.listdir(cur)]
+    except OSError:
+        return []
+
+
 def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttachIndex:
     index = ExportAttachIndex(roots=list(roots))
     seen_paths: set[str] = set()
@@ -379,33 +386,27 @@ def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttach
         stack: list[tuple[Path, int]] = [(root, 0)]
         while stack:
             cur, level = stack.pop()
-            try:
-                children = list(cur.iterdir())
-            except OSError:
-                try:
-                    children = [cur / name for name in os.listdir(cur)]
-                except OSError:
-                    continue
+            children = _safe_listdir(cur)
             for child in children:
-                try:
-                    loc = str(child.resolve()) if child.exists() else str(child)
-                except OSError:
-                    loc = str(child)
+                loc = str(child)
                 if loc.casefold() in seen_paths:
                     continue
                 try:
-                    if child.is_file():
-                        if not child.stat().st_size:
+                    is_file = child.is_file()
+                    is_dir = False if is_file else child.is_dir()
+                    size = child.stat().st_size if is_file else 0
+                except OSError:
+                    continue
+                try:
+                    if is_file:
+                        if not size:
                             continue
                         seen_paths.add(loc.casefold())
                         _remember_name(index, child)
                         parsed = parse_export_filename(child.name)
                         if parsed is None:
                             continue
-                        try:
-                            parent_is_root = child.parent.resolve() == root.resolve()
-                        except OSError:
-                            parent_is_root = child.parent == root
+                        parent_is_root = child.parent == root or str(child.parent).casefold() == str(root).casefold()
                         folder_chat = "" if parent_is_root else child.parent.name
                         chat = folder_chat or parsed.chat
                         index.files.append(
@@ -419,7 +420,7 @@ def build_export_index(roots: Iterable[Path], *, depth: int = 4) -> ExportAttach
                                 name=child.name,
                             )
                         )
-                    elif child.is_dir() and level < depth:
+                    elif is_dir and level < depth:
                         if child.name.casefold() in _SKIP_DIR_NAMES:
                             continue
                         stack.append((child, level + 1))
