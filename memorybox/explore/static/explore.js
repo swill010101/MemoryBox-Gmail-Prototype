@@ -2682,7 +2682,7 @@
       const attHtml = atts.length
         ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
             atts.length === 1 ? "" : "s"
-          }</strong> — stored on this SMS at ingest (not Immich). Optional Artifact copy is not required.<ul>${atts
+          }</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>${atts}
             .map((a, i) => {
               const name = escapeHtml(a.filename || a.source_ref || "attachment");
               const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
