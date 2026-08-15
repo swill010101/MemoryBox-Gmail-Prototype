@@ -951,6 +951,91 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n={len(got_tl)} ids={[x.get('id') for x in got_tl]}",
         )
+
+        _check(
+            "immich_name_matches_peggy_george_to_peggy",
+            _ImmichIds._name_matches_person("Peggy George", "Peggy")
+            and _ImmichIds._name_matches_person("Peggy", "Peggy George")
+            and not _ImmichIds._name_matches_person("Ann", "Anne Will"),
+            checks,
+            problems,
+            "Ask Peggy George must match Immich Peggy",
+        )
+
+        class _SearchPersonImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.n = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                self.n += 1
+                if method == "POST" and path == "/search/person":
+                    return 200, [
+                        {"id": "immich-peggy", "name": "Peggy"},
+                    ]
+                return 404, None
+
+        client7 = _SearchPersonImmich()
+        named = client7.find_people_by_name("Peggy George")
+        _check(
+            "immich_search_person_not_full_people_dump",
+            len(named) == 1
+            and named[0].get("id") == "immich-peggy"
+            and client7.n <= 2,
+            checks,
+            problems,
+            f"n={len(named)} calls={client7.n}",
+        )
+
+        class _TimeoutImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.n = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                self.n += 1
+                raise TimeoutError("RST")
+
+        client8 = _TimeoutImmich()
+        got_to = client8.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_search_fail_fast",
+            got_to == []
+            and client8.n <= 3
+            and getattr(client8, "_last_person_source", "") == "timeout",
+            checks,
+            problems,
+            f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
+        )
+
+        from memorybox.person import _ask_named_photo_people
+        from memorybox.providers.photo.dto import PhotoPersonRef
+
+        class _ImmichNamedPeggy:
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return [
+                    PhotoPersonRef(
+                        provider_key="immich",
+                        external_id="immich-peggy",
+                        display_name="Peggy",
+                    )
+                ]
+
+        got_ask = _ask_named_photo_people(_ImmichNamedPeggy(), "Peggy George")
+        _check(
+            "ask_named_photo_people_upgrades_peggy",
+            len(got_ask) == 1
+            and getattr(got_ask[0], "external_id", "") == "immich-peggy",
+            checks,
+            problems,
+            f"refs={[(getattr(r, 'display_name', None), getattr(r, 'external_id', None)) for r in got_ask]}",
+        )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))
 

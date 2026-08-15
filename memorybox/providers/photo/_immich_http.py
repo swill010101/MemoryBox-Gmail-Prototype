@@ -95,6 +95,8 @@ class ImmichHttpClient:
         timeout: float = 60,
         retries: int = 2,
     ) -> tuple[int, Any]:
+        if getattr(self, "_circuit_open", False) and path != "/server/ping":
+            raise TimeoutError("immich circuit open")
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {
@@ -125,15 +127,34 @@ class ImmichHttpClient:
                     return e.code, parsed
                 except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
                     # FlightSim Immich often RST/times out on person library search.
-                    # Retry — do not treat a dropped socket as "this person has no photos".
                     last_err = exc
-                    if attempt < attempts - 1:
+                    self._note_transport_fail(exc)
+                    if attempt < attempts - 1 and not getattr(self, "_circuit_open", False):
                         time.sleep(0.35 * (attempt + 1))
                         continue
                     raise
         if last_err is not None:
             raise last_err
         raise RuntimeError("Immich request failed")
+
+    def _reset_person_circuit(self) -> None:
+        self._transport_fails = 0
+        self._circuit_open = False
+
+    def _note_transport_fail(self, exc: BaseException | None = None) -> None:
+        """Two RST/timeouts in one person search → stop stacking 8–60s probes."""
+        msg = str(exc or "").lower()
+        if exc is not None and not isinstance(
+            exc, (TimeoutError, ConnectionError, OSError, urllib.error.URLError)
+        ):
+            if "timed out" not in msg and "circuit" not in msg and "rst" not in msg:
+                return
+        self._transport_fails = int(getattr(self, "_transport_fails", 0) or 0) + 1
+        if self._transport_fails >= 2:
+            self._circuit_open = True
+
+    def _circuit(self) -> bool:
+        return bool(getattr(self, "_circuit_open", False))
 
     def ping(self) -> bool:
         status, body = self._request("GET", "/server/ping", timeout=8, retries=1)
@@ -163,7 +184,13 @@ class ImmichHttpClient:
         return data
 
     def list_people(self) -> list[dict[str, Any]]:
-        status, data = self._request("GET", "/people?withHidden=false")
+        try:
+            status, data = self._request(
+                "GET", "/people?withHidden=false", timeout=8, retries=1
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+            return []
         if status != 200:
             return []
         if isinstance(data, dict):
@@ -187,6 +214,7 @@ class ImmichHttpClient:
         """
         if not person_ids:
             return []
+        self._reset_person_circuit()
         target = max(1, min(int(size), 5000))
         by_id: dict[str, dict[str, Any]] = {}
 
@@ -201,23 +229,26 @@ class ImmichHttpClient:
 
         _add(self._assets_from_person_faces(person_ids, target))
         # withFaces often IS the person library (all assigned faces). Only
-        # hit timeline when faces were sparse (feature-face only).
-        if len(by_id) < min(target, 20):
+        # hit timeline when faces were sparse and Immich is still answering.
+        if len(by_id) < min(target, 20) and not self._circuit():
             _add(self._assets_from_person_timeline(person_ids, target))
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
             self._last_person_source = "faces_or_timeline"
             return list(by_id.values())[:target]
+        if self._circuit():
+            self._last_person_source = "timeout"
+            return []
 
         try:
             _add(self._assets_from_person_metadata(person_ids, target))
             if by_id:
                 self._last_person_source = "metadata"
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
         if by_id:
             return list(by_id.values())[:target]
-        self._last_person_source = "empty"
+        self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
     def _assets_from_person_faces(
@@ -229,9 +260,12 @@ class ImmichHttpClient:
             pid = str(pid or "").strip()
             if not pid:
                 continue
+            if self._circuit():
+                break
             try:
                 faces = self.list_faces_for_person(pid)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
                 faces = []
             for face in faces or []:
                 if not isinstance(face, dict):
@@ -258,8 +292,12 @@ class ImmichHttpClient:
             pid = str(pid or "").strip()
             if not pid:
                 continue
+            if self._circuit():
+                break
             buckets = self._list_person_time_buckets(pid)
             for bucket in buckets[:24]:
+                if self._circuit():
+                    break
                 if len(by_id) >= target:
                     return list(by_id.values())[:target]
                 for it in self._list_person_bucket_assets(pid, bucket):
@@ -288,9 +326,14 @@ class ImmichHttpClient:
             f"/timeline/buckets?personId={pid}",
         )
         for path in paths:
+            if self._circuit():
+                break
             try:
-                status, data = self._request("GET", path, timeout=8, retries=1)
-            except Exception:  # noqa: BLE001
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
                 continue
             if status != 200:
                 continue
@@ -336,9 +379,14 @@ class ImmichHttpClient:
             f"/asset/time-bucket?timeBucket={qtb}&personId={pid}",
         )
         for path in paths:
+            if self._circuit():
+                break
             try:
-                status, data = self._request("GET", path, timeout=8, retries=1)
-            except Exception:  # noqa: BLE001
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
                 continue
             if status != 200:
                 continue
@@ -543,25 +591,91 @@ class ImmichHttpClient:
 
         return list(by_id.values())[:target]
 
+    @staticmethod
+    def _name_matches_person(query: str, person_name: str) -> bool:
+        """Match Immich 'Peggy' to Ask 'Peggy George' without substring traps."""
+        q = (query or "").strip().lower()
+        n = (person_name or "").strip().lower()
+        if len(q) < 2 or not n:
+            return False
+        if q == n:
+            return True
+        if n.startswith(q + " ") or q.startswith(n + " "):
+            return True
+        q0 = q.split()[0]
+        n0 = n.split()[0]
+        return bool(q0 and n0 and q0 == n0 and (n.startswith(q) or q.startswith(n)))
+
     def find_people_by_name(self, name_query: str, *, limit: int = 8) -> list[dict[str, Any]]:
-        q = (name_query or "").strip().lower()
+        q = (name_query or "").strip()
         if len(q) < 2:
             return []
-        hits = []
-        for p in self.list_people():
-            name = str(p.get("name") or "").strip()
-            if not name:
-                continue
-            nl = name.lower()
-            if q == nl or q in nl or nl.startswith(q):
-                hits.append(p)
-        hits.sort(
-            key=lambda p: (
-                0 if str(p.get("name") or "").lower() == q else 1,
-                str(p.get("name") or ""),
+        tokens = [q]
+        first = q.split()[0]
+        if first.lower() != q.lower():
+            tokens.append(first)
+        hits: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def _add(rows: Any) -> None:
+            if isinstance(rows, dict):
+                rows = rows.get("people") or rows.get("items") or []
+            if not isinstance(rows, list):
+                return
+            for p in rows:
+                if not isinstance(p, dict):
+                    continue
+                pid = str(p.get("id") or "").strip()
+                name = str(p.get("name") or "").strip()
+                if not pid or pid in seen or not name:
+                    continue
+                if self._name_matches_person(q, name):
+                    seen.add(pid)
+                    hits.append(p)
+
+        from urllib.parse import quote
+
+        for token in tokens:
+            if self._circuit():
+                break
+            try:
+                status, data = self._request(
+                    "POST",
+                    "/search/person",
+                    body={"name": token},
+                    timeout=6,
+                    retries=1,
+                )
+                if status == 200:
+                    _add(data)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+            if hits or self._circuit():
+                break
+            try:
+                status, data = self._request(
+                    "GET",
+                    f"/people?name={quote(token)}&withHidden=false",
+                    timeout=6,
+                    retries=1,
+                )
+                if status == 200:
+                    _add(data)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+            if hits or self._circuit():
+                break
+        if hits:
+            ql = q.lower()
+            hits.sort(
+                key=lambda p: (
+                    0 if str(p.get("name") or "").strip().lower() == ql else 1,
+                    str(p.get("name") or ""),
+                )
             )
-        )
-        return hits[:limit]
+            return hits[:limit]
+        # Do not dump GET /people (60s+ on FlightSim) after search/person missed.
+        return []
 
     @staticmethod
     def _immich_asset_id(value: Any) -> str | None:
@@ -580,16 +694,22 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
-        # Immich variants across versions
+        # Cheap person record first (feature face). withFaces can RST when
+        # the person has hundreds of faces — that was 187s / 0 photos.
         for path in (
+            f"/people/{pid}",
             f"/people/{pid}?withFaces=true",
             f"/people/{pid}/faces",
             f"/faces?id={pid}",
-            f"/people/{pid}",
         ):
+            if self._circuit():
+                break
             try:
-                status, data = self._request("GET", path, timeout=8, retries=1)
-            except Exception:  # noqa: BLE001
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
                 continue
             if status != 200:
                 continue

@@ -1160,6 +1160,9 @@ def search_photos(
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
                 assets = []
                 status["photo_search_error"] = "personIds_search_failed"
+            src = getattr(getattr(photo, "_client", None), "_last_person_source", None)
+            if src:
+                status["person_library_source"] = src
             if assets:
                 return list(assets)
             list_fn = getattr(photo, "list_face_assets", None)
@@ -1439,11 +1442,22 @@ def search_photos(
                 status["clarify_message"] = f"Who is {who}?"
                 return _finish(hits)
             status["identity_mode"] = "photos_empty_person_resolved"
-            status["detail"] = (
-                f"no_immich_person_ids names={name_queries} "
-                f"unmapped_resolvable={unmapped_resolvable_names or []} "
-                f"mapped_names={mapped_names}"
+            src = status.get("person_library_source") or getattr(
+                getattr(photo, "_client", None), "_last_person_source", None
             )
+            if src == "timeout":
+                status["unavailable"] = True
+                status["detail"] = (
+                    f"immich_timeout names={name_queries} "
+                    f"mapped_names={mapped_names}"
+                )
+            else:
+                status["detail"] = (
+                    f"no_immich_person_ids names={name_queries} "
+                    f"unmapped_resolvable={unmapped_resolvable_names or []} "
+                    f"mapped_names={mapped_names}"
+                    + (f" source={src}" if src else "")
+                )
             if mapped_names or unmapped_resolvable_names:
                 status["disclosure"] = (
                     (status.get("disclosure") or "")
