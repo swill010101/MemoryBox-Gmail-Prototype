@@ -1012,10 +1012,53 @@
     }
   }
 
+  const ASK_HIST_KEY = "mb_shell_recent_asks";
+
+  function readAskHistory() {
+    try {
+      const list = JSON.parse(localStorage.getItem(ASK_HIST_KEY) || "[]");
+      return Array.isArray(list)
+        ? list.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 100)
+        : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeAskHistory(list) {
+    const uniq = [];
+    const seen = {};
+    (list || []).forEach((item) => {
+      const t = String(item || "").trim();
+      if (!t || seen[t]) return;
+      seen[t] = 1;
+      uniq.push(t);
+    });
+    const out = uniq.slice(0, 100);
+    try {
+      localStorage.setItem(ASK_HIST_KEY, JSON.stringify(out));
+    } catch (_) {}
+    return out;
+  }
+
+  function rememberAskLocal(text) {
+    const t = String(text || "").trim();
+    if (!t) return;
+    writeAskHistory([t].concat(readAskHistory().filter((x) => x !== t)));
+    if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(t);
+    else {
+      fetch("/ask/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t }),
+      }).catch(() => {});
+    }
+  }
+
   function applyAskCommand(raw) {
     const text = String(raw || "").trim();
     if (!text) return;
-    if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
+    rememberAskLocal(text);
     state.domain.askText = text;
     const lower = text.toLowerCase();
 
@@ -2675,6 +2718,17 @@
         : item.t != null
           ? `@ ${Number(item.t).toFixed(0)}s`
           : "";
+    if (isText && state.preview && state.preview.attach) {
+      const att = (item.attachments || [])[0] || {};
+      const eid = escapeAttr(item.evidence_id || "");
+      const name = escapeHtml(att.filename || att.source_ref || "attachment");
+      const src = `/explore/api/sms-attachment/${eid}?index=0`;
+      return `<div class="mb-qp-body mb-qp-attach">
+      <div class="mb-qp-type">Attachment</div>
+      <div class="mb-qp-media"><img class="mb-qp-attach-img" src="${src}" alt="${name}" /></div>
+      <div class="mb-qp-line">${name}</div>
+    </div>`;
+    }
     if (isText) {
       return `<div class="mb-qp-body mb-qp-text">
       <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
@@ -2784,6 +2838,7 @@
   }
 
   const QUICK_PREVIEW_DELAY_MS = 2500;
+  const ATTACH_PREVIEW_DELAY_MS = 1000;
 
   function clearPreviewTimer() {
     if (state.preview && state.preview.timer) {
@@ -2797,6 +2852,7 @@
     if (state.preview) {
       state.preview.visible = false;
       state.preview.itemId = null;
+      state.preview.attach = false;
     }
     const el = document.getElementById("mb-quick-preview");
     if (el) {
@@ -2832,23 +2888,26 @@
     positionQuickPreviewAtPointer();
   }
 
-  function scheduleQuickPreview(item, clientX, clientY) {
+  function scheduleQuickPreview(item, clientX, clientY, opts) {
     if (!state.preview) {
-      state.preview = { timer: null, itemId: null, x: 0, y: 0, visible: false };
+      state.preview = { timer: null, itemId: null, x: 0, y: 0, visible: false, attach: false };
     }
     clearPreviewTimer();
     state.preview.x = clientX;
     state.preview.y = clientY;
+    state.preview.attach = !!(opts && opts.attach);
+    const delay = state.preview.attach ? ATTACH_PREVIEW_DELAY_MS : QUICK_PREVIEW_DELAY_MS;
     state.preview.timer = setTimeout(() => {
       state.preview.timer = null;
       if (state.modal.openId) return;
       renderQuickPreview(item);
-    }, QUICK_PREVIEW_DELAY_MS);
+    }, delay);
   }
 
   function bindCardPreview(card, id) {
     card.addEventListener("mouseenter", (ev) => {
       if (state.modal.openId) return;
+      if (ev.target && ev.target.closest && ev.target.closest(".mb-card-attach")) return;
       const it = rawItems.find((x) => x.id === id);
       if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
     });
@@ -2858,6 +2917,23 @@
       state.preview.y = ev.clientY;
     });
     card.addEventListener("mouseleave", hideQuickPreview);
+    const attachIcon = card.querySelector(".mb-card-attach");
+    if (attachIcon) {
+      attachIcon.addEventListener("mouseenter", (ev) => {
+        ev.stopPropagation();
+        if (state.modal.openId) return;
+        const it = rawItems.find((x) => x.id === id);
+        if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY, { attach: true });
+      });
+      attachIcon.addEventListener("mouseleave", (ev) => {
+        ev.stopPropagation();
+        hideQuickPreview();
+        if (card.matches(":hover") && !state.modal.openId) {
+          const it = rawItems.find((x) => x.id === id);
+          if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
+        }
+      });
+    }
     card.addEventListener("focus", () => {
       if (state.modal.openId) return;
       const it = rawItems.find((x) => x.id === id);
@@ -3108,6 +3184,145 @@
     hr.addEventListener("pointercancel", endHandle);
   }
 
+  function bindExploreAskHistory(input) {
+    if (!input || input.dataset.mbExploreHist === "1") return;
+    input.dataset.mbExploreHist = "1";
+    let histIndex = -1;
+    let draft = "";
+    let applying = false;
+    let panel = document.getElementById("mb-ask-history-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "mb-ask-history-panel";
+      panel.className = "mb-ask-history";
+      panel.hidden = true;
+      panel.setAttribute("role", "listbox");
+      panel.setAttribute("aria-label", "Recent Ask commands");
+      document.body.appendChild(panel);
+    }
+    const histBtn = document.getElementById("mb-explore-ask-hist");
+
+    const placePanel = () => {
+      const field = input.closest(".mb-explore-ask-field") || input;
+      const r = field.getBoundingClientRect();
+      panel.style.position = "fixed";
+      panel.style.left = `${Math.round(r.left)}px`;
+      panel.style.width = `${Math.round(r.width)}px`;
+      panel.style.top = `${Math.round(r.bottom + 6)}px`;
+      panel.style.right = "auto";
+    };
+
+    const hidePanel = () => {
+      panel.hidden = true;
+      if (histBtn) histBtn.setAttribute("aria-expanded", "false");
+    };
+
+    const showList = (recent, selected) => {
+      const list = recent || [];
+      if (!list.length) {
+        panel.innerHTML =
+          "<p class=\"mb-ask-history-empty\">No saved Ask commands yet. Type an Ask, press Enter, then open Recent or press Up/Down.</p>";
+      } else {
+        panel.innerHTML = list
+          .map((text, i) => {
+            const on = i === selected ? "true" : "false";
+            return `<button type="button" role="option" aria-selected="${on}" data-hist="${i}">${escapeHtml(
+              text
+            )}</button>`;
+          })
+          .join("");
+        panel.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("mousedown", (ev) => {
+            ev.preventDefault();
+            const i = Number(btn.getAttribute("data-hist") || 0);
+            applying = true;
+            histIndex = i;
+            input.value = list[i] || "";
+            applying = false;
+            hidePanel();
+            applyAskCommand(input.value);
+          });
+        });
+      }
+      placePanel();
+      panel.hidden = false;
+      if (histBtn) histBtn.setAttribute("aria-expanded", "true");
+    };
+
+    const loadRecent = () =>
+      fetch("/ask/api/history")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const server = data && Array.isArray(data.asks) ? data.asks : [];
+          return writeAskHistory(server.concat(readAskHistory()));
+        })
+        .catch(() => readAskHistory());
+
+    const cycle = (key, recent) => {
+      if (!recent.length) {
+        showList([], -1);
+        return;
+      }
+      applying = true;
+      if (histIndex < 0) draft = input.value;
+      if (key === "ArrowUp") {
+        if (histIndex < 0 && recent[0] === draft && recent.length > 1) histIndex = 1;
+        else if (histIndex < recent.length - 1) histIndex += 1;
+      } else if (histIndex < 0) {
+        histIndex = recent[0] === draft && recent.length > 1 ? 1 : 0;
+      } else {
+        histIndex -= 1;
+      }
+      input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+      applying = false;
+      showList(recent, histIndex);
+    };
+
+    const openHistory = () => {
+      loadRecent().then((recent) => {
+        histIndex = recent[0] === input.value && recent.length > 1 ? 1 : 0;
+        if (!recent.length) histIndex = -1;
+        if (histIndex >= 0) input.value = recent[histIndex] || input.value;
+        showList(recent, histIndex);
+      });
+    };
+
+    input.addEventListener("focus", () => {
+      loadRecent().then((recent) => showList(recent, histIndex));
+    });
+    input.addEventListener("blur", () => window.setTimeout(hidePanel, 200));
+    input.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key === "Escape") hidePanel();
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const local = readAskHistory();
+        if (local.length) {
+          cycle(e.key, local);
+          return;
+        }
+        loadRecent().then((recent) => cycle(e.key, recent));
+      },
+      true
+    );
+    input.addEventListener("input", () => {
+      if (!applying) histIndex = -1;
+    });
+    if (histBtn) {
+      histBtn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        if (panel.hidden) openHistory();
+        else hidePanel();
+      });
+    }
+    window.addEventListener("resize", () => {
+      if (!panel.hidden) placePanel();
+    });
+    loadRecent();
+  }
+
   function bindChrome() {
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
@@ -3119,14 +3334,7 @@
         applyAskCommand(e.target.value);
       }
     });
-    function wireExploreAskHistory() {
-      if (window.mbShell && window.mbShell.bindAskHistory && askInput) {
-        window.mbShell.bindAskHistory(askInput);
-        return true;
-      }
-      return false;
-    }
-    if (!wireExploreAskHistory()) window.addEventListener("load", wireExploreAskHistory);
+    bindExploreAskHistory(askInput);
     document.getElementById("mb-density-minus").addEventListener("click", () => {
       state.gallery.density = Math.max(1, state.gallery.density - 1);
       renderGallery();

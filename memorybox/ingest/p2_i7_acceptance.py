@@ -219,7 +219,6 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "slice(0, 100)" in shell_js
         and "ArrowUp" in shell_js
         and "localStorage" in shell_js
-        and "bindAskHistory" in explore_js
         and "hydrateAskHistory" in shell_js
         and "/ask/api/history" in shell_js
         and "HISTORY_MAX = 100" in ask_hist
@@ -227,7 +226,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "applyHistory" in shell_js
         and "ArrowDown" in shell_js
         and "mb-ask-history" in shell_js
-        and "parents[2]" in ask_hist,
+        and "parents[2]" in ask_hist
+        and "bindExploreAskHistory" in explore_js
+        and "mb-explore-ask-hist" in explore_js,
         checks,
         problems,
         "Last 100 asks persist in localStorage; Up or Down starts history in all Ask fields",
@@ -240,7 +241,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "add_mb_managed_representation" in sms_attach
         and "Never writes Immich" in sms_attach
         and "_dir_candidates" in sms_attach
-        and "first-class" in explore_js,
+        and "first-class" in explore_js
+        and "_build_attach_index" in sms_attach
+        and "ATTACH_PREVIEW_DELAY_MS" in explore_js,
         checks,
         problems,
         "SMS attachment is first-class on the message; optional Artifact copy; no Immich write",

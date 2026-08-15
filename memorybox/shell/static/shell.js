@@ -66,7 +66,7 @@
 
   function bindAllAskInputs() {
     document
-      .querySelectorAll("#mb-explore-ask, #askInput, #mb-global-ask-input")
+      .querySelectorAll("#askInput, #mb-global-ask-input")
       .forEach((el) => window.mbShell.bindAskHistory(el));
   }
 
@@ -231,7 +231,7 @@
         panel.hidden = true;
         panel.setAttribute("role", "listbox");
         panel.setAttribute("aria-label", "Recent Ask commands");
-        (host || input.parentElement).appendChild(panel);
+        document.body.appendChild(panel);
         return panel;
       };
 
@@ -239,10 +239,22 @@
         if (panel) panel.hidden = true;
       };
 
+      const placePanel = (el) => {
+        const field = input.closest(".mb-explore-ask-field") || input;
+        const r = field.getBoundingClientRect();
+        el.style.position = "fixed";
+        el.style.left = `${Math.round(r.left)}px`;
+        el.style.width = `${Math.round(Math.max(r.width, 280))}px`;
+        el.style.top = `${Math.round(r.bottom + 6)}px`;
+        el.style.right = "auto";
+        el.style.zIndex = "90";
+      };
+
       const renderPanel = (recent, selected) => {
         const el = ensurePanel();
         if (!recent.length) {
           el.innerHTML = `<p class="mb-ask-history-empty">No saved Ask commands yet. After you Ask, Up/Down cycles them here.</p>`;
+          placePanel(el);
           el.hidden = false;
           return;
         }
@@ -257,6 +269,7 @@
               .replace(/"/g, "&quot;")}</button>`;
           })
           .join("");
+        placePanel(el);
         el.hidden = false;
         el.querySelectorAll("button").forEach((btn) => {
           btn.addEventListener("mousedown", (ev) => {

@@ -158,7 +158,117 @@ def _walk_match(root: Path, name: str, uuid: str | None, *, depth: int = 3) -> P
     return None
 
 
-def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
+_INDEX: dict[str, str] | None = None
+_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".heic", ".heif", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+def _payload_roots(payload: dict[str, Any] | None) -> list[Path]:
+    roots: list[Path] = []
+    if not payload:
+        return roots
+    cov = payload.get("source_coverage") or {}
+    loc = str(payload.get("source_locator") or "")
+    import_path = str(cov.get("import_path") or "")
+    if not import_path and "#row=" in loc:
+        import_path = loc.split("#row=", 1)[0]
+    if import_path:
+        p = Path(import_path)
+        roots.append(p.parent if p.suffix.lower() == ".csv" else p)
+        if p.suffix.lower() == ".csv":
+            roots.append(p.parent / p.stem)
+    return roots
+
+
+def _index_file() -> Path:
+    return Path(__file__).resolve().parents[2] / ".memorybox_sms_attach_index.json"
+
+
+def _remember_index_hit(keys: list[str], path: Path) -> None:
+    global _INDEX
+    if _INDEX is None:
+        _INDEX = {}
+    loc = str(path)
+    for key in keys:
+        if key:
+            _INDEX[key] = loc
+
+
+def _lookup_index(name: str, uuid: str | None) -> Path | None:
+    global _INDEX
+    if _INDEX is None:
+        try:
+            raw = json.loads(_index_file().read_text(encoding="utf-8"))
+            _INDEX = raw if isinstance(raw, dict) else {}
+        except (OSError, json.JSONDecodeError, TypeError):
+            _INDEX = {}
+    keys = [name.casefold()]
+    if "__" in name:
+        keys.append(name.split("__", 1)[-1].casefold())
+    if uuid:
+        keys.append(uuid.casefold())
+        keys.append(uuid.replace("-", "").casefold())
+    for key in keys:
+        hit = _INDEX.get(key)
+        if not hit:
+            continue
+        p = Path(hit)
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def _index_file_entry(path: Path) -> None:
+    name = path.name
+    uuid_m = _UUID_IN_NAME.search(name)
+    keys = [name.casefold()]
+    if "__" in name:
+        keys.append(name.split("__", 1)[-1].casefold())
+    if uuid_m:
+        keys.append(uuid_m.group(1).casefold())
+        keys.append(uuid_m.group(1).replace("-", "").casefold())
+    _remember_index_hit(keys, path)
+
+
+def _build_attach_index(roots: list[Path], *, depth: int = 6) -> None:
+    """One-time walk so iMazing UUID filenames resolve after the first miss."""
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if not root.is_dir():
+                continue
+        except OSError:
+            continue
+        stack: list[tuple[Path, int]] = [(root, 0)]
+        while stack:
+            cur, level = stack.pop()
+            try:
+                children = list(cur.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                try:
+                    if child.is_file() and child.suffix.lower() in _IMAGE_EXT:
+                        _index_file_entry(child)
+                    elif child.is_dir() and level < depth:
+                        stack.append((child, level + 1))
+                except OSError:
+                    continue
+    try:
+        _index_file().write_text(json.dumps(_INDEX or {}, indent=0), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def resolve_attachment_file(
+    att: dict[str, Any], payload: dict[str, Any] | None = None
+) -> Path | None:
     for key in ("resolved_path", "source_ref", "filename"):
         raw = str(att.get(key) or "").strip()
         if not raw:
@@ -183,7 +293,11 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
                 continue
     uuid_m = _UUID_IN_NAME.search(name)
     uuid = uuid_m.group(1) if uuid_m else None
-    for root in _search_roots():
+    indexed = _lookup_index(name, uuid)
+    if indexed is not None:
+        return indexed
+    roots = list(_payload_roots(payload)) + _search_roots()
+    for root in roots:
         try:
             if not root.exists():
                 continue
@@ -192,13 +306,16 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
         for hit in _dir_candidates(root, name):
             try:
                 if hit.is_file():
+                    _index_file_entry(hit)
                     return hit
             except OSError:
                 continue
         found = _walk_match(root, name, uuid, depth=5)
         if found is not None:
+            _index_file_entry(found)
             return found
-    return None
+    _build_attach_index(roots, depth=6)
+    return _lookup_index(name, uuid)
 
 
 def load_sms_attachment(evidence_id: str, index: int = 0) -> dict[str, Any]:
@@ -214,7 +331,7 @@ def load_sms_attachment(evidence_id: str, index: int = 0) -> dict[str, Any]:
     if index < 0 or index >= len(atts):
         raise SmsAttachError("attachment index out of range")
     att = atts[index]
-    path = resolve_attachment_file(att)
+    path = resolve_attachment_file(att, payload)
     filename = str(att.get("filename") or (path.name if path else "attachment"))
     mime = (
         mimetypes.guess_type(filename)[0]
