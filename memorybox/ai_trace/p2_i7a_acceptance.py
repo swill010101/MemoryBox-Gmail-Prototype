@@ -26,6 +26,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     rebuild = (root / "ingest" / "rebuild_index.py").read_text(encoding="utf-8")
     main = (root / "__main__.py").read_text(encoding="utf-8")
     mig = (root / "migrations" / "009_p2_i7a_ai_trace.sql").read_text(encoding="utf-8")
+    mig10 = (root / "migrations" / "010_p2_i7a_ai_trace_ensure.sql").read_text(encoding="utf-8")
 
     _check(
         "route_dev_ai_trace",
@@ -104,7 +105,10 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     )
     _check(
         "retention_defaults",
-        "500" in mig and "7" in mig and "ai_trace_max_traces" in mig,
+        "500" in mig
+        and "7" in mig
+        and "ai_trace_max_traces" in mig
+        and "CREATE TABLE IF NOT EXISTS ai_traces" in mig10,
         checks,
         problems,
         "500 traces or 7 days",
@@ -337,13 +341,25 @@ def prove_p2_i7a(*, flightsim: bool = False) -> dict[str, Any]:
 
     checks: dict[str, Any] = {}
     problems: list[str] = []
+    from memorybox.ai_trace import store as ai_store
+
     try:
         applied = migrate_mod.migrate()
+        ensured = ai_store.ensure_schema()
+        have_tables = ai_store.tables_exist()
     except Exception as exc:  # noqa: BLE001
         applied = []
+        ensured = False
+        have_tables = False
         _check("migrate", False, checks, problems, str(exc))
     else:
-        _check("migrate", True, checks, problems, f"applied={applied}")
+        _check(
+            "migrate",
+            bool(have_tables and ensured),
+            checks,
+            problems,
+            f"applied={applied} tables={have_tables}",
+        )
 
     _structural(checks, problems)
     _redact_checks(checks, problems)

@@ -22,6 +22,44 @@ def _migration_files(migrations_dir: Path) -> list[Path]:
     return [f for f in files if re.match(r"^\d{3}_.+\.sql$", f.name)]
 
 
+def _sql_statements(sql: str) -> list[str]:
+    """Split a migration file into executable statements.
+
+    psycopg3 execute() runs one statement. Dollar-quoted bodies stay intact.
+    """
+    out: list[str] = []
+    buf: list[str] = []
+    dollars = 0
+    for line in sql.splitlines():
+        dollars += line.count("$$")
+        buf.append(line)
+        if dollars % 2 == 0 and line.rstrip().endswith(";"):
+            stmt = "\n".join(buf).strip()
+            buf = []
+            if stmt and any(
+                part.strip() and not part.strip().startswith("--")
+                for part in stmt.splitlines()
+            ):
+                out.append(stmt)
+    tail = "\n".join(buf).strip()
+    if tail and any(
+        part.strip() and not part.strip().startswith("--")
+        for part in tail.splitlines()
+    ):
+        out.append(tail)
+    return out
+
+
+def _apply_sql(conn, sql: str) -> None:
+    try:
+        conn.execute(sql)
+        return
+    except Exception:
+        pass
+    for stmt in _sql_statements(sql):
+        conn.execute(stmt)
+
+
 def pending(cfg: Settings | None = None) -> list[str]:
     s = cfg or settings
     with connection(s) as conn:
@@ -53,7 +91,7 @@ def migrate(cfg: Settings | None = None) -> list[str]:
             if version in applied:
                 continue
             sql = path.read_text(encoding="utf-8")
-            conn.execute(sql)
+            _apply_sql(conn, sql)
             conn.execute(
                 "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
                 (version, path.name),

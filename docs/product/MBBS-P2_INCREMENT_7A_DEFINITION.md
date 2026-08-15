@@ -150,9 +150,11 @@ git fetch origin
 git checkout cursor/p2-i7a-model-trace-definition-3061
 git pull origin cursor/p2-i7a-model-trace-definition-3061
 python -m memorybox migrate
-# restart Ask/serve, then:
+# restart Ask/serve (required — old serve will keep polling a missing table)
 #   http://127.0.0.1:8790/dev/ai-trace
 python -m memorybox prove-p2-i7a
 ```
+
+`serve` now applies pending migrations and `ensure_schema()` on startup. If `/dev/ai-trace` still shows an empty list after a restart, the old process was not recycled.
 
 Bookmark `/dev/ai-trace`. It is not in family nav. Run a normal Ask (T3 path) and the T1–T10 buttons on the page. T2 (ORCHESTRATION) and T4 (MODEL_OUTPUT) must look different.

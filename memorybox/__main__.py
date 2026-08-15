@@ -544,7 +544,21 @@ def main(argv: list[str] | None = None) -> int:
         import uvicorn
 
         from memorybox.config import settings
+        from memorybox.migrate import migrate
         from memorybox.profile.bootstrap import ensure_default_owner_session
+
+        try:
+            applied = migrate()
+            if applied:
+                print(f"migrate: {applied}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"migrate warning: {exc}", flush=True)
+        try:
+            from memorybox.ai_trace.store import ensure_schema
+
+            ensure_schema()
+        except Exception as exc:  # noqa: BLE001
+            print(f"ai_trace schema warning: {exc}", flush=True)
 
         boot = ensure_default_owner_session()
         if not boot.get("skipped"):

@@ -135,6 +135,16 @@ app = FastAPI(
     description="MemoryBox modular monolith (MBBS-001). P2-I2 Product Shell.",
 )
 
+
+@app.on_event("startup")
+def _ai_trace_schema_on_startup() -> None:
+    try:
+        from memorybox.ai_trace.store import ensure_schema
+
+        ensure_schema()
+    except Exception:
+        return
+
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
 if EXPLORE_STATIC_DIR.is_dir():

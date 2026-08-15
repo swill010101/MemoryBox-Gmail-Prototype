@@ -19,6 +19,109 @@ POLL_MS = 750
 
 _SETTING_MAX = "ai_trace_max_traces"
 _SETTING_DAYS = "ai_trace_retention_days"
+_schema_ready = False
+_missing_logged = False
+
+_SCHEMA_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS ai_traces (
+        trace_id            UUID PRIMARY KEY,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        request_kind        TEXT NOT NULL,
+        originating_ask     TEXT,
+        session_id          TEXT,
+        purpose             TEXT,
+        status              TEXT NOT NULL DEFAULT 'running',
+        error_class         TEXT,
+        model_call_count    INT NOT NULL DEFAULT 0,
+        duration_ms         INT,
+        initiator           JSONB NOT NULL DEFAULT '{}'::jsonb,
+        assembled_context   JSONB,
+        final_disposition   JSONB,
+        error               JSONB
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ai_traces_created_at ON ai_traces (created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_traces_updated_at ON ai_traces (updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ai_traces_error_class ON ai_traces (error_class)",
+    """
+    CREATE TABLE IF NOT EXISTS ai_spans (
+        span_id             UUID PRIMARY KEY,
+        trace_id            UUID NOT NULL REFERENCES ai_traces (trace_id) ON DELETE CASCADE,
+        parent_span_id      UUID,
+        seq                 INT NOT NULL,
+        stage               TEXT NOT NULL,
+        component           TEXT NOT NULL,
+        operation           TEXT NOT NULL,
+        started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+        ended_at            TIMESTAMPTZ,
+        duration_ms         INT,
+        status              TEXT NOT NULL DEFAULT 'running',
+        error_class         TEXT,
+        assembled_context   JSONB,
+        provider_payload    JSONB,
+        raw_response        JSONB,
+        parsed              JSONB,
+        validation          JSONB,
+        disposition         JSONB,
+        model               JSONB,
+        error               JSONB,
+        meta                JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_ai_spans_trace_seq ON ai_spans (trace_id, seq)",
+    """
+    INSERT INTO memorybox_runtime_settings (setting_key, value_text, actor_key)
+    VALUES
+        ('ai_trace_max_traces', '500', 'system'),
+        ('ai_trace_retention_days', '7', 'system')
+    ON CONFLICT (setting_key) DO NOTHING
+    """,
+)
+
+
+def tables_exist() -> bool:
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                "SELECT to_regclass('public.ai_traces') AS t, "
+                "to_regclass('public.ai_spans') AS s"
+            ).fetchone()
+        return bool((row or {}).get("t") and (row or {}).get("s"))
+    except Exception:
+        return False
+
+
+def ensure_schema() -> bool:
+    """Create AI trace tables even when schema_migrations already has 009."""
+    global _schema_ready
+    if _schema_ready or tables_exist():
+        _schema_ready = True
+        return True
+    try:
+        with connection() as conn:
+            for stmt in _SCHEMA_SQL:
+                conn.execute(stmt)
+        _schema_ready = True
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _warn("ensure_schema", exc)
+        return False
+
+
+def _warn(op: str, exc: BaseException) -> None:
+    global _missing_logged
+    msg = str(exc)
+    if "forced store down" in msg:
+        return
+    if "does not exist" in msg:
+        if _missing_logged:
+            return
+        _missing_logged = True
+        log.warning("ai_trace %s failed (missing table; ensure_schema will retry): %s", op, exc)
+        return
+    log.warning("ai_trace %s failed: %s", op, exc)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -69,7 +172,7 @@ def read_settings() -> dict[str, int]:
         if days <= 0:
             days = int(by_key.get(_SETTING_DAYS) or DEFAULT_DAYS)
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace settings read failed: %s", exc)
+        _warn("settings read", exc)
         if max_traces <= 0:
             max_traces = DEFAULT_MAX
         if days <= 0:
@@ -105,7 +208,7 @@ def write_settings(*, max_traces: int | None = None, retention_days: int | None 
                     (_SETTING_DAYS, str(max(1, int(retention_days)))),
                 )
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace settings write failed: %s", exc)
+        _warn("settings write", exc)
     cleanup()
     return read_settings()
 
@@ -120,6 +223,7 @@ def insert_trace(
     initiator: dict[str, Any] | None = None,
     assembled_context: dict[str, Any] | None = None,
 ) -> bool:
+    ensure_schema()
     try:
         with connection() as conn:
             conn.execute(
@@ -142,7 +246,7 @@ def insert_trace(
         cleanup()
         return True
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace insert_trace failed: %s", exc)
+        _warn("insert_trace", exc)
         return False
 
 
@@ -186,6 +290,7 @@ def update_trace(
             sets.append("model_call_count = model_call_count + %s")
             args.append(int(bump_model_calls))
         args.append(trace_id)
+        ensure_schema()
         with connection() as conn:
             conn.execute(
                 f"UPDATE ai_traces SET {', '.join(sets)} WHERE trace_id = %s",
@@ -193,7 +298,7 @@ def update_trace(
             )
         return True
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace update_trace failed: %s", exc)
+        _warn("update_trace", exc)
         return False
 
 
@@ -206,7 +311,7 @@ def next_seq(trace_id: str) -> int:
             ).fetchone()
         return int((row or {}).get("n") or 0) + 1
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace next_seq failed: %s", exc)
+        _warn("next_seq", exc)
         return 1
 
 
@@ -238,6 +343,7 @@ def insert_span(
     end = ended_at or _now()
     if duration_ms is None:
         duration_ms = max(0, int((end - start).total_seconds() * 1000))
+    ensure_schema()
     try:
         seq = next_seq(trace_id)
         with connection() as conn:
@@ -283,11 +389,12 @@ def insert_span(
             update_trace(trace_id, bump_model_calls=1)
         return sid
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace insert_span failed: %s", exc)
+        _warn("insert_span", exc)
         return None
 
 
 def get_trace(trace_id: str) -> dict[str, Any] | None:
+    ensure_schema()
     try:
         with connection() as conn:
             head = conn.execute(
@@ -301,7 +408,7 @@ def get_trace(trace_id: str) -> dict[str, Any] | None:
             ).fetchall()
         return {**_row(head), "spans": [_row(s) for s in spans]}
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace get_trace failed: %s", exc)
+        _warn("get_trace", exc)
         return None
 
 
@@ -334,16 +441,18 @@ def list_traces(
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY updated_at DESC LIMIT %s"
     args.append(max(1, min(int(limit), 500)))
+    ensure_schema()
     try:
         with connection() as conn:
             rows = conn.execute(sql, args).fetchall()
         return [_row(r) for r in rows]
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace list_traces failed: %s", exc)
+        _warn("list_traces", exc)
         return []
 
 
 def clear_all() -> dict[str, Any]:
+    ensure_schema()
     try:
         with connection() as conn:
             spans = conn.execute("SELECT COUNT(*) AS n FROM ai_spans").fetchone()
@@ -356,11 +465,12 @@ def clear_all() -> dict[str, Any]:
             "cleared_spans": int((spans or {}).get("n") or 0),
         }
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace clear_all failed: %s", exc)
+        _warn("clear_all", exc)
         return {"ok": False, "error": str(exc)}
 
 
 def cleanup() -> dict[str, Any]:
+    ensure_schema()
     settings = read_settings()
     days = settings["retention_days"]
     max_traces = settings["max_traces"]
@@ -387,5 +497,5 @@ def cleanup() -> dict[str, Any]:
             deleted += len(extra or [])
         return {"ok": True, "deleted": deleted, **settings}
     except Exception as exc:  # noqa: BLE001
-        log.warning("ai_trace cleanup failed: %s", exc)
+        _warn("cleanup", exc)
         return {"ok": False, "error": str(exc), **settings}
