@@ -15,6 +15,12 @@ from memorybox.ingest.sms_attach_cache import (
     put_media_object,
     sms_folder_has_attachment_bytes,
 )
+from memorybox.ingest.sms_export_attach import (
+    attachment_search_roots,
+    backfill_unique_export_attachments,
+    get_export_index,
+    reset_export_index,
+)
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
     SmsMessage,
@@ -138,6 +144,16 @@ def _locate_attachment_file(
             return hit
     if not hunt:
         return None
+    name = str(att.get("filename") or att.get("source_ref") or "").strip()
+    if name:
+        try:
+            indexed = get_export_index(attachment_search_roots(payload)).lookup_uuid_or_name(
+                Path(name).name
+            )
+            if indexed is not None and indexed.is_file() and indexed.stat().st_size:
+                return indexed
+        except OSError:
+            pass
     from memorybox.explore.sms_attach import resolve_attachment_file
 
     try:
@@ -240,7 +256,13 @@ def ingest_sms(
     *,
     limit: int | None = None,
     label: str | None = None,
+    attachments_dir: str | None = None,
 ) -> dict[str, Any]:
+    if attachments_dir:
+        os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(
+            Path(attachments_dir).expanduser()
+        )
+    reset_export_index()
     path = Path(uri) if uri else default_sms_export_path()
     job_id = store.start_job(
         "ingest_sms",
@@ -271,10 +293,15 @@ def ingest_sms(
         contacts_upserted = 0
         attachments_stored = 0
         attachments_missing = 0
+        attachments_ambiguous = 0
+        attachment_orphan_files = 0
+        export_stats: dict[str, Any] = {}
         evidence_ids: list[str] = []
         headers: list[str] = []
         written_contacts: set[tuple[str, str]] = set()
         hunt_attach = sms_folder_has_attachment_bytes(path)
+        if hunt_attach:
+            get_export_index(attachment_search_roots({"source_coverage": {"import_path": str(path)}}))
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
         with connection() as conn:
@@ -354,6 +381,19 @@ def ingest_sms(
                     evidence_ids.append(str(eid))
                 if inserted % 1000 == 0:
                     conn.commit()
+            if hunt_attach:
+                export_stats = backfill_unique_export_attachments(
+                    source_id,
+                    conn=conn,
+                    roots=attachment_search_roots(
+                        {"source_coverage": {"import_path": str(path)}}
+                    ),
+                )
+                attachments_stored += int(export_stats.get("stored") or 0)
+                attachments_ambiguous = int(export_stats.get("ambiguous_slots") or 0)
+                attachment_orphan_files = int(export_stats.get("orphan_files") or 0)
+                if export_stats.get("still_missing") is not None:
+                    attachments_missing = int(export_stats["still_missing"])
         after = path.stat()
         untouched = (
             before.st_mtime_ns == after.st_mtime_ns and before.st_size == after.st_size
@@ -363,7 +403,9 @@ def ingest_sms(
             status="done",
             message=(
                 f"inserted={inserted} skipped={skipped} untouched={untouched} "
-                f"attachments_stored={attachments_stored} attachments_missing={attachments_missing}"
+                f"attachments_stored={attachments_stored} attachments_missing={attachments_missing} "
+                f"attachments_ambiguous={attachments_ambiguous} "
+                f"attachment_orphan_files={attachment_orphan_files}"
             ),
         )
         return {
@@ -377,6 +419,9 @@ def ingest_sms(
             "contacts_upserted": contacts_upserted,
             "attachments_stored": attachments_stored,
             "attachments_missing": attachments_missing,
+            "attachments_ambiguous": attachments_ambiguous,
+            "attachment_orphan_files": attachment_orphan_files,
+            "attachment_export_stats": export_stats,
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,

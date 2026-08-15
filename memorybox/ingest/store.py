@@ -161,6 +161,29 @@ def list_indexable_evidence() -> list[dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+def list_evidence_for_source(
+    source_id: UUID, *, conn: Any | None = None
+) -> list[dict[str, Any]]:
+    """All evidence rows for one Source (SMS backfill / unique export match)."""
+
+    def _run(c: Any) -> list[dict[str, Any]]:
+        rows = c.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json, source_id
+            FROM evidence
+            WHERE source_id = %s
+            ORDER BY created_at
+            """,
+            (source_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    if conn is not None:
+        return _run(conn)
+    with connection() as c:
+        return _run(c)
+
+
 def get_evidence(evidence_id: UUID, *, conn: Any | None = None) -> dict[str, Any] | None:
     def _run(c: Any) -> dict[str, Any] | None:
         row = c.execute(

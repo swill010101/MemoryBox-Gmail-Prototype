@@ -1,6 +1,6 @@
 # MBBS — P2-I7 SMS/Text Evidence · Product Request Document
 
-**Status:** **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted”) · attachment bytes **P2-BL-I7-01**  
+**Status:** **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted”) · attachment bytes **P2-BL-I7-01 BUILD AUTHORIZED** (2026-08-15 — matcher, no wipe)  
 **Date:** 2026-08-14 (build)  
 **Owner:** Tom  
 **Increment:** P2-I7 (MBRM-001A) — SMS/Text Evidence · A  

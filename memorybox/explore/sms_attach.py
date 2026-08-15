@@ -316,7 +316,12 @@ def _build_attach_index(roots: list[Path], *, depth: int = 6) -> None:
                 continue
             for child in children:
                 try:
-                    if child.is_file() and child.suffix.lower() in _IMAGE_EXT:
+                    if child.is_file() and (
+                        child.suffix.lower() in _IMAGE_EXT
+                        or child.suffix.lower()
+                        in {".mp4", ".mov", ".m4v", ".m4a", ".mp3", ".pdf", ".html", ".url", ".webloc"}
+                        or not child.suffix
+                    ):
                         _index_file_entry(child)
                     elif child.is_dir() and level < depth:
                         stack.append((child, level + 1))
@@ -397,6 +402,14 @@ def resolve_attachment_file(
                 continue
     uuid_m = _UUID_IN_NAME.search(name)
     uuid = uuid_m.group(1) if uuid_m else None
+    try:
+        from memorybox.ingest.sms_export_attach import get_export_index
+
+        export_hit = get_export_index(_search_roots(payload)).lookup_uuid_or_name(name)
+        if export_hit is not None:
+            return _keep_found(export_hit, name)
+    except OSError:
+        pass
     indexed = _lookup_index(name, uuid)
     if indexed is not None:
         return _keep_found(indexed, name)

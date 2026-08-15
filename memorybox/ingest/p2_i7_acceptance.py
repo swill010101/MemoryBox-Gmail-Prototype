@@ -294,6 +294,16 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         f"parser {PARSER_VERSION}",
     )
+    from memorybox.ingest.sms_export_attach import self_check as i7_01_self_check
+
+    matcher = i7_01_self_check()
+    _check(
+        "i7_01_export_name_matcher",
+        all(matcher.values()),
+        checks,
+        problems,
+        f"P2-BL-I7-01 matcher={matcher}",
+    )
 
 
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:

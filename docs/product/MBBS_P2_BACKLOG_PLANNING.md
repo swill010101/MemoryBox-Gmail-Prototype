@@ -45,7 +45,7 @@ P2-I7 SMS/Text Evidence is **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted�
 
 | ID | Theme | Evidence | Suggested home |
 |----|--------|----------|----------------|
-| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | iMazing CSV lists 8,644 attachment rows / 7,212 unique names; `inspect-sms` 2026-08-15: `attachment_files_on_disk` = 0 (folder is CSV-only). Tom will Export Attachments (or set `MEMORYBOX_SMS_ATTACHMENTS_DIR`) then `ingest-sms` backfill. Not Immich. Not I7A. | After I7 ACCEPTED — thin follow-up when Tom authorizes. Do not reopen I7. |
+| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | **BUILD AUTHORIZED** 2026-08-15 (Tom: matcher, no wipe; run from Downloads then copy to Sources). Export Attachments names (`YYYY-MM-DD HH MM SS - Chat - Type`) join existing SMS rows on timestamp+chat. UUID/exact first. Same-second collisions and orphan files stay unmatched. `ingest-sms --attachments-dir`. Not Immich. Does not reopen I7. | After I7 ACCEPTED — this revision. |
 
 Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md) · [MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md)
 

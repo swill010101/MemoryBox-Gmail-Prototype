@@ -25,7 +25,7 @@ P2-I7 is **ACCEPTED**. SMS **attachment files** were not in the staged export (C
 
 | ID | Item | Notes |
 |----|------|-------|
-| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | CSV lists 8,644 rows / 7,212 unique names; `sms` folder has only the CSV. iMazing **Export Attachments** (or `MEMORYBOX_SMS_ATTACHMENTS_DIR`) then `ingest-sms` backfill. Not I7A. Not Immich. |
+| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | **BUILD AUTHORIZED** 2026-08-15. Export Attachments dump → existing rows via timestamp+chat (`ingest-sms --attachments-dir`). No wipe. Collisions/orphans unmatched. Not I7A. Not Immich. |
 
 ---
 
