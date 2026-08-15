@@ -256,6 +256,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "bytes_ingested" in comms
         and "media_object_id" in comms
         and "inventory_export_attachments" in attach_cache
+        and "sms_folder_has_attachment_bytes" in attach_cache
         and "_find_in_zips" in sms_attach,
         checks,
         problems,

@@ -79,11 +79,9 @@ def _search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
     src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
     if src:
         roots.append(Path(src) / "sms")
-        roots.append(Path(src))
+        roots.append(Path(src) / "sms-attachments")
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms-attachments"))
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\Attachments"))
     roots.extend(_payload_roots(payload))
     out: list[Path] = []
     seen: set[str] = set()

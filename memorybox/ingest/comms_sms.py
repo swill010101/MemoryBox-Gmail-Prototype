@@ -10,7 +10,11 @@ from uuid import UUID
 
 from memorybox.db import connection
 from memorybox.ingest import store as store
-from memorybox.ingest.sms_attach_cache import media_object_path, put_media_object
+from memorybox.ingest.sms_attach_cache import (
+    media_object_path,
+    put_media_object,
+    sms_folder_has_attachment_bytes,
+)
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
     SmsMessage,
@@ -116,7 +120,9 @@ def _payload(
     }
 
 
-def _locate_attachment_file(att: dict[str, Any], payload: dict[str, Any] | None) -> Path | None:
+def _locate_attachment_file(
+    att: dict[str, Any], payload: dict[str, Any] | None, *, hunt: bool = True
+) -> Path | None:
     raw = str(att.get("resolved_path") or "").strip()
     if raw:
         p = Path(raw)
@@ -130,9 +136,14 @@ def _locate_attachment_file(att: dict[str, Any], payload: dict[str, Any] | None)
         hit = media_object_path(mid)
         if hit is not None:
             return hit
+    if not hunt:
+        return None
     from memorybox.explore.sms_attach import resolve_attachment_file
 
-    return resolve_attachment_file(att, payload, build_index=False)
+    try:
+        return resolve_attachment_file(att, payload, build_index=False)
+    except OSError:
+        return None
 
 
 def _ingest_attachment_bytes(
@@ -141,6 +152,7 @@ def _ingest_attachment_bytes(
     source_id: UUID,
     conn: Any,
     payload: dict[str, Any] | None = None,
+    hunt: bool = True,
 ) -> tuple[int, int]:
     """Copy export files into media_objects. Returns (stored, missing). Not Immich."""
     stored = 0
@@ -153,7 +165,7 @@ def _ingest_attachment_bytes(
             att["bytes_ingested"] = True
             att["bytes_present"] = True
             continue
-        path = _locate_attachment_file(att, payload)
+        path = _locate_attachment_file(att, payload, hunt=hunt)
         if path is None:
             att["bytes_ingested"] = False
             missing += 1
@@ -195,6 +207,7 @@ def _backfill_existing_attachments(
     source_id: UUID,
     conn: Any,
     payload_template: dict[str, Any],
+    hunt: bool = True,
 ) -> tuple[int, int]:
     row = store.get_evidence(evidence_id, conn=conn)
     if not row:
@@ -210,7 +223,11 @@ def _backfill_existing_attachments(
         if all(media_object_path(str(a.get("media_object_id")), conn=conn) for a in atts):
             return 0, 0
     stored, missing = _ingest_attachment_bytes(
-        atts, source_id=source_id, conn=conn, payload=payload or payload_template
+        atts,
+        source_id=source_id,
+        conn=conn,
+        payload=payload or payload_template,
+        hunt=hunt,
     )
     if stored:
         payload["attachments"] = atts
@@ -257,14 +274,9 @@ def ingest_sms(
         evidence_ids: list[str] = []
         headers: list[str] = []
         written_contacts: set[tuple[str, str]] = set()
+        hunt_attach = sms_folder_has_attachment_bytes(path)
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
-        from memorybox.explore.sms_attach import _build_attach_index, _search_roots
-
-        _build_attach_index(
-            _search_roots({"source_coverage": {"import_path": str(path)}}),
-            depth=6,
-        )
         with connection() as conn:
             handle_index = _index_confirmed_handles(conn)
             known = store.hashes_for_source(source_id, conn=conn)
@@ -274,21 +286,27 @@ def ingest_sms(
                     skipped += 1
                     if len(evidence_ids) < 64:
                         evidence_ids.append(str(existing))
-                    if msg.attachments:
-                        stored, missing = _backfill_existing_attachments(
-                            existing,
-                            msg,
-                            source_id=source_id,
-                            conn=conn,
-                            payload_template={
-                                "source_coverage": {"import_path": str(path)},
-                                "source_locator": f"{path}#row={msg.source_row}",
-                            },
-                        )
-                        attachments_stored += stored
-                        attachments_missing += missing
-                        if attachments_stored and attachments_stored % 200 == 0:
-                            conn.commit()
+                    if msg.attachments and hunt_attach:
+                        try:
+                            stored, missing = _backfill_existing_attachments(
+                                existing,
+                                msg,
+                                source_id=source_id,
+                                conn=conn,
+                                payload_template={
+                                    "source_coverage": {"import_path": str(path)},
+                                    "source_locator": f"{path}#row={msg.source_row}",
+                                },
+                                hunt=True,
+                            )
+                            attachments_stored += stored
+                            attachments_missing += missing
+                            if attachments_stored and attachments_stored % 200 == 0:
+                                conn.commit()
+                        except OSError:
+                            attachments_missing += len(msg.attachments)
+                    elif msg.attachments:
+                        attachments_missing += len(msg.attachments)
                     continue
                 payload = _payload(
                     msg,
@@ -302,6 +320,7 @@ def ingest_sms(
                     source_id=source_id,
                     conn=conn,
                     payload=payload,
+                    hunt=hunt_attach,
                 )
                 attachments_stored += stored
                 attachments_missing += missing
@@ -361,12 +380,17 @@ def ingest_sms(
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,
+            "attachment_bytes_hunted": hunt_attach,
         }
     except Exception as exc:  # noqa: BLE001
+        detail = str(exc)
+        filename = getattr(exc, "filename", None)
+        if filename:
+            detail = f"{detail} ({filename})"
         store.finish_job(
-            job_id, status="error", message="ingest failed", error_message=str(exc)
+            job_id, status="error", message="ingest failed", error_message=detail
         )
-        return {"ok": False, "job_id": str(job_id), "error": str(exc)}
+        return {"ok": False, "job_id": str(job_id), "error": detail}
 
 
 def inspect_default_or_uri(uri: str | None = None) -> dict[str, Any]:

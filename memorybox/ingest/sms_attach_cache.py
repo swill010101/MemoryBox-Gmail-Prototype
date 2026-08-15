@@ -243,6 +243,13 @@ def inventory_export_attachments(export_path: Path, filenames: list[str]) -> dic
             present += 1
         elif len(missing_sample) < 8:
             missing_sample.append(name)
+    hint = None
+    if uniq and present == 0:
+        hint = (
+            "CSV-only export: attachment names are in the spreadsheet, but no image/video "
+            "files are next to it. Export the message attachments into this folder "
+            "(or set MEMORYBOX_SMS_ATTACHMENTS_DIR) and run ingest-sms."
+        )
     return {
         "sms_folder": str(parent),
         "sms_folder_listing": listing,
@@ -251,4 +258,33 @@ def inventory_export_attachments(export_path: Path, filenames: list[str]) -> dic
         "attachment_files_on_disk": present,
         "attachment_files_missing": max(0, len(uniq) - present),
         "attachment_missing_sample": missing_sample,
+        "attachment_hint": hint,
     }
+
+
+def sms_folder_has_attachment_bytes(export_path: Path) -> bool:
+    """True when a sibling file/folder or env dir might hold attachment bytes."""
+    extra = (os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR") or "").strip()
+    if extra:
+        p = Path(extra).expanduser()
+        try:
+            if p.is_dir() and any(p.iterdir()):
+                return True
+            if p.is_file():
+                return True
+        except OSError:
+            pass
+    try:
+        for child in export_path.parent.iterdir():
+            if child.name == export_path.name:
+                continue
+            return True
+    except OSError:
+        pass
+    try:
+        root = cache_root()
+        if root.is_dir() and any(root.iterdir()):
+            return True
+    except OSError:
+        pass
+    return False
