@@ -8,7 +8,7 @@
 **Depends:** P2-I7 **ACCEPTED** (2026-08-15) · I1–I6 **ACCEPTED**  
 **Does not reopen / does not absorb:** I7 SMS/text · SMS attachment bytes **P2-BL-I7-01** · I8 email **P2-BL-I8-01** · **MBQL-001 language** · I8 richer email · I8.5 face-evidence · I9 spoken · I10 correlation · I11 narrative · I13/I14 Settings product · family nav · multi-user
 
-**I7A is ACCEPTED.** Schema/live-update contract is in [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL implementation starts as part of I7A.** Next: [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) (**draft / no build**).
+**I7A is ACCEPTED.** Schema/live-update contract is in [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL implementation starts as part of I7A.** Next: [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) (**definition locked / no build**).
 
 ## What shipped (ACCEPTED)
 
@@ -46,7 +46,7 @@ MBRM-001 v0.2 (2026-08-15) **supersedes** any earlier sequence that jumped from 
 |-------|----------|------|
 | 1 | **P2-I7** SMS/Text | **ACCEPTED** 2026-08-15. Attachment bytes parked **P2-BL-I7-01**. |
 | 2 | **P2-I7A** AI Model Trace | **ACCEPTED** 2026-08-15. Observability **before** model workload grows |
-| 3 | **MBQL-001** | Ask / query / command language — [draft](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · **NO BUILD** until authorized |
+| 3 | **MBQL-001** | Ask / query / command language — [locked](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · **NO BUILD** until authorized |
 | 4 | **P2-I8** Richer Email | Shared MBQL communication semantics + existing trace. Attachment files up front = **P2-BL-I8-01**. |
 | 5 | **P2-I8.5** Face Evidence Ownership | Already inserted; **unchanged** by I7A |
 | 6 | **P2-I9** Spoken Moments | Same trace contract |
@@ -149,7 +149,7 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | I7 SMS/Text | **ACCEPTED** 2026-08-15 — attachment bytes **P2-BL-I7-01** |
 | I7A build | **AUTHORIZED** 2026-08-15 |
 | I7A ACCEPTED | **Yes** (2026-08-15 — Tom FlightSim owner pass) |
-| MBQL-001 | **DRAFT FOR REVIEW** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · **NO BUILD** |
+| MBQL-001 | **DEFINITION LOCKED** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · **NO BUILD** |
 
 **I7A ACCEPTED.** Keep `/dev/ai-trace` off when not diagnosing; emission stays on for later increments. **No MBQL implementation starts without a new authorization.**
 

@@ -1,12 +1,12 @@
 # MBPRD-P2-MBQL-001 — Ask, Query & Command Language
 
-**Status:** **DRAFT FOR REVIEW** · **NO BUILD** · wait for Tom lock + explicit build authorization  
+**Status:** **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · definition **LOCKED** · **NO BUILD** until explicit authorization  
 **Date:** 2026-08-15  
 **Increment definition:** [MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md)  
 **Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
 **Does not start:** I8 email · I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user
 
-This is a planning PRD. It does **not** authorize implementation.
+PRD accepted. Definition locked. This document does **not** authorize implementation (Q8).
 
 ---
 
@@ -33,7 +33,7 @@ After a future authorized build (not this draft):
 
 1. **One contract.** Ask, Explore refine, Person-scoped Ask, and filter chips describe the same typed intent (person / place / time / modality / communication / navigation).
 2. **One compiler entry.** Typed Ask and the equivalent click produce the same plan fields and the same visible filter/result interpretation (I4 equivalence preserved).
-3. **Deterministic first.** Utterances that `plan_ask` already handles well stay **zero-model** unless Tom locks otherwise. I7A still shows a complete T3 trace.
+3. **Deterministic first (Q1 residual).** Utterances that `plan_ask` already handles well stay **zero-model**. I7A still shows a complete T3 trace.
 4. **Model only for residual work.** If a model fills slots, I7A shows assembled MB context vs exact provider payload, parse/validate, and disposition. A bad fill is `PARSE_SCHEMA` / `TRUST_VALIDATION` / `MODEL_OUTPUT`, not “AI error.”
 5. **Fail back.** Model/planner failure must not fail the user request. Fall back to today’s deterministic plan (or clarification). Trace-store failure still never fails Ask (I7A lock).
 6. **No answer invention.** MBQL names intent. Retrieve and curator remain evidence-backed. MBQL-001 does not become I11 narrative.
@@ -47,9 +47,9 @@ After a future authorized build (not this draft):
 
 - Name and freeze the **MBQL intent record** (extend today’s `QueryPlan`, do not invent a parallel object).
 - Classify every current Ask/Explore phrase as: **new find** · **refine current set** · **navigate** · **clarify**.
-- Route Explore refine commands through the same contract (server or shared module — lock in Q2).
+- Route Explore refine commands through the same contract (Q2). Client may keep instant UI; no private language.
 - Keep planner rules A–H (current utterance > inherit; typed slots; disclose ambiguity; displayed context = retrieval context).
-- Optional **model-assisted slot fill** only when deterministic compile is incomplete or ambiguous — **Q1**.
+- **Residual** model-assisted slot fill only when deterministic compile is incomplete or ambiguous (Q1).
 - I7A spans on any model fill (planner / prompt_build / provider_call / parse_validate).
 - A thin prove list + FlightSim phrase list. No new family surface.
 
@@ -59,7 +59,7 @@ After a future authorized build (not this draft):
 - Sending **every** Ask to a model by default.
 - I8 richer email ingest or **P2-BL-I8-01** attachment files.
 - I8.5 face evidence ownership.
-- I9 STT product (contract must be **STT-ready**; do not build speech).
+- I9 STT product (contract is **STT-ready**; I9 **stays in its position** after I8.5; do not build speech here).
 - I10 correlation, I11 narrative, I13 Living Album / views, I14 Settings.
 - SMS attachment bytes **P2-BL-I7-01**. Reopen I7 / I7A.
 - Explore visual redesign (I4 interaction reference stays).
@@ -81,7 +81,7 @@ After a future authorized build (not this draft):
 - Evidence first. MBQL must not invent people, dates, or messages.
 - Ambiguity is disclosed, not guessed (planner rule F).
 - Default Gallery still hides SMS on broad memory asks (I7). “Add texts” / “Only texts” / explicit text asks override. Visibility ≠ exclusion.
-- Warm Ask cost today is ~6 s retrieve for Peggy texts; Trace persist is ~80 ms. MBQL must not put a model call on the common path without Tom locking that cost.
+- Warm Ask cost today is ~6 s retrieve for Peggy texts; Trace persist is ~80 ms. Q1 forbids putting a model call on a complete deterministic compile.
 - Cold orchestrator (~60 s first Ask) is provider init, not MBQL. Do not “fix” it by skipping I7A.
 
 **Edge cases the definition must cover**
@@ -101,7 +101,7 @@ After a future authorized build (not this draft):
 
 ## 5. Build plan (sequencing only — not authorized)
 
-Do **not** execute until Tom locks Q1–Q8 and says to build.
+Do **not** execute until Tom explicitly authorizes MBQL-001 build (Q8). Q1–Q8 are locked.
 
 1. Freeze the intent record (fields, enums, refine vs find vs navigate).
 2. Inventory every `plan_ask` path and every `applyAskCommand` phrase; map each to the record.
@@ -112,28 +112,21 @@ Do **not** execute until Tom locks Q1–Q8 and says to build.
 
 ---
 
-## 6. Open questions for Tom
+## 6. Locked decisions (Tom, 2026-08-15)
 
-| # | Topic | Recommended answer (for you to confirm or replace) |
-|---|--------|-----------------------------------------------------|
-| **Q1** | How much model? | **Residual only.** Deterministic compile first. Model fills missing/ambiguous slots on the **same schema**. Not “every Ask goes to Ollama.” |
-| **Q2** | Explore commands | **Same contract in MBQL-001.** Prefer one server/shared compile. Client may keep instant UI, but must not keep a private language. |
-| **Q3** | Change answers? | **Normalize intent only.** Retrieve/curator stay as they are unless a compile bug is proven. No narrative. |
-| **Q4** | Fail path | **Fail back** to deterministic `plan_ask` or clarification. Never fail the Ask because MBQL/model/store failed. |
-| **Q5** | Speech | **STT-ready contract.** Do not build I9. Later STT must call the same compile. |
+| # | Topic | Locked answer |
+|---|--------|---------------|
+| **Q1** | How much model? | **Residual.** Deterministic compile first. Model fills missing/ambiguous slots on the same schema. Not every Ask to Ollama. |
+| **Q2** | Explore commands | **Confirm.** Same contract in MBQL-001. No private Explore language. |
+| **Q3** | Change answers? | **Confirm.** Normalize intent only. No narrative. |
+| **Q4** | Fail path | **Confirm.** Fail back to deterministic `plan_ask` or clarification. |
+| **Q5** | Speech | **Confirm.** STT-ready. **I9 stays in its position** (after I8.5). Do not build I9 here. |
 | **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. I8.5 remains after I8. |
-| **Q7** | I4 Explore | **Do not redesign.** MBQL sits under the current Explore Ask row. |
-| **Q8** | Build gate | **Confirm.** This draft may be locked as definition. **No runtime** until you explicitly authorize MBQL-001 build. |
-
-Push back once if you want to skip this PRD: locking Q1–Q8 is cheaper than a planner rewrite that sends every Ask to the model.
+| **Q7** | I4 Explore | **Confirm.** Do not redesign. |
+| **Q8** | Build gate | **Confirm.** **No runtime** until explicit MBQL-001 build authorization. |
 
 ---
 
-## 7. Decision this PRD is asking for
+## 7. Decision status
 
-1. Is the problem statement right?  
-2. Is Q1 (deterministic first, model residual only) the product you want?  
-3. Any IN/OUT row you want flipped before lock?  
-4. **Do not authorize build** until the increment definition is locked.
-
-Reply with confirms / replacements on Q1–Q8. Planning only until then.
+PRD **ACCEPTED**. Increment definition **LOCKED** for review. **Build is not authorized.** Do not implement until Tom explicitly authorizes MBQL-001.

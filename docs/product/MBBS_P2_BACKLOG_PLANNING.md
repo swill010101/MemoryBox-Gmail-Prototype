@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-15 (I7 ACCEPTED; I7A ACCEPTED; MBQL-001 draft / no build)  
+**Status:** Living parking note · **Updated:** 2026-08-15 (I7 ACCEPTED; I7A ACCEPTED; MBQL-001 definition locked / no build)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -59,6 +59,6 @@ Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md
 
 **P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · **ACCEPTED** 2026-08-15.
 
-**MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **DRAFT FOR REVIEW. NO BUILD** until Tom locks Q1–Q8 and authorizes.
+**MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **DEFINITION LOCKED** · PRD **ACCEPTED** · **NO BUILD** until Tom authorizes.
 
-Sequence after I7: **I7A (ACCEPTED) → MBQL-001 (draft) → I8** (I8.5 remains after I8).
+Sequence after I7: **I7A (ACCEPTED) → MBQL-001 (locked, no build) → I8** (I8.5 remains after I8; I9 stays after I8.5).
