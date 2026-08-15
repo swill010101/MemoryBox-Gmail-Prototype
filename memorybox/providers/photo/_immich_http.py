@@ -19,7 +19,7 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 40
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v3"
+_PERSON_LIB_CACHE_VER = "v4"
 
 
 class ImmichAuthError(RuntimeError):
@@ -410,12 +410,20 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return None
+        cached = getattr(self, "_person_rec", None)
+        if isinstance(cached, dict) and pid in cached:
+            return cached[pid]
         try:
             status, data = self._request("GET", f"/people/{pid}", timeout=6, retries=1)
         except Exception as exc:  # noqa: BLE001
             self._note_transport_fail(exc)
             return None
         if status == 200 and isinstance(data, dict) and data.get("id"):
+            store = getattr(self, "_person_rec", None)
+            if store is None:
+                self._person_rec = {}
+                store = self._person_rec
+            store[pid] = data
             return data
         return None
 
@@ -555,15 +563,13 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            buckets = self._list_person_time_buckets(pid)
-            # Newest years first so a budget stop cannot drop 1984–now.
-            # YEAR = one GET/year (allow a lifetime). MONTH is the RST risk.
-            year_mode = "size=YEAR" in str(getattr(self, "_person_buckets_tmpl", "") or "")
-            budget = (
-                _PERSON_TIMELINE_YEAR_BUDGET
-                if year_mode
-                else _PERSON_TIMELINE_MONTH_BUDGET
+            buckets = self._collapse_buckets_to_years(
+                self._list_person_time_buckets(pid)
             )
+            # FlightSim size=YEAR still returns month stamps (2023-12-01, …).
+            # Walking those as years (budget 40) RST'd Immich on Christmas.
+            year_mode = True
+            budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
             if len(buckets) > budget:
@@ -649,6 +655,19 @@ class ImmichHttpClient:
 
         return sorted((b for b in buckets if str(b).strip()), key=_key, reverse=True)
 
+    @staticmethod
+    def _collapse_buckets_to_years(buckets: list[str]) -> list[str]:
+        """One bucket per year. Immich YEAR lists are often month dates."""
+        years: list[str] = []
+        seen: set[str] = set()
+        for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
+            y = str(raw or "").strip()[:4]
+            if len(y) != 4 or not y.isdigit() or y in seen:
+                continue
+            seen.add(y)
+            years.append(f"{y}-01-01")
+        return years
+
     def _list_person_bucket_assets(
         self, person_id: str, time_bucket: str
     ) -> list[dict[str, Any]]:
@@ -660,6 +679,8 @@ class ImmichHttpClient:
 
         qtb = quote(tb, safe=":-T.Z")
         tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}",
             "/assets/time-bucket?timeBucket={qtb}&personId={pid}",
@@ -903,9 +924,16 @@ class ImmichHttpClient:
         q = (name_query or "").strip()
         if len(q) < 2:
             return []
+        memo = getattr(self, "_name_hits", None)
+        if memo is None:
+            self._name_hits = {}
+            memo = self._name_hits
+        ck = q.lower()
+        if ck in memo:
+            return list(memo[ck])[:limit]
         tokens = [q]
         first = q.split()[0]
-        if first.lower() != q.lower():
+        if first.lower() != q.lower() and first.lower() not in memo:
             tokens.append(first)
         hits: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -964,6 +992,9 @@ class ImmichHttpClient:
                     str(p.get("name") or ""),
                 )
             )
+            memo[ck] = list(hits)
+            if first.lower() != q.lower():
+                memo[first.lower()] = list(hits)
             return hits[:limit]
         # Do not dump GET /people (60s+ on FlightSim) after search/person missed.
         return []
@@ -985,13 +1016,14 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
-        # Cheap person record first (feature face). withFaces can RST when
-        # the person has hundreds of faces — that was 187s / 0 photos.
+        # One GET. withFaces / /faces 404s were extra Immich hits before timeline.
+        rec = self.get_person(pid)
+        if rec:
+            usable = self._faces_from_people_payload(pid, rec)
+            if usable:
+                return usable
         for path in (
-            f"/people/{pid}",
             f"/people/{pid}?withFaces=true",
-            f"/people/{pid}/faces",
-            f"/faces?id={pid}",
         ):
             if self._circuit():
                 break

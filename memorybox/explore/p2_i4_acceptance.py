@@ -1090,6 +1090,53 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             "Must walk 2024 before 1983 so recent person photos are not dropped",
         )
+        collapsed = _ImmichIds._collapse_buckets_to_years(
+            ["2023-12-01", "2023-05-01", "2022-12-01", "2022-04-01"]
+        )
+        _check(
+            "immich_month_buckets_collapse_to_years",
+            collapsed == ["2023-01-01", "2022-01-01"],
+            checks,
+            problems,
+            f"collapsed={collapsed}",
+        )
+
+        class _MonthShapedYearImmich(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": "2023-12-01"},
+                        {"timeBucket": "2023-05-01"},
+                        {"timeBucket": "2022-12-01"},
+                        {"timeBucket": "2022-04-01"},
+                    ]
+                if "timeline/bucket" in p:
+                    return 200, [{"id": "aaaaaaaa-1111-2222-3333-444444444444"}]
+                return 404, None
+
+        months = _MonthShapedYearImmich()
+        months.search_by_person_ids(["person-1"], size=50)
+        year_gets = [p for p in months.paths if "timeline/bucket?" in p]
+        _check(
+            "immich_does_not_walk_month_stamps_as_years",
+            len(year_gets) == 2
+            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
+            and any("size=YEAR" in p for p in year_gets),
+            checks,
+            problems,
+            f"bucket_gets={year_gets}",
+        )
 
         class _TwoPersonStickyImmich(ImmichHttpClient):
             def __init__(self) -> None:  # noqa: D107
