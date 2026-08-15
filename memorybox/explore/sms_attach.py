@@ -56,10 +56,13 @@ def _search_roots() -> list[Path]:
     export = default_sms_export_path()
     if export is not None:
         roots.append(export.parent)
+        roots.append(export.parent / export.stem)
     src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
     if src:
         roots.append(Path(src) / "sms")
+        roots.append(Path(src))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
+    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
     out: list[Path] = []
     seen: set[str] = set()
     for r in roots:
@@ -79,6 +82,17 @@ def _dir_candidates(root: Path, name: str) -> list[Path]:
         root / "SMS Attachments" / name,
         root / "iMessage Attachments" / name,
     ]
+    prefix = name.split("__", 1)[0] if "__" in name else ""
+    if prefix:
+        hits.extend(
+            [
+                root / prefix / name,
+                root / prefix / "attachments" / name,
+                root / prefix / "Attachments" / name,
+                root / f"+{prefix}" / name,
+                root / f"+1{prefix}" / name,
+            ]
+        )
     try:
         if not root.is_dir():
             return hits
@@ -108,8 +122,14 @@ def _name_matches(found: str, wanted: str, uuid: str | None) -> bool:
         return True
     if a.endswith(b) or b.endswith(a):
         return True
-    if uuid and uuid.casefold() in a:
-        return True
+    if "__" in b:
+        suffix = b.split("__", 1)[-1]
+        if suffix and a.endswith(suffix):
+            return True
+    if uuid:
+        compact = uuid.replace("-", "").casefold()
+        if uuid.casefold() in a or compact in a.replace("-", ""):
+            return True
     return False
 
 
@@ -149,9 +169,18 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
                 return p
         except OSError:
             continue
-    name = Path(str(att.get("filename") or att.get("source_ref") or "")).name
+    raw_ref = str(att.get("source_ref") or att.get("filename") or "").strip()
+    name = Path(raw_ref).name
     if not name:
         return None
+    if raw_ref and raw_ref not in {name}:
+        for root in _search_roots():
+            rel = root / raw_ref.replace("\\", "/").lstrip("/")
+            try:
+                if rel.is_file():
+                    return rel
+            except OSError:
+                continue
     uuid_m = _UUID_IN_NAME.search(name)
     uuid = uuid_m.group(1) if uuid_m else None
     for root in _search_roots():
@@ -166,7 +195,7 @@ def resolve_attachment_file(att: dict[str, Any]) -> Path | None:
                     return hit
             except OSError:
                 continue
-        found = _walk_match(root, name, uuid, depth=3)
+        found = _walk_match(root, name, uuid, depth=5)
         if found is not None:
             return found
     return None

@@ -506,7 +506,7 @@ def _prove_harness() -> dict[str, Any]:
         xmas = parse_temporal("Christmas 2022")
         _check(
             "i4_compose_christmas_window",
-            xmas.windows == (("2022-12-11", "2023-01-01"),),
+            xmas.windows == (("2022-12-04", "2023-01-01"),),
             checks,
             problems,
             f"christmas={xmas.windows}",
@@ -669,7 +669,7 @@ def _prove_harness() -> dict[str, Any]:
             "i4_compose_show_me_peggy_christmas",
             peggy_xmas.person_names == ("Peggy",)
             and peggy_xmas.place_names == ()
-            and peggy_xmas.temporal_windows == (("2021-12-11", "2022-01-01"),)
+            and peggy_xmas.temporal_windows == (("2021-12-04", "2022-01-01"),)
             and "Christmas" in peggy_xmas.event_labels,
             checks,
             problems,

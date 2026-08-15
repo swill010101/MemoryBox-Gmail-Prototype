@@ -225,7 +225,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "HISTORY_MAX = 100" in ask_hist
         and "/ask/api/history" in app_py
         and "applyHistory" in shell_js
-        and "ArrowDown" in shell_js,
+        and "ArrowDown" in shell_js
+        and "mb-ask-history" in shell_js
+        and "parents[2]" in ask_hist,
         checks,
         problems,
         "Last 100 asks persist in localStorage; Up or Down starts history in all Ask fields",
@@ -237,10 +239,11 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "add_sms_attachment_to_mb_library" in sms_attach
         and "add_mb_managed_representation" in sms_attach
         and "Never writes Immich" in sms_attach
-        and "_dir_candidates" in sms_attach,
+        and "_dir_candidates" in sms_attach
+        and "first-class" in explore_js,
         checks,
         problems,
-        "View SMS attachment; add to MB Artifact store; no Immich write",
+        "SMS attachment is first-class on the message; optional Artifact copy; no Immich write",
     )
     _check(
         "i7_no_i8_email_product",
@@ -611,6 +614,29 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         f"heart people={plan_heart.person_names} n={len(hits_heart)} scope={hits_heart[0].count_scope if hits_heart else None}",
+    )
+
+    from memorybox.planner.temporal import parse_temporal
+
+    xmas_time = parse_temporal("at christmas time in 2017")
+    xmas_season = parse_temporal("christmas season 2017")
+    plan_xmas = plan_ask(
+        "how many times did Peggy and I text each other at christmas time in 2017",
+        ctx,
+    )
+    hits_xmas = search_sms_messages(plan_xmas, limit=5000)
+    xmas_scope = hits_xmas[0].count_scope if hits_xmas else ""
+    _check(
+        "i7_ask_christmas_time_window",
+        xmas_time.windows == (("2017-12-04", "2018-01-01"),)
+        and xmas_season.windows == (("2017-12-04", "2018-01-01"),)
+        and plan_xmas.temporal_windows == (("2017-12-04", "2018-01-01"),)
+        and any("peggy" in n.lower() for n in plan_xmas.person_names)
+        and "keyword=christmas" not in xmas_scope
+        and "christmas_window=minus_21d_through_nyd" in " ".join(plan_xmas.notes),
+        checks,
+        problems,
+        f"windows={plan_xmas.temporal_windows} people={plan_xmas.person_names} scope={xmas_scope} notes={plan_xmas.notes}",
     )
 
     plan_att = plan_ask("show me Peggy George text messages with attachments", ctx)

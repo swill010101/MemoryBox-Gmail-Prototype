@@ -12,7 +12,15 @@ def history_path() -> Path:
     raw = (os.environ.get("MEMORYBOX_ASK_HISTORY_PATH") or "").strip()
     if raw:
         return Path(raw)
-    return Path.cwd() / ".memorybox_ask_history.json"
+    home = (
+        os.environ.get("MEMORYBOX_HOME")
+        or os.environ.get("MEMORYBOX_DATA_DIR")
+        or ""
+    ).strip()
+    if home:
+        return Path(home) / ".memorybox_ask_history.json"
+    # Repo/install root — not process cwd — so history survives serve-from-anywhere.
+    return Path(__file__).resolve().parents[2] / ".memorybox_ask_history.json"
 
 
 def read_asks() -> list[str]:

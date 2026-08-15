@@ -416,6 +416,30 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             if k not in {"hear", "heart", "emoji", "emojis", "attachment", "attachments"}
             and not k.startswith(("emoji", "hear", "heart", "attach"))
         ]
+    holiday_ask = bool(
+        re.search(
+            r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
+            r"nye|nyd|holiday|memorial\s+day|labor\s+day|juneteenth)\b",
+            ask,
+        )
+        or "temporal=holiday" in (plan.notes or ())
+        or "christmas_window" in " ".join(plan.notes or ())
+    )
+    if holiday_ask:
+        holiday_stop = {
+            "christmas",
+            "xmas",
+            "christmastime",
+            "season",
+            "time",
+            "holiday",
+            "thanksgiving",
+            "easter",
+            "halloween",
+            "during",
+            "around",
+        }
+        keywords = [k for k in keywords if k not in holiday_stop]
 
     hits: list[EvidenceHit] = []
     with connection() as conn:

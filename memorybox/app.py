@@ -457,6 +457,18 @@ def explore_demo(demo_id: str) -> dict[str, Any]:
     return payload
 
 
+def _remember_ask_text(text: str) -> None:
+    t = str(text or "").strip()
+    if not t:
+        return
+    try:
+        from memorybox.ask.history import remember_ask
+
+        remember_ask(t)
+    except Exception:
+        return
+
+
 @app.get("/explore/api/find")
 def explore_find(
     q: str = Query("", description="Natural-language Ask / find"),
@@ -465,6 +477,7 @@ def explore_find(
     """Live Mixed-Media Find → Explore item contract (I4 real path)."""
     from memorybox.explore.find import build_explore_find
 
+    _remember_ask_text(q)
     try:
         return build_explore_find(
             ask_text=q,
@@ -480,6 +493,7 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
     """Same as GET /explore/api/find using AskRequest body."""
     from memorybox.explore.find import build_explore_find
 
+    _remember_ask_text(body.ask)
     try:
         return build_explore_find(
             ask_text=body.ask,
@@ -889,6 +903,7 @@ def library_video_poster(
 
 @app.post("/ask")
 def ask_endpoint(body: AskRequest) -> dict[str, Any]:
+    _remember_ask_text(body.ask)
     result = get_orchestrator().ask(body.ask, session_id=body.session_id)
     return result.to_dict()
 

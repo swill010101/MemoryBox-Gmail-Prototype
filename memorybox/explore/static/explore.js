@@ -2524,7 +2524,7 @@
         const box = img.parentElement;
         if (!box) return;
         box.innerHTML =
-          "<p>Could not load this file from the SMS export folder. It stays linked to the message. Add to MemoryBox library needs the file on this machine.</p>";
+          "<p>This attachment is already MemoryBox evidence on the message. The image file was not found next to the SMS export (or in MEMORYBOX_SMS_ATTACHMENTS_DIR), so it cannot be previewed on this machine.</p>";
       });
     });
     document.querySelectorAll(".mb-sms-to-library").forEach((btn) => {
@@ -2612,7 +2612,7 @@
       const attHtml = atts.length
         ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
             atts.length === 1 ? "" : "s"
-          }</strong> — linked to this message. Preview below. Add a copy into the MemoryBox library (Artifacts). Does not write to Immich.<ul>${atts
+          }</strong> — first-class on this SMS (already MemoryBox). Preview is the source file. Optional Artifact copy is not required to keep it.<ul>${atts
             .map((a, i) => {
               const name = escapeHtml(a.filename || a.source_ref || "attachment");
               const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
@@ -2628,8 +2628,9 @@
                     src
                   )}" target="_blank" rel="noopener">Open ${name}</a></p>`;
               return `<li data-att-index="${i}">${name}${kind}${preview}
-                <button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="${i}">Add to MemoryBox library</button>
-                <span class="mb-sms-to-library-status" hidden></span>
+                <details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>
+                <button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="${i}">Copy to Artifacts</button>
+                <span class="mb-sms-to-library-status" hidden></span></details>
               </li>`;
             })
             .join("")}</ul></div>`

@@ -215,14 +215,77 @@
       let histIndex = -1;
       let draft = "";
       let applying = false;
+      let panel = null;
+
+      const host =
+        input.closest(".mb-explore-ask-band") ||
+        input.closest(".mb-ask-bar") ||
+        input.closest(".mb-global-ask-card") ||
+        input.parentElement;
+      if (host && !host.style.position) host.style.position = "relative";
+
+      const ensurePanel = () => {
+        if (panel && panel.isConnected) return panel;
+        panel = document.createElement("div");
+        panel.className = "mb-ask-history";
+        panel.hidden = true;
+        panel.setAttribute("role", "listbox");
+        panel.setAttribute("aria-label", "Recent Ask commands");
+        (host || input.parentElement).appendChild(panel);
+        return panel;
+      };
+
+      const hidePanel = () => {
+        if (panel) panel.hidden = true;
+      };
+
+      const renderPanel = (recent, selected) => {
+        const el = ensurePanel();
+        if (!recent.length) {
+          el.innerHTML = `<p class="mb-ask-history-empty">No saved Ask commands yet. After you Ask, Up/Down cycles them here.</p>`;
+          el.hidden = false;
+          return;
+        }
+        el.innerHTML = recent
+          .map((text, i) => {
+            const on = i === selected ? "true" : "false";
+            return `<button type="button" role="option" aria-selected="${on}" data-hist="${i}">${String(
+              text
+            )
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/"/g, "&quot;")}</button>`;
+          })
+          .join("");
+        el.hidden = false;
+        el.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("mousedown", (ev) => {
+            ev.preventDefault();
+            const i = Number(btn.getAttribute("data-hist") || 0);
+            applying = true;
+            histIndex = i;
+            input.value = recent[i] || "";
+            applying = false;
+            hidePanel();
+            if (window.mbExploreApplyAsk) window.mbExploreApplyAsk(input.value);
+          });
+        });
+        const active = el.querySelector('button[aria-selected="true"]');
+        if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+      };
+
       const applyHistory = (recent, key) => {
-        if (!recent.length) return;
+        if (!recent.length) {
+          renderPanel([], -1);
+          return;
+        }
         applying = true;
         if (histIndex < 0) draft = input.value;
         if (key === "ArrowUp") {
-          if (histIndex < recent.length - 1) histIndex += 1;
+          if (histIndex < 0 && recent[0] === draft && recent.length > 1) histIndex = 1;
+          else if (histIndex < recent.length - 1) histIndex += 1;
         } else if (histIndex < 0) {
-          histIndex = 0;
+          histIndex = recent[0] === draft && recent.length > 1 ? 1 : 0;
         } else {
           histIndex -= 1;
         }
@@ -232,26 +295,39 @@
           input.setSelectionRange(n, n);
         } catch (_) {}
         applying = false;
+        renderPanel(recent, histIndex);
       };
+
       input.addEventListener("focus", () => {
-        hydrateAskHistory();
+        hydrateAskHistory().then((list) => {
+          const recent = list || window.mbShell.recentAsks();
+          if (recent.length) renderPanel(recent, histIndex);
+        });
       });
-      input.addEventListener("keydown", (e) => {
-        if (e.isComposing) return;
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        let recent = window.mbShell.recentAsks();
-        if (!recent.length) {
+      input.addEventListener("blur", () => {
+        window.setTimeout(hidePanel, 180);
+      });
+      input.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.isComposing) return;
+          if (e.key === "Escape") {
+            hidePanel();
+            return;
+          }
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
           e.preventDefault();
-          hydrateAskHistory().then((list) => {
-            recent = list || window.mbShell.recentAsks();
-            if (!recent.length) return;
-            applyHistory(recent, e.key);
-          });
-          return;
-        }
-        e.preventDefault();
-        applyHistory(recent, e.key);
-      });
+          e.stopPropagation();
+          const go = (recent) => applyHistory(recent || [], e.key);
+          const recent = window.mbShell.recentAsks();
+          if (recent.length) {
+            go(recent);
+            return;
+          }
+          hydrateAskHistory().then((list) => go(list || window.mbShell.recentAsks()));
+        },
+        true
+      );
       input.addEventListener("input", () => {
         if (applying) return;
         histIndex = -1;
