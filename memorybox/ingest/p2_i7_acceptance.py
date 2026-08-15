@@ -251,7 +251,10 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "cache_get" in attach_cache
         and "cache_put" in sms_attach
         and "sms-attachment/{evidence_id}/meta" in app_py
-        and "_name_forms" in sms_attach,
+        and "_name_forms" in sms_attach
+        and "put_media_object" in attach_cache
+        and "bytes_ingested" in comms
+        and "media_object_id" in comms,
         checks,
         problems,
         "SMS attachment is first-class on the message; optional Artifact copy; no Immich write",
@@ -450,6 +453,15 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         "Alaska GPS/text preserved; no Place/Event/Trip invented",
     )
     attach_p = peggy_2020.get("attachments") or []
+    peggy_eid = next(
+        eid
+        for eid in eids
+        if "3D printing this weekend"
+        in str((_payload(store.get_evidence(eid) or {})).get("body_text") or "")
+    )
+    from memorybox.explore.sms_attach import load_sms_attachment
+
+    ingested = load_sms_attachment(str(peggy_eid), 0)
     _check(
         "i7_attachment_not_promoted",
         attach_p
@@ -458,6 +470,15 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "Attachment linked, not Immich/Explore-promoted",
+    )
+    _check(
+        "i7_attachment_bytes_in_media_objects",
+        bool(attach_p[0].get("media_object_id"))
+        and attach_p[0].get("bytes_ingested") is True
+        and bool(ingested.get("bytes_present")),
+        checks,
+        problems,
+        "SMS attachment bytes stored on the message (media_objects), not export-path-only",
     )
     from memorybox.explore.sms_attach import _name_forms, resolve_attachment_file
     from memorybox.ingest.sms_attach_cache import cache_get, cache_put

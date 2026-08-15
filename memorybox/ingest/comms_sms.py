@@ -1,6 +1,7 @@
 """SMS / iMessage / MMS export → Source + Evidence (evidence_kind=communication)."""
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from uuid import UUID
 
 from memorybox.db import connection
 from memorybox.ingest import store as store
+from memorybox.ingest.sms_attach_cache import media_object_path, put_media_object
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
     SmsMessage,
@@ -114,6 +116,108 @@ def _payload(
     }
 
 
+def _locate_attachment_file(att: dict[str, Any], payload: dict[str, Any] | None) -> Path | None:
+    raw = str(att.get("resolved_path") or "").strip()
+    if raw:
+        p = Path(raw)
+        try:
+            if p.is_file() and p.stat().st_size:
+                return p
+        except OSError:
+            pass
+    mid = str(att.get("media_object_id") or "").strip()
+    if mid:
+        hit = media_object_path(mid)
+        if hit is not None:
+            return hit
+    from memorybox.explore.sms_attach import resolve_attachment_file
+
+    return resolve_attachment_file(att, payload, build_index=False)
+
+
+def _ingest_attachment_bytes(
+    attachments: list[dict[str, Any]],
+    *,
+    source_id: UUID,
+    conn: Any,
+    payload: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    """Copy export files into media_objects. Returns (stored, missing). Not Immich."""
+    stored = 0
+    missing = 0
+    for att in attachments:
+        if not isinstance(att, dict):
+            continue
+        mid = str(att.get("media_object_id") or "").strip()
+        if mid and media_object_path(mid, conn=conn) is not None:
+            att["bytes_ingested"] = True
+            att["bytes_present"] = True
+            continue
+        path = _locate_attachment_file(att, payload)
+        if path is None:
+            att["bytes_ingested"] = False
+            missing += 1
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            att["bytes_ingested"] = False
+            missing += 1
+            continue
+        rec = put_media_object(
+            data,
+            str(att.get("filename") or path.name),
+            source_id=source_id,
+            conn=conn,
+            mime_type=str(att.get("mime_type") or "") or None,
+        )
+        if rec is None:
+            att["bytes_ingested"] = False
+            missing += 1
+            continue
+        att["media_object_id"] = rec["media_object_id"]
+        att["content_hash"] = rec["content_hash"]
+        att["byte_size"] = rec["byte_size"]
+        att["mime_type"] = rec.get("mime_type") or att.get("mime_type")
+        att["resolved_path"] = rec["uri"]
+        att["bytes_present"] = True
+        att["bytes_ingested"] = True
+        att["promoted_to_immich"] = False
+        att["standalone_explore_media"] = False
+        stored += 1
+    return stored, missing
+
+
+def _backfill_existing_attachments(
+    evidence_id: UUID,
+    msg: SmsMessage,
+    *,
+    source_id: UUID,
+    conn: Any,
+    payload_template: dict[str, Any],
+) -> tuple[int, int]:
+    row = store.get_evidence(evidence_id, conn=conn)
+    if not row:
+        return 0, 0
+    raw = row.get("payload_json")
+    payload = dict(raw) if isinstance(raw, dict) else json.loads(raw or "{}")
+    atts = [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
+    if not atts:
+        atts = [dict(a) for a in (msg.attachments or []) if isinstance(a, dict)]
+    if not atts:
+        return 0, 0
+    if all(str(a.get("media_object_id") or "").strip() and a.get("bytes_ingested") for a in atts):
+        if all(media_object_path(str(a.get("media_object_id")), conn=conn) for a in atts):
+            return 0, 0
+    stored, missing = _ingest_attachment_bytes(
+        atts, source_id=source_id, conn=conn, payload=payload or payload_template
+    )
+    if stored:
+        payload["attachments"] = atts
+        store.update_evidence_payload(evidence_id, payload, conn=conn)
+    return stored, missing
+
+
 def ingest_sms(
     uri: str | None = None,
     *,
@@ -148,11 +252,19 @@ def ingest_sms(
         inserted = 0
         skipped = 0
         contacts_upserted = 0
+        attachments_stored = 0
+        attachments_missing = 0
         evidence_ids: list[str] = []
         headers: list[str] = []
         written_contacts: set[tuple[str, str]] = set()
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
+        from memorybox.explore.sms_attach import _build_attach_index, _search_roots
+
+        _build_attach_index(
+            _search_roots({"source_coverage": {"import_path": str(path)}}),
+            depth=6,
+        )
         with connection() as conn:
             handle_index = _index_confirmed_handles(conn)
             known = store.hashes_for_source(source_id, conn=conn)
@@ -162,6 +274,21 @@ def ingest_sms(
                     skipped += 1
                     if len(evidence_ids) < 64:
                         evidence_ids.append(str(existing))
+                    if msg.attachments:
+                        stored, missing = _backfill_existing_attachments(
+                            existing,
+                            msg,
+                            source_id=source_id,
+                            conn=conn,
+                            payload_template={
+                                "source_coverage": {"import_path": str(path)},
+                                "source_locator": f"{path}#row={msg.source_row}",
+                            },
+                        )
+                        attachments_stored += stored
+                        attachments_missing += missing
+                        if attachments_stored and attachments_stored % 200 == 0:
+                            conn.commit()
                     continue
                 payload = _payload(
                     msg,
@@ -170,6 +297,14 @@ def ingest_sms(
                     ingested_at=ingested_at,
                     handle_index=handle_index,
                 )
+                stored, missing = _ingest_attachment_bytes(
+                    list(payload.get("attachments") or []),
+                    source_id=source_id,
+                    conn=conn,
+                    payload=payload,
+                )
+                attachments_stored += stored
+                attachments_missing += missing
                 for mapped in (payload.get("identity_resolution") or {}).get("mapped") or []:
                     pid = str(mapped.get("person_id") or "")
                     handle = str(mapped.get("normalized") or mapped.get("handle") or "")
@@ -207,7 +342,10 @@ def ingest_sms(
         store.finish_job(
             job_id,
             status="done",
-            message=f"inserted={inserted} skipped={skipped} untouched={untouched}",
+            message=(
+                f"inserted={inserted} skipped={skipped} untouched={untouched} "
+                f"attachments_stored={attachments_stored} attachments_missing={attachments_missing}"
+            ),
         )
         return {
             "ok": True,
@@ -218,6 +356,8 @@ def ingest_sms(
             "inserted": inserted,
             "skipped": skipped,
             "contacts_upserted": contacts_upserted,
+            "attachments_stored": attachments_stored,
+            "attachments_missing": attachments_missing,
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,

@@ -2573,7 +2573,7 @@
           if (extra) extra.remove();
         }
         box.innerHTML =
-          "<p>This file is already on the SMS in MemoryBox. Preview needs the image next to the export (or in MEMORYBOX_SMS_ATTACHMENTS_DIR / working/sms-attachments).</p>" +
+          "<p>This attachment is on the SMS record, but the image bytes were not stored at ingest. Re-run <code>python -m memorybox ingest-sms</code> so MemoryBox copies the file onto the message (not Immich).</p>" +
           "<p class=\"mb-ev-meta\">Missing file: " +
           escapeHtml(name) +
           "</p>";

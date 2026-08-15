@@ -10,7 +10,12 @@ from typing import Any
 from uuid import UUID
 
 from memorybox.ingest.comms_sms import default_sms_export_path
-from memorybox.ingest.sms_attach_cache import cache_get, cache_put, cache_root
+from memorybox.ingest.sms_attach_cache import (
+    cache_get,
+    cache_put,
+    cache_root,
+    media_object_path,
+)
 from memorybox.ingest.store import get_evidence
 
 _UUID_IN_NAME = re.compile(
@@ -324,8 +329,16 @@ def _keep_found(path: Path, filename: str) -> Path:
 
 
 def resolve_attachment_file(
-    att: dict[str, Any], payload: dict[str, Any] | None = None
+    att: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+    *,
+    build_index: bool = True,
 ) -> Path | None:
+    mid = str(att.get("media_object_id") or "").strip()
+    if mid:
+        ingested = media_object_path(mid)
+        if ingested is not None:
+            return ingested
     raw_ref = str(att.get("source_ref") or att.get("filename") or "").strip()
     name = Path(raw_ref).name
     cached = cache_get(name) if name else None
@@ -369,10 +382,11 @@ def resolve_attachment_file(
         found = _walk_match(root, name, uuid, depth=6)
         if found is not None:
             return _keep_found(found, name)
-    _build_attach_index(roots, depth=6)
-    indexed = _lookup_index(name, uuid)
-    if indexed is not None:
-        return _keep_found(indexed, name)
+    if build_index:
+        _build_attach_index(roots, depth=6)
+        indexed = _lookup_index(name, uuid)
+        if indexed is not None:
+            return _keep_found(indexed, name)
     return None
 
 
@@ -426,9 +440,10 @@ def read_sms_attachment_bytes(evidence_id: str, index: int = 0) -> tuple[bytes, 
     info = load_sms_attachment(evidence_id, index)
     if not info["bytes_present"] or not info["path"]:
         raise SmsAttachError(
-            f"Attachment file not found: {info['filename']}. "
-            "Looked next to the SMS export, working/sms-attachments, "
-            "and MEMORYBOX_SMS_ATTACHMENTS_DIR."
+            f"Attachment file was not ingested: {info['filename']}. "
+            "Re-run ingest-sms so bytes are stored on the message "
+            "(media_objects). Looked next to the SMS export and "
+            "MEMORYBOX_SMS_ATTACHMENTS_DIR."
         )
     data = Path(info["path"]).read_bytes()
     if not data:
