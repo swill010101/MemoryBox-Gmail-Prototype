@@ -23,10 +23,98 @@ class EvidenceHit:
     summary: str
     score: float
     excerpt: str
-    source: str  # qdrant | postgres_keyword
+    source: str  # qdrant | postgres_keyword | sms_export
+    sent_at: str | None = None
+    channel: str | None = None
+    people: list[str] | None = None
+    thread_id: str | None = None
+    direction: str | None = None
+    attachments: list[dict[str, Any]] | None = None
+    count_scope: str | None = None
+    match_total: int | None = None
+    truncated: bool = False
+    identity_mapped: list[dict[str, str]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# Hard ceiling so a 90k-row export cannot dump the whole archive into Explore.
+# Year-fair sampling keeps every year on the Timeline when we must truncate.
+# The old default of 5000 oldest-first silently dropped 2020–2025 on FlightSim.
+SMS_RETRIEVE_CAP = 25000
+
+
+SMS_ASK_RE = re.compile(
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"(?:text\s+)?messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|to\s+and\s+from|"
+    r"last\s+\d+\s+(?:text\s+)?messages?|"
+    r"how\s+many\s+(?:text\s+)?messages?"
+    r")\b"
+)
+SMS_COUNT_RE = re.compile(r"(?i)\bhow many\b|\bcount\b|\btimes did\b")
+SMS_OUTBOUND_RE = re.compile(
+    r"(?i)\b(i sent|have i sent|did i send|text messages did i send|total text)\b"
+)
+SMS_INBOUND_RE = re.compile(
+    r"(?i)\b("
+    r"(?:send|sent|text(?:ed|s)?)\s+to\s+me|"
+    r"did\s+.+\s+send\s+(?:to\s+)?me|"
+    r"how\s+many.+\s+send\s+(?:to\s+)?me|"
+    r"emojis?\s+did\s+.+\s+send\s+me"
+    r")\b"
+)
+SMS_LAST_N_RE = re.compile(r"(?i)\blast\s+(\d+)")
+SMS_ATTACH_ASK_RE = re.compile(
+    r"(?i)\bwith\s+attachments?\b|\bhas\s+attachments?\b|\bthat\s+have\s+attachments?\b"
+)
+SMS_HEART_ASK_RE = re.compile(
+    r"(?i)\bhear(?:t)?\s+emojis?|\bheart\s+emojis?|❤️|❤|♥️"
+)
+SMS_NARRATIVE_RE = re.compile(
+    r"(?i)\b(write\s+a\s+narrative|write\s+a\s+story|narrate|narrative\s+about)\b"
+)
+_HEART_MARK_RE = re.compile(
+    r"(?i)❤️|❤|♥️|💕|💖|💗|💓|💞|💘|💝|"
+    r"\b(loved|hearted|tapback\s*loved)\b"
+)
+_SMS_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+_SMS_FAKE_PEOPLE = frozenset(
+    {
+        "attachments",
+        "attachment",
+        "unknown",
+        "photo",
+        "image",
+        "messages",
+        "message",
+        "and",
+    }
+)
+_SMS_KEYWORD_EXTRA_STOP = frozenset(
+    {
+        "about",
+        "between",
+        "myself",
+        "narrative",
+        "write",
+        "hear",
+        "heart",
+        "emoji",
+        "emojis",
+        "attachment",
+        "attachments",
+        "only",
+        "last",
+        "involving",
+        "library",
+        "visible",
+        "gallery",
+    }
+)
 
 
 @dataclass
@@ -115,8 +203,380 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
     return text[:limit]
 
 
+def _sms_ask(plan: QueryPlan) -> bool:
+    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    return (
+        bool(SMS_ASK_RE.search(blob))
+        or "want_sms_modality" in (plan.notes or ())
+        or bool(SMS_INBOUND_RE.search(blob))
+        or bool(SMS_HEART_ASK_RE.search(blob))
+        or bool(SMS_NARRATIVE_RE.search(blob))
+        or bool(SMS_LAST_N_RE.search(blob))
+        or bool(SMS_ATTACH_ASK_RE.search(blob))
+    )
+
+
+def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    atts = [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
+    if atts:
+        return atts
+    meta = payload.get("source_metadata") or {}
+    if not isinstance(meta, dict):
+        return []
+    raw = str(meta.get("Attachment") or meta.get("attachment") or "").strip()
+    if not raw:
+        return []
+    kind = str(meta.get("Attachment type") or meta.get("attachment_type") or "").strip()
+    name = raw.replace("\\", "/").rstrip("/").split("/")[-1] or raw
+    return [
+        {
+            "filename": name,
+            "source_ref": raw,
+            "attachment_type": kind or None,
+            "promoted_to_immich": False,
+            "standalone_explore_media": False,
+            "from_source_metadata": True,
+        }
+    ]
+
+
+def _sms_name_match(blob: str, names: list[str]) -> bool:
+    text = (blob or "").lower()
+    if not text or not names:
+        return False
+    for n in names:
+        if not n:
+            continue
+        if n in text or (text.strip() and text.strip() in n):
+            return True
+        parts = [p for p in re.findall(r"[a-z0-9']+", n) if len(p) > 2]
+        if parts and all(re.search(rf"\b{re.escape(p)}\b", text) for p in parts):
+            return True
+        if parts and re.search(rf"\b{re.escape(parts[0])}\b", text):
+            return True
+    return False
+
+
+def _sms_has_heart(payload: dict[str, Any], summary: str = "") -> bool:
+    blob = f"{summary} {payload.get('body_text') or ''}"
+    meta = payload.get("source_metadata") or {}
+    if isinstance(meta, dict):
+        for key, val in meta.items():
+            if re.search(r"(?i)react|tapback|loved|heart", str(key)):
+                blob += f" {val}"
+        blob += " " + str(meta.get("Reactions") or meta.get("Reaction") or "")
+        blob += " " + str(meta.get("Tapback") or "")
+    return bool(_HEART_MARK_RE.search(blob))
+
+
+def _sms_sender_matches_person(
+    payload: dict[str, Any],
+    *,
+    person_ids: set[str],
+    person_names: list[str],
+) -> bool:
+    sender = str(payload.get("sender_name") or "").strip().lower()
+    handle = str(payload.get("sender_handle") or "").strip().lower()
+    if person_names and _sms_name_match(f"{sender} {handle}", person_names):
+        return True
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    for m in mapped:
+        if not isinstance(m, dict):
+            continue
+        pid = str(m.get("person_id") or "")
+        h = str(m.get("handle") or m.get("normalized") or "").lower()
+        if person_ids and pid in person_ids and h and (h in handle or handle in h or h in sender):
+            return True
+    if person_ids and not payload.get("from_owner"):
+        have = {str(x) for x in (payload.get("person_ids") or [])}
+        participants = [str(p).strip() for p in (payload.get("participants") or []) if str(p).strip()]
+        if have & person_ids and len(participants) <= 3:
+            return True
+    return False
+
+
+def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
+    people = [
+        str(p)
+        for p in (payload.get("participants") or [])
+        if str(p).strip() and str(p).strip().lower() not in _SMS_FAKE_PEOPLE
+    ]
+    if payload.get("sender_name") and payload["sender_name"] not in people:
+        people.insert(0, str(payload["sender_name"]))
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    identity = [
+        {
+            "handle": str(m.get("handle") or m.get("normalized") or ""),
+            "normalized": str(m.get("normalized") or ""),
+            "person_id": str(m.get("person_id") or ""),
+            "status": str(m.get("status") or "auto_mapped"),
+        }
+        for m in mapped
+        if isinstance(m, dict) and (m.get("handle") or m.get("normalized"))
+    ]
+    return EvidenceHit(
+        evidence_id=str(row["id"]),
+        evidence_kind=row["evidence_kind"],
+        summary=row["summary"] or (payload.get("body_text") or "text message")[:80],
+        score=score,
+        excerpt=_excerpt(payload, row["evidence_kind"], limit=800),
+        source="sms_export",
+        sent_at=payload.get("sent_at"),
+        channel=str(payload.get("evidence_channel") or payload.get("service") or "text"),
+        people=people or None,
+        thread_id=payload.get("thread_id") or payload.get("group_name"),
+        direction=payload.get("direction"),
+        attachments=_sms_attachments(payload) or None,
+        identity_mapped=identity or None,
+    )
+
+
+def _year_fair_slice(hits: list[EvidenceHit], limit: int) -> tuple[list[EvidenceHit], bool]:
+    """Keep every year represented when a retrieve cap would otherwise drop recent texts."""
+    cap = max(1, int(limit))
+    if len(hits) <= cap:
+        return hits, False
+    by_year: dict[str, list[EvidenceHit]] = {}
+    for h in hits:
+        year = (h.sent_at or "")[:4] or "undated"
+        by_year.setdefault(year, []).append(h)
+    years = sorted(by_year)
+    min_per = max(24, cap // max(len(years), 1))
+    selected: list[EvidenceHit] = []
+    leftovers: list[EvidenceHit] = []
+    budget = cap
+    for year in years:
+        group = sorted(
+            by_year[year],
+            key=lambda h: (h.sent_at or "", h.evidence_id),
+            reverse=True,
+        )
+        take = min(len(group), min_per, budget)
+        selected.extend(group[:take])
+        leftovers.extend(group[take:])
+        budget -= take
+        if budget <= 0:
+            break
+    leftovers.sort(key=lambda h: (h.sent_at or "", h.evidence_id), reverse=True)
+    if budget > 0:
+        selected.extend(leftovers[:budget])
+    selected.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    return selected, True
+
+
+def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
+    """Person / date / keyword retrieve over ingested SMS/iMessage Evidence."""
+    from memorybox.person.phone_map import normalize_handle
+
+    ask = plan.original_ask or ""
+    want_count = bool(SMS_COUNT_RE.search(ask))
+    outbound_only = bool(SMS_OUTBOUND_RE.search(ask))
+    inbound_only = bool(SMS_INBOUND_RE.search(ask)) and not outbound_only
+    attach_only = bool(SMS_ATTACH_ASK_RE.search(ask))
+    heart_only = bool(SMS_HEART_ASK_RE.search(ask))
+    last_n_m = SMS_LAST_N_RE.search(ask)
+    last_n = int(last_n_m.group(1)) if last_n_m else None
+    if last_n is not None and last_n < 1:
+        last_n = None
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    person_names = [
+        n.strip().lower()
+        for n in (plan.person_names or ())
+        if n.strip() and n.strip().lower() not in _SMS_FAKE_PEOPLE
+    ]
+    name_tokens = {
+        tok
+        for n in person_names
+        for tok in re.findall(r"[a-z0-9']{2,}", n)
+    }
+    windows = list(plan.temporal_windows or ())
+    if not windows and plan.time_start and plan.time_end:
+        windows = [(plan.time_start, plan.time_end)]
+    keyword_stop = {
+        "the", "and", "for", "with", "from", "that", "this", "show", "me",
+        "just", "ones", "what", "else", "have", "how", "many", "times",
+        "did", "text", "texts", "texted", "sms", "imessage", "message",
+        "messages", "all", "my", "each", "other", "sent", "send", "total",
+        "summarize", "summary",
+    } | _SMS_KEYWORD_EXTRA_STOP | name_tokens | set(person_names)
+    keywords = [
+        t.lower().replace("'", "")
+        for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
+        if t.lower().replace("'", "") not in keyword_stop
+    ]
+    # Year tokens belong to the date window, not the body-text keyword filter
+    if windows:
+        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    if last_n is not None:
+        keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
+    if heart_only or attach_only:
+        keywords = [
+            k
+            for k in keywords
+            if k not in {"hear", "heart", "emoji", "emojis", "attachment", "attachments"}
+            and not k.startswith(("emoji", "hear", "heart", "attach"))
+        ]
+    holiday_ask = bool(
+        re.search(
+            r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
+            r"nye|nyd|holiday|memorial\s+day|labor\s+day|juneteenth)\b",
+            ask,
+        )
+        or "temporal=holiday" in (plan.notes or ())
+        or "christmas_window" in " ".join(plan.notes or ())
+    )
+    if holiday_ask:
+        holiday_stop = {
+            "christmas",
+            "xmas",
+            "christmastime",
+            "season",
+            "time",
+            "holiday",
+            "thanksgiving",
+            "easter",
+            "halloween",
+            "during",
+            "around",
+        }
+        keywords = [k for k in keywords if k not in holiday_stop]
+
+    hits: list[EvidenceHit] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', ''))
+                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """
+        ).fetchall()
+    for r in rows:
+        payload = _payload_dict(r["payload_json"])
+        ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
+        if ch not in _SMS_CHANNELS:
+            continue
+        if outbound_only and not payload.get("from_owner"):
+            continue
+        if inbound_only:
+            if payload.get("from_owner"):
+                continue
+            if (person_ids or person_names) and not _sms_sender_matches_person(
+                payload, person_ids=person_ids, person_names=person_names
+            ):
+                continue
+        sent = str(payload.get("sent_at") or "")
+        if windows:
+            day = sent[:10]
+            if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
+                continue
+        if person_ids:
+            have = {str(x) for x in (payload.get("person_ids") or [])}
+            if not (have & person_ids):
+                # name fallback on participants / thread
+                blob = " ".join(
+                    [
+                        str(payload.get("sender_name") or ""),
+                        str(payload.get("thread_id") or ""),
+                        " ".join(str(p) for p in (payload.get("participants") or [])),
+                    ]
+                ).lower()
+                if person_names and not _sms_name_match(blob, person_names):
+                    continue
+                if not person_names:
+                    continue
+        elif person_names:
+            blob = " ".join(
+                [
+                    str(payload.get("sender_name") or ""),
+                    str(payload.get("thread_id") or ""),
+                    str(payload.get("group_name") or ""),
+                    " ".join(str(p) for p in (payload.get("participants") or [])),
+                ]
+            ).lower()
+            handles = " ".join(
+                normalize_handle(str(p)) for p in (payload.get("participants") or [])
+            )
+            if not _sms_name_match(f"{blob} {handles}", person_names):
+                continue
+        if attach_only and not _sms_attachments(payload):
+            continue
+        if heart_only and not _sms_has_heart(payload, str(r["summary"] or "")):
+            continue
+        if keywords:
+            blob = f"{r['summary'] or ''} {payload.get('body_text') or ''} {payload.get('thread_id') or ''}".lower()
+            if not any(k in blob for k in keywords):
+                continue
+        hits.append(_sms_hit(r, payload, score=1.0))
+    hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    scope_bits = [
+        "ingested SMS/iMessage/MMS export",
+        f"n={len(hits)}",
+    ]
+    if person_names:
+        scope_bits.append("person=" + ", ".join(n for n in plan.person_names if str(n).lower() not in _SMS_FAKE_PEOPLE))
+    if windows:
+        scope_bits.append("dates=" + ";".join(f"{a[:10]}..{b[:10]}" for a, b in windows))
+    if outbound_only:
+        scope_bits.append("outbound_only")
+    if inbound_only:
+        scope_bits.append("inbound_only")
+    if attach_only:
+        scope_bits.append("attachments_only")
+    if heart_only:
+        scope_bits.append("heart_emoji_or_loved_tapback")
+    if last_n is not None:
+        scope_bits.append(f"last_{last_n}_newest")
+    if keywords:
+        scope_bits.append("keyword=" + ",".join(keywords))
+    scope = "; ".join(scope_bits)
+    total = len(hits)
+    if last_n is not None:
+        newest = sorted(hits, key=lambda h: (h.sent_at or "", h.evidence_id), reverse=True)
+        sliced = list(reversed(newest[: last_n]))
+        truncated = total > len(sliced)
+        if truncated:
+            scope = f"{scope}; showing newest {len(sliced)} of {total}"
+    else:
+        sliced, truncated = _year_fair_slice(hits, max(1, int(limit)))
+        if truncated:
+            years = sorted({(h.sent_at or "")[:4] for h in sliced if (h.sent_at or "")[:4]})
+            scope = (
+                f"{scope}; showing {len(sliced)} of {total} "
+                f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+            )
+    if sliced:
+        sliced[0].count_scope = scope
+        sliced[0].match_total = total
+        sliced[0].truncated = truncated
+        if want_count:
+            label = "heart emoji / Loved tapbacks" if heart_only else "text messages"
+            sliced[0].summary = f"{total} {label} ({scope}). {sliced[0].summary}"
+        elif last_n is not None:
+            sliced[0].summary = (
+                f"Last {len(sliced)} of {total} text messages ({scope}). "
+                f"{sliced[0].summary}"
+            )
+        elif truncated:
+            sliced[0].summary = (
+                f"Showing {len(sliced)} of {total} text messages ({scope}). "
+                f"{sliced[0].summary}"
+            )
+        for h in sliced:
+            h.match_total = total
+            h.truncated = truncated
+            h.count_scope = scope
+    return sliced
+
+
 def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]:
     """Keyword search over authoritative PostgreSQL Evidence (always available)."""
+    if _sms_ask(plan) and plan.want_communication:
+        sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
+        if sms or _sms_ask(plan):
+            return sms
     kinds: list[str] = []
     if plan.want_communication:
         kinds.append("communication")
@@ -267,7 +727,15 @@ def filter_hits_by_constraints(
         return hits
     kept: list[EvidenceHit] = []
     for h in hits:
-        blob = f"{h.summary} {h.excerpt}".lower()
+        blob = " ".join(
+            [
+                h.summary or "",
+                h.excerpt or "",
+                " ".join(h.people or []),
+                h.thread_id or "",
+                h.channel or "",
+            ]
+        ).lower()
         if any(c.lower() in blob for c in cons):
             kept.append(h)
     return kept
@@ -423,6 +891,7 @@ def search_photos(
         find_confirmed_person_by_name,
         is_negative,
         list_provider_external_ids_for_person,
+        resolve_immich_external_ids_for_person,
     )
 
     status: dict[str, Any] = {
@@ -515,6 +984,10 @@ def search_photos(
             ids: list[str] = []
             for pk in lookup_keys:
                 ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            try:
+                ids.extend(resolve_immich_external_ids_for_person(person.id, photo=photo))
+            except Exception:  # noqa: BLE001
+                pass
             ids = list(dict.fromkeys(ids))
             if ids:
                 mapped_names.append(name)
@@ -561,6 +1034,10 @@ def search_photos(
                 ids: list[str] = []
                 for pk in lookup_keys:
                     ids.extend(list_provider_external_ids_for_person(person.id, pk))
+                try:
+                    ids.extend(resolve_immich_external_ids_for_person(person.id, photo=photo))
+                except Exception:  # noqa: BLE001
+                    pass
                 ids = list(dict.fromkeys(ids))
                 if ids:
                     mapped_names.append(name)
@@ -652,6 +1129,54 @@ def search_photos(
             pn = (person_name or "").strip()
             if pn and pn.lower() != "unknown" and pn not in out:
                 out.insert(0, pn)
+            return out
+
+        def _search_person_assets(ext_ids: list[str]) -> list[PhotoAssetDto]:
+            """Person library via personIds, then face-asset fallback.
+
+            FlightSim Immich /search/metadata often RST/times out. That is not
+            “this person has no photos.”
+            """
+            ids = list(dict.fromkeys(str(x).strip() for x in ext_ids if str(x).strip()))
+            if not ids:
+                return []
+            try:
+                assets = photo.search_assets(
+                    PhotoSearchQuery(person_external_ids=tuple(ids), limit=limit)
+                )
+            except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
+                assets = []
+                status["photo_search_error"] = "personIds_search_failed"
+            if assets:
+                return list(assets)
+            list_fn = getattr(photo, "list_face_assets", None)
+            get_fn = getattr(photo, "get_asset", None)
+            if not callable(list_fn) or not callable(get_fn):
+                return []
+            seen: set[str] = set()
+            out: list[PhotoAssetDto] = []
+            cap = min(max(1, int(limit)), 400)
+            for pid in ids:
+                try:
+                    faces = list_fn(person_external_id=pid, limit=cap)
+                except Exception:  # noqa: BLE001
+                    continue
+                for face in faces or []:
+                    aid = str(getattr(face, "source_asset_id", None) or "").strip()
+                    if not aid or aid in seen:
+                        continue
+                    seen.add(aid)
+                    try:
+                        asset = get_fn(aid)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if asset is not None:
+                        out.append(asset)
+                    if len(out) >= cap:
+                        status["face_asset_fallback"] = len(out)
+                        return out
+            if out:
+                status["face_asset_fallback"] = len(out)
             return out
 
         def _faces_for_hit(a: PhotoAssetDto) -> list[dict[str, Any]] | None:
@@ -746,11 +1271,7 @@ def search_photos(
                 status["identity_mode"] = "mixed_mapping"
             else:
                 status["identity_mode"] = "confirmed_mapping"
-            query = PhotoSearchQuery(
-                person_external_ids=tuple(dict.fromkeys(mapped_ext)),
-                limit=limit,
-            )
-            assets = photo.search_assets(query)
+            assets = _search_person_assets(mapped_ext)
             by_person_ext = {m["external_id"]: m for m in mapped_meta}
             for a in assets:
                 meta: dict[str, str] = {}
@@ -881,13 +1402,33 @@ def search_photos(
         person_ext = list(dict.fromkeys(person_ext))
         if not person_ext:
             status["ok"] = True
-            if plan.person_names and not hits:
+            # MB Person resolved (mapped or unmapped) is not “Who is X?” —
+            # that wipe also cleared video moments on FlightSim person asks.
+            if (
+                plan.person_names
+                and not hits
+                and not mapped_names
+                and not unmapped_resolvable_names
+            ):
                 who = list(plan.person_names)[0]
                 status["identity_mode"] = "unknown_person"
                 status["detail"] = f"unknown={list(plan.person_names)}"
                 status["unknown_person_names"] = list(plan.person_names)
                 status["clarify_message"] = f"Who is {who}?"
                 return _finish(hits)
+            status["identity_mode"] = "photos_empty_person_resolved"
+            status["detail"] = (
+                f"no_immich_person_ids names={name_queries} "
+                f"unmapped_resolvable={unmapped_resolvable_names or []} "
+                f"mapped_names={mapped_names}"
+            )
+            if mapped_names or unmapped_resolvable_names:
+                status["disclosure"] = (
+                    (status.get("disclosure") or "")
+                    + " Photo library did not return stills for this person; "
+                    "video moments stay visible."
+                ).strip()
+            return _finish(hits)
             status["detail"] = (
                 f"no_immich_person_ids names={name_queries} "
                 f"unmapped_resolvable={unmapped_resolvable_names or []}"
@@ -901,11 +1442,7 @@ def search_photos(
 
         # Person asks must stay on personIds only — never bare Immich text search
         # (unfiltered newest-library page).
-        query = PhotoSearchQuery(
-            person_external_ids=tuple(person_ext),
-            limit=limit,
-        )
-        assets = photo.search_assets(query)
+        assets = _search_person_assets(person_ext)
         seen_ext = {h.external_id for h in hits}
         for a in assets:
             if a.external_id in seen_ext:

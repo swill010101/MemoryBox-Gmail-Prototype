@@ -5,7 +5,39 @@ Does not hard-code people or events into product logic.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+_SMS_ASK_RE = re.compile(
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|last\s+\d+\s+messages?"
+    r")\b"
+)
+_HIDDEN_SMS_GALLERY_CAP = 500
+
+
+def _is_sms_type(type_: str) -> bool:
+    return str(type_ or "").lower() in _SMS_ITEM_TYPES
+
+
+def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    """True when the ask itself requested texts (not a broad memory query)."""
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    if "want_sms_modality" in notes:
+        return True
+    blob = " ".join(
+        [
+            ask_text or "",
+            str(plan.get("original_ask") or ""),
+            str((result or {}).get("ask") or ""),
+        ]
+    )
+    return bool(_SMS_ASK_RE.search(blob))
 
 
 def _date_prefix(raw: str | None) -> str:
@@ -251,10 +283,15 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
     for e in result.get("evidence_hits") or []:
         kind = str(e.get("evidence_kind") or "document").lower()
-        # Map communication-ish kinds to email for Explore filters
-        type_ = "email" if kind in ("email", "sms", "text", "communication", "comms") else (
-            "document" if kind in ("document", "file") else kind
-        )
+        channel = str(e.get("channel") or "").lower()
+        sms_channels = {"sms", "text", "imessage", "mms", "rcs"}
+        # Map communication-ish kinds to email/sms for existing Explore filters
+        if channel in sms_channels or e.get("source") == "sms_export":
+            type_ = "sms"
+        elif kind in ("email", "sms", "text", "communication", "comms"):
+            type_ = "sms" if kind in ("sms", "text") else "email"
+        else:
+            type_ = "document" if kind in ("document", "file") else kind
         if type_ not in ("email", "sms", "text", "document", "calendar", "recipe"):
             # Keep as email/text bucket for unknown communication evidence
             if "mail" in kind or "sms" in kind or "message" in kind:
@@ -264,20 +301,36 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         eid = str(e.get("evidence_id") or "")
         if not eid:
             continue
-        add(
-            _item_base(
-                id=f"evidence:{eid}",
-                type_=type_ if type_ != "communication" else "email",
-                title=(e.get("summary") or kind or "Evidence")[:80],
-                date="",  # evidence often lacks browse date in Ask hit
-                undated=True,
-                preview=str(e.get("excerpt") or e.get("summary") or ""),
-                detail=str(e.get("excerpt") or e.get("summary") or ""),
-                evidence_id=eid,
-                evidence_kind=kind,
-                score=e.get("score"),
-            )
+        sent = _date_prefix(e.get("sent_at"))
+        people = [str(p) for p in (e.get("people") or []) if str(p).strip()]
+        item = _item_base(
+            id=f"evidence:{eid}",
+            type_=type_ if type_ != "communication" else "email",
+            title=(e.get("summary") or kind or "Evidence")[:80],
+            date=sent,
+            undated=not sent,
+            preview=str(e.get("excerpt") or e.get("summary") or ""),
+            detail=str(e.get("excerpt") or e.get("summary") or ""),
+            evidence_id=eid,
+            evidence_kind=kind,
+            score=e.get("score"),
+            people=people or None,
+            attachments=e.get("attachments") or None,
+            thread_id=e.get("thread_id"),
+            direction=e.get("direction"),
         )
+        item["from"] = people[0] if people else (e.get("thread_id") or "Message")
+        atts = e.get("attachments") or item.get("attachments") or []
+        item["attachments"] = atts
+        item["attachment_count"] = len(atts) if isinstance(atts, list) else 0
+        if e.get("identity_mapped"):
+            item["identity_mapped"] = e.get("identity_mapped")
+        if e.get("match_total") is not None:
+            item["match_total"] = e.get("match_total")
+            item["truncated"] = bool(e.get("truncated"))
+        if _is_sms_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_text_gallery(result)
+        add(item)
 
     for a in result.get("artifact_hits") or []:
         aid = str(a.get("artifact_id") or a.get("id") or "")
@@ -436,6 +489,81 @@ def range_chip_for_items(items: list[dict[str, Any]]) -> dict[str, str] | None:
     return {"kind": "range", "label": f"{dates[0]}–{dates[-1]}"}
 
 
+def _attach_hidden_sms(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+    show_sms: bool,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Keep SMS eligible for Add texts without dumping cards on broad memory asks.
+
+    Gallery visibility is not evidence exclusion. Caps hidden cards so Explore
+    stays usable; full retrieve/count remains on the SMS Ask path.
+    """
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    sms_already = [i for i in items if _is_sms_type(i.get("type"))]
+    if show_sms:
+        for i in sms_already:
+            i["gallery_default_hidden"] = False
+        return items, len(sms_already), 0
+
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    if not people and not pids and not sms_already:
+        hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
+        return items, len(sms_already), hidden
+
+    extra: list[dict[str, Any]] = []
+    try:
+        from memorybox.ask.retrieve import search_sms_messages
+        from memorybox.planner import QueryPlan
+
+        windows = plan.get("temporal_windows") or ()
+        tw = tuple(tuple(w) for w in windows) if windows else ()
+        sms_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=True,
+            want_calendar=False,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            time_start=plan.get("time_start"),
+            time_end=plan.get("time_end"),
+            temporal_windows=tw,
+            notes=("gallery_sms_eligible",),
+        )
+        hits = search_sms_messages(sms_plan, limit=_HIDDEN_SMS_GALLERY_CAP)
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ()},
+            }
+        )
+        for it in mapped:
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = True
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+
+    out = list(items) + extra
+    sms_n = sum(1 for i in out if _is_sms_type(i.get("type")))
+    hidden_n = sum(
+        1
+        for i in out
+        if _is_sms_type(i.get("type")) and i.get("gallery_default_hidden")
+    )
+    return out, sms_n, hidden_n
+
+
 def build_explore_find(
     *,
     ask_text: str,
@@ -468,12 +596,27 @@ def build_explore_find(
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     items = items_from_ask_result(result)
+    show_sms = explicit_text_gallery(result, text)
+    items, sms_available, sms_hidden = _attach_hidden_sms(
+        items, result, ask_text=text, show_sms=show_sms
+    )
+    visible_items = [
+        i for i in items if not (i.get("gallery_default_hidden") and _is_sms_type(i.get("type")))
+    ]
     title, summary = curator_from_items(
         text,
-        items,
+        visible_items,
         result.get("answer_text"),
         provider_status=result.get("provider_status") or {},
     )
+    if sms_hidden and not show_sms:
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" {sms_available} text message(s) are in the archive "
+                "(hidden in Gallery — say Add texts to show them)."
+            )
+        ).strip()
     chips = chips_from_ask_result(result)
     # Prefer plan temporal chip over item-derived year range when present
     if not any(c.get("kind") == "time" for c in chips):
@@ -482,10 +625,27 @@ def build_explore_find(
             chips.append(rc)
 
     counts: dict[str, int] = {}
-    for i in items:
+    for i in visible_items:
         t = str(i.get("type") or "other")
         counts[t] = counts.get(t, 0) + 1
-    counts["undated"] = sum(1 for i in items if i.get("undated"))
+    counts["undated"] = sum(1 for i in visible_items if i.get("undated"))
+    counts["sms_available"] = sms_available
+    counts["sms_hidden"] = sms_hidden
+    sms_match_total = 0
+    sms_truncated = False
+    for e in result.get("evidence_hits") or []:
+        if e.get("match_total"):
+            sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
+        if e.get("truncated"):
+            sms_truncated = True
+    if sms_truncated and sms_match_total:
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" Showing {counts.get('sms', 0) or sms_available} of "
+                f"{sms_match_total} matching texts (every year kept on the Timeline)."
+            )
+        ).strip()
 
     plan = result.get("plan") or {}
     return {
@@ -516,5 +676,10 @@ def build_explore_find(
             "visual_scope": plan.get("visual_scope"),
             "life_event_kind": plan.get("life_event_kind"),
             "life_event_years": list(plan.get("life_event_years") or []),
+            "gallery_show_sms": show_sms,
+            "sms_available": sms_available,
+            "sms_hidden": sms_hidden,
+            "sms_match_total": sms_match_total,
+            "sms_truncated": sms_truncated,
         },
     }

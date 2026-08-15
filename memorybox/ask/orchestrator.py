@@ -631,6 +631,53 @@ def _build_answer(
         )
         return "insufficient", missing, statements, citations, missing
 
+    ask = getattr(plan, "original_ask", "") or ""
+    sms_hits = [
+        h
+        for h in evidence
+        if (getattr(h, "source", "") == "sms_export")
+        or str(getattr(h, "channel", "") or "").lower()
+        in {"sms", "text", "imessage", "mms", "rcs"}
+    ]
+    if sms_hits and R.SMS_NARRATIVE_RE.search(ask):
+        who = ", ".join(
+            n
+            for n in (plan.person_names or ())
+            if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
+        ) or "the named person"
+        n = len(sms_hits)
+        total = getattr(sms_hits[0], "match_total", None) or n
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        text = (
+            f"Retrieved the last {n} of {total} text messages between you and {who} "
+            f"({scope}). Writing a narrative from those messages is I11 and is not "
+            "generated here. The gallery shows the retrieved messages."
+        )
+        return "evidence_backed", text, statements, citations, None
+    if sms_hits and R.SMS_COUNT_RE.search(ask):
+        total = getattr(sms_hits[0], "match_total", None)
+        if total is None:
+            total = len(sms_hits)
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        label = (
+            "heart emoji / Loved tapbacks"
+            if R.SMS_HEART_ASK_RE.search(ask)
+            else "text messages"
+        )
+        text = f"{total} {label} ({scope})."
+        return "evidence_backed", text, statements, citations, None
+    if sms_hits and R.SMS_LAST_N_RE.search(ask):
+        who = ", ".join(
+            n
+            for n in (plan.person_names or ())
+            if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
+        ) or "the named person"
+        n = len(sms_hits)
+        total = getattr(sms_hits[0], "match_total", None) or n
+        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+        text = f"Last {n} of {total} text messages between you and {who} ({scope})."
+        return "evidence_backed", text, statements, citations, None
+
     parts = []
     if guided_capture:
         parts.append(
@@ -715,7 +762,27 @@ def _build_answer(
         if photo_status.get("disclosure"):
             parts.append(str(photo_status["disclosure"]))
     if evidence:
-        parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
+        sms_n = sum(
+            1
+            for h in evidence
+            if (getattr(h, "source", "") == "sms_export")
+            or str(getattr(h, "channel", "") or "").lower()
+            in {"sms", "text", "imessage", "mms", "rcs"}
+        )
+        scope = next(
+            (getattr(h, "count_scope", None) for h in evidence if getattr(h, "count_scope", None)),
+            None,
+        )
+        if sms_n and sms_n == len(evidence):
+            if scope:
+                parts.append(f"Found {len(evidence)} text message(s) ({scope}).")
+            else:
+                parts.append(
+                    f"Found {len(evidence)} text message(s) "
+                    "(ingested SMS/iMessage/MMS export — not a complete phone history)."
+                )
+        else:
+            parts.append(f"Found {len(evidence)} Evidence hit(s) (email/calendar).")
     if plan.retrieval_constraints:
         parts.append(
             "Retrieval used context constraints: "
@@ -781,6 +848,34 @@ class AskOrchestrator:
         from memorybox.profile import resolve_relational_ask
 
         rel = resolve_relational_ask(text)
+        if (
+            rel.intent == "none"
+            and plan.person_names
+            and not getattr(plan, "person_ids", ())
+            and plan.want_visual
+        ):
+            # Named "Show me Peggy George" → attach MB Person id so photo +
+            # video retrieve share the same identity (not name-only).
+            from memorybox.person import find_ask_person_by_name
+
+            pids: list[str] = []
+            labels: list[str] = []
+            for name in plan.person_names:
+                try:
+                    view = find_ask_person_by_name(name, photo=self.photo, lazy_seed=True)
+                except Exception:  # noqa: BLE001
+                    view = None
+                if not view:
+                    continue
+                pids.append(view.id)
+                labels.append(view.display_name or name)
+            if pids:
+                plan = replace(
+                    plan,
+                    person_ids=tuple(dict.fromkeys(pids)),
+                    person_names=tuple(dict.fromkeys(labels or list(plan.person_names))),
+                    notes=tuple(list(plan.notes) + ["resolved_person_ids_for_visual"]),
+                )
         if rel.intent != "none":
             notes = list(plan.notes) + ["i9a_relational_resolve"]
             if rel.ok and rel.intent in (
@@ -1100,8 +1195,12 @@ class AskOrchestrator:
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
-                qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
-                evidence = R.merge_evidence_hits(pg_hits, qd_hits)
+                if R._sms_ask(plan) and plan.want_communication:
+                    evidence = pg_hits
+                    qdrant_status = {"ok": True, "detail": "skipped_for_sms_ask"}
+                else:
+                    qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
+                    evidence = R.merge_evidence_hits(pg_hits, qd_hits)
                 if plan.retrieval_constraints:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints

@@ -506,7 +506,7 @@ def _prove_harness() -> dict[str, Any]:
         xmas = parse_temporal("Christmas 2022")
         _check(
             "i4_compose_christmas_window",
-            xmas.windows == (("2022-12-11", "2023-01-01"),),
+            xmas.windows == (("2022-12-04", "2023-01-01"),),
             checks,
             problems,
             f"christmas={xmas.windows}",
@@ -618,6 +618,40 @@ def _prove_harness() -> dict[str, Any]:
             "explore.js shared temporal/place sync markers",
         )
 
+        peggy_full = _plan("Show me Peggy George")
+        _check(
+            "i4_compose_show_me_peggy_george",
+            peggy_full.person_names == ("Peggy George",)
+            and peggy_full.place_names == ()
+            and peggy_full.time_start is None
+            and peggy_full.visual_scope == "broad"
+            and peggy_full.want_still
+            and peggy_full.want_video,
+            checks,
+            problems,
+            f"people={peggy_full.person_names} places={peggy_full.place_names} "
+            f"t={peggy_full.time_start} vs={peggy_full.visual_scope}",
+        )
+        sticky = AskContext(
+            session_id="prove-peggy-subject",
+            person_names=("Sue Will",),
+            place_names=("Alaska",),
+            time_start="2020-01-01",
+            time_end="2020-12-31",
+        )
+        peggy_fresh = plan_ask("Show me Peggy George", sticky)
+        _check(
+            "i4_show_me_person_clears_prior_subject",
+            peggy_fresh.person_names == ("Peggy George",)
+            and peggy_fresh.place_names == ()
+            and peggy_fresh.time_start is None
+            and peggy_fresh.visual_scope == "broad"
+            and "supersede_person_subject_change" in (peggy_fresh.notes or ()),
+            checks,
+            problems,
+            f"people={peggy_fresh.person_names} places={peggy_fresh.place_names} "
+            f"t={peggy_fresh.time_start} notes={peggy_fresh.notes}",
+        )
         peggy_in = _plan("Show me Peggy in 2021")
         _check(
             "i4_compose_show_me_peggy_year",
@@ -635,7 +669,7 @@ def _prove_harness() -> dict[str, Any]:
             "i4_compose_show_me_peggy_christmas",
             peggy_xmas.person_names == ("Peggy",)
             and peggy_xmas.place_names == ()
-            and peggy_xmas.temporal_windows == (("2021-12-11", "2022-01-01"),)
+            and peggy_xmas.temporal_windows == (("2021-12-04", "2022-01-01"),)
             and "Christmas" in peggy_xmas.event_labels,
             checks,
             problems,

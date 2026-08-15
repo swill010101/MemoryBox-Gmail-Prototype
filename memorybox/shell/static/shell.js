@@ -25,6 +25,50 @@
   const STACK_KEY = "mb_shell_context_stack";
   const RECENT_KEY = "mb_shell_recent_asks";
   const ACTIVE_PERSON_KEY = "mb_active_person";
+  const ACTIVE_ASK_KEY = "mb_active_ask";
+
+  function readRecent() {
+    try {
+      const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      return Array.isArray(list)
+        ? list.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 100)
+        : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeRecent(list) {
+    const uniq = [];
+    const seen = {};
+    (list || []).forEach((item) => {
+      const t = String(item || "").trim();
+      if (!t || seen[t]) return;
+      seen[t] = 1;
+      uniq.push(t);
+    });
+    const out = uniq.slice(0, 100);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(out));
+    } catch (_) {}
+    return out;
+  }
+
+  function hydrateAskHistory() {
+    return fetch("/ask/api/history")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
+        return readRecent();
+      })
+      .catch(() => readRecent());
+  }
+
+  function bindAllAskInputs() {
+    document
+      .querySelectorAll("#askInput, #mb-global-ask-input")
+      .forEach((el) => window.mbShell.bindAskHistory(el));
+  }
 
   function surface() {
     return (
@@ -73,18 +117,41 @@
     );
   }
 
+  function getActiveAsk() {
+    try {
+      return (sessionStorage.getItem(ACTIVE_ASK_KEY) || "").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function setActiveAsk(text) {
+    const t = String(text || "").trim();
+    try {
+      if (!t) sessionStorage.removeItem(ACTIVE_ASK_KEY);
+      else sessionStorage.setItem(ACTIVE_ASK_KEY, t);
+    } catch (_) {}
+  }
+
+  function withAsk(href) {
+    const ask = getActiveAsk();
+    if (!ask || !href || href === "/people/ui") return href;
+    if (/[?&]q=/.test(href)) return href;
+    return href + (href.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(ask);
+  }
+
   /** People destination: continue active person into Person Explorer when present. */
   function peopleHref() {
     const p = getActivePerson();
     if (p && p.id) {
-      return (
+      return withAsk(
         "/people/ui?person=" +
-        encodeURIComponent(p.id) +
-        (p.name ? "&person_name=" + encodeURIComponent(p.name) : "")
+          encodeURIComponent(p.id) +
+          (p.name ? "&person_name=" + encodeURIComponent(p.name) : "")
       );
     }
     if (p && p.name) {
-      return "/people/ui?person_name=" + encodeURIComponent(p.name);
+      return withAsk("/people/ui?person_name=" + encodeURIComponent(p.name));
     }
     return "/people/ui";
   }
@@ -127,22 +194,74 @@
     rememberAsk(text) {
       const t = (text || "").trim();
       if (!t) return;
-      let recent = [];
-      try {
-        recent = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-      } catch (_) {}
-      recent = [t].concat(recent.filter((x) => x !== t)).slice(0, 6);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+      writeRecent([t].concat(readRecent().filter((x) => x !== t)));
+      fetch("/ask/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
+        })
+        .catch(() => {});
     },
     recentAsks() {
-      try {
-        return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-      } catch (_) {
-        return [];
-      }
+      return readRecent();
+    },
+    bindAskHistory(input) {
+      // PowerShell-style: Up/Down replace the Ask box one command at a time. No dropdown.
+      if (!input || input.dataset.mbAskHistory === "1") return;
+      input.dataset.mbAskHistory = "1";
+      let histIndex = -1;
+      let draft = "";
+      let applying = false;
+      const applyHistory = (recent, key) => {
+        if (!recent.length) return;
+        applying = true;
+        if (histIndex < 0) draft = input.value;
+        if (key === "ArrowUp") {
+          if (histIndex < recent.length - 1) histIndex += 1;
+        } else if (histIndex < 0) {
+          applying = false;
+          return;
+        } else {
+          histIndex -= 1;
+        }
+        input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+        try {
+          const n = input.value.length;
+          input.setSelectionRange(n, n);
+        } catch (_) {}
+        applying = false;
+      };
+      input.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.isComposing) return;
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const recent = window.mbShell.recentAsks();
+          if (recent.length) {
+            applyHistory(recent, e.key);
+            return;
+          }
+          hydrateAskHistory().then((list) =>
+            applyHistory(list || window.mbShell.recentAsks(), e.key)
+          );
+        },
+        true
+      );
+      input.addEventListener("input", () => {
+        if (applying) return;
+        histIndex = -1;
+      });
     },
     getActivePerson,
     setActivePerson,
+    getActiveAsk,
+    setActiveAsk,
     peopleHref,
     refreshPeopleNavLinks,
   };
@@ -317,9 +436,11 @@
     document.getElementById("mb-open-global-ask").addEventListener("click", openGlobalAsk);
     document.getElementById("mb-global-ask-close").addEventListener("click", closeGlobalAsk);
     document.getElementById("mb-global-ask-go").addEventListener("click", submitGlobalAsk);
-    document.getElementById("mb-global-ask-input").addEventListener("keydown", (e) => {
+    const globalInput = document.getElementById("mb-global-ask-input");
+    globalInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitGlobalAsk();
     });
+    window.mbShell.bindAskHistory(globalInput);
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) closeGlobalAsk();
     });
@@ -329,6 +450,8 @@
     injectChrome();
     renderReturnBar();
     wireOutboundContext();
+    hydrateAskHistory();
+    bindAllAskInputs();
   }
 
   if (document.readyState === "loading") {

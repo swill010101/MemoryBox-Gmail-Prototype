@@ -64,6 +64,7 @@
 
   // Ask command examples (typed today; STT later shares applyAskCommand):
   // "Only photos." "Add video." "Clear filters." "Show everything."
+  // "Add texts." "Only texts." — I7: texts join / text-only; default Gallery hides SMS
   // "Show 2005 through 2011." "Only Oak Street." "Near Cascadia."
   // "Clear location." "Show map." "Show gallery."
   // "Clear context and go to People."
@@ -245,7 +246,30 @@
     );
   }
 
-  function matchesType(item, filter) {
+  function isSmsTextItem(item) {
+    const t = String((item && item.type) || "").toLowerCase();
+    return t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs";
+  }
+
+  function matchesType(item, filter, opts) {
+    const d = (opts && opts.domain) || (state && state.domain) || {};
+    const includeTexts = Boolean(
+      (opts && opts.includeTexts) ||
+        d.includeTexts ||
+        d.galleryShowSms ||
+        filter === "email"
+    );
+    if (isSmsTextItem(item)) {
+      if (filter === "email") return true;
+      // All = every type already in this result, including texts that are
+      // on-screen or explicitly requested. Hidden-by-default SMS stay out
+      // until Add texts / an explicit text ask — never empty a text result.
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeTexts) return false;
+        return true;
+      }
+      return Boolean(includeTexts);
+    }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
       // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
@@ -494,8 +518,49 @@
     );
   }
 
+  function maybeMergePersonVisuals() {
+    const hasVisual = rawItems.some((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video";
+    });
+    if (hasVisual) return;
+    const person = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    const name =
+      (person && person.label) ||
+      (PERSON && PERSON.displayName) ||
+      "";
+    if (!name || !liveMode) return;
+    liveFind("Show " + name)
+      .then((payload) => {
+        const extras = (payload.items || []).filter((it) => {
+          const t = String(it.type || "").toLowerCase();
+          return t === "photo" || t === "video";
+        });
+        extras.forEach((it) => {
+          if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
+        });
+        syncTimelineToEligibleDatedExtent();
+        render();
+      })
+      .catch(() => {});
+  }
+
   function setTypeFilter(id) {
+    const prev = state.domain.typeFilter;
+    const keepTexts = Boolean(
+      prev === "email" ||
+        id === "email" ||
+        state.domain.galleryShowSms ||
+        state.domain.includeTexts ||
+        rawItems.some((it) => isSmsTextItem(it) && !it.gallery_default_hidden)
+    );
     state.domain.typeFilter = id || "all";
+    if (id === "email" || (id === "all" && keepTexts)) {
+      state.domain.includeTexts = true;
+    }
+    // All stays clickable and keeps texts; merge Person photos/videos in
+    // without replacing the current text result (no Immich write).
+    if (id === "all") maybeMergePersonVisuals();
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -635,9 +700,13 @@
       }`;
       return;
     }
+    const trunc =
+      state.domain.smsTruncated && state.domain.smsMatchTotal
+        ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
+        : "";
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }`;
+    }${trunc}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -736,9 +805,10 @@
       return false;
     }
     if (
-      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4})/.test(
+      /^(christmas|easter|thanksgiving|halloween|summer|winter|spring|fall|labor|memorial|nye|nyd|new year|photos?|videos?|audio|everything|map|gallery|undated|highlights|all memories|\d{4}|texts?|sms|imessage|messages?|all the|all my)/.test(
         whoL
-      )
+      ) ||
+      /\b(text|sms|imessage|i-?message|mms|message)s?\b/.test(whoL)
     ) {
       return false;
     }
@@ -825,11 +895,18 @@
       placeFilter = null;
     }
     let nextType = typeFilter;
-    if (!keepPresentation) {
+    const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
+    const includeTexts = keepPresentation && state
+      ? Boolean(state.domain.includeTexts || galleryShowSms)
+      : galleryShowSms;
+    if (galleryShowSms) {
+      // Text-only ask → Email/Text filter selected (stay in sync with gallery)
+      nextType = "email";
+    } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
       else if (vs === "video_only") nextType = "video";
-      else nextType = "all";
+      else if (vs === "broad" || !keepPresentation) nextType = "all";
     }
     let temporalWindows = null;
     const rawWindows =
@@ -850,7 +927,10 @@
       rawItems.filter(
         (it) =>
           isDated(it) &&
-          matchesType(it, nextType) &&
+          matchesType(it, nextType, {
+            includeTexts,
+            domain: { includeTexts, galleryShowSms, typeFilter: nextType },
+          }) &&
           matchesPlace(it, placeFilter)
       )
     );
@@ -882,6 +962,10 @@
         _askKind: payload.answer_kind || "",
         chips: chips,
         typeFilter: nextType,
+        includeTexts: includeTexts,
+        galleryShowSms: galleryShowSms,
+        smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
+        smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
@@ -928,9 +1012,53 @@
     }
   }
 
+  const ASK_HIST_KEY = "mb_shell_recent_asks";
+
+  function readAskHistory() {
+    try {
+      const list = JSON.parse(localStorage.getItem(ASK_HIST_KEY) || "[]");
+      return Array.isArray(list)
+        ? list.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 100)
+        : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeAskHistory(list) {
+    const uniq = [];
+    const seen = {};
+    (list || []).forEach((item) => {
+      const t = String(item || "").trim();
+      if (!t || seen[t]) return;
+      seen[t] = 1;
+      uniq.push(t);
+    });
+    const out = uniq.slice(0, 100);
+    try {
+      localStorage.setItem(ASK_HIST_KEY, JSON.stringify(out));
+    } catch (_) {}
+    return out;
+  }
+
+  function rememberAskLocal(text) {
+    const t = String(text || "").trim();
+    if (!t) return;
+    writeAskHistory([t].concat(readAskHistory().filter((x) => x !== t)));
+    if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(t);
+    else {
+      fetch("/ask/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t }),
+      }).catch(() => {});
+    }
+  }
+
   function applyAskCommand(raw) {
     const text = String(raw || "").trim();
     if (!text) return;
+    rememberAskLocal(text);
     state.domain.askText = text;
     const lower = text.toLowerCase();
 
@@ -994,11 +1122,21 @@
       }
     }
 
-    if (/^clear filters\.?$/.test(lower) || /^show everything\.?$/.test(lower)) {
+    if (/^clear filters\.?$/.test(lower)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
       setViewMode("gallery");
+      state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      render();
+      return;
+    }
+    if (/^show everything\.?$/.test(lower)) {
+      setTypeFilter("all");
+      clearPlaceFilter();
+      setUndatedFilter(false);
+      setViewMode("gallery");
+      state.domain.includeTexts = true;
       render();
       return;
     }
@@ -1046,6 +1184,7 @@
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
+      state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
       state.domain.temporalWindows = null;
       resetTimelineExtent(false);
       setViewMode("gallery");
@@ -1112,7 +1251,17 @@
       render();
       return;
     }
-    if (/only (email|emails|text)/.test(lower)) {
+    if (
+      /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$/.test(lower) ||
+      /^add texts?\.?$/.test(lower)
+    ) {
+      state.domain.includeTexts = true;
+      syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (/only (email|emails|texts?|sms|imessage)\b/.test(lower)) {
+      state.domain.includeTexts = true;
       setTypeFilter("email");
       render();
       return;
@@ -1200,7 +1349,11 @@
         .then((payload) => {
           applyPayloadToState(payload, { keepPresentation: true });
           ensureLockedPersonChip();
-          setTypeFilter("all");
+          if (payload.explore_state && payload.explore_state.gallery_show_sms) {
+            setTypeFilter("email");
+            state.domain.includeTexts = true;
+            state.domain.galleryShowSms = true;
+          }
           render();
         })
         .catch((err) => {
@@ -1303,31 +1456,37 @@
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
       window.mbShell.setActivePerson({ id: id || "", name: name });
+      if (state.domain.askText && window.mbShell.setActiveAsk) {
+        window.mbShell.setActiveAsk(state.domain.askText);
+      }
       window.mbShell.refreshPeopleNavLinks();
     }
   }
 
   function peopleNavHref() {
+    let href = "/people/ui";
     if (window.mbShell && typeof window.mbShell.peopleHref === "function") {
-      return window.mbShell.peopleHref();
+      href = window.mbShell.peopleHref();
     }
     const chip =
       state &&
       state.domain &&
       (state.domain.chips || []).find((c) => c && c.kind === "person");
     if (PERSON_MODE && PERSON && PERSON.personId) {
-      return (
+      href =
         "/people/ui?person=" +
         encodeURIComponent(PERSON.personId) +
         (PERSON.displayName
           ? "&person_name=" + encodeURIComponent(PERSON.displayName)
-          : "")
-      );
+          : "");
+    } else if (chip && chip.label && href === "/people/ui") {
+      href = "/people/ui?person_name=" + encodeURIComponent(chip.label);
     }
-    if (chip && chip.label) {
-      return "/people/ui?person_name=" + encodeURIComponent(chip.label);
+    const ask = (state && state.domain && state.domain.askText) || "";
+    if (href && href !== "/people/ui" && ask) {
+      href += (href.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(ask);
     }
-    return "/people/ui";
+    return href;
   }
 
   function renderNav() {
@@ -1541,7 +1700,11 @@
     const media = it.thumb_url || it.media_url || "";
     if (t === "email" || t === "sms" || t === "text") {
       const from = escapeHtml(it.from || "Message");
-      return `<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      const nAtt = Array.isArray(it.attachments) ? it.attachments.length : Number(it.attachment_count || 0);
+      const att = nAtt
+        ? `<span class="mb-card-attach" title="${nAtt} attachment${nAtt === 1 ? "" : "s"} linked to this message">📎 ${nAtt}</span>`
+        : "";
+      return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
       return `<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
@@ -1636,9 +1799,13 @@
         : "";
     const viewBit =
       (state.gallery.viewMode || "gallery") === "map" ? " · map" : "";
+    const totalBit =
+      state.domain.smsTruncated && state.domain.smsMatchTotal
+        ? ` · ${state.domain.smsMatchTotal} matching texts (year-fair sample)`
+        : "";
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
-    }${placeBit}${undatedBit}${refineBit}${viewBit}`;
+    }${placeBit}${undatedBit}${refineBit}${viewBit}${totalBit}`;
   }
 
   function ensureMap() {
@@ -1927,6 +2094,7 @@
     if (prevBtn) prevBtn.disabled = idx <= 0;
     if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+    bindSmsAttachActions(item);
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
@@ -2048,6 +2216,7 @@
       if (!s) return;
       if (s.toLowerCase() === "unknown") return;
       if (s.toLowerCase() === "photo") return;
+      if (["attachments", "attachment", "image", "messages", "message", "and"].includes(s.toLowerCase())) return;
       if (!seen.includes(s)) seen.push(s);
     };
     if (Array.isArray(item.people)) item.people.forEach(push);
@@ -2390,6 +2559,80 @@
     if (current) current.textContent = personLabel;
   }
 
+  function bindSmsAttachActions(item) {
+    const eid = item && item.evidence_id;
+    if (!eid) return;
+    document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
+      img.addEventListener("error", () => {
+        const box = img.parentElement;
+        if (!box) return;
+        const name = img.getAttribute("alt") || "attachment";
+        const li = img.closest("li");
+        if (li) {
+          const extra = li.querySelector(".mb-sms-optional-artifact");
+          if (extra) extra.remove();
+        }
+        box.innerHTML =
+          "<p>This attachment is on the SMS record, but the image bytes were not stored at ingest. Re-run <code>python -m memorybox ingest-sms</code> so MemoryBox copies the file onto the message (not Immich).</p>" +
+          "<p class=\"mb-ev-meta\">Missing file: " +
+          escapeHtml(name) +
+          "</p>";
+        const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
+        fetch(
+          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (!data || data.bytes_present) return;
+            const bits = [];
+            if (data.import_path) bits.push("export: " + data.import_path);
+            if (data.attachments_dir) bits.push("attachments dir: " + data.attachments_dir);
+            if (bits.length) {
+              const p = document.createElement("p");
+              p.className = "mb-ev-meta";
+              p.textContent = bits.join(" · ");
+              box.appendChild(p);
+            }
+          })
+          .catch(() => {});
+      });
+    });
+    document.querySelectorAll(".mb-sms-to-library").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const idx = Number(btn.getAttribute("data-att-index") || 0);
+        const status = btn.parentElement && btn.parentElement.querySelector(".mb-sms-to-library-status");
+        btn.disabled = true;
+        if (status) {
+          status.hidden = false;
+          status.textContent = "Copying into MemoryBox…";
+        }
+        try {
+          const res = await fetch(
+            `/explore/api/sms-attachment/${encodeURIComponent(eid)}/to-library?index=${idx}`,
+            { method: "POST" }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || res.status);
+          if (status) {
+            status.textContent = "In MemoryBox library (not Immich).";
+          }
+          if (data.href) {
+            const a = document.createElement("a");
+            a.className = "mb-viewer-footbtn";
+            a.href = data.href;
+            a.textContent = "Open in Artifacts";
+            btn.replaceWith(a);
+          } else {
+            btn.textContent = "Added";
+          }
+        } catch (err) {
+          btn.disabled = false;
+          if (status) status.textContent = "Could not add: " + err;
+        }
+      });
+    });
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
@@ -2432,9 +2675,47 @@
         </div>
       </div>`;
     }
-    if (t === "email" || t === "sms" || t === "text") {
+    if (t === "email" || isSmsTextItem(item)) {
+      const atts = Array.isArray(item.attachments) ? item.attachments : [];
+      const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
+      const eid = escapeAttr(item.evidence_id || "");
+      const attHtml = atts.length
+        ? `<div class="mb-ev-attach"><strong>📎 ${atts.length} attachment${
+            atts.length === 1 ? "" : "s"
+          }</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>${atts}
+            .map((a, i) => {
+              const name = escapeHtml(a.filename || a.source_ref || "attachment");
+              const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
+              const src = `/explore/api/sms-attachment/${eid}?index=${i}`;
+              const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
+                String(a.attachment_type || a.filename || "")
+              );
+              const preview = isImg
+                ? `<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="${escapeAttr(
+                    src
+                  )}" alt="${name}" /></div>`
+                : `<p><a class="mb-viewer-footbtn" href="${escapeAttr(
+                    src
+                  )}" target="_blank" rel="noopener">Open ${name}</a></p>`;
+              return `<li data-att-index="${i}">${name}${kind}${preview}
+                <details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>
+                <button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="${i}">Copy to Artifacts</button>
+                <span class="mb-sms-to-library-status" hidden></span></details>
+              </li>`;
+            })
+            .join("")}</ul></div>`
+        : "";
+      const phoneHtml = mapped.length
+        ? `<p class="mb-ev-meta">Confirmed phone/handle: ${mapped
+            .map((m) => escapeHtml(m.handle || m.normalized || ""))
+            .filter(Boolean)
+            .join(", ")} — also shown on People.</p>`
+        : "";
       return `<div class="mb-ev-email">${escapeHtml(item.detail || item.preview || "")}</div>
-        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text</p>`;
+        ${attHtml}
+        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text${
+        item.direction ? " · " + escapeHtml(item.direction) : ""
+      }</p>${phoneHtml}`;
     }
     if (t === "story") {
       return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
@@ -2453,6 +2734,9 @@
     const media = item.thumb_url || item.media_url || "";
     const peeps = peopleList(item).slice(0, 4).join(", ");
     const place = item.place || item.location || item.city || "";
+    const isText = t === "email" || isSmsTextItem(item);
+    const body = String(item.detail || item.preview || item.title || "");
+    const nAtt = Array.isArray(item.attachments) ? item.attachments.length : Number(item.attachment_count || 0);
     const dur =
       item.duration_sec != null
         ? `${Math.floor(item.duration_sec / 60)}:${String(
@@ -2461,6 +2745,28 @@
         : item.t != null
           ? `@ ${Number(item.t).toFixed(0)}s`
           : "";
+    if (isText && state.preview && state.preview.attach) {
+      const att = (item.attachments || [])[0] || {};
+      const eid = escapeAttr(item.evidence_id || "");
+      const name = escapeHtml(att.filename || att.source_ref || "attachment");
+      const src = `/explore/api/sms-attachment/${eid}?index=0`;
+      return `<div class="mb-qp-body mb-qp-attach">
+      <div class="mb-qp-type">Attachment</div>
+      <div class="mb-qp-media"><img class="mb-qp-attach-img" src="${src}" alt="${name}" /></div>
+      <div class="mb-qp-line">${name}</div>
+    </div>`;
+    }
+    if (isText) {
+      return `<div class="mb-qp-body mb-qp-text">
+      <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
+      <div class="mb-qp-title">${escapeHtml(item.from || item.title || "Message")}</div>
+      <div class="mb-qp-line">${escapeHtml(fmtCardDate(item.date))}${
+        item.direction ? " · " + escapeHtml(item.direction) : ""
+      }</div>
+      ${peeps ? `<div class="mb-qp-line">${escapeHtml(peeps)}</div>` : ""}
+      <div class="mb-qp-textbody">${escapeHtml(body)}</div>
+    </div>`;
+    }
     const mediaBlock = media
       ? `<div class="mb-qp-media"><img src="${escapeAttr(media)}" alt="" /></div>`
       : `<div class="mb-qp-media"><span>${escapeHtml(TYPE_GLYPH[t] || "•")}</span></div>`;
@@ -2559,6 +2865,7 @@
   }
 
   const QUICK_PREVIEW_DELAY_MS = 2500;
+  const ATTACH_PREVIEW_DELAY_MS = 1000;
 
   function clearPreviewTimer() {
     if (state.preview && state.preview.timer) {
@@ -2572,6 +2879,7 @@
     if (state.preview) {
       state.preview.visible = false;
       state.preview.itemId = null;
+      state.preview.attach = false;
     }
     const el = document.getElementById("mb-quick-preview");
     if (el) {
@@ -2607,23 +2915,26 @@
     positionQuickPreviewAtPointer();
   }
 
-  function scheduleQuickPreview(item, clientX, clientY) {
+  function scheduleQuickPreview(item, clientX, clientY, opts) {
     if (!state.preview) {
-      state.preview = { timer: null, itemId: null, x: 0, y: 0, visible: false };
+      state.preview = { timer: null, itemId: null, x: 0, y: 0, visible: false, attach: false };
     }
     clearPreviewTimer();
     state.preview.x = clientX;
     state.preview.y = clientY;
+    state.preview.attach = !!(opts && opts.attach);
+    const delay = state.preview.attach ? ATTACH_PREVIEW_DELAY_MS : QUICK_PREVIEW_DELAY_MS;
     state.preview.timer = setTimeout(() => {
       state.preview.timer = null;
       if (state.modal.openId) return;
       renderQuickPreview(item);
-    }, QUICK_PREVIEW_DELAY_MS);
+    }, delay);
   }
 
   function bindCardPreview(card, id) {
     card.addEventListener("mouseenter", (ev) => {
       if (state.modal.openId) return;
+      if (ev.target && ev.target.closest && ev.target.closest(".mb-card-attach")) return;
       const it = rawItems.find((x) => x.id === id);
       if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
     });
@@ -2633,6 +2944,23 @@
       state.preview.y = ev.clientY;
     });
     card.addEventListener("mouseleave", hideQuickPreview);
+    const attachIcon = card.querySelector(".mb-card-attach");
+    if (attachIcon) {
+      attachIcon.addEventListener("mouseenter", (ev) => {
+        ev.stopPropagation();
+        if (state.modal.openId) return;
+        const it = rawItems.find((x) => x.id === id);
+        if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY, { attach: true });
+      });
+      attachIcon.addEventListener("mouseleave", (ev) => {
+        ev.stopPropagation();
+        hideQuickPreview();
+        if (card.matches(":hover") && !state.modal.openId) {
+          const it = rawItems.find((x) => x.id === id);
+          if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
+        }
+      });
+    }
     card.addEventListener("focus", () => {
       if (state.modal.openId) return;
       const it = rawItems.find((x) => x.id === id);
@@ -2883,16 +3211,77 @@
     hr.addEventListener("pointercancel", endHandle);
   }
 
+  function bindExploreAskHistory(input) {
+    // PowerShell-style: empty Ask, Up = last command in the box, Up again = previous. No dropdown.
+    if (!input || input.dataset.mbExploreHist === "1") return;
+    input.dataset.mbExploreHist = "1";
+    let histIndex = -1;
+    let draft = "";
+    let applying = false;
+
+    const loadRecent = () =>
+      fetch("/ask/api/history")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const server = data && Array.isArray(data.asks) ? data.asks : [];
+          return writeAskHistory(server.concat(readAskHistory()));
+        })
+        .catch(() => readAskHistory());
+
+    const cycle = (key, recent) => {
+      if (!recent.length) return;
+      applying = true;
+      if (histIndex < 0) draft = input.value;
+      if (key === "ArrowUp") {
+        if (histIndex < recent.length - 1) histIndex += 1;
+      } else if (histIndex < 0) {
+        applying = false;
+        return;
+      } else {
+        histIndex -= 1;
+      }
+      input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+      try {
+        const n = input.value.length;
+        input.setSelectionRange(n, n);
+      } catch (_) {}
+      applying = false;
+    };
+
+    input.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.isComposing) return;
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const local = readAskHistory();
+        if (local.length) {
+          cycle(e.key, local);
+          return;
+        }
+        loadRecent().then((recent) => cycle(e.key, recent));
+      },
+      true
+    );
+    input.addEventListener("input", () => {
+      if (!applying) histIndex = -1;
+    });
+    loadRecent();
+  }
+
   function bindChrome() {
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
-    document.getElementById("mb-explore-ask").addEventListener("keydown", (e) => {
+    const askInput = document.getElementById("mb-explore-ask");
+    askInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         applyAskCommand(e.target.value);
       }
     });
+    bindExploreAskHistory(askInput);
     document.getElementById("mb-density-minus").addEventListener("click", () => {
       state.gallery.density = Math.max(1, state.gallery.density - 1);
       renderGallery();
@@ -3030,6 +3419,10 @@
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
       } else if (PERSON_MODE) {
+        if (q.trim() && PERSON) {
+          PERSON.memoryMode = "all";
+          if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
+        }
         const seed = q || ("Show " + (PERSON.displayName || "person"));
         payload = await liveFind(seed);
         if (payload.session_id) {

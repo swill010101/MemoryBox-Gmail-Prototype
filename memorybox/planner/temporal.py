@@ -8,7 +8,8 @@ Northern-hemisphere meteorological seasons (explicit, testable):
 
 Holiday windows (defaults; later Settings):
   Most holidays: holiday_date − 2 days through holiday_date + 2 days
-  Christmas: Dec 11 (Christmas − 14 days) through Jan 1 (NYD) of the next year
+  Christmas / Christmas time / Christmas season: 3 weeks before Dec 25
+  through Jan 1 (NYD) of the next year
 
 US national (federal) holidays are included and computed per year when variable.
 Recurring holiday year ranges produce one window per year (not one contiguous band).
@@ -80,7 +81,12 @@ HOLIDAY_ALIASES: dict[str, str] = {
     "thanksgiving": "thanksgiving",
     "thanksgiving day": "thanksgiving",
     "christmas": "christmas",
+    "christmas time": "christmas",
+    "christmas season": "christmas",
+    "christmastime": "christmas",
     "xmas": "christmas",
+    "xmas time": "christmas",
+    "xmas season": "christmas",
     # Common family / cultural (non-federal but expected in Ask)
     "christmas eve": "christmas_eve",
     "new year's eve": "nye",
@@ -121,7 +127,7 @@ HOLIDAY_LABELS: dict[str, str] = {
 
 # Default evidence windows (days). Christmas is special-cased.
 DEFAULT_HOLIDAY_PAD_DAYS = 2
-CHRISTMAS_LEAD_DAYS = 14  # through NYD (Jan 1 next year)
+CHRISTMAS_LEAD_DAYS = 21  # 3 weeks before Dec 25 through NYD (Jan 1 next year)
 
 # Bare "at Christmas" / "at Thanksgiving" (no year) → one window per year.
 # Not a sticky single context year — family archives span decades.
@@ -282,7 +288,7 @@ def resolve_holiday_date(key: str, year: int) -> date:
 def holiday_window(key: str, year: int) -> tuple[str, str]:
     """Inclusive ISO window for one holiday occurrence."""
     if key == "christmas":
-        # 2 weeks before Christmas through New Year's Day (next calendar year).
+        # 3 weeks before Christmas through New Year's Day (next calendar year).
         start = date(year, 12, 25) - timedelta(days=CHRISTMAS_LEAD_DAYS)
         end = date(year + 1, 1, 1)
         return _iso(start), _iso(end)
@@ -442,7 +448,7 @@ def parse_temporal(text: str) -> TemporalParse:
         else:
             note = "temporal=holiday"
         if holiday_key == "christmas":
-            notes.append("christmas_window=minus_14d_through_nyd")
+            notes.append("christmas_window=minus_21d_through_nyd")
         else:
             notes.append(f"holiday_pad_days={DEFAULT_HOLIDAY_PAD_DAYS}")
         return TemporalParse(

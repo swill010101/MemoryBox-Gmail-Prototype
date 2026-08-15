@@ -104,13 +104,15 @@ python -m memorybox health
 - **Photos missing:** confirm `config\immich.env` and `MEMORYBOX_PHOTO_PROVIDER=immich`.  
 - **Videos missing:** confirm worker window is up and `MEMORYBOX_VIDEO_MEDIA_ROOT` points at the Home Videos share.
 
-Pull latest I4 branch when you want new code:
+Pull the increment you are testing (a plain `git pull` on another branch will not add new CLI commands):
 
 ```powershell
 cd C:\memorybox
-git fetch
-git checkout cursor/p2-i4-mixed-media-explore-3061
-git pull
+git fetch origin
+# I7 SMS/Text Evidence:
+git checkout cursor/p2-i7-sms-definition-3061
+git pull origin cursor/p2-i7-sms-definition-3061
+python -m memorybox prove-p2-i7
 .\startmb.cmd
 ```
 

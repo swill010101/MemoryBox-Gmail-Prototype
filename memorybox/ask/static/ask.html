@@ -5,31 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Ask</title>
   <style>
-    /* Page-local only; shell.css supplies MBUX chrome */
+    /* Page-local only; shell.css supplies MBUX chrome — dark, readable */
+    html[data-mb-surface="ask"] body,
+    html[data-mb-surface="ask"] body.mb-shell {
+      color: #e8edf5;
+    }
     #breadcrumb {
       margin: 0.65rem 0;
       padding: 0.55rem 0.7rem;
-      border: 1px dashed rgba(31, 77, 63, 0.28);
-      background: rgba(255, 255, 255, 0.55);
+      border: 1px dashed rgba(232, 237, 245, 0.22);
+      background: rgba(15, 20, 28, 0.72);
+      color: #e8edf5;
       min-height: 2.2rem;
       font-size: 0.9rem;
     }
-    #breadcrumb:empty::before { content: "Context: (none)"; color: #7a766c; }
+    #breadcrumb:empty::before { content: "Context: (none)"; color: #9aa3b5; }
     .crumb { display: inline-block; margin-right: 0.6rem; }
-    .crumb b { font-weight: 600; }
+    .crumb b { font-weight: 600; color: #f3f6fb; }
     .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; align-items: center; }
     .ask-section {
-      background: rgba(255, 255, 255, 0.72);
-      border: 1px solid rgba(31, 77, 63, 0.12);
+      background: rgba(20, 27, 39, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       padding: 0.85rem;
       margin-bottom: 0.75rem;
       border-radius: 2px;
+      color: #e8edf5;
     }
-    .ask-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: #1f4d3f; font-family: Georgia, serif; }
-    .warn { color: #6b3a3a; font-weight: 600; }
-    .muted { color: #6a655c; font-size: 0.85rem; }
+    .ask-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: #e8edf5; font-family: Georgia, serif; }
+    .warn { color: #f0b4a8; font-weight: 600; }
+    .muted { color: #9aa3b5; font-size: 0.85rem; }
     ul { margin: 0.25rem 0; padding-left: 1.2rem; }
-    #sessionId { font-size: 0.75rem; color: #6a655c; }
+    #sessionId { font-size: 0.75rem; color: #9aa3b5; }
+    #answer, #results, #citations { color: #e8edf5; }
     #resultsHome { display: none; }
     #resultsHome.is-open { display: block; }
   </style>
@@ -127,6 +134,17 @@
       localStorage.setItem("mb_ask_session", sessionId);
       document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
       renderBreadcrumb(data.context);
+      const planPeople = (data.plan && data.plan.person_names) || [];
+      const planIds = (data.plan && data.plan.person_ids) || [];
+      if (window.mbShell && (planPeople[0] || planIds[0])) {
+        if (window.mbShell.setActivePerson) {
+          window.mbShell.setActivePerson({ id: planIds[0] || "", name: planPeople[0] || "" });
+        }
+        if (window.mbShell.setActiveAsk) {
+          window.mbShell.setActiveAsk(document.getElementById("askInput").value || "");
+        }
+        if (window.mbShell.refreshPeopleNavLinks) window.mbShell.refreshPeopleNavLinks();
+      }
       const ans = document.getElementById("answer");
       const kind = data.answer_kind || "";
       ans.innerHTML = "";
@@ -261,14 +279,27 @@
       renderRecent();
       // I4: Mixed-Media Explore — live find (same Ask state). Demo only if ?demo= set.
       const lower = text.toLowerCase();
+      const personGuess = (text.match(/\b(?:show(?:\s+me)?|tell me about|who is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/) || [])[1]
+        || (text.match(/\b(?:with|from|about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/) || [])[1]
+        || "";
+      if (window.mbShell) {
+        if (personGuess && window.mbShell.setActivePerson) {
+          window.mbShell.setActivePerson({ id: "", name: personGuess });
+        }
+        if (window.mbShell.setActiveAsk) window.mbShell.setActiveAsk(text);
+        if (window.mbShell.refreshPeopleNavLinks) window.mbShell.refreshPeopleNavLinks();
+      }
       if (/peggy/.test(lower) && /christmas/.test(lower)) {
         // Prefer live Explore; optional demo prove uses ?demo=peggy-christmas
         window.location.href =
           "/explore/ui?q=" + encodeURIComponent(text);
         return;
       }
-      // Person-oriented asks: land on Explore with the same query
-      if (/^(show me|tell me about|who is)\b/i.test(text) || /\b(photo|photos|video|videos|memories)\b/i.test(lower)) {
+      // Person / memory / text asks: land on Explore with the same query (keep People context)
+      if (
+        /^(show|tell me about|who is)\b/i.test(text) ||
+        /\b(photo|photos|video|videos|memories|texts?|sms|imessage|messages?)\b/i.test(lower)
+      ) {
         window.location.href = "/explore/ui?q=" + encodeURIComponent(text);
         return;
       }
@@ -315,6 +346,15 @@
     document.getElementById("askInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter") doAsk();
     });
+    function wireAskHistory() {
+      const el = document.getElementById("askInput");
+      if (window.mbShell && window.mbShell.bindAskHistory && el) {
+        window.mbShell.bindAskHistory(el);
+        return true;
+      }
+      return false;
+    }
+    if (!wireAskHistory()) window.addEventListener("load", wireAskHistory);
     document.getElementById("clearBtn").addEventListener("click", clearContext);
     document.getElementById("changeBtn").addEventListener("click", changeContext);
     document.querySelectorAll(".mb-journey[data-ask]").forEach((btn) => {

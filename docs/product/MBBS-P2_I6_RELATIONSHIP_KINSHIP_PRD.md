@@ -1,11 +1,12 @@
 # MBBS — P2-I6 Relationship Graph, Relationship UX & Derived Kinship · PRD
 
-**Status:** BUILD APPROVED (Tom 2026-08-14 — full I6 directive; build if no blockers)  
+**Status:** **ACCEPTED** (Tom 2026-08-14 — “i6 passes”)  
 **Date:** 2026-08-14  
 **Owner:** Tom  
 **Increment:** P2-I6 (MBRM-001A) — Kinship Inference · A (+ Relationship UX)  
 **Branch:** `cursor/p2-i6-relationship-kinship-3061` (from I5 ACCEPTED)  
-**Depends:** P2-I5 ACCEPTED
+**Depends:** P2-I5 ACCEPTED  
+**Acceptance record:** [MBBS-P2_INCREMENT_6_DEFINITION.md](MBBS-P2_INCREMENT_6_DEFINITION.md)
 
 ## Problem
 
@@ -59,4 +60,5 @@ Per I6 directive §12 (modal CRUD, reciprocal consistency, derived + path explai
 
 ## Sign-off
 
-Tom: I6 directive + “if no questions or blockers you are approved to build” (2026-08-14).
+Tom: I6 directive + “if no questions or blockers you are approved to build” (2026-08-14).  
+**Increment:** **ACCEPTED** (2026-08-14 — Tom: “i6 passes”). EVS-209 kinship-in-photo = backlog **P2-BL-I6-01** (not a reopen). Next: I7 SMS definition (no build until authorized).

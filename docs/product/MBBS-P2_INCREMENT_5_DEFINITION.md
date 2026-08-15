@@ -39,4 +39,4 @@ Full backlog parking: [MBBS_P2_BACKLOG_PLANNING.md](MBBS_P2_BACKLOG_PLANNING.md)
 | Founder FlightSim acceptance | **ACCEPTED** (2026-08-14 — Tom: “accepted, i5”) |
 | Immich preferred portrait | **BACKLOG** P2-BL-I5-01 (not a reopen) |
 
-P2-I5 is **ACCEPTED**. Next increment only when Tom authorizes (default direction: I6 Kinship per MBRM-001A).
+P2-I5 is **ACCEPTED**. **P2-I6 Kinship** is **ACCEPTED** (2026-08-14). Next: [P2-I7 SMS/Text Evidence](MBBS-P2_INCREMENT_7_DEFINITION.md) (**BUILD AUTHORIZED** 2026-08-14).

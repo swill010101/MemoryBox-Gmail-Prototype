@@ -5,25 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox People</title>
   <style>
-    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; --ok:#1d5c3a; }
+    :root { --ink:#e8edf5; --line:rgba(255,255,255,0.14); --accent:#5b8cff; --panel:#141b27; --warn:#f0b4a8; --ok:#3dcf9a; }
     * { box-sizing: border-box; }
+    html[data-mb-surface="people"] body,
+    html[data-mb-surface="people"] body.mb-shell,
     body {
       margin: 0;
       font-family: "Segoe UI", "Helvetica Neue", sans-serif;
-      background: linear-gradient(165deg, #e4e8ef 0%, #f7f8fb 55%, #eef1f6 100%);
-      color: var(--ink);
+      background: #0f141c !important;
+      color: var(--ink) !important;
       min-height: 100vh;
     }
     main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
     h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
     h2 { font-size: 1.05rem; margin: 0 0 0.45rem; }
-    .sub { color: #5a6170; font-size: 0.92rem; margin-bottom: 1rem; }
+    .sub { color: #9aa3b5; font-size: 0.92rem; margin-bottom: 1rem; }
     label { display: block; font-size: 0.88rem; margin: 0.55rem 0 0.2rem; font-weight: 600; }
     input, select, textarea {
       width: 100%;
       padding: 0.6rem 0.75rem;
       border: 1px solid var(--line);
-      background: #fff;
+      background: #1a2230;
+      color: #e8edf5;
       font: inherit;
     }
     button {
@@ -36,14 +39,14 @@
       margin-top: 0.55rem;
       font: inherit;
     }
-    button.secondary { background: #fff; color: var(--accent); }
+    button.secondary { background: #1a2230; color: #c9dbff; }
     section {
       background: var(--panel);
       border: 1px solid var(--line);
       padding: 1rem;
       margin-bottom: 0.85rem;
     }
-    .muted { color: #6a7180; font-size: 0.86rem; }
+    .muted { color: #9aa3b5; font-size: 0.86rem; }
     .warn { color: var(--warn); font-weight: 600; }
     .ok { color: var(--ok); font-weight: 600; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
@@ -54,7 +57,7 @@
       padding: 0.12rem 0.45rem;
       border: 1px solid var(--line);
       margin-left: 0.35rem;
-      color: #5a6170;
+      color: #9aa3b5;
     }
     .profile-block { margin: 0.65rem 0; padding: 0.55rem 0; border-top: 1px solid var(--line); }
     .profile-block:first-of-type { border-top: 0; }
@@ -62,13 +65,13 @@
     ul.clean { margin: 0.25rem 0 0; padding-left: 1.15rem; }
     .contact-card {
       border: 1px solid var(--line);
-      background: #fff;
+      background: #1a2230;
       padding: 0.65rem 0.75rem;
       margin: 0.45rem 0;
       cursor: pointer;
     }
     .contact-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-    .contact-card .kind { font-size: 0.78rem; color: #5a6170; text-transform: uppercase; letter-spacing: 0.03em; }
+    .contact-card .kind { font-size: 0.78rem; color: #9aa3b5; text-transform: uppercase; letter-spacing: 0.03em; }
     .contact-card .val { font-size: 1.05rem; font-weight: 600; margin-top: 0.15rem; }
     .contact-card .edit-row { display: none; margin-top: 0.55rem; }
     .contact-card.active .edit-row { display: block; }

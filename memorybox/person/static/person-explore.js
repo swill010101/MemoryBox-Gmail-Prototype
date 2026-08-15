@@ -147,6 +147,19 @@
             .join("")
         : "<li>No relationships recorded yet.</li>") +
       "</ul></section>";
+    const contacts = p.contacts || [];
+    html +=
+      '<section class="mb-person-sec"><h3>Confirmed contacts</h3><ul>' +
+      (contacts.length
+        ? contacts
+            .map((c) => {
+              const kind = escapeHtml(c.contact_kind || "contact");
+              const val = escapeHtml(c.value_text || "");
+              return "<li>" + kind + ": <b>" + val + "</b> (confirmed)</li>";
+            })
+            .join("")
+        : "<li>No confirmed phone or email yet.</li>") +
+      "</ul></section>";
     html +=
       '<section class="mb-person-sec"><h3>Places</h3><ul><li>Important Places can be linked as they are confirmed. No latitude/longitude shown here.</li></ul></section>';
     html +=
@@ -419,6 +432,15 @@
     row("Relationship", rel ? rel.charAt(0).toUpperCase() + rel.slice(1) : null);
     row("Born", birth && birth.value_date);
     row("Died", death && death.value_date);
+    const contacts = profile.contacts || [];
+    const phones = contacts.filter((c) => String(c.contact_kind || "") === "phone");
+    const emails = contacts.filter((c) => String(c.contact_kind || "") === "email");
+    phones.forEach((c) => {
+      row("Confirmed phone", c.value_text || "");
+    });
+    emails.forEach((c) => {
+      row("Confirmed email", c.value_text || "");
+    });
     if (!about.children.length) {
       about.innerHTML =
         '<p class="mb-person-empty">No profile details recorded yet.</p>';

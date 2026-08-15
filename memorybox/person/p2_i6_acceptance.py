@@ -224,7 +224,8 @@ def run_p2_i6_acceptance() -> dict:
         },
         "note": (
             "Harness covers structure + core kinship graph. "
-            "FlightSim manual: Relationships modal CRUD on Person Explorer."
+            "P2-I6 ACCEPTED 2026-08-14 (Tom). "
+            "EVS-209 = backlog P2-BL-I6-01 (not a reopen)."
         ),
     }
 

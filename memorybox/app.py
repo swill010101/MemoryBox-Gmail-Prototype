@@ -178,6 +178,10 @@ class AskRequest(BaseModel):
     session_id: str | None = None
 
 
+class AskHistoryRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
 class ContextChangeRequest(BaseModel):
     person_names: list[str] | None = None
     place_names: list[str] | None = None
@@ -453,6 +457,18 @@ def explore_demo(demo_id: str) -> dict[str, Any]:
     return payload
 
 
+def _remember_ask_text(text: str) -> None:
+    t = str(text or "").strip()
+    if not t:
+        return
+    try:
+        from memorybox.ask.history import remember_ask
+
+        remember_ask(t)
+    except Exception:
+        return
+
+
 @app.get("/explore/api/find")
 def explore_find(
     q: str = Query("", description="Natural-language Ask / find"),
@@ -461,6 +477,7 @@ def explore_find(
     """Live Mixed-Media Find → Explore item contract (I4 real path)."""
     from memorybox.explore.find import build_explore_find
 
+    _remember_ask_text(q)
     try:
         return build_explore_find(
             ask_text=q,
@@ -476,6 +493,7 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
     """Same as GET /explore/api/find using AskRequest body."""
     from memorybox.explore.find import build_explore_find
 
+    _remember_ask_text(body.ask)
     try:
         return build_explore_find(
             ask_text=body.ask,
@@ -512,6 +530,58 @@ def explore_photo_people(external_id: str) -> dict[str, Any]:
         if name and name not in people:
             people.append(name)
     return {"ok": True, "external_id": eid, "people": people, "faces": faces}
+
+
+@app.get("/explore/api/sms-attachment/{evidence_id}")
+def explore_sms_attachment(evidence_id: str, index: int = Query(0, ge=0, le=32)) -> Response:
+    """Preview an SMS/iMessage attachment from the staged export. No Immich write."""
+    from memorybox.explore.sms_attach import SmsAttachError, read_sms_attachment_bytes
+
+    try:
+        data, mime, name = read_sms_attachment_bytes(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    safe = name.replace('"', "")
+    return Response(
+        content=data,
+        media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{safe}"'},
+    )
+
+
+@app.get("/explore/api/sms-attachment/{evidence_id}/meta")
+def explore_sms_attachment_meta(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    """Where Ask will look for SMS attachment bytes. No Immich write."""
+    from memorybox.explore.sms_attach import SmsAttachError, load_sms_attachment
+
+    try:
+        info = load_sms_attachment(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "filename": info.get("filename"),
+        "bytes_present": bool(info.get("bytes_present")),
+        "import_path": info.get("import_path"),
+        "attachments_dir": info.get("attachments_dir"),
+        "search_roots": info.get("search_roots") or [],
+        "immich_write": False,
+    }
+
+
+@app.post("/explore/api/sms-attachment/{evidence_id}/to-library")
+def explore_sms_attachment_to_library(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    """Copy attachment into MemoryBox Artifact storage. Never writes Immich."""
+    from memorybox.explore.sms_attach import SmsAttachError, add_sms_attachment_to_mb_library
+
+    try:
+        return add_sms_attachment_to_mb_library(evidence_id, index)
+    except SmsAttachError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/family-night/ui")
@@ -855,8 +925,24 @@ def library_video_poster(
 
 @app.post("/ask")
 def ask_endpoint(body: AskRequest) -> dict[str, Any]:
+    _remember_ask_text(body.ask)
     result = get_orchestrator().ask(body.ask, session_id=body.session_id)
     return result.to_dict()
+
+
+@app.get("/ask/api/history")
+def ask_history_get() -> dict[str, Any]:
+    """Last 100 asks on this machine. Survives serve shutdown."""
+    from memorybox.ask.history import read_asks
+
+    return {"ok": True, "asks": read_asks()}
+
+
+@app.post("/ask/api/history")
+def ask_history_post(body: AskHistoryRequest) -> dict[str, Any]:
+    from memorybox.ask.history import remember_ask
+
+    return {"ok": True, "asks": remember_ask(body.text)}
 
 
 @app.get("/ask/context/{session_id}")
