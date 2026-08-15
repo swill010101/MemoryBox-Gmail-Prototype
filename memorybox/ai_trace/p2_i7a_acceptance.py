@@ -129,6 +129,23 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         "No MBQL implementation in I7A",
     )
+    explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")
+    _check(
+        "explore_chrome_before_find",
+        "Bind Ask chrome before any find" in explore_js
+        and "chromeBound" in explore_js
+        and "hydrateExploreHistory" in explore_js,
+        checks,
+        problems,
+        "Explore binds Enter/history before the first find returns",
+    )
+    _check(
+        "empty_find_skips_orchestrator",
+        "orch = None if not str(q" in app_py,
+        checks,
+        problems,
+        "Empty Explore find must not construct AskOrchestrator",
+    )
 
 
 def _redact_checks(checks: dict[str, Any], problems: list[str]) -> None:

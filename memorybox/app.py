@@ -578,10 +578,13 @@ def explore_find(
 
     _remember_ask_text(q)
     try:
+        # Empty Explore boot must not construct the orchestrator (Ollama/Immich
+        # health). That blocked chrome bind and made Enter / history look dead.
+        orch = None if not str(q or "").strip() else get_orchestrator()
         return build_explore_find(
             ask_text=q,
             session_id=session_id,
-            orchestrator=get_orchestrator(),
+            orchestrator=orch,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
@@ -594,10 +597,11 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
 
     _remember_ask_text(body.ask)
     try:
+        orch = None if not str(body.ask or "").strip() else get_orchestrator()
         return build_explore_find(
             ask_text=body.ask,
             session_id=body.session_id,
-            orchestrator=get_orchestrator(),
+            orchestrator=orch,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc

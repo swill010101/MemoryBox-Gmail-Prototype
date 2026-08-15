@@ -200,8 +200,15 @@
       try {
         const pack = await jget("/dev/api/ai-trace/" + selectedId);
         renderDetail(pack);
-      } catch (_) {
-        /* keep list */
+      } catch (err) {
+        const msg = String((err && err.message) || err || "");
+        if (msg.indexOf(" 404") !== -1) {
+          selectedId = null;
+          if (!liveEl.checked) {
+            detailEl.innerHTML =
+              "<p class=\"empty\">That trace is no longer in the store (retention or clear).</p>";
+          }
+        }
       }
     }
   }

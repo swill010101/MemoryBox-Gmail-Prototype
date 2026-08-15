@@ -104,6 +104,10 @@
   let mapInstance = null;
   let mapClusterLayer = null;
   let mapReady = false;
+  let chromeBound = false;
+  let timelineBound = false;
+  let findGen = 0;
+  let histHydrate = null;
 
   function dayMs(y, m, d) {
     return Date.UTC(y, m - 1, d);
@@ -856,6 +860,49 @@
     return true;
   }
 
+  function emptyExplorePayload(askText) {
+    return {
+      ok: true,
+      demo: false,
+      live: true,
+      ask_text: String(askText || ""),
+      title: "What would you like to see?",
+      summary: "Ask MemoryBox about a person, place, time, or kind of memory.",
+      chips: [],
+      items: [],
+      counts: {},
+      session_id: sessionId,
+      provider_status: {},
+    };
+  }
+
+  function showSearching(askText) {
+    const title = String(askText || "").trim();
+    const heading = title
+      ? title.length > 48
+        ? title.slice(0, 45) + "…"
+        : title
+      : "Memories";
+    const titleEl = document.getElementById("mb-explore-curator-title");
+    const bodyEl = document.getElementById("mb-explore-curator-body");
+    if (titleEl) titleEl.textContent = heading;
+    if (bodyEl) bodyEl.textContent = "Searching…";
+    if (state && state.domain) {
+      state.domain.title = heading;
+      state.domain.summary = "Searching…";
+    }
+  }
+
+  function markAskDirty() {
+    const el = document.getElementById("mb-explore-ask");
+    if (el) el.dataset.mbAskDirty = "1";
+  }
+
+  function clearAskDirty() {
+    const el = document.getElementById("mb-explore-ask");
+    if (el) el.dataset.mbAskDirty = "";
+  }
+
   async function liveFind(askText) {
     const q = personScopedAsk(askText);
     const url =
@@ -1058,8 +1105,12 @@
   function applyAskCommand(raw) {
     const text = String(raw || "").trim();
     if (!text) return;
+    clearAskDirty();
     rememberAskLocal(text);
-    state.domain.askText = text;
+    if (!state) {
+      applyPayloadToState(emptyExplorePayload(text), { keepPresentation: false });
+    }
+    if (state && state.domain) state.domain.askText = text;
     const lower = text.toLowerCase();
 
     // Navigation / clear context — bare People picker (drop active person)
@@ -1086,8 +1137,11 @@
       resetTimelineExtent(false);
       setViewMode("gallery");
       if (PERSON.memoryMode) PERSON.memoryMode = PERSON.memoryMode;
+      const gen = ++findGen;
+      showSearching("Show " + (PERSON.displayName || "person"));
       liveFind("Show " + (PERSON.displayName || "person"))
         .then((payload) => {
+          if (gen !== findGen) return;
           applyPayloadToState(payload, { keepPresentation: true });
           // Re-assert locked person chip
           ensureLockedPersonChip();
@@ -1326,8 +1380,11 @@
           );
           state.domain.chips = chips;
           ensureLockedPersonChip();
+          const gen = ++findGen;
+          showSearching("Show " + (PERSON.displayName || ""));
           liveFind("Show " + (PERSON.displayName || ""))
             .then((payload) => {
+              if (gen !== findGen) return;
               applyPayloadToState(payload, { keepPresentation: true });
               ensureLockedPersonChip();
               render();
@@ -1345,8 +1402,11 @@
 
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
+      const gen = ++findGen;
+      showSearching(text);
       liveFind(text)
         .then((payload) => {
+          if (gen !== findGen) return;
           applyPayloadToState(payload, { keepPresentation: true });
           ensureLockedPersonChip();
           if (payload.explore_state && payload.explore_state.gallery_show_sms) {
@@ -2041,7 +2101,10 @@
   }
 
   function render() {
-    document.getElementById("mb-explore-ask").value = state.domain.askText || "";
+    const askEl = document.getElementById("mb-explore-ask");
+    if (askEl && document.activeElement !== askEl && askEl.dataset.mbAskDirty !== "1") {
+      askEl.value = state.domain.askText || "";
+    }
     ensureLockedPersonChip();
     syncActivePersonContext();
     syncPersonChrome();
@@ -3042,6 +3105,8 @@
   }
 
   function bindTimeline() {
+    if (timelineBound) return;
+    timelineBound = true;
     const track = document.getElementById("mb-tl-track");
     const hl = document.getElementById("mb-tl-handle-l");
     const hr = document.getElementById("mb-tl-handle-r");
@@ -3211,6 +3276,18 @@
     hr.addEventListener("pointercancel", endHandle);
   }
 
+  function hydrateExploreHistory() {
+    if (histHydrate) return histHydrate;
+    histHydrate = fetch("/ask/api/history")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const server = data && Array.isArray(data.asks) ? data.asks : [];
+        return writeAskHistory(server.concat(readAskHistory()));
+      })
+      .catch(() => readAskHistory());
+    return histHydrate;
+  }
+
   function bindExploreAskHistory(input) {
     // PowerShell-style: empty Ask, Up = last command in the box, Up again = previous. No dropdown.
     if (!input || input.dataset.mbExploreHist === "1") return;
@@ -3218,15 +3295,6 @@
     let histIndex = -1;
     let draft = "";
     let applying = false;
-
-    const loadRecent = () =>
-      fetch("/ask/api/history")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          const server = data && Array.isArray(data.asks) ? data.asks : [];
-          return writeAskHistory(server.concat(readAskHistory()));
-        })
-        .catch(() => readAskHistory());
 
     const cycle = (key, recent) => {
       if (!recent.length) return;
@@ -3241,6 +3309,7 @@
         histIndex -= 1;
       }
       input.value = histIndex < 0 ? draft : recent[histIndex] || "";
+      markAskDirty();
       try {
         const n = input.value.length;
         input.setSelectionRange(n, n);
@@ -3260,17 +3329,20 @@
           cycle(e.key, local);
           return;
         }
-        loadRecent().then((recent) => cycle(e.key, recent));
+        hydrateExploreHistory().then((recent) => cycle(e.key, recent || readAskHistory()));
       },
       true
     );
     input.addEventListener("input", () => {
       if (!applying) histIndex = -1;
+      markAskDirty();
     });
-    loadRecent();
+    hydrateExploreHistory();
   }
 
   function bindChrome() {
+    if (chromeBound) return;
+    chromeBound = true;
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
@@ -3369,7 +3441,7 @@
 
   function bootFromPayload(payload) {
     liveMode = !payload.demo;
-    applyPayloadToState(payload, { keepPresentation: false });
+    applyPayloadToState(payload, { keepPresentation: Boolean(state) });
     ensureLockedPersonChip();
     syncActivePersonContext();
     renderNav();
@@ -3411,6 +3483,8 @@
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
       null;
+    // Bind Ask chrome before any find so Enter / Up / Down work on first paint.
+    bindChrome();
     try {
       let payload;
       if (demo) {
@@ -3418,21 +3492,27 @@
         const res = await fetch(`/explore/api/demo/${encodeURIComponent(demo)}`);
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
-      } else if (PERSON_MODE) {
-        if (q.trim() && PERSON) {
-          PERSON.memoryMode = "all";
-          if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
-        }
-        const seed = q || ("Show " + (PERSON.displayName || "person"));
-        payload = await liveFind(seed);
-        if (payload.session_id) {
-          localStorage.setItem("mb_ask_session", payload.session_id);
-        }
-      } else {
-        payload = await liveFind(q);
-        if (payload.session_id) {
-          localStorage.setItem("mb_ask_session", payload.session_id);
-        }
+        bootFromPayload(payload);
+        return;
+      }
+      if (!PERSON_MODE && !String(q).trim()) {
+        bootFromPayload(emptyExplorePayload(""));
+        return;
+      }
+      const bootGen = ++findGen;
+      bootFromPayload(emptyExplorePayload(q));
+      const seed = PERSON_MODE
+        ? q || ("Show " + (PERSON.displayName || "person"))
+        : q;
+      if (PERSON_MODE && q.trim() && PERSON) {
+        PERSON.memoryMode = "all";
+        if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
+      }
+      showSearching(seed);
+      payload = await liveFind(seed);
+      if (bootGen !== findGen) return;
+      if (payload.session_id) {
+        localStorage.setItem("mb_ask_session", payload.session_id);
       }
       bootFromPayload(payload);
     } catch (err) {

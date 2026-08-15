@@ -243,7 +243,6 @@ def insert_trace(
                     _json(assembled_context),
                 ),
             )
-        cleanup()
         return True
     except Exception as exc:  # noqa: BLE001
         _warn("insert_trace", exc)
