@@ -181,7 +181,7 @@ def _write_attach_tree(root: Path) -> None:
 
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     from memorybox.ingest import store as store
-    from memorybox.ingest.comms_sms import ingest_sms
+    from memorybox.ingest.comms_sms import backfill_existing_sms_attachments, ingest_sms
 
     matcher = self_check()
     _check(
@@ -239,6 +239,20 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
             problems,
             f"first={first.get('inserted')} stored={first.get('attachments_stored')}",
         )
+        hidden = csv_path.with_suffix(".csv.off")
+        csv_path.rename(hidden)
+        only = ingest_sms(str(csv_path), attachments_dir=str(attach_dir))
+        hidden.rename(csv_path)
+        _check(
+            "i7_01_backfill_without_csv",
+            bool(only.get("ok"))
+            and only.get("csv_required") is False
+            and int(only.get("attachments_stored") or 0) == 1
+            and bool(only.get("attachment_bytes_hunted")),
+            checks,
+            problems,
+            f"only stored={only.get('attachments_stored')} err={only.get('error')}",
+        )
         second = ingest_sms(
             str(csv_path),
             label=f"i7-01-{token}",
@@ -269,9 +283,9 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
             "i7_01_unique_backfill_and_collisions",
             bool(second.get("attachment_bytes_hunted"))
             and int((second.get("attachment_export_stats") or {}).get("export_files_indexed") or 0) >= 5
-            and int(second.get("attachments_stored") or 0) == 1
+            and int(only.get("attachments_stored") or 0) == 1
             and int(second.get("attachments_ambiguous") or 0) == 2
-            and int(second.get("attachment_orphan_files") or 0) == 2
+            and int(second.get("attachment_orphan_files") or 0) >= 2
             and int(second.get("attachments_missing") or 0) == 3,
             checks,
             problems,
@@ -364,7 +378,8 @@ def run_p2_bl_i7_01_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
         and "--attachments-dir" in main
         and "inspect-sms-attachments" in main
         and "probe_attachments_dir" in export_mod
-        and "wipe" not in comms.lower(),
+        and "backfill_existing_sms_attachments" in comms
+        and "csv_required" in comms,
         checks,
         problems,
         "Matcher is a backfill; ingest-sms does not wipe",

@@ -23,6 +23,7 @@ _EXPORT_PREFIX = re.compile(
 _ISO_WALL = re.compile(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2}):(\d{2})")
 _COLLISION_SUFFIX = re.compile(r"-\d+$")
 _PHONE_LIKE = re.compile(r"^[+\d][\d\s\-().]{5,}$")
+_MESSAGES_PREFIX = re.compile(r"^messages\s*-\s*", re.IGNORECASE)
 _UUID_IN_NAME = re.compile(
     r"([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
 )
@@ -126,9 +127,19 @@ def _strip_collision_suffix(text: str) -> str:
     return _COLLISION_SUFFIX.sub("", (text or "").strip())
 
 
+def strip_export_label(text: str) -> str:
+    """Folders are `Messages - {Chat Session}`; CSV Chat Session has no prefix."""
+    cleaned = _MESSAGES_PREFIX.sub("", (text or "").strip())
+    return _strip_collision_suffix(cleaned)
+
+
 def normalize_chat(text: str) -> str:
-    cleaned = _strip_collision_suffix(text or "")
+    cleaned = strip_export_label(text or "")
     return re.sub(r"\s+", " ", cleaned).strip().casefold()
+
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text or "")
 
 
 def chat_tokens(text: str) -> list[str]:
@@ -161,11 +172,23 @@ def chat_matches(
     export_n = normalize_chat(export_chat)
     if not export_n:
         return False
+    export_digits = _digits(export_n)
     for label in (thread_id, group_name):
         raw = str(label or "").strip()
-        if not raw or _PHONE_LIKE.match(raw):
+        if not raw:
             continue
         label_n = normalize_chat(raw)
+        label_digits = _digits(raw)
+        if (
+            export_digits
+            and label_digits
+            and len(export_digits) >= 10
+            and len(label_digits) >= 10
+            and export_digits[-10:] == label_digits[-10:]
+        ):
+            return True
+        if _PHONE_LIKE.match(raw) or (export_digits and len(export_digits) >= 10 and export_n.replace("+", "").isdigit()):
+            continue
         if export_n == label_n:
             return True
         export_parts = chat_tokens(export_chat)
@@ -181,14 +204,12 @@ def chat_matches(
 
 
 def _split_chat_type(rest: str) -> tuple[str, str]:
+    """`{chat} - {Photo|Web link|original filename}`."""
     text = (rest or "").strip()
     if " - " not in text:
         return text, ""
     chat, typ = text.rsplit(" - ", 1)
-    typ_n = typ.strip().casefold()
-    if any(typ_n == label or typ_n.startswith(label) for label in _TYPE_LABELS):
-        return chat.strip(), typ.strip()
-    return text, ""
+    return chat.strip(), typ.strip()
 
 
 def parse_export_filename(name: str) -> ParsedExportName | None:
@@ -714,6 +735,23 @@ def self_check() -> dict[str, bool]:
         "chat_truncated_group": chat_matches(
             "Andrew George & Peggy George & Rick Geor-2",
             thread_id=group_chat,
+        ),
+        "chat_messages_prefix": chat_matches(
+            "Messages - Zach Hickert",
+            thread_id="Zach Hickert",
+        ),
+        "chat_phone_folder": chat_matches(
+            "Messages - +13145601721",
+            thread_id="+13145601721",
+        ),
+        "parse_original_filename": bool(
+            parse_export_filename(
+                "2026-08-02 19 47 56 - Zach Hickert & William Galczynski - image000000.jpg"
+            )
+            and parse_export_filename(
+                "2026-08-02 19 47 56 - Zach Hickert & William Galczynski - image000000.jpg"
+            ).chat
+            == "Zach Hickert & William Galczynski"
         ),
         "chat_rejects_other": not chat_matches("Peggy", thread_id=group_chat),
         "wall_clock_iso": wall_clock_from_sent_at("2020-03-15T14:02:00+00:00")
