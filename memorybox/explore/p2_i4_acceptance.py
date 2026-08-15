@@ -760,7 +760,9 @@ def _prove_harness() -> dict[str, Any]:
                 self._calls: list[dict[str, Any]] = []
 
             def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
-                assert method == "POST" and path == "/search/metadata"
+                if method != "POST":
+                    return 404, None
+                assert path == "/search/metadata"
                 # Prefer withExif for Map GPS; fake Immich accepts it.
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
@@ -868,6 +870,86 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             "Face fallback must use asset UUIDs, not thumbnailPath",
+        )
+
+        class _RstMetadataFacesImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if method == "GET" and str(path).startswith("/people/person-1"):
+                    return 200, {
+                        "id": "person-1",
+                        "name": "Peggy George",
+                        "faceAssetId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        "faces": [
+                            {
+                                "id": "f1",
+                                "assetId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                            },
+                            {
+                                "id": "f2",
+                                "assetId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                            },
+                        ],
+                    }
+                return 404, None
+
+        client5 = _RstMetadataFacesImmich()
+        got_faces = client5.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_via_faces_when_metadata_rst",
+            len(got_faces) >= 2
+            and {
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+            }.issubset({str(x.get("id")) for x in got_faces}),
+            checks,
+            problems,
+            f"n={len(got_faces)} ids={[x.get('id') for x in got_faces]}",
+        )
+
+        class _RstMetadataTimelineImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                p = str(path)
+                if "timeline/buckets" in p:
+                    return 200, [{"timeBucket": "2020-01-01", "count": 2}]
+                if "timeline/bucket" in p:
+                    return 200, {
+                        "id": [
+                            "ccccccc1-1111-2222-3333-444444444444",
+                            "ccccccc2-1111-2222-3333-444444444444",
+                        ],
+                        "isImage": [True, True],
+                        "fileCreatedAt": [
+                            "2020-01-15T00:00:00.000Z",
+                            "2020-01-16T00:00:00.000Z",
+                        ],
+                    }
+                return 404, None
+
+        client6 = _RstMetadataTimelineImmich()
+        got_tl = client6.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_via_timeline_when_metadata_rst",
+            len(got_tl) >= 2
+            and all(str(x.get("id") or "").startswith("ccccccc") for x in got_tl),
+            checks,
+            problems,
+            f"n={len(got_tl)} ids={[x.get('id') for x in got_tl]}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))

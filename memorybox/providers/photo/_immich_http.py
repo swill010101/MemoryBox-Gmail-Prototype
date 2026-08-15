@@ -175,18 +175,230 @@ class ImmichHttpClient:
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
-        Prefer ``withExif: true`` so Map gets GPS, but learn once per client:
-        if Immich rejects or times out withExif, fall back to plain personIds
-        pagination for the rest of the fetch. Never re-probe multi-variants on
-        every page (that wiped FlightSim person libraries).
+        FlightSim POST /search/metadata often RST on personIds (Show me Peggy
+        George = 0 photos / 1 video). Prefer GET paths the Immich UI uses:
 
-        Do not trust ``assets.total`` as an early-stop.
+        1. ``GET /people/{id}?withFaces=true`` — one call, asset UUIDs
+        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId
+        3. POST /search/metadata last, short timeout, never the first probe
+
+        Prefer ``withExif: true`` on the metadata path so Map gets GPS, but
+        learn once per client. Do not trust ``assets.total`` as an early-stop.
         """
         if not person_ids:
             return []
         target = max(1, min(int(size), 5000))
+        by_id: dict[str, dict[str, Any]] = {}
+
+        def _add(rows: list[dict[str, Any]]) -> None:
+            for it in rows:
+                if not isinstance(it, dict):
+                    continue
+                eid = str(it.get("id") or "").strip()
+                if not eid or eid in by_id:
+                    continue
+                by_id[eid] = it
+
+        _add(self._assets_from_person_faces(person_ids, target))
+        # withFaces often IS the person library (all assigned faces). Only
+        # hit timeline when faces were sparse (feature-face only).
+        if len(by_id) < min(target, 20):
+            _add(self._assets_from_person_timeline(person_ids, target))
+        # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
+        if by_id:
+            self._last_person_source = "faces_or_timeline"
+            return list(by_id.values())[:target]
+
+        try:
+            _add(self._assets_from_person_metadata(person_ids, target))
+            if by_id:
+                self._last_person_source = "metadata"
+        except Exception:  # noqa: BLE001
+            pass
+        if by_id:
+            return list(by_id.values())[:target]
+        self._last_person_source = "empty"
+        return []
+
+    def _assets_from_person_faces(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Stub assets from face records. GET /people works on FlightSim."""
+        by_id: dict[str, dict[str, Any]] = {}
+        for pid in person_ids:
+            pid = str(pid or "").strip()
+            if not pid:
+                continue
+            try:
+                faces = self.list_faces_for_person(pid)
+            except Exception:  # noqa: BLE001
+                faces = []
+            for face in faces or []:
+                if not isinstance(face, dict):
+                    continue
+                aid = self._immich_asset_id(
+                    face.get("assetId") or face.get("imageId")
+                )
+                if not aid or aid == pid or aid in by_id:
+                    continue
+                by_id[aid] = {
+                    "id": aid,
+                    "people": [{"id": pid, "name": face.get("personName") or ""}],
+                }
+                if len(by_id) >= target:
+                    return list(by_id.values())
+        return list(by_id.values())
+
+    def _assets_from_person_timeline(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Immich UI person library: time buckets, then bucket asset ids."""
+        by_id: dict[str, dict[str, Any]] = {}
+        for pid in person_ids:
+            pid = str(pid or "").strip()
+            if not pid:
+                continue
+            buckets = self._list_person_time_buckets(pid)
+            for bucket in buckets[:24]:
+                if len(by_id) >= target:
+                    return list(by_id.values())[:target]
+                for it in self._list_person_bucket_assets(pid, bucket):
+                    eid = str(it.get("id") or "").strip()
+                    if not eid or eid in by_id:
+                        continue
+                    people = it.get("people")
+                    if not isinstance(people, list) or not people:
+                        it = dict(it)
+                        it["people"] = [{"id": pid}]
+                    by_id[eid] = it
+                    if len(by_id) >= target:
+                        return list(by_id.values())[:target]
+        return list(by_id.values())[:target]
+
+    def _list_person_time_buckets(self, person_id: str) -> list[str]:
+        pid = (person_id or "").strip()
+        if not pid:
+            return []
+        paths = (
+            f"/timeline/buckets?personId={pid}&size=YEAR",
+            f"/timeline/buckets?personId={pid}&size=MONTH",
+            f"/timeline/buckets?personIds={pid}&size=MONTH",
+            f"/assets/time-buckets?personId={pid}&size=MONTH",
+            f"/asset/time-buckets?personId={pid}&size=MONTH",
+            f"/timeline/buckets?personId={pid}",
+        )
+        for path in paths:
+            try:
+                status, data = self._request("GET", path, timeout=8, retries=1)
+            except Exception:  # noqa: BLE001
+                continue
+            if status != 200:
+                continue
+            rows = data if isinstance(data, list) else (
+                data.get("buckets") if isinstance(data, dict) else None
+            )
+            if not isinstance(rows, list) or not rows:
+                continue
+            out: list[str] = []
+            for row in rows:
+                if isinstance(row, str) and row.strip():
+                    out.append(row.strip())
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                tb = (
+                    row.get("timeBucket")
+                    or row.get("timeBucketId")
+                    or row.get("id")
+                    or row.get("date")
+                )
+                if tb:
+                    out.append(str(tb).strip())
+            if out:
+                # Newest first when Immich sent oldest-first.
+                return list(reversed(out)) if len(out) > 1 else out
+        return []
+
+    def _list_person_bucket_assets(
+        self, person_id: str, time_bucket: str
+    ) -> list[dict[str, Any]]:
+        pid = (person_id or "").strip()
+        tb = (time_bucket or "").strip()
+        if not pid or not tb:
+            return []
+        from urllib.parse import quote
+
+        qtb = quote(tb, safe=":-T.Z")
+        paths = (
+            f"/timeline/bucket?timeBucket={qtb}&personId={pid}",
+            f"/timeline/bucket?timeBucket={qtb}&personIds={pid}",
+            f"/assets/time-bucket?timeBucket={qtb}&personId={pid}",
+            f"/asset/time-bucket?timeBucket={qtb}&personId={pid}",
+        )
+        for path in paths:
+            try:
+                status, data = self._request("GET", path, timeout=8, retries=1)
+            except Exception:  # noqa: BLE001
+                continue
+            if status != 200:
+                continue
+            items = self._normalize_timeline_assets(data)
+            if items:
+                return items
+        return []
+
+    def _normalize_timeline_assets(self, data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            out: list[dict[str, Any]] = []
+            for it in data:
+                if isinstance(it, dict) and it.get("id"):
+                    out.append(it)
+                elif isinstance(it, str) and self._immich_asset_id(it):
+                    out.append({"id": str(it)})
+            return out
+        if not isinstance(data, dict):
+            return []
+        raw_items = data.get("items") or data.get("assets")
+        if isinstance(raw_items, list) and raw_items:
+            return [it for it in raw_items if isinstance(it, dict) and it.get("id")]
+        ids = data.get("id") or data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return []
+
+        def _col(name: str) -> list[Any]:
+            v = data.get(name)
+            return v if isinstance(v, list) else []
+
+        created = _col("fileCreatedAt") or _col("createdAt")
+        cities = _col("city")
+        countries = _col("country")
+        is_image = _col("isImage")
+        out: list[dict[str, Any]] = []
+        for i, aid in enumerate(ids):
+            key = str(aid or "").strip()
+            if not key:
+                continue
+            if i < len(is_image) and is_image[i] is False:
+                continue
+            row: dict[str, Any] = {"id": key}
+            if i < len(created) and created[i]:
+                row["localDateTime"] = created[i]
+                row["fileCreatedAt"] = created[i]
+            city = cities[i] if i < len(cities) else None
+            country = countries[i] if i < len(countries) else None
+            if city or country:
+                row["exifInfo"] = {
+                    "city": city or None,
+                    "country": country or None,
+                }
+            out.append(row)
+        return out
+
+    def _assets_from_person_metadata(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Last-resort POST /search/metadata. Short timeouts — FlightSim RST."""
         # FlightSim /search/metadata RST on large person pages (100+withExif).
-        # Smaller pages get a library instead of 0 photos / 1 video.
         page_size = 25
         max_pages = max(2, (target + page_size - 1) // page_size) + 2
         use_order = getattr(self, "_person_use_order", True)
@@ -219,8 +431,8 @@ class ImmichHttpClient:
         def _once(
             payload: dict[str, Any],
             *,
-            timeout: float = 25,
-            retries: int = 2,
+            timeout: float = 8,
+            retries: int = 1,
         ) -> tuple[int, Any, Exception | None]:
             try:
                 status, data = self._request(
@@ -268,7 +480,7 @@ class ImmichHttpClient:
             # was Show me Peggy George = 1 video / 0 photos / ~129s.
             last_err: Exception | None = None
             for payload in ({**base, "order": "desc"}, dict(base)):
-                status, data, err = _once(payload, timeout=25, retries=1)
+                status, data, err = _once(payload, timeout=8, retries=1)
                 if err is not None:
                     last_err = err
                     continue
@@ -360,13 +572,18 @@ class ImmichHttpClient:
         return s
 
     def list_faces_for_person(self, person_id: str) -> list[dict[str, Any]]:
-        """Best-effort Immich face exemplars for a person (P2-I1)."""
+        """Best-effort Immich face exemplars for a person (P2-I1).
+
+        ``withFaces=true`` is the person-library path when /search/metadata RST:
+        each face carries a real asset UUID (not thumbnailPath).
+        """
         pid = (person_id or "").strip()
         if not pid:
             return []
         # Immich variants across versions
         for path in (
             f"/people/{pid}?withFaces=true",
+            f"/people/{pid}/faces",
             f"/faces?id={pid}",
             f"/people/{pid}",
         ):
@@ -376,43 +593,56 @@ class ImmichHttpClient:
                 continue
             if status != 200:
                 continue
-            faces: list[dict[str, Any]] = []
-            if isinstance(data, dict):
-                raw_faces = data.get("faces") or data.get("items") or []
-                if isinstance(raw_faces, list):
-                    faces = [f for f in raw_faces if isinstance(f, dict)]
-                for key in (
-                    "faceAssetId",
-                    "featureFaceAssetId",
-                    "thumbnailAssetId",
-                    "faceAssetID",
-                ):
-                    aid = self._immich_asset_id(data.get(key))
-                    if aid and not any(
-                        self._immich_asset_id(f.get("assetId") or f.get("imageId")) == aid
-                        for f in faces
-                    ):
-                        faces.append(
-                            {
-                                "id": f"person-face-{aid}",
-                                "personId": pid,
-                                "assetId": aid,
-                            }
-                        )
-            elif isinstance(data, list):
-                faces = [f for f in data if isinstance(f, dict)]
-            # Drop rows whose assetId is a path / person id (get_asset would 404).
-            usable = []
-            for f in faces:
-                aid = self._immich_asset_id(f.get("assetId") or f.get("imageId"))
-                if not aid or aid == pid:
-                    continue
-                row = dict(f)
-                row["assetId"] = aid
-                usable.append(row)
+            usable = self._faces_from_people_payload(pid, data)
             if usable:
                 return usable
         return []
+
+    def _faces_from_people_payload(
+        self, pid: str, data: Any
+    ) -> list[dict[str, Any]]:
+        faces: list[dict[str, Any]] = []
+        if isinstance(data, dict):
+            for key in ("faces", "items", "assets"):
+                raw = data.get(key)
+                if isinstance(raw, list):
+                    faces.extend(f for f in raw if isinstance(f, dict))
+            for key in (
+                "faceAssetId",
+                "featureFaceAssetId",
+                "thumbnailAssetId",
+                "faceAssetID",
+            ):
+                aid = self._immich_asset_id(data.get(key))
+                if aid:
+                    faces.append(
+                        {
+                            "id": f"person-face-{aid}",
+                            "personId": pid,
+                            "assetId": aid,
+                        }
+                    )
+        elif isinstance(data, list):
+            faces = [f for f in data if isinstance(f, dict)]
+        usable: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for f in faces:
+            nested = f.get("asset") if isinstance(f.get("asset"), dict) else {}
+            aid = self._immich_asset_id(
+                f.get("assetId")
+                or f.get("imageId")
+                or f.get("sourceAssetId")
+                or nested.get("id")
+            )
+            if not aid or aid == pid or aid in seen:
+                continue
+            seen.add(aid)
+            row = dict(f)
+            row["assetId"] = aid
+            if not row.get("id"):
+                row["id"] = f"person-face-{aid}"
+            usable.append(row)
+        return usable
 
     def thumb_url(self, asset_id: str, *, size: str = "preview") -> str:
         return f"{self.api_base}/assets/{asset_id}/thumbnail?size={size}"

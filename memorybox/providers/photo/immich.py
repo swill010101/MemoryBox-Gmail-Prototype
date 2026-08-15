@@ -421,8 +421,11 @@ class ImmichPhotoProvider:
             raise ProviderError(str(exc)) from exc
         out: list[PhotoFaceAssetRef] = []
         for f in raw or []:
-            fid = str(f.get("id") or f.get("faceId") or "")
+            aid = str(f.get("assetId") or f.get("imageId") or "")
+            fid = str(f.get("id") or f.get("faceId") or aid or "")
             if not fid:
+                continue
+            if aid and ("/" in aid or aid.startswith("http")):
                 continue
             bbox = None
             if any(k in f for k in ("boundingBoxX1", "x1", "bbox")):

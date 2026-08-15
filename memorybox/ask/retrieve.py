@@ -1164,7 +1164,7 @@ def search_photos(
                 return list(assets)
             list_fn = getattr(photo, "list_face_assets", None)
             get_fn = getattr(photo, "get_asset", None)
-            if not callable(list_fn) or not callable(get_fn):
+            if not callable(list_fn):
                 return []
             seen: set[str] = set()
             out: list[PhotoAssetDto] = []
@@ -1176,15 +1176,24 @@ def search_photos(
                     continue
                 for face in faces or []:
                     aid = str(getattr(face, "source_asset_id", None) or "").strip()
-                    if not aid or aid in seen:
+                    if not aid or "/" in aid or aid in seen:
                         continue
                     seen.add(aid)
-                    try:
-                        asset = get_fn(aid)
-                    except Exception:  # noqa: BLE001
-                        continue
-                    if asset is not None:
-                        out.append(asset)
+                    asset = None
+                    if callable(get_fn):
+                        try:
+                            asset = get_fn(aid)
+                        except Exception:  # noqa: BLE001
+                            asset = None
+                    if asset is None:
+                        # Gallery can show a thumb from the asset id alone.
+                        # FlightSim get_asset often 404s/RST after a good face UUID.
+                        asset = PhotoAssetDto(
+                            provider_key=getattr(photo, "provider_key", "immich")
+                            or "immich",
+                            external_id=aid,
+                        )
+                    out.append(asset)
                     if len(out) >= cap:
                         status["face_asset_fallback"] = len(out)
                         return out
