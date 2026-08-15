@@ -1015,7 +1015,7 @@ def library_photo_thumb(external_id: str) -> Response:
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",
-        headers={"Cache-Control": "private, max-age=3600"},
+        headers={"Cache-Control": "private, max-age=86400"},
     )
 
 

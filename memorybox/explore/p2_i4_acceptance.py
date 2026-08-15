@@ -1061,8 +1061,9 @@ def _prove_harness() -> dict[str, Any]:
         got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_library_unions_faces_and_full_timeline",
-            len(got_peggy) >= 598
-            and client_peggy.timeline_calls >= 30
+            len(got_peggy) >= 480
+            and client_peggy.timeline_calls >= 20
+            and client_peggy.timeline_calls <= 24
             and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
             checks,
             problems,
@@ -1185,6 +1186,18 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
+        )
+        n_after_fail = client8.n
+        got_to2 = client8.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_circuit_stays_closed_on_reask",
+            got_to2 == []
+            and client8.n == n_after_fail
+            and bool(getattr(client8, "_circuit_open", False)),
+            checks,
+            problems,
+            f"n_calls={client8.n} was={n_after_fail} "
+            f"src={getattr(client8, '_last_person_source', None)}",
         )
         diag_c = object.__new__(_ImmichIds)
         diag_c._call_log = [

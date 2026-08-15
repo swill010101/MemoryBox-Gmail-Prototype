@@ -1859,17 +1859,37 @@
       root._mbLazyIo = null;
     }
     const imgs = root.querySelectorAll("img.mb-card-thumb[data-src]");
-    const load = (img) => {
-      const src = img.getAttribute("data-src");
-      if (!src || img.getAttribute("src")) return;
-      img.setAttribute("src", src);
-      img.removeAttribute("data-src");
+    let inFlight = 0;
+    let paused = false;
+    const queue = [];
+    const pump = () => {
+      while (!paused && inFlight < 3 && queue.length) {
+        const img = queue.shift();
+        const src = img && img.getAttribute("data-src");
+        if (!src || img.getAttribute("src")) continue;
+        inFlight += 1;
+        img.onload = () => {
+          inFlight = Math.max(0, inFlight - 1);
+          pump();
+        };
+        img.onerror = () => {
+          inFlight = Math.max(0, inFlight - 1);
+          paused = true;
+          queue.length = 0;
+        };
+        img.setAttribute("src", src);
+        img.removeAttribute("data-src");
+      }
     };
-    imgs.forEach((img, i) => {
-      if (i < 18) load(img);
-    });
+    const load = (img) => {
+      if (paused || !img || img.getAttribute("src")) return;
+      queue.push(img);
+      pump();
+    };
     if (!("IntersectionObserver" in window)) {
-      imgs.forEach(load);
+      imgs.forEach((img, i) => {
+        if (i < 6) load(img);
+      });
       return;
     }
     const io = new IntersectionObserver(
@@ -1880,11 +1900,9 @@
           io.unobserve(e.target);
         });
       },
-      { root: root, rootMargin: "240px" }
+      { root: root, rootMargin: "40px" }
     );
-    imgs.forEach((img, i) => {
-      if (i >= 18) io.observe(img);
-    });
+    imgs.forEach((img) => io.observe(img));
     root._mbLazyIo = io;
   }
 

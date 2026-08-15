@@ -1172,8 +1172,10 @@ def search_photos(
                 status["person_library_source"] = src
             if assets:
                 return list(assets)
+            _client = getattr(photo, "_client", None)
+            if _client is not None and getattr(_client, "_circuit", lambda: False)():
+                return []
             list_fn = getattr(photo, "list_face_assets", None)
-            get_fn = getattr(photo, "get_asset", None)
             if not callable(list_fn):
                 return []
             seen: set[str] = set()
@@ -1189,21 +1191,15 @@ def search_photos(
                     if not aid or "/" in aid or aid in seen:
                         continue
                     seen.add(aid)
-                    asset = None
-                    if callable(get_fn):
-                        try:
-                            asset = get_fn(aid)
-                        except Exception:  # noqa: BLE001
-                            asset = None
-                    if asset is None:
-                        # Gallery can show a thumb from the asset id alone.
-                        # FlightSim get_asset often 404s/RST after a good face UUID.
-                        asset = PhotoAssetDto(
+                    # Do not GET /assets/{id} per face — that RST's Immich after
+                    # a failed person search. Gallery can thumb from the id alone.
+                    out.append(
+                        PhotoAssetDto(
                             provider_key=getattr(photo, "provider_key", "immich")
                             or "immich",
                             external_id=aid,
                         )
-                    out.append(asset)
+                    )
                     if len(out) >= cap:
                         status["face_asset_fallback"] = len(out)
                         return out
@@ -1379,11 +1375,8 @@ def search_photos(
             return [], status
 
         person_ext: list[str] = []
-        # Mapped-id RST must not block Immich name lookup (stale UUID / circuit).
-        _client = getattr(photo, "_client", None)
-        _reset = getattr(_client, "_reset_person_circuit", None)
-        if callable(_reset):
-            _reset()
+        # Do not reset the Immich circuit here — that re-floods a recovering NAS.
+        # Name lookup stays allowlisted while the circuit is open.
         # Prefer resolved MB display names (Peggy → Peggy George) for Immich lookup
         name_queries: list[str] = []
         for name in plan.person_names:
