@@ -255,7 +255,7 @@ Explicit communication intent overrides the default (existing Explore refine sty
 | “Only texts” | Text-only Gallery |
 | “Show me all my texts with Peggy” | Text **automatically visible** |
 
-A separate **MBQL-001** specification will follow after I7 ACCEPTED. Do not broaden I7 into that work.
+A separate **P2-I7A** (AI Model Trace) definition is drafted for review; **MBQL-001** follows **after I7A**, not immediately after I7. Do not broaden I7 into either. See [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md).
 
 ### 2.J Archive Health honesty
 

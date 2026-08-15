@@ -41,4 +41,8 @@ Authority: [MBBS-P2_INCREMENT_6_DEFINITION.md](MBBS-P2_INCREMENT_6_DEFINITION.md
 
 ## Next increment (build authorized)
 
-**P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) · [PRD](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md). **BUILD AUTHORIZED** 2026-08-14 (Tom). Q3–Q6 locked. Q1 path documented; real CSV bytes still unopened in the cloud workspace — run `inspect-sms` on FlightSim. Not ACCEPTED until definition §8.
+**P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) · [PRD](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md). **BUILD AUTHORIZED** 2026-08-14 (Tom). Not ACCEPTED until definition §8. Attachment bytes are a separate iMazing export (CSV-only folder confirmed 2026-08-15).
+
+## After I7 ACCEPTED (definition only — no build)
+
+**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [PRD ingest](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) · [MBRM v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md). Inserted **before MBQL-001**. Do not start I7A runtime or MBQL until Tom accepts I7 and authorizes I7A build.
