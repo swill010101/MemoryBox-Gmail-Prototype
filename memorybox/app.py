@@ -103,6 +103,8 @@ DOMAIN_V0_TABLES = (
     "guided_capture_questions",
     "guided_capture_deliveries",
     "guided_capture_responses",
+    "ai_traces",
+    "ai_spans",
 )
 
 ASK_STATIC = Path(__file__).resolve().parent / "ask" / "static" / "ask.html"
@@ -124,12 +126,24 @@ SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
 EXPLORE_STATIC = Path(__file__).resolve().parent / "explore" / "static" / "explore.html"
 EXPLORE_STATIC_DIR = Path(__file__).resolve().parent / "explore" / "static"
 FAMILY_NIGHT_STATIC = Path(__file__).resolve().parent / "family_night" / "static" / "family_night.html"
+AI_TRACE_STATIC = Path(__file__).resolve().parent / "ai_trace" / "static" / "ai-trace.html"
+AI_TRACE_STATIC_DIR = Path(__file__).resolve().parent / "ai_trace" / "static"
 
 app = FastAPI(
     title="MemoryBox",
     version=__version__,
     description="MemoryBox modular monolith (MBBS-001). P2-I2 Product Shell.",
 )
+
+
+@app.on_event("startup")
+def _ai_trace_schema_on_startup() -> None:
+    try:
+        from memorybox.ai_trace.store import ensure_schema
+
+        ensure_schema()
+    except Exception:
+        return
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
@@ -144,6 +158,12 @@ if PERSON_STATIC_DIR.is_dir():
         "/static/person",
         StaticFiles(directory=str(PERSON_STATIC_DIR)),
         name="person_static",
+    )
+if AI_TRACE_STATIC_DIR.is_dir():
+    app.mount(
+        "/static/ai-trace",
+        StaticFiles(directory=str(AI_TRACE_STATIC_DIR)),
+        name="ai_trace_static",
     )
 
 
@@ -426,6 +446,7 @@ def health() -> dict[str, Any]:
         "settings": "/settings/ui",
         "explore": "/explore/ui",
         "family_night": "/family-night/ui",
+        "ai_trace": "/dev/ai-trace",
     }
 
 
@@ -438,6 +459,84 @@ def root() -> RedirectResponse:
 @app.get("/ask/ui")
 def ask_ui() -> HTMLResponse:
     return _html_ui(ASK_STATIC, surface="ask", missing="Ask UI missing")
+
+
+@app.get("/dev/ai-trace")
+def ai_trace_ui() -> HTMLResponse:
+    """Developer-only AI Trace window. Not family primary nav. No shell inject."""
+    if not AI_TRACE_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="AI Trace UI missing")
+    return HTMLResponse(
+        AI_TRACE_STATIC.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
+
+
+@app.get("/dev/api/ai-trace")
+def ai_trace_list(
+    q: str | None = Query(None),
+    error_class: str | None = Query(None),
+    updated_after: str | None = Query(None),
+    limit: int = Query(200),
+) -> dict[str, Any]:
+    from memorybox.ai_trace import store as ai_store
+
+    return {
+        "ok": True,
+        "traces": ai_store.list_traces(
+            q=q, error_class=error_class, updated_after=updated_after, limit=limit
+        ),
+        "settings": ai_store.read_settings(),
+    }
+
+
+@app.get("/dev/api/ai-trace/settings")
+def ai_trace_settings_get() -> dict[str, Any]:
+    from memorybox.ai_trace import store as ai_store
+
+    return {"ok": True, **ai_store.read_settings()}
+
+
+class AiTraceSettingsPatch(BaseModel):
+    max_traces: int | None = None
+    retention_days: int | None = None
+
+
+@app.patch("/dev/api/ai-trace/settings")
+def ai_trace_settings_patch(body: AiTraceSettingsPatch) -> dict[str, Any]:
+    from memorybox.ai_trace import store as ai_store
+
+    return {"ok": True, **ai_store.write_settings(
+        max_traces=body.max_traces, retention_days=body.retention_days
+    )}
+
+
+@app.get("/dev/api/ai-trace/{trace_id}")
+def ai_trace_detail(trace_id: str) -> dict[str, Any]:
+    from memorybox.ai_trace import store as ai_store
+
+    row = ai_store.get_trace(trace_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="trace not found")
+    return {"ok": True, "trace": row}
+
+
+@app.post("/dev/api/ai-trace/clear")
+def ai_trace_clear() -> dict[str, Any]:
+    from memorybox.ai_trace import store as ai_store
+
+    return ai_store.clear_all()
+
+
+class AiTraceScenarioRequest(BaseModel):
+    scenario: str = Field(..., min_length=2, max_length=8)
+
+
+@app.post("/dev/api/ai-trace/scenario")
+def ai_trace_scenario(body: AiTraceScenarioRequest) -> dict[str, Any]:
+    from memorybox.ai_trace.scenarios import run_scenario
+
+    return run_scenario(body.scenario)
 
 
 @app.get("/explore/ui")
@@ -479,10 +578,13 @@ def explore_find(
 
     _remember_ask_text(q)
     try:
+        # Empty Explore boot must not construct the orchestrator (Ollama/Immich
+        # health). That blocked chrome bind and made Enter / history look dead.
+        orch = None if not str(q or "").strip() else get_orchestrator()
         return build_explore_find(
             ask_text=q,
             session_id=session_id,
-            orchestrator=get_orchestrator(),
+            orchestrator=orch,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
@@ -495,10 +597,11 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
 
     _remember_ask_text(body.ask)
     try:
+        orch = None if not str(body.ask or "").strip() else get_orchestrator()
         return build_explore_find(
             ask_text=body.ask,
             session_id=body.session_id,
-            orchestrator=get_orchestrator(),
+            orchestrator=orch,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc

@@ -54,14 +54,21 @@
     return out;
   }
 
+  let hydrateInflight = null;
+
   function hydrateAskHistory() {
-    return fetch("/ask/api/history")
+    if (hydrateInflight) return hydrateInflight;
+    hydrateInflight = fetch("/ask/api/history")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && Array.isArray(data.asks)) writeRecent(data.asks.concat(readRecent()));
         return readRecent();
       })
-      .catch(() => readRecent());
+      .catch(() => readRecent())
+      .finally(() => {
+        hydrateInflight = null;
+      });
+    return hydrateInflight;
   }
 
   function bindAllAskInputs() {

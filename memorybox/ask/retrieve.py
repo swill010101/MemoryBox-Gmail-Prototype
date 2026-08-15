@@ -749,7 +749,20 @@ def search_evidence_qdrant(
     status: dict[str, Any] = {"ok": False, "detail": ""}
     try:
         embedder = rebuild_index._llm_embedder(cfg)
-        vec = list(embedder.embed(plan.effective_ask, purpose="query").vector)
+        from memorybox.ai_trace.context import reset_assembled_context, set_assembled_context
+
+        assembled_tok = set_assembled_context(
+            {
+                "component": "retrieve",
+                "purpose": "query",
+                "ask": plan.effective_ask,
+                "original_ask": plan.original_ask,
+            }
+        )
+        try:
+            vec = list(embedder.embed(plan.effective_ask, purpose="query").vector)
+        finally:
+            reset_assembled_context(assembled_tok)
         client = rebuild_index._qdrant_client(cfg)
         name = cfg.qdrant_collection
         existing = {c.name for c in client.get_collections().collections}

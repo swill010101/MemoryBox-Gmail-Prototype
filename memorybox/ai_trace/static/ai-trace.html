@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox AI Trace</title>
+  <link rel="stylesheet" href="/static/ai-trace/ai-trace.css" />
+</head>
+<body>
+  <header class="bar">
+    <div>
+      <h1>AI Trace</h1>
+      <p class="sub">Developer observability · not a family surface · <code>/dev/ai-trace</code> · Assembled MemoryBox context vs exact provider payload</p>
+    </div>
+    <div class="bar-actions">
+      <label class="toggle"><input type="checkbox" id="liveFollow" checked /> Live Follow</label>
+      <label>Poll
+        <select id="pollMs">
+          <option value="500">500 ms</option>
+          <option value="750" selected>750 ms</option>
+          <option value="1000">1 s</option>
+        </select>
+      </label>
+      <button type="button" id="btnRefresh">Refresh</button>
+      <button type="button" id="btnClear">Clear</button>
+    </div>
+  </header>
+
+  <section class="toolbar">
+    <input id="filterQ" type="search" placeholder="Filter ask, purpose, trace id, class…" />
+    <select id="filterClass">
+      <option value="">All error classes</option>
+      <option>ORCHESTRATION</option>
+      <option>PROMPT_BUILD</option>
+      <option>PROVIDER_TRANSPORT</option>
+      <option>MODEL_EXECUTION</option>
+      <option>MODEL_OUTPUT</option>
+      <option>PARSE_SCHEMA</option>
+      <option>TRUST_VALIDATION</option>
+      <option>DOWNSTREAM_APP</option>
+    </select>
+    <label>Max traces <input id="maxTraces" type="number" min="1" max="5000" /></label>
+    <label>Days <input id="retDays" type="number" min="1" max="365" /></label>
+    <button type="button" id="btnSaveSettings">Save retention</button>
+    <span id="settingsHint" class="hint"></span>
+  </section>
+
+  <section class="scenarios">
+    <span>Harness</span>
+    <div id="scenarioBtns"></div>
+  </section>
+
+  <main>
+    <aside>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Ask / job</th>
+            <th>Purpose</th>
+            <th>Models</th>
+            <th>ms</th>
+            <th>Status</th>
+            <th>Class</th>
+          </tr>
+        </thead>
+        <tbody id="traceRows"></tbody>
+      </table>
+    </aside>
+    <article id="detail">
+      <p class="empty">Select a trace. Live Follow keeps the newest one open.</p>
+    </article>
+  </main>
+  <script src="/static/ai-trace/ai-trace.js?v=i7a2"></script>
+</body>
+</html>

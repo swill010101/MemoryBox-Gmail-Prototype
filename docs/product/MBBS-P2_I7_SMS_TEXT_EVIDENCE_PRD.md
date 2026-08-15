@@ -1,6 +1,6 @@
 # MBBS — P2-I7 SMS/Text Evidence · Product Request Document
 
-**Status:** **BUILD AUTHORIZED** (2026-08-14 — Tom: “approved to build”) · **not ACCEPTED**  
+**Status:** **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted”) · attachment bytes **P2-BL-I7-01**  
 **Date:** 2026-08-14 (build)  
 **Owner:** Tom  
 **Increment:** P2-I7 (MBRM-001A) — SMS/Text Evidence · A  
@@ -28,7 +28,7 @@ IN/OUT as definition §§3–4. Explicitly **not** I8 richer email, I9 spoken, I
 - Canonical MB Person IDs; phone/handle is mapping only.  
 - Unavailable ≠ 0.  
 - No new messaging product.  
-- Default Gallery hides SMS/Text on broad memory asks; “Add texts” / “Only texts” / explicit text asks override. Visibility ≠ exclusion. Query language = **MBQL-001 after I7 ACCEPTED**, not this increment.
+- Default Gallery hides SMS/Text on broad memory asks; “Add texts” / “Only texts” / explicit text asks override. Visibility ≠ exclusion. Query language = **MBQL-001 after I7A**, not this increment.
 
 ## Discovery
 
@@ -48,4 +48,4 @@ Definition §7 — **authorized and implemented** this revision (`ingest-sms`, A
 
 ## Sign-off
 
-Tom authorized build 2026-08-14 (“approved to build”). ACCEPTED still requires definition §8 on FlightSim against the real staged export.
+Tom authorized build 2026-08-14 (“approved to build”). **ACCEPTED** 2026-08-15 (Tom: “i7 is accepted”). SMS attachment **bytes** are **P2-BL-I7-01** — do not reopen I7. I8 email ingest must include attachment files up front (**P2-BL-I8-01**). [I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) is **ACCEPTED** 2026-08-15. Next: **MBQL-001** (not started until explicitly authorized).

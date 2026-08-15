@@ -32,9 +32,11 @@ def _presence_gap_sec() -> float:
 
 
 def build_llm(cfg: Settings | None = None) -> LlmProvider:
+    from memorybox.ai_trace.wrapper import trace_llm
+
     cfg = cfg or settings
     if not cfg.ollama_base_url:
-        return FakeLlmProvider()
+        return trace_llm(FakeLlmProvider())
     try:
         from memorybox.providers.llm.ollama import OllamaLlmProvider
 
@@ -44,10 +46,10 @@ def build_llm(cfg: Settings | None = None) -> LlmProvider:
             embed_model=cfg.ollama_embed_model,
         )
         if p.health().ok:
-            return p
+            return trace_llm(p)
     except Exception:  # noqa: BLE001
         pass
-    return FakeLlmProvider()
+    return trace_llm(FakeLlmProvider())
 
 
 def build_photo(cfg: Settings | None = None) -> PhotoProvider:

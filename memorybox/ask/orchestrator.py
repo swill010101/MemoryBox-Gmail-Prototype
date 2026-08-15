@@ -207,6 +207,7 @@ class AskResult:
     missing_disclosure: str | None
     provider_status: dict[str, Any]
     inventing: bool = False
+    trace_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,6 +229,7 @@ class AskResult:
             "missing_disclosure": self.missing_disclosure,
             "provider_status": self.provider_status,
             "inventing": self.inventing,
+            "trace_id": self.trace_id,
         }
 
 
@@ -835,10 +837,32 @@ class AskOrchestrator:
     ) -> None:
         self.store = store or default_context_store
         self.photo = photo if photo is not None else build_photo()
-        self.llm = llm if llm is not None else build_llm()
+        from memorybox.ai_trace.wrapper import trace_llm
+
+        self.llm = trace_llm(llm if llm is not None else build_llm())
         self.video = video if video is not None else build_video()
 
     def ask(self, text: str, *, session_id: str | None = None) -> AskResult:
+        from memorybox.ai_trace.request import tracing_ask
+
+        with tracing_ask(text, session_id) as tr:
+            result = self._ask_impl(text, session_id=session_id)
+            plan = result.plan if isinstance(result.plan, dict) else {}
+            tr.note_planner(plan)
+            tr.complete(
+                disposition={
+                    "answer_kind": result.answer_kind,
+                    "answer_text": (result.answer_text or "")[:500],
+                    "inventing": result.inventing,
+                    "evidence_hits": len(result.evidence_hits or []),
+                    "photo_hits": len(result.photo_hits or []),
+                    "missing_disclosure": result.missing_disclosure,
+                }
+            )
+            result.trace_id = tr.trace_id
+            return result
+
+    def _ask_impl(self, text: str, *, session_id: str | None = None) -> AskResult:
         ctx = self.store.get_or_create(session_id)
         plan = plan_ask(text, ctx)
 
