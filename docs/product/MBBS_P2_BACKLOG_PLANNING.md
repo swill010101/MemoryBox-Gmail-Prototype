@@ -55,8 +55,8 @@ Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md
 |----|--------|---------|------|
 | **P2-BL-I8-01** | I8 email ingest must include **attachment files up front** | I7 accepted CSV-only; attachment bytes were missing and had to be parked. Do not repeat that gap for email. | **P2-I8** richer email — part of I8 definition/build, not a later surprise |
 
-## Next increment (definition locked — no build)
+## Next increment (build authorized)
 
-**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [PRD ingest](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) · [MBRM v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md). **DEFINITION LOCKED** 2026-08-15 (Q1–Q6). Inserted **before MBQL-001**. **No I7A runtime** until Tom explicitly authorizes I7A build. **No MBQL in I7A.**
+**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) · [PRD ingest](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **BUILD AUTHORIZED** 2026-08-15. **No MBQL in I7A.**
 
 Sequence after I7: **I7A → MBQL-001 → I8** (I8.5 remains after I8).

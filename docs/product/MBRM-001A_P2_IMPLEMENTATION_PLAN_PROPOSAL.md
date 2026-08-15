@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6, **I7 ACCEPTED**; I4 build authorized / not ACCEPTED; **P2-I7A definition LOCKED — no build** until explicit I7A authorization). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files up front = **P2-BL-I8-01**.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6, **I7 ACCEPTED**; I4 build authorized / not ACCEPTED; **P2-I7A BUILD AUTHORIZED** 2026-08-15). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files up front = **P2-BL-I8-01**.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). MBQL-001 waits on I7A.
 
 ## 0. First-increment verdict (confirmed)

@@ -1,13 +1,14 @@
 # MBBS-P2 Increment 7A — AI Model Trace & Observability
 
-**Status:** **DEFINITION LOCKED** · **NO BUILD**  
+**Status:** **BUILD AUTHORIZED** 2026-08-15 (Tom: “P2-I7A is approved to build”) · definition remains locked  
 **Date:** 2026-08-15  
+**Schema / live-update:** [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md)  
 **Authority:** Tom Word uploads 2026-08-15 — [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) (v0.1 ingest) · [MBRM-001 v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · **Q1–Q6 + extra rules locked 2026-08-15**  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — inserted after **P2-I7 ACCEPTED** and **before MBQL-001**  
 **Depends:** P2-I7 **ACCEPTED** (2026-08-15) · I1–I6 **ACCEPTED**  
 **Does not reopen / does not absorb:** I7 SMS/text · SMS attachment bytes **P2-BL-I7-01** · I8 email **P2-BL-I8-01** · **MBQL-001 language** · I8 richer email · I8.5 face-evidence · I9 spoken · I10 correlation · I11 narrative · I13/I14 Settings product · family nav · multi-user
 
-**I7 is ACCEPTED. I7A definition is locked. I7A runtime does not start until Tom gives explicit I7A build authorization.** I7 acceptance is not that authorization. **No MBQL implementation starts as part of I7A.**
+**I7 is ACCEPTED. I7A definition is locked. I7A build is AUTHORIZED.** Schema/live-update contract is in [MBBS-P2_I7A_TRACE_SCHEMA.md](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL implementation starts as part of I7A.**
 
 ---
 
@@ -136,7 +137,7 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | MBRM-001 v0.2 insertion + MBPRD-P2-I7A v0.1 | **INGESTED** 2026-08-15 |
 | I7A increment definition | **LOCKED** 2026-08-15 (Q1–Q6 + extra rules) |
 | I7 SMS/Text | **ACCEPTED** 2026-08-15 — attachment bytes **P2-BL-I7-01** |
-| I7A build | **NOT AUTHORIZED** |
+| I7A build | **AUTHORIZED** 2026-08-15 |
 | MBQL-001 | **NOT STARTED** — blocked on I7A acceptance |
 
-**Do not write I7A runtime, UI, or schema until Tom explicitly authorizes I7A build.** I7 acceptance is not I7A build authorization. **No MBQL implementation starts as part of I7A.**
+**Build authorized.** Implement the schema/live-update contract, wrap the shared provider boundary, add `/dev/ai-trace`, and prove T1–T10. **No MBQL implementation starts as part of I7A.** ACCEPTED remains a FlightSim owner pass.
