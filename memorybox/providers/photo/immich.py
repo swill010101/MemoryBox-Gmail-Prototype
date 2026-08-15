@@ -35,15 +35,15 @@ class ImmichPhotoProvider:
 
     def health(self) -> ProviderHealth:
         try:
+            # Ping only on the Ask hot path. Permission probes hit
+            # /search/metadata and can RST for a minute+ on FlightSim
+            # (Show me Peggy → 0 photos / 1 video / ~129s).
             ok = bool(self._client.ping())
-            meta: dict[str, Any] = {}
-            if ok:
-                meta["permissions"] = self._client.check_read_permissions()
             return ProviderHealth(
                 provider_key=self.provider_key,
                 ok=ok,
                 detail="pong" if ok else "ping failed",
-                meta=meta,
+                meta={},
             )
         except Exception as exc:  # noqa: BLE001
             return ProviderHealth(
@@ -421,8 +421,11 @@ class ImmichPhotoProvider:
             raise ProviderError(str(exc)) from exc
         out: list[PhotoFaceAssetRef] = []
         for f in raw or []:
-            fid = str(f.get("id") or f.get("faceId") or "")
+            aid = str(f.get("assetId") or f.get("imageId") or "")
+            fid = str(f.get("id") or f.get("faceId") or aid or "")
             if not fid:
+                continue
+            if aid and ("/" in aid or aid.startswith("http")):
                 continue
             bbox = None
             if any(k in f for k in ("boundingBoxX1", "x1", "bbox")):

@@ -684,33 +684,56 @@ def _exact_named_photo_people(photo: Any, display_name: str) -> list[Any]:
 
 
 def _ask_named_photo_people(photo: Any, display_name: str) -> list[Any]:
-    """Immich/photo people for Ask: exact name, else unique first-token match."""
+    """Immich/photo people for Ask: exact name, else unique related first-token.
+
+    Immich often stores ``Peggy`` while MB says ``Peggy George``. A space in
+    the Ask name must not skip that match — that was 0 photos / 1 video after
+    a stale mapped id.
+    """
     exact = _exact_named_photo_people(photo, display_name)
     if exact:
         return exact
     name = (display_name or "").strip()
-    if not photo or len(name) < 2 or " " in name:
+    if not photo or len(name) < 2:
         return []
+    token = name.split()[0]
     try:
-        refs = photo.list_people(query=name, limit=50) or []
+        refs = photo.list_people(query=token, limit=50) or []
     except Exception:  # noqa: BLE001
         return []
-    token = name.lower()
-    matched = []
+    q = name.lower()
+    token_l = token.lower()
+    matched: list[Any] = []
     for r in refs:
         dn = (getattr(r, "display_name", None) or "").strip()
         if not dn:
             continue
-        first = dn.split()[0].lower() if dn.split() else ""
-        if first == token or dn.lower() == token:
+        dl = dn.lower()
+        first = dl.split()[0] if dl.split() else ""
+        if dl == q or dl.startswith(q + " ") or q.startswith(dl + " ") or first == token_l:
             matched.append(r)
-    # De-dupe by external_id
     by_ext: dict[str, Any] = {}
     for r in matched:
         ext = str(getattr(r, "external_id", "") or "").strip()
         if ext and ext not in by_ext:
             by_ext[ext] = r
-    return list(by_ext.values())
+    related = list(by_ext.values())
+    if not related:
+        return []
+    contained = []
+    for r in related:
+        dl = (getattr(r, "display_name", None) or "").strip().lower()
+        if dl == q or dl.startswith(q + " ") or q.startswith(dl + " "):
+            contained.append(r)
+    if len(contained) == 1:
+        return contained
+    if len(related) == 1:
+        return related
+    # Single-token Ask ("Peggy") may be ambiguous — caller clarifies.
+    if " " not in name:
+        return related
+    # Multi-word Ask with several Immich Peggys: do not guess.
+    return []
 
 
 def seed_person_from_trusted_provider(

@@ -759,8 +759,10 @@ def _prove_harness() -> dict[str, Any]:
                 self.thumbs_root = None
                 self._calls: list[dict[str, Any]] = []
 
-            def _request(self, method, path, body=None, timeout=30):  # noqa: ANN001
-                assert method == "POST" and path == "/search/metadata"
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method != "POST":
+                    return 404, None
+                assert path == "/search/metadata"
                 # Prefer withExif for Map GPS; fake Immich accepts it.
                 page = int((body or {}).get("page") or 1)
                 order = str((body or {}).get("order") or "desc")
@@ -841,6 +843,208 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"n={len(got_trap)} (must exceed fake page total)",
+        )
+
+        class _ExifTimeoutImmich(_FakeImmich):
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if (body or {}).get("withExif"):
+                    raise TimeoutError("withExif RST")
+                return super()._request(method, path, body=body, timeout=timeout, retries=retries)
+
+        client4 = _ExifTimeoutImmich()
+        got_no_exif = client4.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_survives_exif_timeout",
+            len(got_no_exif) >= 25,
+            checks,
+            problems,
+            f"n={len(got_no_exif)} calls={len(client4._calls)}",
+        )
+        from memorybox.providers.photo._immich_http import ImmichHttpClient as _ImmichIds
+
+        _check(
+            "immich_face_asset_id_not_path",
+            _ImmichIds._immich_asset_id("uploads/thumbs/abc.jpg") is None
+            and _ImmichIds._immich_asset_id("cc6eb438-86a9-405c-89aa-6c6fc43de076")
+            is not None,
+            checks,
+            problems,
+            "Face fallback must use asset UUIDs, not thumbnailPath",
+        )
+
+        class _RstMetadataFacesImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if method == "GET" and str(path).startswith("/people/person-1"):
+                    return 200, {
+                        "id": "person-1",
+                        "name": "Peggy George",
+                        "faceAssetId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        "faces": [
+                            {
+                                "id": "f1",
+                                "assetId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                            },
+                            {
+                                "id": "f2",
+                                "assetId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                            },
+                        ],
+                    }
+                return 404, None
+
+        client5 = _RstMetadataFacesImmich()
+        got_faces = client5.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_via_faces_when_metadata_rst",
+            len(got_faces) >= 2
+            and {
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+            }.issubset({str(x.get("id")) for x in got_faces}),
+            checks,
+            problems,
+            f"n={len(got_faces)} ids={[x.get('id') for x in got_faces]}",
+        )
+
+        class _RstMetadataTimelineImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                p = str(path)
+                if "timeline/buckets" in p:
+                    return 200, [{"timeBucket": "2020-01-01", "count": 2}]
+                if "timeline/bucket" in p:
+                    return 200, {
+                        "id": [
+                            "ccccccc1-1111-2222-3333-444444444444",
+                            "ccccccc2-1111-2222-3333-444444444444",
+                        ],
+                        "isImage": [True, True],
+                        "fileCreatedAt": [
+                            "2020-01-15T00:00:00.000Z",
+                            "2020-01-16T00:00:00.000Z",
+                        ],
+                    }
+                return 404, None
+
+        client6 = _RstMetadataTimelineImmich()
+        got_tl = client6.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_library_via_timeline_when_metadata_rst",
+            len(got_tl) >= 2
+            and all(str(x.get("id") or "").startswith("ccccccc") for x in got_tl),
+            checks,
+            problems,
+            f"n={len(got_tl)} ids={[x.get('id') for x in got_tl]}",
+        )
+
+        _check(
+            "immich_name_matches_peggy_george_to_peggy",
+            _ImmichIds._name_matches_person("Peggy George", "Peggy")
+            and _ImmichIds._name_matches_person("Peggy", "Peggy George")
+            and not _ImmichIds._name_matches_person("Ann", "Anne Will"),
+            checks,
+            problems,
+            "Ask Peggy George must match Immich Peggy",
+        )
+
+        class _SearchPersonImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.n = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                self.n += 1
+                if method == "POST" and path == "/search/person":
+                    return 200, [
+                        {"id": "immich-peggy", "name": "Peggy"},
+                    ]
+                return 404, None
+
+        client7 = _SearchPersonImmich()
+        named = client7.find_people_by_name("Peggy George")
+        _check(
+            "immich_search_person_not_full_people_dump",
+            len(named) == 1
+            and named[0].get("id") == "immich-peggy"
+            and client7.n <= 2,
+            checks,
+            problems,
+            f"n={len(named)} calls={client7.n}",
+        )
+
+        class _TimeoutImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.n = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                self.n += 1
+                raise TimeoutError("RST")
+
+        client8 = _TimeoutImmich()
+        got_to = client8.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_person_search_fail_fast",
+            got_to == []
+            and client8.n <= 3
+            and getattr(client8, "_last_person_source", "") == "timeout",
+            checks,
+            problems,
+            f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
+        )
+        client8._circuit_open = True
+        named_open = client8.find_people_by_name("Peggy George")
+        _check(
+            "immich_name_search_survives_mapped_circuit",
+            client8._circuit_allows("/search/person")
+            and not client8._circuit_allows("/people/stale-id"),
+            checks,
+            problems,
+            f"named={named_open} allows_search={client8._circuit_allows('/search/person')}",
+        )
+
+        from memorybox.person import _ask_named_photo_people
+        from memorybox.providers.photo.dto import PhotoPersonRef
+
+        class _ImmichNamedPeggy:
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return [
+                    PhotoPersonRef(
+                        provider_key="immich",
+                        external_id="immich-peggy",
+                        display_name="Peggy",
+                    )
+                ]
+
+        got_ask = _ask_named_photo_people(_ImmichNamedPeggy(), "Peggy George")
+        _check(
+            "ask_named_photo_people_upgrades_peggy",
+            len(got_ask) == 1
+            and getattr(got_ask[0], "external_id", "") == "immich-peggy",
+            checks,
+            problems,
+            f"refs={[(getattr(r, 'display_name', None), getattr(r, 'external_id', None)) for r in got_ask]}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))
@@ -1001,6 +1205,244 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("person_ask_no_library_pad", False, checks, problems, str(exc))
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        peggy_ref = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="peggy-immich",
+            display_name="Peggy George",
+        )
+        mixed_assets = [
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="xmas-dated",
+                taken_at=datetime(2021, 12, 20, tzinfo=timezone.utc),
+                people=(peggy_ref,),
+            ),
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="july-dated",
+                taken_at=datetime(2021, 7, 4, tzinfo=timezone.utc),
+                people=(peggy_ref,),
+            ),
+            PhotoAssetDto(
+                provider_key="scripted_photo",
+                external_id="undated-face",
+                taken_at=None,
+                people=(peggy_ref,),
+            ),
+        ]
+
+        class _XmasPhoto:
+            provider_key = "scripted_photo"
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                return [peggy_ref]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                return list(mixed_assets)
+
+        class _XmasPerson:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "peggy-immich",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        xmas_plan = QueryPlan(
+            original_ask="show me Peggy George during Christmas time",
+            effective_ask="show me Peggy George during Christmas time",
+            is_followup=False,
+            want_photo=True,
+            want_communication=False,
+            want_calendar=False,
+            want_still=True,
+            want_video=True,
+            want_visual=True,
+            visual_scope="broad",
+            person_names=("Peggy George",),
+            event_labels=("Christmas",),
+            temporal_label="Christmas",
+            temporal_windows=(("2021-12-04", "2022-01-01"),),
+            time_start="2021-12-04",
+            time_end="2022-01-01",
+            notes=("holiday_all_years", "visual_scope=broad_show_me_person"),
+        )
+        orig_x = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _XmasPerson()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["peggy-immich"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _XmasPerson()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            xhits, _xst = R.search_photos(xmas_plan, _XmasPhoto(), limit=50)
+        finally:
+            for k, v in orig_x.items():
+                setattr(person_mod, k, v)
+        xids = {h.external_id for h in xhits}
+        _check(
+            "christmas_keeps_undated_drops_off_season",
+            "xmas-dated" in xids
+            and "undated-face" in xids
+            and "july-dated" not in xids,
+            checks,
+            problems,
+            f"ids={sorted(xids)}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "christmas_keeps_undated_drops_off_season",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        live = PhotoPersonRef(
+            provider_key="scripted_photo",
+            external_id="immich-live-peggy",
+            display_name="Peggy",
+        )
+        live_asset = PhotoAssetDto(
+            provider_key="scripted_photo",
+            external_id="live-face-1",
+            taken_at=datetime(2021, 12, 20, tzinfo=timezone.utc),
+            people=(live,),
+        )
+
+        class _StaleThenName:
+            provider_key = "scripted_photo"
+
+            def __init__(self) -> None:
+                self._client = type(
+                    "C",
+                    (),
+                    {
+                        "_last_person_source": "timeout",
+                        "_reset_person_circuit": lambda self=None: None,
+                    },
+                )()
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query: str | None = None, limit: int = 50):
+                return [live]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                ids = list(query.person_external_ids or ())
+                if ids == ["stale-mapped-id"]:
+                    self._client._last_person_source = "timeout"
+                    return []
+                if "immich-live-peggy" in ids:
+                    self._client._last_person_source = "faces_or_timeline"
+                    return [live_asset]
+                return []
+
+        class _MappedStale:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "scripted_photo",
+                    "external_id": "stale-mapped-id",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig_s = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _MappedStale()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["stale-mapped-id"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _MappedStale()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        try:
+            shits, sst = R.search_photos(
+                QueryPlan(
+                    original_ask="show me Peggy George",
+                    effective_ask="show me Peggy George",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_visual=True,
+                    visual_scope="broad",
+                    person_names=("Peggy George",),
+                ),
+                _StaleThenName(),
+                limit=50,
+            )
+        finally:
+            for k, v in orig_s.items():
+                setattr(person_mod, k, v)
+        _check(
+            "stale_mapped_id_falls_back_to_immich_name",
+            len(shits) == 1
+            and shits[0].external_id == "live-face-1"
+            and sst.get("unavailable") is not True,
+            checks,
+            problems,
+            f"n={len(shits)} ids={[h.external_id for h in shits]} detail={sst.get('detail')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "stale_mapped_id_falls_back_to_immich_name",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
 
     try:
         from memorybox.person import AmbiguousIdentityError, PersonView, _pick_unique_ask_person

@@ -1033,6 +1033,25 @@ def ask_endpoint(body: AskRequest) -> dict[str, Any]:
     return result.to_dict()
 
 
+@app.post("/ask/api/compile")
+def ask_compile(body: AskRequest) -> dict[str, Any]:
+    """MBQL-001 compile — STT-ready. Deterministic first; no model on this route."""
+    from memorybox.context import default_context_store
+    from memorybox.mbql import compile_ask
+
+    store = default_context_store
+    ctx = store.get_or_create(body.session_id) if body.session_id else None
+    plan = compile_ask(body.ask, ctx, llm=None, allow_model=False)
+    return {"ok": True, "plan": plan.to_dict()}
+
+
+@app.get("/ask/api/mbql-verbs")
+def ask_mbql_verbs() -> dict[str, Any]:
+    from memorybox.mbql import VERB_IDS
+
+    return {"ok": True, "verbs": list(VERB_IDS)}
+
+
 @app.get("/ask/api/history")
 def ask_history_get() -> dict[str, Any]:
     """Last 100 asks on this machine. Survives serve shutdown."""

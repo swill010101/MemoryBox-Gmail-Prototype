@@ -6,7 +6,7 @@
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6, **I7 ACCEPTED**; I4 build authorized / not ACCEPTED; **P2-I7A ACCEPTED** 2026-08-15). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files up front = **P2-BL-I8-01**.  
-**I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). MBQL-001 waits on explicit authorization.
+**I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [BUILD AUTHORIZED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-15.
 
 ## 0. First-increment verdict (confirmed)
 
@@ -90,7 +90,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I6** | Kinship Inference | A | **ACCEPTED** (2026-08-14) — TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | **ACCEPTED** (2026-08-15) — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); attachment bytes **P2-BL-I7-01** |
 | **P2-I7A** | AI Model Trace & Observability | F | **ACCEPTED** (2026-08-15) — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
-| **MBQL-001** | Ask, Query & Command Language | F | **After I7A ACCEPTED.** Semantic contract for Planner / Orchestrator. Not I8. Not started. |
+| **MBQL-001** | Ask, Query & Command Language | F | **BUILD AUTHORIZED** 2026-08-15 — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). After I7A ACCEPTED, before I8. |
 | **P2-I8** | Richer Email | A | |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
@@ -162,6 +162,10 @@ P2-COM-01 · CAP-P2-018. **ACCEPTED** 2026-08-15 (Tom). Attachment bytes parked 
 ### P2-I7A — AI Model Trace & Observability · F
 
 Developer-only request→model→disposition traces. **ACCEPTED** 2026-08-15 (Tom FlightSim owner pass). [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL in I7A.**
+
+### MBQL-001 — Ask, Query & Command Language · F
+
+Shared typed intent for Planner / Orchestrator / Explore commands. **DEFINITION LOCKED** · PRD **ACCEPTED** · **BUILD AUTHORIZED** 2026-08-15. [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. I9 stays after I8.5. Do not start I8.
 
 ### P2-I8 — Richer Email · A
 

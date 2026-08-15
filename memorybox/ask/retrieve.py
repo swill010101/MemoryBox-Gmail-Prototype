@@ -927,7 +927,10 @@ def search_photos(
             return hits
         out: list[PhotoHit] = []
         for h in hits:
-            if windows and not date_in_windows(h.taken_at, windows):
+            # Explore keeps undated in Gallery (off the Timeline). Dropping
+            # them here emptied Christmas / year asks: face stubs have no EXIF,
+            # so "Peggy during Christmas" showed 0 cards ("gallery is lost").
+            if windows and h.taken_at and not date_in_windows(h.taken_at, windows):
                 continue
             if places:
                 blob = " ".join(
@@ -965,9 +968,9 @@ def search_photos(
     try:
         health = photo.health()
         if not health.ok:
-            status["unavailable"] = True
-            status["detail"] = health.detail or "photo provider unhealthy"
-            return [], status
+            # Ping/health must not zero a person library. FlightSim Immich ping
+            # can fail while /people + asset GETs still return photos.
+            status["health_detail"] = health.detail or "photo provider unhealthy"
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]
@@ -1160,11 +1163,14 @@ def search_photos(
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
                 assets = []
                 status["photo_search_error"] = "personIds_search_failed"
+            src = getattr(getattr(photo, "_client", None), "_last_person_source", None)
+            if src:
+                status["person_library_source"] = src
             if assets:
                 return list(assets)
             list_fn = getattr(photo, "list_face_assets", None)
             get_fn = getattr(photo, "get_asset", None)
-            if not callable(list_fn) or not callable(get_fn):
+            if not callable(list_fn):
                 return []
             seen: set[str] = set()
             out: list[PhotoAssetDto] = []
@@ -1176,15 +1182,24 @@ def search_photos(
                     continue
                 for face in faces or []:
                     aid = str(getattr(face, "source_asset_id", None) or "").strip()
-                    if not aid or aid in seen:
+                    if not aid or "/" in aid or aid in seen:
                         continue
                     seen.add(aid)
-                    try:
-                        asset = get_fn(aid)
-                    except Exception:  # noqa: BLE001
-                        continue
-                    if asset is not None:
-                        out.append(asset)
+                    asset = None
+                    if callable(get_fn):
+                        try:
+                            asset = get_fn(aid)
+                        except Exception:  # noqa: BLE001
+                            asset = None
+                    if asset is None:
+                        # Gallery can show a thumb from the asset id alone.
+                        # FlightSim get_asset often 404s/RST after a good face UUID.
+                        asset = PhotoAssetDto(
+                            provider_key=getattr(photo, "provider_key", "immich")
+                            or "immich",
+                            external_id=aid,
+                        )
+                    out.append(asset)
                     if len(out) >= cap:
                         status["face_asset_fallback"] = len(out)
                         return out
@@ -1360,6 +1375,11 @@ def search_photos(
             return [], status
 
         person_ext: list[str] = []
+        # Mapped-id RST must not block Immich name lookup (stale UUID / circuit).
+        _client = getattr(photo, "_client", None)
+        _reset = getattr(_client, "_reset_person_circuit", None)
+        if callable(_reset):
+            _reset()
         # Prefer resolved MB display names (Peggy → Peggy George) for Immich lookup
         name_queries: list[str] = []
         for name in plan.person_names:
@@ -1408,7 +1428,9 @@ def search_photos(
                     person_id=confirmed.id,
                 ):
                     continue
-                if r.external_id in mapped_ext and hits:
+                if r.external_id in mapped_ext:
+                    # Already searched (including timeout). Retrying the same
+                    # id just re-opens the 6s RST and skips a live Immich name.
                     continue
                 person_ext.append(r.external_id)
 
@@ -1430,11 +1452,22 @@ def search_photos(
                 status["clarify_message"] = f"Who is {who}?"
                 return _finish(hits)
             status["identity_mode"] = "photos_empty_person_resolved"
-            status["detail"] = (
-                f"no_immich_person_ids names={name_queries} "
-                f"unmapped_resolvable={unmapped_resolvable_names or []} "
-                f"mapped_names={mapped_names}"
+            src = status.get("person_library_source") or getattr(
+                getattr(photo, "_client", None), "_last_person_source", None
             )
+            if src == "timeout":
+                status["unavailable"] = True
+                status["detail"] = (
+                    f"immich_timeout names={name_queries} "
+                    f"mapped_names={mapped_names}"
+                )
+            else:
+                status["detail"] = (
+                    f"no_immich_person_ids names={name_queries} "
+                    f"unmapped_resolvable={unmapped_resolvable_names or []} "
+                    f"mapped_names={mapped_names}"
+                    + (f" source={src}" if src else "")
+                )
             if mapped_names or unmapped_resolvable_names:
                 status["disclosure"] = (
                     (status.get("disclosure") or "")

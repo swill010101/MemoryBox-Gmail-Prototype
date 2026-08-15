@@ -5,6 +5,7 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -35,6 +36,7 @@ class ImmichHttpClient:
         )
         self.ui_root, self.api_base = self._normalize_base_url(raw)
         self._key = key
+        self._lock = threading.Lock()
         thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
 
@@ -91,7 +93,10 @@ class ImmichHttpClient:
         *,
         body: dict[str, Any] | None = None,
         timeout: float = 60,
+        retries: int = 2,
     ) -> tuple[int, Any]:
+        if getattr(self, "_circuit_open", False) and not self._circuit_allows(path):
+            raise TimeoutError("immich circuit open")
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {
@@ -102,37 +107,74 @@ class ImmichHttpClient:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         last_err: Exception | None = None
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    raw = resp.read().decode("utf-8", "replace")
-                    return resp.status, (json.loads(raw) if raw else None)
-            except urllib.error.HTTPError as e:
-                raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        attempts = max(1, int(retries))
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            self._lock = threading.Lock()
+            lock = self._lock
+        with lock:
+            for attempt in range(attempts):
                 try:
-                    parsed = json.loads(raw) if raw else None
-                except Exception:  # noqa: BLE001
-                    parsed = raw
-                return e.code, parsed
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-                # FlightSim Immich often RST/times out on person library search.
-                # Retry — do not treat a dropped socket as "this person has no photos".
-                last_err = exc
-                if attempt < 2:
-                    time.sleep(0.35 * (attempt + 1))
-                    continue
-                raise
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        raw = resp.read().decode("utf-8", "replace")
+                        return resp.status, (json.loads(raw) if raw else None)
+                except urllib.error.HTTPError as e:
+                    raw = e.read().decode("utf-8", "replace") if e.fp else ""
+                    try:
+                        parsed = json.loads(raw) if raw else None
+                    except Exception:  # noqa: BLE001
+                        parsed = raw
+                    return e.code, parsed
+                except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                    # FlightSim Immich often RST/times out on person library search.
+                    last_err = exc
+                    self._note_transport_fail(exc)
+                    if attempt < attempts - 1 and not getattr(self, "_circuit_open", False):
+                        time.sleep(0.35 * (attempt + 1))
+                        continue
+                    raise
         if last_err is not None:
             raise last_err
         raise RuntimeError("Immich request failed")
 
+    def _reset_person_circuit(self) -> None:
+        self._transport_fails = 0
+        self._circuit_open = False
+
+    def _note_transport_fail(self, exc: BaseException | None = None) -> None:
+        """Two RST/timeouts in one person search → stop stacking 8–60s probes."""
+        msg = str(exc or "").lower()
+        if exc is not None and not isinstance(
+            exc, (TimeoutError, ConnectionError, OSError, urllib.error.URLError)
+        ):
+            if "timed out" not in msg and "circuit" not in msg and "rst" not in msg:
+                return
+        self._transport_fails = int(getattr(self, "_transport_fails", 0) or 0) + 1
+        if self._transport_fails >= 2:
+            self._circuit_open = True
+
+    def _circuit(self) -> bool:
+        return bool(getattr(self, "_circuit_open", False))
+
+    @staticmethod
+    def _circuit_allows(path: str) -> bool:
+        """Name lookup stays open after a mapped-id RST (stale Immich UUID)."""
+        p = path or ""
+        return (
+            p == "/server/ping"
+            or p == "/search/person"
+            or p.startswith("/people?name=")
+        )
+
     def ping(self) -> bool:
-        status, body = self._request("GET", "/server/ping")
+        status, body = self._request("GET", "/server/ping", timeout=8, retries=1)
         return status == 200 and isinstance(body, dict) and body.get("res") == "pong"
 
     def check_read_permissions(self) -> dict[str, bool]:
         out = {"asset.read": False, "album.read": False, "person.read": False}
-        status, _ = self._request("POST", "/search/metadata", body={"size": 1})
+        status, _ = self._request(
+            "POST", "/search/metadata", body={"size": 1}, timeout=8, retries=1
+        )
         out["asset.read"] = status == 200
         status, _ = self._request("GET", "/albums")
         out["album.read"] = status == 200
@@ -152,7 +194,13 @@ class ImmichHttpClient:
         return data
 
     def list_people(self) -> list[dict[str, Any]]:
-        status, data = self._request("GET", "/people?withHidden=false")
+        try:
+            status, data = self._request(
+                "GET", "/people?withHidden=false", timeout=8, retries=1
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+            return []
         if status != 200:
             return []
         if isinstance(data, dict):
@@ -164,17 +212,252 @@ class ImmichHttpClient:
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
-        Prefer ``withExif: true`` so Map gets GPS, but learn once per client:
-        if Immich rejects or times out withExif, fall back to plain personIds
-        pagination for the rest of the fetch. Never re-probe multi-variants on
-        every page (that wiped FlightSim person libraries).
+        FlightSim POST /search/metadata often RST on personIds (Show me Peggy
+        George = 0 photos / 1 video). Prefer GET paths the Immich UI uses:
 
-        Do not trust ``assets.total`` as an early-stop.
+        1. ``GET /people/{id}?withFaces=true`` — one call, asset UUIDs
+        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId
+        3. POST /search/metadata last, short timeout, never the first probe
+
+        Prefer ``withExif: true`` on the metadata path so Map gets GPS, but
+        learn once per client. Do not trust ``assets.total`` as an early-stop.
         """
         if not person_ids:
             return []
+        self._reset_person_circuit()
         target = max(1, min(int(size), 5000))
-        page_size = 100
+        by_id: dict[str, dict[str, Any]] = {}
+
+        def _add(rows: list[dict[str, Any]]) -> None:
+            for it in rows:
+                if not isinstance(it, dict):
+                    continue
+                eid = str(it.get("id") or "").strip()
+                if not eid or eid in by_id:
+                    continue
+                by_id[eid] = it
+
+        _add(self._assets_from_person_faces(person_ids, target))
+        # withFaces often IS the person library (all assigned faces). Only
+        # hit timeline when faces were sparse and Immich is still answering.
+        if len(by_id) < min(target, 20) and not self._circuit():
+            _add(self._assets_from_person_timeline(person_ids, target))
+        # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
+        if by_id:
+            self._last_person_source = "faces_or_timeline"
+            return list(by_id.values())[:target]
+        if self._circuit():
+            self._last_person_source = "timeout"
+            return []
+
+        try:
+            _add(self._assets_from_person_metadata(person_ids, target))
+            if by_id:
+                self._last_person_source = "metadata"
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+        if by_id:
+            return list(by_id.values())[:target]
+        self._last_person_source = "timeout" if self._circuit() else "empty"
+        return []
+
+    def _assets_from_person_faces(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Stub assets from face records. GET /people works on FlightSim."""
+        by_id: dict[str, dict[str, Any]] = {}
+        for pid in person_ids:
+            pid = str(pid or "").strip()
+            if not pid:
+                continue
+            if self._circuit():
+                break
+            try:
+                faces = self.list_faces_for_person(pid)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                faces = []
+            for face in faces or []:
+                if not isinstance(face, dict):
+                    continue
+                aid = self._immich_asset_id(
+                    face.get("assetId") or face.get("imageId")
+                )
+                if not aid or aid == pid or aid in by_id:
+                    continue
+                by_id[aid] = {
+                    "id": aid,
+                    "people": [{"id": pid, "name": face.get("personName") or ""}],
+                }
+                if len(by_id) >= target:
+                    return list(by_id.values())
+        return list(by_id.values())
+
+    def _assets_from_person_timeline(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Immich UI person library: time buckets, then bucket asset ids."""
+        by_id: dict[str, dict[str, Any]] = {}
+        for pid in person_ids:
+            pid = str(pid or "").strip()
+            if not pid:
+                continue
+            if self._circuit():
+                break
+            buckets = self._list_person_time_buckets(pid)
+            for bucket in buckets[:24]:
+                if self._circuit():
+                    break
+                if len(by_id) >= target:
+                    return list(by_id.values())[:target]
+                for it in self._list_person_bucket_assets(pid, bucket):
+                    eid = str(it.get("id") or "").strip()
+                    if not eid or eid in by_id:
+                        continue
+                    people = it.get("people")
+                    if not isinstance(people, list) or not people:
+                        it = dict(it)
+                        it["people"] = [{"id": pid}]
+                    by_id[eid] = it
+                    if len(by_id) >= target:
+                        return list(by_id.values())[:target]
+        return list(by_id.values())[:target]
+
+    def _list_person_time_buckets(self, person_id: str) -> list[str]:
+        pid = (person_id or "").strip()
+        if not pid:
+            return []
+        paths = (
+            f"/timeline/buckets?personId={pid}&size=YEAR",
+            f"/timeline/buckets?personId={pid}&size=MONTH",
+            f"/timeline/buckets?personIds={pid}&size=MONTH",
+            f"/assets/time-buckets?personId={pid}&size=MONTH",
+            f"/asset/time-buckets?personId={pid}&size=MONTH",
+            f"/timeline/buckets?personId={pid}",
+        )
+        for path in paths:
+            if self._circuit():
+                break
+            try:
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
+                continue
+            if status != 200:
+                continue
+            rows = data if isinstance(data, list) else (
+                data.get("buckets") if isinstance(data, dict) else None
+            )
+            if not isinstance(rows, list) or not rows:
+                continue
+            out: list[str] = []
+            for row in rows:
+                if isinstance(row, str) and row.strip():
+                    out.append(row.strip())
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                tb = (
+                    row.get("timeBucket")
+                    or row.get("timeBucketId")
+                    or row.get("id")
+                    or row.get("date")
+                )
+                if tb:
+                    out.append(str(tb).strip())
+            if out:
+                # Newest first when Immich sent oldest-first.
+                return list(reversed(out)) if len(out) > 1 else out
+        return []
+
+    def _list_person_bucket_assets(
+        self, person_id: str, time_bucket: str
+    ) -> list[dict[str, Any]]:
+        pid = (person_id or "").strip()
+        tb = (time_bucket or "").strip()
+        if not pid or not tb:
+            return []
+        from urllib.parse import quote
+
+        qtb = quote(tb, safe=":-T.Z")
+        paths = (
+            f"/timeline/bucket?timeBucket={qtb}&personId={pid}",
+            f"/timeline/bucket?timeBucket={qtb}&personIds={pid}",
+            f"/assets/time-bucket?timeBucket={qtb}&personId={pid}",
+            f"/asset/time-bucket?timeBucket={qtb}&personId={pid}",
+        )
+        for path in paths:
+            if self._circuit():
+                break
+            try:
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
+                continue
+            if status != 200:
+                continue
+            items = self._normalize_timeline_assets(data)
+            if items:
+                return items
+        return []
+
+    def _normalize_timeline_assets(self, data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            out: list[dict[str, Any]] = []
+            for it in data:
+                if isinstance(it, dict) and it.get("id"):
+                    out.append(it)
+                elif isinstance(it, str) and self._immich_asset_id(it):
+                    out.append({"id": str(it)})
+            return out
+        if not isinstance(data, dict):
+            return []
+        raw_items = data.get("items") or data.get("assets")
+        if isinstance(raw_items, list) and raw_items:
+            return [it for it in raw_items if isinstance(it, dict) and it.get("id")]
+        ids = data.get("id") or data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return []
+
+        def _col(name: str) -> list[Any]:
+            v = data.get(name)
+            return v if isinstance(v, list) else []
+
+        created = _col("fileCreatedAt") or _col("createdAt")
+        cities = _col("city")
+        countries = _col("country")
+        is_image = _col("isImage")
+        out: list[dict[str, Any]] = []
+        for i, aid in enumerate(ids):
+            key = str(aid or "").strip()
+            if not key:
+                continue
+            if i < len(is_image) and is_image[i] is False:
+                continue
+            row: dict[str, Any] = {"id": key}
+            if i < len(created) and created[i]:
+                row["localDateTime"] = created[i]
+                row["fileCreatedAt"] = created[i]
+            city = cities[i] if i < len(cities) else None
+            country = countries[i] if i < len(countries) else None
+            if city or country:
+                row["exifInfo"] = {
+                    "city": city or None,
+                    "country": country or None,
+                }
+            out.append(row)
+        return out
+
+    def _assets_from_person_metadata(
+        self, person_ids: list[str], target: int
+    ) -> list[dict[str, Any]]:
+        """Last-resort POST /search/metadata. Short timeouts — FlightSim RST."""
+        # FlightSim /search/metadata RST on large person pages (100+withExif).
+        page_size = 25
         max_pages = max(2, (target + page_size - 1) // page_size) + 2
         use_order = getattr(self, "_person_use_order", True)
         # None = not yet probed; True/False = learned for this client
@@ -203,10 +486,19 @@ class ImmichHttpClient:
             )
             return ([it for it in items if isinstance(it, dict)], next_s)
 
-        def _once(payload: dict[str, Any]) -> tuple[int, Any, Exception | None]:
+        def _once(
+            payload: dict[str, Any],
+            *,
+            timeout: float = 8,
+            retries: int = 1,
+        ) -> tuple[int, Any, Exception | None]:
             try:
                 status, data = self._request(
-                    "POST", "/search/metadata", body=payload, timeout=25
+                    "POST",
+                    "/search/metadata",
+                    body=payload,
+                    timeout=timeout,
+                    retries=retries,
                 )
                 return status, data, None
             except Exception as exc:  # noqa: BLE001
@@ -241,35 +533,39 @@ class ImmichHttpClient:
                         return _extract_items(data)
                 return [], None
 
-            # First page(s): probe withExif once, then fall back — never wipe library.
-            probe_order: list[dict[str, Any]] = [
-                {**base, "order": "desc", "withExif": True},
-                {**base, "withExif": True},
-                {**base, "order": "desc"},
-                dict(base),
-            ]
+            # Library first (no withExif). FlightSim personIds+withExif often
+            # RST for 25s × retries and never reaches the working path — that
+            # was Show me Peggy George = 1 video / 0 photos / ~129s.
             last_err: Exception | None = None
-            last_status = 0
-            for payload in probe_order:
-                status, data, err = _once(payload)
+            for payload in ({**base, "order": "desc"}, dict(base)):
+                status, data, err = _once(payload, timeout=8, retries=1)
                 if err is not None:
                     last_err = err
-                    if payload.get("withExif"):
-                        # Timeout/reject on EXIF — keep probing without it.
-                        continue
                     continue
-                last_status = status
                 if status == 200:
-                    use_exif = bool(payload.get("withExif"))
+                    items, nxt = _extract_items(data)
+                    st_x, data_x, _err_x = _once(
+                        {**base, "order": "desc", "withExif": True},
+                        timeout=8,
+                        retries=1,
+                    )
+                    if st_x == 200:
+                        items_x, nxt_x = _extract_items(data_x)
+                        if items_x:
+                            use_exif = True
+                            use_order = True
+                            self._person_with_exif = True
+                            self._person_use_order = True
+                            return items_x, nxt_x
+                    use_exif = False
                     use_order = "order" in payload
-                    self._person_with_exif = use_exif
+                    self._person_with_exif = False
                     self._person_use_order = use_order
-                    return _extract_items(data)
+                    return items, nxt
                 if status in (400, 422):
                     continue
-            if page == 1 and last_err is not None and last_status == 0:
+            if page == 1 and last_err is not None:
                 raise last_err
-            # All probes failed without a transport error — no assets.
             use_exif = False
             self._person_with_exif = False
             return [], None
@@ -305,63 +601,176 @@ class ImmichHttpClient:
 
         return list(by_id.values())[:target]
 
+    @staticmethod
+    def _name_matches_person(query: str, person_name: str) -> bool:
+        """Match Immich 'Peggy' to Ask 'Peggy George' without substring traps."""
+        q = (query or "").strip().lower()
+        n = (person_name or "").strip().lower()
+        if len(q) < 2 or not n:
+            return False
+        if q == n:
+            return True
+        if n.startswith(q + " ") or q.startswith(n + " "):
+            return True
+        q0 = q.split()[0]
+        n0 = n.split()[0]
+        return bool(q0 and n0 and q0 == n0 and (n.startswith(q) or q.startswith(n)))
+
     def find_people_by_name(self, name_query: str, *, limit: int = 8) -> list[dict[str, Any]]:
-        q = (name_query or "").strip().lower()
+        q = (name_query or "").strip()
         if len(q) < 2:
             return []
-        hits = []
-        for p in self.list_people():
-            name = str(p.get("name") or "").strip()
-            if not name:
-                continue
-            nl = name.lower()
-            if q == nl or q in nl or nl.startswith(q):
-                hits.append(p)
-        hits.sort(
-            key=lambda p: (
-                0 if str(p.get("name") or "").lower() == q else 1,
-                str(p.get("name") or ""),
+        tokens = [q]
+        first = q.split()[0]
+        if first.lower() != q.lower():
+            tokens.append(first)
+        hits: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def _add(rows: Any) -> None:
+            if isinstance(rows, dict):
+                rows = rows.get("people") or rows.get("items") or []
+            if not isinstance(rows, list):
+                return
+            for p in rows:
+                if not isinstance(p, dict):
+                    continue
+                pid = str(p.get("id") or "").strip()
+                name = str(p.get("name") or "").strip()
+                if not pid or pid in seen or not name:
+                    continue
+                if self._name_matches_person(q, name):
+                    seen.add(pid)
+                    hits.append(p)
+
+        from urllib.parse import quote
+
+        for token in tokens:
+            try:
+                status, data = self._request(
+                    "POST",
+                    "/search/person",
+                    body={"name": token},
+                    timeout=6,
+                    retries=1,
+                )
+                if status == 200:
+                    _add(data)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+            if hits:
+                break
+            try:
+                status, data = self._request(
+                    "GET",
+                    f"/people?name={quote(token)}&withHidden=false",
+                    timeout=6,
+                    retries=1,
+                )
+                if status == 200:
+                    _add(data)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+            if hits:
+                break
+        if hits:
+            ql = q.lower()
+            hits.sort(
+                key=lambda p: (
+                    0 if str(p.get("name") or "").strip().lower() == ql else 1,
+                    str(p.get("name") or ""),
+                )
             )
-        )
-        return hits[:limit]
+            return hits[:limit]
+        # Do not dump GET /people (60s+ on FlightSim) after search/person missed.
+        return []
+
+    @staticmethod
+    def _immich_asset_id(value: Any) -> str | None:
+        """Immich asset UUID — not a filesystem thumbnailPath or person id."""
+        s = str(value or "").strip()
+        if not s or "/" in s or s.startswith("http") or len(s) < 16:
+            return None
+        return s
 
     def list_faces_for_person(self, person_id: str) -> list[dict[str, Any]]:
-        """Best-effort Immich face exemplars for a person (P2-I1)."""
+        """Best-effort Immich face exemplars for a person (P2-I1).
+
+        ``withFaces=true`` is the person-library path when /search/metadata RST:
+        each face carries a real asset UUID (not thumbnailPath).
+        """
         pid = (person_id or "").strip()
         if not pid:
             return []
-        # Immich variants across versions
+        # Cheap person record first (feature face). withFaces can RST when
+        # the person has hundreds of faces — that was 187s / 0 photos.
         for path in (
-            f"/people/{pid}?withFaces=true",
-            f"/faces?id={pid}",
             f"/people/{pid}",
+            f"/people/{pid}?withFaces=true",
+            f"/people/{pid}/faces",
+            f"/faces?id={pid}",
         ):
+            if self._circuit():
+                break
             try:
-                status, data = self._request("GET", path)
-            except Exception:  # noqa: BLE001
+                status, data = self._request("GET", path, timeout=6, retries=1)
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
+                if self._circuit():
+                    break
                 continue
             if status != 200:
                 continue
-            faces: list[dict[str, Any]] = []
-            if isinstance(data, dict):
-                raw_faces = data.get("faces") or data.get("items") or []
-                if isinstance(raw_faces, list):
-                    faces = [f for f in raw_faces if isinstance(f, dict)]
-                # Some payloads embed thumbnail as person-level only
-                if not faces and data.get("id"):
-                    faces = [
-                        {
-                            "id": f"person-thumb-{pid}",
-                            "personId": pid,
-                            "assetId": data.get("thumbnailPath") or data.get("id"),
-                            "boundingBoxX1": None,
-                        }
-                    ]
-            elif isinstance(data, list):
-                faces = [f for f in data if isinstance(f, dict)]
-            if faces:
-                return faces
+            usable = self._faces_from_people_payload(pid, data)
+            if usable:
+                return usable
         return []
+
+    def _faces_from_people_payload(
+        self, pid: str, data: Any
+    ) -> list[dict[str, Any]]:
+        faces: list[dict[str, Any]] = []
+        if isinstance(data, dict):
+            for key in ("faces", "items", "assets"):
+                raw = data.get(key)
+                if isinstance(raw, list):
+                    faces.extend(f for f in raw if isinstance(f, dict))
+            for key in (
+                "faceAssetId",
+                "featureFaceAssetId",
+                "thumbnailAssetId",
+                "faceAssetID",
+            ):
+                aid = self._immich_asset_id(data.get(key))
+                if aid:
+                    faces.append(
+                        {
+                            "id": f"person-face-{aid}",
+                            "personId": pid,
+                            "assetId": aid,
+                        }
+                    )
+        elif isinstance(data, list):
+            faces = [f for f in data if isinstance(f, dict)]
+        usable: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for f in faces:
+            nested = f.get("asset") if isinstance(f.get("asset"), dict) else {}
+            aid = self._immich_asset_id(
+                f.get("assetId")
+                or f.get("imageId")
+                or f.get("sourceAssetId")
+                or nested.get("id")
+            )
+            if not aid or aid == pid or aid in seen:
+                continue
+            seen.add(aid)
+            row = dict(f)
+            row["assetId"] = aid
+            if not row.get("id"):
+                row["id"] = f"person-face-{aid}"
+            usable.append(row)
+        return usable
 
     def thumb_url(self, asset_id: str, *, size: str = "preview") -> str:
         return f"{self.api_base}/assets/{asset_id}/thumbnail?size={size}"

@@ -84,6 +84,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     _check(
         "i7_person_ask_photo_fallback",
         "face_asset_fallback" in retrieve
+        and "health_detail" in retrieve
         and "_search_person_assets" in retrieve
         and "photos_empty_person_resolved" in retrieve
         and "resolved_person_ids_for_visual" in orch
@@ -121,11 +122,10 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "includeTexts" in explore_js
         and "galleryShowSms" in explore_js
         and "Add texts" in explore_js
-        and "MBQL" not in find_py
-        and "mbql" not in explore_js.lower(),
+        and "MBQL" not in find_py,
         checks,
         problems,
-        "Default Gallery hides texts; Add/Only texts; no MBQL-001",
+        "Default Gallery hides texts; Add/Only texts stay; MBQL lives outside find.py",
     )
     _check(
         "i7_archive_health",

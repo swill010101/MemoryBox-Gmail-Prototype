@@ -69,6 +69,29 @@
   // "Clear location." "Show map." "Show gallery."
   // "Clear context and go to People."
 
+  // MBQL-001 shared verb ids — must match memorybox/mbql/verbs.py VERB_IDS
+  const MBQL_VERBS = {
+    clear_filters: /^clear filters\.?$/i,
+    show_everything: /^show everything\.?$/i,
+    only_undated: /^only undated\.?$|^undated\.?$|^show undated\.?$/i,
+    clear_undated: /^clear undated\.?$|^include dated\.?$/i,
+    show_map: /^show map\.?$|^map view\.?$|^on the map\.?$/i,
+    show_gallery: /^show gallery\.?$|^gallery view\.?$|^list view\.?$/i,
+    clear_place: /^clear location\.?$|^clear place\.?$|^clear map selection\.?$/i,
+    clear_time: /^clear date\.?$|^clear time\.?$|^clear timeline\.?$/i,
+    reset: /^reset\.?$/i,
+    reset_timeline: /^reset timeline\.?$|^full result range\.?$|^reset range\.?$/i,
+    only_photos: /^only photos?\.?$|^photos?\.?$/i,
+    only_video: /^only videos?\.?$/i,
+    add_video: /^add video\.?$/i,
+    add_texts: /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$|^add texts?\.?$/i,
+    only_texts: /^only (email|emails|texts?|sms|imessage)\b/i,
+    only_artifacts: /^only artifacts?\.?$/i,
+    only_stories: /^only stories?\.?$/i,
+    go_to_people: /clear context.*people|go to people/i,
+    go_to_person: /^go to\s+(.+?)\s+instead\.?$/i,
+  };
+
   /** @type {{
    *   domain: {
    *     askText: string,
@@ -272,7 +295,9 @@
         if (item.gallery_default_hidden && !includeTexts) return false;
         return true;
       }
-      return Boolean(includeTexts);
+      // Photos / video / artifact / story are not texts. includeTexts must
+      // not leak SMS into the Photos pill (FlightSim: All texts + Photos on).
+      return false;
     }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
@@ -708,9 +733,17 @@
       state.domain.smsTruncated && state.domain.smsMatchTotal
         ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
         : "";
+    let extra = "";
+    if (
+      !c.photo &&
+      state.domain._askSummary &&
+      /immich|photo/i.test(state.domain._askSummary)
+    ) {
+      extra = " " + String(state.domain._askSummary).trim();
+    }
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}`;
+    }${trunc}${extra}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -943,9 +976,9 @@
     }
     let nextType = typeFilter;
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
-    const includeTexts = keepPresentation && state
-      ? Boolean(state.domain.includeTexts || galleryShowSms)
-      : galleryShowSms;
+    // New find owns visibility. Do not keep includeTexts from a prior SMS ask
+    // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
+    const includeTexts = galleryShowSms;
     if (galleryShowSms) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";
@@ -1114,7 +1147,7 @@
     const lower = text.toLowerCase();
 
     // Navigation / clear context — bare People picker (drop active person)
-    if (/clear context.*people|go to people/.test(lower)) {
+    if (MBQL_VERBS.go_to_people.test(text)) {
       if (window.mbShell && window.mbShell.setActivePerson) {
         window.mbShell.setActivePerson(null);
       }
@@ -1154,8 +1187,8 @@
       return;
     }
 
-    if (PERSON_MODE && /^go to\s+(.+?)\s+instead\.?$/.test(lower)) {
-      const m = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    if (PERSON_MODE && MBQL_VERBS.go_to_person.test(text)) {
+      const m = String(text).match(MBQL_VERBS.go_to_person);
       const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
       if (who) {
         const whoL = who.toLowerCase();
@@ -1176,7 +1209,7 @@
       }
     }
 
-    if (/^clear filters\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_filters.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1185,7 +1218,7 @@
       render();
       return;
     }
-    if (/^show everything\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_everything.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1195,46 +1228,42 @@
       return;
     }
 
-    if (/^only undated\.?$|^undated\.?$|^show undated\.?$/.test(lower)) {
+    if (MBQL_VERBS.only_undated.test(text)) {
       setUndatedFilter(true);
       render();
       return;
     }
-    if (/^clear undated\.?$|^include dated\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_undated.test(text)) {
       setUndatedFilter(false);
       render();
       return;
     }
 
-    if (/^show map\.?$|^map view\.?$|^on the map\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_map.test(text)) {
       setViewMode("map");
       render();
       return;
     }
-    if (/^show gallery\.?$|^gallery view\.?$|^list view\.?$/.test(lower)) {
+    if (MBQL_VERBS.show_gallery.test(text)) {
       setViewMode("gallery");
       render();
       return;
     }
 
-    if (
-      /^clear location\.?$/.test(lower) ||
-      /^clear place\.?$/.test(lower) ||
-      /^clear map selection\.?$/.test(lower)
-    ) {
+    if (MBQL_VERBS.clear_place.test(text)) {
       clearPlaceFilter();
       render();
       return;
     }
 
-    if (/^clear date\.?$|^clear time\.?$|^clear timeline\.?$/.test(lower)) {
+    if (MBQL_VERBS.clear_time.test(text)) {
       state.domain.temporalWindows = null;
       resetTimelineExtent(true);
       render();
       return;
     }
 
-    if (/^reset\.?$/.test(lower)) {
+    if (MBQL_VERBS.reset.test(text)) {
       setTypeFilter("all");
       clearPlaceFilter();
       setUndatedFilter(false);
@@ -1289,15 +1318,15 @@
       }
     }
 
-    if (/only photos?\.?/.test(lower) || /^photos?\.?$/.test(lower)) {
+    if (MBQL_VERBS.only_photos.test(text) || /only photos?\.?/.test(lower)) {
       setTypeFilter("photo");
       render();
       return;
     }
-    if (/only videos?\.?/.test(lower) || /add video/.test(lower)) {
-      if (/add video/.test(lower) && state.domain.typeFilter === "photo") {
+    if (MBQL_VERBS.only_video.test(text) || MBQL_VERBS.add_video.test(text)) {
+      if (MBQL_VERBS.add_video.test(text) && state.domain.typeFilter === "photo") {
         setTypeFilter("all");
-      } else if (/only videos?/.test(lower)) {
+      } else if (MBQL_VERBS.only_video.test(text)) {
         setTypeFilter("video");
       } else {
         setTypeFilter("all");
@@ -1305,27 +1334,24 @@
       render();
       return;
     }
-    if (
-      /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$/.test(lower) ||
-      /^add texts?\.?$/.test(lower)
-    ) {
+    if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
-    if (/only (email|emails|texts?|sms|imessage)\b/.test(lower)) {
+    if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
       setTypeFilter("email");
       render();
       return;
     }
-    if (/only artifacts?/.test(lower)) {
+    if (MBQL_VERBS.only_artifacts.test(text)) {
       setTypeFilter("artifact");
       render();
       return;
     }
-    if (/only stories?/.test(lower)) {
+    if (MBQL_VERBS.only_stories.test(text)) {
       setTypeFilter("story");
       render();
       return;
@@ -1345,7 +1371,7 @@
       return;
     }
 
-    if (/reset timeline|full result range|reset range/.test(lower)) {
+    if (MBQL_VERBS.reset_timeline.test(text) || /reset timeline|full result range|reset range/.test(lower)) {
       resetTimelineExtent(true);
       render();
       return;
@@ -1802,6 +1828,7 @@
 
   function renderGallery() {
     const gallery = document.getElementById("mb-explore-gallery");
+    if (!gallery) return;
     const items = visibleItems();
     state.domain.items = items;
     gallery.dataset.density = String(state.gallery.density);
@@ -2008,13 +2035,15 @@
     const empty = !hasDatedExtent();
 
     if (empty) {
-      band.style.left = "0%";
-      band.style.width = "100%";
-      hl.style.left = "0%";
-      hr.style.left = "100%";
-      ph.style.left = "0%";
-      document.getElementById("mb-tl-range-label").textContent =
-        "No dated memories on the Timeline";
+      if (band) {
+        band.style.left = "0%";
+        band.style.width = "100%";
+      }
+      if (hl) hl.style.left = "0%";
+      if (hr) hr.style.left = "100%";
+      if (ph) ph.style.left = "0%";
+      const rangeLab = document.getElementById("mb-tl-range-label");
+      if (rangeLab) rangeLab.textContent = "No dated memories on the Timeline";
     } else {
       const span = Math.max(extentEnd - extentStart, 1);
       // Clamp chrome to the track — indicators/handles never paint outside the timeline
@@ -2081,8 +2110,8 @@
 
     const ticks = document.getElementById("mb-tl-ticks");
     if (empty) {
-      ticks.innerHTML = "";
-    } else {
+      if (ticks) ticks.innerHTML = "";
+    } else if (ticks) {
       const span = Math.max(extentEnd - extentStart, 1);
       const years = [];
       const y0 = new Date(extentStart).getUTCFullYear();

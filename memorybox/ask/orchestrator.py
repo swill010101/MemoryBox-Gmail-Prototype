@@ -13,6 +13,7 @@ from memorybox.context import (
     apply_patch,
     default_context_store,
 )
+from memorybox.mbql import compile_ask
 from memorybox.planner import QueryPlan, plan_ask
 from memorybox.providers.llm.protocol import LlmProvider
 from memorybox.providers.photo.protocol import PhotoProvider
@@ -864,7 +865,10 @@ class AskOrchestrator:
 
     def _ask_impl(self, text: str, *, session_id: str | None = None) -> AskResult:
         ctx = self.store.get_or_create(session_id)
-        plan = plan_ask(text, ctx)
+        try:
+            plan = compile_ask(text, ctx, llm=self.llm)
+        except Exception:  # noqa: BLE001 — Q4: never fail Ask because MBQL failed
+            plan = plan_ask(text, ctx)
 
         # I9A: owner → Relationship service → Person id (no display_name string hacks)
         from dataclasses import replace
@@ -884,7 +888,13 @@ class AskOrchestrator:
 
             pids: list[str] = []
             labels: list[str] = []
-            for name in plan.person_names:
+            for name in sorted(plan.person_names, key=lambda n: (-len(n), n.lower())):
+                nl = name.lower()
+                if any(
+                    nl == lab.lower() or nl in lab.lower() or lab.lower() in nl
+                    for lab in labels
+                ):
+                    continue
                 try:
                     view = find_ask_person_by_name(name, photo=self.photo, lazy_seed=True)
                 except Exception:  # noqa: BLE001
@@ -1229,8 +1239,14 @@ class AskOrchestrator:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
+            # Photos first, then video. They share the Immich client for identity;
+            # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
+            if plan.want_video:
+                videos, video_status = R.search_videos(
+                    plan, self.video, photo=self.photo
+                )
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)
@@ -1240,11 +1256,6 @@ class AskOrchestrator:
                 artifacts = R.search_artifacts(plan)
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
-
-            if plan.want_video:
-                videos, video_status = R.search_videos(
-                    plan, self.video, photo=self.photo
-                )
 
         # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
         # many→Please specify which X you would like.

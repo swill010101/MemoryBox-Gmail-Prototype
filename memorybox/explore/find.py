@@ -460,17 +460,21 @@ def curator_from_items(
             photo_health = {}
         if not isinstance(photo_search, dict):
             photo_search = {}
-        if photo_search.get("unavailable") or (
-            photo_health and photo_health.get("ok") is False
-        ):
-            detail = str(
-                photo_search.get("detail") or photo_health.get("detail") or ""
-            ).strip()
-            summary += f" Photos unavailable from Immich ({detail or 'provider unhealthy'})."
-        else:
-            detail = str(photo_search.get("detail") or "").strip()
-            if detail and detail not in ("not_requested",):
-                summary += f" Immich photos: {detail}."
+        search_detail = str(photo_search.get("detail") or "").strip()
+        health_detail = str(photo_health.get("detail") or "").strip()
+        if photo_search.get("unavailable"):
+            summary += (
+                f" Photos unavailable from Immich "
+                f"({search_detail or health_detail or 'provider unhealthy'})."
+            )
+        elif search_detail and search_detail not in ("not_requested",):
+            # Ping can fail while /people still works — don't hide the search detail.
+            summary += f" Immich photos: {search_detail}."
+        elif photo_health and photo_health.get("ok") is False:
+            summary += (
+                f" Photos unavailable from Immich "
+                f"({health_detail or 'provider unhealthy'})."
+            )
     return title, summary
 
 
@@ -620,7 +624,7 @@ def build_explore_find(
     chips = chips_from_ask_result(result)
     # Prefer plan temporal chip over item-derived year range when present
     if not any(c.get("kind") == "time" for c in chips):
-        rc = range_chip_for_items(items)
+        rc = range_chip_for_items(visible_items)
         if rc:
             chips.append(rc)
 
