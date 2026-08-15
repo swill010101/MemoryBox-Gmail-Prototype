@@ -801,6 +801,34 @@ class AskOrchestrator:
         from memorybox.profile import resolve_relational_ask
 
         rel = resolve_relational_ask(text)
+        if (
+            rel.intent == "none"
+            and plan.person_names
+            and not getattr(plan, "person_ids", ())
+            and plan.want_visual
+        ):
+            # Named "Show me Peggy George" → attach MB Person id so photo +
+            # video retrieve share the same identity (not name-only).
+            from memorybox.person import find_ask_person_by_name
+
+            pids: list[str] = []
+            labels: list[str] = []
+            for name in plan.person_names:
+                try:
+                    view = find_ask_person_by_name(name, photo=self.photo, lazy_seed=True)
+                except Exception:  # noqa: BLE001
+                    view = None
+                if not view:
+                    continue
+                pids.append(view.id)
+                labels.append(view.display_name or name)
+            if pids:
+                plan = replace(
+                    plan,
+                    person_ids=tuple(dict.fromkeys(pids)),
+                    person_names=tuple(dict.fromkeys(labels or list(plan.person_names))),
+                    notes=tuple(list(plan.notes) + ["resolved_person_ids_for_visual"]),
+                )
         if rel.intent != "none":
             notes = list(plan.notes) + ["i9a_relational_resolve"]
             if rel.ok and rel.intent in (

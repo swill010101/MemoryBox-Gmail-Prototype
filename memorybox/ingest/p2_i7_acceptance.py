@@ -80,6 +80,20 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "Unique auto-map / ambiguous review / unmapped retained",
     )
     _check(
+        "i7_person_ask_photo_fallback",
+        "face_asset_fallback" in retrieve
+        and "_search_person_assets" in retrieve
+        and "photos_empty_person_resolved" in retrieve
+        and "resolved_person_ids_for_visual" in orch
+        and "supersede_person_subject_change" in planner
+        and "URLError" in (root / "providers" / "photo" / "_immich_http.py").read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+        "Show-me-person retries Immich RST and does not wipe photos/videos",
+    )
+    _check(
         "i7_ask_sms_path",
         "search_sms_messages" in retrieve
         and "SMS_ASK_RE" in planner

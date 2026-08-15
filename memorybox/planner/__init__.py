@@ -837,6 +837,17 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if ctx_events and not u_events:
             subject_changed = True
             notes.append("supersede_clear_prior_events_for_new_trip")
+    if u_people and ctx.person_names:
+        uttered = {p.lower() for p in u_people}
+        prior = {p.lower() for p in ctx.person_names}
+        if uttered and prior and uttered.isdisjoint(prior):
+            # "Show me Peggy George" after a Sue/year/text session must not
+            # keep that person's time/place (FlightSim: 1 leftover video).
+            if not any(
+                u in p or p in u for u in uttered for p in prior
+            ):
+                subject_changed = True
+                notes.append("supersede_person_subject_change")
 
     # Explicit clear / remove / reset refinements (mutate shared state; do not re-inherit cleared slots).
     clear_date = bool(re.search(r"(?i)^\s*clear\s+(?:date|time|dates|timeline)\b", q))

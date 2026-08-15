@@ -902,11 +902,11 @@
     if (galleryShowSms) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";
-    } else if (!keepPresentation) {
+    } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
       else if (vs === "video_only") nextType = "video";
-      else nextType = "all";
+      else if (vs === "broad" || !keepPresentation) nextType = "all";
     }
     let temporalWindows = null;
     const rawWindows =

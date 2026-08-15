@@ -686,6 +686,7 @@ def search_photos(
         find_confirmed_person_by_name,
         is_negative,
         list_provider_external_ids_for_person,
+        resolve_immich_external_ids_for_person,
     )
 
     status: dict[str, Any] = {
@@ -778,6 +779,10 @@ def search_photos(
             ids: list[str] = []
             for pk in lookup_keys:
                 ids.extend(list_provider_external_ids_for_person(person.id, pk))
+            try:
+                ids.extend(resolve_immich_external_ids_for_person(person.id, photo=photo))
+            except Exception:  # noqa: BLE001
+                pass
             ids = list(dict.fromkeys(ids))
             if ids:
                 mapped_names.append(name)
@@ -824,6 +829,10 @@ def search_photos(
                 ids: list[str] = []
                 for pk in lookup_keys:
                     ids.extend(list_provider_external_ids_for_person(person.id, pk))
+                try:
+                    ids.extend(resolve_immich_external_ids_for_person(person.id, photo=photo))
+                except Exception:  # noqa: BLE001
+                    pass
                 ids = list(dict.fromkeys(ids))
                 if ids:
                     mapped_names.append(name)
@@ -915,6 +924,54 @@ def search_photos(
             pn = (person_name or "").strip()
             if pn and pn.lower() != "unknown" and pn not in out:
                 out.insert(0, pn)
+            return out
+
+        def _search_person_assets(ext_ids: list[str]) -> list[PhotoAssetDto]:
+            """Person library via personIds, then face-asset fallback.
+
+            FlightSim Immich /search/metadata often RST/times out. That is not
+            “this person has no photos.”
+            """
+            ids = list(dict.fromkeys(str(x).strip() for x in ext_ids if str(x).strip()))
+            if not ids:
+                return []
+            try:
+                assets = photo.search_assets(
+                    PhotoSearchQuery(person_external_ids=tuple(ids), limit=limit)
+                )
+            except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
+                assets = []
+                status["photo_search_error"] = "personIds_search_failed"
+            if assets:
+                return list(assets)
+            list_fn = getattr(photo, "list_face_assets", None)
+            get_fn = getattr(photo, "get_asset", None)
+            if not callable(list_fn) or not callable(get_fn):
+                return []
+            seen: set[str] = set()
+            out: list[PhotoAssetDto] = []
+            cap = min(max(1, int(limit)), 400)
+            for pid in ids:
+                try:
+                    faces = list_fn(person_external_id=pid, limit=cap)
+                except Exception:  # noqa: BLE001
+                    continue
+                for face in faces or []:
+                    aid = str(getattr(face, "source_asset_id", None) or "").strip()
+                    if not aid or aid in seen:
+                        continue
+                    seen.add(aid)
+                    try:
+                        asset = get_fn(aid)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if asset is not None:
+                        out.append(asset)
+                    if len(out) >= cap:
+                        status["face_asset_fallback"] = len(out)
+                        return out
+            if out:
+                status["face_asset_fallback"] = len(out)
             return out
 
         def _faces_for_hit(a: PhotoAssetDto) -> list[dict[str, Any]] | None:
@@ -1009,11 +1066,7 @@ def search_photos(
                 status["identity_mode"] = "mixed_mapping"
             else:
                 status["identity_mode"] = "confirmed_mapping"
-            query = PhotoSearchQuery(
-                person_external_ids=tuple(dict.fromkeys(mapped_ext)),
-                limit=limit,
-            )
-            assets = photo.search_assets(query)
+            assets = _search_person_assets(mapped_ext)
             by_person_ext = {m["external_id"]: m for m in mapped_meta}
             for a in assets:
                 meta: dict[str, str] = {}
@@ -1144,13 +1197,33 @@ def search_photos(
         person_ext = list(dict.fromkeys(person_ext))
         if not person_ext:
             status["ok"] = True
-            if plan.person_names and not hits:
+            # MB Person resolved (mapped or unmapped) is not “Who is X?” —
+            # that wipe also cleared video moments on FlightSim person asks.
+            if (
+                plan.person_names
+                and not hits
+                and not mapped_names
+                and not unmapped_resolvable_names
+            ):
                 who = list(plan.person_names)[0]
                 status["identity_mode"] = "unknown_person"
                 status["detail"] = f"unknown={list(plan.person_names)}"
                 status["unknown_person_names"] = list(plan.person_names)
                 status["clarify_message"] = f"Who is {who}?"
                 return _finish(hits)
+            status["identity_mode"] = "photos_empty_person_resolved"
+            status["detail"] = (
+                f"no_immich_person_ids names={name_queries} "
+                f"unmapped_resolvable={unmapped_resolvable_names or []} "
+                f"mapped_names={mapped_names}"
+            )
+            if mapped_names or unmapped_resolvable_names:
+                status["disclosure"] = (
+                    (status.get("disclosure") or "")
+                    + " Photo library did not return stills for this person; "
+                    "video moments stay visible."
+                ).strip()
+            return _finish(hits)
             status["detail"] = (
                 f"no_immich_person_ids names={name_queries} "
                 f"unmapped_resolvable={unmapped_resolvable_names or []}"
@@ -1164,11 +1237,7 @@ def search_photos(
 
         # Person asks must stay on personIds only — never bare Immich text search
         # (unfiltered newest-library page).
-        query = PhotoSearchQuery(
-            person_external_ids=tuple(person_ext),
-            limit=limit,
-        )
-        assets = photo.search_assets(query)
+        assets = _search_person_assets(person_ext)
         seen_ext = {h.external_id for h in hits}
         for a in assets:
             if a.external_id in seen_ext:

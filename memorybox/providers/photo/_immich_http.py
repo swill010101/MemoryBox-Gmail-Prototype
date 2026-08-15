@@ -5,6 +5,7 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -100,17 +101,30 @@ class ImmichHttpClient:
         if data is not None:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read().decode("utf-8", "replace")
-                return resp.status, (json.loads(raw) if raw else None)
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        last_err: Exception | None = None
+        for attempt in range(3):
             try:
-                parsed = json.loads(raw) if raw else None
-            except Exception:  # noqa: BLE001
-                parsed = raw
-            return e.code, parsed
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read().decode("utf-8", "replace")
+                    return resp.status, (json.loads(raw) if raw else None)
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode("utf-8", "replace") if e.fp else ""
+                try:
+                    parsed = json.loads(raw) if raw else None
+                except Exception:  # noqa: BLE001
+                    parsed = raw
+                return e.code, parsed
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                # FlightSim Immich often RST/times out on person library search.
+                # Retry — do not treat a dropped socket as "this person has no photos".
+                last_err = exc
+                if attempt < 2:
+                    time.sleep(0.35 * (attempt + 1))
+                    continue
+                raise
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError("Immich request failed")
 
     def ping(self) -> bool:
         status, body = self._request("GET", "/server/ping")
