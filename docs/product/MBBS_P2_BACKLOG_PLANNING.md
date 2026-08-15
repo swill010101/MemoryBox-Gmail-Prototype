@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-14 (post–I6 ACCEPTED; I7 SMS definition drafted, no build)  
+**Status:** Living parking note · **Updated:** 2026-08-15 (I7 ACCEPTED; I7A definition locked, no build)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -39,10 +39,24 @@ P2-I6 Relationship Graph & Derived Kinship is **ACCEPTED** (2026-08-14 — Tom: 
 
 Authority: [MBBS-P2_INCREMENT_6_DEFINITION.md](MBBS-P2_INCREMENT_6_DEFINITION.md).
 
-## Next increment (build authorized)
+## Post–I7 carry-forward (ACCEPTED with gap)
 
-**P2-I7 SMS/Text Evidence** — [definition](MBBS-P2_INCREMENT_7_DEFINITION.md) · [PRD](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md). **BUILD AUTHORIZED** 2026-08-14 (Tom). Not ACCEPTED until definition §8. Attachment bytes are a separate iMazing export (CSV-only folder confirmed 2026-08-15).
+P2-I7 SMS/Text Evidence is **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted”). The following did **not** block acceptance and must not reopen I7:
 
-## After I7 ACCEPTED (definition only — no build)
+| ID | Theme | Evidence | Suggested home |
+|----|--------|----------|----------------|
+| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | iMazing CSV lists 8,644 attachment rows / 7,212 unique names; `inspect-sms` 2026-08-15: `attachment_files_on_disk` = 0 (folder is CSV-only). Tom will Export Attachments (or set `MEMORYBOX_SMS_ATTACHMENTS_DIR`) then `ingest-sms` backfill. Not Immich. Not I7A. | After I7 ACCEPTED — thin follow-up when Tom authorizes. Do not reopen I7. |
 
-**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [PRD ingest](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) · [MBRM v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md). Inserted **before MBQL-001**. Do not start I7A runtime or MBQL until Tom accepts I7 and authorizes I7A build.
+Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md) · [MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md)
+
+## I8 constraint parked now (do not wait to rediscover)
+
+| ID | Theme | Why now | Home |
+|----|--------|---------|------|
+| **P2-BL-I8-01** | I8 email ingest must include **attachment files up front** | I7 accepted CSV-only; attachment bytes were missing and had to be parked. Do not repeat that gap for email. | **P2-I8** richer email — part of I8 definition/build, not a later surprise |
+
+## Next increment (definition locked — no build)
+
+**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [PRD ingest](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) · [MBRM v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md). **DEFINITION LOCKED** 2026-08-15 (Q1–Q6). Inserted **before MBQL-001**. **No I7A runtime** until Tom explicitly authorizes I7A build. **No MBQL in I7A.**
+
+Sequence after I7: **I7A → MBQL-001 → I8** (I8.5 remains after I8).

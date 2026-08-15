@@ -1,13 +1,13 @@
 # MBBS-P2 Increment 7A — AI Model Trace & Observability
 
-**Status:** **DRAFTED FOR REVIEW** · **NO BUILD**  
+**Status:** **DEFINITION LOCKED** · **NO BUILD**  
 **Date:** 2026-08-15  
-**Authority:** Tom Word uploads 2026-08-15 — [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) (v0.1 ingest) · [MBRM-001 v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md)  
-**Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — inserted after **P2-I7** and **before MBQL-001**  
-**Depends:** P2-I7 **ACCEPTED** (build gate) · I1–I6 **ACCEPTED**  
-**Does not reopen / does not absorb:** I7 SMS/text · I7 attachment export · **MBQL-001 language** · I8 richer email · I8.5 face-evidence · I9 spoken · I10 correlation · I11 narrative · I13/I14 Settings product · family nav · multi-user
+**Authority:** Tom Word uploads 2026-08-15 — [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) (v0.1 ingest) · [MBRM-001 v0.2 insertion](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · **Q1–Q6 + extra rules locked 2026-08-15**  
+**Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — inserted after **P2-I7 ACCEPTED** and **before MBQL-001**  
+**Depends:** P2-I7 **ACCEPTED** (2026-08-15) · I1–I6 **ACCEPTED**  
+**Does not reopen / does not absorb:** I7 SMS/text · SMS attachment bytes **P2-BL-I7-01** · I8 email **P2-BL-I8-01** · **MBQL-001 language** · I8 richer email · I8.5 face-evidence · I9 spoken · I10 correlation · I11 narrative · I13/I14 Settings product · family nav · multi-user
 
-This document is the increment definition for founder review. It does **not** authorize implementation.
+**I7 is ACCEPTED. I7A definition is locked. I7A runtime does not start until Tom gives explicit I7A build authorization.** I7 acceptance is not that authorization. **No MBQL implementation starts as part of I7A.**
 
 ---
 
@@ -21,9 +21,11 @@ End-to-end (when built, after authorization):
 
 1. Every model invocation used by MemoryBox emits the same provider-neutral trace lifecycle.  
 2. Planner / Orchestrator can attach pre-model and post-model spans to the same Trace ID.  
-3. A bookmarkable local **AI Trace** window follows live work and keeps recent traces.  
+3. A bookmarkable local **AI Trace** window at **`/dev/ai-trace`** follows live work and keeps recent traces.  
 4. Failures are classified by stage (ORCHESTRATION, PROMPT_BUILD, PROVIDER_TRANSPORT, MODEL_EXECUTION, MODEL_OUTPUT, PARSE_SCHEMA, TRUST_VALIDATION, DOWNSTREAM_APP).  
-5. Secrets never land in the trace store. Trace-store failure never fails the user request.
+5. Secrets are redacted **before persistence**. Trace-store failure never fails the user request.
+
+A request trace may contain **zero, one, or many** model calls. Deterministic / no-model Ask paths **must** still produce an end-to-end trace showing planner/orchestrator and final disposition. That is the common P2 path today (`plan_ask` is rule-based; SMS/person retrieve does not call `llm.chat`).
 
 ---
 
@@ -33,40 +35,47 @@ MBRM-001 v0.2 (2026-08-15) **supersedes** any earlier sequence that jumped from 
 
 | Order | Artifact | Role |
 |-------|----------|------|
-| 1 | **P2-I7** SMS/Text | Finish and **ACCEPT** current increment (Tom is still exporting iMazing attachments) |
+| 1 | **P2-I7** SMS/Text | **ACCEPTED** 2026-08-15. Attachment bytes parked **P2-BL-I7-01**. |
 | 2 | **P2-I7A** AI Model Trace | This definition. Observability **before** model workload grows |
-| 3 | **MBQL-001** | Ask / query / command language — **not started until I7A is accepted enough to trace end-to-end** |
-| 4 | **P2-I8** Richer Email | Shared MBQL communication semantics + existing trace |
+| 3 | **MBQL-001** | Ask / query / command language — **not started until I7A is ACCEPTED** |
+| 4 | **P2-I8** Richer Email | Shared MBQL communication semantics + existing trace. Attachment files up front = **P2-BL-I8-01**. |
 | 5 | **P2-I8.5** Face Evidence Ownership | Already inserted; **unchanged** by I7A |
 | 6 | **P2-I9** Spoken Moments | Same trace contract |
 | 7+ | I10 / I11 / later VLM | Trace becomes more valuable; do not pull them into I7A |
 
-**Build rule:** I7A code starts only after (a) I7 is **ACCEPTED** and (b) Tom explicitly authorizes I7A build. Definition review can happen now while I7 attachments are still being exported.
+**Build rule:** I7A code starts only after (a) I7 is **ACCEPTED** (done) and (b) Tom explicitly authorizes I7A build. Definition is finalized. Runtime is not.
 
 ---
 
-## 2. Questions for Tom
+## 2. Locked decisions (Tom, 2026-08-15)
 
-| # | Topic | Proposed lock | Needs |
-|---|--------|---------------|-------|
-| **Q1** | Sequence | I7 ACCEPTED → I7A → MBQL-001. I8.5 stays after I8. | **Confirm** |
-| **Q2** | Build gate | Definition now; **no I7A runtime** until I7 ACCEPTED + “approved to build.” | **Confirm** |
-| **Q3** | First-wave calls | Wrap **all** `LlmProvider.chat` and `LlmProvider.embed` at the shared protocol/wrapper. VLM uses the same contract when a VLM provider exists; I7A does not add a VLM product. | **Confirm or narrow to chat-only** |
-| **Q4** | Route | Bookmarkable **`/dev/ai-trace`** (or `/settings/ui` developer child). **Not** in family primary nav. Settings may link. | **Confirm URL** |
-| **Q5** | Live Follow | Local poll ≤1s is enough for P2. No OpenTelemetry collector, no SaaS. SSE allowed later if poll is insufficient. | Accept unless you want SSE first |
-| **Q6** | Retention | Last **200** traces **or 7 days**, whichever first; configurable; manual clear. Diagnostic only — not family evidence. | **Confirm numbers** |
+| # | Topic | Locked answer |
+|---|--------|---------------|
+| **Q1** | Sequence | **Confirm.** I7 ACCEPTED → I7A → MBQL-001. **I8.5 remains after I8.** |
+| **Q2** | Build gate | **Confirm.** Definition may be finalized now. **No runtime implementation** until I7 is ACCEPTED **and** explicit I7A build authorization is given. I7 is now ACCEPTED; the second gate is still open. |
+| **Q3** | First-wave calls | **Trace all** shared `LlmProvider.chat` and `LlmProvider.embed` at the **provider-neutral** boundary. Embeddings: capture **input / purpose / model / timing / dimensions / error** metadata. **Full vector persistence is not required by default.** `/api/tags` and other non-chat/non-embed health probes are not chat/embed spans. VLM uses the same contract when a VLM provider exists; I7A does not add a VLM product. |
+| **Q4** | Route | Canonical bookmarkable developer route: **`/dev/ai-trace`**. Settings may link to it later. **Must not** appear in family primary navigation. I7A does not build Settings (I13/I14). |
+| **Q5** | Live Follow | **Polling is acceptable for P2**, approximately **500 ms–1 second**. SSE/WebSocket may be added later **only if needed**. No OpenTelemetry collector, no SaaS. |
+| **Q6** | Retention | Default: **500 traces or 7 days**, whichever limit is reached first; **configurable**; **automatic cleanup** and **manual clear**. Diagnostic only — not family evidence. |
 
-PRD already locks: no chain-of-thought reconstruction; no family AI dashboard; no external telemetry requirement; no MBQL implementation in this increment.
+### Additional locked rules (same day)
+
+1. A request trace may contain **zero, one, or many** model calls.
+2. Deterministic / no-model Ask paths **must** still produce an end-to-end trace showing planner/orchestrator and final disposition.
+3. The UI **must distinguish assembled MemoryBox context** from the **exact provider payload actually sent**.
+4. **Secret redaction occurs before trace persistence**, not only at display time.
+5. **Trace-store failure must never fail** the MemoryBox user request.
+6. **No MBQL implementation starts as part of I7A.**
 
 ---
 
 ## 3. Current code (inspect only — do not implement)
 
-Today most Asks never call a model. `plan_ask` is deterministic. The orchestrator **holds** an `LlmProvider` for health/snapshot; SMS/person retrieve does not go through `llm.chat`.
+Today most Asks never call a model. `plan_ask` is deterministic. The orchestrator **holds** an `LlmProvider` for health/snapshot; SMS/person retrieve does not go through `llm.chat`. **T3 (zero model spans) is the common path until MBQL.**
 
 | Boundary | Path | I7A role |
 |----------|------|----------|
-| Protocol | `memorybox/providers/llm/protocol.py` — `chat`, `embed` | **Shared emit point.** Do not instrument only Ollama. |
+| Protocol | `memorybox/providers/llm/protocol.py` — `chat`, `embed` | **Shared emit point.** Do not instrument only Ollama. Provider-neutral wrapper required. |
 | Ollama | `providers/llm/ollama.py` + `_ollama_http.py` | Current local provider; must emit the same lifecycle as Fake. |
 | Fake | `providers/llm/fake.py` | Harness must still produce traces (T1/T3/T10). |
 | Wiring | `ask/deps.py` `build_llm()` | Choose provider; wrapper sits here or on the protocol. |
@@ -74,7 +83,9 @@ Today most Asks never call a model. `plan_ask` is deterministic. The orchestrato
 | Orchestrator | `ask/orchestrator.py` | Parent Trace ID; post-model disposition / final user result. |
 | Health | `status/summary.py` `_ollama_status` | Not a model invocation; do not pretend `/api/tags` is a chat span. |
 
-Handoff after build auth (from the PRD): propose schema + live-update **before coding**; wrap shared boundaries; add the window; prove T1–T10 with at least one orchestrator failure and one model-output failure visibly distinct; **stop** — do not start MBQL.
+**Embeddings (when `embed` is called):** persist input text (redacted), purpose, model, timing, returned dimensions, and error metadata. Do **not** persist the full embedding vector by default.
+
+Handoff after build auth (from the PRD): propose schema + live-update **before coding**; wrap shared boundaries; add `/dev/ai-trace`; prove T1–T10 with at least one orchestrator failure and one model-output failure visibly distinct; **stop** — do not start MBQL.
 
 ---
 
@@ -84,17 +95,21 @@ Handoff after build auth (from the PRD): propose schema + live-update **before c
 
 - Provider-neutral trace contract (Trace + Span/Event; parent/child).  
 - Stages 1–8 and field catalog in the [PRD](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md) §§5–6.  
-- Developer-only AI Trace window: list, detail panes (Sent / Raw / Parsed / MB Result), Live Follow, filter, copy/export JSON, clear, retention.  
-- Local PostgreSQL (or equivalent local) store; bounded retention; secret scrubbing.  
+- Developer-only AI Trace window at **`/dev/ai-trace`**: list, detail panes that separate **assembled MemoryBox context** from **exact provider payload sent**, plus Raw / Parsed / MB Result, Live Follow (poll ~500 ms–1 s), filter, copy/export JSON, clear, retention.  
+- Local PostgreSQL (or equivalent local) store; default **500 traces or 7 days**; configurable; automatic cleanup + manual clear.  
+- Secret redaction **before write**.  
 - Passive emission: UI closed still works; store down does not fail Ask.  
 - Harness T1–T10 (forced-model hook is allowed for T1/T4/T6/T7/T8 because production Ask is still mostly deterministic).
 
 ### OUT
 
 - MBQL grammar, planner rewrite, or “the model interprets every Ask.”  
-- Family-facing AI / Settings product (I13/I14).  
+- Family-facing AI / Settings product (I13/I14). Family primary nav link.  
 - I8 email richness, I8.5 face SoT, I9 STT, I10 Alaska inference, I11 narrative generation.  
+- SMS attachment bytes (**P2-BL-I7-01**) or I8 email attachment ingest (**P2-BL-I8-01**).  
 - External Jaeger/OTLP/SaaS as a requirement.  
+- SSE/WebSocket as a P2 requirement.  
+- Persisting full embedding vectors by default.  
 - Asking the model to explain its hidden reasoning.  
 - Changing I7 SMS retrieve or attachment ingest.
 
@@ -102,15 +117,15 @@ Handoff after build auth (from the PRD): propose schema + live-update **before c
 
 ## 5. Acceptance intent (after build — not now)
 
-Pass the PRD §10 list and T1–T10. Visual polish may be thin. **Gating:** request → raw response → parsed/validated → MB disposition, plus error class that does not say “AI error” for a Python bug.
+Pass the PRD §10 list and T1–T10. Visual polish may be thin. **Gating:** request → raw response → parsed/validated → MB disposition, plus error class that does not say “AI error” for a Python bug. Zero-model Asks must still appear as complete request traces.
 
-`prove-p2-i7a` (when it exists) is a harness, not ACCEPTED. ACCEPTED is a FlightSim owner pass with the window open on a second display.
+`prove-p2-i7a` (when it exists) is a harness, not ACCEPTED. ACCEPTED is a FlightSim owner pass with `/dev/ai-trace` open on a second display.
 
 ---
 
 ## 6. Privacy
 
-Traces may contain the most sensitive prompt material in MemoryBox. They are **diagnostic**, not Evidence. Local only. No API keys/headers in payloads. Family nav must not link here.
+Traces may contain the most sensitive prompt material in MemoryBox. They are **diagnostic**, not Evidence. Local only. API keys, credentials, authorization headers, and connection tokens are stripped **before the row is written**. Family nav must not link here.
 
 ---
 
@@ -119,9 +134,9 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | Step | Status |
 |------|--------|
 | MBRM-001 v0.2 insertion + MBPRD-P2-I7A v0.1 | **INGESTED** 2026-08-15 |
-| I7A increment definition | **THIS DOC — review** |
-| I7 SMS/Text | **BUILD AUTHORIZED** / **not ACCEPTED** (attachment bytes still being exported) |
+| I7A increment definition | **LOCKED** 2026-08-15 (Q1–Q6 + extra rules) |
+| I7 SMS/Text | **ACCEPTED** 2026-08-15 — attachment bytes **P2-BL-I7-01** |
 | I7A build | **NOT AUTHORIZED** |
 | MBQL-001 | **NOT STARTED** — blocked on I7A acceptance |
 
-**Please answer Q1–Q6.** Do not authorize I7A build in this review. Finish I7 (including iMazing attachment export) first.
+**Do not write I7A runtime, UI, or schema until Tom explicitly authorizes I7A build.** I7 acceptance is not I7A build authorization. **No MBQL implementation starts as part of I7A.**

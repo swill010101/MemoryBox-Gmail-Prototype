@@ -1,14 +1,31 @@
 # MBBS-P2 Increment 7 — SMS/Text Evidence
 
-**Status:** **BUILD AUTHORIZED** (2026-08-14 — Tom: “approved to build”) · **not ACCEPTED** until §8  
-**Date:** 2026-08-14 (build)  
+**Status:** **ACCEPTED** (2026-08-15 — Tom: “i7 is accepted”)  
+**Date:** 2026-08-14 (build) · 2026-08-15 (accepted)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I7 (SMS/Text · A)  
 **Authority:** Locked [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) P2-COM-01 / P2-COM-03 · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) CAP-P2-018 · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I6 **ACCEPTED**  
 **Thin PRD:** [MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md](MBBS-P2_I7_SMS_TEXT_EVIDENCE_PRD.md)  
 **Depends:** P2-I6 **ACCEPTED** · I4 Explore already has an SMS/text card type (engine not connected)  
-**Does not reopen / does not absorb:** I4 Explore redesign · I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · **I8 richer email** · I8.5 face-evidence · **I9 spoken** · **I10 cross-source correlation** · **I11 narrative** · I13/I14 Settings · multi-user
+**Does not reopen / does not absorb:** I4 Explore redesign · I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · SMS attachment bytes **P2-BL-I7-01** · **I8 richer email** (incl. **P2-BL-I8-01** attachment files up front) · I8.5 face-evidence · **I9 spoken** · **I10 cross-source correlation** · **I11 narrative** · I13/I14 Settings · multi-user · **I7A / MBQL-001**
 
-Runtime is in this revision. The cloud agent **still cannot open** `\\media-server` bytes. The parser is **header-driven** (known aliases + `source_metadata` bag) and the harness uses an in-repo fixture. On FlightSim, run `python -m memorybox inspect-sms` and record real headers before treating the 1085-session file as fully understood. Do not commit message bodies.
+P2-I7 is **ACCEPTED**. SMS **attachment files** were not in the staged export (CSV-only; `inspect-sms` 2026-08-15: 7,212 names, 0 files). That gap is **P2-BL-I7-01** — do not reopen I7. Next increment definition: [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) (**LOCKED** / **no build** until explicit I7A authorization).
+
+---
+
+## What shipped (ACCEPTED)
+
+- Header-driven ingest of the FlightSim iMazing CSV → communication Evidence (90,784 inserted; originals untouched)
+- Ask retrieve / Person / date / keyword / last-N / outbound + bidirectional + inbound counts with scope
+- Explore / Person reuse Email/Text cards; default Gallery hides texts unless Add/Only/explicit
+- Unique phone → confirmed People contact; ambiguous Review; unmapped retained
+- PowerShell-style Ask history (Up/Down in the box; last 100)
+- Attachment **names/types** linked on the message; not Immich-promoted
+
+## Carry-forward / backlog (not ACCEPTED blockers)
+
+| ID | Item | Notes |
+|----|------|-------|
+| **P2-BL-I7-01** | SMS / iMessage **attachment bytes** | CSV lists 8,644 rows / 7,212 unique names; `sms` folder has only the CSV. iMazing **Export Attachments** (or `MEMORYBOX_SMS_ATTACHMENTS_DIR`) then `ingest-sms` backfill. Not I7A. Not Immich. |
 
 ---
 
@@ -255,7 +272,7 @@ Explicit communication intent overrides the default (existing Explore refine sty
 | “Only texts” | Text-only Gallery |
 | “Show me all my texts with Peggy” | Text **automatically visible** |
 
-A separate **P2-I7A** (AI Model Trace) definition is drafted for review; **MBQL-001** follows **after I7A**, not immediately after I7. Do not broaden I7 into either. See [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md).
+A separate **P2-I7A** (AI Model Trace) definition is **LOCKED** (no build until explicit I7A authorization); **MBQL-001** follows **after I7A**, not immediately after I7. Do not broaden I7 into either. See [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md).
 
 ### 2.J Archive Health honesty
 
@@ -406,7 +423,9 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | FlightSim ingest | **DONE** 2026-08-14 — job `7f763b4e-7ef0-40b5-804b-07ca10e18c34`; inserted **90,784**; skipped **1,014** duplicate hashes; processed **91,798** (= inspect row_count); `original_untouched: true` |
 | Owner notes 2026-08-14 | §8 items **1–8 pass**. Item **10 understood**. Item **9 still the remaining gate** (confirmed phone must show on People). Year / Peggy / FL selection works. Follow-up: Explore theme still mixed (shell `--mb-ink` overrode filters); All emptied texts; attachments listed but not viewable. |
 | FlightSim bugs this revision | Silent **5000 oldest-first** cap hid 2020–2025 and froze the header at 5000; mixed light/dark wiped SMS text; Ask→Explore/People dropped context; Email/Text filter stayed on All; hover did not expand text; no attachment indicator. |
-| ACCEPTED | **No** — §8 item 9 + remaining owner rows after this fix |
+| ACCEPTED | **Yes** (2026-08-15 — Tom: “i7 is accepted”) |
+| Attachment bytes | **BACKLOG P2-BL-I7-01** (CSV-only export; do not reopen I7) |
+| Next | [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) definition **LOCKED**; **no I7A build** until explicit authorization |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
 

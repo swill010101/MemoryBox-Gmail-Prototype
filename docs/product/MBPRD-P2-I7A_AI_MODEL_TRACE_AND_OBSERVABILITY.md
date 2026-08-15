@@ -1,11 +1,11 @@
 # MBPRD-P2-I7A — AI Model Trace & Observability
 
-**Status:** Ingested for definition review · **no build**  
+**Status:** Ingested. I7A **definition locked** 2026-08-15 (Tom Q1–Q6 + extra rules). **No build.**  
 **ID:** MBPRD-P2-I7A · **Source file:** v0.1 · 2026-08-15 (Tom Word upload)  
-**MBRM citation:** v0.2 insertion names this PRD as v0.2; this ingest is the v0.1 document Tom attached. Definition follows this text.  
-**Increment definition (review):** [MBBS-P2_INCREMENT_7A_DEFINITION.md](MBBS-P2_INCREMENT_7A_DEFINITION.md)
+**MBRM citation:** v0.2 insertion names this PRD as v0.2; this ingest is the v0.1 document Tom attached.  
+**Increment definition (locked):** [MBBS-P2_INCREMENT_7A_DEFINITION.md](MBBS-P2_INCREMENT_7A_DEFINITION.md)
 
-Ingested from `MBPRD-P2-I7A_AI_Model_Trace_and_Observability_v0.1.docx`. Wording below is Tom’s PRD, normalized to markdown. Do not treat this ingest as build authorization.
+Ingested from `MBPRD-P2-I7A_AI_Model_Trace_and_Observability_v0.1.docx`. Wording below is Tom’s PRD, normalized to markdown. I7 is ACCEPTED; I7A code still waits for **explicit I7A build authorization**. No MBQL in I7A.
 
 ---
 
@@ -211,4 +211,18 @@ P2-I7A is inserted **after I7 and before MBQL**. It is provider-neutral, develop
 | Primary user | Founder/developer/tester; **not** a normal Family Historian surface |
 | Core question | Was a bad result caused by orchestration/Python, the model call, parse/validation, or downstream application logic? |
 | Provider scope | Provider-neutral. Ollama is the current local model provider; future providers use the same contract |
-| Status | Ready for Cursor **definition**; **build after I7 acceptance** |
+| Status | Definition **LOCKED** 2026-08-15. I7 is ACCEPTED. **No I7A build** until explicit authorization. See definition §2. |
+
+## 15. Founder lock (2026-08-15) — does not rewrite §§1–14
+
+Authoritative answers live in [I7A definition §2](MBBS-P2_INCREMENT_7A_DEFINITION.md). Summary:
+
+- Sequence: I7 ACCEPTED → I7A → MBQL-001. I8.5 remains after I8.
+- No I7A runtime until explicit I7A build authorization. No MBQL in I7A.
+- Trace all shared `LlmProvider.chat` and `embed` at the provider-neutral boundary. Embeddings: input / purpose / model / timing / dimensions / error; full vectors not required by default.
+- Canonical route: `/dev/ai-trace`. Not in family primary nav. Settings may link later.
+- P2 live updates: poll ~500 ms–1 s. SSE/WebSocket later only if needed.
+- Retention: 500 traces or 7 days, whichever first; configurable; automatic cleanup + manual clear.
+- Zero / one / many model calls per request. Deterministic Asks still get an end-to-end trace.
+- UI distinguishes assembled MemoryBox context from the exact provider payload sent.
+- Redact secrets before persistence. Trace-store failure never fails the user request.
