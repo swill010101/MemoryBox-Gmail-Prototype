@@ -168,27 +168,23 @@ def chat_matches(
     *,
     thread_id: str = "",
     group_name: str = "",
+    handles: list[str] | None = None,
 ) -> bool:
     export_n = normalize_chat(export_chat)
     if not export_n:
         return False
     export_digits = _digits(export_n)
+    labels = [thread_id, group_name, *(handles or [])]
+    if export_digits and len(export_digits) >= 10:
+        for raw in labels:
+            label_digits = _digits(str(raw or ""))
+            if len(label_digits) >= 10 and label_digits[-10:] == export_digits[-10:]:
+                return True
     for label in (thread_id, group_name):
         raw = str(label or "").strip()
-        if not raw:
+        if not raw or _PHONE_LIKE.match(raw):
             continue
         label_n = normalize_chat(raw)
-        label_digits = _digits(raw)
-        if (
-            export_digits
-            and label_digits
-            and len(export_digits) >= 10
-            and len(label_digits) >= 10
-            and export_digits[-10:] == label_digits[-10:]
-        ):
-            return True
-        if _PHONE_LIKE.match(raw) or (export_digits and len(export_digits) >= 10 and export_n.replace("+", "").isdigit()):
-            continue
         if export_n == label_n:
             return True
         export_parts = chat_tokens(export_chat)
@@ -450,11 +446,46 @@ def _file_chats(item: ExportFile) -> list[str]:
     return out
 
 
+_GENERIC_EXPORT_TYPES = {
+    "photo",
+    "video",
+    "audio",
+    "web link",
+    "weblink",
+    "attachment",
+    "sticker",
+    "image",
+    "file",
+    "document",
+    "location",
+    "animated",
+    "gif",
+    "voice message",
+    "voice memo",
+    "contact card",
+}
+
+
+def file_original_name(item: ExportFile) -> str:
+    typ = (item.attach_type or "").strip()
+    if not typ or "." not in typ:
+        return ""
+    if typ.casefold() in _GENERIC_EXPORT_TYPES:
+        return ""
+    return Path(typ).name.casefold()
+
+
 def file_matches_slot(item: ExportFile, slot: OpenSlot) -> bool:
     if item.wall_clock != slot.wall_clock:
         return False
+    handles = [slot.sender_name, *slot.participants]
     return any(
-        chat_matches(chat, thread_id=slot.thread_id, group_name=slot.group_name)
+        chat_matches(
+            chat,
+            thread_id=slot.thread_id,
+            group_name=slot.group_name,
+            handles=handles,
+        )
         for chat in _file_chats(item)
     )
 
@@ -491,6 +522,28 @@ def unique_export_pairs(
         used_files.add(fi)
         used_slots.add(si)
 
+    name_to_files: dict[str, list[int]] = {}
+    name_to_slots: dict[str, list[int]] = {}
+    for fi, item in enumerate(files):
+        if fi in used_files:
+            continue
+        key = file_original_name(item)
+        if key:
+            name_to_files.setdefault(key, []).append(fi)
+    for si, slot in enumerate(slots):
+        if si in used_slots:
+            continue
+        key = Path(slot.filename or "").name.casefold()
+        if key and "." in key and key not in _GENERIC_EXPORT_TYPES:
+            name_to_slots.setdefault(key, []).append(si)
+    for key, fis in name_to_files.items():
+        sis = name_to_slots.get(key) or []
+        if len(fis) == 1 and len(sis) == 1:
+            fi, si = fis[0], sis[0]
+            pairs.append((slots[si], files[fi]))
+            used_files.add(fi)
+            used_slots.add(si)
+
     orphan_files = sum(1 for i, hits in enumerate(file_to_slots) if i not in used_files and not hits)
     collision_files = sum(1 for i, hits in enumerate(file_to_slots) if i not in used_files and hits)
     return pairs, {
@@ -526,6 +579,14 @@ def _open_slots(rows: list[dict[str, Any]], *, conn: Any) -> list[OpenSlot]:
         participants = [
             str(p) for p in (payload.get("participants") or []) if str(p).strip()
         ]
+        for extra in (
+            payload.get("sender_handle"),
+            sender_name,
+            *(payload.get("recipients") or []),
+        ):
+            text = str(extra or "").strip()
+            if text and text not in participants:
+                participants.append(text)
         for idx, att in enumerate(atts):
             mid = str(att.get("media_object_id") or "").strip()
             if mid and media_object_path(mid, conn=conn) is not None:
@@ -743,7 +804,8 @@ def self_check() -> dict[str, bool]:
         ),
         "chat_phone_folder": chat_matches(
             "Messages - +13145601721",
-            thread_id="+13145601721",
+            thread_id="LaMartina Laura",
+            handles=["+13145601721"],
         ),
         "parse_original_filename": bool(
             parse_export_filename(
@@ -757,6 +819,35 @@ def self_check() -> dict[str, bool]:
         "chat_rejects_other": not chat_matches("Peggy", thread_id=group_chat),
         "wall_clock_iso": wall_clock_from_sent_at("2020-03-15T14:02:00+00:00")
         == "2020-03-15 14:02:00",
+        "filename_unique": (
+            lambda: unique_export_pairs(
+                [
+                    ExportFile(
+                        path=Path("x/IMG_9003.jpeg"),
+                        wall_clock="2020-02-20 17:18:16",
+                        chat="Messages - +13145601721",
+                        folder_chat="Messages - +13145601721",
+                        parsed_chat="+13145601721",
+                        attach_type="IMG_9003.jpeg",
+                        name="2020-02-20 17 18 16 - +13145601721 - IMG_9003.jpeg",
+                    )
+                ],
+                [
+                    OpenSlot(
+                        evidence_id=UUID("00000000-0000-0000-0000-000000000009"),
+                        att_index=0,
+                        wall_clock="2020-02-20 18:00:00",
+                        thread_id="LaMartina Laura",
+                        group_name="",
+                        sender_name="",
+                        participants=[],
+                        attachment_type="image",
+                        filename="IMG_9003.jpeg",
+                    )
+                ],
+            )[1]["unique"]
+            == 1
+        )(),
         "unique_pairs": len(pairs_ok) == 1 and stats_ok["unique"] == 1,
         "collision_unmatched": len(pairs_bad) == 0
         and stats_bad["ambiguous_slots"] == 2
