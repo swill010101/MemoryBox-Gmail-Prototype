@@ -425,7 +425,7 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | FlightSim bugs this revision | Silent **5000 oldest-first** cap hid 2020–2025 and froze the header at 5000; mixed light/dark wiped SMS text; Ask→Explore/People dropped context; Email/Text filter stayed on All; hover did not expand text; no attachment indicator. |
 | ACCEPTED | **Yes** (2026-08-15 — Tom: “i7 is accepted”) |
 | Attachment bytes | **BACKLOG P2-BL-I7-01** (CSV-only export; do not reopen I7) |
-| Next | [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) **ACCEPTED** 2026-08-15; **MBQL-001** not started |
+| Next | [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) **ACCEPTED** 2026-08-15; [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) **draft / no build** |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
 
