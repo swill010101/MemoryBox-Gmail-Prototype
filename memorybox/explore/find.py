@@ -17,7 +17,7 @@ _SMS_ASK_RE = re.compile(
     r"from\s+and\s+to|last\s+\d+\s+messages?"
     r")\b"
 )
-_HIDDEN_SMS_GALLERY_CAP = 500
+_HIDDEN_SMS_GALLERY_CAP = 5000
 _HOLIDAY_WINDOW_MARKERS = (
     "christmas",
     "xmas",
@@ -149,9 +149,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             fn = str(face.get("name") or "").strip()
             if fn and fn.lower() != "unknown" and fn not in people:
                 people.append(fn)
-        for n in ask_people:
-            if n not in people:
-                people.append(n)
+        if not people:
+            for n in ask_people:
+                if n not in people:
+                    people.append(n)
         name = mb_name or (people[0] if people else None)
         title = name or "Photo"
         place = p.get("place") or None

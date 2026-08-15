@@ -1080,6 +1080,49 @@ def _prove_harness() -> dict[str, Any]:
             f"n={len(got_cached)} tl={client_peggy.timeline_calls} "
             f"src={getattr(client_peggy, '_last_person_source', None)}",
         )
+        _check(
+            "immich_year_buckets_newest_first",
+            _ImmichIds._sort_time_buckets_newest_first(
+                ["1983-01-01", "2024-01-01", "1901-01-01"]
+            )[0].startswith("2024"),
+            checks,
+            problems,
+            "Must walk 2024 before 1983 so recent person photos are not dropped",
+        )
+
+        class _TwoPersonStickyImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [{"timeBucket": "2020-01-01", "count": 1}]
+                if "timeline/bucket" in p:
+                    who = "p1" if "person-1" in p else "p2"
+                    return 200, [{"id": f"{who}aaaaaa-1111-2222-3333-444444444444"}]
+                return 404, None
+
+        two = _TwoPersonStickyImmich()
+        a1 = two.search_by_person_ids(["person-1"], size=20)
+        a2 = two.search_by_person_ids(["person-2"], size=20)
+        bucket_lists = [p for p in two.paths if "timeline/buckets" in p]
+        _check(
+            "immich_person_timeline_not_sticky_across_people",
+            any("person-1" in p for p in bucket_lists)
+            and any("person-2" in p for p in bucket_lists)
+            and {str(x.get("id")) for x in a1} != {str(x.get("id")) for x in a2},
+            checks,
+            problems,
+            f"lists={bucket_lists} a1={[x.get('id') for x in a1]} a2={[x.get('id') for x in a2]}",
+        )
 
         _check(
             "immich_name_matches_peggy_george_to_peggy",

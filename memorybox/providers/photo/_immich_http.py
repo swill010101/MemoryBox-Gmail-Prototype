@@ -228,6 +228,7 @@ class ImmichHttpClient:
         if not person_ids:
             return []
         self._reset_person_circuit()
+        self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
         cache_key = ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
         cache = getattr(self, "_person_lib_cache", None)
@@ -254,11 +255,13 @@ class ImmichHttpClient:
         if by_id:
             self._last_person_source = "faces_or_timeline"
             out = list(by_id.values())[:target]
-            store = getattr(self, "_person_lib_cache", None)
-            if store is None:
-                self._person_lib_cache = {}
-                store = self._person_lib_cache
-            store[cache_key] = (out, time.time())
+            # Do not cache a truncated walk (oldest-only 229 of 598).
+            if not getattr(self, "_person_lib_incomplete", False) and not self._circuit():
+                store = getattr(self, "_person_lib_cache", None)
+                if store is None:
+                    self._person_lib_cache = {}
+                    store = self._person_lib_cache
+                store[cache_key] = (out, time.time())
             return out
         if self._circuit():
             self._last_person_source = "timeout"
@@ -319,11 +322,17 @@ class ImmichHttpClient:
             if self._circuit():
                 break
             buckets = self._list_person_time_buckets(pid)
-            # YEAR buckets first (one GET per year). Cap HTTP so a MONTH
-            # fallback cannot issue hundreds of calls and RST Immich.
+            # Newest years first so a budget stop cannot drop 1984–now.
+            # YEAR = one GET/year (allow a lifetime). MONTH is the RST risk.
+            year_mode = "size=YEAR" in str(getattr(self, "_person_buckets_tmpl", "") or "")
+            budget = 160 if year_mode else 48
             self._timeline_http = 0
-            for bucket in buckets[:120]:
-                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= 80:
+            self._person_lib_incomplete = False
+            if len(buckets) > budget:
+                self._person_lib_incomplete = True
+            for bucket in buckets[:budget]:
+                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= budget:
+                    self._person_lib_incomplete = True
                     break
                 if len(by_id) >= target:
                     return list(by_id.values())[:target]
@@ -344,23 +353,18 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
-        cached = getattr(self, "_person_buckets_path", None)
-        paths = (
-            (
-                cached,
-                f"/timeline/buckets?personId={pid}&size=YEAR",
-                f"/timeline/buckets?personId={pid}&size=MONTH",
-                f"/timeline/buckets?personIds={pid}&size=MONTH",
-                f"/assets/time-buckets?personId={pid}&size=MONTH",
-                f"/asset/time-buckets?personId={pid}&size=MONTH",
-                f"/timeline/buckets?personId={pid}",
-            )
-            if not cached
-            else (cached,)
+        tmpls = (
+            "/timeline/buckets?personId={pid}&size=YEAR",
+            "/timeline/buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personIds={pid}&size=MONTH",
+            "/assets/time-buckets?personId={pid}&size=MONTH",
+            "/asset/time-buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personId={pid}",
         )
-        for path in paths:
-            if not path:
-                continue
+        sticky = getattr(self, "_person_buckets_tmpl", None)
+        use = (sticky,) if sticky in tmpls else tmpls
+        for tmpl in use:
+            path = tmpl.format(pid=pid)
             if self._circuit():
                 break
             try:
@@ -393,10 +397,19 @@ class ImmichHttpClient:
                 if tb:
                     out.append(str(tb).strip())
             if out:
-                self._person_buckets_path = path
-                # Newest first when Immich sent oldest-first.
-                return list(reversed(out)) if len(out) > 1 else out
+                self._person_buckets_tmpl = tmpl
+                return self._sort_time_buckets_newest_first(out)
         return []
+
+    @staticmethod
+    def _sort_time_buckets_newest_first(buckets: list[str]) -> list[str]:
+        """Newest year/month first. Never walk 1900→1983 and drop the rest."""
+
+        def _key(raw: str) -> str:
+            s = str(raw or "").strip()
+            return s[:10] if len(s) >= 4 else s
+
+        return sorted((b for b in buckets if str(b).strip()), key=_key, reverse=True)
 
     def _list_person_bucket_assets(
         self, person_id: str, time_bucket: str
