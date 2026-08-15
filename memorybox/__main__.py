@@ -28,11 +28,26 @@ def main(argv: list[str] | None = None) -> int:
     p_sms = sub.add_parser("ingest-sms", help="Ingest SMS/iMessage CSV → Evidence")
     p_sms.add_argument("--uri", default=None, help="Path to export CSV (default: staged Sources/sms)")
     p_sms.add_argument("--limit", type=int, default=None)
+    p_sms.add_argument(
+        "--attachments-dir",
+        default=None,
+        help="Folder of Export Attachments (sets MEMORYBOX_SMS_ATTACHMENTS_DIR for this run)",
+    )
     p_inspect_sms = sub.add_parser(
         "inspect-sms",
         help="Read-only SMS export inventory (headers/counts; no ingest; no rewrite)",
     )
     p_inspect_sms.add_argument("--uri", default=None)
+    p_inspect_att = sub.add_parser(
+        "inspect-sms-attachments",
+        help="Read-only probe of an Export Attachments folder (no ingest)",
+    )
+    p_inspect_att.add_argument(
+        "--dir",
+        required=True,
+        dest="attachments_dir",
+        help="Folder of per-chat Export Attachments",
+    )
     sub.add_parser(
         "repair-sms-identities",
         help="Backfill People confirmed phones from ingested unique SMS auto-maps",
@@ -222,6 +237,15 @@ def main(argv: list[str] | None = None) -> int:
             "Harness uses the in-repo fixture; inspect-sms the real export separately."
         ),
     )
+    p_prove_p2i7_01 = sub.add_parser(
+        "prove-p2-bl-i7-01",
+        help="P2-BL-I7-01 SMS Export Attachments backfill prove (does not reopen I7)",
+    )
+    p_prove_p2i7_01.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Reserved; harness proves unique match / collision / orphan / no wipe",
+    )
     p_prove_p2i7a = sub.add_parser(
         "prove-p2-i7a",
         help="P2-I7A AI Model Trace acceptance prove",
@@ -319,7 +343,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "ingest-sms":
         from memorybox.ingest.comms_sms import ingest_sms
 
-        payload = ingest_sms(args.uri, limit=args.limit)
+        payload = ingest_sms(
+            args.uri, limit=args.limit, attachments_dir=args.attachments_dir
+        )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
@@ -327,6 +353,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.comms_sms import inspect_default_or_uri
 
         payload = inspect_default_or_uri(args.uri)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "inspect-sms-attachments":
+        from memorybox.ingest.comms_sms import inspect_sms_attachments_dir
+
+        payload = inspect_sms_attachments_dir(args.attachments_dir)
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
@@ -492,6 +525,17 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.p2_i7_acceptance import run_p2_i7_acceptance
 
         payload = run_p2_i7_acceptance(flightsim=bool(args.flightsim))
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-bl-i7-01":
+        from memorybox.ingest.p2_bl_i7_01_acceptance import run_p2_bl_i7_01_acceptance
+
+        payload = run_p2_bl_i7_01_acceptance(flightsim=bool(args.flightsim))
         out = {
             "ok": bool(payload.get("overall_ok")),
             **payload,

@@ -15,6 +15,14 @@ from memorybox.ingest.sms_attach_cache import (
     put_media_object,
     sms_folder_has_attachment_bytes,
 )
+from memorybox.ingest.sms_export_attach import (
+    attachment_search_roots,
+    backfill_unique_export_attachments,
+    get_export_index,
+    probe_attachments_dir,
+    reset_export_index,
+    _clean_dir_arg,
+)
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
     SmsMessage,
@@ -26,6 +34,30 @@ from memorybox.person.phone_map import (
     ensure_confirmed_phone_contact,
     resolve_handles,
 )
+
+
+def _os_error_detail(exc: BaseException) -> str:
+    parts = [str(exc) or type(exc).__name__]
+    filename = getattr(exc, "filename", None) or getattr(exc, "filename2", None)
+    if filename:
+        parts.append(f"path={filename}")
+    winerror = getattr(exc, "winerror", None)
+    if winerror is not None:
+        parts.append(f"winerror={winerror}")
+    return " ".join(parts)
+
+
+def _csv_is_readable(path: Path | None) -> bool:
+    if path is None:
+        return False
+    try:
+        if not path.is_file():
+            return False
+        with path.open("rb") as fh:
+            fh.read(1)
+            return True
+    except OSError:
+        return False
 
 
 def default_sms_export_path() -> Path | None:
@@ -138,6 +170,16 @@ def _locate_attachment_file(
             return hit
     if not hunt:
         return None
+    name = str(att.get("filename") or att.get("source_ref") or "").strip()
+    if name:
+        try:
+            indexed = get_export_index(attachment_search_roots(payload)).lookup_uuid_or_name(
+                Path(name).name
+            )
+            if indexed is not None and indexed.is_file() and indexed.stat().st_size:
+                return indexed
+        except OSError:
+            pass
     from memorybox.explore.sms_attach import resolve_attachment_file
 
     try:
@@ -235,24 +277,147 @@ def _backfill_existing_attachments(
     return stored, missing
 
 
+def backfill_existing_sms_attachments(
+    *,
+    attachments_dir: str | None = None,
+    source_id: UUID | None = None,
+    source_uri: str | None = None,
+    attach_probe: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Join Export Attachments onto already-ingested SMS rows. No CSV. No wipe."""
+    requested_dir = _clean_dir_arg(
+        attachments_dir or os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR")
+    )
+    probe = attach_probe or probe_attachments_dir(requested_dir)
+    if not probe.get("is_dir"):
+        return {
+            "ok": False,
+            "error": (
+                "attachments-dir is not a readable folder. "
+                f"{probe.get('error') or 'not a directory'}"
+            ),
+            "attachments_dir_probe": probe,
+        }
+    os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(probe.get("path") or requested_dir)
+    reset_export_index()
+    job_id = store.start_job(
+        "backfill_sms_attachments",
+        message="backfill sms attachment bytes onto existing evidence",
+        payload={"source_kind": "sms_export", "csv_required": False},
+    )
+    try:
+        with connection() as conn:
+            found = None
+            if source_id is not None:
+                found = {"id": source_id}
+            else:
+                found = store.find_sms_export_source(conn=conn, uri=source_uri)
+            if not found:
+                raise FileNotFoundError(
+                    "No ingested SMS source in the database. "
+                    "Cannot backfill attachments until ingest-sms has run with the CSV."
+                )
+            sid = found["id"] if isinstance(found, dict) else source_id
+            export_roots = attachment_search_roots(attachments_dir=requested_dir)
+            stats = backfill_unique_export_attachments(
+                sid, conn=conn, roots=export_roots
+            )
+        store.finish_job(
+            job_id,
+            status="done",
+            message=(
+                f"attachments_stored={stats.get('stored')} "
+                f"attachments_missing={stats.get('still_missing')} "
+                f"attachments_ambiguous={stats.get('ambiguous_slots')} "
+                f"attachment_orphan_files={stats.get('orphan_files')}"
+            ),
+        )
+        return {
+            "ok": True,
+            "job_id": str(job_id),
+            "source_id": str(sid),
+            "source": {k: str(v) for k, v in (found.items() if isinstance(found, dict) else [])},
+            "inserted": 0,
+            "skipped": "existing",
+            "attachments_stored": int(stats.get("stored") or 0),
+            "attachments_missing": int(stats.get("still_missing") or 0),
+            "attachments_ambiguous": int(stats.get("ambiguous_slots") or 0),
+            "attachment_orphan_files": int(stats.get("orphan_files") or 0),
+            "attachment_export_stats": stats,
+            "attachments_dir_probe": probe,
+            "attachment_bytes_hunted": True,
+            "csv_required": False,
+            "original_untouched": True,
+        }
+    except Exception as exc:  # noqa: BLE001
+        detail = _os_error_detail(exc)
+        store.finish_job(
+            job_id, status="error", message="attachment backfill failed", error_message=detail
+        )
+        return {"ok": False, "job_id": str(job_id), "error": detail}
+
+
 def ingest_sms(
     uri: str | None = None,
     *,
     limit: int | None = None,
     label: str | None = None,
+    attachments_dir: str | None = None,
 ) -> dict[str, Any]:
-    path = Path(uri) if uri else default_sms_export_path()
+    requested_dir = _clean_dir_arg(
+        attachments_dir or os.environ.get("MEMORYBOX_SMS_ATTACHMENTS_DIR")
+    )
+    attach_probe = probe_attachments_dir(requested_dir) if requested_dir else {}
+    if attachments_dir and not attach_probe.get("is_dir"):
+        return {
+            "ok": False,
+            "error": (
+                "attachments-dir is not a readable folder. "
+                f"{attach_probe.get('error') or 'not a directory'}"
+            ),
+            "attachments_dir_probe": attach_probe,
+        }
+    if attach_probe.get("is_dir") and attach_probe.get("path"):
+        os.environ["MEMORYBOX_SMS_ATTACHMENTS_DIR"] = str(attach_probe["path"])
+    reset_export_index()
+    try:
+        path = Path(uri) if uri else default_sms_export_path()
+    except OSError:
+        path = Path(uri) if uri else None
+    csv_ok = _csv_is_readable(path)
+    if attach_probe.get("is_dir") and not uri:
+        existing = store.find_sms_export_source(
+            uri=str(path) if csv_ok and path is not None else None
+        )
+        if existing:
+            return backfill_existing_sms_attachments(
+                attachments_dir=requested_dir,
+                attach_probe=attach_probe,
+                source_id=existing.get("id"),
+                source_uri=str(existing.get("uri") or "") or None,
+            )
+    if not csv_ok:
+        if attach_probe.get("is_dir"):
+            return backfill_existing_sms_attachments(
+                attachments_dir=requested_dir,
+                attach_probe=attach_probe,
+                source_uri=str(path) if path is not None else (uri or None),
+            )
+        return {
+            "ok": False,
+            "error": (
+                "SMS export not found. Set MEMORYBOX_SMS_URI or place the file at "
+                r"\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv"
+                " — or pass --attachments-dir to backfill the already-ingested SMS rows."
+            ),
+            "attachments_dir_probe": attach_probe or None,
+        }
     job_id = store.start_job(
         "ingest_sms",
         message="ingest sms/imessage export",
         payload={"source_kind": "sms_export"},
     )
     try:
-        if path is None or not path.is_file():
-            raise FileNotFoundError(
-                "SMS export not found. Set MEMORYBOX_SMS_URI or place the file at "
-                r"\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv"
-            )
         before = path.stat()
         size = before.st_size
         ingested_at = datetime.now(timezone.utc).isoformat()
@@ -271,10 +436,21 @@ def ingest_sms(
         contacts_upserted = 0
         attachments_stored = 0
         attachments_missing = 0
+        attachments_ambiguous = 0
+        attachment_orphan_files = 0
+        export_stats: dict[str, Any] = {}
         evidence_ids: list[str] = []
         headers: list[str] = []
         written_contacts: set[tuple[str, str]] = set()
-        hunt_attach = sms_folder_has_attachment_bytes(path)
+        export_roots = attachment_search_roots(
+            {"source_coverage": {"import_path": str(path)}},
+            attachments_dir=requested_dir or None,
+        )
+        hunt_attach = bool(attach_probe.get("is_dir")) or sms_folder_has_attachment_bytes(
+            path
+        )
+        if hunt_attach:
+            get_export_index(export_roots)
         # One PG connection for the 90k-row FlightSim export. Opening a socket
         # per row exhausts Windows ephemeral ports (WSAEADDRINUSE 10048).
         with connection() as conn:
@@ -354,6 +530,17 @@ def ingest_sms(
                     evidence_ids.append(str(eid))
                 if inserted % 1000 == 0:
                     conn.commit()
+            if hunt_attach:
+                export_stats = backfill_unique_export_attachments(
+                    source_id,
+                    conn=conn,
+                    roots=export_roots,
+                )
+                attachments_stored += int(export_stats.get("stored") or 0)
+                attachments_ambiguous = int(export_stats.get("ambiguous_slots") or 0)
+                attachment_orphan_files = int(export_stats.get("orphan_files") or 0)
+                if export_stats.get("still_missing") is not None:
+                    attachments_missing = int(export_stats["still_missing"])
         after = path.stat()
         untouched = (
             before.st_mtime_ns == after.st_mtime_ns and before.st_size == after.st_size
@@ -363,7 +550,9 @@ def ingest_sms(
             status="done",
             message=(
                 f"inserted={inserted} skipped={skipped} untouched={untouched} "
-                f"attachments_stored={attachments_stored} attachments_missing={attachments_missing}"
+                f"attachments_stored={attachments_stored} attachments_missing={attachments_missing} "
+                f"attachments_ambiguous={attachments_ambiguous} "
+                f"attachment_orphan_files={attachment_orphan_files}"
             ),
         )
         return {
@@ -377,16 +566,17 @@ def ingest_sms(
             "contacts_upserted": contacts_upserted,
             "attachments_stored": attachments_stored,
             "attachments_missing": attachments_missing,
+            "attachments_ambiguous": attachments_ambiguous,
+            "attachment_orphan_files": attachment_orphan_files,
+            "attachment_export_stats": export_stats,
+            "attachments_dir_probe": attach_probe or None,
             "evidence_ids": evidence_ids,
             "sms_bytes": size,
             "original_untouched": untouched,
             "attachment_bytes_hunted": hunt_attach,
         }
     except Exception as exc:  # noqa: BLE001
-        detail = str(exc)
-        filename = getattr(exc, "filename", None)
-        if filename:
-            detail = f"{detail} ({filename})"
+        detail = _os_error_detail(exc)
         store.finish_job(
             job_id, status="error", message="ingest failed", error_message=detail
         )
@@ -402,3 +592,60 @@ def inspect_default_or_uri(uri: str | None = None) -> dict[str, Any]:
             "tried": uri or str(default_sms_export_path()),
         }
     return inspect_sms_export(path, sample_rows=0)
+
+
+def inspect_sms_attachments_dir(uri: str | None = None) -> dict[str, Any]:
+    """Read-only probe of an Export Attachments folder. No ingest. No rewrite."""
+    probe = probe_attachments_dir(uri)
+    if not probe.get("is_dir"):
+        return {"ok": False, "error": probe.get("error") or "not a directory", **probe}
+    reset_export_index()
+    root = Path(str(probe["path"]))
+    index = get_export_index([root])
+    parsed = index.files[:12]
+    all_files = 0
+    unparsed_sample: list[str] = []
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        cur, level = stack.pop()
+        try:
+            children = list(cur.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_file():
+                    all_files += 1
+                    from memorybox.ingest.sms_export_attach import parse_export_filename
+
+                    if parse_export_filename(child.name) is None and len(unparsed_sample) < 8:
+                        unparsed_sample.append(f"{child.parent.name}/{child.name}")
+                elif child.is_dir() and level < 4:
+                    stack.append((child, level + 1))
+            except OSError:
+                continue
+    return {
+        "ok": True,
+        **probe,
+        "export_files_indexed": len(index.files),
+        "files_on_disk": all_files,
+        "files_unparsed": max(0, all_files - len(index.files)),
+        "unparsed_sample": unparsed_sample,
+        "chat_folders": int(probe.get("child_count") or 0),
+        "note": (
+            "This dump is per-chat Export Attachments, not the 1085-session CSV. "
+            "Folder names are `Messages - {Chat Session}`. "
+            f"{len(index.files)} dated files in {probe.get('child_count')} folders "
+            "is the ceiling for unique joins; DB slots without a file stay missing."
+        ),
+        "parsed_sample": [
+            {
+                "chat": f.chat,
+                "folder_chat": f.folder_chat,
+                "wall_clock": f.wall_clock,
+                "name": f.name,
+                "type": f.attach_type,
+            }
+            for f in parsed
+        ],
+    }

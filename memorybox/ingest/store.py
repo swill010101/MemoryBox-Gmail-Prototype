@@ -161,6 +161,75 @@ def list_indexable_evidence() -> list[dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+def find_sms_export_source(
+    *, conn: Any | None = None, uri: str | None = None
+) -> dict[str, Any] | None:
+    """Prefer an exact URI, then the FlightSim 1085-session export, else most rows."""
+
+    def _run(c: Any) -> dict[str, Any] | None:
+        if uri:
+            hit = c.execute(
+                """
+                SELECT s.id, s.uri, s.label, s.updated_at,
+                       (SELECT count(*) FROM evidence e WHERE e.source_id = s.id) AS n
+                FROM sources s
+                WHERE s.source_kind = 'sms_export' AND s.uri = %s
+                LIMIT 1
+                """,
+                (str(uri),),
+            ).fetchone()
+            if hit:
+                return dict(hit)
+        rows = c.execute(
+            """
+            SELECT s.id, s.uri, s.label, s.updated_at,
+                   (SELECT count(*) FROM evidence e WHERE e.source_id = s.id) AS n
+            FROM sources s
+            WHERE s.source_kind = 'sms_export'
+            ORDER BY n DESC, s.updated_at DESC
+            """
+        ).fetchall()
+        if not rows:
+            return None
+        preferred = None
+        for r in rows:
+            row_uri = str(r.get("uri") or "").casefold()
+            if "1085 chat sessions" in row_uri or row_uri.endswith(
+                "messages - 1085 chat sessions.csv"
+            ):
+                preferred = dict(r)
+                break
+        return preferred or dict(rows[0])
+
+    if conn is not None:
+        return _run(conn)
+    with connection() as c:
+        return _run(c)
+
+
+def list_evidence_for_source(
+    source_id: UUID, *, conn: Any | None = None
+) -> list[dict[str, Any]]:
+    """All evidence rows for one Source (SMS backfill / unique export match)."""
+
+    def _run(c: Any) -> list[dict[str, Any]]:
+        rows = c.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json, source_id
+            FROM evidence
+            WHERE source_id = %s
+            ORDER BY created_at
+            """,
+            (source_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    if conn is not None:
+        return _run(conn)
+    with connection() as c:
+        return _run(c)
+
+
 def get_evidence(evidence_id: UUID, *, conn: Any | None = None) -> dict[str, Any] | None:
     def _run(c: Any) -> dict[str, Any] | None:
         row = c.execute(
