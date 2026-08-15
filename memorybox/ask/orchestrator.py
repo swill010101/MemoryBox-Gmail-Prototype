@@ -1239,21 +1239,11 @@ class AskOrchestrator:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
                     )
-            want_photos = bool(plan.want_still or plan.want_photo)
-            want_vids = bool(plan.want_video)
-            if want_photos and want_vids:
-                from concurrent.futures import ThreadPoolExecutor
-
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    photo_fut = pool.submit(R.search_photos, plan, self.photo)
-                    video_fut = pool.submit(
-                        lambda: R.search_videos(plan, self.video, photo=self.photo)
-                    )
-                    photos, photo_status = photo_fut.result()
-                    videos, video_status = video_fut.result()
-            elif want_photos:
+            # Photos first, then video. They share the Immich client for identity;
+            # parallel calls RST person-library search (0 photos / 1 video).
+            if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
-            elif want_vids:
+            if plan.want_video:
                 videos, video_status = R.search_videos(
                     plan, self.video, photo=self.photo
                 )

@@ -84,6 +84,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     _check(
         "i7_person_ask_photo_fallback",
         "face_asset_fallback" in retrieve
+        and "health_detail" in retrieve
         and "_search_person_assets" in retrieve
         and "photos_empty_person_resolved" in retrieve
         and "resolved_person_ids_for_visual" in orch

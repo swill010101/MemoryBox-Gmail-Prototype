@@ -5,6 +5,7 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -35,6 +36,7 @@ class ImmichHttpClient:
         )
         self.ui_root, self.api_base = self._normalize_base_url(raw)
         self._key = key
+        self._lock = threading.Lock()
         thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
 
@@ -104,26 +106,31 @@ class ImmichHttpClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         last_err: Exception | None = None
         attempts = max(1, int(retries))
-        for attempt in range(attempts):
-            try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    raw = resp.read().decode("utf-8", "replace")
-                    return resp.status, (json.loads(raw) if raw else None)
-            except urllib.error.HTTPError as e:
-                raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            self._lock = threading.Lock()
+            lock = self._lock
+        with lock:
+            for attempt in range(attempts):
                 try:
-                    parsed = json.loads(raw) if raw else None
-                except Exception:  # noqa: BLE001
-                    parsed = raw
-                return e.code, parsed
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-                # FlightSim Immich often RST/times out on person library search.
-                # Retry — do not treat a dropped socket as "this person has no photos".
-                last_err = exc
-                if attempt < attempts - 1:
-                    time.sleep(0.35 * (attempt + 1))
-                    continue
-                raise
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        raw = resp.read().decode("utf-8", "replace")
+                        return resp.status, (json.loads(raw) if raw else None)
+                except urllib.error.HTTPError as e:
+                    raw = e.read().decode("utf-8", "replace") if e.fp else ""
+                    try:
+                        parsed = json.loads(raw) if raw else None
+                    except Exception:  # noqa: BLE001
+                        parsed = raw
+                    return e.code, parsed
+                except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                    # FlightSim Immich often RST/times out on person library search.
+                    # Retry — do not treat a dropped socket as "this person has no photos".
+                    last_err = exc
+                    if attempt < attempts - 1:
+                        time.sleep(0.35 * (attempt + 1))
+                        continue
+                    raise
         if last_err is not None:
             raise last_err
         raise RuntimeError("Immich request failed")
@@ -178,7 +185,9 @@ class ImmichHttpClient:
         if not person_ids:
             return []
         target = max(1, min(int(size), 5000))
-        page_size = 100
+        # FlightSim /search/metadata RST on large person pages (100+withExif).
+        # Smaller pages get a library instead of 0 photos / 1 video.
+        page_size = 25
         max_pages = max(2, (target + page_size - 1) // page_size) + 2
         use_order = getattr(self, "_person_use_order", True)
         # None = not yet probed; True/False = learned for this client
@@ -342,6 +351,14 @@ class ImmichHttpClient:
         )
         return hits[:limit]
 
+    @staticmethod
+    def _immich_asset_id(value: Any) -> str | None:
+        """Immich asset UUID — not a filesystem thumbnailPath or person id."""
+        s = str(value or "").strip()
+        if not s or "/" in s or s.startswith("http") or len(s) < 16:
+            return None
+        return s
+
     def list_faces_for_person(self, person_id: str) -> list[dict[str, Any]]:
         """Best-effort Immich face exemplars for a person (P2-I1)."""
         pid = (person_id or "").strip()
@@ -354,7 +371,7 @@ class ImmichHttpClient:
             f"/people/{pid}",
         ):
             try:
-                status, data = self._request("GET", path)
+                status, data = self._request("GET", path, timeout=8, retries=1)
             except Exception:  # noqa: BLE001
                 continue
             if status != 200:
@@ -364,20 +381,37 @@ class ImmichHttpClient:
                 raw_faces = data.get("faces") or data.get("items") or []
                 if isinstance(raw_faces, list):
                     faces = [f for f in raw_faces if isinstance(f, dict)]
-                # Some payloads embed thumbnail as person-level only
-                if not faces and data.get("id"):
-                    faces = [
-                        {
-                            "id": f"person-thumb-{pid}",
-                            "personId": pid,
-                            "assetId": data.get("thumbnailPath") or data.get("id"),
-                            "boundingBoxX1": None,
-                        }
-                    ]
+                for key in (
+                    "faceAssetId",
+                    "featureFaceAssetId",
+                    "thumbnailAssetId",
+                    "faceAssetID",
+                ):
+                    aid = self._immich_asset_id(data.get(key))
+                    if aid and not any(
+                        self._immich_asset_id(f.get("assetId") or f.get("imageId")) == aid
+                        for f in faces
+                    ):
+                        faces.append(
+                            {
+                                "id": f"person-face-{aid}",
+                                "personId": pid,
+                                "assetId": aid,
+                            }
+                        )
             elif isinstance(data, list):
                 faces = [f for f in data if isinstance(f, dict)]
-            if faces:
-                return faces
+            # Drop rows whose assetId is a path / person id (get_asset would 404).
+            usable = []
+            for f in faces:
+                aid = self._immich_asset_id(f.get("assetId") or f.get("imageId"))
+                if not aid or aid == pid:
+                    continue
+                row = dict(f)
+                row["assetId"] = aid
+                usable.append(row)
+            if usable:
+                return usable
         return []
 
     def thumb_url(self, asset_id: str, *, size: str = "preview") -> str:

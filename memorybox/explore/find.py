@@ -620,7 +620,7 @@ def build_explore_find(
     chips = chips_from_ask_result(result)
     # Prefer plan temporal chip over item-derived year range when present
     if not any(c.get("kind") == "time" for c in chips):
-        rc = range_chip_for_items(items)
+        rc = range_chip_for_items(visible_items)
         if rc:
             chips.append(rc)
 

@@ -965,9 +965,9 @@ def search_photos(
     try:
         health = photo.health()
         if not health.ok:
-            status["unavailable"] = True
-            status["detail"] = health.detail or "photo provider unhealthy"
-            return [], status
+            # Ping/health must not zero a person library. FlightSim Immich ping
+            # can fail while /people + asset GETs still return photos.
+            status["health_detail"] = health.detail or "photo provider unhealthy"
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]

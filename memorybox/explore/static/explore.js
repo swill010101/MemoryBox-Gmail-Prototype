@@ -733,9 +733,17 @@
       state.domain.smsTruncated && state.domain.smsMatchTotal
         ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
         : "";
+    let extra = "";
+    if (
+      !c.photo &&
+      state.domain._askSummary &&
+      /immich|photo/i.test(state.domain._askSummary)
+    ) {
+      extra = " " + String(state.domain._askSummary).trim();
+    }
     state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}`;
+    }${trunc}${extra}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———

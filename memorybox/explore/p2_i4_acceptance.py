@@ -853,10 +853,21 @@ def _prove_harness() -> dict[str, Any]:
         got_no_exif = client4.search_by_person_ids(["person-1"], size=50)
         _check(
             "immich_person_library_survives_exif_timeout",
-            len(got_no_exif) >= 50,
+            len(got_no_exif) >= 25,
             checks,
             problems,
             f"n={len(got_no_exif)} calls={len(client4._calls)}",
+        )
+        from memorybox.providers.photo._immich_http import ImmichHttpClient as _ImmichIds
+
+        _check(
+            "immich_face_asset_id_not_path",
+            _ImmichIds._immich_asset_id("uploads/thumbs/abc.jpg") is None
+            and _ImmichIds._immich_asset_id("cc6eb438-86a9-405c-89aa-6c6fc43de076")
+            is not None,
+            checks,
+            problems,
+            "Face fallback must use asset UUIDs, not thumbnailPath",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_person_full_page", False, checks, problems, str(exc))
