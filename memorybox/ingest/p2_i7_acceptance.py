@@ -254,7 +254,9 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "_name_forms" in sms_attach
         and "put_media_object" in attach_cache
         and "bytes_ingested" in comms
-        and "media_object_id" in comms,
+        and "media_object_id" in comms
+        and "inventory_export_attachments" in attach_cache
+        and "_find_in_zips" in sms_attach,
         checks,
         problems,
         "SMS attachment is first-class on the message; optional Artifact copy; no Immich write",
@@ -355,7 +357,11 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     after_inspect = FIXTURE.read_bytes()
     _check(
         "i7_inspect_untouched",
-        inv.get("ok") and inv.get("original_untouched") and before == after_inspect,
+        inv.get("ok")
+        and inv.get("original_untouched")
+        and before == after_inspect
+        and inv.get("attachment_files_on_disk") == 1
+        and "photo.jpg" in str(inv.get("sms_folder_listing") or ""),
         checks,
         problems,
         "inspect-sms does not rewrite the export",

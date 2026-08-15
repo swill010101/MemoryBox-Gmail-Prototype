@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+import zipfile
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -68,7 +69,9 @@ def _search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
                 parent,
                 parent / stem,
                 parent / f"{stem} Attachments",
+                parent / f"{stem}_Attachments",
                 parent / "Messages Attachments",
+                parent / "sms-attachments",
                 parent / "attachments",
                 parent / "Attachments",
             ]
@@ -78,7 +81,9 @@ def _search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
         roots.append(Path(src) / "sms")
         roots.append(Path(src))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
+    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms-attachments"))
     roots.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
+    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\Attachments"))
     roots.extend(_payload_roots(payload))
     out: list[Path] = []
     seen: set[str] = set()
@@ -228,7 +233,9 @@ def _payload_roots(payload: dict[str, Any] | None) -> list[Path]:
                 parent,
                 parent / stem,
                 parent / f"{stem} Attachments",
+                parent / f"{stem}_Attachments",
                 parent / "Messages Attachments",
+                parent / "sms-attachments",
                 parent / "attachments",
                 parent / "Attachments",
             ]
@@ -328,6 +335,32 @@ def _keep_found(path: Path, filename: str) -> Path:
     return cache_put(path, filename) or path
 
 
+def _find_in_zips(root: Path, name: str, uuid: str | None) -> Path | None:
+    """CSV exports sometimes sit next to a zip of the same attachments."""
+    try:
+        if not root.is_dir():
+            return None
+        zips = [p for p in root.iterdir() if p.is_file() and p.suffix.lower() == ".zip"]
+    except OSError:
+        return None
+    for zp in zips[:24]:
+        try:
+            with zipfile.ZipFile(zp) as zf:
+                for inner in zf.namelist():
+                    base = Path(inner).name
+                    if not base or not _name_matches(base, name, uuid):
+                        continue
+                    dest = cache_root() / base
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if not dest.is_file() or not dest.stat().st_size:
+                        dest.write_bytes(zf.read(inner))
+                    if dest.is_file() and dest.stat().st_size:
+                        return dest
+        except (OSError, zipfile.BadZipFile, RuntimeError):
+            continue
+    return None
+
+
 def resolve_attachment_file(
     att: dict[str, Any],
     payload: dict[str, Any] | None = None,
@@ -382,6 +415,9 @@ def resolve_attachment_file(
         found = _walk_match(root, name, uuid, depth=6)
         if found is not None:
             return _keep_found(found, name)
+        zipped = _find_in_zips(root, name, uuid)
+        if zipped is not None:
+            return _keep_found(zipped, name)
     if build_index:
         _build_attach_index(roots, depth=6)
         indexed = _lookup_index(name, uuid)

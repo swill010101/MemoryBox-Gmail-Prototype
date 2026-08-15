@@ -188,3 +188,67 @@ def put_media_object(
         "byte_size": len(data),
         "mime_type": mime,
     }
+
+
+def inventory_export_attachments(export_path: Path, filenames: list[str]) -> dict[str, Any]:
+    """What is actually next to the SMS CSV (names only; no message bodies)."""
+    parent = export_path.parent
+    listing: list[dict[str, str]] = []
+    unlistable: str | None = None
+    try:
+        kids = sorted(parent.iterdir(), key=lambda p: p.name.casefold())
+        for child in kids[:80]:
+            kind = "unknown"
+            try:
+                kind = "dir" if child.is_dir() else "file"
+            except OSError:
+                pass
+            listing.append({"name": child.name, "kind": kind})
+    except OSError as exc:
+        unlistable = str(exc)
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for raw in filenames:
+        name = Path(raw or "").name
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        uniq.append(name)
+    on_disk: set[str] = set()
+    stack: list[tuple[Path, int]] = [(parent, 0)]
+    while stack:
+        cur, level = stack.pop()
+        try:
+            children = list(cur.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_file():
+                    on_disk.add(child.name.casefold())
+                elif child.is_dir() and level < 4:
+                    stack.append((child, level + 1))
+            except OSError:
+                continue
+    present = 0
+    missing_sample: list[str] = []
+    for name in uniq:
+        stem = Path(name).stem
+        suffix = Path(name).suffix
+        forms = {name.casefold()}
+        if "__" in stem:
+            forms.add((stem.split("__", 1)[1] + suffix).casefold())
+        if any(f in on_disk for f in forms):
+            present += 1
+        elif len(missing_sample) < 8:
+            missing_sample.append(name)
+    return {
+        "sms_folder": str(parent),
+        "sms_folder_listing": listing,
+        "sms_folder_unlistable": unlistable,
+        "attachment_names_unique": len(uniq),
+        "attachment_files_on_disk": present,
+        "attachment_files_missing": max(0, len(uniq) - present),
+        "attachment_missing_sample": missing_sample,
+    }

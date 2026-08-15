@@ -362,6 +362,15 @@ def inspect_sms_export(path: Path, *, sample_rows: int = 0) -> dict[str, Any]:
     dates = [m.sent_at for m in rows if m.sent_at]
     services = sorted({m.service for m in rows if m.service})
     threads = sorted({m.thread_id for m in rows if m.thread_id})
+    from memorybox.ingest.sms_attach_cache import inventory_export_attachments
+
+    attach_names = [
+        str(a.get("filename") or "")
+        for m in rows
+        for a in (m.attachments or [])
+        if a.get("filename")
+    ]
+    disk = inventory_export_attachments(path, attach_names)
     return {
         "ok": True,
         "path": str(path),
@@ -380,6 +389,7 @@ def inspect_sms_export(path: Path, *, sample_rows: int = 0) -> dict[str, Any]:
             1 for m in rows if m.latitude or m.longitude or m.shared_location
         ),
         "parser_version": PARSER_VERSION,
+        **disk,
         "sample": [
             {
                 "row": m.source_row,
