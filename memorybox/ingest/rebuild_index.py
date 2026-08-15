@@ -76,8 +76,10 @@ def _embed_text(payload: dict[str, Any], summary: str, kind: str) -> str:
 
 def _llm_embedder(cfg: Settings):
     """Use Ollama when configured and embed works; otherwise Fake (deterministic prove)."""
+    from memorybox.ai_trace.wrapper import trace_llm
+
     if not cfg.ollama_base_url:
-        return FakeLlmProvider()
+        return trace_llm(FakeLlmProvider())
     try:
         from memorybox.providers.llm.ollama import OllamaLlmProvider
 
@@ -89,10 +91,10 @@ def _llm_embedder(cfg: Settings):
         if p.health().ok:
             # Probe embed — tags OK is not enough (404 on missing model/API).
             p.embed("embed probe", purpose="document")
-            return p
+            return trace_llm(p)
     except Exception:  # noqa: BLE001
         pass
-    return FakeLlmProvider()
+    return trace_llm(FakeLlmProvider())
 
 
 def clear_collection(cfg: Settings | None = None) -> dict[str, Any]:
@@ -106,7 +108,14 @@ def clear_collection(cfg: Settings | None = None) -> dict[str, Any]:
 
 
 def rebuild_comms_index(cfg: Settings | None = None) -> dict[str, Any]:
+    from memorybox.ai_trace.request import tracing_job
+
     cfg = cfg or settings
+    with tracing_job("rebuild_comms_index"):
+        return _rebuild_comms_index_impl(cfg)
+
+
+def _rebuild_comms_index_impl(cfg: Settings) -> dict[str, Any]:
     job_id = store.start_job(
         "rebuild_comms_index",
         message="rebuild derived Qdrant from PostgreSQL Evidence",

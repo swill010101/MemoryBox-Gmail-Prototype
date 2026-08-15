@@ -1,6 +1,6 @@
 # MBPRD-P2-I7A — AI Model Trace & Observability
 
-**Status:** Ingested. I7A **definition locked** 2026-08-15 (Tom Q1–Q6 + extra rules). **No build.**  
+**Status:** Ingested. I7A **definition locked** · **BUILD AUTHORIZED** 2026-08-15.  
 **ID:** MBPRD-P2-I7A · **Source file:** v0.1 · 2026-08-15 (Tom Word upload)  
 **MBRM citation:** v0.2 insertion names this PRD as v0.2; this ingest is the v0.1 document Tom attached.  
 **Increment definition (locked):** [MBBS-P2_INCREMENT_7A_DEFINITION.md](MBBS-P2_INCREMENT_7A_DEFINITION.md)

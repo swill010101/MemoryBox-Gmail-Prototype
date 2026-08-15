@@ -140,4 +140,19 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | I7A build | **AUTHORIZED** 2026-08-15 |
 | MBQL-001 | **NOT STARTED** — blocked on I7A acceptance |
 
-**Build authorized.** Implement the schema/live-update contract, wrap the shared provider boundary, add `/dev/ai-trace`, and prove T1–T10. **No MBQL implementation starts as part of I7A.** ACCEPTED remains a FlightSim owner pass.
+**Build authorized and implemented this revision.** `prove-p2-i7a` is a harness, not ACCEPTED. ACCEPTED remains a FlightSim owner pass with `/dev/ai-trace` open on a second display. **No MBQL implementation starts as part of I7A.**
+
+## 8. FlightSim deploy (this branch)
+
+```powershell
+cd C:\memorybox
+git fetch origin
+git checkout cursor/p2-i7a-model-trace-definition-3061
+git pull origin cursor/p2-i7a-model-trace-definition-3061
+python -m memorybox migrate
+# restart Ask/serve, then:
+#   http://127.0.0.1:8790/dev/ai-trace
+python -m memorybox prove-p2-i7a
+```
+
+Bookmark `/dev/ai-trace`. It is not in family nav. Run a normal Ask (T3 path) and the T1–T10 buttons on the page. T2 (ORCHESTRATION) and T4 (MODEL_OUTPUT) must look different.

@@ -89,7 +89,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I5** | Universal Person Surfaces | F+U | **ACCEPTED** (2026-08-14) — rest of TASK-001 |
 | **P2-I6** | Kinship Inference | A | **ACCEPTED** (2026-08-14) — TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | **ACCEPTED** (2026-08-15) — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); attachment bytes **P2-BL-I7-01** |
-| **P2-I7A** | AI Model Trace & Observability | F | **DEFINITION LOCKED / NO BUILD** — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) |
+| **P2-I7A** | AI Model Trace & Observability | F | **BUILD AUTHORIZED** 2026-08-15 — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
 | **MBQL-001** | Ask, Query & Command Language | F | **After I7A.** Semantic contract for Planner / Orchestrator. Not I8. |
 | **P2-I8** | Richer Email | A | |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
@@ -161,7 +161,7 @@ P2-COM-01 · CAP-P2-018. **ACCEPTED** 2026-08-15 (Tom). Attachment bytes parked 
 
 ### P2-I7A — AI Model Trace & Observability · F
 
-Developer-only request→model→disposition traces. Definition **LOCKED** 2026-08-15. **No build** until explicit I7A authorization. [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md). **MBQL-001 waits on I7A.**
+Developer-only request→model→disposition traces. Definition **LOCKED**. **BUILD AUTHORIZED** 2026-08-15. [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md). **No MBQL in I7A.**
 
 ### P2-I8 — Richer Email · A
 

@@ -222,6 +222,18 @@ def main(argv: list[str] | None = None) -> int:
             "Harness uses the in-repo fixture; inspect-sms the real export separately."
         ),
     )
+    p_prove_p2i7a = sub.add_parser(
+        "prove-p2-i7a",
+        help="P2-I7A AI Model Trace acceptance prove",
+    )
+    p_prove_p2i7a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim ACCEPTED gate remains manual (definition §5). "
+            "Open /dev/ai-trace on a second display; harness is not ACCEPTED."
+        ),
+    )
     p_export = sub.add_parser(
         "export",
         help="Build MV export package synchronously (format 1 folder)",
@@ -477,6 +489,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i7a":
+        from memorybox.ai_trace.p2_i7a_acceptance import prove_p2_i7a
+
+        payload = prove_p2_i7a(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package
