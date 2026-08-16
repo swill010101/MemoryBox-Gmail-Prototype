@@ -575,21 +575,16 @@
   }
 
   function setTypeFilter(id) {
-    const prev = state.domain.typeFilter;
-    const keepTexts = Boolean(
-      prev === "email" ||
-        id === "email" ||
-        state.domain.galleryShowSms ||
-        state.domain.includeTexts ||
-        rawItems.some((it) => isSmsTextItem(it) && !it.gallery_default_hidden)
-    );
     state.domain.typeFilter = id || "all";
-    if (id === "email" || (id === "all" && keepTexts)) {
+    if (id === "email") {
       state.domain.includeTexts = true;
+    } else if (id === "all") {
+      // Filter-only Email/Text must not pin SMS onto All. I7 hides texts
+      // on All unless this find was an explicit text ask or Add texts.
+      if (!state.domain.galleryShowSms && !state.domain.textsPinned) {
+        state.domain.includeTexts = false;
+      }
     }
-    // All stays clickable and keeps texts; merge Person photos/videos in
-    // without replacing the current text result (no Immich write).
-    if (id === "all") maybeMergePersonVisuals();
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
@@ -663,11 +658,12 @@
   }
 
   function countByType(items) {
-    const c = { photo: 0, video: 0, email: 0, artifact: 0, story: 0, other: 0 };
+    const c = { photo: 0, video: 0, email: 0, text: 0, artifact: 0, story: 0, other: 0 };
     for (const it of items) {
       const t = String(it.type || "").toLowerCase();
-      if (t in c) c[t] += 1;
-      else if (t === "sms" || t === "text") c.email += 1;
+      if (t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs") {
+        c.text += 1;
+      } else if (t in c) c[t] += 1;
       else c.other += 1;
     }
     return c;
@@ -692,10 +688,21 @@
       state.domain.summary = state.domain._askSummary;
       return;
     }
+    const hiddenSms = Number(state.domain.smsHidden || 0) || 0;
+    const availableSms = Number(state.domain.smsAvailable || 0) || 0;
+    const includeTexts = Boolean(
+      state.domain.includeTexts || state.domain.galleryShowSms
+    );
+    const allAsk =
+      !state.domain.typeFilter || state.domain.typeFilter === "all";
     const c = countByType(vis);
+    if (allAsk && !includeTexts && (hiddenSms || availableSms)) {
+      c.text = Math.max(c.text, availableSms || hiddenSms);
+    }
     const parts = [];
     if (c.photo) parts.push(`${c.photo} photo${c.photo === 1 ? "" : "s"}`);
     if (c.video) parts.push(`${c.video} video moment${c.video === 1 ? "" : "s"}`);
+    if (c.text) parts.push(`${c.text} text${c.text === 1 ? "" : "s"}`);
     if (c.email) parts.push(`${c.email} email${c.email === 1 ? "" : "s"}`);
     if (c.artifact) parts.push(`${c.artifact} artifact${c.artifact === 1 ? "" : "s"}`);
     if (c.story) parts.push(`${c.story} stor${c.story === 1 ? "y" : "ies"}`);
@@ -741,9 +748,20 @@
     ) {
       extra = " " + String(state.domain._askSummary).trim();
     }
-    state.domain.summary = `Showing ${vis.length} memories (${filterLabel}) for ${range}${
+    const archiveN =
+      allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
+    let hideNote = "";
+    const alreadyHid = /are in the archive/.test(
+      String(state.domain._askSummary || "") + extra
+    );
+    if (allAsk && !includeTexts && (hiddenSms || availableSms) && !alreadyHid) {
+      hideNote =
+        ` ${availableSms || hiddenSms} text message(s) are in the archive ` +
+        "(hidden in Gallery — say Add texts to show them).";
+    }
+    state.domain.summary = `Showing ${archiveN} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}${extra}`;
+    }${trunc}${extra}${hideNote}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -1044,6 +1062,9 @@
         typeFilter: nextType,
         includeTexts: includeTexts,
         galleryShowSms: galleryShowSms,
+        textsPinned: Boolean(galleryShowSms),
+        smsAvailable: Number(exploreHint.sms_available || 0) || 0,
+        smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
@@ -1224,6 +1245,7 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       render();
       return;
     }
@@ -1336,12 +1358,14 @@
     }
     if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
     if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.textsPinned = true;
       setTypeFilter("email");
       render();
       return;
@@ -1802,7 +1826,7 @@
           ? `@ ${Number(it.t).toFixed(0)}s`
           : "";
       const bg = media
-        ? `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" />`
+        ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
         : "";
       return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
         dur ? `<span class="mb-card-dur">${dur}</span>` : ""
@@ -1821,9 +1845,64 @@
       }<span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "photo" && media) {
-      return `<img class="mb-card-thumb" src="${escapeAttr(media)}" alt="" loading="lazy" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
+      return `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" /><span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
     }
     return `<span class="mb-card-preview">${prev || escapeHtml(it.title || "")}</span>`;
+  }
+
+  function bindLazyThumbs(root) {
+    if (!root) return;
+    if (root._mbLazyIo) {
+      try {
+        root._mbLazyIo.disconnect();
+      } catch (_) {}
+      root._mbLazyIo = null;
+    }
+    const imgs = root.querySelectorAll("img.mb-card-thumb[data-src]");
+    let inFlight = 0;
+    let paused = false;
+    const queue = [];
+    const pump = () => {
+      while (!paused && inFlight < 3 && queue.length) {
+        const img = queue.shift();
+        const src = img && img.getAttribute("data-src");
+        if (!src || img.getAttribute("src")) continue;
+        inFlight += 1;
+        img.onload = () => {
+          inFlight = Math.max(0, inFlight - 1);
+          pump();
+        };
+        img.onerror = () => {
+          inFlight = Math.max(0, inFlight - 1);
+          pump();
+        };
+        img.setAttribute("src", src);
+        img.removeAttribute("data-src");
+      }
+    };
+    const load = (img) => {
+      if (paused || !img || img.getAttribute("src")) return;
+      queue.push(img);
+      pump();
+    };
+    if (!("IntersectionObserver" in window)) {
+      imgs.forEach((img, i) => {
+        if (i < 6) load(img);
+      });
+      return;
+    }
+    const io = new IntersectionObserver(
+      (ents) => {
+        ents.forEach((e) => {
+          if (!e.isIntersecting) return;
+          load(e.target);
+          io.unobserve(e.target);
+        });
+      },
+      { root: root, rootMargin: "40px" }
+    );
+    imgs.forEach((img) => io.observe(img));
+    root._mbLazyIo = io;
   }
 
   function renderGallery() {
@@ -1870,6 +1949,7 @@
       card.addEventListener("click", () => openModal(id));
       bindCardPreview(card, id);
     });
+    bindLazyThumbs(gallery);
 
     requestAnimationFrame(() => {
       gallery.scrollTop = state.gallery.scrollTop || 0;
@@ -2655,6 +2735,24 @@
     const eid = item && item.evidence_id;
     if (!eid) return;
     document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
+      const li = img.closest("li");
+      const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
+      const pending = img.getAttribute("data-src");
+      if (pending) {
+        fetch(
+          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data && data.bytes_present) {
+              img.setAttribute("src", pending);
+              img.removeAttribute("data-src");
+              return;
+            }
+            img.dispatchEvent(new Event("error"));
+          })
+          .catch(() => img.dispatchEvent(new Event("error")));
+      }
       img.addEventListener("error", () => {
         const box = img.parentElement;
         if (!box) return;
@@ -2780,7 +2878,7 @@
             String(a.attachment_type || a.filename || "")
           );
           const preview = isImg
-            ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" src="' +
+            ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" data-src="' +
               escapeAttr(src) +
               '" alt="' +
               name +
@@ -2856,13 +2954,10 @@
           : "";
     if (isText && state.preview && state.preview.attach) {
       const att = (item.attachments || [])[0] || {};
-      const eid = escapeAttr(item.evidence_id || "");
       const name = escapeHtml(att.filename || att.source_ref || "attachment");
-      const src = `/explore/api/sms-attachment/${eid}?index=0`;
       return `<div class="mb-qp-body mb-qp-attach">
       <div class="mb-qp-type">Attachment</div>
-      <div class="mb-qp-media"><img class="mb-qp-attach-img" src="${src}" alt="${name}" /></div>
-      <div class="mb-qp-line">${name}</div>
+      <div class="mb-qp-line">${name} — open the card to preview if the file was stored at ingest</div>
     </div>`;
     }
     if (isText) {

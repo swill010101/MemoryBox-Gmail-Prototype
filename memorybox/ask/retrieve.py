@@ -905,6 +905,8 @@ def search_photos(
         is_negative,
         list_provider_external_ids_for_person,
         resolve_immich_external_ids_for_person,
+        asked_name_matches_person,
+        immich_ids_matching_asked_name,
     )
 
     status: dict[str, Any] = {
@@ -958,6 +960,10 @@ def search_photos(
         return out
 
     def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
+        client = getattr(photo, "_client", None)
+        snap = getattr(client, "diag_snapshot", None)
+        if callable(snap):
+            status["immich_diag"] = snap()
         filtered = _filter_photo_hits(hits)
         return filtered[:limit], status
 
@@ -966,11 +972,17 @@ def search_photos(
         status["detail"] = "not_requested"
         return [], status
     try:
-        health = photo.health()
-        if not health.ok:
-            # Ping/health must not zero a person library. FlightSim Immich ping
-            # can fail while /people + asset GETs still return photos.
-            status["health_detail"] = health.detail or "photo provider unhealthy"
+        named_person = bool(
+            getattr(plan, "person_names", ()) or getattr(plan, "person_ids", ())
+        )
+        if named_person:
+            status["health_skipped"] = "named_person_ask"
+        else:
+            health = photo.health()
+            if not health.ok:
+                # Ping/health must not zero a person library. FlightSim Immich ping
+                # can fail while /people + asset GETs still return photos.
+                status["health_detail"] = health.detail or "photo provider unhealthy"
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]
@@ -990,10 +1002,19 @@ def search_photos(
         # I9A: prefer MB Person ids from relational resolve (owner ? Relationship ? id)
         from memorybox.person import get_person as _get_person_by_id
 
+        asked_names = [n for n in (plan.person_names or ()) if str(n).strip()]
+
+        def _person_name_is_asked(display: str) -> bool:
+            if not asked_names:
+                return True
+            return any(asked_name_matches_person(a, display) for a in asked_names)
+
         resolved_by_id: set[str] = set()
         for pid in getattr(plan, "person_ids", ()) or ():
             person = _get_person_by_id(pid)
             if not person:
+                continue
+            if asked_names and not _person_name_is_asked(person.display_name or ""):
                 continue
             resolved_by_id.add(person.id)
             name = person.display_name or pid
@@ -1144,6 +1165,10 @@ def search_photos(
                     out.append(n)
             pn = (person_name or "").strip()
             if pn and pn.lower() != "unknown" and pn not in out:
+                # Do not relabel Tom's stills as Peggy/Dan when people[] already
+                # names someone else.
+                if out and not any(asked_name_matches_person(pn, existing) for existing in out):
+                    return out
                 out.insert(0, pn)
             return out
 
@@ -1158,7 +1183,13 @@ def search_photos(
                 return []
             try:
                 assets = photo.search_assets(
-                    PhotoSearchQuery(person_external_ids=tuple(ids), limit=limit)
+                    PhotoSearchQuery(
+                        person_external_ids=tuple(ids),
+                        limit=limit,
+                        time_windows=tuple(
+                            getattr(plan, "temporal_windows", ()) or ()
+                        ),
+                    )
                 )
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
                 assets = []
@@ -1168,8 +1199,10 @@ def search_photos(
                 status["person_library_source"] = src
             if assets:
                 return list(assets)
+            _client = getattr(photo, "_client", None)
+            if _client is not None and getattr(_client, "_circuit", lambda: False)():
+                return []
             list_fn = getattr(photo, "list_face_assets", None)
-            get_fn = getattr(photo, "get_asset", None)
             if not callable(list_fn):
                 return []
             seen: set[str] = set()
@@ -1185,21 +1218,15 @@ def search_photos(
                     if not aid or "/" in aid or aid in seen:
                         continue
                     seen.add(aid)
-                    asset = None
-                    if callable(get_fn):
-                        try:
-                            asset = get_fn(aid)
-                        except Exception:  # noqa: BLE001
-                            asset = None
-                    if asset is None:
-                        # Gallery can show a thumb from the asset id alone.
-                        # FlightSim get_asset often 404s/RST after a good face UUID.
-                        asset = PhotoAssetDto(
+                    # Do not GET /assets/{id} per face — that RST's Immich after
+                    # a failed person search. Gallery can thumb from the id alone.
+                    out.append(
+                        PhotoAssetDto(
                             provider_key=getattr(photo, "provider_key", "immich")
                             or "immich",
                             external_id=aid,
                         )
-                    out.append(asset)
+                    )
                     if len(out) >= cap:
                         status["face_asset_fallback"] = len(out)
                         return out
@@ -1291,6 +1318,18 @@ def search_photos(
                 faces=_faces_for_hit(a),
             )
 
+        if mapped_ext and asked_names:
+            verified: list[str] = []
+            for name in asked_names:
+                verified.extend(immich_ids_matching_asked_name(photo, name, mapped_ext))
+            verified = list(dict.fromkeys(verified))
+            status["mapped_immich_ids_before_verify"] = list(dict.fromkeys(mapped_ext))
+            status["mapped_immich_ids"] = list(verified)
+            if verified != list(dict.fromkeys(mapped_ext)):
+                status["stale_immich_mapping_dropped"] = True
+            mapped_ext = verified
+            mapped_meta = [m for m in mapped_meta if m.get("external_id") in set(mapped_ext)]
+
         if mapped_ext:
             trusts = {m.get("trust") for m in mapped_meta}
             if trusts == {"trusted_provider"}:
@@ -1375,11 +1414,8 @@ def search_photos(
             return [], status
 
         person_ext: list[str] = []
-        # Mapped-id RST must not block Immich name lookup (stale UUID / circuit).
-        _client = getattr(photo, "_client", None)
-        _reset = getattr(_client, "_reset_person_circuit", None)
-        if callable(_reset):
-            _reset()
+        # Do not reset the Immich circuit here — that re-floods a recovering NAS.
+        # Name lookup stays allowlisted while the circuit is open.
         # Prefer resolved MB display names (Peggy → Peggy George) for Immich lookup
         name_queries: list[str] = []
         for name in plan.person_names:
@@ -1509,15 +1545,15 @@ def search_photos(
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
     except ProviderError as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
     except Exception as exc:  # noqa: BLE001
         status["unavailable"] = True
         status["detail"] = str(exc)
-        return [], status
+        return _finish([])
 
 
 def _dedupe_video_hits(
@@ -1605,10 +1641,21 @@ def search_videos(
 
         from memorybox.person import get_person as _get_person_by_id
 
+        asked_video_names = [n for n in (plan.person_names or ()) if str(n).strip()]
+
+        def _video_person_is_asked(display: str) -> bool:
+            if not asked_video_names:
+                return True
+            from memorybox.person import asked_name_matches_person as _nm
+
+            return any(_nm(a, display) for a in asked_video_names)
+
         seen_pids: set[str] = set()
         for pid in getattr(plan, "person_ids", ()) or ():
             person = _get_person_by_id(pid)
             if not person:
+                continue
+            if asked_video_names and not _video_person_is_asked(person.display_name or ""):
                 continue
             seen_pids.add(person.id)
             ids: list[str] = []

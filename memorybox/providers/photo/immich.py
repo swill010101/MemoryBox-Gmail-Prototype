@@ -84,7 +84,9 @@ class ImmichPhotoProvider:
         try:
             if query.person_external_ids:
                 raw = self._client.search_by_person_ids(
-                    list(query.person_external_ids), size=query.limit
+                    list(query.person_external_ids),
+                    size=query.limit,
+                    time_windows=getattr(query, "time_windows", ()) or (),
                 )
                 items = raw if isinstance(raw, list) else []
             else:
@@ -360,6 +362,8 @@ class ImmichPhotoProvider:
         if w and h:
             add("Dimensions", f"{w} × {h}")
         add("Description", exif.get("description") or exif.get("imageDescription"))
+        if raw.get("isVideo") or str(raw.get("type") or "").lower() == "video":
+            add("media", "video")
         return tuple(rows)
 
     @staticmethod

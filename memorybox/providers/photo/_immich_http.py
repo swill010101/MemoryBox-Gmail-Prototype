@@ -5,6 +5,7 @@ Config-driven only — no hard-coded hosts/paths. Secrets never logged.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import urllib.error
@@ -12,9 +13,64 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+_LOG = logging.getLogger("memorybox.immich")
+_CIRCUIT_COOLDOWN_SEC = 300
+_PERSON_LIB_MEM_TTL_SEC = 6 * 3600
+_PERSON_LIB_DISK_TTL_SEC = 24 * 3600
+_PERSON_TIMELINE_YEAR_BUDGET = 15
+_PERSON_TIMELINE_MONTH_BUDGET = 18
+_PERSON_LIB_CACHE_VER = "v5"
+
 
 class ImmichAuthError(RuntimeError):
     pass
+
+
+def immich_activity_path() -> Path:
+    """Ask-side Immich call log (not Immich's own server log). No API keys."""
+    import os
+
+    raw = (os.environ.get("MEMORYBOX_IMMICH_ACTIVITY_PATH") or "").strip()
+    if raw:
+        return Path(raw)
+    home = (
+        os.environ.get("MEMORYBOX_HOME")
+        or os.environ.get("MEMORYBOX_DATA_DIR")
+        or ""
+    ).strip()
+    if home:
+        return Path(home) / "immich-activity.jsonl"
+    return Path(__file__).resolve().parents[2] / "immich-activity.jsonl"
+
+
+def _append_immich_activity(rec: dict[str, Any]) -> None:
+    try:
+        path = immich_activity_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, default=str) + "\n")
+    except Exception:  # noqa: BLE001 — never fail a photo ask because the log disk hiccuped
+        return
+
+
+def read_immich_activity(*, limit: int = 200) -> list[dict[str, Any]]:
+    path = immich_activity_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for line in lines[-max(1, int(limit)) :]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out
 
 
 class ImmichHttpClient:
@@ -96,6 +152,7 @@ class ImmichHttpClient:
         retries: int = 2,
     ) -> tuple[int, Any]:
         if getattr(self, "_circuit_open", False) and not self._circuit_allows(path):
+            self._record_call(method, path, status=0, ms=0, err="circuit_open")
             raise TimeoutError("immich circuit open")
         url = self.api_base + (path if path.startswith("/") else "/" + path)
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -114,20 +171,27 @@ class ImmichHttpClient:
             lock = self._lock
         with lock:
             for attempt in range(attempts):
+                t0 = time.monotonic()
                 try:
                     with urllib.request.urlopen(req, timeout=timeout) as resp:
                         raw = resp.read().decode("utf-8", "replace")
+                        ms = (time.monotonic() - t0) * 1000
+                        self._record_call(method, path, status=int(resp.status), ms=ms)
                         return resp.status, (json.loads(raw) if raw else None)
                 except urllib.error.HTTPError as e:
+                    ms = (time.monotonic() - t0) * 1000
                     raw = e.read().decode("utf-8", "replace") if e.fp else ""
                     try:
                         parsed = json.loads(raw) if raw else None
                     except Exception:  # noqa: BLE001
                         parsed = raw
+                    self._record_call(method, path, status=int(e.code), ms=ms)
                     return e.code, parsed
                 except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
                     # FlightSim Immich often RST/times out on person library search.
+                    ms = (time.monotonic() - t0) * 1000
                     last_err = exc
+                    self._record_call(method, path, status=0, ms=ms, err=str(exc)[:160])
                     self._note_transport_fail(exc)
                     if attempt < attempts - 1 and not getattr(self, "_circuit_open", False):
                         time.sleep(0.35 * (attempt + 1))
@@ -137,12 +201,74 @@ class ImmichHttpClient:
             raise last_err
         raise RuntimeError("Immich request failed")
 
+    def _record_call(
+        self,
+        method: str,
+        path: str,
+        *,
+        status: int,
+        ms: float,
+        err: str | None = None,
+    ) -> None:
+        rec = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+            "method": str(method or "GET"),
+            "path": str(path or "")[:160],
+            "status": int(status or 0),
+            "ms": int(ms),
+            "err": (err or "")[:160] or None,
+            "circuit": self._circuit(),
+        }
+        log = getattr(self, "_call_log", None)
+        if log is None:
+            self._call_log = []
+            log = self._call_log
+        log.append(rec)
+        if len(log) > 48:
+            del log[:-48]
+        _LOG.info(
+            "immich %s %s status=%s ms=%s err=%s circuit=%s",
+            rec["method"],
+            rec["path"],
+            rec["status"],
+            rec["ms"],
+            rec["err"],
+            rec["circuit"],
+        )
+        _append_immich_activity(rec)
+
+    def diag_snapshot(self) -> dict[str, Any]:
+        """Last Immich HTTP calls for curator / /dev/ai-trace (no secrets)."""
+        rows = list(getattr(self, "_call_log", None) or [])
+        fails = [
+            r
+            for r in rows
+            if r.get("err") or int(r.get("status") or 0) in (0, 500, 502, 503, 504)
+        ]
+        return {
+            "calls": len(rows),
+            "fails": len(fails),
+            "circuit": self._circuit(),
+            "source": getattr(self, "_last_person_source", None),
+            "incomplete": bool(getattr(self, "_person_lib_incomplete", False)),
+            "total_ms": int(sum(int(r.get("ms") or 0) for r in rows)),
+            "last": rows[-8:],
+        }
+
+    def _reset_call_log(self) -> None:
+        self._call_log = []
+
     def _reset_person_circuit(self) -> None:
+        """No-op while cooldown is live. Name search is already allowlisted."""
+        until = float(getattr(self, "_circuit_until", 0) or 0)
+        if getattr(self, "_circuit_open", False) and until and time.time() < until:
+            return
+        if getattr(self, "_circuit_open", False):
+            return
         self._transport_fails = 0
-        self._circuit_open = False
 
     def _note_transport_fail(self, exc: BaseException | None = None) -> None:
-        """Two RST/timeouts in one person search → stop stacking 8–60s probes."""
+        """Two RST/timeouts → stay off Immich for five minutes."""
         msg = str(exc or "").lower()
         if exc is not None and not isinstance(
             exc, (TimeoutError, ConnectionError, OSError, urllib.error.URLError)
@@ -152,9 +278,76 @@ class ImmichHttpClient:
         self._transport_fails = int(getattr(self, "_transport_fails", 0) or 0) + 1
         if self._transport_fails >= 2:
             self._circuit_open = True
+            self._circuit_until = time.time() + _CIRCUIT_COOLDOWN_SEC
 
     def _circuit(self) -> bool:
         return bool(getattr(self, "_circuit_open", False))
+
+    def _maybe_half_open(self) -> None:
+        """Do not ping a restarting NAS. Serve cache or empty until Ask restarts."""
+        return
+
+    def _person_lib_disk_dir(self) -> Path | None:
+        import os
+
+        home = (
+            os.environ.get("MEMORYBOX_HOME")
+            or os.environ.get("MEMORYBOX_DATA_DIR")
+            or ""
+        ).strip()
+        if not home:
+            return None
+        return Path(home) / "immich-person-lib"
+
+    def _read_person_lib_cache(
+        self, cache_key: str, *, allow_stale: bool
+    ) -> list[dict[str, Any]] | None:
+        mem = getattr(self, "_person_lib_cache", None)
+        if isinstance(mem, dict) and cache_key in mem:
+            rows, ts = mem[cache_key]
+            age = time.time() - float(ts)
+            if isinstance(rows, list) and rows:
+                if allow_stale or age < _PERSON_LIB_MEM_TTL_SEC:
+                    return list(rows)
+        disk = self._person_lib_disk_dir()
+        if disk is None:
+            return None
+        path = disk / f"{_PERSON_LIB_CACHE_VER}-{cache_key.replace('/', '_')[:80]}.json"
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(raw, dict):
+            return None
+        rows = raw.get("assets")
+        ts = float(raw.get("ts") or 0)
+        if not isinstance(rows, list) or not rows:
+            return None
+        age = time.time() - ts
+        if allow_stale or age < _PERSON_LIB_DISK_TTL_SEC:
+            return [r for r in rows if isinstance(r, dict)]
+        return None
+
+    def _write_person_lib_cache(
+        self, cache_key: str, rows: list[dict[str, Any]]
+    ) -> None:
+        store = getattr(self, "_person_lib_cache", None)
+        if store is None:
+            self._person_lib_cache = {}
+            store = self._person_lib_cache
+        store[cache_key] = (list(rows), time.time())
+        disk = self._person_lib_disk_dir()
+        if disk is None:
+            return
+        try:
+            disk.mkdir(parents=True, exist_ok=True)
+            path = disk / f"{_PERSON_LIB_CACHE_VER}-{cache_key.replace('/', '_')[:80]}.json"
+            path.write_text(
+                json.dumps({"ts": time.time(), "assets": rows}, default=str),
+                encoding="utf-8",
+            )
+        except OSError:
+            return
 
     @staticmethod
     def _circuit_allows(path: str) -> bool:
@@ -164,6 +357,12 @@ class ImmichHttpClient:
             p == "/server/ping"
             or p == "/search/person"
             or p.startswith("/people?name=")
+            or (
+                p.startswith("/people/")
+                and "?" not in p
+                and "/thumbnail" not in p
+                and "/faces" not in p
+            )
         )
 
     def ping(self) -> bool:
@@ -193,6 +392,28 @@ class ImmichHttpClient:
             raise RuntimeError(f"Immich search/metadata failed HTTP {status}")
         return data
 
+    def get_person(self, person_id: str) -> dict[str, Any] | None:
+        """Cheap Immich person record (name + id). Used to reject stale mappings."""
+        pid = (person_id or "").strip()
+        if not pid:
+            return None
+        cached = getattr(self, "_person_rec", None)
+        if isinstance(cached, dict) and pid in cached:
+            return cached[pid]
+        try:
+            status, data = self._request("GET", f"/people/{pid}", timeout=6, retries=1)
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+            return None
+        if status == 200 and isinstance(data, dict) and data.get("id"):
+            store = getattr(self, "_person_rec", None)
+            if store is None:
+                self._person_rec = {}
+                store = self._person_rec
+            store[pid] = data
+            return data
+        return None
+
     def list_people(self) -> list[dict[str, Any]]:
         try:
             status, data = self._request(
@@ -208,24 +429,44 @@ class ImmichHttpClient:
         return data if isinstance(data, list) else []
 
     def search_by_person_ids(
-        self, person_ids: list[str], *, size: int = 50
+        self,
+        person_ids: list[str],
+        *,
+        size: int = 50,
+        time_windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
         FlightSim POST /search/metadata often RST on personIds (Show me Peggy
         George = 0 photos / 1 video). Prefer GET paths the Immich UI uses:
 
-        1. ``GET /people/{id}?withFaces=true`` — one call, asset UUIDs
-        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId
+        1. ``GET /people/{id}`` faces — often a subset (feature faces), not
+           the person library (Peggy: 131 faces vs 598 Immich assets)
+        2. ``GET /timeline/buckets`` + ``/timeline/bucket`` with personId —
+           the Immich person-page source; always union with faces
         3. POST /search/metadata last, short timeout, never the first probe
 
         Prefer ``withExif: true`` on the metadata path so Map gets GPS, but
         learn once per client. Do not trust ``assets.total`` as an early-stop.
+        Do not treat a non-empty face list as a complete library.
         """
         if not person_ids:
             return []
-        self._reset_person_circuit()
+        self._timeline_windows = tuple(time_windows or ())
+        self._reset_call_log()
+        self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
+        cache_key = (
+            f"{_PERSON_LIB_CACHE_VER}:"
+            + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
+        )
+        cached = self._read_person_lib_cache(cache_key, allow_stale=True)
+        if cached:
+            self._last_person_source = "cache"
+            return list(cached)[:target]
+        if self._circuit():
+            self._last_person_source = "timeout"
+            return []
         by_id: dict[str, dict[str, Any]] = {}
 
         def _add(rows: list[dict[str, Any]]) -> None:
@@ -238,14 +479,16 @@ class ImmichHttpClient:
                 by_id[eid] = it
 
         _add(self._assets_from_person_faces(person_ids, target))
-        # withFaces often IS the person library (all assigned faces). Only
-        # hit timeline when faces were sparse and Immich is still answering.
-        if len(by_id) < min(target, 20) and not self._circuit():
+        if not self._circuit():
             _add(self._assets_from_person_timeline(person_ids, target))
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
             self._last_person_source = "faces_or_timeline"
-            return list(by_id.values())[:target]
+            out = list(by_id.values())[:target]
+            # Cache incomplete newest-N walks so a re-ask does not walk Immich again.
+            if out and not self._circuit():
+                self._write_person_lib_cache(cache_key, out)
+            return out
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -257,7 +500,10 @@ class ImmichHttpClient:
         except Exception as exc:  # noqa: BLE001
             self._note_transport_fail(exc)
         if by_id:
-            return list(by_id.values())[:target]
+            out = list(by_id.values())[:target]
+            if not self._circuit():
+                self._write_person_lib_cache(cache_key, out)
+            return out
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
@@ -304,9 +550,19 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            buckets = self._list_person_time_buckets(pid)
-            for bucket in buckets[:24]:
-                if self._circuit():
+            buckets = self._filter_years_to_windows(
+                self._collapse_buckets_to_years(self._list_person_time_buckets(pid)),
+                getattr(self, "_timeline_windows", ()) or (),
+            )
+            # Cap live walks; completeness is a later cache pass, not 40 GETs.
+            budget = _PERSON_TIMELINE_YEAR_BUDGET
+            self._timeline_http = 0
+            self._person_lib_incomplete = False
+            if len(buckets) > budget:
+                self._person_lib_incomplete = True
+            for bucket in buckets[:budget]:
+                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= budget:
+                    self._person_lib_incomplete = True
                     break
                 if len(by_id) >= target:
                     return list(by_id.values())[:target]
@@ -327,15 +583,18 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
-        paths = (
-            f"/timeline/buckets?personId={pid}&size=YEAR",
-            f"/timeline/buckets?personId={pid}&size=MONTH",
-            f"/timeline/buckets?personIds={pid}&size=MONTH",
-            f"/assets/time-buckets?personId={pid}&size=MONTH",
-            f"/asset/time-buckets?personId={pid}&size=MONTH",
-            f"/timeline/buckets?personId={pid}",
+        tmpls = (
+            "/timeline/buckets?personId={pid}&size=YEAR",
+            "/timeline/buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personIds={pid}&size=MONTH",
+            "/assets/time-buckets?personId={pid}&size=MONTH",
+            "/asset/time-buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personId={pid}",
         )
-        for path in paths:
+        sticky = getattr(self, "_person_buckets_tmpl", None)
+        use = (sticky,) if sticky in tmpls else tmpls
+        for tmpl in use:
+            path = tmpl.format(pid=pid)
             if self._circuit():
                 break
             try:
@@ -368,9 +627,57 @@ class ImmichHttpClient:
                 if tb:
                     out.append(str(tb).strip())
             if out:
-                # Newest first when Immich sent oldest-first.
-                return list(reversed(out)) if len(out) > 1 else out
+                self._person_buckets_tmpl = tmpl
+                return self._sort_time_buckets_newest_first(out)
         return []
+
+    @staticmethod
+    def _sort_time_buckets_newest_first(buckets: list[str]) -> list[str]:
+        """Newest year/month first. Never walk 1900→1983 and drop the rest."""
+
+        def _key(raw: str) -> str:
+            s = str(raw or "").strip()
+            return s[:10] if len(s) >= 4 else s
+
+        return sorted((b for b in buckets if str(b).strip()), key=_key, reverse=True)
+
+    @staticmethod
+    def _collapse_buckets_to_years(buckets: list[str]) -> list[str]:
+        """One bucket per year. Immich YEAR lists are often month dates."""
+        years: list[str] = []
+        seen: set[str] = set()
+        for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
+            y = str(raw or "").strip()[:4]
+            if len(y) != 4 or not y.isdigit() or y in seen:
+                continue
+            seen.add(y)
+            years.append(f"{y}-01-01")
+        return years
+
+    @staticmethod
+    def _filter_years_to_windows(
+        years: list[str],
+        windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None,
+    ) -> list[str]:
+        """Keep year buckets that overlap Ask time windows (Christmas / a year)."""
+        if not windows:
+            return list(years)
+        keep: list[str] = []
+        for yb in years:
+            y = str(yb or "")[:4]
+            if not y.isdigit():
+                continue
+            yi = int(y)
+            for start, end in windows:
+                try:
+                    a = int(str(start)[:4])
+                    b = int(str(end)[:4])
+                except (TypeError, ValueError):
+                    continue
+                if a <= yi <= b:
+                    keep.append(yb)
+                    break
+        return keep
 
     def _list_person_bucket_assets(
         self, person_id: str, time_bucket: str
@@ -382,16 +689,22 @@ class ImmichHttpClient:
         from urllib.parse import quote
 
         qtb = quote(tb, safe=":-T.Z")
-        paths = (
-            f"/timeline/bucket?timeBucket={qtb}&personId={pid}",
-            f"/timeline/bucket?timeBucket={qtb}&personIds={pid}",
-            f"/assets/time-bucket?timeBucket={qtb}&personId={pid}",
-            f"/asset/time-bucket?timeBucket={qtb}&personId={pid}",
+        tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR",
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}",
+            "/assets/time-bucket?timeBucket={qtb}&personId={pid}",
+            "/asset/time-bucket?timeBucket={qtb}&personId={pid}",
         )
-        for path in paths:
+        sticky = getattr(self, "_person_bucket_tmpl", None)
+        use = (sticky,) if sticky in tmpls else tmpls
+        for tmpl in use:
+            path = tmpl.format(qtb=qtb, pid=pid)
             if self._circuit():
                 break
             try:
+                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 status, data = self._request("GET", path, timeout=6, retries=1)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
@@ -402,6 +715,7 @@ class ImmichHttpClient:
                 continue
             items = self._normalize_timeline_assets(data)
             if items:
+                self._person_bucket_tmpl = tmpl
                 return items
         return []
 
@@ -436,9 +750,10 @@ class ImmichHttpClient:
             key = str(aid or "").strip()
             if not key:
                 continue
-            if i < len(is_image) and is_image[i] is False:
-                continue
             row: dict[str, Any] = {"id": key}
+            if i < len(is_image) and is_image[i] is False:
+                row["type"] = "video"
+                row["isVideo"] = True
             if i < len(created) and created[i]:
                 row["localDateTime"] = created[i]
                 row["fileCreatedAt"] = created[i]
@@ -620,9 +935,16 @@ class ImmichHttpClient:
         q = (name_query or "").strip()
         if len(q) < 2:
             return []
+        memo = getattr(self, "_name_hits", None)
+        if memo is None:
+            self._name_hits = {}
+            memo = self._name_hits
+        ck = q.lower()
+        if ck in memo:
+            return list(memo[ck])[:limit]
         tokens = [q]
         first = q.split()[0]
-        if first.lower() != q.lower():
+        if first.lower() != q.lower() and first.lower() not in memo:
             tokens.append(first)
         hits: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -681,6 +1003,9 @@ class ImmichHttpClient:
                     str(p.get("name") or ""),
                 )
             )
+            memo[ck] = list(hits)
+            if first.lower() != q.lower():
+                memo[first.lower()] = list(hits)
             return hits[:limit]
         # Do not dump GET /people (60s+ on FlightSim) after search/person missed.
         return []
@@ -702,13 +1027,14 @@ class ImmichHttpClient:
         pid = (person_id or "").strip()
         if not pid:
             return []
-        # Cheap person record first (feature face). withFaces can RST when
-        # the person has hundreds of faces — that was 187s / 0 photos.
+        # One GET. withFaces / /faces 404s were extra Immich hits before timeline.
+        rec = self.get_person(pid)
+        if rec:
+            usable = self._faces_from_people_payload(pid, rec)
+            if usable:
+                return usable
         for path in (
-            f"/people/{pid}",
             f"/people/{pid}?withFaces=true",
-            f"/people/{pid}/faces",
-            f"/faces?id={pid}",
         ):
             if self._circuit():
                 break
@@ -784,29 +1110,159 @@ class ImmichHttpClient:
             return data
         return None
 
-    def _fetch_api_image(self, url: str, timeout: float = 30) -> tuple[bytes, str] | None:
+    def _thumb_paths(self, asset_id: str) -> tuple[str, ...]:
+        aid = (asset_id or "").strip()
+        sticky = getattr(self, "_thumb_tmpl", None)
+        tmpls = (
+            "/assets/{id}/thumbnail?size=thumbnail",
+            "/assets/{id}/thumbnail?size=preview",
+            "/assets/{id}/thumbnail?size=WEB",
+            "/asset/thumbnail/{id}",
+        )
+        if sticky in tmpls:
+            return (sticky.format(id=aid),)
+        return tuple(t.format(id=aid) for t in tmpls)
+
+    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
+        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
+        root = self.thumbs_root
+        aid = (asset_id or "").strip()
+        if root is None or not aid or not root.is_dir():
+            return None
+        prefix = aid[:2]
+        names = (
+            f"{aid}-thumbnail.webp",
+            f"{aid}-preview.webp",
+            f"{aid}-thumbnail.jpeg",
+            f"{aid}-preview.jpeg",
+            f"{aid}.webp",
+            f"{aid}.jpeg",
+            f"{aid}.jpg",
+        )
+        candidates: list[Path] = []
+        for name in names:
+            candidates.append(root / prefix / name)
+            candidates.append(root / prefix / aid / name)
+        try:
+            users = [p for p in root.iterdir() if p.is_dir()][:12]
+        except OSError:
+            users = []
+        for user in users:
+            for name in names[:4]:
+                candidates.append(user / prefix / name)
+                candidates.append(user / prefix / aid / name)
+        for path in candidates:
+            try:
+                if not path.is_file() or path.stat().st_size < 24:
+                    continue
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if not data or data[:1] in (b"{", b"["):
+                continue
+            suf = path.suffix.lower()
+            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+            return data, ctype
+        return None
+
+    def _thumb_missed(self, asset_id: str) -> bool:
+        store = getattr(self, "_thumb_miss", None)
+        if not isinstance(store, dict):
+            return False
+        ts = store.get(asset_id)
+        if ts is None:
+            return False
+        if time.time() - float(ts) > 300:
+            store.pop(asset_id, None)
+            return False
+        return True
+
+    def _mark_thumb_miss(self, asset_id: str) -> None:
+        store = getattr(self, "_thumb_miss", None)
+        if store is None:
+            self._thumb_miss = {}
+            store = self._thumb_miss
+        store[asset_id] = time.time()
+        if len(store) > 4000:
+            oldest = sorted(store.items(), key=lambda kv: kv[1])[:2000]
+            for key, _ in oldest:
+                store.pop(key, None)
+
+    def _fetch_api_image(self, url: str, timeout: float = 3) -> tuple[bytes, str] | None:
+        if self._circuit():
+            return None
         req = urllib.request.Request(
             url,
             headers={"x-api-key": self._key, "Accept": "image/*,*/*"},
             method="GET",
         )
+        t0 = time.monotonic()
+        path = url.split("/api", 1)[-1][:160]
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
+                ms = (time.monotonic() - t0) * 1000
                 if not data or len(data) < 24:
                     return None
                 ctype = resp.headers.get("Content-Type") or "image/jpeg"
                 if "json" in ctype or data[:1] in (b"{", b"["):
                     return None
+                self._record_call("GET", path, status=200, ms=ms)
                 return data, ctype
-        except Exception:  # noqa: BLE001
+        except urllib.error.HTTPError as exc:
+            ms = (time.monotonic() - t0) * 1000
+            self._record_call("GET", path, status=int(exc.code), ms=ms, err=str(exc)[:160])
+            if int(exc.code) in (401, 403):
+                self._thumb_forbidden = True
+            # 4xx means Immich answered. Do not open the transport circuit.
+            return None
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            ms = (time.monotonic() - t0) * 1000
+            self._record_call("GET", path, status=0, ms=ms, err=str(exc)[:160])
+            self._note_transport_fail(exc)
             return None
 
     def fetch_preview_bytes(self, asset_id: str) -> tuple[bytes, str, str]:
-        for size in ("preview", "thumbnail"):
-            got = self._fetch_api_image(self.thumb_url(asset_id, size=size))
-            if got:
-                return got[0], got[1], "immich-api"
+        aid = (asset_id or "").strip()
+        if not aid:
+            raise FileNotFoundError("missing asset id")
+        local = self._read_local_thumb(aid)
+        if local:
+            return local[0], local[1], "immich-thumbs-path"
+        if self._thumb_missed(aid):
+            raise FileNotFoundError("immich thumb miss cached")
+        import os
+
+        api_on = (
+            os.environ.get("IMMICH_THUMBS_API")
+            or os.environ.get("MEMORYBOX_IMMICH_THUMBS_API")
+            or ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if not api_on:
+            self._mark_thumb_miss(aid)
+            raise FileNotFoundError("immich thumb API disabled; set IMMICH_THUMBS_PATH")
+        if getattr(self, "_thumb_forbidden", False):
+            raise FileNotFoundError("immich API key lacks asset.view")
+        if self._circuit():
+            raise FileNotFoundError("immich circuit open")
+        sem = getattr(self, "_thumb_sema", None)
+        if sem is None:
+            self._thumb_sema = threading.Semaphore(2)
+            sem = self._thumb_sema
+        if not sem.acquire(timeout=1.0):
+            raise FileNotFoundError("immich thumb backlog")
+        try:
+            for path in self._thumb_paths(aid):
+                if self._circuit() or getattr(self, "_thumb_forbidden", False):
+                    break
+                got = self._fetch_api_image(self.api_base + path, timeout=3)
+                if got:
+                    raw_tmpl = path.replace(aid, "{id}")
+                    self._thumb_tmpl = raw_tmpl
+                    return got[0], got[1], "immich-api"
+        finally:
+            sem.release()
+        self._mark_thumb_miss(aid)
         raise FileNotFoundError(
             "No thumbnail available via Immich API (needs asset.view on API key)"
         )

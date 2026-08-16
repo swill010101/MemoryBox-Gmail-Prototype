@@ -253,6 +253,10 @@ def _prove_harness() -> dict[str, Any]:
             "bindPhotoPan",
             "renderRailTools",
             "Camera / EXIF",
+            "smsHidden",
+            "hidden in Gallery — say Add texts to show them",
+            "textsPinned",
+            "bindLazyThumbs",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -350,6 +354,62 @@ def _prove_harness() -> dict[str, Any]:
         )
         _t, _s = curator_from_items("Show me Test", mapped, None)
         _check("curator_builder", bool(_s), checks, problems, (_s or "")[:80])
+        all_ask_items = (
+            [{"type": "photo"} for _ in range(131)]
+            + [{"type": "video"}]
+            + [
+                {"type": "sms", "gallery_default_hidden": True}
+                for _ in range(500)
+            ]
+        )
+        _pt, _ps = curator_from_items("Show me Peggy George", all_ask_items, None)
+        _check(
+            "all_ask_curator_counts_hidden_texts",
+            "632" in _ps
+            and "131 photo" in _ps
+            and "500 text" in _ps
+            and "1 video" in _ps,
+            checks,
+            problems,
+            (_ps or "")[:160],
+        )
+        from memorybox.explore.find import _sms_attach_windows
+
+        xmas_windows = _sms_attach_windows(
+            {
+                "temporal_windows": [
+                    ["2023-12-04", "2024-01-01"],
+                    ["2024-12-04", "2025-01-01"],
+                ],
+                "time_start": "1950-12-04",
+                "time_end": "2027-01-01",
+                "temporal_label": "Christmas",
+            }
+        )
+        _check(
+            "christmas_sms_uses_holiday_windows_not_lifetime",
+            xmas_windows == (
+                ("2023-12-04", "2024-01-01"),
+                ("2024-12-04", "2025-01-01"),
+            ),
+            checks,
+            problems,
+            f"windows={xmas_windows}",
+        )
+        _check(
+            "christmas_sms_no_lifetime_fallback",
+            _sms_attach_windows(
+                {
+                    "temporal_label": "Christmas",
+                    "time_start": "1950-01-01",
+                    "time_end": "2027-12-31",
+                }
+            )
+            == (),
+            checks,
+            problems,
+            "holiday label without windows must not attach all-time texts",
+        )
     except Exception as exc:  # noqa: BLE001
         _check("ask_to_explore_mapper", False, checks, problems, str(exc))
 
@@ -952,6 +1012,226 @@ def _prove_harness() -> dict[str, Any]:
             f"n={len(got_tl)} ids={[x.get('id') for x in got_tl]}",
         )
 
+        class _FacesSubsetTimelineLibraryImmich(ImmichHttpClient):
+            """Peggy bug: faces return 131; Immich person page is timeline 598."""
+
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.timeline_calls = 0
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                p = str(path)
+                if method == "GET" and p.startswith("/people/person-1"):
+                    faces = [
+                        {
+                            "id": f"f{i}",
+                            "assetId": f"{i:08d}-aaaa-bbbb-cccc-dddddddddddd",
+                        }
+                        for i in range(131)
+                    ]
+                    return 200, {"id": "person-1", "name": "Peggy George", "faces": faces}
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": f"{2000 + y}-01-01", "count": 20}
+                        for y in range(30)
+                    ]
+                if "timeline/bucket" in p:
+                    self.timeline_calls += 1
+                    # 30 year buckets × 20 assets = 600 (Immich person page).
+                    import re
+
+                    m = re.search(r"timeBucket=(\d{4})", p)
+                    year = int(m.group(1)) if m else 2000
+                    yoff = year - 2000
+                    return 200, [
+                        {
+                            "id": f"{yoff:02d}{i:02d}cccc-1111-2222-3333-444444444444",
+                            "isImage": True,
+                        }
+                        for i in range(20)
+                    ]
+                return 404, None
+
+        client_peggy = _FacesSubsetTimelineLibraryImmich()
+        got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_person_library_unions_faces_and_full_timeline",
+            len(got_peggy) >= 400
+            and client_peggy.timeline_calls <= 15
+            and client_peggy.timeline_calls >= 10
+            and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
+            checks,
+            problems,
+            f"n={len(got_peggy)} tl_calls={client_peggy.timeline_calls} "
+            f"src={getattr(client_peggy, '_last_person_source', None)}",
+        )
+        tl_before = client_peggy.timeline_calls
+        got_cached = client_peggy.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_person_library_cached_on_reask",
+            len(got_cached) == len(got_peggy)
+            and client_peggy.timeline_calls == tl_before
+            and getattr(client_peggy, "_last_person_source", "") == "cache",
+            checks,
+            problems,
+            f"n={len(got_cached)} tl={client_peggy.timeline_calls} "
+            f"src={getattr(client_peggy, '_last_person_source', None)}",
+        )
+        _check(
+            "immich_year_buckets_newest_first",
+            _ImmichIds._sort_time_buckets_newest_first(
+                ["1983-01-01", "2024-01-01", "1901-01-01"]
+            )[0].startswith("2024"),
+            checks,
+            problems,
+            "Must walk 2024 before 1983 so recent person photos are not dropped",
+        )
+        collapsed = _ImmichIds._collapse_buckets_to_years(
+            ["2023-12-01", "2023-05-01", "2022-12-01", "2022-04-01"]
+        )
+        _check(
+            "immich_month_buckets_collapse_to_years",
+            collapsed == ["2023-01-01", "2022-01-01"],
+            checks,
+            problems,
+            f"collapsed={collapsed}",
+        )
+
+        class _MonthShapedYearImmich(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": "2023-12-01"},
+                        {"timeBucket": "2023-05-01"},
+                        {"timeBucket": "2022-12-01"},
+                        {"timeBucket": "2022-04-01"},
+                    ]
+                if "timeline/bucket" in p:
+                    return 200, [{"id": "aaaaaaaa-1111-2222-3333-444444444444"}]
+                return 404, None
+
+        months = _MonthShapedYearImmich()
+        months.search_by_person_ids(["person-1"], size=50)
+        year_gets = [p for p in months.paths if "timeline/bucket?" in p]
+        _check(
+            "immich_does_not_walk_month_stamps_as_years",
+            len(year_gets) == 2
+            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
+            and any("size=YEAR" in p for p in year_gets),
+            checks,
+            problems,
+            f"bucket_gets={year_gets}",
+        )
+        _check(
+            "immich_filter_years_to_christmas_windows",
+            _ImmichIds._filter_years_to_windows(
+                ["2023-01-01", "2022-01-01", "2010-01-01"],
+                (("2021-12-04", "2022-01-01"), ("2022-12-04", "2023-01-01")),
+            )
+            == ["2023-01-01", "2022-01-01"],
+            checks,
+            problems,
+            "Christmas windows must not walk 2010",
+        )
+
+        class _HealthProbePhoto:
+            provider_key = "scripted_photo"
+            n_health = 0
+
+            def health(self):
+                self.n_health += 1
+                from memorybox.providers.base import ProviderHealth
+
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return []
+
+            def search_assets(self, query):  # noqa: ANN001
+                return []
+
+        from memorybox.ask import retrieve as Rhealth
+        from memorybox.planner import QueryPlan as _QP
+        from memorybox import person as person_mod
+
+        orig_h = person_mod.find_ask_person_by_name
+        person_mod.find_ask_person_by_name = lambda *a, **k: None  # type: ignore[assignment]
+        hp = _HealthProbePhoto()
+        try:
+            Rhealth.search_photos(
+                _QP(
+                    original_ask="Show me Peggy",
+                    effective_ask="Show me Peggy",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    person_names=("Peggy",),
+                ),
+                hp,
+                limit=10,
+            )
+        finally:
+            person_mod.find_ask_person_by_name = orig_h
+        _check(
+            "named_person_ask_skips_immich_health_ping",
+            hp.n_health == 0,
+            checks,
+            problems,
+            f"health_calls={hp.n_health}",
+        )
+
+        class _TwoPersonStickyImmich(ImmichHttpClient):
+            def __init__(self) -> None:  # noqa: D107
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [{"timeBucket": "2020-01-01", "count": 1}]
+                if "timeline/bucket" in p:
+                    who = "p1" if "person-1" in p else "p2"
+                    return 200, [{"id": f"{who}aaaaaa-1111-2222-3333-444444444444"}]
+                return 404, None
+
+        two = _TwoPersonStickyImmich()
+        a1 = two.search_by_person_ids(["person-1"], size=20)
+        a2 = two.search_by_person_ids(["person-2"], size=20)
+        bucket_lists = [p for p in two.paths if "timeline/buckets" in p]
+        _check(
+            "immich_person_timeline_not_sticky_across_people",
+            any("person-1" in p for p in bucket_lists)
+            and any("person-2" in p for p in bucket_lists)
+            and {str(x.get("id")) for x in a1} != {str(x.get("id")) for x in a2},
+            checks,
+            problems,
+            f"lists={bucket_lists} a1={[x.get('id') for x in a1]} a2={[x.get('id') for x in a2]}",
+        )
+
         _check(
             "immich_name_matches_peggy_george_to_peggy",
             _ImmichIds._name_matches_person("Peggy George", "Peggy")
@@ -1013,15 +1293,101 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"n_calls={client8.n} src={getattr(client8, '_last_person_source', None)}",
         )
+        n_after_fail = client8.n
+        got_to2 = client8.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_circuit_stays_closed_on_reask",
+            got_to2 == []
+            and client8.n == n_after_fail
+            and bool(getattr(client8, "_circuit_open", False)),
+            checks,
+            problems,
+            f"n_calls={client8.n} was={n_after_fail} "
+            f"src={getattr(client8, '_last_person_source', None)}",
+        )
+        diag_c = object.__new__(_ImmichIds)
+        diag_c._call_log = [
+            {
+                "ts": "2026-08-15T18:00:00",
+                "method": "GET",
+                "path": "/server/ping",
+                "status": 0,
+                "ms": 8000,
+                "err": "timed out",
+                "circuit": True,
+            }
+        ]
+        diag_c._circuit_open = True
+        diag_c._last_person_source = "timeout"
+        snap = _ImmichIds.diag_snapshot(diag_c)
+        _check(
+            "immich_activity_diag_snapshot",
+            int(snap.get("fails") or 0) >= 1
+            and snap.get("circuit") is True
+            and snap.get("source") == "timeout",
+            checks,
+            problems,
+            f"snap={snap}",
+        )
         client8._circuit_open = True
         named_open = client8.find_people_by_name("Peggy George")
         _check(
             "immich_name_search_survives_mapped_circuit",
             client8._circuit_allows("/search/person")
-            and not client8._circuit_allows("/people/stale-id"),
+            and client8._circuit_allows("/people/stale-id")
+            and not client8._circuit_allows("/timeline/buckets"),
             checks,
             problems,
             f"named={named_open} allows_search={client8._circuit_allows('/search/person')}",
+        )
+
+        import tempfile
+        from pathlib import Path as _Path
+
+        local_aid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        tmp_thumbs = _Path(tempfile.mkdtemp())
+        (tmp_thumbs / local_aid[:2]).mkdir()
+        (tmp_thumbs / local_aid[:2] / f"{local_aid}-thumbnail.webp").write_bytes(
+            b"RIFF" + b"\x00" * 40
+        )
+        disk_c = object.__new__(_ImmichIds)
+        disk_c.thumbs_root = tmp_thumbs
+        local_got = _ImmichIds._read_local_thumb(disk_c, local_aid)
+        _check(
+            "immich_thumb_from_local_thumbs_path",
+            bool(local_got and local_got[0] and local_got[1] == "image/webp"),
+            checks,
+            problems,
+            f"got={None if not local_got else (len(local_got[0]), local_got[1])}",
+        )
+        miss_c = object.__new__(_ImmichIds)
+        miss_c.thumbs_root = None
+        miss_c.api_base = "http://immich.test/api"
+        miss_c._key = "test"
+        miss_c._circuit_open = False
+        miss_c._fetch_api_image = lambda *a, **k: None
+        try:
+            _ImmichIds.fetch_preview_bytes(miss_c, local_aid)
+            thumb_err = None
+        except FileNotFoundError as exc:
+            thumb_err = exc
+        _check(
+            "immich_http_thumb_miss_does_not_open_circuit",
+            thumb_err is not None and not bool(getattr(miss_c, "_circuit_open", False)),
+            checks,
+            problems,
+            f"err={thumb_err} circuit={getattr(miss_c, '_circuit_open', None)}",
+        )
+        from memorybox.ask import deps as ask_deps
+
+        p_a = ask_deps.build_photo()
+        p_b = ask_deps.build_photo()
+        _check(
+            "photo_provider_is_process_singleton",
+            p_a is p_b,
+            checks,
+            problems,
+            f"a={type(p_a).__name__} b={type(p_b).__name__}",
         )
 
         from memorybox.person import _ask_named_photo_people
@@ -1438,6 +1804,146 @@ def _prove_harness() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _check(
             "stale_mapped_id_falls_back_to_immich_name",
+            False,
+            checks,
+            problems,
+            str(exc),
+        )
+
+    try:
+        from datetime import datetime, timezone
+
+        from memorybox.ask import retrieve as R
+        from memorybox.planner import QueryPlan
+        from memorybox.providers.base import ProviderHealth
+        from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
+        from memorybox import person as person_mod
+
+        tom_ref = PhotoPersonRef(
+            provider_key="immich", external_id="tom-immich", display_name="Tom Will"
+        )
+        peggy_live = PhotoPersonRef(
+            provider_key="immich", external_id="peggy-immich", display_name="Peggy George"
+        )
+        tom_pic = PhotoAssetDto(
+            provider_key="immich",
+            external_id="tom-2026",
+            taken_at=datetime(2026, 8, 5, tzinfo=timezone.utc),
+            people=(tom_ref,),
+        )
+        peggy_pic = PhotoAssetDto(
+            provider_key="immich",
+            external_id="peggy-2010",
+            taken_at=datetime(2010, 6, 1, tzinfo=timezone.utc),
+            people=(peggy_live,),
+        )
+
+        class _WrongMapPhoto:
+            provider_key = "immich"
+
+            def __init__(self) -> None:
+                self._client = type(
+                    "C",
+                    (),
+                    {
+                        "get_person": staticmethod(
+                            lambda eid: (
+                                {"id": eid, "name": "Tom Will"}
+                                if eid == "tom-immich"
+                                else {"id": eid, "name": "Peggy George"}
+                            )
+                        ),
+                        "diag_snapshot": lambda *a, **k: {},
+                    },
+                )()
+                self.calls: list[tuple[str, ...]] = []
+
+            def health(self) -> ProviderHealth:
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return [peggy_live]
+
+            def search_assets(self, query: PhotoSearchQuery):
+                ids = tuple(query.person_external_ids or ())
+                self.calls.append(ids)
+                if "tom-immich" in ids:
+                    return [tom_pic]
+                if "peggy-immich" in ids:
+                    return [peggy_pic]
+                return []
+
+        class _PeggyMappedToTom:
+            id = "mb-peggy"
+            display_name = "Peggy George"
+            identity_authority = "owner_confirmed"
+            provider_mappings = [
+                {
+                    "provider_key": "immich",
+                    "external_id": "tom-immich",
+                    "identity_authority": "owner_confirmed",
+                }
+            ]
+
+        orig_w = {
+            "get_person": person_mod.get_person,
+            "find_ask_person_by_name": person_mod.find_ask_person_by_name,
+            "list_provider_external_ids_for_person": person_mod.list_provider_external_ids_for_person,
+            "resolve_immich_external_ids_for_person": person_mod.resolve_immich_external_ids_for_person,
+            "find_confirmed_person_by_name": person_mod.find_confirmed_person_by_name,
+            "is_negative": person_mod.is_negative,
+        }
+        person_mod.get_person = lambda _pid: None  # type: ignore[assignment]
+        person_mod.find_ask_person_by_name = (  # type: ignore[assignment]
+            lambda name, photo=None, lazy_seed=True: _PeggyMappedToTom()
+        )
+        person_mod.list_provider_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, provider_key: ["tom-immich"]
+        )
+        person_mod.resolve_immich_external_ids_for_person = (  # type: ignore[assignment]
+            lambda person_id, photo=None: ["tom-immich"]
+        )
+        person_mod.find_confirmed_person_by_name = (  # type: ignore[assignment]
+            lambda name: _PeggyMappedToTom()
+        )
+        person_mod.is_negative = lambda **kwargs: False  # type: ignore[assignment]
+        photo_w = _WrongMapPhoto()
+        try:
+            whits, wst = R.search_photos(
+                QueryPlan(
+                    original_ask="Show me Peggy",
+                    effective_ask="Show me Peggy",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    want_video=True,
+                    want_visual=True,
+                    person_names=("Peggy",),
+                    person_ids=("mb-tom-owner",),
+                ),
+                photo_w,
+                limit=50,
+            )
+        finally:
+            for k, v in orig_w.items():
+                setattr(person_mod, k, v)
+        _check(
+            "peggy_ask_rejects_toms_immich_mapping",
+            len(whits) == 1
+            and whits[0].external_id == "peggy-2010"
+            and "tom-2026" not in {h.external_id for h in whits}
+            and wst.get("stale_immich_mapping_dropped") is True
+            and photo_w.calls
+            and all("tom-immich" not in c for c in photo_w.calls),
+            checks,
+            problems,
+            f"ids={[h.external_id for h in whits]} calls={photo_w.calls} st={wst.get('stale_immich_mapping_dropped')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "peggy_ask_rejects_toms_immich_mapping",
             False,
             checks,
             problems,
