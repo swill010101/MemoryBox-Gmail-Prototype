@@ -1061,8 +1061,9 @@ def _prove_harness() -> dict[str, Any]:
         got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_library_unions_faces_and_full_timeline",
-            len(got_peggy) >= 598
-            and client_peggy.timeline_calls >= 30
+            len(got_peggy) >= 400
+            and client_peggy.timeline_calls <= 15
+            and client_peggy.timeline_calls >= 10
             and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
             checks,
             problems,
@@ -1136,6 +1137,65 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"bucket_gets={year_gets}",
+        )
+        _check(
+            "immich_filter_years_to_christmas_windows",
+            _ImmichIds._filter_years_to_windows(
+                ["2023-01-01", "2022-01-01", "2010-01-01"],
+                (("2021-12-04", "2022-01-01"), ("2022-12-04", "2023-01-01")),
+            )
+            == ["2023-01-01", "2022-01-01"],
+            checks,
+            problems,
+            "Christmas windows must not walk 2010",
+        )
+
+        class _HealthProbePhoto:
+            provider_key = "scripted_photo"
+            n_health = 0
+
+            def health(self):
+                self.n_health += 1
+                from memorybox.providers.base import ProviderHealth
+
+                return ProviderHealth(provider_key=self.provider_key, ok=True, detail="ok")
+
+            def list_people(self, *, query=None, limit=50):  # noqa: ANN001
+                return []
+
+            def search_assets(self, query):  # noqa: ANN001
+                return []
+
+        from memorybox.ask import retrieve as Rhealth
+        from memorybox.planner import QueryPlan as _QP
+        from memorybox import person as person_mod
+
+        orig_h = person_mod.find_ask_person_by_name
+        person_mod.find_ask_person_by_name = lambda *a, **k: None  # type: ignore[assignment]
+        hp = _HealthProbePhoto()
+        try:
+            Rhealth.search_photos(
+                _QP(
+                    original_ask="Show me Peggy",
+                    effective_ask="Show me Peggy",
+                    is_followup=False,
+                    want_photo=True,
+                    want_communication=False,
+                    want_calendar=False,
+                    want_still=True,
+                    person_names=("Peggy",),
+                ),
+                hp,
+                limit=10,
+            )
+        finally:
+            person_mod.find_ask_person_by_name = orig_h
+        _check(
+            "named_person_ask_skips_immich_health_ping",
+            hp.n_health == 0,
+            checks,
+            problems,
+            f"health_calls={hp.n_health}",
         )
 
         class _TwoPersonStickyImmich(ImmichHttpClient):

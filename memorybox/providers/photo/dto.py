@@ -77,3 +77,4 @@ class PhotoSearchQuery:
     taken_before: datetime | None = None
     text: str | None = None
     limit: int = 50
+    time_windows: tuple[tuple[str, str], ...] = ()

@@ -972,11 +972,17 @@ def search_photos(
         status["detail"] = "not_requested"
         return [], status
     try:
-        health = photo.health()
-        if not health.ok:
-            # Ping/health must not zero a person library. FlightSim Immich ping
-            # can fail while /people + asset GETs still return photos.
-            status["health_detail"] = health.detail or "photo provider unhealthy"
+        named_person = bool(
+            getattr(plan, "person_names", ()) or getattr(plan, "person_ids", ())
+        )
+        if named_person:
+            status["health_skipped"] = "named_person_ask"
+        else:
+            health = photo.health()
+            if not health.ok:
+                # Ping/health must not zero a person library. FlightSim Immich ping
+                # can fail while /people + asset GETs still return photos.
+                status["health_detail"] = health.detail or "photo provider unhealthy"
 
         photo_pk = getattr(photo, "provider_key", "immich") or "immich"
         lookup_keys = [photo_pk]
@@ -1177,7 +1183,13 @@ def search_photos(
                 return []
             try:
                 assets = photo.search_assets(
-                    PhotoSearchQuery(person_external_ids=tuple(ids), limit=limit)
+                    PhotoSearchQuery(
+                        person_external_ids=tuple(ids),
+                        limit=limit,
+                        time_windows=tuple(
+                            getattr(plan, "temporal_windows", ()) or ()
+                        ),
+                    )
                 )
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
                 assets = []

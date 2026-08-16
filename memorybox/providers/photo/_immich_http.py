@@ -17,9 +17,9 @@ _LOG = logging.getLogger("memorybox.immich")
 _CIRCUIT_COOLDOWN_SEC = 300
 _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
-_PERSON_TIMELINE_YEAR_BUDGET = 40
+_PERSON_TIMELINE_YEAR_BUDGET = 15
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v4"
+_PERSON_LIB_CACHE_VER = "v5"
 
 
 class ImmichAuthError(RuntimeError):
@@ -284,21 +284,8 @@ class ImmichHttpClient:
         return bool(getattr(self, "_circuit_open", False))
 
     def _maybe_half_open(self) -> None:
-        """After cooldown, one ping. Failure keeps the circuit shut."""
-        if not getattr(self, "_circuit_open", False):
-            return
-        until = float(getattr(self, "_circuit_until", 0) or 0)
-        if until and time.time() < until:
-            return
-        try:
-            if self.ping():
-                self._circuit_open = False
-                self._circuit_until = 0
-                self._transport_fails = 0
-                return
-        except Exception:  # noqa: BLE001
-            pass
-        self._circuit_until = time.time() + _CIRCUIT_COOLDOWN_SEC
+        """Do not ping a restarting NAS. Serve cache or empty until Ask restarts."""
+        return
 
     def _person_lib_disk_dir(self) -> Path | None:
         import os
@@ -442,7 +429,11 @@ class ImmichHttpClient:
         return data if isinstance(data, list) else []
 
     def search_by_person_ids(
-        self, person_ids: list[str], *, size: int = 50
+        self,
+        person_ids: list[str],
+        *,
+        size: int = 50,
+        time_windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
@@ -461,7 +452,7 @@ class ImmichHttpClient:
         """
         if not person_ids:
             return []
-        self._maybe_half_open()
+        self._timeline_windows = tuple(time_windows or ())
         self._reset_call_log()
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
@@ -469,9 +460,7 @@ class ImmichHttpClient:
             f"{_PERSON_LIB_CACHE_VER}:"
             + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
         )
-        cached = self._read_person_lib_cache(
-            cache_key, allow_stale=self._circuit()
-        )
+        cached = self._read_person_lib_cache(cache_key, allow_stale=True)
         if cached:
             self._last_person_source = "cache"
             return list(cached)[:target]
@@ -496,10 +485,8 @@ class ImmichHttpClient:
         if by_id:
             self._last_person_source = "faces_or_timeline"
             out = list(by_id.values())[:target]
-            if (
-                not getattr(self, "_person_lib_incomplete", False)
-                and not self._circuit()
-            ):
+            # Cache incomplete newest-N walks so a re-ask does not walk Immich again.
+            if out and not self._circuit():
                 self._write_person_lib_cache(cache_key, out)
             return out
         if self._circuit():
@@ -563,12 +550,11 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            buckets = self._collapse_buckets_to_years(
-                self._list_person_time_buckets(pid)
+            buckets = self._filter_years_to_windows(
+                self._collapse_buckets_to_years(self._list_person_time_buckets(pid)),
+                getattr(self, "_timeline_windows", ()) or (),
             )
-            # FlightSim size=YEAR still returns month stamps (2023-12-01, …).
-            # Walking those as years (budget 40) RST'd Immich on Christmas.
-            year_mode = True
+            # Cap live walks; completeness is a later cache pass, not 40 GETs.
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
@@ -667,6 +653,31 @@ class ImmichHttpClient:
             seen.add(y)
             years.append(f"{y}-01-01")
         return years
+
+    @staticmethod
+    def _filter_years_to_windows(
+        years: list[str],
+        windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None,
+    ) -> list[str]:
+        """Keep year buckets that overlap Ask time windows (Christmas / a year)."""
+        if not windows:
+            return list(years)
+        keep: list[str] = []
+        for yb in years:
+            y = str(yb or "")[:4]
+            if not y.isdigit():
+                continue
+            yi = int(y)
+            for start, end in windows:
+                try:
+                    a = int(str(start)[:4])
+                    b = int(str(end)[:4])
+                except (TypeError, ValueError):
+                    continue
+                if a <= yi <= b:
+                    keep.append(yb)
+                    break
+        return keep
 
     def _list_person_bucket_assets(
         self, person_id: str, time_bucket: str
@@ -1220,6 +1231,16 @@ class ImmichHttpClient:
             return local[0], local[1], "immich-thumbs-path"
         if self._thumb_missed(aid):
             raise FileNotFoundError("immich thumb miss cached")
+        import os
+
+        api_on = (
+            os.environ.get("IMMICH_THUMBS_API")
+            or os.environ.get("MEMORYBOX_IMMICH_THUMBS_API")
+            or ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if not api_on:
+            self._mark_thumb_miss(aid)
+            raise FileNotFoundError("immich thumb API disabled; set IMMICH_THUMBS_PATH")
         if getattr(self, "_thumb_forbidden", False):
             raise FileNotFoundError("immich API key lacks asset.view")
         if self._circuit():

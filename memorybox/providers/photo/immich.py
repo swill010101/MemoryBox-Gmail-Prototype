@@ -84,7 +84,9 @@ class ImmichPhotoProvider:
         try:
             if query.person_external_ids:
                 raw = self._client.search_by_person_ids(
-                    list(query.person_external_ids), size=query.limit
+                    list(query.person_external_ids),
+                    size=query.limit,
+                    time_windows=getattr(query, "time_windows", ()) or (),
                 )
                 items = raw if isinstance(raw, list) else []
             else:
