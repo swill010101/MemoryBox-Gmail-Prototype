@@ -1,6 +1,7 @@
 # MBBS-P2 Increment 4 — Mixed-Media Find / Explore
 
 **Status:** **LOCKED** · Combined functionality + UX · Founder clarifications incorporated · **BUILD AUTHORIZED** (2026-08-13) · **Not ACCEPTED** until §8 + §8.1 pass on FlightSim  
+**Owner-pass order (Tom 2026-08-17):** When FlightSim / Immich / the box are stable again, **I4 §8 + §8.1 is the first owner pass.** It must **actually work**. Do **not** skip it for MBQL-001, I8, comms LOD, or attachments. Attachments are **not** the I4 holdout (SMS files = P2-BL-I7-01; email files = P2-BL-I8-01).  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX):** [MBUX-001 v0.4](MBUX-001_v0.4.md) full baseline (§22 exploration patterns) · historical addendum: [I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)  
@@ -378,7 +379,9 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 
 ### 8.2 FlightSim walk (after LOCK + Build)
 
-1. Pull agreed branch; **restart serve** (port **8790**).  
+**When the box is back up, do this walk before any other owner pass.** Do not rubber-stamp. Fail any §8.1 case → not ACCEPTED.
+
+1. Pull agreed branch; **restart serve** (port **8790**). Immich/HVRT must stay up long enough for **case D** (real photo or video identity correction).  
 2. Open Mixed-Media Find.  
 3. Walk every §8 row and every §8.1 case; mark pass/fail.  
 4. `prove-p2-i4 --flightsim` is structural assist only — **manual gate required for ACCEPTED**.
@@ -414,6 +417,6 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | **This revised definition** | **LOCKED** |
 | Teach vs Review & Learn label | **Review & Learn** (locked) |
 | Build | **AUTHORIZED** (2026-08-13) |
-| FlightSim ACCEPTED | **PENDING** — §8 + §8.1 |
+| FlightSim ACCEPTED | **PENDING** — §8 + §8.1 · **first owner pass** when box is stable (Tom 2026-08-17); must work, do not skip |
 
 Build is authorized against this locked text. **Do not redesign** the Explore experience while wiring implementation underneath it. Do **not** mark ACCEPTED until §8 and §8.1 pass on FlightSim.

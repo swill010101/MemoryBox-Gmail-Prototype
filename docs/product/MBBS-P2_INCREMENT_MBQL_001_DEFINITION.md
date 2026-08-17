@@ -181,4 +181,4 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 | MBQL-001 build | **AUTHORIZED** 2026-08-15 — implementing |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** Do not start I8. ACCEPTED is a FlightSim owner pass of §6 phrases with `/dev/ai-trace` available.
+**Stop.** Do not start I8. When the box is stable, **I4 §8.1 owner pass comes first** (Tom 2026-08-17) and must actually work — do not skip I4 to pass MBQL. MBQL ACCEPTED is a later FlightSim owner pass of §6 phrases with `/dev/ai-trace` available.
