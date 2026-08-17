@@ -108,7 +108,7 @@ Q8 is open. Q1–Q7 stay locked.
 3. Single compile function used by Ask + Explore (+ Person scope).
 4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Do not start I8. ACCEPTED remains a FlightSim owner pass of definition §6 phrases.
+6. **Stop.** Do not start I8. When the box is stable, **I4 §8.1 is the first owner pass** (must work; do not skip). MBQL ACCEPTED remains a later FlightSim owner pass of definition §6 phrases.
 
 ---
 

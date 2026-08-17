@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-15 (I7 ACCEPTED; I7A ACCEPTED; MBQL-001 BUILD AUTHORIZED)  
+**Status:** Living parking note · **Updated:** 2026-08-17 (I4 first owner pass when box is stable)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -8,6 +8,7 @@
 
 - **No build** until Tom approves the next definition and explicitly authorizes build.
 - Prefer **one** authorized increment at a time.
+- **When FlightSim / Immich are back up (Tom 2026-08-17):** first owner pass is **I4 §8 + §8.1**. It must work. Do not skip for MBQL-001, I8, comms cards, or attachments. I4 holdout is that walk, not SMS/email files.
 
 ## Backlog absorption (normalized)
 
