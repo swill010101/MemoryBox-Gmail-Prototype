@@ -40,6 +40,8 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 P1 runtime host (MemoryBox + Immich + Docker + Qdrant + Ollama): floor vs buy sizing is [docs/ops/MBBS-P2_HOST_SIZING.md](docs/ops/MBBS-P2_HOST_SIZING.md).
 
+Immich on FlightSim (leave media-server): [docs/ops/FLIGHTSIM_IMMICH_CUTOVER.md](docs/ops/FLIGHTSIM_IMMICH_CUTOVER.md).
+
 ## P2 planning (no build)
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)

@@ -96,6 +96,12 @@ function Load-MbEnv {
   if (-not $env:MEMORYBOX_IMMICH_ENV -and (Test-Path -LiteralPath $immichPath)) {
     $env:MEMORYBOX_IMMICH_ENV = $immichPath
   }
+  if (Test-Path -LiteralPath $immichPath) {
+    $immichText = Get-Content -LiteralPath $immichPath -Raw
+    if ($immichText -match "(?i)media-server") {
+      Write-Host "  WARNING: config\immich.env still mentions media-server. Immich is on FlightSim — see docs\ops\FLIGHTSIM_IMMICH_CUTOVER.md" -ForegroundColor Yellow
+    }
+  }
 }
 
 function Resolve-Python {
