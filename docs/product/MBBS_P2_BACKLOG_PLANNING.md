@@ -9,6 +9,7 @@
 - **No build** until Tom approves the next definition and explicitly authorizes build.
 - Prefer **one** authorized increment at a time.
 - **When FlightSim / Immich are back up (Tom 2026-08-17):** first owner pass is **I4 §8 + §8.1**. It must work. Do not skip for MBQL-001, I8, comms cards, or attachments. I4 holdout is that walk, not SMS/email files.
+- Combined host floor vs buy (chip, RAM, 1 TB NVMe, 10 TB USB sources): [MBBS-P2_HOST_SIZING.md](../ops/MBBS-P2_HOST_SIZING.md) (2026-08-17).
 
 ## Backlog absorption (normalized)
 
