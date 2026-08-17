@@ -38,6 +38,8 @@ Takeout zips sync FlightSim → GitHub → Toms-Desktop via **Git LFS**.
 
 See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHIVE_LAYOUT.md).
 
+P1 runtime host (MemoryBox + Immich + Docker + Qdrant + Ollama): floor vs buy sizing is [docs/ops/MBBS-P2_HOST_SIZING.md](docs/ops/MBBS-P2_HOST_SIZING.md).
+
 ## P2 planning (no build)
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)
