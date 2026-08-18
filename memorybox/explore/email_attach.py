@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from typing import Any
 from uuid import UUID
 
@@ -118,4 +119,135 @@ def add_email_attachment_to_mb_library(evidence_id: str, index: int = 0) -> dict
         "href": f"/artifact/ui?id={art.id}",
         "filename": filename,
         "mime_type": mime,
+    }
+
+
+_SUBJECT_AS_PERSON = re.compile(r"(?i)^(re|fw|fwd)\s*:")
+
+
+def split_quoted_email(text: str) -> list[dict[str, str | None]]:
+    """Split one MIME body into quoted turns. Does not invent RFC thread members."""
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not raw:
+        return []
+    splitter = re.compile(
+        r"(?m)^(On .{8,240}? wrote:|-----Original Message-----)\s*$"
+    )
+    parts = splitter.split(raw)
+    turns: list[dict[str, str | None]] = []
+    lead = (parts[0] or "").strip()
+    if lead:
+        turns.append({"header": None, "from": None, "body": lead})
+    i = 1
+    while i < len(parts):
+        header = (parts[i] or "").strip()
+        body = (parts[i + 1] if i + 1 < len(parts) else "") or ""
+        turns.append(
+            {
+                "header": header,
+                "from": _speaker_from_quote_header(header),
+                "body": body.strip(),
+            }
+        )
+        i += 2
+    return turns or [{"header": None, "from": None, "body": raw}]
+
+
+def _speaker_from_quote_header(header: str) -> str | None:
+    if not header:
+        return None
+    if header.startswith("-----"):
+        return "Earlier message"
+    addr_m = re.search(r"<([^>]+@[^>]+)>", header)
+    addr = (addr_m.group(1) if addr_m else "").strip()
+    name = ""
+    name_m = re.search(r"(?i)\b(?:AM|PM),?\s+([^<]+?)\s*<", header)
+    if name_m:
+        name = name_m.group(1).strip().strip(",")
+        if re.match(r"^\d", name):
+            name = ""
+    if not name:
+        names = re.findall(r",\s*([^,<\n]+)\s*<", header)
+        if names:
+            name = names[-1].strip()
+    if name and addr:
+        return f"{name} <{addr}>"
+    return name or addr or header[:120]
+
+
+def _plain_body(payload: dict[str, Any]) -> tuple[str, bool]:
+    text = str(payload.get("body_text") or "").strip()
+    html = str(payload.get("body_html") or "").strip()
+    html_only = bool(payload.get("html_only")) or (bool(html) and not text)
+    if text:
+        return text[:40000], html_only
+    if not html:
+        return "", html_only
+    import html as htmlmod
+
+    t = re.sub(r"(?i)<br\s*/?>", "\n", html)
+    t = re.sub(r"(?i)</p>", "\n", t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = htmlmod.unescape(re.sub(r"[ \t]+\n", "\n", t))
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    return t[:40000], True
+
+
+def _rail_people(payload: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for rec in (
+        list(payload.get("from_parsed") or [])
+        + list(payload.get("to_parsed") or [])
+        + list(payload.get("cc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        label = str(rec.get("display_name") or rec.get("address") or "").strip()
+        if not label or _SUBJECT_AS_PERSON.match(label):
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(label)
+    return out
+
+
+def load_email_view(evidence_id: str) -> dict[str, Any]:
+    try:
+        eid = UUID(str(evidence_id).strip())
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise EmailAttachError("invalid evidence id") from exc
+    row = get_evidence(eid)
+    if not row:
+        raise EmailAttachError("evidence not found")
+    payload = _payload(row)
+    if str(payload.get("evidence_channel") or "").lower() != "email":
+        raise EmailAttachError("not an email evidence row")
+    body, html_only = _plain_body(payload)
+    turns = split_quoted_email(body)
+    people = _rail_people(payload)
+    return {
+        "ok": True,
+        "evidence_id": str(eid),
+        "subject": str(payload.get("subject") or row.get("summary") or ""),
+        "from": payload.get("from") or payload.get("from_raw"),
+        "to": payload.get("to") or [],
+        "sent_at": payload.get("sent_at"),
+        "direction": payload.get("direction"),
+        "html_only": html_only,
+        "thread_id": payload.get("thread_id"),
+        "thread_status": payload.get("thread_status"),
+        "thread_completeness": payload.get("thread_completeness"),
+        "people": people,
+        "turns": turns,
+        "quoted_history_in_body": len(turns) > 1,
+        "note": (
+            "Turns are quoted history inside this MIME message. "
+            "RFC/vendor thread membership is separate and is not invented here."
+        ),
+        "attachments": _attachments(payload),
+        "identity_mapped": (payload.get("identity_resolution") or {}).get("mapped")
+        or [],
     }

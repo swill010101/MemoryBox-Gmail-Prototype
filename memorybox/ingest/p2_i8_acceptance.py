@@ -80,6 +80,20 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "Attachment bytes on the message; explicit Artifact copy only",
     )
     _check(
+        "i8_structured_email_view",
+        "split_quoted_email" in attach
+        and "load_email_view" in attach
+        and "/explore/api/email/" in app_py
+        and "parseQuotedEmail" in explore_js
+        and "firstImageAttachIndex" in explore_js
+        and "mb-qp-media" in explore_js
+        and "titleHead" in explore_js
+        and 't !== "email"' in explore_js,
+        checks,
+        problems,
+        "Viewer/hover use quoted turns; image attach hover; subject is not a Person",
+    )
+    _check(
         "i8_gallery_emails_visible",
         "gallery_default_hidden" in find_py
         and "_is_sms_type" in find_py
@@ -158,7 +172,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     from memorybox.ask.retrieve import search_email_messages
     from memorybox.context import AskContext
-    from memorybox.explore.email_attach import load_email_attachment
+    from memorybox.explore.email_attach import load_email_attachment, split_quoted_email
     from memorybox.explore.find import explicit_text_gallery, items_from_ask_result
     from memorybox.ingest import store as store
     from memorybox.ingest.comms_email import ingest_mbox
@@ -200,6 +214,22 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "Q1 inspect records actual fixture format/people samples; no bodies",
+    )
+    sample_body = (
+        "Meet at Bishop's Post near the old Chesterfield mall at 1:00 PM.\n\n"
+        "On Jul 22, 2026, at 10:14 PM, Carolyn Ridenhower "
+        "<carolynridenhower@gmail.com> wrote:\n"
+        "Does 1:30 Friday Aug 14 work?\n"
+    )
+    turns = split_quoted_email(sample_body)
+    _check(
+        "i8_quoted_turns_not_invented_rfc",
+        len(turns) >= 2
+        and "Bishop" in str(turns[0].get("body") or "")
+        and "Carolyn" in str(turns[1].get("from") or turns[1].get("header") or ""),
+        checks,
+        problems,
+        "Quoted On … wrote: history becomes turns; not an invented RFC thread",
     )
 
     os.environ["MEMORYBOX_OWNER_EMAIL"] = owner_addr

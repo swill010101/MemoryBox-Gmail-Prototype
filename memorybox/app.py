@@ -776,6 +776,17 @@ def explore_email_attachment_to_library(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/explore/api/email/{evidence_id}")
+def explore_email_view(evidence_id: str) -> dict[str, Any]:
+    """Structured quoted-turn view of one ingested email. Does not invent RFC threads."""
+    from memorybox.explore.email_attach import EmailAttachError, load_email_view
+
+    try:
+        return load_email_view(evidence_id)
+    except EmailAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/family-night/ui")
 def family_night_ui() -> HTMLResponse:
     """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""
