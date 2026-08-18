@@ -209,14 +209,21 @@ SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|all\b|"
+    r"stories?\b|story\b|artifacts?\b|journals?\b|"
     r"the\b|last\b|first\b|next\b|recent\b|how\b|write\b|attachments?\b)"
     rf"{_PERSON_NAME}\b"
+)
+# "show me Tom and Sue Will at Christmas"
+SHOW_ME_AND_PEOPLE_RE = re.compile(
+    r"(?i)\bshow\s+me\s+"
+    rf"{_PERSON_NAME}\s+and\s+{_PERSON_NAME}\b"
 )
 # "Show Tom Will" / "Show Eugene" — owners often omit "me"; same person visual intent
 SHOW_PERSON_RE = re.compile(
     r"(?i)\bshow\s+"
     r"(?!me\b|myself\b|pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|"
+    r"stories?\b|story\b|artifacts?\b|journals?\b|"
     r"everything\b|map\b|gallery\b|undated\b)"
     rf"{_PERSON_NAME}\b"
 )
@@ -516,6 +523,11 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         "grandfather",
         "grandmother",
         "grandparent",
+        "grandpa",
+        "grandma",
+        "nana",
+        "grammy",
+        "gram",
         "grandson",
         "granddaughter",
         "grandchild",
@@ -531,6 +543,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     }
     found: list[str] = []
     patterns = [
+        SHOW_ME_AND_PEOPLE_RE,
         PERSON_WITH_RE,
         PERSON_OF_RE,
         PERSON_POSSESSIVE_RE,
@@ -552,24 +565,25 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         )
     for rx in patterns:
         for m in rx.finditer(text or ""):
-            raw_name = next((g for g in m.groups() if g and str(g).strip()), None)
-            ent = _clean_entity(raw_name or "")
-            if not ent:
-                continue
-            # "my dad" / "our mother" are kinship, not display names
-            lowered = ent.lower()
-            role = lowered
-            for prefix in ("my ", "our ", "the "):
-                if lowered.startswith(prefix):
-                    role = lowered[len(prefix) :].strip()
-                    break
-            if role in kinship_stop or lowered in kinship_stop:
-                continue
-            # Do not treat season/holiday tokens as Person via bare-leading pattern.
-            if lowered in _PERSON_BARE_BLOCKED or role in _PERSON_BARE_BLOCKED:
-                continue
-            if ent not in found:
-                found.append(ent)
+            raws = [g for g in m.groups() if g and str(g).strip()]
+            for raw_name in raws:
+                ent = _clean_entity(raw_name or "")
+                if not ent:
+                    continue
+                # "my dad" / "our mother" are kinship, not display names
+                lowered = ent.lower()
+                role = lowered
+                for prefix in ("my ", "our ", "the "):
+                    if lowered.startswith(prefix):
+                        role = lowered[len(prefix) :].strip()
+                        break
+                if role in kinship_stop or lowered in kinship_stop:
+                    continue
+                # Do not treat season/holiday tokens as Person via bare-leading pattern.
+                if lowered in _PERSON_BARE_BLOCKED or role in _PERSON_BARE_BLOCKED:
+                    continue
+                if ent not in found:
+                    found.append(ent)
     return found
 
 
@@ -855,8 +869,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         kinship_show = bool(
             re.search(
                 r"(?i)\b(?:my\s+)?(father|dad|mother|mom|son|daughter|"
-                r"grandfather|grandmother|uncle|aunt|spouse|partner|"
-                r"brother|sister|parent|child)\b",
+                r"grandfather|grandmother|grandparent|grandpa|grandma|nana|grammy|gram|"
+                r"uncle|aunt|spouse|partner|"
+                r"brother|sister|parent|child|grandson|granddaughter|grandchild)\b",
                 q,
             )
         )
@@ -1278,6 +1293,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             want_story = False
         if said_about:
             want_story = False
+        if re.search(r"(?i)\bstories?\b", q) and not said_about:
+            if not (STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q)):
+                want_story = True
         if want_story:
             notes.append("want_story_modality")
 

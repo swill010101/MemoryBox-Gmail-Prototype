@@ -303,13 +303,16 @@
 
   async function loadProfile() {
     const id = cfg.personId;
-    const [personRes, profileRes, faceRes, appRes] = await Promise.all([
+    const [personRes, profileRes, faceRes, appRes, statsRes] = await Promise.all([
       fetch("/people/" + encodeURIComponent(id)),
       fetch("/people/" + encodeURIComponent(id) + "/profile"),
       fetch("/people/" + encodeURIComponent(id) + "/face-evidence").catch(
         () => null
       ),
       fetch("/people/" + encodeURIComponent(id) + "/appearances").catch(
+        () => null
+      ),
+      fetch("/people/" + encodeURIComponent(id) + "/learn-stats").catch(
         () => null
       ),
     ]);
@@ -320,6 +323,7 @@
     const profile = profilePayload.profile || profilePayload;
     const facesPayload = faceRes && faceRes.ok ? await faceRes.json() : {};
     const appsPayload = appRes && appRes.ok ? await appRes.json() : {};
+    const statsPayload = statsRes && statsRes.ok ? await statsRes.json() : {};
 
     const name =
       person.display_name ||
@@ -369,7 +373,7 @@
     }
 
     clearPortraitToInitial();
-    // Preferred Immich feature-face thumbnail (server: Immich first, then face evidence)
+    // Immich preferred person thumb only — never race in a face-evidence crop.
     const portraitUrl =
       (personPayload.portrait_url ||
         "/people/" + encodeURIComponent(id) + "/portrait") +
@@ -379,7 +383,7 @@
     const probe = new Image();
     probe.onload = () => applyPortraitUrl(portraitUrl);
     probe.onerror = () => {
-      /* keep initial letter; optional evidence fallback below */
+      /* keep letter; do not overwrite with a random library face */
     };
     probe.src = portraitUrl;
 
@@ -509,40 +513,21 @@
     cached.person = person;
     cached.profile = profile;
 
-    const faceThumb = cached.faces
-      .map((f) => {
-        const meta = f.exemplar_meta_json || f.exemplar_meta || {};
-        const asset =
-          f.source_asset_id ||
-          (meta && (meta.source_asset_id || meta.assetId)) ||
-          "";
-        return (
-          f.thumb_url ||
-          f.media_url ||
-          f.preview_url ||
-          f.image_url ||
-          (asset ? "/library/media/photo/" + asset : "")
-        );
-      })
-      .find(Boolean);
-    // Only use face-evidence thumbs if Immich preferred portrait did not load
-    if (faceThumb && !(portrait && portrait.classList.contains("has-photo"))) {
-      const fb = new Image();
-      fb.onload = () => applyPortraitUrl(faceThumb);
-      fb.src = faceThumb;
-    }
-
-    const faceN = cached.faces.length;
-    const appN = cached.appearances.length;
+    const faceN = Number(statsPayload.immich_photos || cached.faces.length) || 0;
+    const appN = Number(statsPayload.immich_videos || cached.appearances.length) || 0;
+    const faceLabel = statsPayload.immich_photos != null
+      ? " Immich photo" + (faceN === 1 ? "" : "s")
+      : " confirmed face" + (faceN === 1 ? "" : "s");
+    const vidLabel = statsPayload.immich_videos != null
+      ? " Immich video" + (appN === 1 ? "" : "s")
+      : " video appearance" + (appN === 1 ? "" : "s");
     document.getElementById("mb-person-learn-stats").innerHTML =
       "<li>" +
       faceN +
-      " confirmed face" +
-      (faceN === 1 ? "" : "s") +
+      faceLabel +
       "</li><li>" +
       appN +
-      " video appearance" +
-      (appN === 1 ? "" : "s") +
+      vidLabel +
       "</li><li>0 voice examples</li>";
 
     document.getElementById("mb-person-summary").textContent =

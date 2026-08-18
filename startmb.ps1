@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   FlightSim cold-boot: Docker PG/Qdrant + video worker + MemoryBox serve + Chrome Explore.
@@ -95,6 +95,12 @@ function Load-MbEnv {
   $immichPath = Join-Path $Root "config\immich.env"
   if (-not $env:MEMORYBOX_IMMICH_ENV -and (Test-Path -LiteralPath $immichPath)) {
     $env:MEMORYBOX_IMMICH_ENV = $immichPath
+  }
+  if (Test-Path -LiteralPath $immichPath) {
+    $immichText = Get-Content -LiteralPath $immichPath -Raw
+    if ($immichText -match "(?i)media-server") {
+      Write-Host "  WARNING: config\immich.env still mentions media-server. Immich is on FlightSim - see docs\ops\FLIGHTSIM_IMMICH_CUTOVER.md" -ForegroundColor Yellow
+    }
   }
 }
 
@@ -205,8 +211,8 @@ if ($Role -eq "worker" -or $Role -eq "serve") {
   exit $LASTEXITCODE
 }
 
-# ——— orchestrator (Role=all) ———
-Write-Host "startmb — MemoryBox FlightSim cold boot"
+# --- orchestrator (Role=all) ---
+Write-Host "startmb - MemoryBox FlightSim cold boot"
 Write-Host "root: $Root"
 
 Write-Step "Loading local env files (if present)"
@@ -241,7 +247,7 @@ $null = Resolve-Python
 
 Write-Step "Video worker (:$WorkerPort)"
 if (Test-TcpPort "127.0.0.1" $WorkerPort) {
-  Write-Host "  already listening — leaving existing worker alone"
+  Write-Host "  already listening - leaving existing worker alone"
 } else {
   Start-MbRoleWindow -Title "MemoryBox video worker :$WorkerPort" -ChildRole "worker"
   Wait-Tcp "video worker" "127.0.0.1" $WorkerPort $HealthWaitSec
@@ -249,14 +255,14 @@ if (Test-TcpPort "127.0.0.1" $WorkerPort) {
 
 Write-Step "Ask / serve (:$ServePort)"
 if (Test-TcpPort "127.0.0.1" $ServePort) {
-  Write-Host "  already listening — leaving existing serve alone"
+  Write-Host "  already listening - leaving existing serve alone"
 } else {
   Start-MbRoleWindow -Title "MemoryBox serve :$ServePort" -ChildRole "serve"
   Wait-HttpOk "http://${ServeHost}:${ServePort}/health" $HealthWaitSec
 }
 
 if (-not $SkipChrome) {
-  Write-Step "Opening Chrome → $ExploreUrl"
+  Write-Step "Opening Chrome -> $ExploreUrl"
   $chromeCandidates = @(
     "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
     "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
@@ -266,7 +272,7 @@ if (-not $SkipChrome) {
   if ($chrome) {
     Start-Process -FilePath $chrome -ArgumentList $ExploreUrl | Out-Null
   } else {
-    Write-Host "  Chrome not found — opening default browser"
+    Write-Host "  Chrome not found - opening default browser"
     Start-Process $ExploreUrl | Out-Null
   }
 }

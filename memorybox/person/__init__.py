@@ -1351,7 +1351,7 @@ def resolve_immich_external_ids_for_person(
         provider = photo
         if provider is None:
             try:
-                from memorybox.providers.photo import build_photo
+                from memorybox.ask.deps import build_photo
 
                 provider = build_photo()
             except Exception:  # noqa: BLE001
@@ -1384,12 +1384,12 @@ def resolve_immich_external_ids_for_person(
 
 
 def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
-    """Preferred Immich person thumbnail bytes for Person Explorer header.
+    """Immich preferred person thumbnail only (People header).
 
-    Order: Immich feature-face thumb (mapped or name-resolved) → face evidence asset.
+    Never substitute a random face-evidence crop or first library still — those
+    are not Immich's feature-face / preferred thumb.
     """
-    from memorybox.person.face_evidence import list_face_evidence
-    from memorybox.providers.photo import build_photo
+    from memorybox.ask.deps import build_photo
 
     try:
         photo = build_photo()
@@ -1398,9 +1398,9 @@ def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
 
     client = getattr(photo, "_client", None)
     fetch_person = getattr(client, "fetch_person_thumbnail_bytes", None)
+    if not callable(fetch_person):
+        return None
     for ext in resolve_immich_external_ids_for_person(person_id, photo=photo):
-        if not callable(fetch_person):
-            break
         try:
             got = fetch_person(ext)
         except Exception:  # noqa: BLE001
@@ -1409,45 +1409,6 @@ def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
             data, ctype, _src = got
             if data:
                 return data, ctype or "image/jpeg"
-
-    for row in list_face_evidence(person_id):
-        asset = (row.get("source_asset_id") or "").strip()
-        if not asset:
-            meta = row.get("exemplar_meta_json") or {}
-            if isinstance(meta, dict):
-                asset = str(
-                    meta.get("source_asset_id") or meta.get("assetId") or ""
-                ).strip()
-        if not asset:
-            continue
-        try:
-            preview = photo.fetch_preview(asset)
-        except Exception:  # noqa: BLE001
-            continue
-        if preview and preview.data:
-            return preview.data, preview.content_type or "image/jpeg"
-
-    # Last resort: one Immich asset for the resolved person (not preferred face, but better than letter)
-    client = getattr(photo, "_client", None)
-    search_by = getattr(client, "search_by_person_ids", None)
-    ext_ids = resolve_immich_external_ids_for_person(person_id, photo=photo)
-    if ext_ids and callable(search_by):
-        try:
-            items = search_by(ext_ids[:1], size=1) or []
-        except Exception:  # noqa: BLE001
-            items = []
-        for it in items:
-            if not isinstance(it, dict):
-                continue
-            aid = str(it.get("id") or "").strip()
-            if not aid:
-                continue
-            try:
-                preview = photo.fetch_preview(aid)
-            except Exception:  # noqa: BLE001
-                continue
-            if preview and preview.data:
-                return preview.data, preview.content_type or "image/jpeg"
     return None
 
 

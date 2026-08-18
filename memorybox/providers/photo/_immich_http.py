@@ -17,9 +17,10 @@ _LOG = logging.getLogger("memorybox.immich")
 _CIRCUIT_COOLDOWN_SEC = 300
 _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
-_PERSON_TIMELINE_YEAR_BUDGET = 15
+_PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v5"
+_PERSON_TIMELINE_MONTH_WALK = 720
+_PERSON_LIB_CACHE_VER = "v9"
 
 
 class ImmichAuthError(RuntimeError):
@@ -95,6 +96,10 @@ class ImmichHttpClient:
         self._lock = threading.Lock()
         thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
+        if self.thumbs_root is None:
+            _LOG.warning("IMMICH_THUMBS_PATH unset; /library/media/photo will 204")
+        elif not self.thumbs_root.is_dir():
+            _LOG.warning("IMMICH_THUMBS_PATH is not a directory: %s", self.thumbs_root)
 
     @staticmethod
     def _load_env(path: Path) -> dict[str, str]:
@@ -463,7 +468,10 @@ class ImmichHttpClient:
         cached = self._read_person_lib_cache(cache_key, allow_stale=True)
         if cached:
             self._last_person_source = "cache"
-            return list(cached)[:target]
+            windowed = self._filter_assets_to_windows(
+                list(cached), getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -483,12 +491,17 @@ class ImmichHttpClient:
             _add(self._assets_from_person_timeline(person_ids, target))
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
+            self._merge_map_marker_gps(by_id)
             self._last_person_source = "faces_or_timeline"
-            out = list(by_id.values())[:target]
-            # Cache incomplete newest-N walks so a re-ask does not walk Immich again.
-            if out and not self._circuit():
-                self._write_person_lib_cache(cache_key, out)
-            return out
+            full = list(by_id.values())
+            # Never cache a truncated walk — FlightSim re-asks kept 2015-only Peggy.
+            # Cache the unwindowed library so Christmas / year asks reuse it.
+            if full and not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
+                self._write_person_lib_cache(cache_key, full)
+            windowed = self._filter_assets_to_windows(
+                full, getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -500,10 +513,13 @@ class ImmichHttpClient:
         except Exception as exc:  # noqa: BLE001
             self._note_transport_fail(exc)
         if by_id:
-            out = list(by_id.values())[:target]
-            if not self._circuit():
-                self._write_person_lib_cache(cache_key, out)
-            return out
+            full = list(by_id.values())
+            if not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
+                self._write_person_lib_cache(cache_key, full)
+            windowed = self._filter_assets_to_windows(
+                full, getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
@@ -550,23 +566,46 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            buckets = self._filter_years_to_windows(
-                self._collapse_buckets_to_years(self._list_person_time_buckets(pid)),
+            raw_buckets = self._filter_years_to_windows(
+                self._list_person_time_buckets(pid),
                 getattr(self, "_timeline_windows", ()) or (),
             )
-            # Cap live walks; completeness is a later cache pass, not 40 GETs.
+            by_year = self._group_buckets_by_year(raw_buckets)
+            years = sorted(by_year.keys(), reverse=True)
+            month_mode = any(len(v) > 1 for v in by_year.values()) or any(
+                self._stamp_is_month(s) for s in raw_buckets
+            )
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
-            if len(buckets) > budget:
+            if month_mode:
+                stamps = raw_buckets[:_PERSON_TIMELINE_MONTH_WALK]
+                if len(raw_buckets) > _PERSON_TIMELINE_MONTH_WALK:
+                    self._person_lib_incomplete = True
+                for tb in stamps:
+                    if self._circuit():
+                        self._person_lib_incomplete = True
+                        break
+                    for it in self._list_person_bucket_assets(pid, tb, size="MONTH"):
+                        eid = str(it.get("id") or "").strip()
+                        if not eid or eid in by_id:
+                            continue
+                        people = it.get("people")
+                        if not isinstance(people, list) or not people:
+                            it = dict(it)
+                            it["people"] = [{"id": pid}]
+                        by_id[eid] = it
+                continue
+            if len(years) > budget:
                 self._person_lib_incomplete = True
-            for bucket in buckets[:budget]:
-                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= budget:
+            years_walked = 0
+            for year in years[:budget]:
+                if self._circuit():
                     self._person_lib_incomplete = True
                     break
-                if len(by_id) >= target:
-                    return list(by_id.values())[:target]
-                for it in self._list_person_bucket_assets(pid, bucket):
+                years_walked += 1
+                rows = self._list_person_year_assets(pid, year, by_year.get(year) or [])
+                for it in rows:
                     eid = str(it.get("id") or "").strip()
                     if not eid or eid in by_id:
                         continue
@@ -575,24 +614,27 @@ class ImmichHttpClient:
                         it = dict(it)
                         it["people"] = [{"id": pid}]
                     by_id[eid] = it
-                    if len(by_id) >= target:
-                        return list(by_id.values())[:target]
-        return list(by_id.values())[:target]
+            if years_walked < min(len(years), budget):
+                self._person_lib_incomplete = True
+        return list(by_id.values())
 
     def _list_person_time_buckets(self, person_id: str) -> list[str]:
         pid = (person_id or "").strip()
         if not pid:
             return []
         tmpls = (
-            "/timeline/buckets?personId={pid}&size=YEAR",
             "/timeline/buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personId={pid}&size=YEAR",
             "/timeline/buckets?personIds={pid}&size=MONTH",
             "/assets/time-buckets?personId={pid}&size=MONTH",
             "/asset/time-buckets?personId={pid}&size=MONTH",
             "/timeline/buckets?personId={pid}",
         )
         sticky = getattr(self, "_person_buckets_tmpl", None)
+        if sticky and "MONTH" not in str(sticky):
+            sticky = None
         use = (sticky,) if sticky in tmpls else tmpls
+        year_only: list[str] | None = None
         for tmpl in use:
             path = tmpl.format(pid=pid)
             if self._circuit():
@@ -627,8 +669,18 @@ class ImmichHttpClient:
                 if tb:
                     out.append(str(tb).strip())
             if out:
-                self._person_buckets_tmpl = tmpl
-                return self._sort_time_buckets_newest_first(out)
+                # Never sticky a YEAR bucket list — it hides months (Tom/Sue holes).
+                if "MONTH" in tmpl:
+                    self._person_buckets_tmpl = tmpl
+                    return self._sort_time_buckets_newest_first(out)
+                if getattr(self, "_person_buckets_tmpl", None) and "MONTH" in str(
+                    getattr(self, "_person_buckets_tmpl")
+                ):
+                    continue
+                year_only = out
+                continue
+        if year_only:
+            return self._sort_time_buckets_newest_first(year_only)
         return []
 
     @staticmethod
@@ -643,16 +695,70 @@ class ImmichHttpClient:
 
     @staticmethod
     def _collapse_buckets_to_years(buckets: list[str]) -> list[str]:
-        """One bucket per year. Immich YEAR lists are often month dates."""
+        """One Immich timeBucket string per year (keep the real stamp).
+
+        Rewriting to YYYY-01-01 makes GET /timeline/bucket miss recent years
+        when Immich only knows 2025-12-01 (FlightSim: latest looked like 2015).
+        """
         years: list[str] = []
         seen: set[str] = set()
         for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
-            y = str(raw or "").strip()[:4]
+            s = str(raw or "").strip()
+            y = s[:4]
             if len(y) != 4 or not y.isdigit() or y in seen:
                 continue
             seen.add(y)
-            years.append(f"{y}-01-01")
+            years.append(s)
         return years
+
+    @staticmethod
+    def _group_buckets_by_year(buckets: list[str]) -> dict[str, list[str]]:
+        grouped: dict[str, list[str]] = {}
+        for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
+            s = str(raw or "").strip()
+            y = s[:4]
+            if len(y) != 4 or not y.isdigit():
+                continue
+            grouped.setdefault(y, []).append(s)
+        return grouped
+
+    @staticmethod
+    def _stamp_is_month(raw: str) -> bool:
+        s = str(raw or "").strip()
+        if len(s) < 7 or s[4] != "-":
+            return False
+        mm = s[5:7]
+        return mm.isdigit() and mm != "01"
+
+    def _list_person_year_assets(
+        self, person_id: str, year: str, month_stamps: list[str]
+    ) -> list[dict[str, Any]]:
+        """Full year first (ISO YEAR bucket). Month stamps only if YEAR is empty.
+
+        A December stamp + size=YEAR does not match Immich date_trunc('year'),
+        so Tom/Sue looked like 2026 / 2023 / 2022 holes with a few hundred photos.
+        """
+        y = str(year or "").strip()[:4]
+        if len(y) != 4 or not y.isdigit():
+            return []
+        year_stamps = (
+            f"{y}-01-01T00:00:00.000Z",
+            f"{y}-01-01",
+        )
+        for tb in year_stamps:
+            items = self._list_person_bucket_assets(person_id, tb, size="YEAR")
+            if items:
+                return items
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for tb in month_stamps:
+            for it in self._list_person_bucket_assets(person_id, tb, size="MONTH"):
+                eid = str(it.get("id") or "").strip()
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(it)
+        return out
 
     @staticmethod
     def _filter_years_to_windows(
@@ -679,8 +785,45 @@ class ImmichHttpClient:
                     break
         return keep
 
+    def _filter_assets_to_windows(
+        self,
+        rows: list[dict[str, Any]],
+        windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None,
+    ) -> list[dict[str, Any]]:
+        """Keep assets whose taken date falls in Ask windows (after cache)."""
+        if not windows:
+            return list(rows)
+        from memorybox.planner.temporal import date_in_windows
+
+        out: list[dict[str, Any]] = []
+        for it in rows:
+            iso = self._asset_taken_iso(it)
+            if not iso:
+                # Face stubs without EXIF stay (Explore undated gallery).
+                out.append(it)
+                continue
+            if date_in_windows(iso, windows):
+                out.append(it)
+        return out
+
+    @staticmethod
+    def _asset_taken_iso(raw: dict[str, Any] | None) -> str | None:
+        if not isinstance(raw, dict):
+            return None
+        exif = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
+        for taken in (
+            exif.get("dateTimeOriginal"),
+            exif.get("dateTime"),
+            raw.get("localDateTime"),
+            raw.get("takenAt"),
+            raw.get("fileCreatedAt"),
+        ):
+            if isinstance(taken, str) and len(taken.strip()) >= 8:
+                return taken.strip()
+        return None
+
     def _list_person_bucket_assets(
-        self, person_id: str, time_bucket: str
+        self, person_id: str, time_bucket: str, *, size: str = "YEAR"
     ) -> list[dict[str, Any]]:
         pid = (person_id or "").strip()
         tb = (time_bucket or "").strip()
@@ -689,22 +832,31 @@ class ImmichHttpClient:
         from urllib.parse import quote
 
         qtb = quote(tb, safe=":-T.Z")
-        tmpls = (
+        year_tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR&withCoordinates=true",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR",
+        )
+        month_tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=MONTH&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=MONTH&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=MONTH",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=MONTH",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}",
-            "/assets/time-bucket?timeBucket={qtb}&personId={pid}",
-            "/asset/time-bucket?timeBucket={qtb}&personId={pid}",
         )
-        sticky = getattr(self, "_person_bucket_tmpl", None)
+        tmpls = year_tmpls if str(size).upper() == "YEAR" else month_tmpls
+        attr = "_person_year_tmpl" if str(size).upper() == "YEAR" else "_person_month_tmpl"
+        sticky = getattr(self, attr, None)
         use = (sticky,) if sticky in tmpls else tmpls
         for tmpl in use:
             path = tmpl.format(qtb=qtb, pid=pid)
             if self._circuit():
                 break
             try:
-                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 status, data = self._request("GET", path, timeout=6, retries=1)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
@@ -715,9 +867,106 @@ class ImmichHttpClient:
                 continue
             items = self._normalize_timeline_assets(data)
             if items:
-                self._person_bucket_tmpl = tmpl
-                return items
+                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
+                setattr(self, attr, tmpl)
+                return self._coerce_asset_dates_to_bucket_year(items, tb)
         return []
+
+    @staticmethod
+    def _year_fair_assets(
+        rows: list[dict[str, Any]], target: int
+    ) -> list[dict[str, Any]]:
+        """Keep every year when the person library is larger than the Ask cap."""
+        if len(rows) <= target:
+            return rows
+        by_y: dict[int, list[dict[str, Any]]] = {}
+        for it in rows:
+            y = ImmichHttpClient._asset_year(it) or 0
+            by_y.setdefault(y, []).append(it)
+        years = sorted(by_y.keys(), reverse=True)
+        out: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        idxs = {y: 0 for y in years}
+        while len(out) < target:
+            progressed = False
+            for y in years:
+                i = idxs[y]
+                bucket = by_y[y]
+                if i >= len(bucket):
+                    continue
+                aid = id(bucket[i])
+                if aid in seen:
+                    idxs[y] = i + 1
+                    continue
+                seen.add(aid)
+                out.append(bucket[i])
+                idxs[y] = i + 1
+                progressed = True
+                if len(out) >= target:
+                    break
+            if not progressed:
+                break
+        return out
+
+    @staticmethod
+    def _asset_year(raw: Any) -> int | None:
+        if isinstance(raw, dict):
+            exif = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
+            candidates = (
+                exif.get("dateTimeOriginal"),
+                exif.get("dateTime"),
+                raw.get("localDateTime"),
+                raw.get("takenAt"),
+                raw.get("fileCreatedAt"),
+            )
+        else:
+            candidates = (raw,)
+        for taken in candidates:
+            if not isinstance(taken, str) or len(taken.strip()) < 4:
+                continue
+            y = taken.strip()[:4]
+            if y.isdigit():
+                yi = int(y)
+                if 1800 <= yi <= 2100:
+                    return yi
+        return None
+
+    @staticmethod
+    def _coerce_asset_dates_to_bucket_year(
+        items: list[dict[str, Any]], time_bucket: str
+    ) -> list[dict[str, Any]]:
+        """YEAR buckets often stamp fileCreatedAt as Immich import day (2023).
+
+        Keep EXIF when it matches the bucket year. Otherwise pin localDateTime
+        to mid-year so Explore timeline density follows the walk, not import.
+        """
+        y = str(time_bucket or "").strip()[:4]
+        if not (len(y) == 4 and y.isdigit()):
+            return items
+        year = int(y)
+        out: list[dict[str, Any]] = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            row = dict(it)
+            exif = row.get("exifInfo") if isinstance(row.get("exifInfo"), dict) else {}
+            exif_year = ImmichHttpClient._asset_year(
+                {
+                    "exifInfo": exif,
+                    "localDateTime": None,
+                    "takenAt": None,
+                    "fileCreatedAt": None,
+                }
+            )
+            if exif_year == year:
+                out.append(row)
+                continue
+            if ImmichHttpClient._asset_year(row) == year:
+                out.append(row)
+                continue
+            row["localDateTime"] = f"{year}-07-01T12:00:00"
+            out.append(row)
+        return out
 
     def _normalize_timeline_assets(self, data: Any) -> list[dict[str, Any]]:
         if isinstance(data, list):
@@ -743,7 +992,10 @@ class ImmichHttpClient:
 
         created = _col("fileCreatedAt") or _col("createdAt")
         cities = _col("city")
+        states = _col("state")
         countries = _col("country")
+        lats = _col("latitude") or _col("lat")
+        lons = _col("longitude") or _col("lng") or _col("lon")
         is_image = _col("isImage")
         out: list[dict[str, Any]] = []
         for i, aid in enumerate(ids):
@@ -758,14 +1010,113 @@ class ImmichHttpClient:
                 row["localDateTime"] = created[i]
                 row["fileCreatedAt"] = created[i]
             city = cities[i] if i < len(cities) else None
+            state = states[i] if i < len(states) else None
             country = countries[i] if i < len(countries) else None
-            if city or country:
-                row["exifInfo"] = {
-                    "city": city or None,
-                    "country": country or None,
-                }
+            lat = ImmichHttpClient._float_or_none(lats[i] if i < len(lats) else None)
+            lon = ImmichHttpClient._float_or_none(lons[i] if i < len(lons) else None)
+            ImmichHttpClient._stamp_gps(
+                row,
+                lat=lat,
+                lon=lon,
+                city=city,
+                state=state,
+                country=country,
+            )
             out.append(row)
         return out
+
+    @staticmethod
+    def _float_or_none(v: Any) -> float | None:
+        if v is None or isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            fv = float(v)
+            if fv != fv:  # NaN
+                return None
+            return fv
+        s = str(v).strip()
+        if not s or s.lower() in ("none", "null"):
+            return None
+        try:
+            fv = float(s)
+        except ValueError:
+            return None
+        if fv != fv:
+            return None
+        return fv
+
+    @staticmethod
+    def _stamp_gps(
+        row: dict[str, Any],
+        *,
+        lat: float | None,
+        lon: float | None,
+        city: Any = None,
+        state: Any = None,
+        country: Any = None,
+    ) -> None:
+        if lat is not None:
+            row["latitude"] = lat
+        if lon is not None:
+            row["longitude"] = lon
+        city_s = str(city).strip() if city not in (None, "") else ""
+        state_s = str(state).strip() if state not in (None, "") else ""
+        country_s = str(country).strip() if country not in (None, "") else ""
+        if not any((lat is not None, lon is not None, city_s, state_s, country_s)):
+            return
+        exif = row.get("exifInfo") if isinstance(row.get("exifInfo"), dict) else {}
+        exif = dict(exif)
+        if lat is not None:
+            exif["latitude"] = lat
+        if lon is not None:
+            exif["longitude"] = lon
+        if city_s:
+            exif["city"] = city_s
+        if state_s:
+            exif["state"] = state_s
+        if country_s:
+            exif["country"] = country_s
+        row["exifInfo"] = exif
+
+    def _merge_map_marker_gps(self, by_id: dict[str, dict[str, Any]]) -> None:
+        """Join Immich map markers onto the person library (pins without metadata RST)."""
+        if not by_id:
+            return
+        try:
+            status, data = self._request("GET", "/map/markers", timeout=8, retries=1)
+        except Exception:  # noqa: BLE001
+            return
+        if status != 200:
+            return
+        rows = data if isinstance(data, list) else (
+            (data.get("markers") or data.get("items")) if isinstance(data, dict) else None
+        )
+        if not isinstance(rows, list):
+            return
+        for m in rows:
+            if not isinstance(m, dict):
+                continue
+            aid = str(m.get("id") or m.get("assetId") or m.get("asset_id") or "").strip()
+            if not aid or aid not in by_id:
+                continue
+            lat = self._float_or_none(
+                m.get("lat") if m.get("lat") is not None else m.get("latitude")
+            )
+            lon = self._float_or_none(
+                m.get("lon")
+                if m.get("lon") is not None
+                else (m.get("lng") if m.get("lng") is not None else m.get("longitude"))
+            )
+            if lat is None or lon is None:
+                continue
+            self._stamp_gps(
+                by_id[aid],
+                lat=lat,
+                lon=lon,
+                city=m.get("city"),
+                state=m.get("state"),
+                country=m.get("country"),
+            )
 
     def _assets_from_person_metadata(
         self, person_ids: list[str], target: int
@@ -1123,35 +1474,86 @@ class ImmichHttpClient:
             return (sticky.format(id=aid),)
         return tuple(t.format(id=aid) for t in tmpls)
 
-    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
-        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
-        root = self.thumbs_root
-        aid = (asset_id or "").strip()
-        if root is None or not aid or not root.is_dir():
-            return None
+    @staticmethod
+    def _thumb_search_roots(root: Path) -> list[Path]:
+        """IMMICH_THUMBS_PATH may be thumbs/ or the Immich library/upload parent."""
+        roots: list[Path] = []
+        if root.is_dir():
+            roots.append(root)
+            nested = root / "thumbs"
+            if nested.is_dir() and nested.resolve() != root.resolve():
+                roots.append(nested)
+        return roots
+
+    @staticmethod
+    def _thumb_path_candidates(root: Path, aid: str) -> list[Path]:
+        """Immich on-disk layouts (old prefix + current owner/aa/bb nest)."""
         prefix = aid[:2]
+        nest = aid[2:4] if len(aid) >= 4 else ""
         names = (
             f"{aid}-thumbnail.webp",
             f"{aid}-preview.webp",
             f"{aid}-thumbnail.jpeg",
             f"{aid}-preview.jpeg",
+            f"{aid}_thumbnail.webp",
+            f"{aid}_preview.webp",
             f"{aid}.webp",
             f"{aid}.jpeg",
             f"{aid}.jpg",
         )
-        candidates: list[Path] = []
-        for name in names:
-            candidates.append(root / prefix / name)
-            candidates.append(root / prefix / aid / name)
+        out: list[Path] = []
+
+        def _add(base: Path) -> None:
+            for name in names:
+                out.append(base / prefix / name)
+                out.append(base / prefix / aid / name)
+                if nest:
+                    out.append(base / prefix / nest / name)
+                    out.append(base / prefix / nest / aid / name)
+
+        _add(root)
         try:
-            users = [p for p in root.iterdir() if p.is_dir()][:12]
+            users = [p for p in root.iterdir() if p.is_dir()][:16]
         except OSError:
             users = []
         for user in users:
-            for name in names[:4]:
-                candidates.append(user / prefix / name)
-                candidates.append(user / prefix / aid / name)
-        for path in candidates:
+            # Skip the 2-char hex shard dirs so we do not recurse the same tree.
+            if len(user.name) == 2:
+                continue
+            _add(user)
+        return out
+
+    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
+        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
+        root = self.thumbs_root
+        aid = (asset_id or "").strip()
+        if root is None or not aid:
+            return None
+        seen: set[str] = set()
+        paths: list[Path] = []
+        for search in self._thumb_search_roots(root):
+            paths.extend(self._thumb_path_candidates(search, aid))
+            prefix = aid[:2]
+            nest = aid[2:4] if len(aid) >= 4 else ""
+            globs = (
+                f"{prefix}/{aid}-thumbnail.webp",
+                f"{prefix}/{nest}/{aid}-thumbnail.webp" if nest else "",
+                f"*/{prefix}/{aid}-thumbnail.webp",
+                f"*/{prefix}/{nest}/{aid}-thumbnail.webp" if nest else "",
+                f"*/{prefix}/{nest}/{aid}-preview.webp" if nest else "",
+            )
+            for pattern in globs:
+                if not pattern:
+                    continue
+                try:
+                    paths.extend(search.glob(pattern))
+                except OSError:
+                    continue
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
             try:
                 if not path.is_file() or path.stat().st_size < 24:
                     continue
@@ -1164,6 +1566,110 @@ class ImmichHttpClient:
             ctype = "image/webp" if suf == ".webp" else "image/jpeg"
             return data, ctype
         return None
+
+    def _encoded_video_roots(self) -> list[Path]:
+        root = self.thumbs_root
+        if root is None:
+            return []
+        out: list[Path] = []
+        seen: set[str] = set()
+
+        def _add(p: Path) -> None:
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen or not p.is_dir():
+                return
+            seen.add(key)
+            out.append(p)
+
+        for base in (root, root.parent):
+            _add(base / "encoded-video")
+            if base.name.lower() in {"encoded-video", "encoded_video"}:
+                _add(base)
+        return out
+
+    def find_local_encoded_video(self, asset_id: str) -> Path | None:
+        """Immich transcoded MP4 on disk (sibling of thumbs/)."""
+        aid = (asset_id or "").strip()
+        if not aid:
+            return None
+        prefix = aid[:2]
+        nest = aid[2:4] if len(aid) >= 4 else ""
+        names = (f"{aid}.mp4", f"{aid}.webm", f"{aid}.m4v")
+        paths: list[Path] = []
+        for search in self._encoded_video_roots():
+            for name in names:
+                paths.append(search / prefix / name)
+                if nest:
+                    paths.append(search / prefix / nest / name)
+            try:
+                users = [p for p in search.iterdir() if p.is_dir()][:16]
+            except OSError:
+                users = []
+            for user in users:
+                if len(user.name) == 2:
+                    continue
+                for name in names:
+                    paths.append(user / prefix / name)
+                    if nest:
+                        paths.append(user / prefix / nest / name)
+            globs = [
+                f"{prefix}/{aid}.mp4",
+                f"*/{prefix}/{aid}.mp4",
+            ]
+            if nest:
+                globs.extend(
+                    (
+                        f"{prefix}/{nest}/{aid}.mp4",
+                        f"*/{prefix}/{nest}/{aid}.mp4",
+                    )
+                )
+            for pattern in globs:
+                try:
+                    paths.extend(search.glob(pattern))
+                except OSError:
+                    continue
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if path.is_file() and path.stat().st_size > 64:
+                    return path
+            except OSError:
+                continue
+        return None
+
+    def open_video_playback(self, asset_id: str, range_header: str | None):
+        """Immich transcoded playback stream (API key + Range)."""
+        aid = (asset_id or "").strip()
+        if not aid:
+            raise FileNotFoundError("missing asset id")
+        headers = {"x-api-key": self._key, "Accept": "video/*,*/*"}
+        if range_header:
+            headers["Range"] = range_header
+        last_err: Exception | None = None
+        for path in (
+            f"/assets/{aid}/video/playback",
+            f"/assets/{aid}/original",
+        ):
+            url = f"{self.api_base}{path}"
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                return urllib.request.urlopen(req, timeout=120)
+            except urllib.error.HTTPError as exc:
+                last_err = exc
+                if exc.code in {401, 403, 404}:
+                    continue
+                raise
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                continue
+        raise FileNotFoundError(str(last_err or "immich video playback missing"))
 
     def _thumb_missed(self, asset_id: str) -> bool:
         store = getattr(self, "_thumb_miss", None)
@@ -1270,10 +1776,17 @@ class ImmichHttpClient:
     def fetch_person_thumbnail_bytes(
         self, person_id: str
     ) -> tuple[bytes, str, str] | None:
-        """Immich preferred person thumbnail (feature face / person thumb)."""
+        """Immich preferred person thumbnail (feature face / person thumb).
+
+        Does not fall through to a random face-list still — that is not the
+        Immich UI preferred crop.
+        """
         pid = (person_id or "").strip()
         if not pid:
             return None
+        disk = self._read_local_person_thumb(pid)
+        if disk:
+            return disk[0], disk[1], "immich-person-disk"
         for path in (
             f"/people/{pid}/thumbnail",
             f"/people/{pid}/thumbnail?format=JPEG",
@@ -1298,25 +1811,70 @@ class ImmichHttpClient:
                 asset_id = str(data.get(key) or "").strip()
                 if not asset_id:
                     continue
+                local = self._read_local_thumb(asset_id)
+                if local:
+                    return local[0], local[1], "immich-feature-face-disk"
                 try:
                     data_b, ctype, src = self.fetch_preview_bytes(asset_id)
                     return data_b, ctype, src
                 except Exception:  # noqa: BLE001
                     continue
-        # Fall back: faces list → asset preview
-        faces = self.list_faces_for_person(pid)
-        for face in faces:
-            asset_id = str(
-                face.get("assetId")
-                or face.get("asset_id")
-                or face.get("id")
-                or ""
-            ).strip()
-            if not asset_id or asset_id.startswith("person-thumb-"):
-                continue
+        return None
+
+    def _read_local_person_thumb(self, person_id: str) -> tuple[bytes, str] | None:
+        """On-disk Immich person preferred thumb (`{personId}.jpeg` nest)."""
+        root = self.thumbs_root
+        pid = (person_id or "").strip()
+        if root is None or not pid:
+            return None
+        names = (
+            f"{pid}.jpeg",
+            f"{pid}.jpg",
+            f"{pid}.webp",
+            f"{pid}-preview.jpeg",
+            f"{pid}-thumbnail.webp",
+        )
+        paths: list[Path] = []
+        for search in self._thumb_search_roots(root):
+            paths.extend(self._thumb_path_candidates(search, pid))
+            prefix = pid[:2]
+            nest = pid[2:4] if len(pid) >= 4 else ""
+            for pattern in (
+                f"{prefix}/{nest}/{pid}.jpeg" if nest else "",
+                f"*/{prefix}/{nest}/{pid}.jpeg" if nest else "",
+                f"*/{prefix}/{nest}/{pid}.webp" if nest else "",
+            ):
+                if not pattern:
+                    continue
+                try:
+                    paths.extend(search.glob(pattern))
+                except OSError:
+                    continue
             try:
-                data_b, ctype, src = self.fetch_preview_bytes(asset_id)
-                return data_b, ctype, src
-            except Exception:  # noqa: BLE001
+                users = [p for p in search.iterdir() if p.is_dir()][:16]
+            except OSError:
+                users = []
+            for user in users:
+                if len(user.name) == 2:
+                    continue
+                base = user / prefix / nest if nest else user / prefix
+                for name in names:
+                    paths.append(base / name)
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
                 continue
+            seen.add(key)
+            try:
+                if not path.is_file() or path.stat().st_size < 24:
+                    continue
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if not data or data[:1] in (b"{", b"["):
+                continue
+            suf = path.suffix.lower()
+            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+            return data, ctype
         return None

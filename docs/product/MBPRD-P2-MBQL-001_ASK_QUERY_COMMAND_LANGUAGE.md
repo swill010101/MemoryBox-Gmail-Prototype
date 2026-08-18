@@ -1,12 +1,12 @@
 # MBPRD-P2-MBQL-001 — Ask, Query & Command Language
 
-**Status:** **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · definition **LOCKED** · **BUILD AUTHORIZED** 2026-08-15  
-**Date:** 2026-08-15  
+**Status:** PRD **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”) · definition **LOCKED**  
+**Date:** 2026-08-15 (PRD) · 2026-08-18 (increment accepted)  
 **Increment definition:** [MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md)  
-**Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
+**Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not start:** I8 email · I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user
 
-PRD accepted. Definition locked. Build authorized 2026-08-15. Do not start I8.
+PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. Do not start I8.
 
 ---
 
@@ -37,7 +37,7 @@ After this authorized build:
 4. **Model only for residual work.** If a model fills slots, I7A shows assembled MB context vs exact provider payload, parse/validate, and disposition. A bad fill is `PARSE_SCHEMA` / `TRUST_VALIDATION` / `MODEL_OUTPUT`, not “AI error.”
 5. **Fail back.** Model/planner failure must not fail the user request. Fall back to today’s deterministic plan (or clarification). Trace-store failure still never fails Ask (I7A lock).
 6. **No answer invention.** MBQL names intent. Retrieve and curator remain evidence-backed. MBQL-001 does not become I11 narrative.
-7. **FlightSim owner pass** on a short locked phrase list (below) with `/dev/ai-trace` available. `prove-mbql-001` is a harness, not ACCEPTED.
+7. **FlightSim owner pass** of the locked phrase list with `/dev/ai-trace` available — **done** 2026-08-18. `prove-mbql-001` remains a harness (not a substitute for that pass).
 
 ---
 
@@ -108,7 +108,7 @@ Q8 is open. Q1–Q7 stay locked.
 3. Single compile function used by Ask + Explore (+ Person scope).
 4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Do not start I8. When the box is stable, **I4 §8.1 is the first owner pass** (must work; do not skip). MBQL ACCEPTED remains a later FlightSim owner pass of definition §6 phrases.
+6. **Stop.** Increment **ACCEPTED** 2026-08-18. Do not start I8. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -129,4 +129,4 @@ Q8 is open. Q1–Q7 stay locked.
 
 ## 7. Decision status
 
-PRD **ACCEPTED**. Increment definition **LOCKED**. **Build authorized** 2026-08-15. Do not start I8.
+PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). Do not start I8.

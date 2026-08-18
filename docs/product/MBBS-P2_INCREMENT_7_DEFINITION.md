@@ -8,7 +8,7 @@
 **Depends:** P2-I6 **ACCEPTED** · I4 Explore already has an SMS/text card type (engine not connected)  
 **Does not reopen / does not absorb:** I4 Explore redesign · I5 portrait **P2-BL-I5-01** · I6 kinship **P2-BL-I6-01** · SMS attachment bytes **P2-BL-I7-01** · **I8 richer email** (incl. **P2-BL-I8-01** attachment files up front) · I8.5 face-evidence · **I9 spoken** · **I10 cross-source correlation** · **I11 narrative** · I13/I14 Settings · multi-user · **I7A / MBQL-001**
 
-P2-I7 is **ACCEPTED**. SMS **attachment files** were not in the staged export (CSV-only; `inspect-sms` 2026-08-15: 7,212 names, 0 files). That gap is **P2-BL-I7-01** — do not reopen I7. [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) is **ACCEPTED** 2026-08-15. Next: **[MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) BUILD AUTHORIZED** 2026-08-15.
+P2-I7 is **ACCEPTED**. SMS **attachment files** were not in the staged export (CSV-only; `inspect-sms` 2026-08-15: 7,212 names, 0 files). That gap is **P2-BL-I7-01** — do not reopen I7. [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) is **ACCEPTED** 2026-08-15. [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) is **ACCEPTED** 2026-08-18.
 
 ---
 
@@ -425,7 +425,7 @@ Pass **all**. Structural `prove-p2-i7` does **not** equal ACCEPTED.
 | FlightSim bugs this revision | Silent **5000 oldest-first** cap hid 2020–2025 and froze the header at 5000; mixed light/dark wiped SMS text; Ask→Explore/People dropped context; Email/Text filter stayed on All; hover did not expand text; no attachment indicator. |
 | ACCEPTED | **Yes** (2026-08-15 — Tom: “i7 is accepted”) |
 | Attachment bytes | **BACKLOG P2-BL-I7-01** (CSV-only export; do not reopen I7) |
-| Next | [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) **ACCEPTED** 2026-08-15; [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) **BUILD AUTHORIZED** 2026-08-15 |
+| Next | [P2-I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) **ACCEPTED** 2026-08-15; [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) **ACCEPTED** 2026-08-18; I8 **not started** |
 
 `prove-p2-i7` is structural + fixture assist only. It is **not** P1 `prove-video`.
 

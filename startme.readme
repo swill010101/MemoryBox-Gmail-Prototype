@@ -33,16 +33,26 @@ cd C:\memorybox
 .\startmb.cmd
 ```
 
+Do **not** run `.\startmb.ps1` directly. Windows often has `Restricted` execution policy, which prints *cannot be loaded because running scripts is disabled*. `startmb.cmd` already calls PowerShell with `-ExecutionPolicy Bypass` for this file only.
+
 4. Two PowerShell windows open and stay open: **video worker** and **serve**. Leave them running.  
 5. Chrome opens on Explore when `/health` responds.
 
-### Optional flags (PowerShell)
+### Optional flags
+
+Pass flags through the `.cmd` wrapper (same Bypass):
 
 ```powershell
 cd C:\memorybox
-.\startmb.ps1 -SkipChrome
-.\startmb.ps1 -RecreateContainers   # wipe/recreate PG+Qdrant containers (keeps named volumes unless you remove them)
-.\startmb.ps1 -ExploreUrl "http://127.0.0.1:8790/explore/ui?demo=peggy-christmas"
+.\startmb.cmd -SkipChrome
+.\startmb.cmd -RecreateContainers   # wipe/recreate PG+Qdrant containers (keeps named volumes unless you remove them)
+.\startmb.cmd -ExploreUrl "http://127.0.0.1:8790/explore/ui?demo=peggy-christmas"
+```
+
+If you must invoke the `.ps1` yourself:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\memorybox\startmb.ps1
 ```
 
 ---

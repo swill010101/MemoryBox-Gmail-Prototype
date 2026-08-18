@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-17 (I4 first owner pass when box is stable)  
+**Status:** Living parking note · **Updated:** 2026-08-18 (I8 definition DRAFT, awaiting approval)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -8,8 +8,9 @@
 
 - **No build** until Tom approves the next definition and explicitly authorizes build.
 - Prefer **one** authorized increment at a time.
-- **When FlightSim / Immich are back up (Tom 2026-08-17):** first owner pass is **I4 §8 + §8.1**. It must work. Do not skip for MBQL-001, I8, comms cards, or attachments. I4 holdout is that walk, not SMS/email files.
+- **I4 is ACCEPTED** (2026-08-18). Remaining Explore visual defects are **P2-BL-I4-01** (non-blocking). Do not reopen I4 unless a defect affects function, context continuity, filtering, Timeline/Gallery sync, modal return, trust, or the accepted interaction model. Do not skip later Explore work for I8 attachment surprises.
 - Combined host floor vs buy (chip, RAM, 1 TB NVMe, 10 TB USB sources): [MBBS-P2_HOST_SIZING.md](../ops/MBBS-P2_HOST_SIZING.md) (2026-08-17).
+- Immich lives on FlightSim: [FLIGHTSIM_IMMICH_CUTOVER.md](../ops/FLIGHTSIM_IMMICH_CUTOVER.md). Do not leave `config/immich.env` on media-server.
 
 ## Backlog absorption (normalized)
 
@@ -20,6 +21,16 @@
 | TASK-P1P2-002 Kinship inference | **P2-I6** |
 | Ops SMS / mbox | **P2-I7 / P2-I8** |
 | TASK-P1P2-003 Export import-back | **P2-I17** (EVS-020) |
+
+## Post–I4 carry-forward (ACCEPTED with gap)
+
+P2-I4 Mixed-Media Find / Explore is **ACCEPTED** (2026-08-18 — Tom: functional and UX acceptance satisfactory). The following did **not** block acceptance and must not reopen I4 unless a defect is found to affect **function**, **context continuity**, **filtering**, **Timeline/Gallery synchronization**, **modal return state**, **trust**, or the **accepted interaction model**:
+
+| ID | Theme | Evidence | Suggested home |
+|----|--------|----------|----------------|
+| **P2-BL-I4-01** | Explore **visual polish** (chrome, crop, density, mockup aesthetic) | Founder: remaining issues are minor aesthetic/polish. Mixed-Media Find mockup was hierarchy/calm-aesthetic **anchor**, not pixel spec. Includes leftover visual mismatch (e.g. curator/header crop vs Immich preferred thumb on Explore; card/chrome vs mockup). Not a new Explore interaction. | Later UX cleanup increment when Tom authorizes. **Not I8 email.** Cross-ref Person header portrait **P2-BL-I5-01**. |
+
+Authority: [MBBS-P2_INCREMENT_4_DEFINITION.md](MBBS-P2_INCREMENT_4_DEFINITION.md).
 
 ## Post–I5 carry-forward (ACCEPTED with gap)
 
@@ -57,10 +68,12 @@ Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md
 |----|--------|---------|------|
 | **P2-BL-I8-01** | I8 email ingest must include **attachment files up front** | I7 accepted CSV-only; attachment bytes were missing and had to be parked. Do not repeat that gap for email. | **P2-I8** richer email — part of I8 definition/build, not a later surprise |
 
-## Next increment (build authorized)
+## Next increment
 
 **P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · **ACCEPTED** 2026-08-15.
 
-**MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **BUILD AUTHORIZED** 2026-08-15.
+**MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”).
 
-Sequence after I7: **I7A (ACCEPTED) → MBQL-001 (BUILD AUTHORIZED) → I8** (I8.5 remains after I8; I9 stays after I8.5).
+**P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **DRAFT 2026-08-18 — awaiting Tom approval. Not build authorized.**
+
+**P2-I8 is not started** (needs locked Q1–Q6 + explicit build authorization). Sequence: **I7A ACCEPTED → MBQL-001 ACCEPTED → I8** when Tom authorizes (I8.5 remains after I8; I9 stays after I8.5). **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.

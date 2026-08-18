@@ -137,7 +137,7 @@ def _prove_p2_i2_harness() -> dict[str, Any]:
         r = client.get("/", follow_redirects=False)
         _check(
             "root_redirect",
-            r.status_code in (307, 302) and "/ask/ui" in (r.headers.get("location") or ""),
+            r.status_code in (307, 302) and "/explore/ui" in (r.headers.get("location") or ""),
             checks,
             problems,
             f"status={r.status_code} loc={r.headers.get('location')}",
@@ -252,17 +252,17 @@ def _prove_p2_i2_flightsim() -> dict[str, Any]:
         if status in (301, 302, 303, 307, 308):
             _check(
                 "root_redirect",
-                "/ask/ui" in loc,
+                "/explore/ui" in loc,
                 checks,
                 problems,
                 f"status={status} loc={loc}",
             )
         else:
             # Follow manually
-            st2, html2, _ = _fetch(base + "/ask/ui")
+            st2, html2, _ = _fetch(base + "/explore/ui")
             _check(
                 "root_redirect",
-                st2 == 200 and "mb-invite-title" in html2,
+                st2 == 200 and "mb-explore" in html2,
                 checks,
                 problems,
                 f"no redirect status={status}; ask={st2}",

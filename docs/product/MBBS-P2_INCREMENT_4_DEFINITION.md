@@ -1,7 +1,8 @@
 # MBBS-P2 Increment 4 — Mixed-Media Find / Explore
 
-**Status:** **LOCKED** · Combined functionality + UX · Founder clarifications incorporated · **BUILD AUTHORIZED** (2026-08-13) · **Not ACCEPTED** until §8 + §8.1 pass on FlightSim  
-**Owner-pass order (Tom 2026-08-17):** When FlightSim / Immich / the box are stable again, **I4 §8 + §8.1 is the first owner pass.** It must **actually work**. Do **not** skip it for MBQL-001, I8, comms LOD, or attachments. Attachments are **not** the I4 holdout (SMS files = P2-BL-I7-01; email files = P2-BL-I8-01).  
+**Status:** **ACCEPTED** (2026-08-18 — Tom: functional and UX acceptance satisfactory; remaining issues are minor aesthetic/polish) · definition **LOCKED** · **BUILD AUTHORIZED** (2026-08-13)  
+**Date:** 2026-08-13 (build) · 2026-08-18 (accepted)  
+**Reopen rule:** Do **not** reopen I4 unless a parked defect is found to affect **function**, **context continuity**, **filtering**, **Timeline/Gallery synchronization**, **modal return state**, **trust**, or the **accepted interaction model**. Visual polish is **P2-BL-I4-01**.  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX):** [MBUX-001 v0.4](MBUX-001_v0.4.md) full baseline (§22 exploration patterns) · historical addendum: [I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)  
@@ -10,11 +11,13 @@
 **Interaction reference (binding):** The **current Explore screen** (`/explore/ui`, branch implementation as of founder confirmation 2026-08-13) is the **accepted interaction reference for I4**. Implementation may improve underneath (providers, data, performance, honesty). **Do not redesign the experience** while wiring it up.  
 **Depends on:** P2-I1 (moments + identity correction) · P2-I2 (shell/context) · P2-I3 (honest coverage / undated)  
 **CLI prove (assist only):** `python -m memorybox prove-p2-i4` · `prove-p2-i4 --flightsim`  
-**ACCEPTED gate:** §8 + §8.1 manual cases. Structural prove does not equal ACCEPTED.
+**ACCEPTED:** Founder review 2026-08-18. §8 + §8.1 were the gate. Structural prove does not equal ACCEPTED (and did not). Remaining visual defects are **P2-BL-I4-01** (non-blocking).
 
 **Founder direction:** Combined I4 direction approved with clarifications. Top-level learn destination labeled **Review & Learn**. **Build authorized.** Current on-screen Explore interaction is the reference — wire/improve implementation without redesigning the UX.
 
 **I4 UI amendment (2026-08-13):** Shared Evidence Viewer + gallery rollover/focus preview authorized (MBUX §22.4–22.6 · CAP-P2-026). Named Places and Living Albums remain out of I4.
+
+**Founder acceptance (2026-08-18):** The I4 functional and UX acceptance behaviors have been reviewed and are satisfactory. Remaining issues are minor aesthetic/polish defects and do not block acceptance. Parked as **P2-BL-I4-01**.
 
 ---
 
@@ -315,7 +318,7 @@ Supporting scenarios; **pass/fail authority remains §8 + §8.1.**
 
 ## 8. Exact acceptance gate (authoritative pass/fail)
 
-All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEPTED.
+These rows were the ACCEPTED gate. Founder **ACCEPTED** 2026-08-18. Remaining visual defects are **P2-BL-I4-01** (non-blocking). Do not treat leftover aesthetic mismatch as a failed row.
 
 | Area | I4 acceptance |
 |------|----------------|
@@ -379,7 +382,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 
 ### 8.2 FlightSim walk (after LOCK + Build)
 
-**When the box is back up, do this walk before any other owner pass.** Do not rubber-stamp. Fail any §8.1 case → not ACCEPTED.
+**FlightSim walk (historical gate).** Founder **ACCEPTED** 2026-08-18. Remaining visual defects are **P2-BL-I4-01**. `prove-p2-i4 --flightsim` remains structural assist only.
 
 1. Pull agreed branch; **restart serve** (port **8790**). Immich/HVRT must stay up long enough for **case D** (real photo or video identity correction).  
 2. Open Mixed-Media Find.  
@@ -417,6 +420,7 @@ All rows must **pass** on FlightSim for **ACCEPTED**. Fail any row → not ACCEP
 | **This revised definition** | **LOCKED** |
 | Teach vs Review & Learn label | **Review & Learn** (locked) |
 | Build | **AUTHORIZED** (2026-08-13) |
-| FlightSim ACCEPTED | **PENDING** — §8 + §8.1 · **first owner pass** when box is stable (Tom 2026-08-17); must work, do not skip |
+| FlightSim ACCEPTED | **Yes** (2026-08-18 — Tom: functional and UX satisfactory; remaining visual defects are polish) |
+| Visual polish | **P2-BL-I4-01** — non-blocking; do not reopen I4 unless function / context / trust / interaction model is affected |
 
-Build is authorized against this locked text. **Do not redesign** the Explore experience while wiring implementation underneath it. Do **not** mark ACCEPTED until §8 and §8.1 pass on FlightSim.
+P2-I4 is **ACCEPTED**. **Do not redesign** the Explore experience as an I4 reopen. Remaining visual defects go to **P2-BL-I4-01**.

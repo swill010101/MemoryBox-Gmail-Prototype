@@ -194,6 +194,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "external_id": eid,
             "media_url": thumb,
             "thumb_url": thumb,
+            "web_url": p.get("web_url"),
             "teachable": True,
             "face_identity": mb_name or (people[0] if people else None) or "Unknown",
             "place": place,
@@ -226,6 +227,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             if str((exif_d or {}).get("media") or "").lower() == "video"
             else "photo"
         )
+        if photo_type == "video" and eid:
+            # Immich library videos stream here — never HVRT /review/media.
+            extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["video_provider_key"] = p.get("provider_key") or "immich"
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
@@ -247,10 +252,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
         face = v.get("face_external_id")
-        play = v.get("play_url") or (
-            f"/review/ui?video={vid}&t={t0}"
-            + (f"&face={face}" if face else "")
-        )
+        play = f"/review/media/{vid}?t={t0:.3f}"
+        if face:
+            play += f"&face={face}"
         poster = ""
         if not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
@@ -383,18 +387,26 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         sid = str(s.get("story_id") or "")
         if not sid:
             continue
+        taken = str(s.get("taken_at") or "")
+        thumb = str(s.get("thumb_url") or "")
+        photo_id = str(s.get("source_photo_id") or "")
+        if photo_id and not thumb:
+            thumb = f"/library/media/photo/{photo_id}"
         add(
             _item_base(
                 id=f"story:{sid}",
                 type_="story",
                 title=str(s.get("title") or "Story")[:80],
-                date="",  # stories are not calendar-primary
-                undated=True,
+                date=taken,
+                undated=not taken,
                 preview=str(s.get("excerpt") or s.get("attribution") or ""),
                 detail=str(s.get("excerpt") or ""),
                 story_id=sid,
                 version=s.get("version"),
                 attribution=s.get("attribution"),
+                media_url=thumb or None,
+                thumb_url=thumb or None,
+                external_id=photo_id or None,
             )
         )
 

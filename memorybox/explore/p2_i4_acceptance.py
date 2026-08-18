@@ -186,6 +186,13 @@ def _prove_harness() -> dict[str, Any]:
         )
         cp = _assert_explore_css(css)
         _check("explore_css_hierarchy", not cp, checks, problems, "; ".join(cp) if cp else "ok")
+        _check(
+            "explore_css_face_hold",
+            "mb-faces-revealed" in css,
+            checks,
+            problems,
+            "detail viewer face boxes stay hidden until 1s hold",
+        )
     except Exception as exc:  # noqa: BLE001
         _check("explore_html", False, checks, problems, str(exc))
 
@@ -236,6 +243,8 @@ def _prove_harness() -> dict[str, Any]:
             "syncTimelineToEligibleDatedExtent",
             "Does NOT clear query/filters",
             "liveFind",
+            "askHref",
+            "getActivePerson",
             "/explore/api/find",
             "No dated memories on the Timeline",
             "renderViewer",
@@ -257,6 +266,18 @@ def _prove_harness() -> dict[str, Any]:
             "hidden in Gallery — say Add texts to show them",
             "textsPinned",
             "bindLazyThumbs",
+            "mb-tl-bar",
+            "useYearDensity",
+            "timelineDatedItems",
+            "mb-ev-video-player",
+            "bindExploreVideoPlayer",
+            "immichVideoSrc",
+            "FACE_HOLD_MS",
+            "mb-faces-revealed",
+            "applyCuratorPortrait",
+            "mb-ev-photo-zoom",
+            "select\\s+",
+            "/explore/ui",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -269,6 +290,22 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("explore_js_state", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.context import AskContext
+        from memorybox.planner import plan_ask
+
+        p_and = plan_ask("show me jordan and sam at christmas", AskContext.empty())
+        and_names = {n.lower() for n in p_and.person_names}
+        _check(
+            "show_me_two_people_and",
+            "jordan" in and_names and "sam" in and_names,
+            checks,
+            problems,
+            f"people={p_and.person_names}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("show_me_two_people_and", False, checks, problems, str(exc))
 
     try:
         from memorybox.explore.find import items_from_ask_result, curator_from_items
@@ -736,6 +773,17 @@ def _prove_harness() -> dict[str, Any]:
             f"people={peggy_xmas.person_names} places={peggy_xmas.place_names} "
             f"win={peggy_xmas.temporal_windows}",
         )
+        stories_grandma = _plan("show me stories about grandma")
+        _check(
+            "i4_stories_about_grandma_not_person_stories",
+            "stories" not in {n.lower() for n in (stories_grandma.person_names or ())}
+            and stories_grandma.want_story is True
+            and "show_me_kinship_forces_broad_visual" in (stories_grandma.notes or ()),
+            checks,
+            problems,
+            f"people={stories_grandma.person_names} story={stories_grandma.want_story} "
+            f"notes={stories_grandma.notes}",
+        )
     except Exception as exc:  # noqa: BLE001
         _check("i4_compose_query_expansion", False, checks, problems, str(exc))
 
@@ -1061,9 +1109,8 @@ def _prove_harness() -> dict[str, Any]:
         got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_library_unions_faces_and_full_timeline",
-            len(got_peggy) >= 400
-            and client_peggy.timeline_calls <= 15
-            and client_peggy.timeline_calls >= 10
+            len(got_peggy) >= 700
+            and client_peggy.timeline_calls == 30
             and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
             checks,
             problems,
@@ -1096,7 +1143,7 @@ def _prove_harness() -> dict[str, Any]:
         )
         _check(
             "immich_month_buckets_collapse_to_years",
-            collapsed == ["2023-01-01", "2022-01-01"],
+            collapsed == ["2023-12-01", "2022-12-01"],
             checks,
             problems,
             f"collapsed={collapsed}",
@@ -1128,15 +1175,16 @@ def _prove_harness() -> dict[str, Any]:
 
         months = _MonthShapedYearImmich()
         months.search_by_person_ids(["person-1"], size=50)
-        year_gets = [p for p in months.paths if "timeline/bucket?" in p]
+        month_gets = [p for p in months.paths if "timeline/bucket?" in p]
         _check(
-            "immich_does_not_walk_month_stamps_as_years",
-            len(year_gets) == 2
-            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
-            and any("size=YEAR" in p for p in year_gets),
+            "immich_walks_listed_month_buckets",
+            len(month_gets) == 4
+            and any("2023-12-01" in p for p in month_gets)
+            and any("2022-04-01" in p for p in month_gets)
+            and any("size=MONTH" in p or "size=YEAR" not in p for p in month_gets),
             checks,
             problems,
-            f"bucket_gets={year_gets}",
+            f"bucket_gets={month_gets}",
         )
         _check(
             "immich_filter_years_to_christmas_windows",
@@ -1148,6 +1196,102 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             "Christmas windows must not walk 2010",
+        )
+        pinned = _ImmichIds._coerce_asset_dates_to_bucket_year(
+            [{"id": "a1", "fileCreatedAt": "2023-01-31T12:00:00.000Z"}],
+            "2010-12-01",
+        )
+        _check(
+            "immich_bucket_year_wins_over_import_stamp",
+            pinned
+            and str(pinned[0].get("localDateTime") or "").startswith("2010-"),
+            checks,
+            problems,
+            f"pinned={pinned}",
+        )
+
+        class _ManyYearImmich(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": f"{y}-06-01"} for y in range(2025, 2004, -1)
+                    ]
+                if "timeline/bucket" in p:
+                    y = "2025"
+                    for part in p.split("timeBucket=", 1)[-1].split("&", 1)[0].split("-"):
+                        if len(part) == 4 and part.isdigit():
+                            y = part
+                            break
+                    return 200, [{"id": f"asset-{y}", "fileCreatedAt": f"{y}-06-01"}]
+                return 404, None
+
+        many = _ManyYearImmich()
+        got_many = many.search_by_person_ids(["person-1"], size=5000)
+        years_got = {str(r.get("id") or "")[-4:] for r in got_many}
+        bucket_gets = [p for p in many.paths if "timeline/bucket?" in p]
+        _check(
+            "immich_walks_full_person_year_span",
+            "2025" in years_got
+            and "2005" in years_got
+            and len(bucket_gets) >= 20
+            and not getattr(many, "_person_lib_incomplete", False),
+            checks,
+            problems,
+            f"years={sorted(years_got)} n_gets={len(bucket_gets)}",
+        )
+
+        class _YearEmptyMonthFallback(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": "2024-03-01"},
+                        {"timeBucket": "2024-11-01"},
+                    ]
+                if "timeline/bucket" in p and "size=YEAR" in p:
+                    return 200, []
+                if "timeline/bucket" in p:
+                    month = "03" if "2024-03" in p else "11"
+                    return 200, [{"id": f"m-{month}", "fileCreatedAt": f"2024-{month}-01"}]
+                return 404, None
+
+        fb = _YearEmptyMonthFallback()
+        got_fb = fb.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_year_empty_walks_months",
+            {r.get("id") for r in got_fb} == {"m-03", "m-11"},
+            checks,
+            problems,
+            f"ids={[r.get('id') for r in got_fb]} paths={fb.paths}",
+        )
+        many.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_complete_walk_may_cache",
+            getattr(many, "_last_person_source", "") == "cache",
+            checks,
+            problems,
+            f"src={getattr(many, '_last_person_source', None)}",
         )
 
         class _HealthProbePhoto:
@@ -1360,6 +1504,70 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"got={None if not local_got else (len(local_got[0]), local_got[1])}",
         )
+        nest_aid = "d74b407f-c714-4cf7-9b0b-2ef7d87d0ffa"
+        nest_root = _Path(tempfile.mkdtemp())
+        nest_file = (
+            nest_root
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}-thumbnail.webp"
+        )
+        nest_file.parent.mkdir(parents=True)
+        nest_file.write_bytes(b"RIFF" + b"\x00" * 40)
+        nest_c = object.__new__(_ImmichIds)
+        nest_c.thumbs_root = nest_root
+        nest_got = _ImmichIds._read_local_thumb(nest_c, nest_aid)
+        _check(
+            "immich_thumb_from_nested_owner_aa_bb",
+            bool(nest_got and nest_got[0] and nest_got[1] == "image/webp"),
+            checks,
+            problems,
+            f"got={None if not nest_got else (len(nest_got[0]), nest_got[1])}",
+        )
+        parent_c = object.__new__(_ImmichIds)
+        parent_lib = _Path(tempfile.mkdtemp())
+        parent_file = (
+            parent_lib
+            / "thumbs"
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}-preview.webp"
+        )
+        parent_file.parent.mkdir(parents=True)
+        parent_file.write_bytes(b"RIFF" + b"\x00" * 40)
+        parent_c.thumbs_root = parent_lib
+        parent_got = _ImmichIds._read_local_thumb(parent_c, nest_aid)
+        _check(
+            "immich_thumb_from_library_parent_thumbs_dir",
+            bool(parent_got and parent_got[0]),
+            checks,
+            problems,
+            f"got={None if not parent_got else len(parent_got[0])}",
+        )
+        vid_lib = _Path(tempfile.mkdtemp())
+        vid_file = (
+            vid_lib
+            / "encoded-video"
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}.mp4"
+        )
+        vid_file.parent.mkdir(parents=True)
+        vid_file.write_bytes(b"\x00" * 128)
+        vid_c = object.__new__(_ImmichIds)
+        vid_c.thumbs_root = vid_lib / "thumbs"
+        (vid_lib / "thumbs").mkdir(exist_ok=True)
+        vid_got = _ImmichIds.find_local_encoded_video(vid_c, nest_aid)
+        _check(
+            "immich_encoded_video_from_library_sibling",
+            bool(vid_got and str(vid_got).endswith(".mp4")),
+            checks,
+            problems,
+            f"got={vid_got}",
+        )
         miss_c = object.__new__(_ImmichIds)
         miss_c.thumbs_root = None
         miss_c.api_base = "http://immich.test/api"
@@ -1371,6 +1579,15 @@ def _prove_harness() -> dict[str, Any]:
             thumb_err = None
         except FileNotFoundError as exc:
             thumb_err = exc
+        from memorybox.providers.photo import build_photo as _photo_alias
+
+        _check(
+            "providers_photo_exports_build_photo",
+            callable(_photo_alias),
+            checks,
+            problems,
+            "lazy alias for person portrait import",
+        )
         _check(
             "immich_http_thumb_miss_does_not_open_circuit",
             thumb_err is not None and not bool(getattr(miss_c, "_circuit_open", False)),
@@ -1450,6 +1667,30 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             str(mapped.location),
+        )
+        from memorybox.providers.photo._immich_http import ImmichHttpClient as _ImmichGps
+
+        gps_rows = _ImmichGps._normalize_timeline_assets(
+            object.__new__(_ImmichGps),
+            {
+                "id": ["gps-tl-1"],
+                "latitude": [38.597],
+                "longitude": [-90.509],
+                "city": ["Manchester"],
+                "country": ["United States of America"],
+                "fileCreatedAt": ["2020-02-29T21:43:06"],
+            },
+        )
+        _check(
+            "immich_timeline_gps_columns",
+            bool(gps_rows)
+            and abs(float((gps_rows[0].get("exifInfo") or {}).get("latitude")) - 38.597)
+            < 0.001
+            and abs(float((gps_rows[0].get("exifInfo") or {}).get("longitude")) - (-90.509))
+            < 0.001,
+            checks,
+            problems,
+            f"rows={gps_rows[:1]}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_exif_gps_mapped", False, checks, problems, str(exc))
@@ -2010,7 +2251,7 @@ def _prove_harness() -> dict[str, Any]:
             "D Teach and return",
             "E Ask command equivalence",
         ],
-        "note": "Harness is structural. ACCEPTED requires FlightSim manual pass of every §8 row and §8.1 cases A–E.",
+        "note": "P2-I4 ACCEPTED 2026-08-18 (Tom). Harness is structural assist. Remaining visual defects are P2-BL-I4-01 (non-blocking).",
     }
 
 
@@ -2113,5 +2354,5 @@ def _prove_flightsim() -> dict[str, Any]:
             "D Teach and return",
             "E Ask command equivalence",
         ],
-        "note": "prove-p2-i4 is structural assist only. ACCEPTED requires manual pass of every §8 row and §8.1 cases A–E on FlightSim.",
+        "note": "P2-I4 ACCEPTED 2026-08-18 (Tom). prove-p2-i4 is structural assist only. Remaining visual defects are P2-BL-I4-01 (non-blocking).",
     }

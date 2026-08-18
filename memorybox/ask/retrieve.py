@@ -178,6 +178,9 @@ class StoryHit:
     provenance_kind: str
     attribution: str
     score: float = 1.0
+    taken_at: str | None = None
+    thumb_url: str | None = None
+    source_photo_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1234,6 +1237,38 @@ def search_photos(
                 status["face_asset_fallback"] = len(out)
             return out
 
+        def _intersect_person_assets(meta_rows: list[dict[str, str]]) -> list[PhotoAssetDto]:
+            """Two+ named people: photos that appear in every person library (AND)."""
+            ids = list(
+                dict.fromkeys(
+                    str(m.get("external_id") or "").strip()
+                    for m in meta_rows
+                    if str(m.get("external_id") or "").strip()
+                )
+            )
+            if len(ids) < 2:
+                return _search_person_assets(ids)
+            maps: list[dict[str, PhotoAssetDto]] = []
+            for pid in ids:
+                chunk = _search_person_assets([pid])
+                maps.append({a.external_id: a for a in chunk if a.external_id})
+            common = set(maps[0]) if maps else set()
+            for amap in maps[1:]:
+                common &= set(amap)
+            out: list[PhotoAssetDto] = []
+            seen: set[str] = set()
+            for amap in maps:
+                for eid in common:
+                    if eid in seen or eid not in amap:
+                        continue
+                    out.append(amap[eid])
+                    seen.add(eid)
+            status["person_combine"] = "and_intersection"
+            status["and_person_ids"] = ids
+            status["and_library_sizes"] = [len(m) for m in maps]
+            status["and_intersection"] = len(out)
+            return out
+
         def _faces_for_hit(a: PhotoAssetDto) -> list[dict[str, Any]] | None:
             rows: list[dict[str, Any]] = []
             for face in getattr(a, "faces", ()) or ():
@@ -1338,7 +1373,14 @@ def search_photos(
                 status["identity_mode"] = "mixed_mapping"
             else:
                 status["identity_mode"] = "confirmed_mapping"
-            assets = _search_person_assets(mapped_ext)
+            and_people = len(asked_names) >= 2 and len(
+                {str(m.get("external_id") or "") for m in mapped_meta if m.get("external_id")}
+            ) >= 2
+            assets = (
+                _intersect_person_assets(mapped_meta)
+                if and_people
+                else _search_person_assets(mapped_ext)
+            )
             by_person_ext = {m["external_id"]: m for m in mapped_meta}
             for a in assets:
                 meta: dict[str, str] = {}
@@ -1900,34 +1942,58 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
     """
     if not getattr(plan, "want_story", False):
         return []
+    person_ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+    token_stop = {
+        "what",
+        "you",
+        "know",
+        "about",
+        "tell",
+        "have",
+        "from",
+        "our",
+        "the",
+        "trip",
+        "show",
+        "me",
+        "emails",
+        "photos",
+        "story",
+        "stories",
+        "grandma",
+        "grandpa",
+        "grandmother",
+        "grandfather",
+        "nana",
+        "grammy",
+        "gram",
+        "my",
+        "and",
+    }
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
     if not tokens:
         tokens = [
             t
             for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", plan.original_ask or "")
-            if t.lower()
-            not in {
-                "what",
-                "you",
-                "know",
-                "about",
-                "tell",
-                "have",
-                "from",
-                "our",
-                "the",
-                "trip",
-                "show",
-                "me",
-                "emails",
-                "photos",
-            }
+            if t.lower() not in token_stop
         ]
-    if not tokens:
-        return []
-
     hits: list[StoryHit] = []
     with connection() as conn:
+        about_ids: set[str] = set()
+        if person_ids:
+            r_about = conn.execute(
+                """
+                SELECT r.from_id
+                FROM relationships r
+                WHERE r.from_type = 'story'
+                  AND r.to_type = 'person'
+                  AND r.to_id = ANY(%s)
+                """,
+                (person_ids,),
+            ).fetchall()
+            about_ids = {str(r["from_id"]) for r in r_about}
+
+        fetch_n = max(limit * 8, 80 if person_ids else 0)
         rows = conn.execute(
             """
             SELECT
@@ -1937,6 +2003,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 s.current_version,
                 sv.body_text,
                 sv.version,
+                sv.note,
                 p.display_name AS narrator_name
             FROM stories s
             JOIN story_versions sv
@@ -1946,7 +2013,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             ORDER BY s.updated_at DESC
             LIMIT %s
             """,
-            (limit * 8,),
+            (fetch_n or (limit * 8),),
         ).fetchall()
 
         # Also gather person names linked via about_person
@@ -1981,11 +2048,20 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 ]
             ).lower()
             match_n = sum(1 for t in tokens if t.lower() in blob)
-            if match_n == 0:
+            linked = sid in about_ids
+            if match_n == 0 and not linked:
                 continue
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or ""
             excerpt = body[:200] + ("?" if len(body) > 200 else "")
+            note = str(r.get("note") or "")
+            photo_m = re.search(r"mb_source_photo=(\S+)", note)
+            taken_m = re.search(r"mb_taken_at=(\S+)", note)
+            thumb_m = re.search(r"mb_thumb=(\S+)", note)
+            photo_id = photo_m.group(1) if photo_m else None
+            thumb = thumb_m.group(1) if thumb_m else None
+            if photo_id and not thumb:
+                thumb = f"/library/media/photo/{photo_id}"
             hits.append(
                 StoryHit(
                     story_id=sid,
@@ -1998,11 +2074,14 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                     narrator_display_name=r["narrator_name"],
                     provenance_kind="owner_narrator_recollection",
                     attribution=f"{narrator} recalled (Story v{int(r['version'])})",
-                    score=float(match_n),
+                    score=float(match_n) + (2.0 if linked else 0.0),
+                    taken_at=(taken_m.group(1) if taken_m else None),
+                    thumb_url=thumb,
+                    source_photo_id=photo_id,
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits[:limit]
+    return hits[: max(limit, 24 if person_ids else limit)]
 
 
 @dataclass

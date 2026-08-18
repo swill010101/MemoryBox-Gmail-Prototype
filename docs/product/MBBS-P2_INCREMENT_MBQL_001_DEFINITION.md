@@ -1,14 +1,14 @@
 # MBBS-P2 Increment MBQL-001 — Ask, Query & Command Language
 
-**Status:** **BUILD AUTHORIZED** 2026-08-15 (Tom: “approved to build”) · definition **LOCKED** · PRD **ACCEPTED**  
-**Date:** 2026-08-15  
+**Status:** **ACCEPTED** (2026-08-18 — Tom: “MBQL is accepted”) · definition **LOCKED** · PRD **ACCEPTED**  
+**Date:** 2026-08-15 (build) · 2026-08-18 (accepted)  
 **PRD:** [MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md)  
-**Authority:** Tom lock 2026-08-15 · [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · I7A **ACCEPTED**  
+**Authority:** Tom lock 2026-08-15 · owner pass 2026-08-18 · [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · I7A **ACCEPTED**  
 **Roadmap:** After **P2-I7A ACCEPTED** and **before P2-I8**  
-**Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
+**Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I8 email / **P2-BL-I8-01** · I8.5 · **I9 spoken product** (stays after I8.5) · I10 · I11 · I13/I14 · family nav · multi-user · Explore redesign
 
-**I7A is ACCEPTED. MBQL-001 definition is locked. MBQL-001 build is AUTHORIZED.** Q1 residual · Q2 shared Explore contract · Q8 was the gate — now open.
+**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. Do not start I8 until Tom authorizes that increment. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -35,13 +35,13 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 |-------|----------|------|
 | 1 | **P2-I7** SMS/Text | **ACCEPTED** 2026-08-15 |
 | 2 | **P2-I7A** AI Model Trace | **ACCEPTED** 2026-08-15 — observe before models do more |
-| 3 | **MBQL-001** | This definition. Shared compile **before** I8 |
+| 3 | **MBQL-001** | **ACCEPTED** 2026-08-18. Shared compile **before** I8 |
 | 4 | **P2-I8** Richer Email | Shared MBQL communication semantics + **P2-BL-I8-01** |
 | 5 | **P2-I8.5** Face Evidence | Unchanged |
 | 6 | **P2-I9** Spoken Moments | **Stays here.** STT-ready contract only in MBQL-001; no I9 product |
 | 7+ | I10 / I11 | Same contract; do not pull them into MBQL-001 |
 
-**Build rule:** Definition locked. Build authorized 2026-08-15. Do not start I8.
+**Build rule:** Definition locked. Build authorized 2026-08-15. Increment **ACCEPTED** 2026-08-18. Do not start I8.
 
 ---
 
@@ -137,7 +137,7 @@ Residual means: a slot the deterministic compiler could not fill, or an ambiguit
 
 ## 6. Acceptance intent (FlightSim owner pass)
 
-Pass **all** on FlightSim. `prove-mbql-001` is a harness, not ACCEPTED.
+Pass **all** on FlightSim. `prove-mbql-001` is a harness (structural assist). Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”).
 
 | # | Gate |
 |---|------|
@@ -161,7 +161,7 @@ Pass **all** on FlightSim. `prove-mbql-001` is a harness, not ACCEPTED.
 7. `Go to Tom instead.` on a Person surface — navigate, not a find  
 8. One residual/ambiguous follow-up (`what did she say` / `the other trip`) — clarify or traced residual fill  
 
-`prove-mbql-001` is a harness, not ACCEPTED.
+`prove-mbql-001` is a harness (structural assist). Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”).
 
 ---
 
@@ -177,8 +177,9 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 |------|--------|
 | I7A ACCEPTED | **Yes** 2026-08-15 |
 | MBQL-001 PRD | **ACCEPTED** 2026-08-15 (Tom Q1–Q8) |
-| MBQL-001 definition | **LOCKED** this revision — review stamp |
-| MBQL-001 build | **AUTHORIZED** 2026-08-15 — implementing |
+| MBQL-001 definition | **LOCKED** |
+| MBQL-001 build | **AUTHORIZED** 2026-08-15 |
+| MBQL-001 ACCEPTED | **Yes** (2026-08-18 — Tom: “MBQL is accepted”) |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** Do not start I8. When the box is stable, **I4 §8.1 owner pass comes first** (Tom 2026-08-17) and must actually work — do not skip I4 to pass MBQL. MBQL ACCEPTED is a later FlightSim owner pass of §6 phrases with `/dev/ai-trace` available.
+**Stop.** Do not start I8 until Tom authorizes I8. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.

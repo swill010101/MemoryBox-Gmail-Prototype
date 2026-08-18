@@ -40,6 +40,8 @@ See [docs/GIT_SYNC.md](docs/GIT_SYNC.md) and [docs/ARCHIVE_LAYOUT.md](docs/ARCHI
 
 P1 runtime host (MemoryBox + Immich + Docker + Qdrant + Ollama): floor vs buy sizing is [docs/ops/MBBS-P2_HOST_SIZING.md](docs/ops/MBBS-P2_HOST_SIZING.md).
 
+Immich on FlightSim (leave media-server): [docs/ops/FLIGHTSIM_IMMICH_CUTOVER.md](docs/ops/FLIGHTSIM_IMMICH_CUTOVER.md).
+
 ## P2 planning (no build)
 
 - Locked specs: [docs/source/README.md](docs/source/README.md)
@@ -47,7 +49,8 @@ P1 runtime host (MemoryBox + Immich + Docker + Qdrant + Ollama): floor vs buy si
 - **P2-I1 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_1_DEFINITION.md)
 - **P2-I2 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md)
 - **P2-I3 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md)
-- **P2-I4 definition (DRAFT — awaiting approval; governed by MBUX-001 v0.4):** [docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md)
+- **P2-I4 definition (ACCEPTED 2026-08-18):** [docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md)
+- **P2-I8 definition (DRAFT — awaiting approval; no build):** [docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md)
 - **MBUX-001 v0.4 I4 addendum:** [docs/product/MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md](docs/product/MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 

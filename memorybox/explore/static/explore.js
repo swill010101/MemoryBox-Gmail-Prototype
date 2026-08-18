@@ -40,7 +40,7 @@
   };
 
   const NAV = [
-    { id: "ask", label: "Ask", href: "/ask/ui", ico: "?" },
+    { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
     { id: "people", label: "People", href: "/people/ui", ico: "☺" },
     { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
     { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
@@ -89,7 +89,7 @@
     only_artifacts: /^only artifacts?\.?$/i,
     only_stories: /^only stories?\.?$/i,
     go_to_people: /clear context.*people|go to people/i,
-    go_to_person: /^go to\s+(.+?)\s+instead\.?$/i,
+    go_to_person: /^(?:go to\s+(.+?)\s+instead|select\s+(.+?)|switch to\s+(.+?))\.?$/i,
   };
 
   /** @type {{
@@ -195,6 +195,26 @@
 
   function datedEligible() {
     return eligibleItems().filter(isDated);
+  }
+
+  /** Dated items that should paint the Timeline rail (not the gallery).
+   *  Hidden SMS stay off cards (I7) but must still mark years on All. */
+  function timelineDatedItems() {
+    const filter = (state && state.domain && state.domain.typeFilter) || "all";
+    const place = state && state.domain ? state.domain.placeFilter : null;
+    const plotHiddenSms = !filter || filter === "all" || filter === "email";
+    return rawItems.filter((it) => {
+      if (!isDated(it)) return false;
+      if (isSmsTextItem(it)) {
+        if (!plotHiddenSms) return false;
+        if (it.gallery_default_hidden) return true;
+        return matchesType(it, filter);
+      }
+      return (
+        matchesType(it, filter) &&
+        matchesPlace(it, place)
+      );
+    });
   }
 
   function undatedEligible() {
@@ -492,7 +512,7 @@
 
   /** After type-filter change: Timeline = dated portion of new eligible set (full extent). */
   function syncTimelineToEligibleDatedExtent() {
-    const ext = extentOf(datedEligible());
+    const ext = extentOf(timelineDatedItems());
     if (ext.empty) {
       state.timeline.fullExtentStart = NaN;
       state.timeline.fullExtentEnd = NaN;
@@ -680,11 +700,10 @@
       state.domain.summary = state.domain._fixtureSummary;
       return;
     }
-    // Prefer Ask clarification / curator answer over empty "0 memories" noise.
-    if (
-      state.domain._askSummary &&
-      (state.domain._askKind === "clarification" || vis.length === 0)
-    ) {
+    // Prefer Ask clarification over empty "0 memories" noise.
+    // Do not keep the server's photo count when the Gallery is empty
+    // (FlightSim: "I found 311 photos" while Christmas AND showed 0 cards).
+    if (state.domain._askSummary && state.domain._askKind === "clarification") {
       state.domain.summary = state.domain._askSummary;
       return;
     }
@@ -741,13 +760,6 @@
         ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
         : "";
     let extra = "";
-    if (
-      !c.photo &&
-      state.domain._askSummary &&
-      /immich|photo/i.test(state.domain._askSummary)
-    ) {
-      extra = " " + String(state.domain._askSummary).trim();
-    }
     const archiveN =
       allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
     let hideNote = "";
@@ -775,7 +787,7 @@
     const nameL = name.toLowerCase();
     const first = nameL.split(/\s+/)[0];
     if (!q) return "Show " + name;
-    if (/^go to\b/.test(lower)) return q;
+    if (/^go to\b/.test(lower) || /^(select|switch to)\b/.test(lower)) return q;
     if (lower.includes(nameL) || (first && /\b/.test(first) && lower.includes(first))) {
       // Already mentions locked person — don't double-prefix
       if (/^show\b/.test(lower)) return q;
@@ -830,14 +842,15 @@
 
   /** Person surface: "Show me Tom" / "Go to Tom instead" → open that Person Explorer. */
   function trySwitchPersonFromAsk(raw) {
-    if (!PERSON_MODE) return false;
     const text = String(raw || "").trim();
     const lower = text.toLowerCase();
     let who = "";
     const go = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    const select = lower.match(/^(?:select|switch to)\s+(.+?)\.?$/);
     const show = text.match(/^show\s+(?:me\s+)?(.+?)\.?$/i);
     if (go) who = go[1].replace(/\.$/, "").trim();
-    else if (show) {
+    else if (select) who = select[1].replace(/\.$/, "").trim();
+    else if (show && PERSON_MODE) {
       who = show[1].trim();
       who = who
         .replace(
@@ -850,13 +863,14 @@
     }
     if (!who) return false;
     const whoL = who.toLowerCase();
-    const locked = (PERSON.displayName || "").toLowerCase();
+    const locked = String((PERSON && PERSON.displayName) || "").toLowerCase();
     const lockedFirst = locked.split(/\s+/)[0] || "";
-    if (
+    const lockedTokens = locked.split(/\s+/).filter(Boolean);
+    const whoTokens = whoL.split(/\s+/).filter(Boolean);
+    const samePerson =
       whoL === locked ||
-      whoL === lockedFirst ||
-      (lockedFirst && whoL.startsWith(lockedFirst + " "))
-    ) {
+      (whoTokens.length === 1 && whoTokens[0] === lockedFirst);
+    if (samePerson) {
       return false;
     }
     if (
@@ -1016,21 +1030,32 @@
           const a = parseISO(String(w[0]).slice(0, 10));
           const b = parseISO(String(w[1]).slice(0, 10));
           if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-          return [Math.min(a, b), Math.max(a, b)];
+          const lo = Math.min(a, b);
+          // Date-only window end is midnight at the start of that day.
+          const hi = Math.max(a, b) + 86400000 - 1;
+          return [lo, hi];
         })
         .filter(Boolean);
       if (!temporalWindows.length) temporalWindows = null;
     }
     const ext = extentOf(
-      rawItems.filter(
-        (it) =>
-          isDated(it) &&
+      rawItems.filter((it) => {
+        if (!isDated(it)) return false;
+        if (isSmsTextItem(it)) {
+          if (nextType === "photo" || nextType === "video") return false;
+          if (it.gallery_default_hidden) return nextType === "all" || nextType === "email";
+          return matchesType(it, nextType, {
+            includeTexts,
+            domain: { includeTexts, galleryShowSms, typeFilter: nextType },
+          });
+        }
+        return (
           matchesType(it, nextType, {
             includeTexts,
             domain: { includeTexts, galleryShowSms, typeFilter: nextType },
-          }) &&
-          matchesPlace(it, placeFilter)
-      )
+          }) && matchesPlace(it, placeFilter)
+        );
+      })
     );
     const emptyTl = Boolean(ext.empty);
     let rangeStart = emptyTl ? NaN : ext.start;
@@ -1210,14 +1235,11 @@
 
     if (PERSON_MODE && MBQL_VERBS.go_to_person.test(text)) {
       const m = String(text).match(MBQL_VERBS.go_to_person);
-      const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
-      if (who) {
-        const whoL = who.toLowerCase();
-        const hit = (peopleOptions || []).find((p) => {
-          const lab = String(p.label || "").toLowerCase();
-          const first = lab.split(/\s+/)[0];
-          return lab === whoL || first === whoL || lab.includes(whoL);
-        });
+        const who = (m && (m[1] || m[2] || m[3]) ? (m[1] || m[2] || m[3]) : "")
+          .replace(/\.$/, "")
+          .trim();
+        if (who) {
+          const hit = resolvePersonOption(who);
         if (hit && hit.id) {
           window.location.href =
             "/people/ui?person=" + encodeURIComponent(hit.id);
@@ -1553,15 +1575,7 @@
       "";
     const name = String(chip.label || "").trim();
     if (!id && name && peopleOptions && peopleOptions.length) {
-      const nameL = name.toLowerCase();
-      const hit = peopleOptions.find((p) => {
-        const lab = String(p.label || "").toLowerCase();
-        return (
-          lab === nameL ||
-          lab.startsWith(nameL) ||
-          nameL.startsWith(lab.split(/\s+/)[0])
-        );
-      });
+      const hit = resolvePersonOption(name);
       if (hit) id = hit.id;
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
@@ -1603,7 +1617,12 @@
     const el = document.getElementById("mb-explore-nav");
     if (!el) return;
     el.innerHTML = NAV.map((n) => {
-      const href = n.id === "people" ? peopleNavHref() : n.href;
+      const href =
+        n.id === "people"
+          ? peopleNavHref()
+          : n.id === "ask" && window.mbShell && typeof window.mbShell.askHref === "function"
+            ? window.mbShell.askHref()
+            : n.href;
       return `<a href="${href}" data-nav="${n.id}"${
         (PERSON_MODE ? n.id === "people" : n.id === "ask")
           ? ' aria-current="page"'
@@ -1681,23 +1700,44 @@
       });
     });
     const av = document.getElementById("mb-explore-curator-avatar");
-    if (av) {
-      const portraitUrl =
-        (PERSON && PERSON.portraitUrl) ||
-        (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
-        "";
-      if (portraitUrl && av.classList.contains("has-photo")) {
-        // Keep Immich preferred portrait; do not wipe to letter
-      } else if (portraitUrl) {
-        av.textContent = "";
-        av.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
-        av.classList.add("has-photo");
-      } else if (!av.classList.contains("has-photo")) {
-        const person = (state.domain.chips || []).find((c) => c.kind === "person");
-        const label = (person && person.label) || state.domain.title || "M";
-        av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
-      }
+    if (av) applyCuratorPortrait();
+  }
+
+  function applyCuratorPortrait() {
+    const av = document.getElementById("mb-explore-curator-avatar");
+    if (!av) return;
+    const personChip = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    const label = (personChip && personChip.label) || "";
+    const opt = label ? resolvePersonOption(label) : null;
+    let url =
+      (PERSON && PERSON.portraitUrl) ||
+      (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
+      "";
+    if (!url && opt && opt.id) {
+      url = "/people/" + encodeURIComponent(opt.id) + "/portrait";
     }
+    if (!url && opt && opt.immichId) {
+      url = "/library/media/immich-person/" + encodeURIComponent(opt.immichId);
+    }
+    const initial = String(label || state.domain.title || "M").trim().charAt(0).toUpperCase() || "M";
+    if (!url) {
+      av.classList.remove("has-photo");
+      av.style.backgroundImage = "";
+      av.textContent = initial;
+      return;
+    }
+    const probe = new Image();
+    probe.onload = () => {
+      av.textContent = "";
+      av.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      av.classList.add("has-photo");
+    };
+    probe.onerror = () => {
+      av.classList.remove("has-photo");
+      av.style.backgroundImage = "";
+      av.textContent = initial;
+    };
+    probe.src = url;
   }
 
   function renderFilters() {
@@ -1817,7 +1857,10 @@
       return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
-      return `<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      const bg = media
+        ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
+        : "";
+      return `${bg}<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "video") {
       const dur = it.duration_sec
@@ -2164,26 +2207,56 @@
     }
 
     const dotsEl = document.getElementById("mb-tl-dots");
-    const typedDated = datedEligible();
+    const typedDated = timelineDatedItems();
     // Always clear first — prevents leftover dots after zoom
     if (dotsEl) dotsEl.innerHTML = "";
     if (!empty && dotsEl) {
       const span = Math.max(extentEnd - extentStart, 1);
       const parts = [];
-      for (const it of typedDated) {
-        const t = parseISO(it.date);
-        if (!Number.isFinite(t)) continue;
-        // Rule: timeline indicators never exceed the timeline track
-        if (t < extentStart || t > extentEnd) continue;
-        let x = ((t - extentStart) / span) * 100;
-        if (x < 0 || x > 100) continue;
-        // Keep dot centers inside the rail (avoid margin bleed past edges)
-        x = Math.min(99.2, Math.max(0.8, x));
-        parts.push(
-          `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
-            it.date
-          )}"></span>`
-        );
+      // Year precision: one 7px dot per card stacks and looks empty. Hidden
+      // SMS stay off cards (I7) but still mark years. Always density on long spans.
+      const useYearDensity =
+        precision === "years" || (extentEnd - extentStart) / 86400000 > 900;
+      if (useYearDensity) {
+        const bins = new Map();
+        for (const it of typedDated) {
+          const t = parseISO(it.date);
+          if (!Number.isFinite(t) || t < extentStart || t > extentEnd) continue;
+          const y = new Date(t).getUTCFullYear();
+          bins.set(y, (bins.get(y) || 0) + 1);
+        }
+        let maxN = 1;
+        bins.forEach((n) => {
+          if (n > maxN) maxN = n;
+        });
+        bins.forEach((n, y) => {
+          const t0 = dayMs(y, 1, 1);
+          const t1 = dayMs(y + 1, 1, 1);
+          const left = ((t0 - extentStart) / span) * 100;
+          const width = Math.max(((t1 - t0) / span) * 100, 0.35);
+          const op = (0.22 + (n / maxN) * 0.7).toFixed(2);
+          parts.push(
+            `<span class="mb-tl-bar" style="left:${Math.max(0, left)}%;width:${width}%;opacity:${op}" title="${escapeAttr(
+              `${y}: ${n}`
+            )}"></span>`
+          );
+        });
+      } else {
+        for (const it of typedDated) {
+          const t = parseISO(it.date);
+          if (!Number.isFinite(t)) continue;
+          // Rule: timeline indicators never exceed the timeline track
+          if (t < extentStart || t > extentEnd) continue;
+          let x = ((t - extentStart) / span) * 100;
+          if (x < 0 || x > 100) continue;
+          // Keep dot centers inside the rail (avoid margin bleed past edges)
+          x = Math.min(99.2, Math.max(0.8, x));
+          parts.push(
+            `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
+              it.date
+            )}"></span>`
+          );
+        }
       }
       dotsEl.innerHTML = parts.join("");
     }
@@ -2229,7 +2302,22 @@
   // ——— Shared Evidence Viewer + quick preview (MBUX §22.4–22.6) ———
 
   function visibleIds() {
-    return visibleItems().map((x) => x.id);
+    const vis = visibleItems().map((x) => x.id);
+    const openId = state && state.modal && state.modal.openId;
+    if (openId && vis.indexOf(openId) < 0) {
+      const cur = rawItems.find((x) => x.id === openId);
+      const related = [];
+      if (cur && String(cur.type || "") !== "story") {
+        const photoKey = String(cur.external_id || cur.id || "").replace(/^photo:/, "");
+        rawItems.forEach((x) => {
+          if (String(x.type || "") !== "story") return;
+          const src = String(x.external_id || x.source_photo_id || "");
+          if (src && photoKey && src === photoKey) related.push(x.id);
+        });
+      }
+      return [openId].concat(related, vis.filter((id) => related.indexOf(id) < 0));
+    }
+    return vis;
   }
 
   function openModal(id) {
@@ -2267,6 +2355,8 @@
     if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
     bindSmsAttachActions(item);
+    bindExploreVideoPlayer(item);
+    bindFaceHoldReveal();
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
@@ -2522,7 +2612,22 @@
     const addStory = document.getElementById("mb-rail-add-story");
     if (addStory) {
       addStory.addEventListener("click", () => {
-        window.location.href = "/story/ui";
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        const qs = new URLSearchParams();
+        if (cur) {
+          const photoId = String(cur.external_id || "").trim();
+          if (photoId) qs.set("photo", photoId);
+          if (cur.date) qs.set("taken", String(cur.date).slice(0, 32));
+          const thumb = cur.thumb_url || cur.media_url || "";
+          if (thumb) qs.set("thumb", thumb);
+          if (cur.title) qs.set("title", String(cur.title).slice(0, 80));
+          const who =
+            cur.mb_person_name ||
+            (Array.isArray(cur.people) && cur.people[0]) ||
+            "";
+          if (who) qs.set("about", String(who));
+        }
+        window.location.href = "/story/ui" + (qs.toString() ? "?" + qs.toString() : "");
       });
     }
   }
@@ -2823,40 +2928,130 @@
     });
   }
 
+  const FACE_HOLD_MS = 1000;
+
+  function bindFaceHoldReveal() {
+    const frame =
+      document.querySelector(".mb-ev-photo-frame") ||
+      document.querySelector(".mb-ev-video-frame");
+    if (!frame) return;
+    let holdTimer = 0;
+    const clearHold = () => {
+      if (holdTimer) {
+        window.clearTimeout(holdTimer);
+        holdTimer = 0;
+      }
+      frame.classList.remove("mb-faces-revealed");
+    };
+    const startHold = () => {
+      if (holdTimer) window.clearTimeout(holdTimer);
+      holdTimer = window.setTimeout(() => {
+        frame.classList.add("mb-faces-revealed");
+        holdTimer = 0;
+      }, FACE_HOLD_MS);
+    };
+    frame.addEventListener("mouseenter", startHold);
+    frame.addEventListener("mouseleave", clearHold);
+  }
+
+  function bindExploreVideoPlayer(item) {
+    const el = document.querySelector(".mb-ev-video-player");
+    if (!el) return;
+    const immichSrc = immichVideoSrc(item);
+    if (immichSrc) {
+      el.src = immichSrc;
+      el.preload = "metadata";
+      el.load();
+      return;
+    }
+    const vid = String((item && item.video_external_id) || "").trim();
+    if (!vid) return;
+    const t0 = item.t != null ? Number(item.t) : 0;
+    const encoded = encodeURIComponent(vid);
+    fetch("/review/videos/" + encoded + "/browser-proxy", { method: "POST" })
+      .then((res) => {
+        el.src =
+          "/review/media/" + encoded + (res.ok ? "?proxy=1" : "");
+        const onMeta = () => {
+          try {
+            if (t0 > 0) el.currentTime = t0;
+          } catch (e) {}
+          el.removeEventListener("loadedmetadata", onMeta);
+        };
+        el.addEventListener("loadedmetadata", onMeta);
+        el.load();
+      })
+      .catch(() => {
+        el.src = "/review/media/" + encoded;
+        el.load();
+      });
+  }
+
+  function immichVideoSrc(item) {
+    const play = String((item && item.play_url) || "");
+    if (play.indexOf("/library/media/immich-video/") >= 0) return play;
+    const pk = String((item && item.provider_key) || "").toLowerCase();
+    const eid = String((item && item.external_id) || "").trim();
+    if (pk === "immich" && eid && String(item.type || "").toLowerCase() === "video") {
+      return "/library/media/immich-video/" + encodeURIComponent(eid);
+    }
+    return "";
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
     if (t === "photo") {
       const zoom = Number(state.modal.zoom) || 1;
-      // Width-based zoom (not transform) so overflow scrolls inside the stage
-      // and never paints over the footer controls.
-      const zoomStyle =
-        zoom === 1
-          ? ""
-          : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none;max-height:none;height:auto"`;
+      // Width-based zoom on the photo+faces wrapper so Immich boxes stay aligned.
       const img = media
         ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(
             item.title || "Photo"
-          )}"${zoomStyle} />`
+          )}" />`
         : escapeHtml(item.preview || item.title || "Photo");
+      const zoomWrapStyle =
+        zoom === 1
+          ? ""
+          : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none"`;
       return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">
-        <div class="mb-ev-photo-frame">${img}${faceBoxHtml(item)}</div>
+        <div class="mb-ev-photo-frame"><div class="mb-ev-photo-zoom"${zoomWrapStyle}>${img}${faceBoxHtml(item)}</div></div>
       </div>`;
     }
     if (t === "video") {
-      const poster = media
-        ? `<img src="${escapeAttr(media)}" alt="" />`
-        : "Paused frame · face teach applies here only (not during playback)";
       const t0 = item.t != null ? Number(item.t) : 0;
+      const vid = String(item.video_external_id || "").trim();
+      const immichStream = immichVideoSrc(item);
+      const canStream =
+        Boolean(vid) &&
+        !vid.startsWith("video-peggy-") &&
+        !vid.startsWith("video-library-") &&
+        !immichStream;
+      const stream = immichStream
+        ? immichStream
+        : canStream
+          ? `/review/media/${encodeURIComponent(vid)}?proxy=1`
+          : "";
+      const posterAttr = media ? ` poster="${escapeAttr(media)}"` : "";
+      const stage = stream
+        ? `<video class="mb-ev-video-player" controls preload="metadata" src="${escapeAttr(
+            stream
+          )}"${posterAttr}></video>`
+        : media
+          ? `<img src="${escapeAttr(media)}" alt="" />`
+          : "Paused frame · face teach applies here only (not during playback)";
       return `<div class="mb-ev-video-shell">
         <div class="mb-ev-video-frame" id="mb-ev-video-frame">
-          ${poster}
+          ${stage}
           ${faceBoxHtml(item)}
         </div>
-        <div class="mb-ev-video-transport" aria-label="Video transport">
+        ${
+          stream
+            ? ""
+            : `<div class="mb-ev-video-transport" aria-label="Video transport">
           <span>▶︎</span>
           <span>${t0.toFixed(1)}s · paused frame</span>
-        </div>
+        </div>`
+        }
         <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
           <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>
           <div>[${t0.toFixed(0)}] ${escapeHtml(
@@ -2925,7 +3120,10 @@
       }</p>${phoneHtml}`;
     }
     if (t === "story") {
-      return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
+      const img = media
+        ? `<div class="mb-ev-photo"><img src="${escapeAttr(media)}" alt="" style="max-width:100%;border-radius:10px" /></div>`
+        : "";
+      return `${img}<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
         <p>${escapeHtml(item.detail || "")}</p>`;
     }
     const img = media
@@ -3019,6 +3217,8 @@
       });
       if (item.id !== state.modal.openId) return;
       document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+      bindExploreVideoPlayer(item);
+      bindFaceHoldReveal();
       renderRailPanel(item);
       renderRailTools(item);
       bindPhotoPan();
@@ -3592,6 +3792,7 @@
     loadPeopleOptions().then(() => {
       syncActivePersonContext();
       renderNav();
+      applyCuratorPortrait();
     });
   }
 
@@ -3608,7 +3809,12 @@
       const opts = (data.options || data.people || []).map((p) => ({
         id: String(p.id || p.person_id || ""),
         label: String(p.display_name || p.name || p.label || "Person"),
-      })).filter((p) => p.id);
+        immichId: String(
+          (Array.isArray(p.immich_external_ids) && p.immich_external_ids[0]) ||
+            p.external_id ||
+            ""
+        ),
+      })).filter((p) => p.id || p.immichId);
       peopleOptions = opts.length ? opts : fallback;
     } catch (_) {
       peopleOptions = fallback;
@@ -3636,16 +3842,21 @@
         bootFromPayload(payload);
         return;
       }
-      if (!PERSON_MODE && !String(q).trim()) {
+      let bootQ = String(q).trim();
+      if (!PERSON_MODE && !bootQ && window.mbShell && typeof window.mbShell.getActivePerson === "function") {
+        const locked = window.mbShell.getActivePerson();
+        if (locked && locked.name) bootQ = "Show " + locked.name;
+      }
+      if (!PERSON_MODE && !bootQ) {
         bootFromPayload(emptyExplorePayload(""));
         return;
       }
       const bootGen = ++findGen;
-      bootFromPayload(emptyExplorePayload(q));
+      bootFromPayload(emptyExplorePayload(bootQ));
       const seed = PERSON_MODE
-        ? q || ("Show " + (PERSON.displayName || "person"))
-        : q;
-      if (PERSON_MODE && q.trim() && PERSON) {
+        ? bootQ || ("Show " + (PERSON.displayName || "person"))
+        : bootQ;
+      if (PERSON_MODE && bootQ.trim() && PERSON) {
         PERSON.memoryMode = "all";
         if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
       }

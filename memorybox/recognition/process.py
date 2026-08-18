@@ -31,6 +31,10 @@ def ensure_timeslot_play_url(
     raw = (play_url or "").strip()
     if not raw:
         return f"/review/ui?video={video_external_id}&t={t}"
+    # HVRT worker paths are /media/{id}. Explore/Ask serve :8790 — that 404s
+    # unless we send the browser through the Review proxy.
+    if raw.startswith("/media/"):
+        raw = "/review" + raw
     if "t=" in raw:
         return raw
     # Absolute or relative URL/path — append t=

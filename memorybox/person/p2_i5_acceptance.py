@@ -143,6 +143,7 @@ def run_p2_i5_acceptance() -> dict:
     _check(
         "i5_shell_people_continues_person",
         "peopleHref" in shell_js
+        and "askHref" in shell_js
         and "setActivePerson" in shell_js
         and "mb_active_person" in shell_js
         and "syncActivePersonContext" in explore_js

@@ -64,7 +64,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("only_artifacts", "refine", _rx(r"^only artifacts?\.?$")),
     CommandSpec("only_stories", "refine", _rx(r"^only stories?\.?$")),
     CommandSpec("go_to_people", "navigate", _rx(r"clear context.*people|go to people")),
-    CommandSpec("go_to_person", "navigate", _rx(r"^go to\s+(.+?)\s+instead\.?$")),
+    CommandSpec(
+        "go_to_person",
+        "navigate",
+        _rx(r"^(?:go to\s+(.+?)\s+instead|select\s+(.+?)|switch to\s+(.+?))\.?$"),
+    ),
 )
 
 VERB_IDS = tuple(c.verb for c in COMMANDS)
@@ -86,5 +90,9 @@ def navigate_target(text: str, spec: CommandSpec) -> str | None:
     m = spec.pattern.search((text or "").strip())
     if not m:
         return None
-    who = (m.group(1) or "").replace(".", "").strip()
+    who = ""
+    for g in m.groups():
+        if g and str(g).strip():
+            who = str(g).replace(".", "").strip()
+            break
     return who or None

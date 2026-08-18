@@ -21,19 +21,22 @@ from memorybox.profile.relationships import (
     resolve_one_relative,
 )
 
-_MY_ROLE_RE = re.compile(
-    r"(?i)\bmy\s+(father|dad|mother|mom|son|daughter|grandfather|grandmother|"
-    r"grandparent|uncle|aunt|spouse|partner|sibling|brother|sister|"
-    r"grandson|granddaughter|grandchild|parent|child)\b"
+_KINSHIP_ROLE = (
+    r"father|dad|mother|mom|son|daughter|grandfather|grandmother|"
+    r"grandparent|grandpa|grandma|nana|grammy|gram|"
+    r"uncle|aunt|spouse|partner|sibling|brother|sister|"
+    r"grandson|granddaughter|grandchild|parent|child"
 )
-# "show me dad" / "show me pictures of dad" without requiring "my"
+_MY_ROLE_RE = re.compile(rf"(?i)\bmy\s+({_KINSHIP_ROLE})\b")
+# "show me dad" / "show me pictures of dad" / "show me stories about grandma"
 _SHOW_ME_ROLE_RE = re.compile(
-    r"(?i)\bshow\s+me\s+"
-    r"(?:(?:pictures?|photos?|images?|videos?|stills?)\s+(?:of\s+)?)?"
-    r"(?:(?:my|our)\s+)?"
-    r"(father|dad|mother|mom|son|daughter|grandfather|grandmother|"
-    r"grandparent|uncle|aunt|spouse|partner|sibling|brother|sister|"
-    r"grandson|granddaughter|grandchild|parent|child)\b"
+    rf"(?i)\bshow\s+me\s+"
+    rf"(?:(?:pictures?|photos?|images?|videos?|stills?|stories?)\s+(?:of\s+|about\s+)?)?"
+    rf"(?:(?:my|our)\s+)?"
+    rf"({_KINSHIP_ROLE})\b"
+)
+_STORIES_ABOUT_ROLE_RE = re.compile(
+    rf"(?i)\bstories?\s+about\s+(?:(?:my|our)\s+)?({_KINSHIP_ROLE})\b"
 )
 # "pictures of me/myself", "show me myself", "show me me" → owner (not prior dad context)
 _PICTURES_OF_ME_RE = re.compile(
@@ -144,7 +147,11 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
     who_am_i = bool(_WHO_AM_I_RE.search(q))
     pictures_me = bool(_PICTURES_OF_ME_RE.search(q))
     anniversary_me = bool(_ANNIVERSARY_RE.search(q) and re.search(r"(?i)\bmy\b", q))
-    my_role = _MY_ROLE_RE.search(q) or _SHOW_ME_ROLE_RE.search(q)
+    my_role = (
+        _MY_ROLE_RE.search(q)
+        or _SHOW_ME_ROLE_RE.search(q)
+        or _STORIES_ABOUT_ROLE_RE.search(q)
+    )
     cousins = bool(_COUSINS_RE.search(q))
     grandchildren = bool(_GRANDCHILDREN_RE.search(q))
     how_rel = _HOW_RELATED_RE.search(q)

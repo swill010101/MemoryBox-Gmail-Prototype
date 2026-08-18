@@ -214,6 +214,9 @@
           narrator_display_name: document.getElementById("narrator").value.trim() || null,
           evidence_ids: evidence ? [evidence] : [],
           person_ids: about ? [about] : [],
+          source_photo_id: (window._mbSourcePhoto || "").trim() || null,
+          taken_at: (window._mbTakenAt || "").trim() || null,
+          thumb_url: (window._mbThumb || "").trim() || null,
         };
         if (!about) {
           show({
@@ -306,10 +309,33 @@
     }
 
     const bootId = new URLSearchParams(location.search).get("id");
+    const params = new URLSearchParams(location.search);
+    window._mbSourcePhoto = params.get("photo") || "";
+    window._mbTakenAt = params.get("taken") || "";
+    window._mbThumb = params.get("thumb") || "";
+    if (params.get("title") && !document.getElementById("title").value) {
+      document.getElementById("title").value = params.get("title");
+    }
+    if (window._mbTakenAt) {
+      const hint = document.createElement("p");
+      hint.className = "muted";
+      hint.textContent =
+        "Attached photo date: " + window._mbTakenAt.slice(0, 10) +
+        (window._mbSourcePhoto ? " · photo " + window._mbSourcePhoto : "");
+      document.getElementById("saveBtn").parentNode.insertBefore(hint, document.getElementById("saveBtn"));
+    }
     if (bootId && UUID_RE.test(bootId)) {
       openStory(bootId).catch((e) => show(e));
     }
-    loadPeople();
+    loadPeople().then(() => {
+      const aboutName = (params.get("about") || "").trim().toLowerCase();
+      if (!aboutName) return;
+      const sel = document.getElementById("aboutPerson");
+      const opts = [...sel.options];
+      const hit = opts.find((o) => o.textContent.trim().toLowerCase() === aboutName)
+        || opts.find((o) => o.textContent.trim().toLowerCase().startsWith(aboutName.split(/\s+/)[0]));
+      if (hit) sel.value = hit.value;
+    });
   </script>
 </body>
 </html>

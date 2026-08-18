@@ -219,6 +219,9 @@ class StoryCreateRequest(BaseModel):
     person_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     note: str | None = None
+    source_photo_id: str | None = None
+    taken_at: str | None = None
+    thumb_url: str | None = None
 
 
 class StoryVersionRequest(BaseModel):
@@ -433,7 +436,7 @@ def health() -> dict[str, Any]:
         "capture_stt": stt_info,
         "host": settings.host,
         "port": settings.port,
-        "ask": "/ask/ui",
+        "ask": "/explore/ui",
         "story": "/story/ui",
         "journal": "/journal/ui",
         "people": "/people/ui",
@@ -453,7 +456,7 @@ def health() -> dict[str, Any]:
 @app.get("/")
 def root() -> RedirectResponse:
     """P2-I2: Ask/Home is the product front door."""
-    return RedirectResponse(url="/ask/ui", status_code=307)
+    return RedirectResponse(url="/explore/ui", status_code=307)
 
 
 @app.get("/ask/ui")
@@ -1009,14 +1012,137 @@ def library_photo_thumb(external_id: str) -> Response:
     try:
         preview = photo.fetch_preview(external_id)
     except Exception:  # noqa: BLE001 — miss is normal; do not 404-storm the console
+        root = getattr(client, "thumbs_root", None)
         return Response(
             status_code=204,
-            headers={"Cache-Control": "private, max-age=120"},
+            headers={
+                "Cache-Control": "private, max-age=120",
+                "X-MB-Thumb-Miss": "1",
+                "X-MB-Thumbs-Root": str(root) if root else "unset",
+            },
         )
     return Response(
         content=preview.data,
         media_type=preview.content_type or "image/jpeg",
         headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+def _range_file_response(path: Path, request: Request, media_type: str) -> Response:
+    """Local Immich encoded-video with HTTP Range (browser <video> scrub)."""
+    size = path.stat().st_size
+    range_header = request.headers.get("range") or ""
+    start = 0
+    end = size - 1
+    status = 200
+    if range_header.lower().startswith("bytes="):
+        spec = range_header.split("=", 1)[1].strip()
+        left, _, right = spec.partition("-")
+        try:
+            if left:
+                start = max(0, int(left))
+            if right:
+                end = min(size - 1, int(right))
+        except ValueError:
+            start, end = 0, size - 1
+        if start > end or start >= size:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        status = 206
+
+    length = end - start + 1
+
+    def _iter():
+        with path.open("rb") as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+        "Cache-Control": "private, max-age=3600",
+    }
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(_iter(), status_code=status, media_type=media_type, headers=headers)
+
+
+@app.get("/library/media/immich-video/{external_id}")
+def library_immich_video(external_id: str, request: Request) -> Response:
+    """Play Immich library video in Explore (disk encoded-video, then Immich playback)."""
+    photo = build_photo()
+    client = getattr(photo, "_client", None)
+    finder = getattr(client, "find_local_encoded_video", None)
+    path = finder(external_id) if callable(finder) else None
+    if path is not None:
+        suf = str(path.suffix or "").lower()
+        ctype = "video/webm" if suf == ".webm" else "video/mp4"
+        return _range_file_response(path, request, ctype)
+    opener = getattr(client, "open_video_playback", None)
+    if not callable(opener):
+        raise HTTPException(status_code=404, detail="immich video not available")
+    try:
+        resp = opener(external_id, request.headers.get("range"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"immich video proxy failed: {exc}") from exc
+    status = getattr(resp, "status", 200) or 200
+    ctype = resp.headers.get("Content-Type") or "video/mp4"
+    out_headers: dict[str, str] = {
+        "Accept-Ranges": resp.headers.get("Accept-Ranges") or "bytes",
+        "Cache-Control": "private, max-age=3600",
+    }
+    if resp.headers.get("Content-Range"):
+        out_headers["Content-Range"] = resp.headers["Content-Range"]
+    if resp.headers.get("Content-Length"):
+        out_headers["Content-Length"] = resp.headers["Content-Length"]
+
+    def _iter():
+        try:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        _iter(),
+        status_code=status,
+        media_type=ctype,
+        headers=out_headers,
+    )
+
+
+@app.get("/library/media/immich-person/{external_id}")
+def library_immich_person_thumb(external_id: str) -> Response:
+    """Preferred Immich person thumbnail when Explore has no MB person id yet."""
+    photo = build_photo()
+    client = getattr(photo, "_client", None)
+    fetch = getattr(client, "fetch_person_thumbnail_bytes", None)
+    if not callable(fetch):
+        return Response(status_code=204, headers={"Cache-Control": "private, max-age=60"})
+    try:
+        got = fetch(external_id)
+    except Exception:  # noqa: BLE001
+        got = None
+    if not got:
+        return Response(status_code=204, headers={"Cache-Control": "private, max-age=60"})
+    data, ctype = got[0], got[1]
+    return Response(
+        content=data,
+        media_type=ctype or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 
@@ -1265,6 +1391,16 @@ def story_list() -> dict[str, Any]:
 @app.post("/story")
 def story_create(body: StoryCreateRequest) -> dict[str, Any]:
     try:
+        note = body.note
+        bits: list[str] = []
+        if (body.source_photo_id or "").strip():
+            bits.append("mb_source_photo=" + str(body.source_photo_id).strip())
+        if (body.taken_at or "").strip():
+            bits.append("mb_taken_at=" + str(body.taken_at).strip()[:40])
+        if (body.thumb_url or "").strip():
+            bits.append("mb_thumb=" + str(body.thumb_url).strip()[:400])
+        if bits:
+            note = ((note or "") + " " + " ".join(bits)).strip()
         view = create_story(
             title=body.title,
             body_text=body.body_text,
@@ -1272,7 +1408,7 @@ def story_create(body: StoryCreateRequest) -> dict[str, Any]:
             narrator_person_id=body.narrator_person_id,
             person_ids=body.person_ids,
             evidence_ids=body.evidence_ids,
-            note=body.note,
+            note=note,
             actor_key="owner",
         )
     except StoryServiceError as exc:
@@ -1647,6 +1783,80 @@ def people_face_evidence(person_id: str) -> dict[str, Any]:
     return {"ok": True, "person_id": person_id, "evidence": enriched}
 
 
+@app.get("/people/{person_id}/learn-stats")
+def people_learn_stats(person_id: str) -> dict[str, Any]:
+    """Immich library counts for Learn (not only MB-taught face-evidence rows)."""
+    from memorybox.ask.deps import build_photo
+    from memorybox.person import resolve_immich_external_ids_for_person
+    from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.recognition.process import list_appearance_moments
+
+    taught_faces = 0
+    taught_video = 0
+    try:
+        taught_faces = len(list_face_evidence(person_id) or [])
+    except Exception:
+        taught_faces = 0
+    try:
+        taught_video = len(list_appearance_moments(person_id, limit=500) or [])
+    except Exception:
+        taught_video = 0
+
+    immich_photos = 0
+    immich_videos = 0
+    immich_faces = 0
+    try:
+        photo = build_photo()
+        ids = resolve_immich_external_ids_for_person(person_id, photo=photo) or []
+        client = getattr(photo, "_client", None)
+        list_faces = getattr(client, "list_faces_for_person", None)
+        search = getattr(client, "search_by_person_ids", None)
+        seen_assets: set[str] = set()
+        for ext in ids:
+            if callable(list_faces):
+                try:
+                    faces = list_faces(ext) or []
+                    immich_faces += len(faces)
+                except Exception:
+                    pass
+            if not callable(search):
+                continue
+            try:
+                rows = search([ext], size=5000) or []
+            except Exception:
+                rows = []
+            for raw in rows:
+                if not isinstance(raw, dict):
+                    continue
+                aid = str(raw.get("id") or "").strip()
+                if not aid or aid in seen_assets:
+                    continue
+                seen_assets.add(aid)
+                kind = str(raw.get("type") or "").upper()
+                name = str(
+                    raw.get("originalFileName") or raw.get("originalPath") or ""
+                ).lower()
+                is_video = kind == "VIDEO" or name.endswith(
+                    (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
+                )
+                if is_video:
+                    immich_videos += 1
+                else:
+                    immich_photos += 1
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "person_id": person_id,
+        "immich_photos": immich_photos,
+        "immich_videos": immich_videos,
+        "immich_faces": immich_faces,
+        "taught_faces": taught_faces,
+        "taught_video": taught_video,
+        "voice": 0,
+    }
+
+
 @app.get("/people/{person_id}/appearances")
 def people_appearances(person_id: str, limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     from memorybox.recognition.process import list_appearance_moments
@@ -1886,14 +2096,20 @@ def people_immich_list() -> dict[str, Any]:
 
 @app.get("/people/{person_id}/portrait")
 def people_portrait(person_id: str) -> Response:
-    """Preferred Immich person thumbnail (feature face), then face-evidence fallback."""
+    """Immich preferred person thumbnail only (no face-evidence crop)."""
     from memorybox.person import fetch_person_portrait_bytes, get_person
 
     if not get_person(person_id):
         raise HTTPException(status_code=404, detail="person not found")
-    got = fetch_person_portrait_bytes(person_id)
+    try:
+        got = fetch_person_portrait_bytes(person_id)
+    except Exception:  # noqa: BLE001 — missing portrait must not 500 the Person header
+        got = None
     if not got:
-        raise HTTPException(status_code=404, detail="portrait unavailable")
+        return Response(
+            status_code=204,
+            headers={"Cache-Control": "private, max-age=60"},
+        )
     data, ctype = got
     return Response(
         content=data,
@@ -2497,6 +2713,16 @@ def _worker_browser_proxy(video_external_id: str, *, method: str) -> dict[str, A
         raise HTTPException(status_code=exc.code, detail=detail) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/media/{video_external_id}")
+def library_media_alias(
+    video_external_id: str,
+    request: Request,
+    proxy: int = Query(0),
+) -> Response:
+    """HVRT play_url is /media/{id}. Browser is on Ask :8790 — proxy to worker."""
+    return review_media(video_external_id, request, proxy=proxy)
 
 
 @app.get("/review/media/{video_external_id}")
