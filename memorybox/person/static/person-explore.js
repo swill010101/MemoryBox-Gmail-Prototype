@@ -373,7 +373,7 @@
     }
 
     clearPortraitToInitial();
-    // Preferred Immich feature-face thumbnail (server: Immich first, then face evidence)
+    // Immich preferred person thumb only — never race in a face-evidence crop.
     const portraitUrl =
       (personPayload.portrait_url ||
         "/people/" + encodeURIComponent(id) + "/portrait") +
@@ -383,7 +383,7 @@
     const probe = new Image();
     probe.onload = () => applyPortraitUrl(portraitUrl);
     probe.onerror = () => {
-      /* keep initial letter; optional evidence fallback below */
+      /* keep letter; do not overwrite with a random library face */
     };
     probe.src = portraitUrl;
 
@@ -512,29 +512,6 @@
     cached.appearances = Array.isArray(appList) ? appList : [];
     cached.person = person;
     cached.profile = profile;
-
-    const faceThumb = cached.faces
-      .map((f) => {
-        const meta = f.exemplar_meta_json || f.exemplar_meta || {};
-        const asset =
-          f.source_asset_id ||
-          (meta && (meta.source_asset_id || meta.assetId)) ||
-          "";
-        return (
-          f.thumb_url ||
-          f.media_url ||
-          f.preview_url ||
-          f.image_url ||
-          (asset ? "/library/media/photo/" + asset : "")
-        );
-      })
-      .find(Boolean);
-    // Only use face-evidence thumbs if Immich preferred portrait did not load
-    if (faceThumb && !(portrait && portrait.classList.contains("has-photo"))) {
-      const fb = new Image();
-      fb.onload = () => applyPortraitUrl(faceThumb);
-      fb.src = faceThumb;
-    }
 
     const faceN = Number(statsPayload.immich_photos || cached.faces.length) || 0;
     const appN = Number(statsPayload.immich_videos || cached.appearances.length) || 0;

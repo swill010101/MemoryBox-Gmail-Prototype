@@ -163,12 +163,32 @@
     return "/people/ui";
   }
 
+  /** Family Ask / Explore: keep locked person so gallery is not an empty boot. */
+  function askHref() {
+    const p = getActivePerson();
+    if (p && (p.name || p.id)) {
+      const name = String(p.name || "").trim() || "person";
+      let href = "/explore/ui?q=" + encodeURIComponent("Show " + name);
+      if (p.id) href += "&person=" + encodeURIComponent(p.id);
+      return href;
+    }
+    return withAsk("/explore/ui");
+  }
+
   function refreshPeopleNavLinks() {
-    const href = peopleHref();
+    const people = peopleHref();
     document.querySelectorAll('a[href^="/people/ui"]').forEach((a) => {
       const cur = a.getAttribute("href") || "";
       if (cur.includes("admin=")) return;
-      a.setAttribute("href", href);
+      a.setAttribute("href", people);
+    });
+    const ask = askHref();
+    document.querySelectorAll('a[href^="/explore/ui"]').forEach((a) => {
+      const label = (a.textContent || "").trim();
+      const nav = a.getAttribute("data-nav") || "";
+      if (a.classList.contains("mb-brand") || nav === "ask" || label === "Ask" || label === "Explore") {
+        a.setAttribute("href", ask);
+      }
     });
   }
 
@@ -270,6 +290,7 @@
     getActiveAsk,
     setActiveAsk,
     peopleHref,
+    askHref,
     refreshPeopleNavLinks,
   };
 
@@ -406,18 +427,21 @@
     bar.setAttribute("role", "banner");
 
     const family = FAMILY.map((item) => {
-      const href = item.id === "people" ? peopleHref() : item.href;
+      let href = item.href;
+      if (item.id === "people") href = peopleHref();
+      if (item.id === "ask") href = askHref();
       const curAttr = item.id === cur ? ' aria-current="page"' : "";
       return `<a href="${href}"${curAttr}>${item.label}</a>`;
     }).join("");
 
     const system = SYSTEM.map((item) => {
+      const href = item.id === "explore" ? askHref() : item.href;
       const curAttr = item.id === cur ? ' aria-current="page"' : "";
-      return `<a href="${item.href}"${curAttr}>${item.label}</a>`;
+      return `<a href="${href}"${curAttr}>${item.label}</a>`;
     }).join("");
 
     bar.innerHTML =
-      `<a class="mb-brand" href="/explore/ui">MemoryBox</a>` +
+      `<a class="mb-brand" href="${askHref()}">MemoryBox</a>` +
       `<nav class="mb-nav-family" aria-label="Family exploration">${family}` +
       `<button type="button" class="mb-global-ask-btn" id="mb-open-global-ask">Ask</button>` +
       `</nav>` +

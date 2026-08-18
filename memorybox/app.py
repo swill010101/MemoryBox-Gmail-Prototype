@@ -2096,7 +2096,7 @@ def people_immich_list() -> dict[str, Any]:
 
 @app.get("/people/{person_id}/portrait")
 def people_portrait(person_id: str) -> Response:
-    """Preferred Immich person thumbnail (feature face), then face-evidence fallback."""
+    """Immich preferred person thumbnail only (no face-evidence crop)."""
     from memorybox.person import fetch_person_portrait_bytes, get_person
 
     if not get_person(person_id):

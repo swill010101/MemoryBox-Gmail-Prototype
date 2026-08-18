@@ -1942,34 +1942,58 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
     """
     if not getattr(plan, "want_story", False):
         return []
+    person_ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+    token_stop = {
+        "what",
+        "you",
+        "know",
+        "about",
+        "tell",
+        "have",
+        "from",
+        "our",
+        "the",
+        "trip",
+        "show",
+        "me",
+        "emails",
+        "photos",
+        "story",
+        "stories",
+        "grandma",
+        "grandpa",
+        "grandmother",
+        "grandfather",
+        "nana",
+        "grammy",
+        "gram",
+        "my",
+        "and",
+    }
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
     if not tokens:
         tokens = [
             t
             for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", plan.original_ask or "")
-            if t.lower()
-            not in {
-                "what",
-                "you",
-                "know",
-                "about",
-                "tell",
-                "have",
-                "from",
-                "our",
-                "the",
-                "trip",
-                "show",
-                "me",
-                "emails",
-                "photos",
-            }
+            if t.lower() not in token_stop
         ]
-    if not tokens:
-        return []
-
     hits: list[StoryHit] = []
     with connection() as conn:
+        about_ids: set[str] = set()
+        if person_ids:
+            r_about = conn.execute(
+                """
+                SELECT r.from_id
+                FROM relationships r
+                WHERE r.from_type = 'story'
+                  AND r.to_type = 'person'
+                  AND r.to_id = ANY(%s)
+                """,
+                (person_ids,),
+            ).fetchall()
+            about_ids = {str(r["from_id"]) for r in r_about}
+
+        fetch_n = max(limit * 8, 80 if person_ids else 0)
         rows = conn.execute(
             """
             SELECT
@@ -1989,7 +2013,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             ORDER BY s.updated_at DESC
             LIMIT %s
             """,
-            (limit * 8,),
+            (fetch_n or (limit * 8),),
         ).fetchall()
 
         # Also gather person names linked via about_person
@@ -2024,7 +2048,8 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 ]
             ).lower()
             match_n = sum(1 for t in tokens if t.lower() in blob)
-            if match_n == 0:
+            linked = sid in about_ids
+            if match_n == 0 and not linked:
                 continue
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or ""
@@ -2049,14 +2074,14 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                     narrator_display_name=r["narrator_name"],
                     provenance_kind="owner_narrator_recollection",
                     attribution=f"{narrator} recalled (Story v{int(r['version'])})",
-                    score=float(match_n),
+                    score=float(match_n) + (2.0 if linked else 0.0),
                     taken_at=(taken_m.group(1) if taken_m else None),
                     thumb_url=thumb,
                     source_photo_id=photo_id,
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits[:limit]
+    return hits[: max(limit, 24 if person_ids else limit)]
 
 
 @dataclass

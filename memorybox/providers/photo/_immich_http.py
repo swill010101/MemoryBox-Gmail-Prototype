@@ -20,7 +20,7 @@ _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
 _PERSON_TIMELINE_MONTH_WALK = 720
-_PERSON_LIB_CACHE_VER = "v8"
+_PERSON_LIB_CACHE_VER = "v9"
 
 
 class ImmichAuthError(RuntimeError):
@@ -491,6 +491,7 @@ class ImmichHttpClient:
             _add(self._assets_from_person_timeline(person_ids, target))
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
+            self._merge_map_marker_gps(by_id)
             self._last_person_source = "faces_or_timeline"
             full = list(by_id.values())
             # Never cache a truncated walk — FlightSim re-asks kept 2015-only Peggy.
@@ -832,10 +833,16 @@ class ImmichHttpClient:
 
         qtb = quote(tb, safe=":-T.Z")
         year_tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR&withCoordinates=true",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR",
         )
         month_tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=MONTH&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=MONTH&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&withCoordinates=true",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&withCoordinates=true",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=MONTH",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=MONTH",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}",
@@ -985,7 +992,10 @@ class ImmichHttpClient:
 
         created = _col("fileCreatedAt") or _col("createdAt")
         cities = _col("city")
+        states = _col("state")
         countries = _col("country")
+        lats = _col("latitude") or _col("lat")
+        lons = _col("longitude") or _col("lng") or _col("lon")
         is_image = _col("isImage")
         out: list[dict[str, Any]] = []
         for i, aid in enumerate(ids):
@@ -1000,14 +1010,113 @@ class ImmichHttpClient:
                 row["localDateTime"] = created[i]
                 row["fileCreatedAt"] = created[i]
             city = cities[i] if i < len(cities) else None
+            state = states[i] if i < len(states) else None
             country = countries[i] if i < len(countries) else None
-            if city or country:
-                row["exifInfo"] = {
-                    "city": city or None,
-                    "country": country or None,
-                }
+            lat = ImmichHttpClient._float_or_none(lats[i] if i < len(lats) else None)
+            lon = ImmichHttpClient._float_or_none(lons[i] if i < len(lons) else None)
+            ImmichHttpClient._stamp_gps(
+                row,
+                lat=lat,
+                lon=lon,
+                city=city,
+                state=state,
+                country=country,
+            )
             out.append(row)
         return out
+
+    @staticmethod
+    def _float_or_none(v: Any) -> float | None:
+        if v is None or isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            fv = float(v)
+            if fv != fv:  # NaN
+                return None
+            return fv
+        s = str(v).strip()
+        if not s or s.lower() in ("none", "null"):
+            return None
+        try:
+            fv = float(s)
+        except ValueError:
+            return None
+        if fv != fv:
+            return None
+        return fv
+
+    @staticmethod
+    def _stamp_gps(
+        row: dict[str, Any],
+        *,
+        lat: float | None,
+        lon: float | None,
+        city: Any = None,
+        state: Any = None,
+        country: Any = None,
+    ) -> None:
+        if lat is not None:
+            row["latitude"] = lat
+        if lon is not None:
+            row["longitude"] = lon
+        city_s = str(city).strip() if city not in (None, "") else ""
+        state_s = str(state).strip() if state not in (None, "") else ""
+        country_s = str(country).strip() if country not in (None, "") else ""
+        if not any((lat is not None, lon is not None, city_s, state_s, country_s)):
+            return
+        exif = row.get("exifInfo") if isinstance(row.get("exifInfo"), dict) else {}
+        exif = dict(exif)
+        if lat is not None:
+            exif["latitude"] = lat
+        if lon is not None:
+            exif["longitude"] = lon
+        if city_s:
+            exif["city"] = city_s
+        if state_s:
+            exif["state"] = state_s
+        if country_s:
+            exif["country"] = country_s
+        row["exifInfo"] = exif
+
+    def _merge_map_marker_gps(self, by_id: dict[str, dict[str, Any]]) -> None:
+        """Join Immich map markers onto the person library (pins without metadata RST)."""
+        if not by_id:
+            return
+        try:
+            status, data = self._request("GET", "/map/markers", timeout=8, retries=1)
+        except Exception:  # noqa: BLE001
+            return
+        if status != 200:
+            return
+        rows = data if isinstance(data, list) else (
+            (data.get("markers") or data.get("items")) if isinstance(data, dict) else None
+        )
+        if not isinstance(rows, list):
+            return
+        for m in rows:
+            if not isinstance(m, dict):
+                continue
+            aid = str(m.get("id") or m.get("assetId") or m.get("asset_id") or "").strip()
+            if not aid or aid not in by_id:
+                continue
+            lat = self._float_or_none(
+                m.get("lat") if m.get("lat") is not None else m.get("latitude")
+            )
+            lon = self._float_or_none(
+                m.get("lon")
+                if m.get("lon") is not None
+                else (m.get("lng") if m.get("lng") is not None else m.get("longitude"))
+            )
+            if lat is None or lon is None:
+                continue
+            self._stamp_gps(
+                by_id[aid],
+                lat=lat,
+                lon=lon,
+                city=m.get("city"),
+                state=m.get("state"),
+                country=m.get("country"),
+            )
 
     def _assets_from_person_metadata(
         self, person_ids: list[str], target: int
@@ -1667,10 +1776,17 @@ class ImmichHttpClient:
     def fetch_person_thumbnail_bytes(
         self, person_id: str
     ) -> tuple[bytes, str, str] | None:
-        """Immich preferred person thumbnail (feature face / person thumb)."""
+        """Immich preferred person thumbnail (feature face / person thumb).
+
+        Does not fall through to a random face-list still — that is not the
+        Immich UI preferred crop.
+        """
         pid = (person_id or "").strip()
         if not pid:
             return None
+        disk = self._read_local_person_thumb(pid)
+        if disk:
+            return disk[0], disk[1], "immich-person-disk"
         for path in (
             f"/people/{pid}/thumbnail",
             f"/people/{pid}/thumbnail?format=JPEG",
@@ -1695,25 +1811,70 @@ class ImmichHttpClient:
                 asset_id = str(data.get(key) or "").strip()
                 if not asset_id:
                     continue
+                local = self._read_local_thumb(asset_id)
+                if local:
+                    return local[0], local[1], "immich-feature-face-disk"
                 try:
                     data_b, ctype, src = self.fetch_preview_bytes(asset_id)
                     return data_b, ctype, src
                 except Exception:  # noqa: BLE001
                     continue
-        # Fall back: faces list → asset preview
-        faces = self.list_faces_for_person(pid)
-        for face in faces:
-            asset_id = str(
-                face.get("assetId")
-                or face.get("asset_id")
-                or face.get("id")
-                or ""
-            ).strip()
-            if not asset_id or asset_id.startswith("person-thumb-"):
-                continue
+        return None
+
+    def _read_local_person_thumb(self, person_id: str) -> tuple[bytes, str] | None:
+        """On-disk Immich person preferred thumb (`{personId}.jpeg` nest)."""
+        root = self.thumbs_root
+        pid = (person_id or "").strip()
+        if root is None or not pid:
+            return None
+        names = (
+            f"{pid}.jpeg",
+            f"{pid}.jpg",
+            f"{pid}.webp",
+            f"{pid}-preview.jpeg",
+            f"{pid}-thumbnail.webp",
+        )
+        paths: list[Path] = []
+        for search in self._thumb_search_roots(root):
+            paths.extend(self._thumb_path_candidates(search, pid))
+            prefix = pid[:2]
+            nest = pid[2:4] if len(pid) >= 4 else ""
+            for pattern in (
+                f"{prefix}/{nest}/{pid}.jpeg" if nest else "",
+                f"*/{prefix}/{nest}/{pid}.jpeg" if nest else "",
+                f"*/{prefix}/{nest}/{pid}.webp" if nest else "",
+            ):
+                if not pattern:
+                    continue
+                try:
+                    paths.extend(search.glob(pattern))
+                except OSError:
+                    continue
             try:
-                data_b, ctype, src = self.fetch_preview_bytes(asset_id)
-                return data_b, ctype, src
-            except Exception:  # noqa: BLE001
+                users = [p for p in search.iterdir() if p.is_dir()][:16]
+            except OSError:
+                users = []
+            for user in users:
+                if len(user.name) == 2:
+                    continue
+                base = user / prefix / nest if nest else user / prefix
+                for name in names:
+                    paths.append(base / name)
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
                 continue
+            seen.add(key)
+            try:
+                if not path.is_file() or path.stat().st_size < 24:
+                    continue
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if not data or data[:1] in (b"{", b"["):
+                continue
+            suf = path.suffix.lower()
+            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+            return data, ctype
         return None

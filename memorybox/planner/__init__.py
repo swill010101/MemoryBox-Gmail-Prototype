@@ -209,6 +209,7 @@ SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|all\b|"
+    r"stories?\b|story\b|artifacts?\b|journals?\b|"
     r"the\b|last\b|first\b|next\b|recent\b|how\b|write\b|attachments?\b)"
     rf"{_PERSON_NAME}\b"
 )
@@ -222,6 +223,7 @@ SHOW_PERSON_RE = re.compile(
     r"(?i)\bshow\s+"
     r"(?!me\b|myself\b|pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|"
+    r"stories?\b|story\b|artifacts?\b|journals?\b|"
     r"everything\b|map\b|gallery\b|undated\b)"
     rf"{_PERSON_NAME}\b"
 )
@@ -521,6 +523,11 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         "grandfather",
         "grandmother",
         "grandparent",
+        "grandpa",
+        "grandma",
+        "nana",
+        "grammy",
+        "gram",
         "grandson",
         "granddaughter",
         "grandchild",
@@ -862,8 +869,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         kinship_show = bool(
             re.search(
                 r"(?i)\b(?:my\s+)?(father|dad|mother|mom|son|daughter|"
-                r"grandfather|grandmother|uncle|aunt|spouse|partner|"
-                r"brother|sister|parent|child)\b",
+                r"grandfather|grandmother|grandparent|grandpa|grandma|nana|grammy|gram|"
+                r"uncle|aunt|spouse|partner|"
+                r"brother|sister|parent|child|grandson|granddaughter|grandchild)\b",
                 q,
             )
         )
@@ -1285,6 +1293,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             want_story = False
         if said_about:
             want_story = False
+        if re.search(r"(?i)\bstories?\b", q) and not said_about:
+            if not (STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q)):
+                want_story = True
         if want_story:
             notes.append("want_story_modality")
 

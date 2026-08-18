@@ -243,6 +243,8 @@ def _prove_harness() -> dict[str, Any]:
             "syncTimelineToEligibleDatedExtent",
             "Does NOT clear query/filters",
             "liveFind",
+            "askHref",
+            "getActivePerson",
             "/explore/api/find",
             "No dated memories on the Timeline",
             "renderViewer",
@@ -770,6 +772,17 @@ def _prove_harness() -> dict[str, Any]:
             problems,
             f"people={peggy_xmas.person_names} places={peggy_xmas.place_names} "
             f"win={peggy_xmas.temporal_windows}",
+        )
+        stories_grandma = _plan("show me stories about grandma")
+        _check(
+            "i4_stories_about_grandma_not_person_stories",
+            "stories" not in {n.lower() for n in (stories_grandma.person_names or ())}
+            and stories_grandma.want_story is True
+            and "show_me_kinship_forces_broad_visual" in (stories_grandma.notes or ()),
+            checks,
+            problems,
+            f"people={stories_grandma.person_names} story={stories_grandma.want_story} "
+            f"notes={stories_grandma.notes}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("i4_compose_query_expansion", False, checks, problems, str(exc))
@@ -1654,6 +1667,30 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             str(mapped.location),
+        )
+        from memorybox.providers.photo._immich_http import ImmichHttpClient as _ImmichGps
+
+        gps_rows = _ImmichGps._normalize_timeline_assets(
+            object.__new__(_ImmichGps),
+            {
+                "id": ["gps-tl-1"],
+                "latitude": [38.597],
+                "longitude": [-90.509],
+                "city": ["Manchester"],
+                "country": ["United States of America"],
+                "fileCreatedAt": ["2020-02-29T21:43:06"],
+            },
+        )
+        _check(
+            "immich_timeline_gps_columns",
+            bool(gps_rows)
+            and abs(float((gps_rows[0].get("exifInfo") or {}).get("latitude")) - 38.597)
+            < 0.001
+            and abs(float((gps_rows[0].get("exifInfo") or {}).get("longitude")) - (-90.509))
+            < 0.001,
+            checks,
+            problems,
+            f"rows={gps_rows[:1]}",
         )
     except Exception as exc:  # noqa: BLE001
         _check("immich_exif_gps_mapped", False, checks, problems, str(exc))

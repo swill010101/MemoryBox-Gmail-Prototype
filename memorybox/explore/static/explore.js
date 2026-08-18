@@ -1617,7 +1617,12 @@
     const el = document.getElementById("mb-explore-nav");
     if (!el) return;
     el.innerHTML = NAV.map((n) => {
-      const href = n.id === "people" ? peopleNavHref() : n.href;
+      const href =
+        n.id === "people"
+          ? peopleNavHref()
+          : n.id === "ask" && window.mbShell && typeof window.mbShell.askHref === "function"
+            ? window.mbShell.askHref()
+            : n.href;
       return `<a href="${href}" data-nav="${n.id}"${
         (PERSON_MODE ? n.id === "people" : n.id === "ask")
           ? ' aria-current="page"'
@@ -2297,7 +2302,22 @@
   // ——— Shared Evidence Viewer + quick preview (MBUX §22.4–22.6) ———
 
   function visibleIds() {
-    return visibleItems().map((x) => x.id);
+    const vis = visibleItems().map((x) => x.id);
+    const openId = state && state.modal && state.modal.openId;
+    if (openId && vis.indexOf(openId) < 0) {
+      const cur = rawItems.find((x) => x.id === openId);
+      const related = [];
+      if (cur && String(cur.type || "") !== "story") {
+        const photoKey = String(cur.external_id || cur.id || "").replace(/^photo:/, "");
+        rawItems.forEach((x) => {
+          if (String(x.type || "") !== "story") return;
+          const src = String(x.external_id || x.source_photo_id || "");
+          if (src && photoKey && src === photoKey) related.push(x.id);
+        });
+      }
+      return [openId].concat(related, vis.filter((id) => related.indexOf(id) < 0));
+    }
+    return vis;
   }
 
   function openModal(id) {
@@ -3100,7 +3120,10 @@
       }</p>${phoneHtml}`;
     }
     if (t === "story") {
-      return `<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
+      const img = media
+        ? `<div class="mb-ev-photo"><img src="${escapeAttr(media)}" alt="" style="max-width:100%;border-radius:10px" /></div>`
+        : "";
+      return `${img}<p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Story (contextual meaning)</p>
         <p>${escapeHtml(item.detail || "")}</p>`;
     }
     const img = media
@@ -3819,16 +3842,21 @@
         bootFromPayload(payload);
         return;
       }
-      if (!PERSON_MODE && !String(q).trim()) {
+      let bootQ = String(q).trim();
+      if (!PERSON_MODE && !bootQ && window.mbShell && typeof window.mbShell.getActivePerson === "function") {
+        const locked = window.mbShell.getActivePerson();
+        if (locked && locked.name) bootQ = "Show " + locked.name;
+      }
+      if (!PERSON_MODE && !bootQ) {
         bootFromPayload(emptyExplorePayload(""));
         return;
       }
       const bootGen = ++findGen;
-      bootFromPayload(emptyExplorePayload(q));
+      bootFromPayload(emptyExplorePayload(bootQ));
       const seed = PERSON_MODE
-        ? q || ("Show " + (PERSON.displayName || "person"))
-        : q;
-      if (PERSON_MODE && q.trim() && PERSON) {
+        ? bootQ || ("Show " + (PERSON.displayName || "person"))
+        : bootQ;
+      if (PERSON_MODE && bootQ.trim() && PERSON) {
         PERSON.memoryMode = "all";
         if (window.MB_PERSON_SURFACE) window.MB_PERSON_SURFACE.memoryMode = "all";
       }
