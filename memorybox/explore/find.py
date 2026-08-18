@@ -17,11 +17,16 @@ _SMS_ASK_RE = re.compile(
     r"from\s+and\s+to|last\s+\d+\s+messages?"
     r")\b"
 )
+_EMAIL_ASK_RE = re.compile(r"(?i)\b(e-?mails?|inbox|correspondence)\b")
+_CAL_ASK_RE = re.compile(
+    r"(?i)\b(calendar|appointment|schedule|meeting|ics)\b"
+)
 # All-ask: small hidden sample so Email/Text works. Count is the real archive.
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
 _VISIBLE_SMS_GALLERY_CAP = 10000
 _VISIBLE_EMAIL_GALLERY_CAP = 800
+_VISIBLE_CALENDAR_GALLERY_CAP = 800
 _HOLIDAY_WINDOW_MARKERS = (
     "christmas",
     "xmas",
@@ -41,6 +46,14 @@ def _is_sms_type(type_: str) -> bool:
     return str(type_ or "").lower() in _SMS_ITEM_TYPES
 
 
+def _is_email_type(type_: str) -> bool:
+    return str(type_ or "").lower() == "email"
+
+
+def _is_calendar_type(type_: str) -> bool:
+    return str(type_ or "").lower() == "calendar"
+
+
 def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
     """True when the ask itself requested texts (not a broad memory query)."""
     plan = (result or {}).get("plan") or {}
@@ -55,6 +68,40 @@ def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = 
         ]
     )
     return bool(_SMS_ASK_RE.search(blob))
+
+
+def explicit_email_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    if "want_email_modality" in notes:
+        return True
+    if plan.get("gallery_show_email") is True:
+        return True
+    blob = " ".join(
+        [
+            ask_text or "",
+            str(plan.get("original_ask") or ""),
+            str((result or {}).get("ask") or ""),
+        ]
+    )
+    return bool(_EMAIL_ASK_RE.search(blob))
+
+
+def explicit_calendar_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    if "want_calendar_modality" in notes:
+        return True
+    if plan.get("gallery_show_calendar") is True:
+        return True
+    blob = " ".join(
+        [
+            ask_text or "",
+            str(plan.get("original_ask") or ""),
+            str((result or {}).get("ask") or ""),
+        ]
+    )
+    return bool(_CAL_ASK_RE.search(blob))
 
 
 def _date_prefix(raw: str | None) -> str:
@@ -320,9 +367,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         kind = str(e.get("evidence_kind") or "document").lower()
         channel = str(e.get("channel") or "").lower()
         sms_channels = {"sms", "text", "imessage", "mms", "rcs"}
-        # Map communication-ish kinds to email/sms for existing Explore filters
+        # Map communication-ish kinds to email/sms/calendar for Explore filters
         if channel in sms_channels or e.get("source") == "sms_export":
             type_ = "sms"
+        elif kind == "calendar_event" or channel == "calendar":
+            type_ = "calendar"
         elif kind in ("email", "sms", "text", "communication", "comms"):
             type_ = "sms" if kind in ("sms", "text") else "email"
         else:
@@ -365,6 +414,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["truncated"] = bool(e.get("truncated"))
         if _is_sms_type(item.get("type") or type_):
             item["gallery_default_hidden"] = not explicit_text_gallery(result)
+        elif _is_email_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_email_gallery(result)
+        elif _is_calendar_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_calendar_gallery(result)
         add(item)
 
     for a in result.get("artifact_hits") or []:
@@ -496,6 +549,7 @@ def curator_from_items(
             "video": sum(1 for i in items if i.get("type") == "video"),
             "sms": sum(1 for i in items if _is_sms_type(i.get("type"))),
             "email": sum(1 for i in items if i.get("type") == "email"),
+            "calendar": sum(1 for i in items if i.get("type") == "calendar"),
             "artifact": sum(1 for i in items if i.get("type") == "artifact"),
             "story": sum(1 for i in items if i.get("type") == "story"),
         }
@@ -510,6 +564,10 @@ def curator_from_items(
             parts.append(f"{counts['sms']} text{'s' if counts['sms'] != 1 else ''}")
         if counts["email"]:
             parts.append(f"{counts['email']} email{'s' if counts['email'] != 1 else ''}")
+        if counts["calendar"]:
+            parts.append(
+                f"{counts['calendar']} calendar event{'s' if counts['calendar'] != 1 else ''}"
+            )
         if counts["artifact"]:
             parts.append(
                 f"{counts['artifact']} artifact{'s' if counts['artifact'] != 1 else ''}"
@@ -703,27 +761,22 @@ def _attach_hidden_sms(
     return out, sms_n, hidden_n
 
 
-def _is_email_type(type_: str) -> bool:
-    return str(type_ or "").lower() == "email"
-
-
 def _attach_visible_email(
     items: list[dict[str, Any]],
     result: dict[str, Any],
     *,
     ask_text: str,
+    show_email: bool,
 ) -> tuple[list[dict[str, Any]], int, int]:
-    """Person-scoped Find includes emails (visible). SMS hide is unchanged.
-
-    Show me Tom Will + Email/Text must not be an empty filter: I8 emails are
-    in the mixed Gallery; 90k cards are year-fair capped.
-    """
+    """Person-scoped Find keeps emails eligible. Q3: hidden unless presentation on."""
     existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
     already = [i for i in items if _is_email_type(i.get("type"))]
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
     pids = list(plan.get("person_ids") or [])
     if already:
+        for i in already:
+            i["gallery_default_hidden"] = not show_email
         match_total = 0
         for e in result.get("evidence_hits") or []:
             if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
@@ -761,7 +814,7 @@ def _attach_visible_email(
         mapped = items_from_ask_result(
             {
                 "evidence_hits": [h.to_dict() for h in hits],
-                "plan": {"notes": ()},
+                "plan": {"notes": ("want_email_modality",) if show_email else ()},
             }
         )
         for it in mapped:
@@ -770,7 +823,7 @@ def _attach_visible_email(
             eid = str(it.get("evidence_id") or "")
             if eid and eid in existing_ids:
                 continue
-            it["gallery_default_hidden"] = False
+            it["gallery_default_hidden"] = not show_email
             extra.append(it)
             if eid:
                 existing_ids.add(eid)
@@ -778,10 +831,80 @@ def _attach_visible_email(
         extra = []
 
     out = list(items) + extra
+    if not show_email:
+        for i in out:
+            if _is_email_type(i.get("type")):
+                i["gallery_default_hidden"] = True
     email_n = sum(1 for i in out if _is_email_type(i.get("type")))
     if match_total > email_n:
         email_n = match_total
     return out, email_n, match_total
+
+
+def _attach_calendar(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+    show_calendar: bool,
+) -> tuple[list[dict[str, Any]], int]:
+    """Eligible calendar_event rows; Q3 hidden unless Calendar presentation is on."""
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    already = [i for i in items if _is_calendar_type(i.get("type"))]
+    if already:
+        for i in already:
+            i["gallery_default_hidden"] = not show_calendar
+        return items, len(already)
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    extra: list[dict[str, Any]] = []
+    try:
+        from memorybox.ask.retrieve import search_calendar_events
+        from memorybox.planner import QueryPlan
+
+        tw = _sms_attach_windows(plan)
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
+        cal_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=False,
+            want_calendar=True,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            time_start=t0,
+            time_end=t1,
+            temporal_windows=tw,
+            notes=("gallery_calendar_eligible",),
+        )
+        hits = search_calendar_events(cal_plan, limit=_VISIBLE_CALENDAR_GALLERY_CAP)
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ("want_calendar_modality",) if show_calendar else ()},
+            }
+        )
+        for it in mapped:
+            if not _is_calendar_type(it.get("type")):
+                continue
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = not show_calendar
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+    out = list(items) + extra
+    if not show_calendar:
+        for i in out:
+            if _is_calendar_type(i.get("type")):
+                i["gallery_default_hidden"] = True
+    return out, sum(1 for i in out if _is_calendar_type(i.get("type")))
 
 
 def build_explore_find(
@@ -817,17 +940,31 @@ def build_explore_find(
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     items = items_from_ask_result(result)
     show_sms = explicit_text_gallery(result, text)
+    show_email = explicit_email_gallery(result, text)
+    show_calendar = explicit_calendar_gallery(result, text)
     items, sms_available, sms_hidden = _attach_hidden_sms(
         items, result, ask_text=text, show_sms=show_sms
     )
     items, email_available, email_match_total = _attach_visible_email(
-        items, result, ask_text=text
+        items, result, ask_text=text, show_email=show_email
+    )
+    items, calendar_available = _attach_calendar(
+        items, result, ask_text=text, show_calendar=show_calendar
     )
     visible_items = [
-        i for i in items if not (i.get("gallery_default_hidden") and _is_sms_type(i.get("type")))
+        i
+        for i in items
+        if not (
+            i.get("gallery_default_hidden")
+            and (
+                _is_sms_type(i.get("type"))
+                or _is_email_type(i.get("type"))
+                or _is_calendar_type(i.get("type"))
+            )
+        )
     ]
     # All-ask curator counts the archive (photos + hidden texts + video).
-    # Gallery still hides SMS until Add texts / an explicit text ask.
+    # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).
     answer_for_curator = result.get("answer_text")
     if result.get("answer_kind") != "clarification":
         answer_for_curator = None
@@ -884,6 +1021,7 @@ def build_explore_find(
             )
         ).strip()
     counts["email_available"] = email_available
+    counts["calendar_available"] = calendar_available
 
     plan = result.get("plan") or {}
     return {
@@ -915,11 +1053,14 @@ def build_explore_find(
             "life_event_kind": plan.get("life_event_kind"),
             "life_event_years": list(plan.get("life_event_years") or []),
             "gallery_show_sms": show_sms,
+            "gallery_show_email": show_email,
+            "gallery_show_calendar": show_calendar,
             "sms_available": sms_available,
             "sms_hidden": sms_hidden,
             "sms_match_total": sms_match_total,
             "sms_truncated": sms_truncated,
             "email_available": email_available,
             "email_match_total": email_match_total,
+            "calendar_available": calendar_available,
         },
     }

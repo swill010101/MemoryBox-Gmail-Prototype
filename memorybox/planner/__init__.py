@@ -459,6 +459,10 @@ class QueryPlan:
     refine_verb: str | None = None
     navigate_target: str | None = None
     gallery_show_sms: bool | None = None
+    gallery_show_email: bool | None = None
+    gallery_show_calendar: bool | None = None
+    attachments_only: bool | None = None
+    memory_presentation: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1356,6 +1360,10 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
 
     if want_sms:
         notes.append("want_sms_modality")
+    if want_email:
+        notes.append("want_email_modality")
+    if want_cal and not requires_clarification and not journal_capture_intent:
+        notes.append("want_calendar_modality")
 
     return QueryPlan(
         original_ask=q,

@@ -62,6 +62,15 @@ def main(argv: list[str] | None = None) -> int:
             "Harness uses the in-repo I8 fixture; inspect-mbox the real export separately."
         ),
     )
+    p_prove_p2i8a = sub.add_parser(
+        "prove-p2-i8a",
+        help="P2-I8A Unified Communications Gallery & Timeline Precision prove",
+    )
+    p_prove_p2i8a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="FlightSim ACCEPTED gate remains manual (definition §11). Harness is structural+logic.",
+    )
     p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
     p_cal.add_argument("--uri", required=True)
     p_cal.add_argument("--limit", type=int, default=None)
@@ -625,6 +634,17 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.p2_i8_acceptance import run_p2_i8_acceptance
 
         payload = run_p2_i8_acceptance(flightsim=bool(args.flightsim))
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i8a":
+        from memorybox.ingest.p2_i8a_acceptance import run_p2_i8a_acceptance
+
+        payload = run_p2_i8a_acceptance(flightsim=bool(args.flightsim))
         out = {
             "ok": bool(payload.get("overall_ok")),
             **payload,

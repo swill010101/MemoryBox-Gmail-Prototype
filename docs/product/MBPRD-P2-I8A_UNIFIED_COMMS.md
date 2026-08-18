@@ -1,13 +1,13 @@
 # MBPRD-P2-I8A — Unified Communications Gallery & Timeline Precision
 
-**Status:** **REVISED** · Q1–Q6 **LOCKED** · visual baseline **ACCEPTED** · conflict locks **LOCKED** (founder 2026-08-18) · **not BUILD AUTHORIZED** · awaiting **final founder lock** of the increment definition  
+**Status:** **BUILD AUTHORIZED** 2026-08-18 · Q1–Q6 **LOCKED** · visual baseline **ACCEPTED** · conflict locks **LOCKED**  
 **Date:** 2026-08-18  
 **Increment definition:** [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md)  
 **Visual baseline:** [`docs/source/mockups/i8A/`](../source/mockups/i8A/)  
 **Depends:** I8 **ACCEPTED** · I7 **ACCEPTED** · I4 **ACCEPTED** · MBQL-001 **ACCEPTED** · existing ICS ingest path  
 **Does not start:** I8A runtime until “I8A build is authorized” · I9 spoken product inside I8A · I8.5 face SoT · I10 · I11 **narrative generation** · live Gmail / send · Calendar product redesign · Reply/Reply all/Forward
 
-This PRD tracks the **revised definition** (visual verification + founder conflict resolution). No code until Tom finally locks that sheet **and** says **“I8A build is authorized.”**
+This PRD tracks the **locked definition**. Runtime follows MBBS-P2 I8A.
 
 ---
 
@@ -75,4 +75,4 @@ Visual authority: definition §0.1.
 
 ## 7. Decision status
 
-PRD **REVISED**. Definition **REVISED** (screens + conflict locks incorporated). Q1–Q6 **LOCKED**. Visual baseline **ACCEPTED**. Build **not authorized**. Awaiting **final founder lock** of the definition, then explicit build authorization.
+PRD **LOCKED**. Definition **LOCKED**. Build **AUTHORIZED** 2026-08-18.

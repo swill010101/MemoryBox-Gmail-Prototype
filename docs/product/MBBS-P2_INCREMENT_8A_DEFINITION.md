@@ -1,6 +1,6 @@
 # MBBS-P2 Increment 8A — Unified Communications Gallery & Timeline Precision
 
-**Status:** **REVISED for founder lock** · Q1–Q6 **LOCKED** (founder 2026-08-18) · visual baseline **ACCEPTED** (committed screens 00–11 + conflict resolution 2026-08-18) · **not BUILD AUTHORIZED** · **no I8A runtime**  
+**Status:** **BUILD AUTHORIZED** 2026-08-18 (founder: “approved…. build it.”) · Q1–Q6 **LOCKED** · visual baseline **ACCEPTED** · conflict resolution **LOCKED**  
 **Date:** 2026-08-18 (written) · 2026-08-18 (founder revise) · 2026-08-18 (visual verification + conflict locks — this document)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — after **P2-I8 ACCEPTED**, **before P2-I9**. Face Evidence Ownership / Immich decoupling is **later**, not next after I8A.  
 **Thin PRD:** [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md)  
@@ -11,7 +11,7 @@
 
 **I8 follow-up in this increment:** **P2-BL-I8-02** — Ask email/SMS counts lock canonical Person (Peggy George) before retrieve. Behavioral, not a required persistent Person-lock screen. Does not reopen I8.
 
-**Build rule:** This revision is for **final founder lock**. Do **not** implement I8A, add `prove-p2-i8a`, or change Ask/Explore/Timeline runtime until Tom reviews **this** document and then says **“I8A build is authorized.”** Do not start I9, I8.5, I10, or I11 as part of this increment.
+**Build rule:** Founder **authorized I8A build** 2026-08-18. Implement this definition. Do not start I9, I8.5, I10, or I11 as part of this increment.
 
 ---
 
@@ -76,7 +76,7 @@ Near-term: **I8 ACCEPTED → I8A → I9**.
 | **Q3** | Gallery default | In a **normal broad Memory Gallery: Email OFF visually, SMS/Text OFF visually, Calendar OFF visually** until presentation is requested. All remain first-class Evidence and remain eligible for retrieval, counts, correlation, and later synthesis. **Explicit Ask** sets **initial** presentation (e.g. “show me texts with Peggy” → Text on). A later **explicit UI command** (Memory chip, Communications filter, Calendar filter, Attachments only, Show everything) **may change presentation** without rewriting the Ask string. Person + Timeline + query context remain. **Gallery visibility must not restrict evidence eligibility.** |
 | **Q4** | Threads | **Do not invent thread membership.** Preserve RFC/vendor relationships from I8 when valid. Quoted `On … wrote:` is **display of one message body**, not proof of membership. Thread/detail lives in the **drill-down** (§4.5). Incomplete membership **disclosed honestly**. |
 | **Q5** | Calendar | **IN I8A as its own evidence/filter dimension** (`calendar_event`; **do not reclassify as communication**). **Communications filter = Email + Text only.** **Calendar filter = Calendar only** (concept from contact sheet 00: Events / Attachments only / Events + attachments, where attachment evidence exists). Mixed Gallery may have **both** filters active. Combined **day card may show E / T / C counts**. Click path is **not** “click Email count on the card → list”; see §4.5. **Before coding:** inspect FlightSim ICS/Calendar state. Reuse ingested `calendar_event` if present. If not ingested, I8A includes **minimum** ingest of the **existing staged ICS** via `ingest-calendar`. No new Calendar product or redesign. Preserve originals and provenance. |
-| **Q6** | Build gate | **This revision is for final founder lock. No runtime yet.** After Tom accepts **this** definition, explicit **“I8A build is authorized”** starts implementation. |
+| **Q6** | Build gate | **BUILD AUTHORIZED** 2026-08-18. Implement this definition. |
 
 ### Additional rules (LOCKED)
 
@@ -374,7 +374,7 @@ Pass **all**. Harness ≠ ACCEPTED. Not runnable until build is authorized.
 
 ## 12. Build (only after final lock + authorization)
 
-Do **not** start until Tom accepts **this revision** and says **“I8A build is authorized.”**
+Do **not** start I9 / I8.5 / I10 / I11 in this increment. I8A build is authorized.
 
 1. FlightSim Calendar inspect: staged ICS vs `calendar_event`; minimum `ingest-calendar` only if needed.  
 2. Q3 presentation defaults (Email OFF, SMS OFF, Calendar OFF) without changing eligibility.  
@@ -398,14 +398,14 @@ Do **not** start until Tom accepts **this revision** and says **“I8A build is 
 | I8A Q1–Q6 | **LOCKED** 2026-08-18 |
 | I8A screens 00–11 | **ACCEPTED visual baseline** 2026-08-18 (`docs/source/mockups/i8A/`, `3d46a86`) |
 | Visual-conflict resolution | **LOCKED** 2026-08-18 (this document §2.1) |
-| I8A definition | **REVISED** — this document — **awaiting final founder lock** |
-| I8A PRD | **REVISED** — [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
+| I8A definition | **LOCKED** — this document — founder approved 2026-08-18 |
+| I8A PRD | **LOCKED** — [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
 | P2-BL-I8-02 | **In I8A** (behavioral; not a required lock screen) |
 | P2-BL-I8A-01 (promo classifier) | **Parked** |
 | P2-BL-I7-01 (SMS attachment bytes) | **Not in I8A** — disclose missing bytes |
-| I8A build | **NOT AUTHORIZED** — no runtime until “I8A build is authorized” after this review |
+| I8A build | **AUTHORIZED** 2026-08-18 |
 | I9 Spoken | **NOT STARTED** (next after I8A) |
 | I8.5 Face ownership | **LATER** (not next after I8A) |
 | I10 / I11 | **NOT STARTED** (I8A preserves combined-card reuse only) |
 
-**Stop.** Do not implement I8A until Tom **finally locks this revision** and authorizes build.
+**Stop after I8A.** Do not start I9 / I8.5 / I10 / I11 in this increment.

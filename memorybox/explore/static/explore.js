@@ -19,9 +19,11 @@
 
   const FILTERS = [
     { id: "all", label: "All" },
+    { id: "memory", label: "Memory" },
     { id: "photo", label: "Photos" },
     { id: "video", label: "Video" },
-    { id: "email", label: "Email/Text" },
+    { id: "email", label: "Communications" }, // I7 Email/Text
+    { id: "calendar", label: "Calendar" },
     { id: "artifact", label: "Artifacts" },
     { id: "story", label: "Stories" },
   ];
@@ -56,7 +58,8 @@
   if (PERSON_MODE) {
     // I5 visual lock order: All · Photos · Video · Audio · Email/Text · Artifacts · Stories · Location
     // Audio empty-OK; Location = has GPS/Place (locked option D); Map toggle stays separate.
-    FILTERS.splice(3, 0, { id: "audio", label: "Audio" });
+    const commsAt = FILTERS.findIndex((f) => f.id === "email");
+    FILTERS.splice(commsAt >= 0 ? commsAt : 3, 0, { id: "audio", label: "Audio" });
     FILTERS.push({ id: "location", label: "Location" });
     const teachNav = NAV.find((n) => n.id === "teach");
     if (teachNav) teachNav.label = "Teach";
@@ -85,7 +88,14 @@
     only_video: /^only videos?\.?$/i,
     add_video: /^add video\.?$/i,
     add_texts: /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$|^add texts?\.?$/i,
-    only_texts: /^only (email|emails|texts?|sms|imessage)\b/i,
+    only_texts: /^only (texts?|sms|imessage|i-?message)\b/i,
+    add_email: /^(add|include)\s+(e-?mails?)\.?$/i,
+    only_email: /^only (e-?mails?)\b/i,
+    add_communications: /^(add|include)\s+communications?\.?$|^add comms\.?$/i,
+    add_calendar: /^(add|include)\s+calendar\.?$/i,
+    only_calendar: /^only calendar\.?$/i,
+    attachments_only: /^attachments only\.?$|^only attachments\.?$/i,
+    show_memory: /^memory\.?$|^show memory\.?$|^memory view\.?$/i,
     only_artifacts: /^only artifacts?\.?$/i,
     only_stories: /^only stories?\.?$/i,
     go_to_people: /clear context.*people|go to people/i,
@@ -298,6 +308,20 @@
     return t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs";
   }
 
+  function isEmailItem(item) {
+    return String((item && item.type) || "").toLowerCase() === "email";
+  }
+
+  function isCalendarItem(item) {
+    return String((item && item.type) || "").toLowerCase() === "calendar";
+  }
+
+  function itemAttachCount(item) {
+    if (!item) return 0;
+    if (Array.isArray(item.attachments)) return item.attachments.length;
+    return Number(item.attachment_count || 0) || 0;
+  }
+
   function matchesType(item, filter, opts) {
     const d = (opts && opts.domain) || (state && state.domain) || {};
     const includeTexts = Boolean(
@@ -306,27 +330,60 @@
         d.galleryShowSms ||
         filter === "email"
     );
+    const includeEmail = Boolean(
+      d.includeEmail || d.galleryShowEmail || (filter === "email" && !d.memoryPresentation)
+    );
+    const includeCalendar = Boolean(
+      d.includeCalendar || d.galleryShowCalendar || filter === "calendar"
+    );
+    const memoryOn = Boolean(d.memoryPresentation || filter === "memory");
+    const attachmentsOnly = Boolean(d.attachmentsOnly);
+    if (memoryOn && (isSmsTextItem(item) || isEmailItem(item) || isCalendarItem(item))) {
+      return false;
+    }
     if (isSmsTextItem(item)) {
-      if (filter === "email") return true;
-      // All = every type already in this result, including texts that are
-      // on-screen or explicitly requested. Hidden-by-default SMS stay out
-      // until Add texts / an explicit text ask — never empty a text result.
-      if (!filter || filter === "all") {
-        if (item.gallery_default_hidden && !includeTexts) return false;
+      if (filter === "email") {
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
         return true;
       }
-      // Photos / video / artifact / story are not texts. includeTexts must
-      // not leak SMS into the Photos pill (FlightSim: All texts + Photos on).
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeTexts) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return includeTexts;
+      }
+      return false;
+    }
+    if (isEmailItem(item)) {
+      if (filter === "email") {
+        if (!includeEmail) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return true;
+      }
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeEmail) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return includeEmail;
+      }
+      return false;
+    }
+    if (isCalendarItem(item)) {
+      if (filter === "calendar") return true;
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeCalendar) return false;
+        return includeCalendar;
+      }
       return false;
     }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
-      // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
       if (itemLatLng(item)) return true;
       return Boolean(itemPlaceBlob(item).trim());
     }
     const t = String(item.type || "").toLowerCase();
-    if (filter === "email") return t === "email" || t === "sms" || t === "text";
+    if (filter === "memory") {
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    }
+    if (filter === "email") return false;
     if (filter === "audio") return t === "audio" || t === "voice";
     return t === filter;
   }
@@ -602,12 +659,29 @@
     state.domain.typeFilter = id || "all";
     if (id === "email") {
       state.domain.includeTexts = true;
+      state.domain.includeEmail = true;
+      state.domain.memoryPresentation = false;
+    } else if (id === "calendar") {
+      state.domain.includeCalendar = true;
+      state.domain.memoryPresentation = false;
+    } else if (id === "memory") {
+      state.domain.memoryPresentation = true;
+      state.domain.includeTexts = false;
+      state.domain.includeEmail = false;
+      state.domain.includeCalendar = false;
     } else if (id === "all") {
       // Filter-only Email/Text must not pin SMS onto All. I7 hides texts
       // on All unless this find was an explicit text ask or Add texts.
       if (!state.domain.galleryShowSms && !state.domain.textsPinned) {
         state.domain.includeTexts = false;
       }
+      if (!state.domain.galleryShowEmail && !state.domain.emailPinned) {
+        state.domain.includeEmail = false;
+      }
+      if (!state.domain.galleryShowCalendar && !state.domain.calendarPinned) {
+        state.domain.includeCalendar = false;
+      }
+      state.domain.memoryPresentation = false;
     }
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
@@ -1012,12 +1086,20 @@
     }
     let nextType = typeFilter;
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
+    const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
+    const galleryShowCalendar = Boolean(exploreHint.gallery_show_calendar);
     // New find owns visibility. Do not keep includeTexts from a prior SMS ask
     // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
+    // Photos pill must not leak SMS.
     const includeTexts = galleryShowSms;
-    if (galleryShowSms) {
+    const keepTexts = includeTexts;
+    const includeEmail = galleryShowEmail;
+    const includeCalendar = galleryShowCalendar;
+    if (galleryShowSms || galleryShowEmail) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";
+    } else if (galleryShowCalendar) {
+      nextType = "calendar";
     } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
@@ -1090,8 +1172,16 @@
         chips: chips,
         typeFilter: nextType,
         includeTexts: includeTexts,
+        includeEmail: includeEmail,
+        includeCalendar: includeCalendar,
         galleryShowSms: galleryShowSms,
+        galleryShowEmail: galleryShowEmail,
+        galleryShowCalendar: galleryShowCalendar,
         textsPinned: Boolean(galleryShowSms),
+        emailPinned: Boolean(galleryShowEmail),
+        calendarPinned: Boolean(galleryShowCalendar),
+        memoryPresentation: false,
+        attachmentsOnly: false,
         smsAvailable: Number(exploreHint.sms_available || 0) || 0,
         smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
@@ -1262,6 +1352,9 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      state.domain.includeEmail = Boolean(state.domain.galleryShowEmail);
+      state.domain.includeCalendar = Boolean(state.domain.galleryShowCalendar);
+      state.domain.memoryPresentation = false;
       render();
       return;
     }
@@ -1271,7 +1364,12 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = true;
+      state.domain.includeEmail = true;
+      state.domain.includeCalendar = true;
       state.domain.textsPinned = true;
+      state.domain.emailPinned = true;
+      state.domain.calendarPinned = true;
+      state.domain.memoryPresentation = false;
       render();
       return;
     }
@@ -1316,6 +1414,9 @@
       clearPlaceFilter();
       setUndatedFilter(false);
       state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      state.domain.includeEmail = Boolean(state.domain.galleryShowEmail);
+      state.domain.includeCalendar = Boolean(state.domain.galleryShowCalendar);
+      state.domain.memoryPresentation = false;
       state.domain.temporalWindows = null;
       resetTimelineExtent(false);
       setViewMode("gallery");
@@ -1385,14 +1486,65 @@
     if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
       state.domain.textsPinned = true;
+      state.domain.memoryPresentation = false;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
     if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.includeEmail = false;
       state.domain.textsPinned = true;
+      state.domain.memoryPresentation = false;
       setTypeFilter("email");
+      state.domain.includeEmail = false;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_email.test(text)) {
+      state.domain.includeEmail = true;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (MBQL_VERBS.only_email.test(text)) {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = false;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      setTypeFilter("email");
+      state.domain.includeTexts = false;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_communications.test(text)) {
+      state.domain.includeTexts = true;
+      state.domain.includeEmail = true;
+      state.domain.textsPinned = true;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      setTypeFilter("email");
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_calendar.test(text) || MBQL_VERBS.only_calendar.test(text)) {
+      state.domain.includeCalendar = true;
+      state.domain.calendarPinned = true;
+      state.domain.memoryPresentation = false;
+      if (MBQL_VERBS.only_calendar.test(text)) setTypeFilter("calendar");
+      else syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (MBQL_VERBS.attachments_only.test(text)) {
+      state.domain.attachmentsOnly = true;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.show_memory.test(text)) {
+      setTypeFilter("memory");
       render();
       return;
     }
@@ -1785,7 +1937,16 @@
     }
     el.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        setTypeFilter(btn.getAttribute("data-filter"));
+        const fid = btn.getAttribute("data-filter");
+        if (fid === "email" && state.domain.typeFilter === "email") {
+          openCommsFilter();
+          return;
+        }
+        if (fid === "calendar" && state.domain.typeFilter === "calendar") {
+          openCalFilter();
+          return;
+        }
+        setTypeFilter(fid);
         render();
       });
     });
@@ -1952,10 +2113,307 @@
     root._mbLazyIo = io;
   }
 
+  const I8A_DAY_CAP = 80;
+
+  function dayKey(item) {
+    const s = String((item && item.date) || "").slice(0, 10);
+    return s.length >= 10 ? s : "";
+  }
+
+  function commsCalItems(list) {
+    return (list || []).filter(
+      (it) => isSmsTextItem(it) || isEmailItem(it) || isCalendarItem(it)
+    );
+  }
+
+  function memoryLikeItems(list) {
+    return (list || []).filter((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    });
+  }
+
+  function threadKey(it) {
+    return String(it.thread_id || it.id || "");
+  }
+
+  function summarizeDay(items) {
+    const emails = items.filter(isEmailItem);
+    const texts = items.filter(isSmsTextItem);
+    const cals = items.filter(isCalendarItem);
+    const eThreads = new Set(emails.map(threadKey).filter(Boolean));
+    const tConv = new Set(texts.map(threadKey).filter(Boolean));
+    return {
+      emails,
+      texts,
+      cals,
+      emailN: emails.length,
+      textN: texts.length,
+      calN: cals.length,
+      emailThreads: eThreads.size || (emails.length ? 1 : 0),
+      textConvos: tConv.size || (texts.length ? 1 : 0),
+      attachN:
+        emails.reduce((n, it) => n + itemAttachCount(it), 0) +
+        texts.reduce((n, it) => n + itemAttachCount(it), 0),
+    };
+  }
+
+  function galleryCardsFromVisible(items) {
+    const d = state.domain || {};
+    const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
+    const calOn = Boolean(d.includeCalendar || d.typeFilter === "calendar");
+    const mix = memoryLikeItems(items).length > 0 && commsCalItems(items).length > 0;
+    const commsOnly =
+      commsCalItems(items).length > 0 && memoryLikeItems(items).length === 0;
+    if (!commsOn && !calOn) return items;
+    if (!mix && commsOnly && !(d.includeEmail && d.includeCalendar) && !d.includeCalendar) {
+      // Explicit SMS/email: group by day (density-aware).
+      const byDay = {};
+      items.forEach((it) => {
+        const k = dayKey(it) || "undated";
+        (byDay[k] = byDay[k] || []).push(it);
+      });
+      const days = Object.keys(byDay).sort();
+      const cap = days.length > I8A_DAY_CAP ? I8A_DAY_CAP : days.length;
+      const shown = (state.gallery.sort === "oldest" ? days : days.slice().reverse()).slice(0, cap);
+      d._showingDays = { shown: shown.length, total: days.length };
+      return shown.map((k) => {
+        const group = byDay[k];
+        const s = summarizeDay(group);
+        if (group.length === 1 && !mix) return group[0];
+        return {
+          id: "daycard:" + k,
+          type: "daycard",
+          title: "Communications" + (s.calN ? " & calendar" : ""),
+          date: k === "undated" ? "" : k,
+          undated: k === "undated",
+          _dayItems: group,
+          _daySummary: s,
+          preview: s.emailN + " email · " + s.textN + " text · " + s.calN + " calendar",
+        };
+      });
+    }
+    if (mix || (commsOn && calOn)) {
+      const mem = memoryLikeItems(items);
+      const cc = commsCalItems(items);
+      const byDay = {};
+      cc.forEach((it) => {
+        const k = dayKey(it) || "undated";
+        (byDay[k] = byDay[k] || []).push(it);
+      });
+      const days = Object.keys(byDay);
+      const cap = days.length > I8A_DAY_CAP ? I8A_DAY_CAP : days.length;
+      const ordered = (state.gallery.sort === "oldest" ? days.sort() : days.sort().reverse()).slice(
+        0,
+        cap
+      );
+      d._showingDays = { shown: ordered.length, total: days.length };
+      const dayCards = ordered.map((k) => {
+        const group = byDay[k];
+        const s = summarizeDay(group);
+        return {
+          id: "daycard:" + k,
+          type: "daycard",
+          title: "Communications & calendar",
+          date: k === "undated" ? "" : k,
+          undated: k === "undated",
+          _dayItems: group,
+          _daySummary: s,
+          preview:
+            s.emailN +
+            " email · " +
+            s.textN +
+            " text · " +
+            s.calN +
+            " calendar",
+        };
+      });
+      return mem.concat(dayCards);
+    }
+    return items;
+  }
+
+  function openCommsFilter() {
+    const el = document.getElementById("mb-comms-filter");
+    if (!el) return;
+    document.getElementById("mb-comms-src-email").checked = Boolean(state.domain.includeEmail);
+    document.getElementById("mb-comms-src-text").checked = Boolean(state.domain.includeTexts);
+    const att = state.domain.attachmentsOnly;
+    el.querySelectorAll('input[name="mb-comms-show"]').forEach((r) => {
+      r.checked = att ? r.value === "attachments" : r.value === "messages";
+    });
+    const ctx = document.getElementById("mb-comms-ctx");
+    if (ctx) {
+      const person = ((state.domain.chips || []).find((c) => c.kind === "person") || {}).label || "—";
+      ctx.textContent = "CURRENT CONTEXT · " + person + " · Person and timeline unchanged";
+    }
+    el.hidden = false;
+  }
+
+  function openCalFilter() {
+    const el = document.getElementById("mb-cal-filter");
+    if (!el) return;
+    el.hidden = false;
+  }
+
+  let dayStack = { day: null, tab: "email", items: [] };
+
+  function openDayStack(card) {
+    const items = (card && card._dayItems) || [];
+    if (!items.length) return;
+    hideQuickPreview();
+    state.gallery.scrollTop =
+      (document.getElementById("mb-explore-gallery") || {}).scrollTop || 0;
+    if (!state.modal.snapshot) state.modal.snapshot = snapshotExplore();
+    dayStack = { day: card.date || "", tab: "email", items: items, card: card };
+    const s = card._daySummary || summarizeDay(items);
+    if (s.emailN) dayStack.tab = "email";
+    else if (s.textN) dayStack.tab = "text";
+    else dayStack.tab = "calendar";
+    renderDayStack();
+    document.getElementById("mb-day-stack").hidden = false;
+  }
+
+  function closeDayStack() {
+    const stack = document.getElementById("mb-day-stack");
+    if (stack) stack.hidden = true;
+    const det = document.getElementById("mb-day-detail");
+    if (det) det.hidden = true;
+    if (state.modal && state.modal.snapshot) {
+      restoreExplore(state.modal.snapshot);
+      state.modal.snapshot = null;
+    }
+    render();
+  }
+
+  function renderDayStack() {
+    const card = dayStack.card || {};
+    const s = card._daySummary || summarizeDay(dayStack.items);
+    document.getElementById("mb-day-title").textContent = fmtCardDate(dayStack.day);
+    document.getElementById("mb-day-sub").textContent =
+      dayStack.items.length + " records · " +
+      (s.emailThreads + s.textConvos + s.calN) +
+      " meaningful groups";
+    const tabs = document.getElementById("mb-day-tabs");
+    tabs.innerHTML =
+      `<button type="button" data-tab="email" class="${dayStack.tab === "email" ? "is-on" : ""}">Email · ${s.emailThreads} threads · ${s.emailN} messages</button>` +
+      `<button type="button" data-tab="text" class="${dayStack.tab === "text" ? "is-on" : ""}">Text · ${s.textConvos} conversations · ${s.textN} messages</button>` +
+      `<button type="button" data-tab="calendar" class="${dayStack.tab === "calendar" ? "is-on" : ""}">Calendar · ${s.calN} events</button>`;
+    tabs.querySelectorAll("[data-tab]").forEach((b) => {
+      b.addEventListener("click", () => {
+        dayStack.tab = b.getAttribute("data-tab");
+        renderDayStack();
+      });
+    });
+    let rows = [];
+    if (dayStack.tab === "email") {
+      const by = {};
+      s.emails.forEach((it) => {
+        const k = threadKey(it);
+        (by[k] = by[k] || []).push(it);
+      });
+      rows = Object.keys(by).map((k) => ({ kind: "thread", items: by[k], title: by[k][0].title || k }));
+    } else if (dayStack.tab === "text") {
+      const by = {};
+      s.texts.forEach((it) => {
+        const k = threadKey(it);
+        (by[k] = by[k] || []).push(it);
+      });
+      rows = Object.keys(by).map((k) => ({
+        kind: "convo",
+        items: by[k],
+        title: by[k][0].from || by[k][0].title || k,
+      }));
+    } else {
+      rows = s.cals.map((it) => ({ kind: "event", items: [it], title: it.title || "Event" }));
+    }
+    const list = document.getElementById("mb-day-list");
+    const shown = rows;
+    document.getElementById("mb-day-showing").textContent =
+      "Showing " + shown.length + " of " + rows.length;
+    list.innerHTML = shown
+      .map((row, i) => {
+        const it = row.items[0];
+        const preview = escapeHtml(it.preview || it.detail || "");
+        return `<button type="button" class="mb-day-row" data-row="${i}"><strong>${escapeHtml(
+          row.title
+        )}</strong><div>${preview}</div></button>`;
+      })
+      .join("");
+    list.querySelectorAll("[data-row]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const row = shown[+btn.getAttribute("data-row")];
+        openDayDetail(row.items[0]);
+      });
+    });
+  }
+
+  function openDayDetail(item) {
+    const wrap = document.getElementById("mb-day-detail");
+    const body = document.getElementById("mb-day-detail-body");
+    if (!wrap || !body) return;
+    wrap.hidden = false;
+    body.innerHTML = `<h3>${escapeHtml(item.title || "Detail")}</h3>
+      <p>${escapeHtml(item.from || "")} · ${escapeHtml(fmtCardDate(item.date))}</p>
+      <div>${escapeHtml(item.detail || item.preview || "")}</div>`;
+    if (isEmailItem(item) && item.evidence_id && typeof bindEmailStructuredView === "function") {
+      body.innerHTML += `<div class="mb-ev-email-wrap" data-evidence-id="${escapeAttr(
+        item.evidence_id
+      )}"></div>`;
+      bindEmailStructuredView(body.querySelector(".mb-ev-email-wrap"), item);
+    }
+  }
+
+  function bindI8aChrome() {
+    const cc = document.getElementById("mb-comms-cancel");
+    const ca = document.getElementById("mb-comms-apply");
+    if (cc) cc.onclick = () => {
+      document.getElementById("mb-comms-filter").hidden = true;
+    };
+    if (ca)
+      ca.onclick = () => {
+        state.domain.includeEmail = document.getElementById("mb-comms-src-email").checked;
+        state.domain.includeTexts = document.getElementById("mb-comms-src-text").checked;
+        state.domain.emailPinned = state.domain.includeEmail;
+        state.domain.textsPinned = state.domain.includeTexts;
+        const att = document.querySelector('input[name="mb-comms-show"]:checked');
+        state.domain.attachmentsOnly = Boolean(att && att.value === "attachments");
+        state.domain.memoryPresentation = false;
+        document.getElementById("mb-comms-filter").hidden = true;
+        if (state.domain.includeEmail || state.domain.includeTexts) setTypeFilter("email");
+        render();
+      };
+    const kcan = document.getElementById("mb-cal-cancel");
+    const kap = document.getElementById("mb-cal-apply");
+    if (kcan) kcan.onclick = () => {
+      document.getElementById("mb-cal-filter").hidden = true;
+    };
+    if (kap)
+      kap.onclick = () => {
+        const mode = document.querySelector('input[name="mb-cal-show"]:checked');
+        state.domain.includeCalendar = true;
+        state.domain.calendarPinned = true;
+        state.domain.calShowMode = (mode && mode.value) || "events";
+        state.domain.memoryPresentation = false;
+        document.getElementById("mb-cal-filter").hidden = true;
+        setTypeFilter("calendar");
+        render();
+      };
+    const close = document.getElementById("mb-day-close");
+    const back = document.getElementById("mb-day-back");
+    const dback = document.getElementById("mb-day-detail-back");
+    if (close) close.onclick = closeDayStack;
+    if (back) back.onclick = closeDayStack;
+    if (dback)
+      dback.onclick = () => {
+        document.getElementById("mb-day-detail").hidden = true;
+      };
+  }
+
   function renderGallery() {
     const gallery = document.getElementById("mb-explore-gallery");
     if (!gallery) return;
-    const items = visibleItems();
+    const items = galleryCardsFromVisible(visibleItems());
     state.domain.items = items;
     gallery.dataset.density = String(state.gallery.density);
     const densLabel = document.getElementById("mb-density-label");
@@ -1965,6 +2423,30 @@
 
     gallery.innerHTML = items
       .map((it) => {
+        if (String(it.type) === "daycard") {
+          const s = it._daySummary || {};
+          return `<button type="button" class="mb-card mb-card-day" data-id="${escapeAttr(
+            it.id
+          )}" data-type="daycard">
+          <div class="mb-card-media" data-type="daycard">
+            <div class="mb-day-counts">
+              <span class="mb-day-e">E ${s.emailN || 0}</span>
+              <span class="mb-day-t">T ${s.textN || 0}</span>
+              <span class="mb-day-c">C ${s.calN || 0}</span>
+            </div>
+            <span class="mb-day-open">Open day →</span>
+          </div>
+          <div class="mb-card-meta">
+            <span class="mb-card-type" aria-hidden="true">▦</span>
+            <div>
+              <div class="mb-card-title">${escapeHtml(it.title || "Communications & calendar")}</div>
+              <div class="mb-card-sub">${escapeHtml(fmtCardDate(it.date))} · ${
+            (s.emailN || 0) + (s.textN || 0) + (s.calN || 0)
+          } records</div>
+            </div>
+          </div>
+        </button>`;
+        }
         const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
         const date = escapeHtml(fmtCardDate(it.date));
@@ -1993,7 +2475,14 @@
 
     gallery.querySelectorAll(".mb-card").forEach((card) => {
       const id = card.getAttribute("data-id");
-      card.addEventListener("click", () => openModal(id));
+      card.addEventListener("click", () => {
+        if (String(card.getAttribute("data-type")) === "daycard") {
+          const it = items.find((x) => x.id === id);
+          if (it) openDayStack(it);
+          return;
+        }
+        openModal(id);
+      });
       bindCardPreview(card, id);
     });
     bindLazyThumbs(gallery);
@@ -3256,6 +3745,18 @@
   }
 
   function quickPreviewHtml(item) {
+    if (String(item.type || "") === "daycard") {
+      const s = item._daySummary || summarizeDay(item._dayItems || []);
+      return `<div class="mb-qp-body mb-qp-day">
+      <div class="mb-qp-type">500 ms rollover · representative groups</div>
+      <ul>
+        <li>${s.emailThreads} email threads · ${s.emailN} messages · ${s.attachN} attachments</li>
+        <li>${s.textConvos} text conversations · ${s.textN} messages</li>
+        <li>${s.calN} calendar events</li>
+      </ul>
+      <div class="mb-qp-line">Open day →</div>
+    </div>`;
+    }
     const t = String(item.type || "memory");
     const media = item.thumb_url || item.media_url || "";
     const peeps = peopleList(item).slice(0, 4).join(", ");
@@ -3297,7 +3798,7 @@
     }
     if (isText) {
       const turns = parseQuotedEmail(body);
-      return `<div class="mb-qp-body mb-qp-text">
+      return `<div class="mb-qp-body mb-qp-text mb-qp-textbody">
       <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
       <div class="mb-qp-title">${escapeHtml(item.from || item.title || "Message")}</div>
       <div class="mb-qp-line">${escapeHtml(fmtCardDate(item.date))}${
@@ -3408,6 +3909,7 @@
 
   const QUICK_PREVIEW_DELAY_MS = 2500;
   const ATTACH_PREVIEW_DELAY_MS = 1000;
+  const DAY_PREVIEW_DELAY_MS = 500;
 
   function clearPreviewTimer() {
     if (state.preview && state.preview.timer) {
@@ -3465,7 +3967,12 @@
     state.preview.x = clientX;
     state.preview.y = clientY;
     state.preview.attach = !!(opts && opts.attach);
-    const delay = state.preview.attach ? ATTACH_PREVIEW_DELAY_MS : QUICK_PREVIEW_DELAY_MS;
+    const delay =
+      String(item.type || "") === "daycard"
+        ? DAY_PREVIEW_DELAY_MS
+        : state.preview.attach
+          ? ATTACH_PREVIEW_DELAY_MS
+          : QUICK_PREVIEW_DELAY_MS;
     state.preview.timer = setTimeout(() => {
       state.preview.timer = null;
       if (state.modal.openId) return;
@@ -3477,7 +3984,9 @@
     card.addEventListener("mouseenter", (ev) => {
       if (state.modal.openId) return;
       if (ev.target && ev.target.closest && ev.target.closest(".mb-card-attach")) return;
-      const it = rawItems.find((x) => x.id === id);
+      const it =
+        ((state.domain && state.domain.items) || []).find((x) => x.id === id) ||
+        rawItems.find((x) => x.id === id);
       if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
     });
     card.addEventListener("mousemove", (ev) => {
@@ -3822,6 +4331,7 @@
   function bindChrome() {
     if (chromeBound) return;
     chromeBound = true;
+    bindI8aChrome();
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });

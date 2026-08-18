@@ -880,14 +880,15 @@ class AskOrchestrator:
             rel.intent == "none"
             and plan.person_names
             and not getattr(plan, "person_ids", ())
-            and plan.want_visual
+            and (plan.want_visual or plan.want_communication or plan.want_calendar)
         ):
-            # Named "Show me Peggy George" → attach MB Person id so photo +
-            # video retrieve share the same identity (not name-only).
-            from memorybox.person import find_ask_person_by_name
+            # Named Ask → attach MB Person id so photo/video/email/SMS share identity.
+            # P2-BL-I8-02: unique Peggy → Peggy George; genuine ambiguity clarifies.
+            from memorybox.person import AmbiguousIdentityError, find_ask_person_by_name
 
             pids: list[str] = []
             labels: list[str] = []
+            ambiguous = None
             for name in sorted(plan.person_names, key=lambda n: (-len(n), n.lower())):
                 nl = name.lower()
                 if any(
@@ -897,18 +898,33 @@ class AskOrchestrator:
                     continue
                 try:
                     view = find_ask_person_by_name(name, photo=self.photo, lazy_seed=True)
+                except AmbiguousIdentityError as exc:
+                    ambiguous = exc
+                    view = None
                 except Exception:  # noqa: BLE001
                     view = None
                 if not view:
                     continue
                 pids.append(view.id)
                 labels.append(view.display_name or name)
-            if pids:
+            if ambiguous and not pids and plan.want_communication:
+                plan = replace(
+                    plan,
+                    requires_clarification=True,
+                    ambiguity_message=str(ambiguous),
+                    notes=tuple(list(plan.notes) + ["p2_bl_i8_02_clarify"]),
+                )
+            elif pids:
+                note = (
+                    "resolved_person_ids_for_comms"
+                    if plan.want_communication or plan.want_calendar
+                    else "resolved_person_ids_for_visual"
+                )
                 plan = replace(
                     plan,
                     person_ids=tuple(dict.fromkeys(pids)),
                     person_names=tuple(dict.fromkeys(labels or list(plan.person_names))),
-                    notes=tuple(list(plan.notes) + ["resolved_person_ids_for_visual"]),
+                    notes=tuple(list(plan.notes) + [note]),
                 )
         if rel.intent != "none":
             notes = list(plan.notes) + ["i9a_relational_resolve"]
