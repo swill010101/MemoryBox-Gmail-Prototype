@@ -84,7 +84,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "gallery_default_hidden" in find_py
         and "_is_sms_type" in find_py
         and 'type_ = "sms"' in find_py
-        and "includeTexts" in explore_js,
+        and "includeTexts" in explore_js
+        and "_attach_visible_email" in find_py,
         checks,
         problems,
         "SMS default-hide remains SMS-only; emails stay visible",

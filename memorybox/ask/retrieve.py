@@ -611,6 +611,81 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     return sliced
 
 
+def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
+    from memorybox.person.phone_map import normalize_handle
+
+    out: set[str] = set()
+    for rec in (
+        list(payload.get("from_parsed") or [])
+        + list(payload.get("to_parsed") or [])
+        + list(payload.get("cc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
+        if n and "@" in n:
+            out.add(n)
+    return out
+
+
+def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
+    from memorybox.person.phone_map import normalize_handle
+
+    ids = [str(p) for p in person_ids if str(p).strip()]
+    if not ids:
+        return set()
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT value_text
+                FROM person_contact_points
+                WHERE contact_kind = 'email'
+                  AND status = 'confirmed'
+                  AND person_id::text = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        n = normalize_handle(str(r.get("value_text") or ""))
+        if n and "@" in n:
+            out.add(n)
+    return out
+
+
+def _asked_person_is_owner(plan: QueryPlan) -> bool:
+    try:
+        from memorybox.profile.owner import get_owner_person_id
+    except Exception:  # noqa: BLE001
+        return False
+    oid = get_owner_person_id()
+    if not oid:
+        return False
+    if str(oid) in {str(p) for p in (plan.person_ids or ()) if p}:
+        return True
+    asked = {str(n).strip().lower() for n in (plan.person_names or ()) if str(n).strip()}
+    if not asked:
+        return False
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                "SELECT display_name FROM people WHERE id = %s",
+                (oid,),
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return False
+    dn = str((row or {}).get("display_name") or "").strip().lower()
+    if not dn:
+        return False
+    if dn in asked:
+        return True
+    first = dn.split()[0]
+    return first in asked and len(first) > 2
+
+
 def _email_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
 
@@ -674,6 +749,11 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     attach_only = bool(EMAIL_ATTACH_ASK_RE.search(ask))
     thread_open = bool(EMAIL_THREAD_RE.search(ask))
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    from memorybox.ingest.comms_email import owner_emails
+
+    owner_addrs = owner_emails()
+    asked_owner = _asked_person_is_owner(plan)
+    confirmed_addrs = _confirmed_emails_for_people(person_ids)
     person_names = [
         n.strip().lower()
         for n in (plan.person_names or ())
@@ -790,16 +870,24 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             day = sent[:10]
             if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
                 return False
-        if person_ids:
+        if person_ids or person_names:
             have = {str(x) for x in (payload.get("person_ids") or [])}
-            if not (have & person_ids):
-                blob = _email_person_blob(payload)
-                if person_names and not _sms_name_match(blob, person_names):
-                    return False
-                if not person_names:
-                    return False
-        elif person_names:
-            if not _sms_name_match(_email_person_blob(payload), person_names):
+            addrs = _payload_email_addresses(payload)
+            if person_ids and (have & person_ids):
+                pass
+            elif confirmed_addrs and (addrs & confirmed_addrs):
+                pass
+            elif asked_owner and (
+                payload.get("from_owner")
+                or (owner_addrs and (addrs & owner_addrs))
+                or (asked_owner and not owner_addrs and not confirmed_addrs)
+            ):
+                # Owner Person + personal Takeout: mailbox is theirs even when
+                # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
+                pass
+            elif person_names and _sms_name_match(_email_person_blob(payload), person_names):
+                pass
+            else:
                 return False
         if attach_only and not _email_attachments(payload):
             return False

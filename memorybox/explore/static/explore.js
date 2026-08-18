@@ -365,6 +365,10 @@
       return sort === "oldest" ? d : -d;
     });
     if (PERSON_MODE && (PERSON.memoryMode || "highlights") === "highlights") {
+      if (state.domain && state.domain.typeFilter === "email") {
+        if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
+        return list;
+      }
       if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
       return rankHighlights(list);
     }
