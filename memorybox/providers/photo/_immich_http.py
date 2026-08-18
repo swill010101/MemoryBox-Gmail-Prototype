@@ -19,7 +19,8 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v7"
+_PERSON_TIMELINE_MONTH_WALK = 400
+_PERSON_LIB_CACHE_VER = "v8"
 
 
 class ImmichAuthError(RuntimeError):
@@ -560,9 +561,30 @@ class ImmichHttpClient:
             )
             by_year = self._group_buckets_by_year(raw_buckets)
             years = sorted(by_year.keys(), reverse=True)
+            month_mode = any(len(v) > 1 for v in by_year.values()) or any(
+                self._stamp_is_month(s) for s in raw_buckets
+            )
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
+            if month_mode:
+                stamps = raw_buckets[:_PERSON_TIMELINE_MONTH_WALK]
+                if len(raw_buckets) > _PERSON_TIMELINE_MONTH_WALK:
+                    self._person_lib_incomplete = True
+                for tb in stamps:
+                    if self._circuit():
+                        self._person_lib_incomplete = True
+                        break
+                    for it in self._list_person_bucket_assets(pid, tb, size="MONTH"):
+                        eid = str(it.get("id") or "").strip()
+                        if not eid or eid in by_id:
+                            continue
+                        people = it.get("people")
+                        if not isinstance(people, list) or not people:
+                            it = dict(it)
+                            it["people"] = [{"id": pid}]
+                        by_id[eid] = it
+                continue
             if len(years) > budget:
                 self._person_lib_incomplete = True
             years_walked = 0
@@ -598,7 +620,10 @@ class ImmichHttpClient:
             "/timeline/buckets?personId={pid}",
         )
         sticky = getattr(self, "_person_buckets_tmpl", None)
+        if sticky and "MONTH" not in str(sticky):
+            sticky = None
         use = (sticky,) if sticky in tmpls else tmpls
+        year_only: list[str] | None = None
         for tmpl in use:
             path = tmpl.format(pid=pid)
             if self._circuit():
@@ -633,8 +658,18 @@ class ImmichHttpClient:
                 if tb:
                     out.append(str(tb).strip())
             if out:
-                self._person_buckets_tmpl = tmpl
-                return self._sort_time_buckets_newest_first(out)
+                # Never sticky a YEAR bucket list — it hides months (Tom/Sue holes).
+                if "MONTH" in tmpl:
+                    self._person_buckets_tmpl = tmpl
+                    return self._sort_time_buckets_newest_first(out)
+                if getattr(self, "_person_buckets_tmpl", None) and "MONTH" in str(
+                    getattr(self, "_person_buckets_tmpl")
+                ):
+                    continue
+                year_only = out
+                continue
+        if year_only:
+            return self._sort_time_buckets_newest_first(year_only)
         return []
 
     @staticmethod
@@ -675,6 +710,14 @@ class ImmichHttpClient:
                 continue
             grouped.setdefault(y, []).append(s)
         return grouped
+
+    @staticmethod
+    def _stamp_is_month(raw: str) -> bool:
+        s = str(raw or "").strip()
+        if len(s) < 7 or s[4] != "-":
+            return False
+        mm = s[5:7]
+        return mm.isdigit() and mm != "01"
 
     def _list_person_year_assets(
         self, person_id: str, year: str, month_stamps: list[str]

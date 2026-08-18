@@ -250,14 +250,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
         face = v.get("face_external_id")
-        play = v.get("play_url") or ""
-        if str(play).startswith("/media/"):
-            play = "/review" + play
-        if not play:
-            play = (
-                f"/review/ui?video={vid}&t={t0}"
-                + (f"&face={face}" if face else "")
-            )
+        play = f"/review/media/{vid}?t={t0:.3f}"
+        if face:
+            play += f"&face={face}"
         poster = ""
         if not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"

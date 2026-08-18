@@ -1432,6 +1432,12 @@ body {
   object-fit: contain;
 }
 
+.mb-ev-video-player {
+  width: 100%;
+  max-height: min(52vh, 480px);
+  background: #000;
+}
+
 .mb-ev-video-transport {
   display: flex;
   flex-wrap: wrap;

@@ -2325,6 +2325,7 @@
     if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
     bindSmsAttachActions(item);
+    bindExploreVideoPlayer(item);
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
@@ -2881,6 +2882,32 @@
     });
   }
 
+  function bindExploreVideoPlayer(item) {
+    const el = document.querySelector(".mb-ev-video-player");
+    const vid = String((item && item.video_external_id) || "").trim();
+    if (!el || !vid) return;
+    const t0 = item.t != null ? Number(item.t) : 0;
+    const encoded = encodeURIComponent(vid);
+    fetch("/review/videos/" + encoded + "/browser-proxy", { method: "POST" })
+      .then((res) => {
+        el.src =
+          "/review/media/" + encoded + (res.ok ? "?proxy=1" : "");
+        const onMeta = () => {
+          try {
+            if (t0 > 0) el.currentTime = t0;
+          } catch (e) {}
+          el.removeEventListener("loadedmetadata", onMeta);
+        };
+        el.addEventListener("loadedmetadata", onMeta);
+        el.load();
+        return el.play().catch(() => {});
+      })
+      .catch(() => {
+        el.src = "/review/media/" + encoded;
+        el.load();
+      });
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
@@ -2904,15 +2931,13 @@
     if (t === "video") {
       const t0 = item.t != null ? Number(item.t) : 0;
       const vid = String(item.video_external_id || "").trim();
-      const hvrt = String(item.video_provider_key || item.provider_key || "")
-        .toLowerCase()
-        .includes("hvrt");
-      const stream =
-        hvrt && vid
-          ? `/review/media/${encodeURIComponent(vid)}`
-          : item.play_url && String(item.play_url).startsWith("/review/media/")
-            ? String(item.play_url).split("?")[0]
-            : "";
+      const canStream =
+        Boolean(vid) &&
+        !vid.startsWith("video-peggy-") &&
+        !vid.startsWith("video-library-");
+      const stream = canStream
+        ? `/review/media/${encodeURIComponent(vid)}?proxy=1`
+        : "";
       const posterAttr = media ? ` poster="${escapeAttr(media)}"` : "";
       const stage = stream
         ? `<video class="mb-ev-video-player" controls preload="metadata" src="${escapeAttr(

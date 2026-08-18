@@ -261,6 +261,7 @@ def _prove_harness() -> dict[str, Any]:
             "useYearDensity",
             "timelineDatedItems",
             "mb-ev-video-player",
+            "bindExploreVideoPlayer",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -1131,16 +1132,16 @@ def _prove_harness() -> dict[str, Any]:
 
         months = _MonthShapedYearImmich()
         months.search_by_person_ids(["person-1"], size=50)
-        year_gets = [p for p in months.paths if "timeline/bucket?" in p]
+        month_gets = [p for p in months.paths if "timeline/bucket?" in p]
         _check(
-            "immich_does_not_walk_month_stamps_as_years",
-            len(year_gets) == 2
-            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
-            and any("size=YEAR" in p for p in year_gets)
-            and not any("2023-12-01" in p for p in year_gets),
+            "immich_walks_listed_month_buckets",
+            len(month_gets) == 4
+            and any("2023-12-01" in p for p in month_gets)
+            and any("2022-04-01" in p for p in month_gets)
+            and any("size=MONTH" in p or "size=YEAR" not in p for p in month_gets),
             checks,
             problems,
-            f"bucket_gets={year_gets}",
+            f"bucket_gets={month_gets}",
         )
         _check(
             "immich_filter_years_to_christmas_windows",
