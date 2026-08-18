@@ -83,8 +83,15 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=r"ICS file or calendar/ folder. Default: Sources/calendar under MEMORYBOX_SOURCES_ROOT",
     )
-    p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
-    p_cal.add_argument("--uri", required=True)
+    p_cal = sub.add_parser(
+        "ingest-calendar",
+        help="Ingest ICS file or staged calendar/ folder → calendar_event Evidence",
+    )
+    p_cal.add_argument(
+        "--uri",
+        required=True,
+        help=r"ICS file or folder (e.g. P:\photos\memorybox\sources\calendar)",
+    )
     p_cal.add_argument("--limit", type=int, default=None)
     p_sms = sub.add_parser("ingest-sms", help="Ingest SMS/iMessage CSV → Evidence")
     p_sms.add_argument("--uri", default=None, help="Path to export CSV (default: staged Sources/sms)")
@@ -426,10 +433,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "ingest-calendar":
-        from memorybox.ingest.comms_calendar import ingest_ics
+        from memorybox.ingest.comms_calendar import (
+            compact_calendar_cli_payload,
+            ingest_calendar_uri,
+        )
 
-        payload = ingest_ics(args.uri, limit=args.limit)
-        print(json.dumps(payload, indent=2, default=str))
+        payload = ingest_calendar_uri(args.uri, limit=args.limit)
+        print(json.dumps(compact_calendar_cli_payload(payload), indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "ingest-sms":

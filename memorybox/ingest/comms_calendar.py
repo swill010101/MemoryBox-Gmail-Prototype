@@ -24,9 +24,8 @@ def _count_row(row: Any) -> int:
     return int(row[0])
 
 
-def _list_ics(root: Path) -> tuple[list[dict[str, Any]], int]:
-    sample: list[dict[str, Any]] = []
-    found = 0
+def _list_ics(root: Path) -> tuple[list[dict[str, Any]], int, int]:
+    found_files: list[dict[str, Any]] = []
     stack: list[tuple[Path, int]] = [(root, 0)]
     scanned = 0
     while stack and scanned < _MAX_ICS_SCAN:
@@ -41,19 +40,19 @@ def _list_ics(root: Path) -> tuple[list[dict[str, Any]], int]:
                 break
             try:
                 if child.is_file() and child.suffix.lower() in _ICS_SUFFIXES:
-                    found += 1
-                    if len(sample) < _MAX_ICS_SAMPLE:
-                        sample.append(
-                            {
-                                "path": str(child),
-                                "bytes": child.stat().st_size,
-                            }
-                        )
+                    found_files.append(
+                        {
+                            "path": str(child),
+                            "bytes": child.stat().st_size,
+                        }
+                    )
                 elif child.is_dir() and level < 4:
                     stack.append((child, level + 1))
             except OSError:
                 continue
-    return sample, found
+    found_files.sort(key=lambda row: int(row["bytes"]), reverse=True)
+    total_bytes = sum(int(row["bytes"]) for row in found_files)
+    return found_files, len(found_files), total_bytes
 
 
 def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
@@ -76,8 +75,9 @@ def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
             except OSError:
                 continue
 
-    ics_sample: list[dict[str, Any]] = []
+    ics_files: list[dict[str, Any]] = []
     ics_count = 0
+    staged_bytes = 0
     staged_exists = False
     if staged_root is not None:
         try:
@@ -85,10 +85,14 @@ def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
         except OSError:
             staged_exists = False
         if staged_root.is_file() and staged_root.suffix.lower() in _ICS_SUFFIXES:
+            staged_bytes = staged_root.stat().st_size
             ics_count = 1
-            ics_sample = [{"path": str(staged_root), "bytes": staged_root.stat().st_size}]
+            ics_files = [{"path": str(staged_root), "bytes": staged_bytes}]
         elif staged_root.is_dir():
-            ics_sample, ics_count = _list_ics(staged_root)
+            ics_files, ics_count, staged_bytes = _list_ics(staged_root)
+
+    ics_sample = ics_files[:_MAX_ICS_SAMPLE]
+    largest = int(ics_files[0]["bytes"]) if ics_files else 0
 
     pg_ok = False
     calendar_event_count: int | None = None
@@ -107,9 +111,23 @@ def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
 
     n = calendar_event_count if calendar_event_count is not None else 0
     needs_ingest = bool(pg_ok and n == 0 and ics_count > 0)
-    first_ics = (ics_sample[0]["path"] if ics_sample else None)
+    # i3 smoke used --limit 5. A 2MB+ Takeout ICS with a handful of PG rows is not the archive.
+    coverage_gap = bool(
+        pg_ok and ics_count > 0 and n > 0 and largest >= 100_000 and n < 100
+    )
+    coverage = (
+        "empty"
+        if n == 0
+        else ("smoke_or_partial" if coverage_gap else "ingested")
+    )
+    tree_uri = None
+    if staged_root is not None:
+        tree_uri = str(staged_root if staged_root.is_dir() else staged_root.parent)
+    ingest_recommended = needs_ingest or coverage_gap
     ingest_hint = (
-        f'python -m memorybox ingest-calendar --uri "{first_ics}"' if first_ics else None
+        f'python -m memorybox ingest-calendar --uri "{tree_uri}"'
+        if ingest_recommended and tree_uri
+        else None
     )
 
     archive_health = {
@@ -140,6 +158,7 @@ def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
                 "label": "Staged calendar Takeout / ICS",
                 "display": str(staged_root) if staged_root else "calendar/",
                 "ics_files": ics_count,
+                "ics_bytes": staged_bytes,
                 "state": "available" if staged_exists else "unavailable",
                 "source": str(staged_root) if staged_root else None,
                 "note": "Calendar originals staged; PG calendar_event count is separate (ingest result)",
@@ -156,8 +175,12 @@ def inspect_calendar_state(*, uri: str | None = None) -> dict[str, Any]:
         "sources_root": str(sources_root) if sources_root else None,
         "staged_calendar_dir": str(staged_root) if staged_root else None,
         "staged_ics_files": ics_count,
+        "staged_ics_bytes": staged_bytes,
         "staged_ics_sample": ics_sample,
+        "coverage": coverage,
+        "coverage_gap": coverage_gap,
         "needs_ingest": needs_ingest,
+        "ingest_recommended": ingest_recommended,
         "ingest_hint": ingest_hint,
         "archive_health": archive_health,
     }
@@ -210,7 +233,7 @@ def ingest_ics(
             label=label or f"ics:{path.name}",
             uri=str(path.resolve()),
             metadata={
-                "fixture_or_smoke": True,
+                "fixture_or_smoke": limit is not None,
                 "byte_size": _size,
                 "original_untouched": True,
             },
@@ -255,3 +278,76 @@ def ingest_ics(
             job_id, status="error", message="ingest failed", error_message=str(exc)
         )
         return {"ok": False, "job_id": str(job_id), "error": str(exc)}
+
+
+def compact_calendar_cli_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep counts; do not print thousands of evidence UUIDs."""
+    out = dict(payload)
+    ids = out.get("evidence_ids")
+    if isinstance(ids, list) and len(ids) > 12:
+        out["evidence_id_count"] = len(ids)
+        out["evidence_ids_sample"] = ids[:8]
+        del out["evidence_ids"]
+    files = out.get("files")
+    if isinstance(files, list):
+        compact_files = []
+        for row in files:
+            if not isinstance(row, dict):
+                compact_files.append(row)
+                continue
+            compact_files.append(compact_calendar_cli_payload(row))
+        out["files"] = compact_files
+    return out
+
+
+def ingest_calendar_uri(
+    uri: str,
+    *,
+    limit: int | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Ingest one ICS file or every .ics under a staged calendar folder. Originals untouched."""
+    path = Path(uri)
+    if path.is_file():
+        return ingest_ics(str(path), limit=limit, label=label)
+    if not path.is_dir():
+        return {"ok": False, "error": f"ics not found: {path}"}
+    files, count, total_bytes = _list_ics(path)
+    if count == 0:
+        return {
+            "ok": False,
+            "error": "no .ics files in folder",
+            "uri": str(path),
+        }
+    file_results: list[dict[str, Any]] = []
+    inserted = 0
+    skipped = 0
+    all_ok = True
+    for row in files:
+        one = ingest_ics(str(row["path"]), limit=limit, label=label)
+        file_results.append(
+            {
+                "path": row["path"],
+                "bytes": row["bytes"],
+                "ok": bool(one.get("ok")),
+                "inserted": one.get("inserted"),
+                "skipped": one.get("skipped"),
+                "error": one.get("error"),
+                "job_id": one.get("job_id"),
+                "source_id": one.get("source_id"),
+            }
+        )
+        if not one.get("ok"):
+            all_ok = False
+        inserted += int(one.get("inserted") or 0)
+        skipped += int(one.get("skipped") or 0)
+    return {
+        "ok": all_ok,
+        "uri": str(path),
+        "ics_files": count,
+        "ics_bytes": total_bytes,
+        "inserted": inserted,
+        "skipped": skipped,
+        "original_untouched": True,
+        "files": file_results,
+    }

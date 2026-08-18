@@ -224,7 +224,9 @@ def _inspect(checks: dict[str, Any], problems: list[str]) -> dict[str, Any]:
         (
             f"calendar_event={n} staged_ics={staged} "
             f"archive_health.calendar={n} "
-            f"needs_ingest={inspect.get('needs_ingest')}"
+            f"coverage={inspect.get('coverage')} "
+            f"needs_ingest={inspect.get('needs_ingest')} "
+            f"ingest_recommended={inspect.get('ingest_recommended')}"
         ),
     )
     return inspect
