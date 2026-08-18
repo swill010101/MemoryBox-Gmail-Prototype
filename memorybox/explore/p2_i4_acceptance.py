@@ -1415,6 +1415,15 @@ def _prove_harness() -> dict[str, Any]:
             thumb_err = None
         except FileNotFoundError as exc:
             thumb_err = exc
+        from memorybox.providers.photo import build_photo as _photo_alias
+
+        _check(
+            "providers_photo_exports_build_photo",
+            callable(_photo_alias),
+            checks,
+            problems,
+            "lazy alias for person portrait import",
+        )
         _check(
             "immich_http_thumb_miss_does_not_open_circuit",
             thumb_err is not None and not bool(getattr(miss_c, "_circuit_open", False)),

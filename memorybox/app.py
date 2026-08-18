@@ -1009,9 +1009,14 @@ def library_photo_thumb(external_id: str) -> Response:
     try:
         preview = photo.fetch_preview(external_id)
     except Exception:  # noqa: BLE001 — miss is normal; do not 404-storm the console
+        root = getattr(client, "thumbs_root", None)
         return Response(
             status_code=204,
-            headers={"Cache-Control": "private, max-age=120"},
+            headers={
+                "Cache-Control": "private, max-age=120",
+                "X-MB-Thumb-Miss": "1",
+                "X-MB-Thumbs-Root": str(root) if root else "unset",
+            },
         )
     return Response(
         content=preview.data,
@@ -1891,9 +1896,15 @@ def people_portrait(person_id: str) -> Response:
 
     if not get_person(person_id):
         raise HTTPException(status_code=404, detail="person not found")
-    got = fetch_person_portrait_bytes(person_id)
+    try:
+        got = fetch_person_portrait_bytes(person_id)
+    except Exception:  # noqa: BLE001 — missing portrait must not 500 the Person header
+        got = None
     if not got:
-        raise HTTPException(status_code=404, detail="portrait unavailable")
+        return Response(
+            status_code=204,
+            headers={"Cache-Control": "private, max-age=60"},
+        )
     data, ctype = got
     return Response(
         content=data,

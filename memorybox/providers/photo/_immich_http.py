@@ -95,6 +95,10 @@ class ImmichHttpClient:
         self._lock = threading.Lock()
         thumbs = (vals.get("IMMICH_THUMBS_PATH") or vals.get("immich_thumbs_path") or "").strip()
         self.thumbs_root = Path(thumbs) if thumbs else None
+        if self.thumbs_root is None:
+            _LOG.warning("IMMICH_THUMBS_PATH unset; /library/media/photo will 204")
+        elif not self.thumbs_root.is_dir():
+            _LOG.warning("IMMICH_THUMBS_PATH is not a directory: %s", self.thumbs_root)
 
     @staticmethod
     def _load_env(path: Path) -> dict[str, str]:
@@ -1178,19 +1182,42 @@ class ImmichHttpClient:
         aid = (asset_id or "").strip()
         if root is None or not aid:
             return None
+        seen: set[str] = set()
+        paths: list[Path] = []
         for search in self._thumb_search_roots(root):
-            for path in self._thumb_path_candidates(search, aid):
+            paths.extend(self._thumb_path_candidates(search, aid))
+            prefix = aid[:2]
+            nest = aid[2:4] if len(aid) >= 4 else ""
+            globs = (
+                f"{prefix}/{aid}-thumbnail.webp",
+                f"{prefix}/{nest}/{aid}-thumbnail.webp" if nest else "",
+                f"*/{prefix}/{aid}-thumbnail.webp",
+                f"*/{prefix}/{nest}/{aid}-thumbnail.webp" if nest else "",
+                f"*/{prefix}/{nest}/{aid}-preview.webp" if nest else "",
+            )
+            for pattern in globs:
+                if not pattern:
+                    continue
                 try:
-                    if not path.is_file() or path.stat().st_size < 24:
-                        continue
-                    data = path.read_bytes()
+                    paths.extend(search.glob(pattern))
                 except OSError:
                     continue
-                if not data or data[:1] in (b"{", b"["):
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if not path.is_file() or path.stat().st_size < 24:
                     continue
-                suf = path.suffix.lower()
-                ctype = "image/webp" if suf == ".webp" else "image/jpeg"
-                return data, ctype
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if not data or data[:1] in (b"{", b"["):
+                continue
+            suf = path.suffix.lower()
+            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+            return data, ctype
         return None
 
     def _thumb_missed(self, asset_id: str) -> bool:

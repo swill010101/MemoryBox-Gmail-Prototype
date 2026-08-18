@@ -1351,7 +1351,7 @@ def resolve_immich_external_ids_for_person(
         provider = photo
         if provider is None:
             try:
-                from memorybox.providers.photo import build_photo
+                from memorybox.ask.deps import build_photo
 
                 provider = build_photo()
             except Exception:  # noqa: BLE001
@@ -1389,7 +1389,7 @@ def fetch_person_portrait_bytes(person_id: str) -> tuple[bytes, str] | None:
     Order: Immich feature-face thumb (mapped or name-resolved) → face evidence asset.
     """
     from memorybox.person.face_evidence import list_face_evidence
-    from memorybox.providers.photo import build_photo
+    from memorybox.ask.deps import build_photo
 
     try:
         photo = build_photo()
