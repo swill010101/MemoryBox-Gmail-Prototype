@@ -74,13 +74,13 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 | ID | Theme | Evidence | Suggested home |
 |----|--------|----------|----------------|
-| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Founder: high-volume combined cards + Timeline precision + Calendar in the bucket; not viewer-only | [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **REVISED, not build-authorized** |
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Founder: combined day cards + density-aware aggregation + Calendar filter + Attachments only; screens 00–11 accepted | [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **REVISED, not build-authorized** |
 | **P2-BL-I8-02** | Ask “how many times did I send an email to Peggy?” must **lock Peggy George** (canonical Person) **before** count + Gallery | Owner 2026-08-18: curator count + Gallery showed email and it worked, but first-name Peggy was not resolved to Peggy George first, so extra mail that is not Peggy George was included. Does not reopen I8. | **Next increment: P2-I8A** |
 
 ## Next increment
 
 **P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **ACCEPTED** 2026-08-18.
 
-**P2-I8A Unified Communications Gallery & Timeline Precision** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **REVISED** (Q1–Q6 locked). **Not BUILD AUTHORIZED.** Awaiting final founder lock. No I8A runtime.
+**P2-I8A Unified Communications Gallery & Timeline Precision** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **REVISED** (Q1–Q6 + visual 00–11 + conflict locks). **Not BUILD AUTHORIZED.** Awaiting final founder lock. No I8A runtime.
 
 Sequence: **I8 ACCEPTED → I8A → I9**. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**.

@@ -24,7 +24,7 @@ P2-I8 is **ACCEPTED**. Unified Communications Gallery & Timeline Precision is **
 
 | ID | Item | Notes |
 |----|------|-------|
-| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Definition revised. Combined cards + Timeline + Calendar + viewer + **P2-BL-I8-02**. **Not BUILD AUTHORIZED.** |
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Definition revised (screens 00–11 accepted). Combined day cards + density-aware aggregation + Calendar filter + viewer + **P2-BL-I8-02**. **Not BUILD AUTHORIZED.** |
 | **P2-BL-I8-01** | Attachment files up front | **Absorbed in I8** (shipped). |
 | **P2-BL-I8-02** | Ask email count must lock canonical Person first | Owner 2026-08-18: “how many times did I send an email to Peggy?” counted and showed mail **without resolving Peggy George first**, so extra mail that is not Peggy George was included. Count path still worked. **Do not reopen I8.** Next increment: **I8A**. |
 

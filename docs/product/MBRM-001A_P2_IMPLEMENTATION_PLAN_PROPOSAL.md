@@ -93,7 +93,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I7A** | AI Model Trace & Observability | F | **ACCEPTED** (2026-08-15) — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
 | **MBQL-001** | Ask, Query & Command Language | F | **ACCEPTED** (2026-08-18 — Tom: “MBQL is accepted”) — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). After I7A ACCEPTED, before I8. |
 | **P2-I8** | Richer Email | A | **ACCEPTED** 2026-08-18 — [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md) |
-| **P2-I8A** | Unified Communications Gallery & Timeline Precision | U | **REVISED** (Q1–Q6 locked 2026-08-18; awaiting final founder lock; **not BUILD AUTHORIZED**) — after I8 ACCEPTED, **before I9**. Face-SoT later. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | U | **REVISED** (Q1–Q6 + visual 00–11 + conflict locks 2026-08-18; awaiting final founder lock; **not BUILD AUTHORIZED**) — after I8 ACCEPTED, **before I9**. Face-SoT later. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -176,7 +176,7 @@ P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-
 
 ### P2-I8A — Unified Communications Gallery & Timeline Precision · U
 
-Combined Email/SMS/Calendar time-bucket cards, Timeline-precision aggregation, drill-down stack, shared viewer, Q3 visual-off defaults, **P2-BL-I8-02**. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **REVISED**, **not BUILD AUTHORIZED**. Next after I8A is **I9**. Not I8.5. Not I10/I11.
+Combined Email/SMS/Calendar **day** cards, density-aware aggregation, Communications + Calendar filters, Attachments only, drill-down (rollover → Open Day → tabs), shared viewer without send, Q3 visual-off defaults, **P2-BL-I8-02**. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **REVISED**, **not BUILD AUTHORIZED**. Next after I8A is **I9**. Not I8.5. Not I10/I11 generation.
 
 ### P2-I8.5 — Face Evidence Ownership · F
 
