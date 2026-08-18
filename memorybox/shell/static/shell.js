@@ -5,7 +5,7 @@
 (function () {
   // MBUX-001 v0.4 family primary destinations (I4). Review & Learn label locked.
   const FAMILY = [
-    { id: "ask", href: "/ask/ui", label: "Ask" },
+    { id: "ask", href: "/explore/ui", label: "Ask" },
     { id: "people", href: "/people/ui", label: "People" },
     { id: "story", href: "/story/ui", label: "Stories" },
     { id: "journal", href: "/journal/ui", label: "Journal" },
@@ -320,7 +320,7 @@
       return;
     }
     window.mbShell.pushContext({ label: "before Global Ask", surface: surface() });
-    const url = "/ask/ui?q=" + encodeURIComponent(text);
+    const url = "/explore/ui?q=" + encodeURIComponent(text);
     location.href = url;
   }
 
@@ -353,7 +353,7 @@
       if (!a) return;
       let href = a.getAttribute("href") || "";
       if (!href.startsWith("/")) return;
-      if (href.startsWith("/ask/ui") && surface() === "ask") return;
+      if (href.startsWith("/explore/ui") && surface() === "explore") return;
 
       // Explore → People: continue active person into Person Explorer
       try {
@@ -417,7 +417,7 @@
     }).join("");
 
     bar.innerHTML =
-      `<a class="mb-brand" href="/ask/ui">MemoryBox</a>` +
+      `<a class="mb-brand" href="/explore/ui">MemoryBox</a>` +
       `<nav class="mb-nav-family" aria-label="Family exploration">${family}` +
       `<button type="button" class="mb-global-ask-btn" id="mb-open-global-ask">Ask</button>` +
       `</nav>` +

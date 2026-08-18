@@ -303,13 +303,16 @@
 
   async function loadProfile() {
     const id = cfg.personId;
-    const [personRes, profileRes, faceRes, appRes] = await Promise.all([
+    const [personRes, profileRes, faceRes, appRes, statsRes] = await Promise.all([
       fetch("/people/" + encodeURIComponent(id)),
       fetch("/people/" + encodeURIComponent(id) + "/profile"),
       fetch("/people/" + encodeURIComponent(id) + "/face-evidence").catch(
         () => null
       ),
       fetch("/people/" + encodeURIComponent(id) + "/appearances").catch(
+        () => null
+      ),
+      fetch("/people/" + encodeURIComponent(id) + "/learn-stats").catch(
         () => null
       ),
     ]);
@@ -320,6 +323,7 @@
     const profile = profilePayload.profile || profilePayload;
     const facesPayload = faceRes && faceRes.ok ? await faceRes.json() : {};
     const appsPayload = appRes && appRes.ok ? await appRes.json() : {};
+    const statsPayload = statsRes && statsRes.ok ? await statsRes.json() : {};
 
     const name =
       person.display_name ||
@@ -532,17 +536,21 @@
       fb.src = faceThumb;
     }
 
-    const faceN = cached.faces.length;
-    const appN = cached.appearances.length;
+    const faceN = Number(statsPayload.immich_photos || cached.faces.length) || 0;
+    const appN = Number(statsPayload.immich_videos || cached.appearances.length) || 0;
+    const faceLabel = statsPayload.immich_photos != null
+      ? " Immich photo" + (faceN === 1 ? "" : "s")
+      : " confirmed face" + (faceN === 1 ? "" : "s");
+    const vidLabel = statsPayload.immich_videos != null
+      ? " Immich video" + (appN === 1 ? "" : "s")
+      : " video appearance" + (appN === 1 ? "" : "s");
     document.getElementById("mb-person-learn-stats").innerHTML =
       "<li>" +
       faceN +
-      " confirmed face" +
-      (faceN === 1 ? "" : "s") +
+      faceLabel +
       "</li><li>" +
       appN +
-      " video appearance" +
-      (appN === 1 ? "" : "s") +
+      vidLabel +
       "</li><li>0 voice examples</li>";
 
     document.getElementById("mb-person-summary").textContent =

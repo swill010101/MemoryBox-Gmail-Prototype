@@ -178,6 +178,9 @@ class StoryHit:
     provenance_kind: str
     attribution: str
     score: float = 1.0
+    taken_at: str | None = None
+    thumb_url: str | None = None
+    source_photo_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1976,6 +1979,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 s.current_version,
                 sv.body_text,
                 sv.version,
+                sv.note,
                 p.display_name AS narrator_name
             FROM stories s
             JOIN story_versions sv
@@ -2025,6 +2029,14 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or ""
             excerpt = body[:200] + ("?" if len(body) > 200 else "")
+            note = str(r.get("note") or "")
+            photo_m = re.search(r"mb_source_photo=(\S+)", note)
+            taken_m = re.search(r"mb_taken_at=(\S+)", note)
+            thumb_m = re.search(r"mb_thumb=(\S+)", note)
+            photo_id = photo_m.group(1) if photo_m else None
+            thumb = thumb_m.group(1) if thumb_m else None
+            if photo_id and not thumb:
+                thumb = f"/library/media/photo/{photo_id}"
             hits.append(
                 StoryHit(
                     story_id=sid,
@@ -2038,6 +2050,9 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                     provenance_kind="owner_narrator_recollection",
                     attribution=f"{narrator} recalled (Story v{int(r['version'])})",
                     score=float(match_n),
+                    taken_at=(taken_m.group(1) if taken_m else None),
+                    thumb_url=thumb,
+                    source_photo_id=photo_id,
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)

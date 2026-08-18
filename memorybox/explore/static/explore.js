@@ -40,7 +40,7 @@
   };
 
   const NAV = [
-    { id: "ask", label: "Ask", href: "/ask/ui", ico: "?" },
+    { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
     { id: "people", label: "People", href: "/people/ui", ico: "☺" },
     { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
     { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
@@ -89,7 +89,7 @@
     only_artifacts: /^only artifacts?\.?$/i,
     only_stories: /^only stories?\.?$/i,
     go_to_people: /clear context.*people|go to people/i,
-    go_to_person: /^go to\s+(.+?)\s+instead\.?$/i,
+    go_to_person: /^(?:go to\s+(.+?)\s+instead|select\s+(.+?)|switch to\s+(.+?))\.?$/i,
   };
 
   /** @type {{
@@ -787,7 +787,7 @@
     const nameL = name.toLowerCase();
     const first = nameL.split(/\s+/)[0];
     if (!q) return "Show " + name;
-    if (/^go to\b/.test(lower)) return q;
+    if (/^go to\b/.test(lower) || /^(select|switch to)\b/.test(lower)) return q;
     if (lower.includes(nameL) || (first && /\b/.test(first) && lower.includes(first))) {
       // Already mentions locked person — don't double-prefix
       if (/^show\b/.test(lower)) return q;
@@ -842,14 +842,15 @@
 
   /** Person surface: "Show me Tom" / "Go to Tom instead" → open that Person Explorer. */
   function trySwitchPersonFromAsk(raw) {
-    if (!PERSON_MODE) return false;
     const text = String(raw || "").trim();
     const lower = text.toLowerCase();
     let who = "";
     const go = lower.match(/^go to\s+(.+?)\s+instead\.?$/);
+    const select = lower.match(/^(?:select|switch to)\s+(.+?)\.?$/);
     const show = text.match(/^show\s+(?:me\s+)?(.+?)\.?$/i);
     if (go) who = go[1].replace(/\.$/, "").trim();
-    else if (show) {
+    else if (select) who = select[1].replace(/\.$/, "").trim();
+    else if (show && PERSON_MODE) {
       who = show[1].trim();
       who = who
         .replace(
@@ -862,13 +863,14 @@
     }
     if (!who) return false;
     const whoL = who.toLowerCase();
-    const locked = (PERSON.displayName || "").toLowerCase();
+    const locked = String((PERSON && PERSON.displayName) || "").toLowerCase();
     const lockedFirst = locked.split(/\s+/)[0] || "";
-    if (
+    const lockedTokens = locked.split(/\s+/).filter(Boolean);
+    const whoTokens = whoL.split(/\s+/).filter(Boolean);
+    const samePerson =
       whoL === locked ||
-      whoL === lockedFirst ||
-      (lockedFirst && whoL.startsWith(lockedFirst + " "))
-    ) {
+      (whoTokens.length === 1 && whoTokens[0] === lockedFirst);
+    if (samePerson) {
       return false;
     }
     if (
@@ -1233,14 +1235,11 @@
 
     if (PERSON_MODE && MBQL_VERBS.go_to_person.test(text)) {
       const m = String(text).match(MBQL_VERBS.go_to_person);
-      const who = (m && m[1] ? m[1] : "").replace(/\.$/, "").trim();
-      if (who) {
-        const whoL = who.toLowerCase();
-        const hit = (peopleOptions || []).find((p) => {
-          const lab = String(p.label || "").toLowerCase();
-          const first = lab.split(/\s+/)[0];
-          return lab === whoL || first === whoL || lab.includes(whoL);
-        });
+        const who = (m && (m[1] || m[2] || m[3]) ? (m[1] || m[2] || m[3]) : "")
+          .replace(/\.$/, "")
+          .trim();
+        if (who) {
+          const hit = resolvePersonOption(who);
         if (hit && hit.id) {
           window.location.href =
             "/people/ui?person=" + encodeURIComponent(hit.id);
@@ -1576,15 +1575,7 @@
       "";
     const name = String(chip.label || "").trim();
     if (!id && name && peopleOptions && peopleOptions.length) {
-      const nameL = name.toLowerCase();
-      const hit = peopleOptions.find((p) => {
-        const lab = String(p.label || "").toLowerCase();
-        return (
-          lab === nameL ||
-          lab.startsWith(nameL) ||
-          nameL.startsWith(lab.split(/\s+/)[0])
-        );
-      });
+      const hit = resolvePersonOption(name);
       if (hit) id = hit.id;
     }
     if (window.mbShell && window.mbShell.setActivePerson) {
@@ -1861,7 +1852,10 @@
       return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
-      return `<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      const bg = media
+        ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
+        : "";
+      return `${bg}<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "video") {
       const dur = it.duration_sec
@@ -2598,7 +2592,22 @@
     const addStory = document.getElementById("mb-rail-add-story");
     if (addStory) {
       addStory.addEventListener("click", () => {
-        window.location.href = "/story/ui";
+        const cur = rawItems.find((x) => x.id === state.modal.openId);
+        const qs = new URLSearchParams();
+        if (cur) {
+          const photoId = String(cur.external_id || "").trim();
+          if (photoId) qs.set("photo", photoId);
+          if (cur.date) qs.set("taken", String(cur.date).slice(0, 32));
+          const thumb = cur.thumb_url || cur.media_url || "";
+          if (thumb) qs.set("thumb", thumb);
+          if (cur.title) qs.set("title", String(cur.title).slice(0, 80));
+          const who =
+            cur.mb_person_name ||
+            (Array.isArray(cur.people) && cur.people[0]) ||
+            "";
+          if (who) qs.set("about", String(who));
+        }
+        window.location.href = "/story/ui" + (qs.toString() ? "?" + qs.toString() : "");
       });
     }
   }
@@ -2931,8 +2940,8 @@
     const immichSrc = immichVideoSrc(item);
     if (immichSrc) {
       el.src = immichSrc;
+      el.preload = "metadata";
       el.load();
-      el.play().catch(() => {});
       return;
     }
     const vid = String((item && item.video_external_id) || "").trim();
@@ -2951,7 +2960,6 @@
         };
         el.addEventListener("loadedmetadata", onMeta);
         el.load();
-        return el.play().catch(() => {});
       })
       .catch(() => {
         el.src = "/review/media/" + encoded;
@@ -2975,19 +2983,18 @@
     const media = item.media_url || item.thumb_url || "";
     if (t === "photo") {
       const zoom = Number(state.modal.zoom) || 1;
-      // Width-based zoom (not transform) so overflow scrolls inside the stage
-      // and never paints over the footer controls.
-      const zoomStyle =
-        zoom === 1
-          ? ""
-          : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none;max-height:none;height:auto"`;
+      // Width-based zoom on the photo+faces wrapper so Immich boxes stay aligned.
       const img = media
         ? `<img src="${escapeAttr(media)}" alt="${escapeAttr(
             item.title || "Photo"
-          )}"${zoomStyle} />`
+          )}" />`
         : escapeHtml(item.preview || item.title || "Photo");
+      const zoomWrapStyle =
+        zoom === 1
+          ? ""
+          : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none"`;
       return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">
-        <div class="mb-ev-photo-frame">${img}${faceBoxHtml(item)}</div>
+        <div class="mb-ev-photo-frame"><div class="mb-ev-photo-zoom"${zoomWrapStyle}>${img}${faceBoxHtml(item)}</div></div>
       </div>`;
     }
     if (t === "video") {
@@ -3017,10 +3024,14 @@
           ${stage}
           ${faceBoxHtml(item)}
         </div>
-        <div class="mb-ev-video-transport" aria-label="Video transport">
+        ${
+          stream
+            ? ""
+            : `<div class="mb-ev-video-transport" aria-label="Video transport">
           <span>▶︎</span>
-          <span>${t0.toFixed(1)}s ${stream ? "· play here" : "· paused frame"}</span>
-        </div>
+          <span>${t0.toFixed(1)}s · paused frame</span>
+        </div>`
+        }
         <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
           <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>
           <div>[${t0.toFixed(0)}] ${escapeHtml(

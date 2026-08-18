@@ -219,6 +219,9 @@ class StoryCreateRequest(BaseModel):
     person_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     note: str | None = None
+    source_photo_id: str | None = None
+    taken_at: str | None = None
+    thumb_url: str | None = None
 
 
 class StoryVersionRequest(BaseModel):
@@ -433,7 +436,7 @@ def health() -> dict[str, Any]:
         "capture_stt": stt_info,
         "host": settings.host,
         "port": settings.port,
-        "ask": "/ask/ui",
+        "ask": "/explore/ui",
         "story": "/story/ui",
         "journal": "/journal/ui",
         "people": "/people/ui",
@@ -453,7 +456,7 @@ def health() -> dict[str, Any]:
 @app.get("/")
 def root() -> RedirectResponse:
     """P2-I2: Ask/Home is the product front door."""
-    return RedirectResponse(url="/ask/ui", status_code=307)
+    return RedirectResponse(url="/explore/ui", status_code=307)
 
 
 @app.get("/ask/ui")
@@ -1388,6 +1391,16 @@ def story_list() -> dict[str, Any]:
 @app.post("/story")
 def story_create(body: StoryCreateRequest) -> dict[str, Any]:
     try:
+        note = body.note
+        bits: list[str] = []
+        if (body.source_photo_id or "").strip():
+            bits.append("mb_source_photo=" + str(body.source_photo_id).strip())
+        if (body.taken_at or "").strip():
+            bits.append("mb_taken_at=" + str(body.taken_at).strip()[:40])
+        if (body.thumb_url or "").strip():
+            bits.append("mb_thumb=" + str(body.thumb_url).strip()[:400])
+        if bits:
+            note = ((note or "") + " " + " ".join(bits)).strip()
         view = create_story(
             title=body.title,
             body_text=body.body_text,
@@ -1395,7 +1408,7 @@ def story_create(body: StoryCreateRequest) -> dict[str, Any]:
             narrator_person_id=body.narrator_person_id,
             person_ids=body.person_ids,
             evidence_ids=body.evidence_ids,
-            note=body.note,
+            note=note,
             actor_key="owner",
         )
     except StoryServiceError as exc:
@@ -1768,6 +1781,80 @@ def people_face_evidence(person_id: str) -> dict[str, Any]:
             item["media_url"] = item["thumb_url"]
         enriched.append(item)
     return {"ok": True, "person_id": person_id, "evidence": enriched}
+
+
+@app.get("/people/{person_id}/learn-stats")
+def people_learn_stats(person_id: str) -> dict[str, Any]:
+    """Immich library counts for Learn (not only MB-taught face-evidence rows)."""
+    from memorybox.ask.deps import build_photo
+    from memorybox.person import resolve_immich_external_ids_for_person
+    from memorybox.person.face_evidence import list_face_evidence
+    from memorybox.recognition.process import list_appearance_moments
+
+    taught_faces = 0
+    taught_video = 0
+    try:
+        taught_faces = len(list_face_evidence(person_id) or [])
+    except Exception:
+        taught_faces = 0
+    try:
+        taught_video = len(list_appearance_moments(person_id, limit=500) or [])
+    except Exception:
+        taught_video = 0
+
+    immich_photos = 0
+    immich_videos = 0
+    immich_faces = 0
+    try:
+        photo = build_photo()
+        ids = resolve_immich_external_ids_for_person(person_id, photo=photo) or []
+        client = getattr(photo, "_client", None)
+        list_faces = getattr(client, "list_faces_for_person", None)
+        search = getattr(client, "search_by_person_ids", None)
+        seen_assets: set[str] = set()
+        for ext in ids:
+            if callable(list_faces):
+                try:
+                    faces = list_faces(ext) or []
+                    immich_faces += len(faces)
+                except Exception:
+                    pass
+            if not callable(search):
+                continue
+            try:
+                rows = search([ext], size=5000) or []
+            except Exception:
+                rows = []
+            for raw in rows:
+                if not isinstance(raw, dict):
+                    continue
+                aid = str(raw.get("id") or "").strip()
+                if not aid or aid in seen_assets:
+                    continue
+                seen_assets.add(aid)
+                kind = str(raw.get("type") or "").upper()
+                name = str(
+                    raw.get("originalFileName") or raw.get("originalPath") or ""
+                ).lower()
+                is_video = kind == "VIDEO" or name.endswith(
+                    (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
+                )
+                if is_video:
+                    immich_videos += 1
+                else:
+                    immich_photos += 1
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "person_id": person_id,
+        "immich_photos": immich_photos,
+        "immich_videos": immich_videos,
+        "immich_faces": immich_faces,
+        "taught_faces": taught_faces,
+        "taught_video": taught_video,
+        "voice": 0,
+    }
 
 
 @app.get("/people/{person_id}/appearances")

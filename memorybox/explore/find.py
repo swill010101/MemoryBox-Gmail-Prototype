@@ -387,18 +387,26 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         sid = str(s.get("story_id") or "")
         if not sid:
             continue
+        taken = str(s.get("taken_at") or "")
+        thumb = str(s.get("thumb_url") or "")
+        photo_id = str(s.get("source_photo_id") or "")
+        if photo_id and not thumb:
+            thumb = f"/library/media/photo/{photo_id}"
         add(
             _item_base(
                 id=f"story:{sid}",
                 type_="story",
                 title=str(s.get("title") or "Story")[:80],
-                date="",  # stories are not calendar-primary
-                undated=True,
+                date=taken,
+                undated=not taken,
                 preview=str(s.get("excerpt") or s.get("attribution") or ""),
                 detail=str(s.get("excerpt") or ""),
                 story_id=sid,
                 version=s.get("version"),
                 attribution=s.get("attribution"),
+                media_url=thumb or None,
+                thumb_url=thumb or None,
+                external_id=photo_id or None,
             )
         )
 

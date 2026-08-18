@@ -273,6 +273,9 @@ def _prove_harness() -> dict[str, Any]:
             "FACE_HOLD_MS",
             "mb-faces-revealed",
             "applyCuratorPortrait",
+            "mb-ev-photo-zoom",
+            "select\\s+",
+            "/explore/ui",
         ):
             if marker not in js:
                 missing.append(marker)
