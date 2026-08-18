@@ -90,7 +90,20 @@ git checkout cursor/p2-immich-flightsim-cutover-3061
 git pull origin cursor/p2-immich-flightsim-cutover-3061
 ```
 
-Then restart Ask/serve the way you usually do (`startmb.ps1` or the serve window). Confirm the serve window prints `IMMICH_ENV=C:\memorybox\config\immich.env` and does **not** warn about media-server.
+Then restart Ask/serve. Prefer **`startmb.cmd`** (not `.\startmb.ps1` — Restricted policy blocks `.ps1` files):
+
+```powershell
+cd C:\memorybox
+.\startmb.cmd
+```
+
+Or Bypass once:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\memorybox\startmb.ps1
+```
+
+Confirm the serve window prints `IMMICH_ENV=C:\memorybox\config\immich.env` and does **not** warn about media-server.
 
 ---
 
