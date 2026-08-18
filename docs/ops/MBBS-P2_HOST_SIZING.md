@@ -7,7 +7,7 @@
 
 **Archive guide (this recommendation):** ~51k photos · ~1k videos · ~94k email · ~90k SMS  
 
-**Related:** Immich lives on **local disk** on this host (not UNC `\\media-server\…`). After the box is up: point `config/immich.env` at localhost, then **I4 §8.1 is the first owner pass** ([I4 definition](../product/MBBS-P2_INCREMENT_4_DEFINITION.md)).
+**Related:** Immich lives on **local disk** on this host (not UNC `\\media-server\…`). After the box is up: point `config/immich.env` at localhost. **P2-I4 is ACCEPTED** (2026-08-18); remaining Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -95,4 +95,4 @@ Keep the 10 TB as **Sources**, not as the database disk.
 1. Immich app + library on **local NVMe** (not UNC).  
 2. `config/immich.env`: `IMMICH_BASE_URL` → localhost; thumbs path local; thumbs API off unless needed.  
 3. Restart Ask/serve.  
-4. **I4 §8 + §8.1 owner pass** — must actually work. **MBQL-001 is ACCEPTED** (2026-08-18). Do not skip I4 for I8.
+4. **P2-I4 ACCEPTED** 2026-08-18. Remaining Explore visual defects are **P2-BL-I4-01**. **MBQL-001 is ACCEPTED**. Do not start I8 until authorized.

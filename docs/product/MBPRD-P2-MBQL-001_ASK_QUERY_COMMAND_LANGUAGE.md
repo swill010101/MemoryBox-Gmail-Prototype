@@ -3,7 +3,7 @@
 **Status:** PRD **ACCEPTED** 2026-08-15 (Tom Q1–Q8) · increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”) · definition **LOCKED**  
 **Date:** 2026-08-15 (PRD) · 2026-08-18 (increment accepted)  
 **Increment definition:** [MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md)  
-**Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
+**Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not start:** I8 email · I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user
 
 PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. Do not start I8.
@@ -108,7 +108,7 @@ Q8 is open. Q1–Q7 stay locked.
 3. Single compile function used by Ask + Explore (+ Person scope).
 4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Increment **ACCEPTED** 2026-08-18. Do not start I8. **I4 §8.1** remains the Explore owner pass (must still work).
+6. **Stop.** Increment **ACCEPTED** 2026-08-18. Do not start I8. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
 
 ---
 

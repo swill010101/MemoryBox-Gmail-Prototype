@@ -2251,7 +2251,7 @@ def _prove_harness() -> dict[str, Any]:
             "D Teach and return",
             "E Ask command equivalence",
         ],
-        "note": "Harness is structural. ACCEPTED requires FlightSim manual pass of every §8 row and §8.1 cases A–E.",
+        "note": "P2-I4 ACCEPTED 2026-08-18 (Tom). Harness is structural assist. Remaining visual defects are P2-BL-I4-01 (non-blocking).",
     }
 
 
@@ -2354,5 +2354,5 @@ def _prove_flightsim() -> dict[str, Any]:
             "D Teach and return",
             "E Ask command equivalence",
         ],
-        "note": "prove-p2-i4 is structural assist only. ACCEPTED requires manual pass of every §8 row and §8.1 cases A–E on FlightSim.",
+        "note": "P2-I4 ACCEPTED 2026-08-18 (Tom). prove-p2-i4 is structural assist only. Remaining visual defects are P2-BL-I4-01 (non-blocking).",
     }

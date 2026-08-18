@@ -7,7 +7,7 @@
 
 Immich is up on FlightSim. MemoryBox still reads `config/immich.env` (gitignored). If that file still has a media-server URL or `\\media-server\immich\thumbs`, Ask/Explore will talk to the old box or miss thumbs.
 
-After this works: **I4 §8.1 is the first owner pass.**
+After this works: Ask/Explore against local Immich. **P2-I4 is ACCEPTED** (2026-08-18); remaining visual polish is **P2-BL-I4-01**.
 
 ---
 

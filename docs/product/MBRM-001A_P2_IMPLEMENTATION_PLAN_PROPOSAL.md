@@ -5,8 +5,8 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I3, I5, I6, **I7 ACCEPTED**; I4 build authorized / not ACCEPTED; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files up front = **P2-BL-I8-01**.  
-**Owner-pass order:** **MBQL-001 ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **I4 §8.1** remains the Explore owner pass and must work. Do not skip I4 for I8. Attachments do not block I4. Do not start I8 until Tom authorizes I8.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I7 **ACCEPTED** including **I4** 2026-08-18; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files up front = **P2-BL-I8-01**. Explore visual polish = **P2-BL-I4-01** (does not reopen I4).  
+**Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18 (Tom: functional and UX satisfactory). **MBQL-001 ACCEPTED** 2026-08-18. Do not start I8 until Tom authorizes I8. Do not reopen I4 for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
 ## 0. First-increment verdict (confirmed)
@@ -86,7 +86,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I1** | Show me Peggy (Person-in-Media Vertical) | F+E | **ACCEPTED** (2026-08-13) |
 | **P2-I2** | Product Shell & Context Maturation | U | **ACCEPTED** (2026-08-13) |
 | **P2-I3** | Archive Health & Provider Honesty | U+A | **ACCEPTED** (2026-08-13) |
-| **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **BUILD AUTHORIZED** / not ACCEPTED — **first owner pass when box is stable** (Tom 2026-08-17; must work, do not skip) — [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md) |
+| **P2-I4** | Mixed-Media Find / Explore (Timeline-first) | U | **ACCEPTED** (2026-08-18 — Tom: functional and UX satisfactory; remaining visual defects **P2-BL-I4-01**) — [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md) |
 | **P2-I5** | Universal Person Surfaces | F+U | **ACCEPTED** (2026-08-14) — rest of TASK-001 |
 | **P2-I6** | Kinship Inference | A | **ACCEPTED** (2026-08-14) — TASK-002 |
 | **P2-I7** | SMS/Text Evidence | A | **ACCEPTED** (2026-08-15) — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); attachment bytes **P2-BL-I7-01** |
@@ -146,7 +146,7 @@ P2-AH-01..03; **TASK-004** Immich Photos inventory. Minimal sync/reprocess statu
 
 ### P2-I4 — Timeline-first High-Volume Explore · U
 
-P2-UX-02/03. Depends on I2; improved by I1 moments.
+P2-UX-02/03. Depends on I2; improved by I1 moments. **ACCEPTED** 2026-08-18 (Tom: functional and UX satisfactory; remaining visual defects parked **P2-BL-I4-01**). [I4 definition](MBBS-P2_INCREMENT_4_DEFINITION.md). Do not reopen I4 for aesthetic polish.
 
 ### P2-I5 — Universal Person Surfaces · F+U
 

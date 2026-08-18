@@ -5,10 +5,10 @@
 **PRD:** [MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md)  
 **Authority:** Tom lock 2026-08-15 · owner pass 2026-08-18 · [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · I7A **ACCEPTED**  
 **Roadmap:** After **P2-I7A ACCEPTED** and **before P2-I8**  
-**Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** · I4 build authorized / not ACCEPTED  
+**Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I8 email / **P2-BL-I8-01** · I8.5 · **I9 spoken product** (stays after I8.5) · I10 · I11 · I13/I14 · family nav · multi-user · Explore redesign
 
-**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. Do not start I8 until Tom authorizes that increment. I4 §8 + §8.1 remains the Explore owner pass.
+**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. Do not start I8 until Tom authorizes that increment. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -182,4 +182,4 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 | MBQL-001 ACCEPTED | **Yes** (2026-08-18 — Tom: “MBQL is accepted”) |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** Do not start I8 until Tom authorizes I8. **I4 §8 + §8.1** is still the Explore owner pass and must actually work. Do not reopen MBQL-001.
+**Stop.** Do not start I8 until Tom authorizes I8. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.
