@@ -23,7 +23,7 @@ class EvidenceHit:
     summary: str
     score: float
     excerpt: str
-    source: str  # qdrant | postgres_keyword | sms_export
+    source: str  # qdrant | postgres_keyword | sms_export | email_mbox
     sent_at: str | None = None
     channel: str | None = None
     people: list[str] | None = None
@@ -94,6 +94,39 @@ _SMS_FAKE_PEOPLE = frozenset(
         "and",
     }
 )
+EMAIL_ASK_RE = re.compile(r"(?i)\b(e-?mails?|inbox|correspondence)\b")
+EMAIL_COUNT_RE = re.compile(r"(?i)\bhow many\b|\bcount\b|\btimes did\b")
+EMAIL_OUTBOUND_RE = re.compile(
+    r"(?i)\b("
+    r"did i e-?mail|have i e-?mailed|i e-?mailed|how many times did i e-?mail|"
+    r"e-?mails? did i send|sent e-?mail"
+    r")\b"
+)
+EMAIL_INBOUND_RE = re.compile(
+    r"(?i)\b("
+    r"respond(?:ed)?\s+to\s+any\s+of\s+my\s+e-?mails?|"
+    r"replied\s+to\s+my\s+e-?mails?|"
+    r"e-?mails?\s+.+\s+respond"
+    r")\b"
+)
+EMAIL_THREAD_RE = re.compile(r"(?i)\b(thread|replies|reply chain|conversation)\b")
+EMAIL_ATTACH_ASK_RE = re.compile(
+    r"(?i)\bwith\s+attachments?\b|\bhas\s+attachments?\b|\binline\s+images?\b"
+)
+_EMAIL_FAKE_PEOPLE = frozenset(
+    {
+        "attachments",
+        "attachment",
+        "unknown",
+        "email",
+        "emails",
+        "mail",
+        "inbox",
+        "and",
+        "times",
+    }
+)
+
 _SMS_KEYWORD_EXTRA_STOP = frozenset(
     {
         "about",
@@ -217,6 +250,11 @@ def _sms_ask(plan: QueryPlan) -> bool:
         or bool(SMS_LAST_N_RE.search(blob))
         or bool(SMS_ATTACH_ASK_RE.search(blob))
     )
+
+
+def _email_ask(plan: QueryPlan) -> bool:
+    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    return bool(EMAIL_ASK_RE.search(blob))
 
 
 def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -573,13 +611,387 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     return sliced
 
 
+def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
+    from memorybox.person.phone_map import normalize_handle
+
+    out: set[str] = set()
+    for rec in (
+        list(payload.get("from_parsed") or [])
+        + list(payload.get("to_parsed") or [])
+        + list(payload.get("cc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
+        if n and "@" in n:
+            out.add(n)
+    return out
+
+
+def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
+    from memorybox.person.phone_map import normalize_handle
+
+    ids = [str(p) for p in person_ids if str(p).strip()]
+    if not ids:
+        return set()
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT value_text
+                FROM person_contact_points
+                WHERE contact_kind = 'email'
+                  AND status = 'confirmed'
+                  AND person_id::text = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        n = normalize_handle(str(r.get("value_text") or ""))
+        if n and "@" in n:
+            out.add(n)
+    return out
+
+
+def _asked_person_is_owner(plan: QueryPlan) -> bool:
+    try:
+        from memorybox.profile.owner import get_owner_person_id
+    except Exception:  # noqa: BLE001
+        return False
+    oid = get_owner_person_id()
+    if not oid:
+        return False
+    if str(oid) in {str(p) for p in (plan.person_ids or ()) if p}:
+        return True
+    asked = {str(n).strip().lower() for n in (plan.person_names or ()) if str(n).strip()}
+    if not asked:
+        return False
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                "SELECT display_name FROM people WHERE id = %s",
+                (oid,),
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return False
+    dn = str((row or {}).get("display_name") or "").strip().lower()
+    if not dn:
+        return False
+    if dn in asked:
+        return True
+    first = dn.split()[0]
+    return first in asked and len(first) > 2
+
+
+def _email_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
+
+
+def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
+    people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    identity = [
+        {
+            "handle": str(m.get("handle") or m.get("normalized") or ""),
+            "normalized": str(m.get("normalized") or ""),
+            "person_id": str(m.get("person_id") or ""),
+            "status": str(m.get("status") or "auto_mapped"),
+        }
+        for m in mapped
+        if isinstance(m, dict) and (m.get("handle") or m.get("normalized"))
+    ]
+    return EvidenceHit(
+        evidence_id=str(row["id"]),
+        evidence_kind=row["evidence_kind"],
+        summary=row["summary"] or (payload.get("subject") or "email")[:80],
+        score=score,
+        excerpt=_excerpt(payload, row["evidence_kind"], limit=800),
+        source="email_mbox",
+        sent_at=payload.get("sent_at"),
+        channel="email",
+        people=people or None,
+        thread_id=payload.get("thread_id"),
+        direction=payload.get("direction"),
+        attachments=_email_attachments(payload) or None,
+        identity_mapped=identity or None,
+    )
+
+
+def _email_person_blob(payload: dict[str, Any]) -> str:
+    bits = [
+        str(payload.get("from") or ""),
+        str(payload.get("from_raw") or ""),
+        " ".join(str(t) for t in (payload.get("to") or [])),
+        " ".join(str(p) for p in (payload.get("people") or [])),
+    ]
+    for rec in list(payload.get("from_parsed") or []) + list(payload.get("to_parsed") or []):
+        if isinstance(rec, dict):
+            bits.append(str(rec.get("display_name") or ""))
+            bits.append(str(rec.get("address") or ""))
+            bits.append(str(rec.get("normalized") or ""))
+    mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
+    for m in mapped:
+        if isinstance(m, dict):
+            bits.append(str(m.get("handle") or ""))
+            bits.append(str(m.get("normalized") or ""))
+    return " ".join(bits).lower()
+
+
+def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
+    """Person / date / keyword retrieve over ingested email Evidence."""
+    ask = plan.original_ask or ""
+    want_count = bool(EMAIL_COUNT_RE.search(ask))
+    outbound_only = bool(EMAIL_OUTBOUND_RE.search(ask))
+    inbound_only = bool(EMAIL_INBOUND_RE.search(ask)) and not outbound_only
+    attach_only = bool(EMAIL_ATTACH_ASK_RE.search(ask))
+    thread_open = bool(EMAIL_THREAD_RE.search(ask))
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    from memorybox.ingest.comms_email import owner_emails
+
+    owner_addrs = owner_emails()
+    asked_owner = _asked_person_is_owner(plan)
+    confirmed_addrs = _confirmed_emails_for_people(person_ids)
+    person_names = [
+        n.strip().lower()
+        for n in (plan.person_names or ())
+        if n.strip() and n.strip().lower() not in _EMAIL_FAKE_PEOPLE
+    ]
+    name_tokens = {tok for n in person_names for tok in re.findall(r"[a-z0-9']{2,}", n)}
+    windows = list(plan.temporal_windows or ())
+    if not windows and plan.time_start and plan.time_end:
+        windows = [(plan.time_start, plan.time_end)]
+    keyword_stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "show",
+        "me",
+        "just",
+        "ones",
+        "what",
+        "else",
+        "have",
+        "how",
+        "many",
+        "times",
+        "did",
+        "email",
+        "emails",
+        "e-mail",
+        "e-mails",
+        "mail",
+        "inbox",
+        "all",
+        "my",
+        "each",
+        "other",
+        "sent",
+        "send",
+        "total",
+        "summarize",
+        "summary",
+        "respond",
+        "responded",
+        "replied",
+        "thread",
+        "replies",
+        "any",
+        "about",
+    } | name_tokens | set(person_names)
+    keywords = [
+        t.lower().replace("'", "")
+        for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
+        if t.lower().replace("'", "") not in keyword_stop
+    ]
+    if windows:
+        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    holiday_ask = bool(
+        re.search(
+            r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
+            r"nye|nyd|holiday|memorial\s+day|labor\s+day|juneteenth)\b",
+            ask,
+        )
+        or "temporal=holiday" in (plan.notes or ())
+        or "christmas_window" in " ".join(plan.notes or ())
+    )
+    if holiday_ask:
+        keywords = [
+            k
+            for k in keywords
+            if k
+            not in {
+                "christmas",
+                "xmas",
+                "christmastime",
+                "season",
+                "time",
+                "holiday",
+                "thanksgiving",
+                "easter",
+                "halloween",
+                "during",
+                "around",
+                "coordinate",
+                "coordinated",
+            }
+        ]
+
+    rows_payload: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """
+        ).fetchall()
+    for r in rows:
+        payload = _payload_dict(r["payload_json"])
+        if str(payload.get("evidence_channel") or "email").lower() != "email":
+            continue
+        rows_payload.append((r, payload))
+
+    def _keep(payload: dict[str, Any], row: dict[str, Any]) -> bool:
+        if outbound_only and not payload.get("from_owner"):
+            return False
+        if inbound_only and payload.get("from_owner"):
+            return False
+        sent = str(payload.get("sent_at") or "")
+        if windows:
+            day = sent[:10]
+            if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
+                return False
+        if person_ids or person_names:
+            have = {str(x) for x in (payload.get("person_ids") or [])}
+            addrs = _payload_email_addresses(payload)
+            if person_ids and (have & person_ids):
+                pass
+            elif confirmed_addrs and (addrs & confirmed_addrs):
+                pass
+            elif asked_owner and (
+                payload.get("from_owner")
+                or (owner_addrs and (addrs & owner_addrs))
+                or (asked_owner and not owner_addrs and not confirmed_addrs)
+            ):
+                # Owner Person + personal Takeout: mailbox is theirs even when
+                # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
+                pass
+            elif person_names and _sms_name_match(_email_person_blob(payload), person_names):
+                pass
+            else:
+                return False
+        if attach_only and not _email_attachments(payload):
+            return False
+        if keywords:
+            blob = (
+                f"{row['summary'] or ''} {payload.get('subject') or ''} "
+                f"{payload.get('body_text') or ''} {payload.get('thread_id') or ''}"
+            ).lower()
+            if not any(k in blob for k in keywords):
+                return False
+        return True
+
+    matched: list[EvidenceHit] = []
+    for r, payload in rows_payload:
+        if _keep(payload, r):
+            matched.append(_email_hit(r, payload, score=1.0))
+    if thread_open:
+        thread_ids = {h.thread_id for h in matched if h.thread_id}
+        if thread_ids:
+            extra: list[EvidenceHit] = []
+            have = {h.evidence_id for h in matched}
+            for r, payload in rows_payload:
+                tid = payload.get("thread_id")
+                if tid in thread_ids and str(r["id"]) not in have:
+                    extra.append(_email_hit(r, payload, score=0.8))
+            matched.extend(extra)
+    hits = matched
+    hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    scope_bits = [
+        "ingested email export",
+        f"n={len(hits)}",
+    ]
+    if person_names:
+        scope_bits.append(
+            "person="
+            + ", ".join(n for n in plan.person_names if str(n).lower() not in _EMAIL_FAKE_PEOPLE)
+        )
+    if windows:
+        scope_bits.append("dates=" + ";".join(f"{a[:10]}..{b[:10]}" for a, b in windows))
+    if outbound_only:
+        scope_bits.append("outbound_only")
+    if inbound_only:
+        scope_bits.append("inbound_only")
+    if attach_only:
+        scope_bits.append("attachments_only")
+    if thread_open:
+        scope_bits.append("thread_open_rfc_or_vendor_only")
+    if keywords:
+        scope_bits.append("keyword=" + ",".join(keywords))
+    unthreaded_n = sum(1 for h in hits if not h.thread_id)
+    if unthreaded_n:
+        scope_bits.append(f"unthreaded={unthreaded_n}")
+    scope = "; ".join(scope_bits)
+    total = len(hits)
+    sliced, truncated = _year_fair_slice(hits, max(1, int(limit)))
+    if truncated:
+        years = sorted({(h.sent_at or "")[:4] for h in sliced if (h.sent_at or "")[:4]})
+        scope = (
+            f"{scope}; showing {len(sliced)} of {total} "
+            f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+        )
+    if sliced:
+        sliced[0].count_scope = scope
+        sliced[0].match_total = total
+        sliced[0].truncated = truncated
+        if want_count:
+            sliced[0].summary = f"{total} emails ({scope}). {sliced[0].summary}"
+        elif truncated:
+            sliced[0].summary = (
+                f"Showing {len(sliced)} of {total} emails ({scope}). {sliced[0].summary}"
+            )
+        for h in sliced:
+            h.match_total = total
+            h.truncated = truncated
+            h.count_scope = scope
+    return sliced
+
+
 def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]:
     """Keyword search over authoritative PostgreSQL Evidence (always available)."""
-    if _sms_ask(plan) and plan.want_communication:
+    sms_q = _sms_ask(plan) and plan.want_communication
+    email_q = _email_ask(plan) and plan.want_communication
+    if sms_q and email_q:
+        sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        mail = search_email_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        combined = list(mail) + list(sms)
+        if combined:
+            scope = (
+                f"email+sms; email_n={mail[0].match_total if mail else 0}; "
+                f"sms_n={sms[0].match_total if sms else 0}; "
+                "I8 retrieves email; I7 retrieves texts; no joint narrative"
+            )
+            combined[0].count_scope = scope
+            combined[0].match_total = (mail[0].match_total if mail else 0) + (
+                sms[0].match_total if sms else 0
+            )
+        return combined
+    if sms_q:
         sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
         # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
-        if sms or _sms_ask(plan):
+        if sms or sms_q:
             return sms
+    if email_q:
+        return search_email_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
     kinds: list[str] = []
     if plan.want_communication:
         kinds.append("communication")

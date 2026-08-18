@@ -23,6 +23,7 @@ from memorybox.ingest.sms_export_attach import (
     reset_export_index,
     _clean_dir_arg,
 )
+from memorybox.ingest.sources_paths import sms_source_dir_candidates
 from memorybox.ingest.sms_parse import (
     PARSER_VERSION,
     SmsMessage,
@@ -74,7 +75,11 @@ def default_sms_export_path() -> Path | None:
     src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
     if src:
         roots.append(Path(src) / "sms")
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
+    for d in sms_source_dir_candidates():
+        if d.name.casefold() == "sms-attachments":
+            continue
+        if d not in roots:
+            roots.append(d)
     named = "Messages - 1085 chat sessions.csv"
     for d in roots:
         hit = d / named
@@ -407,7 +412,7 @@ def ingest_sms(
             "ok": False,
             "error": (
                 "SMS export not found. Set MEMORYBOX_SMS_URI or place the file at "
-                r"\\media-server\photos\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv"
+                r"P:\MemoryBox\Sources\sms\Messages - 1085 chat sessions.csv"
                 " — or pass --attachments-dir to backfill the already-ingested SMS rows."
             ),
             "attachments_dir_probe": attach_probe or None,

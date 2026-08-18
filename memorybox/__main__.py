@@ -20,8 +20,48 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("prove-synthetic", help="I1 prove Grandpa graph")
     sub.add_parser("prove-providers", help="I2 provider acceptance")
     p_email = sub.add_parser("ingest-email", help="Ingest mbox → Evidence")
-    p_email.add_argument("--uri", required=True)
-    p_email.add_argument("--limit", type=int, default=None)
+    p_email.add_argument(
+        "--uri",
+        default=None,
+        help=r"Path to mbox/Maildir (default: P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox)",
+    )
+    p_email.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Stop after this many kept messages (Spam/Trash skipped first unless --include-spam-trash)",
+    )
+    p_email.add_argument(
+        "--include-spam-trash",
+        action="store_true",
+        help="Ingest Gmail Spam/Trash labeled messages (default: skip those labels; originals untouched)",
+    )
+    p_inspect_mbox = sub.add_parser(
+        "inspect-mbox",
+        help="Read-only mbox/Maildir inventory (counts Spam/Trash labels; does not skip them)",
+    )
+    p_inspect_mbox.add_argument(
+        "--uri",
+        default=None,
+        help=r"Default: P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox",
+    )
+    p_inspect_mbox.add_argument("--limit", type=int, default=None)
+    sub.add_parser(
+        "ingest-email-report",
+        help="Read-only: last ingest-email job + email Evidence count (no UUID dump)",
+    )
+    p_prove_p2i8 = sub.add_parser(
+        "prove-p2-i8",
+        help="P2-I8 Richer Email acceptance prove",
+    )
+    p_prove_p2i8.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim ACCEPTED gate remains manual (definition §9). "
+            "Harness uses the in-repo I8 fixture; inspect-mbox the real export separately."
+        ),
+    )
     p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
     p_cal.add_argument("--uri", required=True)
     p_cal.add_argument("--limit", type=int, default=None)
@@ -327,9 +367,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "ingest-email":
-        from memorybox.ingest.comms_email import ingest_mbox
+        from memorybox.ingest.comms_email import ingest_mbox, inspect_default_or_uri
+        from memorybox.providers.email_read.mbox_parse import default_email_source_path
 
-        payload = ingest_mbox(args.uri, limit=args.limit)
+        uri = args.uri or (str(default_email_source_path()) if default_email_source_path() else None)
+        if not uri:
+            payload = inspect_default_or_uri(None)
+            print(json.dumps(payload, indent=2, default=str))
+            return 1
+        payload = ingest_mbox(
+            uri, limit=args.limit, include_spam_trash=bool(args.include_spam_trash)
+        )
+        from memorybox.ingest.comms_email import compact_ingest_cli_payload
+
+        print(json.dumps(compact_ingest_cli_payload(payload), indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "ingest-email-report":
+        from memorybox.ingest.comms_email import email_ingest_report
+
+        payload = email_ingest_report()
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "inspect-mbox":
+        from memorybox.ingest.comms_email import inspect_default_or_uri
+
+        payload = inspect_default_or_uri(args.uri, limit=args.limit)
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
@@ -556,6 +620,17 @@ def main(argv: list[str] | None = None) -> int:
         payload = prove_p2_mbql_001(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i8":
+        from memorybox.ingest.p2_i8_acceptance import run_p2_i8_acceptance
+
+        payload = run_p2_i8_acceptance(flightsim=bool(args.flightsim))
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package

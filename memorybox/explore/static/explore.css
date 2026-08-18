@@ -1663,15 +1663,48 @@ body {
   line-height: 1.45;
 }
 
-.mb-ev-email {
-  white-space: pre-wrap;
+.mb-ev-email-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.mb-ev-turns {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.mb-ev-turn {
   background: #141b27;
-  border: 1px solid var(--mb-line);
+  border: 1px solid var(--mb-line, #1f2937);
   border-radius: 12px;
-  padding: 0.85rem;
-  font-size: 1.05rem;
-  line-height: 1.5;
+  padding: 0.75rem 0.85rem;
+}
+
+.mb-ev-turn-hd {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 0.4rem;
+}
+
+.mb-ev-turn-body {
+  white-space: pre-wrap;
+  font-size: 1.02rem;
+  line-height: 1.45;
   color: #e8edf5;
+}
+
+.mb-qp-text .mb-ev-turns {
+  gap: 0.4rem;
+}
+
+.mb-qp-text .mb-ev-turn {
+  padding: 0.45rem 0.55rem;
+}
+
+.mb-qp-text .mb-ev-turn-body {
+  font-size: 0.92rem;
+  max-height: 7.5rem;
+  overflow: auto;
 }
 
 .mb-ev-meta {

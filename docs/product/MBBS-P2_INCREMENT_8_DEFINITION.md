@@ -1,14 +1,12 @@
 # MBBS-P2 Increment 8 — Richer Email
 
-**Status:** **DRAFT — awaiting Tom approval** · **NOT BUILD AUTHORIZED** · **no implementation this revision**  
+**Status:** **LOCKED** · **BUILD AUTHORIZED** 2026-08-18 (Tom: Q1–Q6 locks below + “P2-I8 build is authorized”) · implementation **this revision** · **not yet ACCEPTED** (FlightSim §9 owner pass remaining)  
 **Date:** 2026-08-18  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I8 (Richer Email · A)  
 **Thin PRD:** [MBPRD-P2-I8_RICHER_EMAIL.md](MBPRD-P2-I8_RICHER_EMAIL.md)  
-**Authority (when locked):** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) **P2-COM-02 / P2-COM-03** · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) **CAP-P2-019** · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I7 **ACCEPTED** · I7A **ACCEPTED** · MBQL-001 **ACCEPTED** · I4 **ACCEPTED**  
+**Authority:** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) **P2-COM-02 / P2-COM-03** · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) **CAP-P2-019** · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I7 **ACCEPTED** · I7A **ACCEPTED** · MBQL-001 **ACCEPTED** · I4 **ACCEPTED**  
 **Depends:** MBQL-001 **ACCEPTED** (2026-08-18) · existing P1/I3 mbox ingest pattern (`ingest-email` / `comms_email.py`)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I4 Explore redesign / **P2-BL-I4-01** · I5 portrait **P2-BL-I5-01** · I6 kinship · **I8.5** face-evidence · **I9** spoken · **I10** cross-source correlation · **I11** narrative · I13/I14 Settings · multi-user · live Gmail sync / sending mail
-
-**Stop.** This document is for review. **Do not write I8 runtime** until Tom locks Q1–Q6 (or records exceptions) **and** says **approved to build**.
 
 ---
 
@@ -18,20 +16,18 @@
 
 I8 is **archive understanding**, not a mail client, not a new family nav item, and not I10/I11.
 
-P1/I3 already ingest mbox **headers + body text** into `evidence_kind=communication`. That is **not** richer email. Today’s DTO has **no attachment files**. I7 accepted SMS **without** attachment bytes (parked **P2-BL-I7-01**). **P2-BL-I8-01 is in-scope here:** email attachment **files go in with the mail**, not as a later surprise.
+P1/I3 already ingest mbox **headers + body text** into `evidence_kind=communication`. That is **not** richer email. Parser version **`i8-email-1`** stores MIME parts (bytes + metadata) with the message.
 
-End-to-end (when built, after authorization):
+End-to-end:
 
 1. The staged FlightSim mail export is ingested **without modifying originals**.  
 2. Each message is communication Evidence with channel `email`.  
-3. **Threads** are reconstructable (Message-ID / In-Reply-To / References, plus any thread id the source actually has).  
-4. Participants resolve to **canonical MB People** via normalized email identity (same ladder as I7 phones: unique auto-map / ambiguous Review / unmapped retained).  
-5. **Attachment bytes** are stored and reachable from the message (open / optional Artifact copy). **Not** auto-promoted to Immich or standalone Explore photo/video cards.  
-6. Ask uses **MBQL-001** compile (deterministic first; I7A traces residual model fill). Retrieve, count, Person, date/holiday window, keyword, thread, attachment-aware open, **scope disclosure**.  
-7. Explore / Person reuse existing Email/Text cards; dated mail participates in Timeline. I7 SMS default-hide on broad Gallery **does not change**.  
-8. Archive Health distinguishes staged vs ingested vs unavailable (unavailable ≠ 0).
-
-Future use I8 must **enable**, not perform: *“Include those Christmas emails in the Alaska trip narrative.”* That is **I10/I11**. I8 must leave timestamp, addresses, thread, body, attachments, and any explicit place/event headers intact.
+3. **Threads** use RFC `Message-ID` / `In-Reply-To` / `References`, plus preserved vendor ids (`X-GM-THRID` when present). Membership is **not invented**; valid mail may remain **unthreaded**. Incomplete threading is represented honestly.  
+4. Participants resolve via the **I7 identity ladder** on normalized email (never display name alone). Raw source address and display name are preserved.  
+5. **Attachment bytes** ingest with the message (filename, MIME type, size, hash, disposition/inline, Content-ID, source relationship, provenance). Inline/CID ≠ ordinary attachments. **No** automatic Immich or standalone Gallery promotion. **Explicit Artifact copy only.** Email attachment evidence is **not** automatically an Artifact.  
+6. Ask uses **MBQL-001** (deterministic first; I7A traces residual model fill). Default Gallery semantics: emails stay visible; I7 SMS default-hide is unchanged.  
+7. Archive Health distinguishes staged vs ingested vs unavailable (unavailable ≠ 0).  
+8. I8 is **correlation-ready**; I10 correlates; I11 narrates.
 
 ---
 
@@ -39,44 +35,41 @@ Future use I8 must **enable**, not perform: *“Include those Christmas emails i
 
 | Order | Artifact | Role |
 |-------|----------|------|
-| 1–3 | I7 / I7A / MBQL-001 | **ACCEPTED** — SMS pattern, traces, shared compile |
-| 4 | **P2-I8** | This definition. Richer email **before** I8.5 |
+| 1–3 | I7 / I7A / MBQL-001 | **ACCEPTED** |
+| 4 | **P2-I8** | This increment — **building** |
 | 5 | **P2-I8.5** | Face evidence ownership — **after I8**; not this increment |
-| 6+ | I9 / I10 / I11 | Speech; cross-source; narrative |
-
-**Build rule:** Definition may be finalized now. **No I8 code** until explicit build authorization.
+| 6+ | I9 / I10 / I11 | Speech; cross-source; narrative — **not this increment** |
 
 ---
 
-## 2. Proposed locked decisions (Tom to confirm)
+## 2. Locked decisions (Tom 2026-08-18)
 
-| # | Topic | Proposed lock | Notes |
-|---|--------|----------------|-------|
-| **Q1** | Export path / format | **OPEN until FlightSim `inspect-mbox`** | Same discipline as I7 Q1. Do not invent a convenience corpus. Header/folder/attachment layout must be recorded from the real staged mail. |
-| **Q2** | Acceptance people / years | **Selection rules locked; names after Q1 sample** | Prefer Peggy / sister / holiday seasons / owner outbound counts **only if they exist in the real mbox**. Otherwise map real equivalents to EVS intent. Do not invent. |
-| **Q3** | Thread model | **Proposed: RFC 5322** | Reconstruct threads from `Message-ID`, `In-Reply-To`, `References`. If the export carries Gmail `X-GM-THRID` (or equivalent), preserve it. **No live Gmail API** in I8. No “Core 4” object. |
-| **Q4** | Attachments | **Proposed LOCK (P2-BL-I8-01)** | Ingest **files + metadata at the same time as messages**. Show on the message. Optional “Add to MemoryBox library” → Artifact (I7 SMS pattern). **Do not auto-promote to Immich** or mint Explore photo/video cards from mail attachments. Inline images stay on the message unless the owner copies them. |
-| **Q5** | Address → Person | **Proposed: I7 ladder** | Normalize email. Unique confirmed Profile/contact match → auto-map. Ambiguous → Review. No match → unmapped participant (raw address / display name). Never silent duplicate People. Never merge on similar display name alone. |
-| **Q6** | How much of P2-COM-02 | **Proposed split** | **I8:** thread, identity, attachments, dates, retrieve/count/keyword, cited extract, **preserve** explicit place/event headers in source metadata. **I10:** infer Place/Event/Trip across mail + SMS + photos/calendar. **I11:** year/trip/person multi-source narrative (EVS-070). “Significant exchanges” as a ranking product is **out** of I8 unless Tom explicitly pulls a thin cited-summary bar (I7 Q6 style). |
+| # | Topic | Lock |
+|---|--------|------|
+| **Q1** | Export path / format | **Inspect the actual FlightSim staged email source first.** Do not assume format or fabricate a convenience corpus. Cloud/harness uses `inspect-mbox` (headers/counts/attachment presence; **no bodies in the report**). In-repo fixture is **not** the acceptance corpus. |
+| **Q2** | Acceptance people / years | **Use real people / date ranges / keywords / threads from that source**, mapped to EVS intent (Peggy / sister / holidays if present; otherwise real equivalents). Harness fixture is EVS-intent stand-in only. |
+| **Q3** | Thread model | **RFC message relationships** (`Message-ID`, `In-Reply-To`, `References`). **Preserve vendor thread IDs when present.** Do not invent thread membership when evidence is insufficient; valid email may remain unthreaded. Incomplete threading must be represented honestly rather than guessed. |
+| **Q4** | Attachments | **In I8 scope.** Bytes + metadata ingested **with the message**. Preserve filename, MIME type, size, hash, disposition/inline state, Content-ID where available, source relationship, provenance. Distinguish inline/CID from ordinary attachments. **No** automatic Immich / standalone Gallery promotion. **Explicit Artifact copy only.** Email attachment evidence is **not** automatically an Artifact. |
+| **Q5** | Address → Person | **I7 identity ladder.** Unique confirmed match → canonical Person; ambiguous → Review; unmatched retained. Preserve raw source address/display name. **Never merge on display name alone.** |
+| **Q6** | P2-COM-02 split | **Locked.** I8 provides rich email evidence and **correlation readiness**. **I10** performs cross-source correlation. **I11** performs richer narrative/synthesis. |
 
-**Do not treat this table as locked until Tom says so.**
+Additional rules (locked): preserve sufficient original MIME/header provenance for source fidelity; use MBQL shared state and default Gallery semantics; use I7A tracing for any model-assisted interpretation; **do not implement I8.5, I9, I10, or I11**.
 
 ---
 
 ## 3. Scope IN
 
-- Read-only ingest of the **actual** FlightSim staged mail (after Q1 file-open).  
-- Expand existing mbox ingest: attachments **in the first I8 ingest**, not a parked byte gap.  
-- Communication Evidence + full source-metadata preservation (headers the UI does not show still stored).  
-- Thread reconstruction (§2 Q3).  
+- Read-only ingest of the **actual** FlightSim staged mail (after Q1 `inspect-mbox`).  
+- Expand mbox ingest: attachments **in the first I8 ingest**.  
+- Communication Evidence + MIME/header provenance.  
+- Thread reconstruction (§2 Q3) with honest incomplete/unthreaded states.  
 - Email → Person (§2 Q5).  
 - Attachment files reachable from the message; optional Artifact copy; not Immich.  
-- Ask via MBQL: email modality, Person, date/holiday windows, keyword, counts (to/from/between), thread open, attachment-aware viewer.  
-- Explore / Person Email/Text cards + Timeline for dated mail.  
+- Ask via MBQL: email modality, Person, date/holiday windows, keyword, counts, thread open, attachment-aware viewer, **scope disclosure**.  
+- Explore / Person Email/Text cards + Timeline for dated mail. Emails **visible** on default mixed Gallery; SMS hide unchanged.  
 - Archive Health staged / ingested / unavailable.  
-- Source-fidelity check of at least one real message **and one real attachment** against the export.  
-- `prove-p2-i8` structural harness **plus** FlightSim owner ACCEPTED (after build).  
-- Correlation-**readiness** (metadata preserved). No Alaska inference.
+- `prove-p2-i8` structural harness **plus** FlightSim owner ACCEPTED (after this build).  
+- Correlation-**readiness**. No Alaska inference / year narrative.
 
 ## 4. Scope OUT
 
@@ -85,61 +78,57 @@ Future use I8 must **enable**, not perform: *“Include those Christmas emails i
 | Live IMAP/Gmail sync, sending mail, mail client UX | Never I8 |
 | New Email family-nav app | Never |
 | SMS / iMessage ingest or **P2-BL-I7-01** | I7 / that backlog item |
-| Auto-promote attachments to Immich / Gallery photos | Out (same as I7 Q4) |
+| Auto-promote attachments to Immich / Gallery photos | Out |
 | Infer Place / Event / Trip from mail + photos + SMS | **I10** |
-| Year / trip / person **multi-source narrative** (EVS-070, 211–213, 235–236) | **I11** |
+| Year / trip / person **multi-source narrative** | **I11** |
 | Face-evidence ownership / Immich decoupling | **I8.5 after I8** |
 | Spoken moments / STT | **I9** |
 | I4 Explore chrome redesign / **P2-BL-I4-01** | Closed / polish |
-| I5 preferred portrait | **P2-BL-I5-01** |
-| Mature Settings / provider catalog | **I13 / I14** |
-| Invented messages or silent completeness | Forbidden |
-| Multi-user contributed mail | Late / I15 |
+| Invented messages or guessed threads | Forbidden |
 
 ---
 
 ## 5. EVS coverage (I8 homes)
 
-Canonical homes from MBRM-001A Appendix A.1. Aliases are not separate acceptance.
-
-| EVS | Ask (short) | I8 bar (after Q2 mapping) |
-|-----|-------------|---------------------------|
-| **EVS-107** | How many times did I email Peggy at her email address? | Outbound (or to-address) count + **scope** |
-| **EVS-108** | How many times did my sister respond to any of my emails? | Sister Person + inbound/reply count + scope **or** mapped equivalent |
-| **EVS-047** | What did Peggy and I coordinate on around Christmas, in emails and texts? | **I8:** retrieve **email** side in Christmas windows (I4 holiday lock). SMS side already I7 if ingested. **Do not** invent a joint narrative (I11) or photo correlation (I10). Disclose if one channel is missing. |
-| **EVS-109** | Summarize emails to sister/Peggy over holiday seasons | Catalog row is mistagged Photos; **Ask text is mail**. I8: holiday-window retrieve + **cited extract**; messages remain reachable. Not Immich. |
-| **EVS-070** | Summary through emails, texts, pictures, and videos of my 2024 | **Not an I8 hard gate.** Preserve mail so I11 can cite it. I8 may return **email-only** 2024 retrieve with disclosure. |
-
-**Not I8 ACCEPTED:** I10/I11 multi-source stories; I8.5 face SoT; live Gmail.
+| EVS | Ask (short) | I8 bar |
+|-----|-------------|--------|
+| **EVS-107** | How many times did I email Peggy at her email address? | Outbound count + **scope** (map real Person from Q1 inspect) |
+| **EVS-108** | How many times did my sister respond to any of my emails? | Sister Person or **mapped equivalent** + inbound/reply count + scope |
+| **EVS-047** | What did Peggy and I coordinate on around Christmas, in emails and texts? | **I8:** retrieve **email** side in Christmas windows. SMS side is I7. No joint narrative. |
+| **EVS-109** | Summarize emails to sister/Peggy over holiday seasons | Holiday-window retrieve + **cited extract**; messages remain reachable. |
+| **EVS-070** | Summary through emails, texts, pictures, and videos of my 2024 | **Not an I8 hard gate.** Email-only retrieve with disclosure. I11 narrates later. |
 
 ---
 
-## 6. Discovery (reuse — do not reinvent)
+## 6. Discovery (reuse)
 
 | Area | Finding |
 |------|---------|
-| Existing ingest | `memorybox/ingest/comms_email.py` + `ingest-email` — Source + Evidence, originals untouched, hash skip. Parser version `i3-email-1`. |
-| DTO gap | `EmailMessageDto` has subject/from/to/cc/bodies/thread headers — **no attachments**. |
-| Evidence | `evidence_kind=communication`, `evidence_channel=email` already used. |
-| Ask | MBQL + `want_communication` already retrieve PG communication Evidence (email-shaped). |
-| Explore | Email/Text cards exist; I7 taught SMS onto the same filter. |
-| Identity | Profile `CONTACT_KINDS` includes `email`; I7 ladder is the pattern. |
-| Attachments UX | I7 message viewer: open stored file; optional Artifact copy; not Immich. |
-| Staged mail | Ops still point SMS/mbox/ICS at `\\media-server\photos\…` until those Sources move ([FLIGHTSIM_IMMICH_CUTOVER.md](../ops/FLIGHTSIM_IMMICH_CUTOVER.md)). **Q1 must open the real path on FlightSim.** |
-| Holiday windows | I4 / MBQL Christmas (and other holidays) already compile; I8 retrieve must use those windows, not a new calendar. |
+| Ingest | `ingest-email` / `inspect-mbox` / `comms_email.py` · parser `i8-email-1` |
+| Attachments | `put_media_object` (origin `email_ingest`) · `/explore/api/email-attachment` |
+| Identity | `phone_map.resolve_handles` (email contacts + `identity_kind=email`) |
+| Ask | `search_email_messages` · MBQL `EMAIL_RE` · I7A residual traces unchanged |
+| Explore | Email/Text cards; SMS `gallery_default_hidden` only for SMS |
+| Staged mail | `P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox` |
+
+**Spam / Trash (not a Gmail search filter).** The Takeout file is an All Mail dump; the words in the filename do not change ingest. Each message still carries `X-Gmail-Labels` / `X-GM-LABELS`. Tokens `Spam`/`Junk` skip as spam; `Trash`/`Bin`/`Deleted` skip as trash. Inbox (and other labels) ingest even when the file is named “including spam and trash.”
+
+- Inventory (counts labels, does not skip): `python -m memorybox inspect-mbox`
+- Ingest kept mail only (default): `python -m memorybox ingest-email`
+- Include Spam + Trash Evidence: `python -m memorybox ingest-email --include-spam-trash`
+
+`--limit N` on ingest is kept messages after that skip. Originals stay read-only.
 
 ---
 
-## 7. Build plan (only after authorization)
+## 7. Build (this revision)
 
-1. `inspect-mbox` (FlightSim): path, byte size, folder/mbox vs Maildir, attachment presence, date span, address sample — **do not commit bodies**.  
-2. Extend email parser/DTO/ingest: attachments on disk (or MB blob store already used for SMS files), payload metadata, hash skip, originals untouched.  
-3. Thread index from RFC 5322 (+ preserved vendor thread id if present).  
-4. Email → Person mapping (I7 ladder).  
-5. Ask retrieve/count/keyword/holiday + attachment-aware open; MBQL email phrases; I7A on any residual model fill.  
-6. Explore/Person cards show attachment affordance when files exist.  
-7. Archive Health staged vs ingested vs unavailable.  
-8. `prove-p2-i8` harness + FlightSim §9 owner pass.
+1. `inspect-mbox` (FlightSim): path, byte size, mbox vs Maildir, attachment presence, date span, address sample — **do not commit bodies**.  
+2. Parser/DTO/ingest: MIME parts, RFC/vendor threads, identity, originals untouched, hash skip + `i8-email-1` upgrade of prior I3 rows.  
+3. Ask retrieve/count/keyword/holiday + attachment-aware open.  
+4. Explore/Person attachment affordance; explicit Artifact copy.  
+5. Archive Health honesty.  
+6. `prove-p2-i8` harness + FlightSim §9 owner pass.
 
 ---
 
@@ -148,31 +137,36 @@ Canonical homes from MBRM-001A Appendix A.1. Aliases are not separate acceptance
 - staged vs ingested distinguishable  
 - unavailable ≠ zero  
 - missing mbox ≠ zero messages  
-- unsupported date range ≠ zero  
 - unmapped participants disclosed  
-- attachment listed in source but file missing → disclosed, not invented  
-- do not imply completeness beyond ingested source scope  
-- P2-COM-03: source, participants, timestamps, thread, import provenance remain reachable behind any cited extract  
+- attachment listed but bytes missing → disclosed  
+- incomplete thread → `thread_completeness=incomplete`, not guessed members  
+- P2-COM-03: source, participants, timestamps, thread, MIME provenance remain reachable  
 
 ---
 
-## 9. ACCEPTED gate (FlightSim, after build is authorized)
+## 9. ACCEPTED gate (FlightSim)
 
 Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 
 1. Real staged mail is ingested **without modifying originals**.  
 2. At least one real message fidelity-checked: subject, timestamp, from/to, body (or disclosed HTML-only), thread association.  
-3. At least one real **attachment file** opens from that message (P2-BL-I8-01).  
+3. At least one real **attachment file** opens from that message.  
 4. “How many times did I email **[Q2 Person]**” returns a count **with scope**.  
 5. Person filtering works.  
 6. Year / holiday-window filtering works (reuse I4 windows).  
 7. Keyword filtering works.  
-8. Thread open shows related messages, not a flat unrelated dump.  
+8. Thread open shows related messages, not a flat unrelated dump. Unthreaded mail is not forced into a thread.  
 9. Unique email auto-maps; ambiguous goes to Review; unmapped retained.  
-10. Attachments are **not** dumped into Immich as library photos.  
+10. Attachments are **not** dumped into Immich as library photos and are **not** automatic Artifacts.  
 11. Archive Health: staged vs ingested vs unavailable; unavailable ≠ 0.  
-12. Broad Explore Gallery SMS hide unchanged.  
-13. No I8.5 / I9 / I10 / I11 product in the I8 walk.
+12. Broad Explore Gallery SMS hide unchanged; emails remain visible on Email/Text and default mixed Gallery.  
+13. No I8.5 / I9 / I10 / I11 product in the I8 walk.  
+
+**Additional harness/owner checks (required):**
+
+14. **Attachment / MIME fidelity** — filename, MIME type, size, hash, disposition/inline, Content-ID (when present), inline vs ordinary attachment.  
+15. **Incomplete-thread honesty** — missing parents / insufficient RFC or vendor evidence stay unthreaded or `incomplete`; no subject-line invention.  
+16. **MBQL email / default-Gallery behavior** — email asks compile on MBQL shared state; emails are not hidden by the SMS `gallery_default_hidden` rule.
 
 ---
 
@@ -181,11 +175,12 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 | Step | Status |
 |------|--------|
 | I7 / I7A / MBQL-001 / I4 | **ACCEPTED** |
-| P2-BL-I8-01 (files up front) | **In I8 scope** — not a later parking lot |
-| I8 definition | **DRAFT** this revision — Tom review |
-| I8 PRD | **DRAFT** — [MBPRD-P2-I8_RICHER_EMAIL.md](MBPRD-P2-I8_RICHER_EMAIL.md) |
-| Q1–Q6 | **Awaiting Tom** |
-| I8 build | **NOT AUTHORIZED** |
+| P2-BL-I8-01 (files up front) | **In I8 scope — implementing** |
+| I8 definition | **LOCKED** 2026-08-18 |
+| I8 PRD | **LOCKED** — [MBPRD-P2-I8_RICHER_EMAIL.md](MBPRD-P2-I8_RICHER_EMAIL.md) |
+| Q1–Q6 | **LOCKED** (this table §2) |
+| I8 build | **AUTHORIZED** — this revision |
+| I8 ACCEPTED | **Pending FlightSim §9** |
 | I8.5 / I9 / I10 / I11 | **NOT STARTED** |
 
-**Stop.** Do not implement I8. Do not start I8.5. Reply with Q1–Q6 locks (or edits) and, separately, **approved to build** when ready.
+**Stop.** Do not start I8.5, I9, I10, or I11.

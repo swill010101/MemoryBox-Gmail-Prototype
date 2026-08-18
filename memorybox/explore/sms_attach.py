@@ -80,8 +80,11 @@ def _search_roots(payload: dict[str, Any] | None = None) -> list[Path]:
     if src:
         roots.append(Path(src) / "sms")
         roots.append(Path(src) / "sms-attachments")
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms"))
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms-attachments"))
+    from memorybox.ingest.sources_paths import sms_source_dir_candidates
+
+    for d in sms_source_dir_candidates():
+        if d not in roots:
+            roots.append(d)
     roots.extend(_payload_roots(payload))
     out: list[Path] = []
     seen: set[str] = set()

@@ -129,6 +129,8 @@ def put_media_object(
     source_id: UUID,
     conn: Any,
     mime_type: str | None = None,
+    origin: str = "sms_ingest",
+    store_root: Path | None = None,
 ) -> dict[str, Any] | None:
     """Write attachment bytes into MB-managed store + media_objects. Not Immich."""
     if not data:
@@ -136,7 +138,7 @@ def put_media_object(
     name = _safe_filename(filename)
     digest = hashlib.sha256(data).hexdigest()
     mime = (mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream")
-    dest = cache_root() / digest[:2] / f"{digest}_{name}"
+    dest = (store_root or cache_root()) / digest[:2] / f"{digest}_{name}"
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if not dest.is_file():
@@ -178,7 +180,7 @@ def put_media_object(
             str(dest),
             digest,
             mime,
-            json.dumps({"origin": "sms_ingest", "promoted_to_immich": False}),
+            json.dumps({"origin": origin, "promoted_to_immich": False}),
         ),
     )
     return {

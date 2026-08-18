@@ -21,6 +21,7 @@ _SMS_ASK_RE = re.compile(
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
 _VISIBLE_SMS_GALLERY_CAP = 10000
+_VISIBLE_EMAIL_GALLERY_CAP = 800
 _HOLIDAY_WINDOW_MARKERS = (
     "christmas",
     "xmas",
@@ -702,6 +703,87 @@ def _attach_hidden_sms(
     return out, sms_n, hidden_n
 
 
+def _is_email_type(type_: str) -> bool:
+    return str(type_ or "").lower() == "email"
+
+
+def _attach_visible_email(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Person-scoped Find includes emails (visible). SMS hide is unchanged.
+
+    Show me Tom Will + Email/Text must not be an empty filter: I8 emails are
+    in the mixed Gallery; 90k cards are year-fair capped.
+    """
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    already = [i for i in items if _is_email_type(i.get("type"))]
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    if already:
+        match_total = 0
+        for e in result.get("evidence_hits") or []:
+            if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
+                match_total = max(match_total, int(e.get("match_total") or 0))
+        return items, match_total or len(already), match_total
+    if not people and not pids:
+        return items, 0, 0
+
+    extra: list[dict[str, Any]] = []
+    match_total = 0
+    try:
+        from memorybox.ask.retrieve import search_email_messages
+        from memorybox.planner import QueryPlan
+
+        tw = _sms_attach_windows(plan)
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
+        mail_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=True,
+            want_calendar=False,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            time_start=t0,
+            time_end=t1,
+            temporal_windows=tw,
+            notes=("gallery_email_eligible",),
+        )
+        hits = search_email_messages(mail_plan, limit=_VISIBLE_EMAIL_GALLERY_CAP)
+        if hits:
+            match_total = int(getattr(hits[0], "match_total", None) or len(hits))
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ()},
+            }
+        )
+        for it in mapped:
+            if not _is_email_type(it.get("type")):
+                continue
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = False
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+
+    out = list(items) + extra
+    email_n = sum(1 for i in out if _is_email_type(i.get("type")))
+    if match_total > email_n:
+        email_n = match_total
+    return out, email_n, match_total
+
+
 def build_explore_find(
     *,
     ask_text: str,
@@ -737,6 +819,9 @@ def build_explore_find(
     show_sms = explicit_text_gallery(result, text)
     items, sms_available, sms_hidden = _attach_hidden_sms(
         items, result, ask_text=text, show_sms=show_sms
+    )
+    items, email_available, email_match_total = _attach_visible_email(
+        items, result, ask_text=text
     )
     visible_items = [
         i for i in items if not (i.get("gallery_default_hidden") and _is_sms_type(i.get("type")))
@@ -789,6 +874,16 @@ def build_explore_find(
                 f"{sms_match_total} matching texts (every year kept on the Timeline)."
             )
         ).strip()
+    if email_match_total > (counts.get("email") or 0):
+        shown = counts.get("email") or 0
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" Showing {shown} of {email_match_total} emails involving this person "
+                "(year-fair sample; use Email/Text to focus on mail)."
+            )
+        ).strip()
+    counts["email_available"] = email_available
 
     plan = result.get("plan") or {}
     return {
@@ -824,5 +919,7 @@ def build_explore_find(
             "sms_hidden": sms_hidden,
             "sms_match_total": sms_match_total,
             "sms_truncated": sms_truncated,
+            "email_available": email_available,
+            "email_match_total": email_match_total,
         },
     }

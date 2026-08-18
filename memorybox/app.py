@@ -723,6 +723,70 @@ def explore_sms_attachment_to_library(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/explore/api/email-attachment/{evidence_id}")
+def explore_email_attachment(evidence_id: str, index: int = Query(0, ge=0, le=32)) -> Response:
+    """Preview an email MIME part stored at ingest. No Immich write."""
+    from memorybox.explore.email_attach import EmailAttachError, read_email_attachment_bytes
+
+    try:
+        data, mime, name = read_email_attachment_bytes(evidence_id, index)
+    except EmailAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    safe = name.replace('"', "")
+    return Response(
+        content=data,
+        media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{safe}"'},
+    )
+
+
+@app.get("/explore/api/email-attachment/{evidence_id}/meta")
+def explore_email_attachment_meta(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    from memorybox.explore.email_attach import EmailAttachError, load_email_attachment
+
+    try:
+        info = load_email_attachment(evidence_id, index)
+    except EmailAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "filename": info.get("filename"),
+        "bytes_present": bool(info.get("bytes_present")),
+        "kind": info.get("kind"),
+        "disposition": info.get("disposition"),
+        "content_id": info.get("content_id"),
+        "import_path": info.get("import_path"),
+        "immich_write": False,
+        "is_artifact": False,
+    }
+
+
+@app.post("/explore/api/email-attachment/{evidence_id}/to-library")
+def explore_email_attachment_to_library(
+    evidence_id: str, index: int = Query(0, ge=0, le=32)
+) -> dict[str, Any]:
+    """Explicit Artifact copy only. Never writes Immich."""
+    from memorybox.explore.email_attach import EmailAttachError, add_email_attachment_to_mb_library
+
+    try:
+        return add_email_attachment_to_mb_library(evidence_id, index)
+    except EmailAttachError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/explore/api/email/{evidence_id}")
+def explore_email_view(evidence_id: str) -> dict[str, Any]:
+    """Structured quoted-turn view of one ingested email. Does not invent RFC threads."""
+    from memorybox.explore.email_attach import EmailAttachError, load_email_view
+
+    try:
+        return load_email_view(evidence_id)
+    except EmailAttachError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/family-night/ui")
 def family_night_ui() -> HTMLResponse:
     """Thin Family Night entry (I4 nav alignment; full FN UX out of scope)."""

@@ -59,6 +59,57 @@ def _metric(
     }
 
 
+def _email_ingested_metric(
+    *,
+    count: int,
+    unmapped_rows: int,
+    date_min: str | None,
+    date_max: str | None,
+    staged: bool,
+    calculated_at: str,
+    pg: str,
+) -> dict[str, Any]:
+    """Staged vs ingested vs unavailable — never report missing source as 0."""
+    if count > 0:
+        return _metric(
+            "emails",
+            "Emails indexed in MemoryBox Evidence (PostgreSQL)",
+            value=count,
+            state="available",
+            source=f"{pg}:evidence.communication email",
+            last_updated=calculated_at,
+            note=(
+                "Ingested mbox/Maildir only — not live Gmail. "
+                f"Coverage {date_min or 'unknown'} … {date_max or 'unknown'}. "
+                f"{unmapped_rows} message(s) have unmapped participants. "
+                "Attachment files live on the message; they are not Immich photos "
+                "and not Artifacts unless explicitly copied."
+            ),
+        )
+    if staged:
+        return _metric(
+            "emails",
+            "Emails indexed in MemoryBox Evidence (PostgreSQL)",
+            state="partial",
+            source="email:ingest",
+            last_updated=calculated_at,
+            reason="Staged mail not ingested yet (or only a smoke --limit)",
+            note=(
+                "Sources/email is present. Ingested count is unknown until ingest-email. "
+                "This is not zero messages."
+            ),
+        )
+    return _metric(
+        "emails",
+        "Emails indexed in MemoryBox Evidence (PostgreSQL)",
+        state="unavailable",
+        source="email:ingest",
+        last_updated=calculated_at,
+        reason="Email export not available",
+        note="Missing source is not zero messages.",
+    )
+
+
 def _sms_ingested_metric(
     *,
     count: int,
@@ -290,28 +341,14 @@ def _immich_people_count(client: Any) -> tuple[int | None, str]:
 
 
 def _sources_root() -> Any:
-    """Canonical staged Sources tree (media-server). Env preferred; known UNC probed."""
-    import os
-    from pathlib import Path
+    """Canonical staged Sources tree. Env preferred; local P: then leftover UNC."""
+    from memorybox.ingest.sources_paths import default_sources_root
 
-    candidates: list[Path] = []
-    raw = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
-    if raw:
-        candidates.append(Path(raw))
-    # Documented canonical layout (ops MEDIA_SERVER_SOURCES.md)
-    candidates.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
-    candidates.append(Path(r"\\media-server\photos\memorybox\sources"))
-    for p in candidates:
-        try:
-            if p.is_dir():
-                return p
-        except OSError:
-            continue
-    return None
+    return default_sources_root()
 
 
 def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
-    """Inventory of staged originals on media-server (not PG Evidence)."""
+    """Inventory of staged originals (not PG Evidence)."""
     import json
     from pathlib import Path
 
@@ -320,14 +357,14 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         return [
             _metric(
                 "staged_sources_root",
-                "Staged Sources root (media-server)",
+                "Staged Sources root",
                 state="unavailable",
                 source="MEMORYBOX_SOURCES_ROOT",
                 last_updated=calculated_at,
                 reason="Not available",
                 note=(
                     "Set MEMORYBOX_SOURCES_ROOT to "
-                    r"\\media-server\photos\MemoryBox\Sources "
+                    r"P:\photos\memorybox\sources "
                     "(email / calendar / sms staged there; PG Evidence may only have smoke ingest)"
                 ),
             )
@@ -339,9 +376,9 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
             "Staged Sources root",
             display=str(root),
             state="available",
-            source="MEMORYBOX_SOURCES_ROOT|canonical UNC",
+            source="MEMORYBOX_SOURCES_ROOT|P:\\MemoryBox\\Sources",
             last_updated=calculated_at,
-            note="Authoritative originals for ingest (read-only) — see docs/ops/MEDIA_SERVER_SOURCES.md",
+            note="Authoritative originals for ingest (read-only) on the P: Sources tree",
         )
     ]
 
@@ -377,7 +414,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         out.append(
             _metric(
                 "staged_email_mbox",
-                "Staged Gmail mbox (media-server)",
+                "Staged Gmail mbox",
                 display=f"{email_f.get('relative')} ({nbytes / (1024**3):.1f} GiB)",
                 state="available",
                 source=str(Path(root) / str(email_f.get("relative"))),
@@ -393,7 +430,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         out.append(
             _metric(
                 "staged_email_mbox",
-                "Staged Gmail mbox (media-server)",
+                "Staged Gmail mbox",
                 state="unavailable",
                 source=str(Path(root) / "email"),
                 last_updated=calculated_at,
@@ -736,6 +773,37 @@ def build_status_summary() -> dict[str, Any]:
             WHERE evidence_kind = 'communication'
               AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                   NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            """,
+        )
+        email_unmapped = _count(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND jsonb_typeof(payload_json->'identity_resolution'->'unmapped') = 'array'
+              AND jsonb_array_length(payload_json->'identity_resolution'->'unmapped') > 0
+            """,
+        )
+        email_date_min = _scalar_ts(
+            conn,
+            """
+            SELECT MIN(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
+            """,
+        )
+        email_date_max = _scalar_ts(
+            conn,
+            """
+            SELECT MAX(payload_json->>'sent_at') AS t FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND NULLIF(payload_json->>'sent_at', '') IS NOT NULL
             """,
         )
         sms_ingested = _count(
@@ -1338,6 +1406,7 @@ def build_status_summary() -> dict[str, Any]:
             "Photo/video % linked to known People — deferred",
             "Provider face-cluster-not-linked exact count — unavailable (not synthesized)",
             "SMS ingest — use ingest-sms; staged vs ingested are separate metrics",
+            "Email ingest — use ingest-email / inspect-mbox; staged vs ingested are separate metrics",
             "Source video dated/undated — unavailable until reliable date exposed",
             "High-leverage video dating task — omitted until source→moment dates computable",
         ]
@@ -1346,12 +1415,22 @@ def build_status_summary() -> dict[str, Any]:
     pg = "postgresql"
     _sms_root = _sources_root()
     sms_staged = bool(_sms_root and (_sms_root / "sms").is_dir())
+    email_staged = bool(_sms_root and (_sms_root / "email").exists())
     sms_metric = _sms_ingested_metric(
         count=sms_ingested,
         unmapped_rows=sms_unmapped,
         date_min=sms_date_min,
         date_max=sms_date_max,
         staged=sms_staged,
+        calculated_at=calculated_at,
+        pg=pg,
+    )
+    email_metric = _email_ingested_metric(
+        count=emails,
+        unmapped_rows=email_unmapped,
+        date_min=email_date_min,
+        date_max=email_date_max,
+        staged=email_staged,
         calculated_at=calculated_at,
         pg=pg,
     )
@@ -1428,19 +1507,7 @@ def build_status_summary() -> dict[str, Any]:
                                 "MemoryBox retains — not Immich/HVRT audio libraries"
                             ),
                         ),
-                        _metric(
-                            "emails",
-                            "Emails indexed in MemoryBox Evidence (PostgreSQL)",
-                            value=emails,
-                            state="available",
-                            source=f"{pg}:evidence.communication",
-                            last_updated=calculated_at,
-                            note=(
-                                "PG Evidence only. Full Gmail mbox (~18 GiB) is staged on "
-                                r"media-server Sources\email; early checkpoint ingested with "
-                                "smoke --limit 5 — see Communications tab for staged inventory."
-                            ),
-                        ),
+                        email_metric,
                         (
                             _metric(
                                 "emails_qdrant",
@@ -2044,19 +2111,7 @@ def build_status_summary() -> dict[str, Any]:
                 {
                     "title": "Email (MemoryBox Evidence vs staged Sources)",
                     "metrics": [
-                        _metric(
-                            "emails",
-                            "Email messages indexed in MemoryBox Evidence (PostgreSQL)",
-                            value=emails,
-                            state="available",
-                            source=f"{pg}:evidence.communication",
-                            last_updated=calculated_at,
-                            note=(
-                                "Only ingested Evidence rows. Early media-server checkpoint "
-                                "ingested with smoke --limit 5 — so a small PG count is expected "
-                                "even though the full Gmail mbox is staged on media-server."
-                            ),
-                        ),
+                        email_metric,
                         *_staged_sources_metrics(calculated_at),
                         _metric(
                             "email_correspondents",
@@ -2417,15 +2472,7 @@ def build_status_summary() -> dict[str, Any]:
                             last_updated=calculated_at,
                             href="/people/ui",
                         ),
-                        _metric(
-                            "emails",
-                            "Emails in Evidence (PG)",
-                            value=emails,
-                            state="available",
-                            source=f"{pg}:evidence",
-                            last_updated=calculated_at,
-                            note="PostgreSQL Evidence communication rows — not Gmail mailbox total",
-                        ),
+                        email_metric,
                         _metric(
                             "calendar",
                             "Calendar events",

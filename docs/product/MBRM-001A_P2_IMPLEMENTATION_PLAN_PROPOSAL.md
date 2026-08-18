@@ -92,7 +92,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I7** | SMS/Text Evidence | A | **ACCEPTED** (2026-08-15) — [I7 definition](MBBS-P2_INCREMENT_7_DEFINITION.md); attachment bytes **P2-BL-I7-01** |
 | **P2-I7A** | AI Model Trace & Observability | F | **ACCEPTED** (2026-08-15) — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
 | **MBQL-001** | Ask, Query & Command Language | F | **ACCEPTED** (2026-08-18 — Tom: “MBQL is accepted”) — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). After I7A ACCEPTED, before I8. |
-| **P2-I8** | Richer Email | A | **DRAFT definition** 2026-08-18 — awaiting Tom approval · **not build authorized** — [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md) |
+| **P2-I8** | Richer Email | A | **BUILD AUTHORIZED** 2026-08-18 (definition locked; not yet ACCEPTED) — [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md) |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -166,11 +166,11 @@ Developer-only request→model→disposition traces. **ACCEPTED** 2026-08-15 (To
 
 ### MBQL-001 — Ask, Query & Command Language · F
 
-Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. I9 stays after I8.5. Do not start I8.
+Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. I9 stays after I8.5. **P2-I8 is BUILD AUTHORIZED** (2026-08-18).
 
 ### P2-I8 — Richer Email · A
 
-P2-COM-02/03. **P2-BL-I8-01:** ingest **attachment files up front** (do not repeat the I7 CSV-only gap). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) **DRAFT** 2026-08-18 — **no build** until Tom approves.
+P2-COM-02/03. **P2-BL-I8-01:** ingest **attachment files up front** (do not repeat the I7 CSV-only gap). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) **LOCKED + BUILD AUTHORIZED** 2026-08-18. Do not start I8.5 / I9 / I10 / I11.
 
 ### P2-I8.5 — Face Evidence Ownership · F
 

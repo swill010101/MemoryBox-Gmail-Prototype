@@ -365,6 +365,10 @@
       return sort === "oldest" ? d : -d;
     });
     if (PERSON_MODE && (PERSON.memoryMode || "highlights") === "highlights") {
+      if (state.domain && state.domain.typeFilter === "email") {
+        if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
+        return list;
+      }
       if (state && state.domain) state.domain._eligibleBeforeHighlights = list.length;
       return rankHighlights(list);
     }
@@ -2355,6 +2359,7 @@
     if (nextBtn) nextBtn.disabled = idx < 0 || idx >= ids.length - 1;
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
     bindSmsAttachActions(item);
+    bindEmailStructuredView(item);
     bindExploreVideoPlayer(item);
     bindFaceHoldReveal();
     renderViewerFooter(item);
@@ -2478,19 +2483,22 @@
       if (!s) return;
       if (s.toLowerCase() === "unknown") return;
       if (s.toLowerCase() === "photo") return;
+      if (/^(re|fw|fwd)\s*:/i.test(s)) return;
+      if (s.length > 80) return;
       if (["attachments", "attachment", "image", "messages", "message", "and"].includes(s.toLowerCase())) return;
       if (!seen.includes(s)) seen.push(s);
     };
     if (Array.isArray(item.people)) item.people.forEach(push);
     push(item.face_identity);
     push(item.mb_person_name);
-    // Ask-scoped person chips — why this result set exists (e.g. Show me Peggy).
     (state.domain.chips || []).forEach((c) => {
       if (c && c.kind === "person") push(c.label);
     });
-    // Title often begins with the person name before " · place".
-    const titleHead = String(item.title || "").split(" · ")[0].trim();
-    push(titleHead);
+    const t = String(item.type || "").toLowerCase();
+    if (t !== "email" && t !== "sms" && t !== "text") {
+      const titleHead = String(item.title || "").split(" · ")[0].trim();
+      push(titleHead);
+    }
     return seen;
   }
 
@@ -2839,13 +2847,15 @@
   function bindSmsAttachActions(item) {
     const eid = item && item.evidence_id;
     if (!eid) return;
+    const attachApi =
+      item.type === "email" || item.channel === "email" ? "email-attachment" : "sms-attachment";
     document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
       const li = img.closest("li");
       const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
       const pending = img.getAttribute("data-src");
       if (pending) {
         fetch(
-          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+          `/explore/api/${attachApi}/${encodeURIComponent(eid)}/meta?index=${idx}`
         )
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
@@ -2868,13 +2878,13 @@
           if (extra) extra.remove();
         }
         box.innerHTML =
-          "<p>This attachment is on the SMS record, but the image bytes were not stored at ingest. Re-run <code>python -m memorybox ingest-sms</code> so MemoryBox copies the file onto the message (not Immich).</p>" +
+          "<p>This attachment is listed on the message, but the image bytes were not stored at ingest.</p>" +
           "<p class=\"mb-ev-meta\">Missing file: " +
           escapeHtml(name) +
           "</p>";
         const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
         fetch(
-          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+          `/explore/api/${attachApi}/${encodeURIComponent(eid)}/meta?index=${idx}`
         )
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
@@ -2903,7 +2913,7 @@
         }
         try {
           const res = await fetch(
-            `/explore/api/sms-attachment/${encodeURIComponent(eid)}/to-library?index=${idx}`,
+            `/explore/api/${attachApi}/${encodeURIComponent(eid)}/to-library?index=${idx}`,
             { method: "POST" }
           );
           const data = await res.json().catch(() => ({}));
@@ -2998,6 +3008,100 @@
     return "";
   }
 
+  function firstImageAttachIndex(item) {
+    const atts = Array.isArray(item.attachments) ? item.attachments : [];
+    const idx = atts.findIndex((a) =>
+      /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
+        String((a && (a.attachment_type || a.mime_type || a.filename)) || "")
+      )
+    );
+    return idx >= 0 ? idx : atts.length ? 0 : -1;
+  }
+
+  function parseQuotedEmail(text) {
+    const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+    if (!raw) return [];
+    const re = /^(On .{8,240}? wrote:|-----Original Message-----)\s*$/gm;
+    const parts = raw.split(re);
+    const turns = [];
+    const lead = (parts[0] || "").trim();
+    if (lead) turns.push({ header: null, from: null, body: lead });
+    for (let i = 1; i < parts.length; i += 2) {
+      const header = String(parts[i] || "").trim();
+      const body = String(parts[i + 1] || "").trim();
+      let from = null;
+      const addrM = header.match(/<([^>]+@[^>]+)>/);
+      const addr = addrM ? addrM[1] : "";
+      let name = "";
+      const pm = header.match(/\b(?:AM|PM),?\s+([^<]+?)\s*</i);
+      if (pm && !/^\d/.test(pm[1].trim())) name = pm[1].trim().replace(/^,/, "").trim();
+      if (!name) {
+        const commas = [...header.matchAll(/,\s*([^,<\n]+)\s*</g)];
+        if (commas.length) name = commas[commas.length - 1][1].trim();
+      }
+      if (name && addr) from = name + " <" + addr + ">";
+      else from = name || addr || (/^-----/.test(header) ? "Earlier message" : null);
+      turns.push({ header, from, body });
+    }
+    return turns.length ? turns : [{ header: null, from: null, body: raw }];
+  }
+
+  function emailTurnsHtml(turns, opts) {
+    const compact = !!(opts && opts.compact);
+    const list = Array.isArray(turns) ? turns : [];
+    const shown = compact ? list.slice(0, 4) : list;
+    if (!shown.length) return "";
+    return (
+      '<div class="mb-ev-turns" id="mb-email-turns">' +
+      shown
+        .map((turn, i) => {
+          const who = escapeHtml(turn.from || (i === 0 ? "This message" : "Quoted"));
+          const hd = turn.header
+            ? '<div class="mb-ev-turn-hd">' + escapeHtml(turn.header) + "</div>"
+            : '<div class="mb-ev-turn-hd">' + who + "</div>";
+          return (
+            '<article class="mb-ev-turn">' +
+            hd +
+            '<div class="mb-ev-turn-body">' +
+            escapeHtml(turn.body || "") +
+            "</div></article>"
+          );
+        })
+        .join("") +
+      (compact && list.length > shown.length
+        ? '<p class="mb-ev-meta">Open the card for the rest of the quoted history.</p>'
+        : "") +
+      "</div>"
+    );
+  }
+
+  function bindEmailStructuredView(item) {
+    const t = String((item && item.type) || "").toLowerCase();
+    const eid = item && item.evidence_id;
+    if (t !== "email" || !eid) return;
+    const host = document.getElementById("mb-email-turns");
+    if (!host) return;
+    fetch("/explore/api/email/" + encodeURIComponent(eid))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.ok) return;
+        item._emailView = data;
+        if (Array.isArray(data.people) && data.people.length) {
+          item.people = data.people;
+          renderRailPanel(item);
+        }
+        const wrap = document.createElement("div");
+        wrap.innerHTML = emailTurnsHtml(data.turns);
+        const next = wrap.firstElementChild;
+        if (next) host.replaceWith(next);
+        const note = document.getElementById("mb-email-thread-note");
+        if (note && data.quoted_history_in_body) {
+          note.hidden = false;
+        }
+      })
+      .catch(() => {});
+  }
+
   function renderEvidenceBody(item) {
     const t = String(item.type || "").toLowerCase();
     const media = item.media_url || item.thumb_url || "";
@@ -3064,13 +3168,19 @@
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
       const eid = escapeAttr(item.evidence_id || "");
+      const attachApi = t === "email" ? "email-attachment" : "sms-attachment";
       const attItems = atts
         .map((a, i) => {
           const name = escapeHtml(a.filename || a.source_ref || "attachment");
-          const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
-          const src = "/explore/api/sms-attachment/" + eid + "?index=" + i;
+          const kindBits = [];
+          if (a.kind) kindBits.push(String(a.kind));
+          if (a.attachment_type) kindBits.push(String(a.attachment_type));
+          if (a.mime_type) kindBits.push(String(a.mime_type));
+          if (a.content_id) kindBits.push("cid:" + String(a.content_id));
+          const kind = kindBits.length ? " · " + escapeHtml(kindBits.join(" · ")) : "";
+          const src = "/explore/api/" + attachApi + "/" + eid + "?index=" + i;
           const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
-            String(a.attachment_type || a.filename || "")
+            String(a.attachment_type || a.mime_type || a.filename || "")
           );
           const preview = isImg
             ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" data-src="' +
@@ -3090,7 +3200,7 @@
             name +
             kind +
             preview +
-            '<details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>' +
+            '<details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts (not automatic)</summary>' +
             '<button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="' +
             i +
             '">Copy to Artifacts</button>' +
@@ -3098,12 +3208,18 @@
           );
         })
         .join("");
+      const attLabel =
+        t === "email"
+          ? "MIME part on this email; stored at ingest (not Immich, not a Gallery photo). Optional Artifact copy is explicit only."
+          : "first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.";
       const attHtml = atts.length
         ? '<div class="mb-ev-attach"><strong>📎 ' +
           atts.length +
           " attachment" +
           (atts.length === 1 ? "" : "s") +
-          "</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>" +
+          "</strong> — " +
+          attLabel +
+          "<ul>" +
           attItems +
           "</ul></div>"
         : "";
@@ -3113,11 +3229,16 @@
             .filter(Boolean)
             .join(", ")} — also shown on People.</p>`
         : "";
-      return `<div class="mb-ev-email">${escapeHtml(item.detail || item.preview || "")}</div>
+      return `<div class="mb-ev-email-wrap">
+        <p class="mb-ev-meta">${escapeHtml(item.from || "")}${
+        item.title ? " · " + escapeHtml(item.title) : ""
+      }</p>
+        ${emailTurnsHtml(parseQuotedEmail(item.detail || item.preview || ""))}
+        <p class="mb-ev-meta" id="mb-email-thread-note" hidden>Quoted history is in this message body — not an invented RFC thread.</p>
         ${attHtml}
-        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email / text${
+        <p class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · Email${
         item.direction ? " · " + escapeHtml(item.direction) : ""
-      }</p>${phoneHtml}`;
+      }</p>${phoneHtml}</div>`;
     }
     if (t === "story") {
       const img = media
@@ -3151,14 +3272,31 @@
           ? `@ ${Number(item.t).toFixed(0)}s`
           : "";
     if (isText && state.preview && state.preview.attach) {
-      const att = (item.attachments || [])[0] || {};
+      const atts = Array.isArray(item.attachments) ? item.attachments : [];
+      const idx = firstImageAttachIndex(item);
+      const att = idx >= 0 ? atts[idx] : {};
       const name = escapeHtml(att.filename || att.source_ref || "attachment");
-      return `<div class="mb-qp-body mb-qp-attach">
+      const eid = item.evidence_id || "";
+      const api =
+        t === "email" || item.channel === "email" ? "email-attachment" : "sms-attachment";
+      const isImg =
+        idx >= 0 &&
+        /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
+          String(att.attachment_type || att.mime_type || att.filename || "")
+        );
+      const img =
+        isImg && eid
+          ? `<div class="mb-qp-media"><img src="${escapeAttr(
+              "/explore/api/" + api + "/" + eid + "?index=" + idx
+            )}" alt="${name}" /></div>`
+          : "";
+      return `<div class="mb-qp-body mb-qp-attach">${img}
       <div class="mb-qp-type">Attachment</div>
-      <div class="mb-qp-line">${name} — open the card to preview if the file was stored at ingest</div>
+      <div class="mb-qp-line">${name}</div>
     </div>`;
     }
     if (isText) {
+      const turns = parseQuotedEmail(body);
       return `<div class="mb-qp-body mb-qp-text">
       <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
       <div class="mb-qp-title">${escapeHtml(item.from || item.title || "Message")}</div>
@@ -3166,7 +3304,7 @@
         item.direction ? " · " + escapeHtml(item.direction) : ""
       }</div>
       ${peeps ? `<div class="mb-qp-line">${escapeHtml(peeps)}</div>` : ""}
-      <div class="mb-qp-textbody">${escapeHtml(body)}</div>
+      ${emailTurnsHtml(turns, { compact: true })}
     </div>`;
     }
     const mediaBlock = media
