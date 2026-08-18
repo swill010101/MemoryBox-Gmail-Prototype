@@ -227,8 +227,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             if str((exif_d or {}).get("media") or "").lower() == "video"
             else "photo"
         )
-        if photo_type == "video" and p.get("web_url"):
-            extra["play_url"] = p.get("web_url")
+        if photo_type == "video" and eid:
+            # Immich library videos stream here — never HVRT /review/media.
+            extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["video_provider_key"] = p.get("provider_key") or "immich"
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",

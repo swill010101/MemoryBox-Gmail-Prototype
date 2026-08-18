@@ -19,7 +19,7 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_TIMELINE_MONTH_WALK = 400
+_PERSON_TIMELINE_MONTH_WALK = 720
 _PERSON_LIB_CACHE_VER = "v8"
 
 
@@ -468,7 +468,10 @@ class ImmichHttpClient:
         cached = self._read_person_lib_cache(cache_key, allow_stale=True)
         if cached:
             self._last_person_source = "cache"
-            return list(cached)[:target]
+            windowed = self._filter_assets_to_windows(
+                list(cached), getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -489,11 +492,15 @@ class ImmichHttpClient:
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
             self._last_person_source = "faces_or_timeline"
-            out = self._year_fair_assets(list(by_id.values()), target)
+            full = list(by_id.values())
             # Never cache a truncated walk — FlightSim re-asks kept 2015-only Peggy.
-            if out and not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
-                self._write_person_lib_cache(cache_key, out)
-            return out
+            # Cache the unwindowed library so Christmas / year asks reuse it.
+            if full and not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
+                self._write_person_lib_cache(cache_key, full)
+            windowed = self._filter_assets_to_windows(
+                full, getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -505,10 +512,13 @@ class ImmichHttpClient:
         except Exception as exc:  # noqa: BLE001
             self._note_transport_fail(exc)
         if by_id:
-            out = self._year_fair_assets(list(by_id.values()), target)
+            full = list(by_id.values())
             if not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
-                self._write_person_lib_cache(cache_key, out)
-            return out
+                self._write_person_lib_cache(cache_key, full)
+            windowed = self._filter_assets_to_windows(
+                full, getattr(self, "_timeline_windows", ()) or ()
+            )
+            return self._year_fair_assets(windowed, target)
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
@@ -773,6 +783,43 @@ class ImmichHttpClient:
                     keep.append(yb)
                     break
         return keep
+
+    def _filter_assets_to_windows(
+        self,
+        rows: list[dict[str, Any]],
+        windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None,
+    ) -> list[dict[str, Any]]:
+        """Keep assets whose taken date falls in Ask windows (after cache)."""
+        if not windows:
+            return list(rows)
+        from memorybox.planner.temporal import date_in_windows
+
+        out: list[dict[str, Any]] = []
+        for it in rows:
+            iso = self._asset_taken_iso(it)
+            if not iso:
+                # Face stubs without EXIF stay (Explore undated gallery).
+                out.append(it)
+                continue
+            if date_in_windows(iso, windows):
+                out.append(it)
+        return out
+
+    @staticmethod
+    def _asset_taken_iso(raw: dict[str, Any] | None) -> str | None:
+        if not isinstance(raw, dict):
+            return None
+        exif = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
+        for taken in (
+            exif.get("dateTimeOriginal"),
+            exif.get("dateTime"),
+            raw.get("localDateTime"),
+            raw.get("takenAt"),
+            raw.get("fileCreatedAt"),
+        ):
+            if isinstance(taken, str) and len(taken.strip()) >= 8:
+                return taken.strip()
+        return None
 
     def _list_person_bucket_assets(
         self, person_id: str, time_bucket: str, *, size: str = "YEAR"
@@ -1410,6 +1457,110 @@ class ImmichHttpClient:
             ctype = "image/webp" if suf == ".webp" else "image/jpeg"
             return data, ctype
         return None
+
+    def _encoded_video_roots(self) -> list[Path]:
+        root = self.thumbs_root
+        if root is None:
+            return []
+        out: list[Path] = []
+        seen: set[str] = set()
+
+        def _add(p: Path) -> None:
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen or not p.is_dir():
+                return
+            seen.add(key)
+            out.append(p)
+
+        for base in (root, root.parent):
+            _add(base / "encoded-video")
+            if base.name.lower() in {"encoded-video", "encoded_video"}:
+                _add(base)
+        return out
+
+    def find_local_encoded_video(self, asset_id: str) -> Path | None:
+        """Immich transcoded MP4 on disk (sibling of thumbs/)."""
+        aid = (asset_id or "").strip()
+        if not aid:
+            return None
+        prefix = aid[:2]
+        nest = aid[2:4] if len(aid) >= 4 else ""
+        names = (f"{aid}.mp4", f"{aid}.webm", f"{aid}.m4v")
+        paths: list[Path] = []
+        for search in self._encoded_video_roots():
+            for name in names:
+                paths.append(search / prefix / name)
+                if nest:
+                    paths.append(search / prefix / nest / name)
+            try:
+                users = [p for p in search.iterdir() if p.is_dir()][:16]
+            except OSError:
+                users = []
+            for user in users:
+                if len(user.name) == 2:
+                    continue
+                for name in names:
+                    paths.append(user / prefix / name)
+                    if nest:
+                        paths.append(user / prefix / nest / name)
+            globs = [
+                f"{prefix}/{aid}.mp4",
+                f"*/{prefix}/{aid}.mp4",
+            ]
+            if nest:
+                globs.extend(
+                    (
+                        f"{prefix}/{nest}/{aid}.mp4",
+                        f"*/{prefix}/{nest}/{aid}.mp4",
+                    )
+                )
+            for pattern in globs:
+                try:
+                    paths.extend(search.glob(pattern))
+                except OSError:
+                    continue
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if path.is_file() and path.stat().st_size > 64:
+                    return path
+            except OSError:
+                continue
+        return None
+
+    def open_video_playback(self, asset_id: str, range_header: str | None):
+        """Immich transcoded playback stream (API key + Range)."""
+        aid = (asset_id or "").strip()
+        if not aid:
+            raise FileNotFoundError("missing asset id")
+        headers = {"x-api-key": self._key, "Accept": "video/*,*/*"}
+        if range_header:
+            headers["Range"] = range_header
+        last_err: Exception | None = None
+        for path in (
+            f"/assets/{aid}/video/playback",
+            f"/assets/{aid}/original",
+        ):
+            url = f"{self.api_base}{path}"
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                return urllib.request.urlopen(req, timeout=120)
+            except urllib.error.HTTPError as exc:
+                last_err = exc
+                if exc.code in {401, 403, 404}:
+                    continue
+                raise
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                continue
+        raise FileNotFoundError(str(last_err or "immich video playback missing"))
 
     def _thumb_missed(self, asset_id: str) -> bool:
         store = getattr(self, "_thumb_miss", None)

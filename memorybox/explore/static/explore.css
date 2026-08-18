@@ -976,6 +976,8 @@ body {
   border-radius: 6px;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
   pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
 }
 .mb-teach-proof {
   display: grid;
@@ -1488,6 +1490,14 @@ body {
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.6);
   pointer-events: auto;
   z-index: 2;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.mb-ev-photo-frame.mb-faces-revealed .mb-face-box,
+.mb-ev-video-frame.mb-faces-revealed .mb-face-box {
+  opacity: 1;
+  visibility: visible;
 }
 
 .mb-face-label {

@@ -186,6 +186,13 @@ def _prove_harness() -> dict[str, Any]:
         )
         cp = _assert_explore_css(css)
         _check("explore_css_hierarchy", not cp, checks, problems, "; ".join(cp) if cp else "ok")
+        _check(
+            "explore_css_face_hold",
+            "mb-faces-revealed" in css,
+            checks,
+            problems,
+            "detail viewer face boxes stay hidden until 1s hold",
+        )
     except Exception as exc:  # noqa: BLE001
         _check("explore_html", False, checks, problems, str(exc))
 
@@ -262,6 +269,10 @@ def _prove_harness() -> dict[str, Any]:
             "timelineDatedItems",
             "mb-ev-video-player",
             "bindExploreVideoPlayer",
+            "immichVideoSrc",
+            "FACE_HOLD_MS",
+            "mb-faces-revealed",
+            "applyCuratorPortrait",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -274,6 +285,22 @@ def _prove_harness() -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("explore_js_state", False, checks, problems, str(exc))
+
+    try:
+        from memorybox.context import AskContext
+        from memorybox.planner import plan_ask
+
+        p_and = plan_ask("show me jordan and sam at christmas", AskContext.empty())
+        and_names = {n.lower() for n in p_and.person_names}
+        _check(
+            "show_me_two_people_and",
+            "jordan" in and_names and "sam" in and_names,
+            checks,
+            problems,
+            f"people={p_and.person_names}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("show_me_two_people_and", False, checks, problems, str(exc))
 
     try:
         from memorybox.explore.find import items_from_ask_result, curator_from_items
@@ -1502,6 +1529,28 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"got={None if not parent_got else len(parent_got[0])}",
+        )
+        vid_lib = _Path(tempfile.mkdtemp())
+        vid_file = (
+            vid_lib
+            / "encoded-video"
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}.mp4"
+        )
+        vid_file.parent.mkdir(parents=True)
+        vid_file.write_bytes(b"\x00" * 128)
+        vid_c = object.__new__(_ImmichIds)
+        vid_c.thumbs_root = vid_lib / "thumbs"
+        (vid_lib / "thumbs").mkdir(exist_ok=True)
+        vid_got = _ImmichIds.find_local_encoded_video(vid_c, nest_aid)
+        _check(
+            "immich_encoded_video_from_library_sibling",
+            bool(vid_got and str(vid_got).endswith(".mp4")),
+            checks,
+            problems,
+            f"got={vid_got}",
         )
         miss_c = object.__new__(_ImmichIds)
         miss_c.thumbs_root = None

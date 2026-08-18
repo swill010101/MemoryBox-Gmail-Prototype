@@ -1234,6 +1234,38 @@ def search_photos(
                 status["face_asset_fallback"] = len(out)
             return out
 
+        def _intersect_person_assets(meta_rows: list[dict[str, str]]) -> list[PhotoAssetDto]:
+            """Two+ named people: photos that appear in every person library (AND)."""
+            ids = list(
+                dict.fromkeys(
+                    str(m.get("external_id") or "").strip()
+                    for m in meta_rows
+                    if str(m.get("external_id") or "").strip()
+                )
+            )
+            if len(ids) < 2:
+                return _search_person_assets(ids)
+            maps: list[dict[str, PhotoAssetDto]] = []
+            for pid in ids:
+                chunk = _search_person_assets([pid])
+                maps.append({a.external_id: a for a in chunk if a.external_id})
+            common = set(maps[0]) if maps else set()
+            for amap in maps[1:]:
+                common &= set(amap)
+            out: list[PhotoAssetDto] = []
+            seen: set[str] = set()
+            for amap in maps:
+                for eid in common:
+                    if eid in seen or eid not in amap:
+                        continue
+                    out.append(amap[eid])
+                    seen.add(eid)
+            status["person_combine"] = "and_intersection"
+            status["and_person_ids"] = ids
+            status["and_library_sizes"] = [len(m) for m in maps]
+            status["and_intersection"] = len(out)
+            return out
+
         def _faces_for_hit(a: PhotoAssetDto) -> list[dict[str, Any]] | None:
             rows: list[dict[str, Any]] = []
             for face in getattr(a, "faces", ()) or ():
@@ -1338,7 +1370,14 @@ def search_photos(
                 status["identity_mode"] = "mixed_mapping"
             else:
                 status["identity_mode"] = "confirmed_mapping"
-            assets = _search_person_assets(mapped_ext)
+            and_people = len(asked_names) >= 2 and len(
+                {str(m.get("external_id") or "") for m in mapped_meta if m.get("external_id")}
+            ) >= 2
+            assets = (
+                _intersect_person_assets(mapped_meta)
+                if and_people
+                else _search_person_assets(mapped_ext)
+            )
             by_person_ext = {m["external_id"]: m for m in mapped_meta}
             for a in assets:
                 meta: dict[str, str] = {}

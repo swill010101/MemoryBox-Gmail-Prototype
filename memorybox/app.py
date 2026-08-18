@@ -1025,6 +1025,124 @@ def library_photo_thumb(external_id: str) -> Response:
     )
 
 
+def _range_file_response(path: Path, request: Request, media_type: str) -> Response:
+    """Local Immich encoded-video with HTTP Range (browser <video> scrub)."""
+    size = path.stat().st_size
+    range_header = request.headers.get("range") or ""
+    start = 0
+    end = size - 1
+    status = 200
+    if range_header.lower().startswith("bytes="):
+        spec = range_header.split("=", 1)[1].strip()
+        left, _, right = spec.partition("-")
+        try:
+            if left:
+                start = max(0, int(left))
+            if right:
+                end = min(size - 1, int(right))
+        except ValueError:
+            start, end = 0, size - 1
+        if start > end or start >= size:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+        status = 206
+
+    length = end - start + 1
+
+    def _iter():
+        with path.open("rb") as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+        "Cache-Control": "private, max-age=3600",
+    }
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(_iter(), status_code=status, media_type=media_type, headers=headers)
+
+
+@app.get("/library/media/immich-video/{external_id}")
+def library_immich_video(external_id: str, request: Request) -> Response:
+    """Play Immich library video in Explore (disk encoded-video, then Immich playback)."""
+    photo = build_photo()
+    client = getattr(photo, "_client", None)
+    finder = getattr(client, "find_local_encoded_video", None)
+    path = finder(external_id) if callable(finder) else None
+    if path is not None:
+        suf = str(path.suffix or "").lower()
+        ctype = "video/webm" if suf == ".webm" else "video/mp4"
+        return _range_file_response(path, request, ctype)
+    opener = getattr(client, "open_video_playback", None)
+    if not callable(opener):
+        raise HTTPException(status_code=404, detail="immich video not available")
+    try:
+        resp = opener(external_id, request.headers.get("range"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"immich video proxy failed: {exc}") from exc
+    status = getattr(resp, "status", 200) or 200
+    ctype = resp.headers.get("Content-Type") or "video/mp4"
+    out_headers: dict[str, str] = {
+        "Accept-Ranges": resp.headers.get("Accept-Ranges") or "bytes",
+        "Cache-Control": "private, max-age=3600",
+    }
+    if resp.headers.get("Content-Range"):
+        out_headers["Content-Range"] = resp.headers["Content-Range"]
+    if resp.headers.get("Content-Length"):
+        out_headers["Content-Length"] = resp.headers["Content-Length"]
+
+    def _iter():
+        try:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        _iter(),
+        status_code=status,
+        media_type=ctype,
+        headers=out_headers,
+    )
+
+
+@app.get("/library/media/immich-person/{external_id}")
+def library_immich_person_thumb(external_id: str) -> Response:
+    """Preferred Immich person thumbnail when Explore has no MB person id yet."""
+    photo = build_photo()
+    client = getattr(photo, "_client", None)
+    fetch = getattr(client, "fetch_person_thumbnail_bytes", None)
+    if not callable(fetch):
+        return Response(status_code=204, headers={"Cache-Control": "private, max-age=60"})
+    try:
+        got = fetch(external_id)
+    except Exception:  # noqa: BLE001
+        got = None
+    if not got:
+        return Response(status_code=204, headers={"Cache-Control": "private, max-age=60"})
+    data, ctype = got[0], got[1]
+    return Response(
+        content=data,
+        media_type=ctype or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @app.get("/library/media/video-poster")
 def library_video_poster(
     video: str = Query(..., min_length=1),

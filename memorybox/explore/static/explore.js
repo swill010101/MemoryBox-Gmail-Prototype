@@ -700,11 +700,10 @@
       state.domain.summary = state.domain._fixtureSummary;
       return;
     }
-    // Prefer Ask clarification / curator answer over empty "0 memories" noise.
-    if (
-      state.domain._askSummary &&
-      (state.domain._askKind === "clarification" || vis.length === 0)
-    ) {
+    // Prefer Ask clarification over empty "0 memories" noise.
+    // Do not keep the server's photo count when the Gallery is empty
+    // (FlightSim: "I found 311 photos" while Christmas AND showed 0 cards).
+    if (state.domain._askSummary && state.domain._askKind === "clarification") {
       state.domain.summary = state.domain._askSummary;
       return;
     }
@@ -761,13 +760,6 @@
         ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
         : "";
     let extra = "";
-    if (
-      !c.photo &&
-      state.domain._askSummary &&
-      /immich|photo/i.test(state.domain._askSummary)
-    ) {
-      extra = " " + String(state.domain._askSummary).trim();
-    }
     const archiveN =
       allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
     let hideNote = "";
@@ -1036,7 +1028,10 @@
           const a = parseISO(String(w[0]).slice(0, 10));
           const b = parseISO(String(w[1]).slice(0, 10));
           if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-          return [Math.min(a, b), Math.max(a, b)];
+          const lo = Math.min(a, b);
+          // Date-only window end is midnight at the start of that day.
+          const hi = Math.max(a, b) + 86400000 - 1;
+          return [lo, hi];
         })
         .filter(Boolean);
       if (!temporalWindows.length) temporalWindows = null;
@@ -1709,23 +1704,44 @@
       });
     });
     const av = document.getElementById("mb-explore-curator-avatar");
-    if (av) {
-      const portraitUrl =
-        (PERSON && PERSON.portraitUrl) ||
-        (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
-        "";
-      if (portraitUrl && av.classList.contains("has-photo")) {
-        // Keep Immich preferred portrait; do not wipe to letter
-      } else if (portraitUrl) {
-        av.textContent = "";
-        av.style.backgroundImage = "url(" + JSON.stringify(portraitUrl) + ")";
-        av.classList.add("has-photo");
-      } else if (!av.classList.contains("has-photo")) {
-        const person = (state.domain.chips || []).find((c) => c.kind === "person");
-        const label = (person && person.label) || state.domain.title || "M";
-        av.textContent = String(label).trim().charAt(0).toUpperCase() || "M";
-      }
+    if (av) applyCuratorPortrait();
+  }
+
+  function applyCuratorPortrait() {
+    const av = document.getElementById("mb-explore-curator-avatar");
+    if (!av) return;
+    const personChip = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    const label = (personChip && personChip.label) || "";
+    const opt = label ? resolvePersonOption(label) : null;
+    let url =
+      (PERSON && PERSON.portraitUrl) ||
+      (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) ||
+      "";
+    if (!url && opt && opt.id) {
+      url = "/people/" + encodeURIComponent(opt.id) + "/portrait";
     }
+    if (!url && opt && opt.immichId) {
+      url = "/library/media/immich-person/" + encodeURIComponent(opt.immichId);
+    }
+    const initial = String(label || state.domain.title || "M").trim().charAt(0).toUpperCase() || "M";
+    if (!url) {
+      av.classList.remove("has-photo");
+      av.style.backgroundImage = "";
+      av.textContent = initial;
+      return;
+    }
+    const probe = new Image();
+    probe.onload = () => {
+      av.textContent = "";
+      av.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      av.classList.add("has-photo");
+    };
+    probe.onerror = () => {
+      av.classList.remove("has-photo");
+      av.style.backgroundImage = "";
+      av.textContent = initial;
+    };
+    probe.src = url;
   }
 
   function renderFilters() {
@@ -2326,6 +2342,7 @@
     document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
     bindSmsAttachActions(item);
     bindExploreVideoPlayer(item);
+    bindFaceHoldReveal();
     renderViewerFooter(item);
     syncRailTabs();
     renderRailPanel(item);
@@ -2882,10 +2899,44 @@
     });
   }
 
+  const FACE_HOLD_MS = 1000;
+
+  function bindFaceHoldReveal() {
+    const frame =
+      document.querySelector(".mb-ev-photo-frame") ||
+      document.querySelector(".mb-ev-video-frame");
+    if (!frame) return;
+    let holdTimer = 0;
+    const clearHold = () => {
+      if (holdTimer) {
+        window.clearTimeout(holdTimer);
+        holdTimer = 0;
+      }
+      frame.classList.remove("mb-faces-revealed");
+    };
+    const startHold = () => {
+      if (holdTimer) window.clearTimeout(holdTimer);
+      holdTimer = window.setTimeout(() => {
+        frame.classList.add("mb-faces-revealed");
+        holdTimer = 0;
+      }, FACE_HOLD_MS);
+    };
+    frame.addEventListener("mouseenter", startHold);
+    frame.addEventListener("mouseleave", clearHold);
+  }
+
   function bindExploreVideoPlayer(item) {
     const el = document.querySelector(".mb-ev-video-player");
+    if (!el) return;
+    const immichSrc = immichVideoSrc(item);
+    if (immichSrc) {
+      el.src = immichSrc;
+      el.load();
+      el.play().catch(() => {});
+      return;
+    }
     const vid = String((item && item.video_external_id) || "").trim();
-    if (!el || !vid) return;
+    if (!vid) return;
     const t0 = item.t != null ? Number(item.t) : 0;
     const encoded = encodeURIComponent(vid);
     fetch("/review/videos/" + encoded + "/browser-proxy", { method: "POST" })
@@ -2906,6 +2957,17 @@
         el.src = "/review/media/" + encoded;
         el.load();
       });
+  }
+
+  function immichVideoSrc(item) {
+    const play = String((item && item.play_url) || "");
+    if (play.indexOf("/library/media/immich-video/") >= 0) return play;
+    const pk = String((item && item.provider_key) || "").toLowerCase();
+    const eid = String((item && item.external_id) || "").trim();
+    if (pk === "immich" && eid && String(item.type || "").toLowerCase() === "video") {
+      return "/library/media/immich-video/" + encodeURIComponent(eid);
+    }
+    return "";
   }
 
   function renderEvidenceBody(item) {
@@ -2931,13 +2993,17 @@
     if (t === "video") {
       const t0 = item.t != null ? Number(item.t) : 0;
       const vid = String(item.video_external_id || "").trim();
+      const immichStream = immichVideoSrc(item);
       const canStream =
         Boolean(vid) &&
         !vid.startsWith("video-peggy-") &&
-        !vid.startsWith("video-library-");
-      const stream = canStream
-        ? `/review/media/${encodeURIComponent(vid)}?proxy=1`
-        : "";
+        !vid.startsWith("video-library-") &&
+        !immichStream;
+      const stream = immichStream
+        ? immichStream
+        : canStream
+          ? `/review/media/${encodeURIComponent(vid)}?proxy=1`
+          : "";
       const posterAttr = media ? ` poster="${escapeAttr(media)}"` : "";
       const stage = stream
         ? `<video class="mb-ev-video-player" controls preload="metadata" src="${escapeAttr(
@@ -3117,6 +3183,8 @@
       });
       if (item.id !== state.modal.openId) return;
       document.getElementById("mb-modal-body").innerHTML = renderEvidenceBody(item);
+      bindExploreVideoPlayer(item);
+      bindFaceHoldReveal();
       renderRailPanel(item);
       renderRailTools(item);
       bindPhotoPan();
@@ -3690,6 +3758,7 @@
     loadPeopleOptions().then(() => {
       syncActivePersonContext();
       renderNav();
+      applyCuratorPortrait();
     });
   }
 
@@ -3706,7 +3775,12 @@
       const opts = (data.options || data.people || []).map((p) => ({
         id: String(p.id || p.person_id || ""),
         label: String(p.display_name || p.name || p.label || "Person"),
-      })).filter((p) => p.id);
+        immichId: String(
+          (Array.isArray(p.immich_external_ids) && p.immich_external_ids[0]) ||
+            p.external_id ||
+            ""
+        ),
+      })).filter((p) => p.id || p.immichId);
       peopleOptions = opts.length ? opts : fallback;
     } catch (_) {
       peopleOptions = fallback;
