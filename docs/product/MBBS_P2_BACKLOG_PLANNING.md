@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-18 (I8 **ACCEPTED**; I8A definition **DRAFT**)  
+**Status:** Living parking note · **Updated:** 2026-08-18 (I8 **ACCEPTED**; I8A definition **written**, not build-authorized)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -74,13 +74,13 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 | ID | Theme | Evidence | Suggested home |
 |----|--------|----------|----------------|
-| **P2-I8A** | Unified communications (email + SMS viewer, hover, gallery density/noise) | Founder: aesthetic errors + mixed gallery noise after I8 owner pass | [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **DRAFT** — not I8.5 |
+| **P2-I8A** | Unified communications (email + SMS viewer, hover, gallery density/noise) | Founder: aesthetic errors + mixed gallery noise after I8 owner pass | [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **written, not build-authorized** — not I8.5 |
 | **P2-BL-I8-02** | Ask “how many times did I send an email to Peggy?” must **lock Peggy George** (canonical Person) **before** count + Gallery | Owner 2026-08-18: curator count + Gallery showed email and it worked, but first-name Peggy was not resolved to Peggy George first, so extra mail that is not Peggy George was included. Does not reopen I8. | **Next increment: P2-I8A** |
 
 ## Next increment
 
 **P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **ACCEPTED** 2026-08-18.
 
-**P2-I8A Unified Communications** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **DRAFT**. Q1–Q6 open. **Not BUILD AUTHORIZED.** Do not start I8.5 / I9 / I10 / I11.
+**P2-I8A Unified Communications** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **Definition written.** Q1–Q6 open. **Not BUILD AUTHORIZED.** No I8A runtime until Tom approves. Do not start I8.5 / I9 / I10 / I11.
 
 Sequence: **I8 ACCEPTED → I8A (draft) → I8.5**. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.

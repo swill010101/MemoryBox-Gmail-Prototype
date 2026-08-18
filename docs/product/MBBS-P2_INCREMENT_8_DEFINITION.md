@@ -8,7 +8,7 @@
 **Depends:** MBQL-001 **ACCEPTED** (2026-08-18) · existing P1/I3 mbox ingest pattern (`ingest-email` / `comms_email.py`)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I4 Explore redesign / **P2-BL-I4-01** · I5 portrait **P2-BL-I5-01** · I6 kinship · **I8A** unified comms UX · **I8.5** face-evidence · **I9** spoken · **I10** cross-source correlation · **I11** narrative · I13/I14 Settings · multi-user · live Gmail sync / sending mail
 
-P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (draft; not build-authorized). Do not reopen I8 for chrome. Do not start I8.5 until Tom authorizes that increment (after I8A unless Q1 reorders).
+P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (definition written; not build-authorized). Do not reopen I8 for chrome. Do not start I8.5 until Tom authorizes that increment (after I8A unless Q1 reorders).
 
 ## What shipped (ACCEPTED)
 
@@ -24,7 +24,7 @@ P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A]
 
 | ID | Item | Notes |
 |----|------|-------|
-| **P2-I8A** | Unified communications UX | Draft definition. Viewer/hover/gallery density/noise. Not I8.5. |
+| **P2-I8A** | Unified communications UX | Definition written. Viewer/hover/gallery density/noise + **P2-BL-I8-02**. Not I8.5. **Not BUILD AUTHORIZED.** |
 | **P2-BL-I8-01** | Attachment files up front | **Absorbed in I8** (shipped). |
 | **P2-BL-I8-02** | Ask email count must lock canonical Person first | Owner 2026-08-18: “how many times did I send an email to Peggy?” counted and showed mail **without resolving Peggy George first**, so extra mail that is not Peggy George was included. Count path still worked. **Do not reopen I8.** Next increment: **I8A**. |
 
@@ -203,7 +203,7 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 | I8 build | **AUTHORIZED** — shipped |
 | I8 ACCEPTED | **ACCEPTED** 2026-08-18 |
 | P2-BL-I8-02 (Ask Person lock on email count) | **Parked for I8A** — first-name Peggy vs Peggy George |
-| I8A Unified Communications | **DRAFT** — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
+| I8A Unified Communications | **WRITTEN, not BUILD AUTHORIZED** — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
 | I8.5 / I9 / I10 / I11 | **NOT STARTED** |
 
 **Stop.** Do not reopen I8 for chrome. I8A is next definition (not authorized). Do not start I8.5, I9, I10, or I11.

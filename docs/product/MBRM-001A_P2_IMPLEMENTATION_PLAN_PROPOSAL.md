@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I7 **ACCEPTED** including **I4** 2026-08-18; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18; **P2-I8 ACCEPTED** 2026-08-18). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). **P2-I8A** is **DRAFT** (not build-authorized).  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I7 **ACCEPTED** including **I4** 2026-08-18; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18; **P2-I8 ACCEPTED** 2026-08-18). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). **P2-I8A** is **definition written** (not build-authorized).  
 **Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. Next definition is **P2-I8A** (Q1–Q6 open). Do not start I8A runtime or I8.5 until Tom authorizes that increment. Do not reopen I4 or I8 for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
@@ -93,7 +93,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I7A** | AI Model Trace & Observability | F | **ACCEPTED** (2026-08-15) — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
 | **MBQL-001** | Ask, Query & Command Language | F | **ACCEPTED** (2026-08-18 — Tom: “MBQL is accepted”) — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). After I7A ACCEPTED, before I8. |
 | **P2-I8** | Richer Email | A | **ACCEPTED** 2026-08-18 — [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md) |
-| **P2-I8A** | Unified Communications | U | **DRAFT** (after I8 ACCEPTED, before I8.5 unless Tom reorders) — [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
+| **P2-I8A** | Unified Communications | U | **Definition written** (after I8 ACCEPTED, before I8.5 unless Tom reorders; **not BUILD AUTHORIZED**) — [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -167,7 +167,7 @@ Developer-only request→model→disposition traces. **ACCEPTED** 2026-08-15 (To
 
 ### MBQL-001 — Ask, Query & Command Language · F
 
-Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. I9 stays after I8.5. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A is DRAFT** (not build-authorized).
+Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. I9 stays after I8.5. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A definition is written** (not build-authorized).
 
 ### P2-I8 — Richer Email · A
 
@@ -175,7 +175,7 @@ P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-
 
 ### P2-I8A — Unified Communications · U
 
-Shared email + SMS viewer / hover / gallery density after both channels exist. Absorbs **P2-BL-I8-02** (Ask Person lock on email counts). [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **DRAFT**. Not I8.5. Not I10/I11.
+Shared email + SMS viewer / hover / gallery density after both channels exist. Absorbs **P2-BL-I8-02** (Ask Person lock on email counts). [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **written, not BUILD AUTHORIZED**. Not I8.5. Not I10/I11.
 
 ### P2-I8.5 — Face Evidence Ownership · F
 

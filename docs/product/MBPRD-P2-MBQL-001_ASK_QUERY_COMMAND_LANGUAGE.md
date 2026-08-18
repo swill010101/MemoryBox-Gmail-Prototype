@@ -6,7 +6,7 @@
 **Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not start:** I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user · I8A runtime
 
-PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A is DRAFT** (not build-authorized).
+PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A definition is written** (not build-authorized).
 
 ---
 
@@ -129,4 +129,4 @@ Q8 is open. Q1–Q7 stay locked.
 
 ## 7. Decision status
 
-PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **P2-I8 ACCEPTED.** **I8A DRAFT.**
+PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **P2-I8 ACCEPTED.** **I8A definition written, not authorized.**
