@@ -855,6 +855,15 @@ body {
   opacity: 0.85;
 }
 
+.mb-tl-bar {
+  position: absolute;
+  bottom: 22px;
+  border-radius: 3px 3px 0 0;
+  background: var(--mb-blue);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .mb-tl-dot-undated {
   background: #b45309;
   box-shadow: 0 0 0 2px rgba(180, 83, 9, 0.25);

@@ -257,6 +257,8 @@ def _prove_harness() -> dict[str, Any]:
             "hidden in Gallery — say Add texts to show them",
             "textsPinned",
             "bindLazyThumbs",
+            "mb-tl-bar",
+            "useYearDensity",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -1359,6 +1361,48 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"got={None if not local_got else (len(local_got[0]), local_got[1])}",
+        )
+        nest_aid = "d74b407f-c714-4cf7-9b0b-2ef7d87d0ffa"
+        nest_root = _Path(tempfile.mkdtemp())
+        nest_file = (
+            nest_root
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}-thumbnail.webp"
+        )
+        nest_file.parent.mkdir(parents=True)
+        nest_file.write_bytes(b"RIFF" + b"\x00" * 40)
+        nest_c = object.__new__(_ImmichIds)
+        nest_c.thumbs_root = nest_root
+        nest_got = _ImmichIds._read_local_thumb(nest_c, nest_aid)
+        _check(
+            "immich_thumb_from_nested_owner_aa_bb",
+            bool(nest_got and nest_got[0] and nest_got[1] == "image/webp"),
+            checks,
+            problems,
+            f"got={None if not nest_got else (len(nest_got[0]), nest_got[1])}",
+        )
+        parent_c = object.__new__(_ImmichIds)
+        parent_lib = _Path(tempfile.mkdtemp())
+        parent_file = (
+            parent_lib
+            / "thumbs"
+            / "93f6ab6a-565c-45d3-9d88-8507085f4aff"
+            / nest_aid[:2]
+            / nest_aid[2:4]
+            / f"{nest_aid}-preview.webp"
+        )
+        parent_file.parent.mkdir(parents=True)
+        parent_file.write_bytes(b"RIFF" + b"\x00" * 40)
+        parent_c.thumbs_root = parent_lib
+        parent_got = _ImmichIds._read_local_thumb(parent_c, nest_aid)
+        _check(
+            "immich_thumb_from_library_parent_thumbs_dir",
+            bool(parent_got and parent_got[0]),
+            checks,
+            problems,
+            f"got={None if not parent_got else len(parent_got[0])}",
         )
         miss_c = object.__new__(_ImmichIds)
         miss_c.thumbs_root = None

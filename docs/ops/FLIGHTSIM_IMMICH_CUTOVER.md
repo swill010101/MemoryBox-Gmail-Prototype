@@ -150,6 +150,6 @@ Those are not Immich. Do not point them at `127.0.0.1:2283`.
 |---|---|
 | Health fake/unavailable | `immich.env` missing, placeholder key, or serve not restarted |
 | Photos still from old NAS | `IMMICH_BASE_URL` still media-server IP |
-| Gallery 204 / no thumbs | Wrong `IMMICH_THUMBS_PATH`; do not enable API thumbs to “fix” it first |
+| Gallery 204 / no thumbs | Wrong `IMMICH_THUMBS_PATH` (must reach Immich `thumbs/`, not UNC). Current Immich stores `{owner}/{aa}/{bb}/{id}-thumbnail.webp`. Do not enable API thumbs to fix it first. |
 | Peggy shows Tom’s photos | Fresh Immich UUIDs; sync + name verify; do not skip I4 case D |
 | Immich dies after gallery | `IMMICH_THUMBS_API=1` or UNC thumbs — turn API off, use local disk |

@@ -2170,20 +2170,51 @@
     if (!empty && dotsEl) {
       const span = Math.max(extentEnd - extentStart, 1);
       const parts = [];
-      for (const it of typedDated) {
-        const t = parseISO(it.date);
-        if (!Number.isFinite(t)) continue;
-        // Rule: timeline indicators never exceed the timeline track
-        if (t < extentStart || t > extentEnd) continue;
-        let x = ((t - extentStart) / span) * 100;
-        if (x < 0 || x > 100) continue;
-        // Keep dot centers inside the rail (avoid margin bleed past edges)
-        x = Math.min(99.2, Math.max(0.8, x));
-        parts.push(
-          `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
-            it.date
-          )}"></span>`
-        );
+      // Year/month precision: one 7px dot per card stacks on Jan 1 (Immich YEAR
+      // buckets) and looks like Christmas lights. Draw year density instead.
+      const useYearDensity =
+        (precision === "years" || (extentEnd - extentStart) / 86400000 > 900) &&
+        typedDated.length > 40;
+      if (useYearDensity) {
+        const bins = new Map();
+        for (const it of typedDated) {
+          const t = parseISO(it.date);
+          if (!Number.isFinite(t) || t < extentStart || t > extentEnd) continue;
+          const y = new Date(t).getUTCFullYear();
+          bins.set(y, (bins.get(y) || 0) + 1);
+        }
+        let maxN = 1;
+        bins.forEach((n) => {
+          if (n > maxN) maxN = n;
+        });
+        bins.forEach((n, y) => {
+          const t0 = dayMs(y, 1, 1);
+          const t1 = dayMs(y + 1, 1, 1);
+          const left = ((t0 - extentStart) / span) * 100;
+          const width = Math.max(((t1 - t0) / span) * 100, 0.35);
+          const h = 5 + Math.round((n / maxN) * 12);
+          parts.push(
+            `<span class="mb-tl-bar" style="left:${Math.max(0, left)}%;width:${width}%;height:${h}px" title="${escapeAttr(
+              `${y}: ${n}`
+            )}"></span>`
+          );
+        });
+      } else {
+        for (const it of typedDated) {
+          const t = parseISO(it.date);
+          if (!Number.isFinite(t)) continue;
+          // Rule: timeline indicators never exceed the timeline track
+          if (t < extentStart || t > extentEnd) continue;
+          let x = ((t - extentStart) / span) * 100;
+          if (x < 0 || x > 100) continue;
+          // Keep dot centers inside the rail (avoid margin bleed past edges)
+          x = Math.min(99.2, Math.max(0.8, x));
+          parts.push(
+            `<span class="mb-tl-dot" style="left:${x}%" title="${escapeAttr(
+              it.date
+            )}"></span>`
+          );
+        }
       }
       dotsEl.innerHTML = parts.join("");
     }

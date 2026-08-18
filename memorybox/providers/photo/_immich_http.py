@@ -1123,46 +1123,74 @@ class ImmichHttpClient:
             return (sticky.format(id=aid),)
         return tuple(t.format(id=aid) for t in tmpls)
 
-    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
-        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
-        root = self.thumbs_root
-        aid = (asset_id or "").strip()
-        if root is None or not aid or not root.is_dir():
-            return None
+    @staticmethod
+    def _thumb_search_roots(root: Path) -> list[Path]:
+        """IMMICH_THUMBS_PATH may be thumbs/ or the Immich library/upload parent."""
+        roots: list[Path] = []
+        if root.is_dir():
+            roots.append(root)
+            nested = root / "thumbs"
+            if nested.is_dir() and nested.resolve() != root.resolve():
+                roots.append(nested)
+        return roots
+
+    @staticmethod
+    def _thumb_path_candidates(root: Path, aid: str) -> list[Path]:
+        """Immich on-disk layouts (old prefix + current owner/aa/bb nest)."""
         prefix = aid[:2]
+        nest = aid[2:4] if len(aid) >= 4 else ""
         names = (
             f"{aid}-thumbnail.webp",
             f"{aid}-preview.webp",
             f"{aid}-thumbnail.jpeg",
             f"{aid}-preview.jpeg",
+            f"{aid}_thumbnail.webp",
+            f"{aid}_preview.webp",
             f"{aid}.webp",
             f"{aid}.jpeg",
             f"{aid}.jpg",
         )
-        candidates: list[Path] = []
-        for name in names:
-            candidates.append(root / prefix / name)
-            candidates.append(root / prefix / aid / name)
+        out: list[Path] = []
+
+        def _add(base: Path) -> None:
+            for name in names:
+                out.append(base / prefix / name)
+                out.append(base / prefix / aid / name)
+                if nest:
+                    out.append(base / prefix / nest / name)
+                    out.append(base / prefix / nest / aid / name)
+
+        _add(root)
         try:
-            users = [p for p in root.iterdir() if p.is_dir()][:12]
+            users = [p for p in root.iterdir() if p.is_dir()][:16]
         except OSError:
             users = []
         for user in users:
-            for name in names[:4]:
-                candidates.append(user / prefix / name)
-                candidates.append(user / prefix / aid / name)
-        for path in candidates:
-            try:
-                if not path.is_file() or path.stat().st_size < 24:
+            # Skip the 2-char hex shard dirs so we do not recurse the same tree.
+            if len(user.name) == 2:
+                continue
+            _add(user)
+        return out
+
+    def _read_local_thumb(self, asset_id: str) -> tuple[bytes, str] | None:
+        """Immich thumbs on disk — no HTTP, no NAS API bounce."""
+        root = self.thumbs_root
+        aid = (asset_id or "").strip()
+        if root is None or not aid:
+            return None
+        for search in self._thumb_search_roots(root):
+            for path in self._thumb_path_candidates(search, aid):
+                try:
+                    if not path.is_file() or path.stat().st_size < 24:
+                        continue
+                    data = path.read_bytes()
+                except OSError:
                     continue
-                data = path.read_bytes()
-            except OSError:
-                continue
-            if not data or data[:1] in (b"{", b"["):
-                continue
-            suf = path.suffix.lower()
-            ctype = "image/webp" if suf == ".webp" else "image/jpeg"
-            return data, ctype
+                if not data or data[:1] in (b"{", b"["):
+                    continue
+                suf = path.suffix.lower()
+                ctype = "image/webp" if suf == ".webp" else "image/jpeg"
+                return data, ctype
         return None
 
     def _thumb_missed(self, asset_id: str) -> bool:
