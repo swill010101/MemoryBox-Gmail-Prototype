@@ -23,7 +23,8 @@ param(
   [int]$DockerWaitSec = 180,
   [int]$HealthWaitSec = 120,
   [switch]$SkipChrome,
-  [switch]$RecreateContainers
+  [switch]$RecreateContainers,
+  [switch]$Restart
 )
 
 $ErrorActionPreference = "Stop"
@@ -156,6 +157,27 @@ function Ensure-Container {
   }
 }
 
+function Stop-MbListenPort([int]$Port) {
+  $procIds = @()
+  try {
+    $procIds = @(
+      Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    )
+  } catch {
+    foreach ($line in (netstat -ano)) {
+      if ($line -match (":$Port\s+.+LISTENING\s+(\d+)\s*$")) {
+        $procIds += [int]$Matches[1]
+      }
+    }
+  }
+  foreach ($procId in ($procIds | Select-Object -Unique)) {
+    if (-not $procId -or $procId -le 4) { continue }
+    Write-Host "  stopping PID $procId on :$Port"
+    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Wait-Tcp([string]$Label, [string]$TargetHost, [int]$Port, [int]$Seconds) {
   Write-Host "  waiting for $Label ${TargetHost}:${Port} ..."
   $deadline = (Get-Date).AddSeconds($Seconds)
@@ -244,6 +266,13 @@ Wait-Tcp "Postgres" "127.0.0.1" 5432 60
 Wait-Tcp "Qdrant" "127.0.0.1" 6333 60
 
 $null = Resolve-Python
+
+if ($Restart) {
+  Write-Step "Restart: stopping listeners on :$WorkerPort and :$ServePort"
+  Stop-MbListenPort $WorkerPort
+  Stop-MbListenPort $ServePort
+  Start-Sleep -Seconds 1
+}
 
 Write-Step "Video worker (:$WorkerPort)"
 if (Test-TcpPort "127.0.0.1" $WorkerPort) {

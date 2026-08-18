@@ -67,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\memorybox\startmb.ps1
 | 4 | Wait for **Docker engine** (up to ~3 minutes). |
 | 5 | Ensure containers **`memorybox-pg`** and **`memorybox-qdrant`** exist and are running (create with named volumes if missing). |
 | 6 | Wait until ports **5432** and **6333** accept TCP. |
-| 7 | If **:8791** is free → start worker in a new window; else reuse the existing listener. |
+| 7 | If **:8791** is free → start worker in a new window; else reuse the existing listener (`-Restart` stops it first). |
 | 8 | If **:8790** is free → start serve in a new window; else reuse. |
 | 9 | Wait for `http://127.0.0.1:8790/health`. |
 | 10 | Launch **Chrome** to Explore (falls back to the default browser if Chrome is missing). |
@@ -128,9 +128,17 @@ python -m memorybox prove-p2-i7
 
 ---
 
-## Stopping
+## Stopping / restarting
 
-Close the **worker** and **serve** PowerShell windows (Ctrl+C then close).  
+Close the **worker** and **serve** PowerShell windows (Ctrl+C then close), then run `.\startmb.cmd` again.
+
+To restart without hunting windows (picks up new calendar_event / code after ingest or git pull):
+
+```powershell
+cd C:\memorybox
+.\startmb.cmd -Restart
+```
+
 Containers can stay running; next `startmb` will reuse them. To stop containers:
 
 ```powershell
