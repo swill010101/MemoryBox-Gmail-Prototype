@@ -171,11 +171,11 @@ Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 
 
 ### P2-I8 — Richer Email · A
 
-P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md). Attachment files up front = **P2-BL-I8-01** (absorbed).
+P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md). Attachment files up front = **P2-BL-I8-01** (absorbed). Ask first-name Peggy count without locking Peggy George = **P2-BL-I8-02** (next increment; does not reopen I8).
 
 ### P2-I8A — Unified Communications · U
 
-Shared email + SMS viewer / hover / gallery density after both channels exist. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **DRAFT**. Not I8.5. Not I10/I11.
+Shared email + SMS viewer / hover / gallery density after both channels exist. Absorbs **P2-BL-I8-02** (Ask Person lock on email counts). [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **DRAFT**. Not I8.5. Not I10/I11.
 
 ### P2-I8.5 — Face Evidence Ownership · F
 
