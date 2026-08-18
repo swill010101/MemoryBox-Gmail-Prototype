@@ -43,7 +43,7 @@ After this build + FlightSim owner pass (definition §9, including the three ext
 - Originals untouched; hash skip; I3 rows upgrade to `i8-email-1` on re-ingest.  
 - Unavailable ≠ 0.  
 - MBQL deterministic first; I7A on residual fill.  
-- Q1: FlightSim `inspect-mbox` on the real path (`MEMORYBOX_SOURCES_ROOT/email` or media-server UNC).  
+- Q1: `inspect-mbox` on the real path (`MEMORYBOX_SOURCES_ROOT/email` or `P:\MemoryBox\Sources\email`). Sources are on the P: drive, not the old NAS UNC.  
 - HTML-only bodies: preserve HTML; disclose empty plain text.  
 - Duplicate Message-IDs / broken threads: disclose; do not invent a thread.  
 - Inline/CID vs ordinary attachments distinguished.

@@ -4,13 +4,13 @@ from __future__ import annotations
 import email
 import email.policy
 import hashlib
-import os
 import re
 from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Iterator
 
 from memorybox.providers.email_read.dto import EmailAddressDto, EmailPartDto
+from memorybox.ingest.sources_paths import email_source_candidates
 
 PARSER_VERSION = "i8-email-1"
 
@@ -107,42 +107,29 @@ def iter_rfc822_bytes(path: Path) -> Iterator[bytes]:
 
 
 def default_email_source_path() -> Path | None:
-    env = (
-        os.environ.get("MEMORYBOX_MBOX_URI")
-        or os.environ.get("MEMORYBOX_SMOKE_MBOX_URI")
-        or ""
-    ).strip()
-    if env:
-        p = Path(env)
-        if p.exists():
-            return p
-    roots: list[Path] = []
-    src = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
-    if src:
-        roots.append(Path(src) / "email")
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\email"))
-    for d in roots:
+    for path in email_source_candidates():
         try:
-            if d.is_file():
-                return d
-            if not d.is_dir():
+            if path.is_file():
+                return path
+            if not path.is_dir():
                 continue
             named = [
-                d / "All mail Including Spam and Trash.mbox",
-                d / "All Mail Including Spam and Trash.mbox",
+                path / "All mail Including Spam and Trash.mbox",
+                path / "All Mail Including Spam and Trash.mbox",
+                path / "All mail Including Spam and Trash-002.mbox",
             ]
             for hit in named:
                 if hit.is_file():
                     return hit
             mboxes = sorted(
-                [p for p in d.iterdir() if p.is_file() and p.suffix.lower() in {".mbox", ".mbx"}],
+                [p for p in path.iterdir() if p.is_file() and p.suffix.lower() in {".mbox", ".mbx"}],
                 key=lambda p: p.stat().st_size if p.is_file() else 0,
                 reverse=True,
             )
             if mboxes:
                 return mboxes[0]
-            if (d / "cur").is_dir() or (d / "new").is_dir():
-                return d
+            if (path / "cur").is_dir() or (path / "new").is_dir():
+                return path
         except OSError:
             continue
     return None

@@ -109,7 +109,7 @@ Additional rules (locked): preserve sufficient original MIME/header provenance f
 | Identity | `phone_map.resolve_handles` (email contacts + `identity_kind=email`) |
 | Ask | `search_email_messages` · MBQL `EMAIL_RE` · I7A residual traces unchanged |
 | Explore | Email/Text cards; SMS `gallery_default_hidden` only for SMS |
-| Staged mail | `MEMORYBOX_SOURCES_ROOT/email` or `\\media-server\photos\MemoryBox\Sources\email` |
+| Staged mail | `MEMORYBOX_SOURCES_ROOT/email` or `P:\MemoryBox\Sources\email` (Sources moved off the NAS onto the P: drive) |
 
 ---
 

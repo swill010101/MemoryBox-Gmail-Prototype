@@ -45,14 +45,32 @@ def owner_emails() -> set[str]:
 
 
 def inspect_default_or_uri(uri: str | None = None, *, limit: int | None = None) -> dict[str, Any]:
-    path = Path(uri) if uri else default_email_source_path()
+    from memorybox.ingest.sources_paths import email_source_candidates
+
+    if uri:
+        path = Path(uri)
+        if not path.exists():
+            return {
+                "ok": False,
+                "error": "not_found",
+                "path": str(path),
+                "note": (
+                    "That --uri does not exist. Missing source is not zero messages."
+                ),
+            }
+        return inspect_mbox(path, limit=limit)
+    path = default_email_source_path()
     if path is None:
+        tried = [str(p) for p in email_source_candidates()]
         return {
             "ok": False,
             "error": "not_found",
+            "tried": tried,
             "note": (
-                "No staged mbox/Maildir found. Set MEMORYBOX_MBOX_URI or "
-                "MEMORYBOX_SOURCES_ROOT/email. Missing source is not zero messages."
+                "No staged mbox/Maildir found. Sources now live on the P: drive "
+                r"(P:\MemoryBox\Sources\email), not the old NAS UNC. "
+                "Pass --uri, or set MEMORYBOX_MBOX_URI / MEMORYBOX_SOURCES_ROOT. "
+                "Missing source is not zero messages."
             ),
         }
     return inspect_mbox(path, limit=limit)

@@ -319,7 +319,11 @@ def attachment_search_roots(
     if src:
         roots.append(Path(src) / "sms-attachments")
         roots.append(Path(src) / "sms")
-    roots.append(Path(r"\\media-server\photos\MemoryBox\Sources\sms-attachments"))
+    from memorybox.ingest.sources_paths import sms_source_dir_candidates
+
+    for d in sms_source_dir_candidates():
+        if d not in roots:
+            roots.append(d)
     if payload:
         cov = payload.get("source_coverage") or {}
         loc = str(payload.get("source_locator") or "")

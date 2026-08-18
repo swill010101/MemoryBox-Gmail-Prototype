@@ -22,6 +22,7 @@ def _payload(row: dict[str, Any]) -> dict[str, Any]:
 def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     root = Path(__file__).resolve().parents[1]
     parse = (root / "providers" / "email_read" / "mbox_parse.py").read_text(encoding="utf-8")
+    sources_paths = (root / "ingest" / "sources_paths.py").read_text(encoding="utf-8")
     dto = (root / "providers" / "email_read" / "dto.py").read_text(encoding="utf-8")
     comms = (root / "ingest" / "comms_email.py").read_text(encoding="utf-8")
     retrieve = (root / "ask" / "retrieve.py").read_text(encoding="utf-8")
@@ -113,6 +114,15 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "CLI ingest/inspect/prove-p2-i8",
+    )
+    _check(
+        "i8_sources_on_p_drive",
+        r"P:\MemoryBox\Sources" in sources_paths
+        and "email_source_candidates" in sources_paths
+        and "email_source_candidates" in parse,
+        checks,
+        problems,
+        "Default inspect/ingest looks on P:\\MemoryBox\\Sources before leftover UNC",
     )
     _check(
         "i8_no_i85_i9_i10_i11",

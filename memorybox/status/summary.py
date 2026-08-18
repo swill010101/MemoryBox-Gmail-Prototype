@@ -341,28 +341,14 @@ def _immich_people_count(client: Any) -> tuple[int | None, str]:
 
 
 def _sources_root() -> Any:
-    """Canonical staged Sources tree (media-server). Env preferred; known UNC probed."""
-    import os
-    from pathlib import Path
+    """Canonical staged Sources tree. Env preferred; local P: then leftover UNC."""
+    from memorybox.ingest.sources_paths import default_sources_root
 
-    candidates: list[Path] = []
-    raw = (os.environ.get("MEMORYBOX_SOURCES_ROOT") or "").strip()
-    if raw:
-        candidates.append(Path(raw))
-    # Documented canonical layout (ops MEDIA_SERVER_SOURCES.md)
-    candidates.append(Path(r"\\media-server\photos\MemoryBox\Sources"))
-    candidates.append(Path(r"\\media-server\photos\memorybox\sources"))
-    for p in candidates:
-        try:
-            if p.is_dir():
-                return p
-        except OSError:
-            continue
-    return None
+    return default_sources_root()
 
 
 def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
-    """Inventory of staged originals on media-server (not PG Evidence)."""
+    """Inventory of staged originals (not PG Evidence)."""
     import json
     from pathlib import Path
 
@@ -371,14 +357,14 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         return [
             _metric(
                 "staged_sources_root",
-                "Staged Sources root (media-server)",
+                "Staged Sources root",
                 state="unavailable",
                 source="MEMORYBOX_SOURCES_ROOT",
                 last_updated=calculated_at,
                 reason="Not available",
                 note=(
                     "Set MEMORYBOX_SOURCES_ROOT to "
-                    r"\\media-server\photos\MemoryBox\Sources "
+                    r"P:\MemoryBox\Sources "
                     "(email / calendar / sms staged there; PG Evidence may only have smoke ingest)"
                 ),
             )
@@ -390,9 +376,9 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
             "Staged Sources root",
             display=str(root),
             state="available",
-            source="MEMORYBOX_SOURCES_ROOT|canonical UNC",
+            source="MEMORYBOX_SOURCES_ROOT|P:\\MemoryBox\\Sources",
             last_updated=calculated_at,
-            note="Authoritative originals for ingest (read-only) — see docs/ops/MEDIA_SERVER_SOURCES.md",
+            note="Authoritative originals for ingest (read-only) on the P: Sources tree",
         )
     ]
 
@@ -428,7 +414,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         out.append(
             _metric(
                 "staged_email_mbox",
-                "Staged Gmail mbox (media-server)",
+                "Staged Gmail mbox",
                 display=f"{email_f.get('relative')} ({nbytes / (1024**3):.1f} GiB)",
                 state="available",
                 source=str(Path(root) / str(email_f.get("relative"))),
@@ -444,7 +430,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
         out.append(
             _metric(
                 "staged_email_mbox",
-                "Staged Gmail mbox (media-server)",
+                "Staged Gmail mbox",
                 state="unavailable",
                 source=str(Path(root) / "email"),
                 last_updated=calculated_at,
