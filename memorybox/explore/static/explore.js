@@ -1938,13 +1938,27 @@
     el.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const fid = btn.getAttribute("data-filter");
-        if (fid === "email" && state.domain.typeFilter === "email") {
-          openCommsFilter();
-          return;
+        if (fid === "email") {
+          const hasComms = rawItems.some((it) => isSmsTextItem(it) || isEmailItem(it));
+          if (!hasComms) {
+            applyAskCommand("Add communications.");
+            return;
+          }
+          if (state.domain.typeFilter === "email") {
+            openCommsFilter();
+            return;
+          }
         }
-        if (fid === "calendar" && state.domain.typeFilter === "calendar") {
-          openCalFilter();
-          return;
+        if (fid === "calendar") {
+          const hasCal = rawItems.some(isCalendarItem);
+          if (!hasCal) {
+            applyAskCommand("Add calendar.");
+            return;
+          }
+          if (state.domain.typeFilter === "calendar") {
+            openCalFilter();
+            return;
+          }
         }
         setTypeFilter(fid);
         render();
@@ -2014,12 +2028,17 @@
     const prev = escapeHtml(it.preview || "");
     const media = it.thumb_url || it.media_url || "";
     if (t === "email" || t === "sms" || t === "text") {
-      const from = escapeHtml(it.from || "Message");
+      const from = String(it.from || "").trim();
+      const to = String(it.to || "").trim();
+      const who =
+        t === "email" && from && to
+          ? escapeHtml(from) + " → " + escapeHtml(to)
+          : escapeHtml(from || to || "Message");
       const nAtt = Array.isArray(it.attachments) ? it.attachments.length : Number(it.attachment_count || 0);
       const att = nAtt
         ? `<span class="mb-card-attach" title="${nAtt} attachment${nAtt === 1 ? "" : "s"} linked to this message">📎 ${nAtt}</span>`
         : "";
-      return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      return `${att}<div class="mb-card-textbody"><strong>${who}</strong>${escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
       const bg = media
@@ -2113,11 +2132,69 @@
     root._mbLazyIo = io;
   }
 
-  const I8A_DAY_CAP = 80;
+  const I8A_BUCKET_CAP = 80;
 
   function dayKey(item) {
     const s = String((item && item.date) || "").slice(0, 10);
     return s.length >= 10 ? s : "";
+  }
+
+  function bucketKeyFor(item, grain) {
+    const d = dayKey(item);
+    if (!d) return "undated";
+    if (grain === "month") return d.slice(0, 7);
+    if (grain === "year") return d.slice(0, 4);
+    return d;
+  }
+
+  function pickGrain(datedKeys) {
+    if (datedKeys.length <= I8A_BUCKET_CAP) return "day";
+    const months = new Set(datedKeys.map((k) => String(k).slice(0, 7)));
+    if (months.size <= I8A_BUCKET_CAP) return "month";
+    return "year";
+  }
+
+  function yearFairTake(keysNewestFirst, cap) {
+    const byYear = {};
+    keysNewestFirst.forEach((k) => {
+      const y = String(k).slice(0, 4);
+      (byYear[y] = byYear[y] || []).push(k);
+    });
+    const years = Object.keys(byYear).sort().reverse();
+    const out = [];
+    let i = 0;
+    while (out.length < cap) {
+      let added = false;
+      years.forEach((y) => {
+        if (out.length >= cap) return;
+        const k = byYear[y][i];
+        if (k) {
+          out.push(k);
+          added = true;
+        }
+      });
+      if (!added) break;
+      i += 1;
+    }
+    return out;
+  }
+
+  function orderBucketKeys(keys, sort) {
+    const dated = keys.filter((k) => k && k !== "undated").sort();
+    const undated = keys.filter((k) => !k || k === "undated");
+    if (sort === "oldest") return dated.concat(undated);
+    return dated.reverse().concat(undated);
+  }
+
+  function fmtBucketDate(k) {
+    if (!k || k === "undated") return "Undated";
+    if (/^\d{4}$/.test(k)) return k;
+    if (/^\d{4}-\d{2}$/.test(k)) {
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const m = Number(k.slice(5, 7)) - 1;
+      return (months[m] || k) + " " + k.slice(0, 4);
+    }
+    return fmtCardDate(k);
   }
 
   function commsCalItems(list) {
@@ -2158,6 +2235,70 @@
     };
   }
 
+  function threadCards(items) {
+    const by = {};
+    (items || []).forEach((it) => {
+      const k = threadKey(it) || it.id || "msg";
+      (by[k] = by[k] || []).push(it);
+    });
+    return Object.keys(by).map((k) => {
+      const group = by[k].slice().sort((a, b) => {
+        const da = parseISO(a.date);
+        const db = parseISO(b.date);
+        const sa = Number.isFinite(da) ? da : 0;
+        const sb = Number.isFinite(db) ? db : 0;
+        return sb - sa;
+      });
+      const head = Object.assign({}, group[0]);
+      head._threadItems = group;
+      if (group.length > 1) {
+        head.id = "thread:" + k;
+        head.preview = group.length + " messages in this thread";
+      }
+      return head;
+    });
+  }
+
+  function makeCombinedCard(k, group, grain) {
+    const s = summarizeDay(group);
+    const openLabel = grain === "day" ? "Open day →" : "Open →";
+    return {
+      id: "daycard:" + k,
+      type: "daycard",
+      title: "Communications" + (s.calN ? " & calendar" : ""),
+      date: k === "undated" ? "" : k,
+      undated: k === "undated",
+      _dayItems: group,
+      _daySummary: s,
+      _grain: grain,
+      _openLabel: openLabel,
+      preview:
+        (s.emailThreads ? s.emailThreads + " email threads" : "") +
+        (s.textConvos ? (s.emailThreads ? " · " : "") + s.textConvos + " text conversations" : "") +
+        (s.calN ? (s.emailThreads || s.textConvos ? " · " : "") + s.calN + " events" : ""),
+    };
+  }
+
+  function bucketCombined(items, grain) {
+    const by = {};
+    items.forEach((it) => {
+      const k = bucketKeyFor(it, grain);
+      (by[k] = by[k] || []).push(it);
+    });
+    const keys = Object.keys(by);
+    const dated = keys.filter((k) => k && k !== "undated");
+    const sort = state.gallery.sort || "newest";
+    let shownDated = orderBucketKeys(dated, sort).filter((k) => k !== "undated");
+    if (shownDated.length > I8A_BUCKET_CAP) {
+      const newestFirst = sort === "oldest" ? shownDated.slice().reverse() : shownDated;
+      shownDated = yearFairTake(newestFirst, I8A_BUCKET_CAP);
+      if (sort === "oldest") shownDated = shownDated.slice().reverse();
+    }
+    const shown = orderBucketKeys(shownDated.concat(keys.filter((k) => k === "undated")), sort);
+    state.domain._showingDays = { shown: shown.length, total: keys.length, grain: grain };
+    return shown.map((k) => makeCombinedCard(k, by[k], grain));
+  }
+
   function galleryCardsFromVisible(items) {
     const d = state.domain || {};
     const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
@@ -2166,69 +2307,33 @@
     const commsOnly =
       commsCalItems(items).length > 0 && memoryLikeItems(items).length === 0;
     if (!commsOn && !calOn) return items;
-    if (!mix && commsOnly && !(d.includeEmail && d.includeCalendar) && !d.includeCalendar) {
-      // Explicit SMS/email: group by day (density-aware).
-      const byDay = {};
-      items.forEach((it) => {
-        const k = dayKey(it) || "undated";
-        (byDay[k] = byDay[k] || []).push(it);
-      });
-      const days = Object.keys(byDay).sort();
-      const cap = days.length > I8A_DAY_CAP ? I8A_DAY_CAP : days.length;
-      const shown = (state.gallery.sort === "oldest" ? days : days.slice().reverse()).slice(0, cap);
-      d._showingDays = { shown: shown.length, total: days.length };
-      return shown.map((k) => {
-        const group = byDay[k];
-        const s = summarizeDay(group);
-        if (group.length === 1 && !mix) return group[0];
-        return {
-          id: "daycard:" + k,
-          type: "daycard",
-          title: "Communications" + (s.calN ? " & calendar" : ""),
-          date: k === "undated" ? "" : k,
-          undated: k === "undated",
-          _dayItems: group,
-          _daySummary: s,
-          preview: s.emailN + " email · " + s.textN + " text · " + s.calN + " calendar",
-        };
-      });
+    const emailOnly = Boolean(d.includeEmail) && !d.includeTexts && !d.includeCalendar;
+    const textOnly = Boolean(d.includeTexts) && !d.includeEmail && !d.includeCalendar;
+    if (emailOnly && commsOnly) {
+      const threads = threadCards(items.filter(isEmailItem));
+      const other = items.filter((it) => !isEmailItem(it));
+      const dated = threads.filter((it) => dayKey(it));
+      const grain = pickGrain(dated.map(dayKey));
+      if (grain === "day" && threads.length <= I8A_BUCKET_CAP) {
+        const sort = state.gallery.sort || "newest";
+        return threads.slice().sort((a, b) => {
+          if (isUndated(a) && isUndated(b)) return 0;
+          if (isUndated(a)) return 1;
+          if (isUndated(b)) return -1;
+          const da = parseISO(a.date) - parseISO(b.date);
+          return sort === "oldest" ? da : -da;
+        }).concat(other);
+      }
+      return bucketCombined(threads, grain).concat(other);
     }
-    if (mix || (commsOn && calOn)) {
+    if ((textOnly || (commsOn && !calOn && commsOnly) || mix || (commsOn && calOn)) && commsCalItems(items).length) {
       const mem = memoryLikeItems(items);
       const cc = commsCalItems(items);
-      const byDay = {};
-      cc.forEach((it) => {
-        const k = dayKey(it) || "undated";
-        (byDay[k] = byDay[k] || []).push(it);
-      });
-      const days = Object.keys(byDay);
-      const cap = days.length > I8A_DAY_CAP ? I8A_DAY_CAP : days.length;
-      const ordered = (state.gallery.sort === "oldest" ? days.sort() : days.sort().reverse()).slice(
-        0,
-        cap
-      );
-      d._showingDays = { shown: ordered.length, total: days.length };
-      const dayCards = ordered.map((k) => {
-        const group = byDay[k];
-        const s = summarizeDay(group);
-        return {
-          id: "daycard:" + k,
-          type: "daycard",
-          title: "Communications & calendar",
-          date: k === "undated" ? "" : k,
-          undated: k === "undated",
-          _dayItems: group,
-          _daySummary: s,
-          preview:
-            s.emailN +
-            " email · " +
-            s.textN +
-            " text · " +
-            s.calN +
-            " calendar",
-        };
-      });
-      return mem.concat(dayCards);
+      const datedKeys = cc.map(dayKey).filter(Boolean);
+      const grain = pickGrain(datedKeys);
+      const dayCards = bucketCombined(cc, grain);
+      if (mix || (commsOn && calOn && mem.length)) return mem.concat(dayCards);
+      return dayCards;
     }
     return items;
   }
@@ -2289,11 +2394,14 @@
   function renderDayStack() {
     const card = dayStack.card || {};
     const s = card._daySummary || summarizeDay(dayStack.items);
-    document.getElementById("mb-day-title").textContent = fmtCardDate(dayStack.day);
-    document.getElementById("mb-day-sub").textContent =
-      dayStack.items.length + " records · " +
-      (s.emailThreads + s.textConvos + s.calN) +
-      " meaningful groups";
+    document.getElementById("mb-day-title").textContent = fmtBucketDate(dayStack.day);
+    document.getElementById("mb-day-sub").textContent = [
+      s.emailThreads ? s.emailThreads + " email thread" + (s.emailThreads === 1 ? "" : "s") : "",
+      s.textConvos ? s.textConvos + " text conversation" + (s.textConvos === 1 ? "" : "s") : "",
+      s.calN ? s.calN + " calendar event" + (s.calN === 1 ? "" : "s") : "",
+    ]
+      .filter(Boolean)
+      .join(" · ") || "No matching groups";
     const tabs = document.getElementById("mb-day-tabs");
     tabs.innerHTML =
       `<button type="button" data-tab="email" class="${dayStack.tab === "email" ? "is-on" : ""}">Email · ${s.emailThreads} threads · ${s.emailN} messages</button>` +
@@ -2380,6 +2488,14 @@
         state.domain.attachmentsOnly = Boolean(att && att.value === "attachments");
         state.domain.memoryPresentation = false;
         document.getElementById("mb-comms-filter").hidden = true;
+        const needTexts =
+          state.domain.includeTexts && !rawItems.some((it) => isSmsTextItem(it));
+        const needMail =
+          state.domain.includeEmail && !rawItems.some((it) => isEmailItem(it));
+        if (needTexts || needMail) {
+          applyAskCommand("Add communications.");
+          return;
+        }
         if (state.domain.includeEmail || state.domain.includeTexts) setTypeFilter("email");
         render();
       };
@@ -2425,24 +2541,26 @@
       .map((it) => {
         if (String(it.type) === "daycard") {
           const s = it._daySummary || {};
+          const groupN = (s.emailThreads || 0) + (s.textConvos || 0) + (s.calN || 0);
+          const bits = [];
+          if (s.emailThreads) bits.push(`<span class="mb-day-e">Email · ${s.emailThreads}</span>`);
+          if (s.textConvos) bits.push(`<span class="mb-day-t">Text · ${s.textConvos}</span>`);
+          if (s.calN) bits.push(`<span class="mb-day-c">Calendar · ${s.calN}</span>`);
+          if (!bits.length) bits.push(`<span class="mb-day-e">No matching groups</span>`);
           return `<button type="button" class="mb-card mb-card-day" data-id="${escapeAttr(
             it.id
           )}" data-type="daycard">
           <div class="mb-card-media" data-type="daycard">
-            <div class="mb-day-counts">
-              <span class="mb-day-e">E ${s.emailN || 0}</span>
-              <span class="mb-day-t">T ${s.textN || 0}</span>
-              <span class="mb-day-c">C ${s.calN || 0}</span>
-            </div>
-            <span class="mb-day-open">Open day →</span>
+            <div class="mb-day-counts">${bits.join("")}</div>
+            <span class="mb-day-open">${escapeHtml(it._openLabel || "Open →")}</span>
           </div>
           <div class="mb-card-meta">
             <span class="mb-card-type" aria-hidden="true">▦</span>
             <div>
-              <div class="mb-card-title">${escapeHtml(it.title || "Communications & calendar")}</div>
-              <div class="mb-card-sub">${escapeHtml(fmtCardDate(it.date))} · ${
-            (s.emailN || 0) + (s.textN || 0) + (s.calN || 0)
-          } records</div>
+              <div class="mb-card-title">${escapeHtml(it.title || "Communications")}</div>
+              <div class="mb-card-sub">${escapeHtml(fmtBucketDate(it.date))} · ${groupN} ${
+            groupN === 1 ? "group" : "groups"
+          }</div>
             </div>
           </div>
         </button>`;
@@ -3748,7 +3866,7 @@
     if (String(item.type || "") === "daycard") {
       const s = item._daySummary || summarizeDay(item._dayItems || []);
       return `<div class="mb-qp-body mb-qp-day">
-      <div class="mb-qp-type">500 ms rollover · representative groups</div>
+      <div class="mb-qp-type">${escapeHtml(fmtBucketDate(item.date))} · matching groups</div>
       <ul>
         <li>${s.emailThreads} email threads · ${s.emailN} messages · ${s.attachN} attachments</li>
         <li>${s.textConvos} text conversations · ${s.textN} messages</li>

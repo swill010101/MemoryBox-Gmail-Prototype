@@ -403,7 +403,14 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             thread_id=e.get("thread_id"),
             direction=e.get("direction"),
         )
-        item["from"] = people[0] if people else (e.get("thread_id") or "Message")
+        item["from"] = (
+            e.get("from_header")
+            or people[0]
+            or e.get("thread_id")
+            or "Message"
+        )
+        if e.get("to_header"):
+            item["to"] = e.get("to_header")
         atts = e.get("attachments") or item.get("attachments") or []
         item["attachments"] = atts
         item["attachment_count"] = len(atts) if isinstance(atts, list) else 0
@@ -671,6 +678,11 @@ def _attach_hidden_sms(
         for i in sms_already:
             i["gallery_default_hidden"] = False
         return items, len(sms_already), 0
+    if not show_sms:
+        # Q3: do not hydrate 80k SMS rows on a broad person Ask (FlightSim 30s+).
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        return items, len(sms_already), len(sms_already)
 
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
@@ -782,6 +794,8 @@ def _attach_visible_email(
             if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
                 match_total = max(match_total, int(e.get("match_total") or 0))
         return items, match_total or len(already), match_total
+    if not show_email:
+        return items, 0, 0
     if not people and not pids:
         return items, 0, 0
 
@@ -855,6 +869,8 @@ def _attach_calendar(
         for i in already:
             i["gallery_default_hidden"] = not show_calendar
         return items, len(already)
+    if not show_calendar:
+        return items, 0
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
     pids = list(plan.get("person_ids") or [])

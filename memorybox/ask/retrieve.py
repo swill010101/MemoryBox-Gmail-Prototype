@@ -34,6 +34,8 @@ class EvidenceHit:
     match_total: int | None = None
     truncated: bool = False
     identity_mapped: list[dict[str, str]] | None = None
+    from_header: str | None = None
+    to_header: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -732,7 +734,19 @@ def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) ->
         direction=payload.get("direction"),
         attachments=_email_attachments(payload) or None,
         identity_mapped=identity or None,
+        from_header=(str(payload.get("from") or "").strip() or None),
+        to_header=_fmt_addr_header(payload.get("to")),
     )
+
+
+def _fmt_addr_header(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, (list, tuple)):
+        bits = [str(x).strip() for x in val if str(x).strip()]
+        return ", ".join(bits)[:160] or None
+    s = str(val).strip()
+    return s[:160] if s else None
 
 
 def _email_person_blob(payload: dict[str, Any]) -> str:

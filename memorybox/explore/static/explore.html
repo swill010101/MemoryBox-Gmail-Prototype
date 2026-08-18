@@ -182,18 +182,18 @@
           <h2 id="mb-day-title">—</h2>
           <p class="mb-day-sub" id="mb-day-sub"></p>
         </div>
-        <button type="button" id="mb-day-close">Close</button>
+        <button type="button" class="mb-modal-close" id="mb-day-close">Close</button>
       </header>
       <div class="mb-day-tabs" id="mb-day-tabs"></div>
       <div class="mb-day-list" id="mb-day-list"></div>
       <footer class="mb-day-foot">
         <span id="mb-day-showing"></span>
-        <button type="button" id="mb-day-back">Back to Day</button>
+        <button type="button" class="mb-viewer-footbtn" id="mb-day-back">Back to Gallery</button>
       </footer>
     </div>
     <div class="mb-day-detail" id="mb-day-detail" hidden>
       <div class="mb-day-detail-card">
-        <button type="button" id="mb-day-detail-back">Back</button>
+        <button type="button" class="mb-modal-close" id="mb-day-detail-back">Back to list</button>
         <div id="mb-day-detail-body"></div>
       </div>
     </div>
@@ -203,7 +203,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
-  <script src="/static/explore/explore.js?v=i8a1"></script>
+  <script src="/static/explore/explore.js?v=i8a2"></script>
   <script>
     setTimeout(function () {
       if (window.mbExploreApplyAsk) return;

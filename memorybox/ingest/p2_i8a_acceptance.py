@@ -51,6 +51,8 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "i8a_drilldown_screens",
         "openDayStack" in explore_js
         and "DAY_PREVIEW_DELAY_MS" in explore_js
+        and "threadCards" in explore_js
+        and "yearFairTake" in explore_js
         and "mb-day-stack" in explore_html
         and "mb-comms-filter" in explore_html
         and "mb-cal-filter" in explore_html
