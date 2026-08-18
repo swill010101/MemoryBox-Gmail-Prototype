@@ -69,7 +69,19 @@ def main(argv: list[str] | None = None) -> int:
     p_prove_p2i8a.add_argument(
         "--flightsim",
         action="store_true",
-        help="FlightSim ACCEPTED gate remains manual (definition §11). Harness is structural+logic.",
+        help=(
+            "Includes live calendar_event / Archive Health inspect. "
+            "§11 ACCEPTED remains a manual owner pass."
+        ),
+    )
+    p_inspect_cal = sub.add_parser(
+        "inspect-calendar",
+        help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
+    )
+    p_inspect_cal.add_argument(
+        "--uri",
+        default=None,
+        help=r"ICS file or calendar/ folder. Default: Sources/calendar under MEMORYBOX_SOURCES_ROOT",
     )
     p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
     p_cal.add_argument("--uri", required=True)
@@ -403,6 +415,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.comms_email import inspect_default_or_uri
 
         payload = inspect_default_or_uri(args.uri, limit=args.limit)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "inspect-calendar":
+        from memorybox.ingest.comms_calendar import inspect_calendar_state
+
+        payload = inspect_calendar_state(uri=args.uri)
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

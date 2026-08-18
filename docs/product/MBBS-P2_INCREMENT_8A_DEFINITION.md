@@ -220,7 +220,7 @@ Memory chip (screen 06): presentation command that can hide Communications while
 
 ### 4.7 Calendar ingest (minimum, Q5)
 
-- Inspect FlightSim Calendar/ICS **before coding** (`inspect` / Archive Health staged vs ingested; `evidence_kind=calendar_event`).  
+- Inspect FlightSim Calendar/ICS **before coding** (`inspect-calendar` / Archive Health staged vs ingested; `evidence_kind=calendar_event`). `prove-p2-i8a --flightsim` prints the same slice under `inspect` / check `i8a_calendar_inspect`.  
 - If already ingested: **reuse**. No parallel ingest.  
 - If not ingested: **minimum** `ingest-calendar` on the staged Sources ICS tree (`P:\photos\memorybox\sources\calendar` or env). Parser already exists (`i3-calendar-1`).  
 - Real staged/ingested evidence only for ACCEPTED. **No synthetic test rows** as the owner gate.  

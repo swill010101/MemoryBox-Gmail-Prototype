@@ -81,17 +81,20 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "i8a_calendar_retrieve",
         "search_calendar_events" in retrieve
         and "want_calendar_modality" in planner
-        and 'type_ = "calendar"' in find_py,
+        and 'type_ = "calendar"' in find_py
+        and "inspect_calendar_state" in (root / "ingest" / "comms_calendar.py").read_text(
+            encoding="utf-8"
+        ),
         checks,
         problems,
-        "calendar_event retrieve + Explore type",
+        "calendar_event retrieve + Explore type + inspect",
     )
     _check(
         "i8a_cli",
-        "prove-p2-i8a" in main,
+        "prove-p2-i8a" in main and "inspect-calendar" in main,
         checks,
         problems,
-        "prove-p2-i8a CLI",
+        "prove-p2-i8a + inspect-calendar CLI",
     )
     _check(
         "i8a_no_draft_badge",
@@ -207,6 +210,26 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     )
 
 
+def _inspect(checks: dict[str, Any], problems: list[str]) -> dict[str, Any]:
+    from memorybox.ingest.comms_calendar import inspect_calendar_state
+
+    inspect = inspect_calendar_state()
+    n = inspect.get("calendar_event")
+    staged = inspect.get("staged_ics_files")
+    _check(
+        "i8a_calendar_inspect",
+        bool(inspect.get("ok")),
+        checks,
+        problems,
+        (
+            f"calendar_event={n} staged_ics={staged} "
+            f"archive_health.calendar={n} "
+            f"needs_ingest={inspect.get('needs_ingest')}"
+        ),
+    )
+    return inspect
+
+
 def run_p2_i8a_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
     checks: dict[str, Any] = {}
     problems: list[str] = []
@@ -221,15 +244,31 @@ def run_p2_i8a_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
             problems,
             f"{type(exc).__name__}: {exc}",
         )
+    try:
+        inspect = _inspect(checks, problems)
+    except Exception as exc:  # noqa: BLE001
+        inspect = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        _check(
+            "i8a_calendar_inspect",
+            False,
+            checks,
+            problems,
+            str(inspect.get("error")),
+        )
     overall = not problems and all(c.get("ok") for c in checks.values())
     return {
         "overall_ok": overall,
         "ok": overall,
         "checks": checks,
         "problems": problems,
+        "inspect": inspect,
         "meta": {
             "increment": "P2-I8A",
             "mode": "flightsim" if flightsim else "harness",
             "build_authorized": True,
+            "note": (
+                "i8a_calendar_inspect + inspect.* are live FlightSim/PG facts. "
+                "Other checks stay structural+logic. §11 ACCEPTED is still a manual owner pass."
+            ),
         },
     }
