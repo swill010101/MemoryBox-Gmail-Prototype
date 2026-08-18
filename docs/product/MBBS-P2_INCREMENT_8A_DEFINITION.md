@@ -8,6 +8,8 @@
 **Depends:** P2-I8 **ACCEPTED** (2026-08-18) · I7 **ACCEPTED** · MBQL-001 **ACCEPTED** · I4 **ACCEPTED**  
 **Does not reopen / does not absorb:** I7/I8 evidence ingest or parsers · **P2-BL-I7-01** SMS attachment bytes · live Gmail / sending mail · new family-nav app · **I8.5** face-evidence · **I9** spoken · **I10** correlation · **I11** narrative · I13/I14 Settings · multi-user · **P2-BL-I4-01** general Explore chrome (unless a comms-card defect)
 
+**I8 follow-up in this increment (proposed):** **P2-BL-I8-02** — Ask email counts lock canonical Person (Peggy George) before retrieve. Does not reopen I8.
+
 I8A is **definition only** until Tom locks Q1–Q6 and authorizes build. Do not start I8.5, I9, I10, or I11 as part of this increment.
 
 ---
@@ -75,7 +77,7 @@ Do not treat these as locked until Tom answers.
 | EVS | Ask (short) | I8A bar |
 |-----|-------------|--------|
 | **EVS-047** | Peggy + Christmas in emails **and** texts | Same Email/Text surface + shared viewer; **no** joint story. SMS still I7 evidence; email still I8 evidence. |
-| **EVS-107 / 108** | Counts by Person / sister | Unchanged I8 retrieve; I8A does not change counts. Viewer must open the cited message. |
+| **EVS-107 / 108** | Counts by Person / sister | **P2-BL-I8-02:** first-name “Peggy” must lock **Peggy George** (or disclose ambiguous) **before** count + Gallery. Viewer must open the cited message. |
 | **EVS-109** | Holiday-season email extract | Unchanged retrieve; I8A makes the opened message readable (quoted turns). |
 | **EVS-070** | 2024 across mail, texts, pictures, video | **Not an I8A gate.** Density/caps must not pretend the gallery is a year narrative (I11). |
 
@@ -90,7 +92,8 @@ Do not treat these as locked until Tom answers.
 - One Email/Text filter behavior documented under Q3.  
 - Honest notes when HTML-only, incomplete thread, truncated sample, missing attachment bytes.  
 - `prove-p2-i8a` harness + FlightSim owner pass.  
-- Thin CSS/layout for comms cards/viewer (**comms-specific** aesthetic; not a full Explore redesign).
+- Thin CSS/layout for comms cards/viewer (**comms-specific** aesthetic; not a full Explore redesign).  
+- **P2-BL-I8-02:** Ask email (and SMS, same rule) counts resolve **canonical Person first** (Peggy → Peggy George when unique / owner-preferred; otherwise clarify). Count + Gallery must not include other Peggys by first-name substring.
 
 ## 5. Scope OUT
 
@@ -119,6 +122,7 @@ Do not treat these as locked until Tom answers.
 - **Newsletter hide (if Q2):** view filter only; Evidence rows stay; Archive Health counts do not drop.  
 - **Caps:** “Showing N of M” required when sampling ~90k mail or ~90k SMS. Unavailable ≠ 0.  
 - **People:** I7/I8 identity ladder only. Never merge on display name. Never treat `Re:` / `Fwd:` / subject as a Person.  
+- **P2-BL-I8-02:** Ambiguous first-name Ask is **clarify or lock**, not a silent union of every matching display name. Disclose scope (which Person, which addresses).  
 - **MBQL:** I8A does not invent a third planner. Email/SMS Ask still compiles on MBQL-001.  
 - **I10/I11:** opening mail next to a photo is not correlation or narrative.
 
@@ -136,6 +140,7 @@ From I8 owner pass 2026-08-18 (Tom: I8 accepted; aesthetics → I8A):
 | Gallery noise (All Mail + photos) | Density/caps + Q2 noise policy |
 | Email/Text vs SMS hide mismatch | Q3 one rule |
 | Subject in People rail | Participants only (partially fixed in I8; I8A verifies) |
+| **P2-BL-I8-02** Ask first-name Peggy count | Lock **Peggy George** (or disclose ambiguous) before count + Gallery; no extra non–Peggy-George mail |
 
 ---
 
@@ -159,8 +164,9 @@ From I8 owner pass 2026-08-18 (Tom: I8 accepted; aesthetics → I8A):
 3. Hover image + structured compact turns.  
 4. People rail from parsed participants.  
 5. Gallery density + Q3 filter semantics.  
-6. `prove-p2-i8a` + FlightSim §9.  
-7. **Stop.** Do not start I8.5 unless Q1 skipped I8A.
+6. **P2-BL-I8-02:** Ask person-lock before email/SMS count retrieve.  
+7. `prove-p2-i8a` + FlightSim §11.  
+8. **Stop.** Do not start I8.5 unless Q1 skipped I8A.
 
 ---
 
@@ -187,7 +193,8 @@ Pass **all**. Harness ≠ ACCEPTED.
 6. SMS hide rule matches Q3; Add texts (or successor) still works.  
 7. Q2 noise policy visible and honest.  
 8. No I8.5 / I9 / I10 / I11 in the I8A walk.  
-9. Originals untouched; no Immich dump; Artifact still explicit.
+9. Originals untouched; no Immich dump; Artifact still explicit.  
+10. **P2-BL-I8-02:** “How many times did I send an email to Peggy?” locks **Peggy George** (or discloses ambiguous) **before** count + Gallery; extra non–Peggy-George mail is not included.
 
 ---
 
@@ -199,7 +206,7 @@ Pass **all**. Harness ≠ ACCEPTED.
 | I8A definition | **DRAFT** — this document |
 | I8A PRD | **DRAFT** — [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
 | Q1–Q6 | **OPEN** |
-| I8A build | **NOT AUTHORIZED** |
+| P2-BL-I8-02 (Ask Person lock) | **In I8A (proposed)** — next increment after I8 ACCEPTED |
 | I8.5 / I9 / I10 / I11 | **NOT STARTED** |
 
 **Stop.** Do not implement I8A until Tom locks Q1–Q6 and authorizes build. Do not start I8.5 in this increment.

@@ -72,4 +72,4 @@ Locked in the increment definition §2 (Tom 2026-08-18). Short form:
 
 ## 7. Decision status
 
-PRD **LOCKED**. Definition **LOCKED**. Build **shipped**. **ACCEPTED** 2026-08-18. Unified comms UX is **[I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (draft).
+PRD **LOCKED**. Definition **LOCKED**. Build **shipped**. **ACCEPTED** 2026-08-18. Unified comms UX is **[I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (draft). Ask first-name Peggy count without locking Peggy George is **P2-BL-I8-02** (next increment; does not reopen I8).

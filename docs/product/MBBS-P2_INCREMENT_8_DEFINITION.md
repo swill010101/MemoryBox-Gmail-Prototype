@@ -18,6 +18,7 @@ P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A]
 - I7 identity ladder on email; MIME attachments with the message; not Immich; explicit Artifact only
 - Ask: person / holiday window / keyword / count+scope; Explore Email/Text; SMS hide unchanged
 - Owner pass: Show me email; Christmas window; Sue Will mail with photos; §9 all pass
+- Follow-up (did not fail I8): Ask “how many times did I send an email to Peggy?” returned a count and Gallery showed mail, but **Peggy was not locked to Peggy George first**, so extra non–Peggy-George messages were included. Parked **P2-BL-I8-02** for the next increment (I8A).
 
 ## Carry-forward (not ACCEPTED blockers)
 
@@ -25,6 +26,7 @@ P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A]
 |----|------|-------|
 | **P2-I8A** | Unified communications UX | Draft definition. Viewer/hover/gallery density/noise. Not I8.5. |
 | **P2-BL-I8-01** | Attachment files up front | **Absorbed in I8** (shipped). |
+| **P2-BL-I8-02** | Ask email count must lock canonical Person first | Owner 2026-08-18: “how many times did I send an email to Peggy?” counted and showed mail **without resolving Peggy George first**, so extra mail that is not Peggy George was included. Count path still worked. **Do not reopen I8.** Next increment: **I8A**. |
 
 ---
 
@@ -170,7 +172,7 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 1. Real staged mail is ingested **without modifying originals**.  
 2. At least one real message fidelity-checked: subject, timestamp, from/to, body (or disclosed HTML-only), thread association.  
 3. At least one real **attachment file** opens from that message.  
-4. “How many times did I email **[Q2 Person]**” returns a count **with scope**.  
+4. “How many times did I email **[Q2 Person]**” returns a count **with scope**. *(Owner 2026-08-18: first-name “Peggy” counted without locking **Peggy George** — **P2-BL-I8-02**, next increment; did not fail I8.)*  
 5. Person filtering works.  
 6. Year / holiday-window filtering works (reuse I4 windows).  
 7. Keyword filtering works.  
@@ -200,6 +202,7 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 | Q1–Q6 | **LOCKED** (this table §2) |
 | I8 build | **AUTHORIZED** — shipped |
 | I8 ACCEPTED | **ACCEPTED** 2026-08-18 |
+| P2-BL-I8-02 (Ask Person lock on email count) | **Parked for I8A** — first-name Peggy vs Peggy George |
 | I8A Unified Communications | **DRAFT** — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
 | I8.5 / I9 / I10 / I11 | **NOT STARTED** |
 

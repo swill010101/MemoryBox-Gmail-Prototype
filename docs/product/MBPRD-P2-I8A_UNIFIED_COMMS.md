@@ -26,7 +26,8 @@ After build authorization + FlightSim definition §11:
 4. Person + Email/Text is usable at archive scale (caps + “Showing N of M”).  
 5. SMS/email visibility follows locked Q3.  
 6. Noise policy follows locked Q2 (view filter, not deletion).  
-7. `prove-p2-i8a` is harness only.
+7. `prove-p2-i8a` is harness only.  
+8. **P2-BL-I8-02:** first-name Peggy email-count Ask locks Peggy George (or discloses ambiguous) before count + Gallery.
 
 ---
 
@@ -34,7 +35,7 @@ After build authorization + FlightSim definition §11:
 
 **IN / OUT:** definition §§4–5.
 
-**IN (proposed):** shared communications viewer; hover that matches zoom; image-attachment preview from stored bytes; participant-only people rail; gallery density/caps; Q2/Q3 display rules; `prove-p2-i8a` after authorization.
+**IN (proposed):** shared communications viewer; hover that matches zoom; image-attachment preview from stored bytes; participant-only people rail; gallery density/caps; Q2/Q3 display rules; **P2-BL-I8-02** Ask canonical-Person lock on email/SMS counts; `prove-p2-i8a` after authorization.
 
 **OUT:** re-ingest; SMS attachment **bytes** (**P2-BL-I7-01**); deleting Evidence for newsletters; live Gmail; new nav app; I8.5–I11; **P2-BL-I4-01** general Explore chrome.
 
@@ -48,6 +49,7 @@ After build authorization + FlightSim definition §11:
 - HTML-only: disclose; do not invent plain text.  
 - Missing attachment bytes: disclose.  
 - Do not merge People on display name or subject.  
+- **P2-BL-I8-02:** first-name Ask is lock-or-clarify, not a silent union of every Peggy.  
 - Promo/newsletter hide (if Q2) is a **view filter**, not deletion.  
 - I10/I11 remain later. EVS-047 in I8A is **open both channels**, not a joint summary.
 
