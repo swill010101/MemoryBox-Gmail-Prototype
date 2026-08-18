@@ -1,7 +1,7 @@
 # MBBS-P2 Increment 4 — Mixed-Media Find / Explore
 
 **Status:** **LOCKED** · Combined functionality + UX · Founder clarifications incorporated · **BUILD AUTHORIZED** (2026-08-13) · **Not ACCEPTED** until §8 + §8.1 pass on FlightSim  
-**Owner-pass order (Tom 2026-08-17):** When FlightSim / Immich / the box are stable again, **I4 §8 + §8.1 is the first owner pass.** It must **actually work**. Do **not** skip it for MBQL-001, I8, comms LOD, or attachments. Attachments are **not** the I4 holdout (SMS files = P2-BL-I7-01; email files = P2-BL-I8-01).  
+**Owner-pass order:** **MBQL-001 is ACCEPTED** (2026-08-18). **I4 §8 + §8.1** remains the Explore owner pass and must **actually work**. Do **not** skip it for I8, comms LOD, or attachments. Attachments are **not** the I4 holdout (SMS files = P2-BL-I7-01; email files = P2-BL-I8-01).  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)  
 **Authority (product):** Locked MBPS-002 · Locked MBEVS-001 v1.0 · MBRM-001A · **P2-I1..I3 ACCEPTED**  
 **Authority (UX):** [MBUX-001 v0.4](MBUX-001_v0.4.md) full baseline (§22 exploration patterns) · historical addendum: [I4 Mixed-Media Exploration Addendum](MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)  

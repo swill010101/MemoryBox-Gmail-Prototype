@@ -48,4 +48,4 @@ Definition §7 — **authorized and implemented** this revision (`ingest-sms`, A
 
 ## Sign-off
 
-Tom authorized build 2026-08-14 (“approved to build”). **ACCEPTED** 2026-08-15 (Tom: “i7 is accepted”). SMS attachment **bytes** are **P2-BL-I7-01** — do not reopen I7. I8 email ingest must include attachment files up front (**P2-BL-I8-01**). [I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) is **ACCEPTED** 2026-08-15. Next: **[MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) BUILD AUTHORIZED** 2026-08-15.
+Tom authorized build 2026-08-14 (“approved to build”). **ACCEPTED** 2026-08-15 (Tom: “i7 is accepted”). SMS attachment **bytes** are **P2-BL-I7-01** — do not reopen I7. I8 email ingest must include attachment files up front (**P2-BL-I8-01**). [I7A](MBBS-P2_INCREMENT_7A_DEFINITION.md) is **ACCEPTED** 2026-08-15. [MBQL-001](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) is **ACCEPTED** 2026-08-18.

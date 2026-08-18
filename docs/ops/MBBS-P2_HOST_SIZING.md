@@ -95,4 +95,4 @@ Keep the 10 TB as **Sources**, not as the database disk.
 1. Immich app + library on **local NVMe** (not UNC).  
 2. `config/immich.env`: `IMMICH_BASE_URL` → localhost; thumbs path local; thumbs API off unless needed.  
 3. Restart Ask/serve.  
-4. **I4 §8 + §8.1 owner pass first** — must actually work. Do not skip for MBQL or I8.
+4. **I4 §8 + §8.1 owner pass** — must actually work. **MBQL-001 is ACCEPTED** (2026-08-18). Do not skip I4 for I8.

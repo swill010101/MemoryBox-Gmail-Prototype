@@ -1,4 +1,7 @@
-"""P2-MBQL-001 acceptance — structural + phrase compile. Harness ≠ ACCEPTED."""
+"""P2-MBQL-001 acceptance — structural + phrase compile.
+
+Increment ACCEPTED 2026-08-18 (Tom). This harness remains structural assist.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -349,8 +352,8 @@ def prove_p2_mbql_001(*, flightsim: bool = False) -> dict[str, Any]:
         "increment": "MBQL-001",
         "flightsim": bool(flightsim),
         "note": (
-            "MBQL-001 harness. ACCEPTED is a FlightSim owner pass of definition §6 phrases "
-            "with /dev/ai-trace available. Q1 residual; I9 not in this increment."
+            "MBQL-001 ACCEPTED 2026-08-18 (Tom: 'MBQL is accepted'). "
+            "This harness is structural assist. Q1 residual; I9 not in this increment."
         ),
         "checks": checks,
         "problems": problems,
