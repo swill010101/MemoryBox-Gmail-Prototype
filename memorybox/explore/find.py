@@ -194,6 +194,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "external_id": eid,
             "media_url": thumb,
             "thumb_url": thumb,
+            "web_url": p.get("web_url"),
             "teachable": True,
             "face_identity": mb_name or (people[0] if people else None) or "Unknown",
             "place": place,
@@ -226,6 +227,8 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             if str((exif_d or {}).get("media") or "").lower() == "video"
             else "photo"
         )
+        if photo_type == "video" and p.get("web_url"):
+            extra["play_url"] = p.get("web_url")
         add(
             _item_base(
                 id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
@@ -247,10 +250,14 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
         face = v.get("face_external_id")
-        play = v.get("play_url") or (
-            f"/review/ui?video={vid}&t={t0}"
-            + (f"&face={face}" if face else "")
-        )
+        play = v.get("play_url") or ""
+        if str(play).startswith("/media/"):
+            play = "/review" + play
+        if not play:
+            play = (
+                f"/review/ui?video={vid}&t={t0}"
+                + (f"&face={face}" if face else "")
+            )
         poster = ""
         if not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"

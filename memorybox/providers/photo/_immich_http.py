@@ -19,7 +19,7 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v6"
+_PERSON_LIB_CACHE_VER = "v7"
 
 
 class ImmichAuthError(RuntimeError):
@@ -554,24 +554,25 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            buckets = self._filter_years_to_windows(
-                self._collapse_buckets_to_years(self._list_person_time_buckets(pid)),
+            raw_buckets = self._filter_years_to_windows(
+                self._list_person_time_buckets(pid),
                 getattr(self, "_timeline_windows", ()) or (),
             )
-            # Count years walked, not template retries. Failed YEAR?timeBucket=YYYY-01-01
-            # used to burn the old 15-call budget and leave Peggy stuck in 2008-2015.
+            by_year = self._group_buckets_by_year(raw_buckets)
+            years = sorted(by_year.keys(), reverse=True)
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
-            if len(buckets) > budget:
+            if len(years) > budget:
                 self._person_lib_incomplete = True
             years_walked = 0
-            for bucket in buckets[:budget]:
+            for year in years[:budget]:
                 if self._circuit():
                     self._person_lib_incomplete = True
                     break
                 years_walked += 1
-                for it in self._list_person_bucket_assets(pid, bucket):
+                rows = self._list_person_year_assets(pid, year, by_year.get(year) or [])
+                for it in rows:
                     eid = str(it.get("id") or "").strip()
                     if not eid or eid in by_id:
                         continue
@@ -580,7 +581,7 @@ class ImmichHttpClient:
                         it = dict(it)
                         it["people"] = [{"id": pid}]
                     by_id[eid] = it
-            if years_walked < min(len(buckets), budget):
+            if years_walked < min(len(years), budget):
                 self._person_lib_incomplete = True
         return list(by_id.values())
 
@@ -589,8 +590,8 @@ class ImmichHttpClient:
         if not pid:
             return []
         tmpls = (
-            "/timeline/buckets?personId={pid}&size=YEAR",
             "/timeline/buckets?personId={pid}&size=MONTH",
+            "/timeline/buckets?personId={pid}&size=YEAR",
             "/timeline/buckets?personIds={pid}&size=MONTH",
             "/assets/time-buckets?personId={pid}&size=MONTH",
             "/asset/time-buckets?personId={pid}&size=MONTH",
@@ -665,6 +666,47 @@ class ImmichHttpClient:
         return years
 
     @staticmethod
+    def _group_buckets_by_year(buckets: list[str]) -> dict[str, list[str]]:
+        grouped: dict[str, list[str]] = {}
+        for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
+            s = str(raw or "").strip()
+            y = s[:4]
+            if len(y) != 4 or not y.isdigit():
+                continue
+            grouped.setdefault(y, []).append(s)
+        return grouped
+
+    def _list_person_year_assets(
+        self, person_id: str, year: str, month_stamps: list[str]
+    ) -> list[dict[str, Any]]:
+        """Full year first (ISO YEAR bucket). Month stamps only if YEAR is empty.
+
+        A December stamp + size=YEAR does not match Immich date_trunc('year'),
+        so Tom/Sue looked like 2026 / 2023 / 2022 holes with a few hundred photos.
+        """
+        y = str(year or "").strip()[:4]
+        if len(y) != 4 or not y.isdigit():
+            return []
+        year_stamps = (
+            f"{y}-01-01T00:00:00.000Z",
+            f"{y}-01-01",
+        )
+        for tb in year_stamps:
+            items = self._list_person_bucket_assets(person_id, tb, size="YEAR")
+            if items:
+                return items
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for tb in month_stamps:
+            for it in self._list_person_bucket_assets(person_id, tb, size="MONTH"):
+                eid = str(it.get("id") or "").strip()
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(it)
+        return out
+
+    @staticmethod
     def _filter_years_to_windows(
         years: list[str],
         windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None,
@@ -690,7 +732,7 @@ class ImmichHttpClient:
         return keep
 
     def _list_person_bucket_assets(
-        self, person_id: str, time_bucket: str
+        self, person_id: str, time_bucket: str, *, size: str = "YEAR"
     ) -> list[dict[str, Any]]:
         pid = (person_id or "").strip()
         tb = (time_bucket or "").strip()
@@ -699,15 +741,19 @@ class ImmichHttpClient:
         from urllib.parse import quote
 
         qtb = quote(tb, safe=":-T.Z")
-        tmpls = (
+        year_tmpls = (
             "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=YEAR",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=YEAR",
+        )
+        month_tmpls = (
+            "/timeline/bucket?timeBucket={qtb}&personId={pid}&size=MONTH",
+            "/timeline/bucket?timeBucket={qtb}&personIds={pid}&size=MONTH",
             "/timeline/bucket?timeBucket={qtb}&personId={pid}",
             "/timeline/bucket?timeBucket={qtb}&personIds={pid}",
-            "/assets/time-bucket?timeBucket={qtb}&personId={pid}",
-            "/asset/time-bucket?timeBucket={qtb}&personId={pid}",
         )
-        sticky = getattr(self, "_person_bucket_tmpl", None)
+        tmpls = year_tmpls if str(size).upper() == "YEAR" else month_tmpls
+        attr = "_person_year_tmpl" if str(size).upper() == "YEAR" else "_person_month_tmpl"
+        sticky = getattr(self, attr, None)
         use = (sticky,) if sticky in tmpls else tmpls
         for tmpl in use:
             path = tmpl.format(qtb=qtb, pid=pid)
@@ -725,7 +771,7 @@ class ImmichHttpClient:
             items = self._normalize_timeline_assets(data)
             if items:
                 self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
-                self._person_bucket_tmpl = tmpl
+                setattr(self, attr, tmpl)
                 return self._coerce_asset_dates_to_bucket_year(items, tb)
         return []
 

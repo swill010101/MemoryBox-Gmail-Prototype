@@ -2902,18 +2902,33 @@
       </div>`;
     }
     if (t === "video") {
-      const poster = media
-        ? `<img src="${escapeAttr(media)}" alt="" />`
-        : "Paused frame · face teach applies here only (not during playback)";
       const t0 = item.t != null ? Number(item.t) : 0;
+      const vid = String(item.video_external_id || "").trim();
+      const hvrt = String(item.video_provider_key || item.provider_key || "")
+        .toLowerCase()
+        .includes("hvrt");
+      const stream =
+        hvrt && vid
+          ? `/review/media/${encodeURIComponent(vid)}`
+          : item.play_url && String(item.play_url).startsWith("/review/media/")
+            ? String(item.play_url).split("?")[0]
+            : "";
+      const posterAttr = media ? ` poster="${escapeAttr(media)}"` : "";
+      const stage = stream
+        ? `<video class="mb-ev-video-player" controls preload="metadata" src="${escapeAttr(
+            stream
+          )}"${posterAttr}></video>`
+        : media
+          ? `<img src="${escapeAttr(media)}" alt="" />`
+          : "Paused frame · face teach applies here only (not during playback)";
       return `<div class="mb-ev-video-shell">
         <div class="mb-ev-video-frame" id="mb-ev-video-frame">
-          ${poster}
+          ${stage}
           ${faceBoxHtml(item)}
         </div>
         <div class="mb-ev-video-transport" aria-label="Video transport">
           <span>▶︎</span>
-          <span>${t0.toFixed(1)}s · paused frame</span>
+          <span>${t0.toFixed(1)}s ${stream ? "· play here" : "· paused frame"}</span>
         </div>
         <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
           <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>

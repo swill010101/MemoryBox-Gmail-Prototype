@@ -2510,6 +2510,16 @@ def _worker_browser_proxy(video_external_id: str, *, method: str) -> dict[str, A
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/media/{video_external_id}")
+def library_media_alias(
+    video_external_id: str,
+    request: Request,
+    proxy: int = Query(0),
+) -> Response:
+    """HVRT play_url is /media/{id}. Browser is on Ask :8790 — proxy to worker."""
+    return review_media(video_external_id, request, proxy=proxy)
+
+
 @app.get("/review/media/{video_external_id}")
 def review_media(
     video_external_id: str,

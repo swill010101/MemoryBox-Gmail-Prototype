@@ -260,6 +260,7 @@ def _prove_harness() -> dict[str, Any]:
             "mb-tl-bar",
             "useYearDensity",
             "timelineDatedItems",
+            "mb-ev-video-player",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -1134,8 +1135,9 @@ def _prove_harness() -> dict[str, Any]:
         _check(
             "immich_does_not_walk_month_stamps_as_years",
             len(year_gets) == 2
-            and all("2023-12-01" in p or "2022-12-01" in p for p in year_gets)
-            and any("size=YEAR" in p for p in year_gets),
+            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
+            and any("size=YEAR" in p for p in year_gets)
+            and not any("2023-12-01" in p for p in year_gets),
             checks,
             problems,
             f"bucket_gets={year_gets}",
@@ -1203,6 +1205,41 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             f"years={sorted(years_got)} n_gets={len(bucket_gets)}",
+        )
+
+        class _YearEmptyMonthFallback(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": "2024-03-01"},
+                        {"timeBucket": "2024-11-01"},
+                    ]
+                if "timeline/bucket" in p and "size=YEAR" in p:
+                    return 200, []
+                if "timeline/bucket" in p:
+                    month = "03" if "2024-03" in p else "11"
+                    return 200, [{"id": f"m-{month}", "fileCreatedAt": f"2024-{month}-01"}]
+                return 404, None
+
+        fb = _YearEmptyMonthFallback()
+        got_fb = fb.search_by_person_ids(["person-1"], size=50)
+        _check(
+            "immich_year_empty_walks_months",
+            {r.get("id") for r in got_fb} == {"m-03", "m-11"},
+            checks,
+            problems,
+            f"ids={[r.get('id') for r in got_fb]} paths={fb.paths}",
         )
         many.search_by_person_ids(["person-1"], size=5000)
         _check(
