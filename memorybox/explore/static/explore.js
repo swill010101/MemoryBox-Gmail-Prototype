@@ -2839,13 +2839,15 @@
   function bindSmsAttachActions(item) {
     const eid = item && item.evidence_id;
     if (!eid) return;
+    const attachApi =
+      item.type === "email" || item.channel === "email" ? "email-attachment" : "sms-attachment";
     document.querySelectorAll(".mb-sms-attach-img").forEach((img) => {
       const li = img.closest("li");
       const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
       const pending = img.getAttribute("data-src");
       if (pending) {
         fetch(
-          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+          `/explore/api/${attachApi}/${encodeURIComponent(eid)}/meta?index=${idx}`
         )
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
@@ -2874,7 +2876,7 @@
           "</p>";
         const idx = li ? li.getAttribute("data-att-index") || "0" : "0";
         fetch(
-          `/explore/api/sms-attachment/${encodeURIComponent(eid)}/meta?index=${idx}`
+          `/explore/api/${attachApi}/${encodeURIComponent(eid)}/meta?index=${idx}`
         )
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
@@ -2903,7 +2905,7 @@
         }
         try {
           const res = await fetch(
-            `/explore/api/sms-attachment/${encodeURIComponent(eid)}/to-library?index=${idx}`,
+            `/explore/api/${attachApi}/${encodeURIComponent(eid)}/to-library?index=${idx}`,
             { method: "POST" }
           );
           const data = await res.json().catch(() => ({}));
@@ -3064,13 +3066,19 @@
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
       const eid = escapeAttr(item.evidence_id || "");
+      const attachApi = t === "email" ? "email-attachment" : "sms-attachment";
       const attItems = atts
         .map((a, i) => {
           const name = escapeHtml(a.filename || a.source_ref || "attachment");
-          const kind = a.attachment_type ? " · " + escapeHtml(a.attachment_type) : "";
-          const src = "/explore/api/sms-attachment/" + eid + "?index=" + i;
+          const kindBits = [];
+          if (a.kind) kindBits.push(String(a.kind));
+          if (a.attachment_type) kindBits.push(String(a.attachment_type));
+          if (a.mime_type) kindBits.push(String(a.mime_type));
+          if (a.content_id) kindBits.push("cid:" + String(a.content_id));
+          const kind = kindBits.length ? " · " + escapeHtml(kindBits.join(" · ")) : "";
+          const src = "/explore/api/" + attachApi + "/" + eid + "?index=" + i;
           const isImg = /image|jpe?g|png|gif|heic|webp|bmp|tif/i.test(
-            String(a.attachment_type || a.filename || "")
+            String(a.attachment_type || a.mime_type || a.filename || "")
           );
           const preview = isImg
             ? '<div class="mb-ev-attach-preview"><img class="mb-sms-attach-img" data-src="' +
@@ -3090,7 +3098,7 @@
             name +
             kind +
             preview +
-            '<details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts</summary>' +
+            '<details class="mb-sms-optional-artifact"><summary>Optional: copy into Artifacts (not automatic)</summary>' +
             '<button type="button" class="mb-viewer-footbtn mb-sms-to-library" data-att-index="' +
             i +
             '">Copy to Artifacts</button>' +
@@ -3098,12 +3106,18 @@
           );
         })
         .join("");
+      const attLabel =
+        t === "email"
+          ? "MIME part on this email; stored at ingest (not Immich, not a Gallery photo). Optional Artifact copy is explicit only."
+          : "first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.";
       const attHtml = atts.length
         ? '<div class="mb-ev-attach"><strong>📎 ' +
           atts.length +
           " attachment" +
           (atts.length === 1 ? "" : "s") +
-          "</strong> — first-class on this SMS; stored at ingest (not Immich). Optional Artifact copy is not required.<ul>" +
+          "</strong> — " +
+          attLabel +
+          "<ul>" +
           attItems +
           "</ul></div>"
         : "";

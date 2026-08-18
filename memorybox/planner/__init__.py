@@ -200,6 +200,12 @@ SMS_BETWEEN_ME_RE = re.compile(
 SMS_DID_SEND_RE = re.compile(
     rf"(?i)\b(?:did|has|have)\s+{_PERSON_NAME}\s+send"
 )
+EMAIL_I_EMAIL_PERSON_RE = re.compile(
+    rf"(?i)\b(?:(?:how\s+many\s+times\s+)?did\s+i\s+e-?mail|i\s+e-?mailed?|e-?mails?\s+to)\s+{_PERSON_NAME}\b"
+)
+EMAIL_PERSON_RESPOND_RE = re.compile(
+    rf"(?i)\bdid\s+{_PERSON_NAME}\s+respond"
+)
 SMS_NAME_TEXTS_RE = re.compile(
     rf"(?i)\b(?!how\b|all\b|my\b|the\b|last\b|show\b|write\b|did\b)"
     rf"{_PERSON_NAME}\s+(?:text|sms|imessage)(?:s|ed|ing)?\b"
@@ -557,6 +563,8 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
         SMS_BETWEEN_ME_RE,
         SMS_DID_SEND_RE,
         SMS_NAME_TEXTS_RE,
+        EMAIL_I_EMAIL_PERSON_RE,
+        EMAIL_PERSON_RESPOND_RE,
     ]
     if want_email:
         # "from <Name>" in an email ask is a person, never a place

@@ -1229,9 +1229,16 @@ class AskOrchestrator:
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
-                if R._sms_ask(plan) and plan.want_communication:
+                if (R._sms_ask(plan) or R._email_ask(plan)) and plan.want_communication:
                     evidence = pg_hits
-                    qdrant_status = {"ok": True, "detail": "skipped_for_sms_ask"}
+                    qdrant_status = {
+                        "ok": True,
+                        "detail": (
+                            "skipped_for_email_ask"
+                            if R._email_ask(plan) and not R._sms_ask(plan)
+                            else "skipped_for_sms_ask"
+                        ),
+                    }
                 else:
                     qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
                     evidence = R.merge_evidence_hits(pg_hits, qd_hits)
