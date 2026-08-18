@@ -149,6 +149,26 @@ def build_i8_fixture_bytes(
     shared_msg.set_content("Same address maps to two People — Review, do not merge on display name.")
     chunks.append(_mbox_stamp(shared, "Mon Jun 03 11:00:00 2019").encode() + shared_msg.as_bytes())
 
+    spam = EmailMessage()
+    spam["From"] = "promo@spam.test"
+    spam["To"] = owner
+    spam["Subject"] = "You have won a prize"
+    spam["Message-ID"] = "<i8-spam@memorybox.test>"
+    spam["Date"] = "Tue, 04 Jun 2019 08:00:00 -0500"
+    spam["X-Gmail-Labels"] = "Spam,Unread"
+    spam.set_content("Gmail Spam label — skipped on ingest by default.")
+    chunks.append(_mbox_stamp("promo@spam.test", "Tue Jun 04 08:00:00 2019").encode() + spam.as_bytes())
+
+    trash = EmailMessage()
+    trash["From"] = "old@memorybox.test"
+    trash["To"] = owner
+    trash["Subject"] = "Deleted draft leftover"
+    trash["Message-ID"] = "<i8-trash@memorybox.test>"
+    trash["Date"] = "Tue, 04 Jun 2019 09:00:00 -0500"
+    trash["X-Gmail-Labels"] = "Trash"
+    trash.set_content("Gmail Trash label — skipped on ingest by default.")
+    chunks.append(_mbox_stamp("old@memorybox.test", "Tue Jun 04 09:00:00 2019").encode() + trash.as_bytes())
+
     return b"\n".join(chunks)
 
 

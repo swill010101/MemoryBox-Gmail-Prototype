@@ -109,7 +109,15 @@ Additional rules (locked): preserve sufficient original MIME/header provenance f
 | Identity | `phone_map.resolve_handles` (email contacts + `identity_kind=email`) |
 | Ask | `search_email_messages` · MBQL `EMAIL_RE` · I7A residual traces unchanged |
 | Explore | Email/Text cards; SMS `gallery_default_hidden` only for SMS |
-| Staged mail | `MEMORYBOX_SOURCES_ROOT/email` or `P:\MemoryBox\Sources\email` (Sources moved off the NAS onto the P: drive) |
+| Staged mail | `P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox` |
+
+**Spam / Trash (not a Gmail search filter).** The Takeout file is an All Mail dump; the words in the filename do not change ingest. Each message still carries `X-Gmail-Labels` / `X-GM-LABELS`. Tokens `Spam`/`Junk` skip as spam; `Trash`/`Bin`/`Deleted` skip as trash. Inbox (and other labels) ingest even when the file is named “including spam and trash.”
+
+- Inventory (counts labels, does not skip): `python -m memorybox inspect-mbox`
+- Ingest kept mail only (default): `python -m memorybox ingest-email`
+- Include Spam + Trash Evidence: `python -m memorybox ingest-email --include-spam-trash`
+
+`--limit N` on ingest is kept messages after that skip. Originals stay read-only.
 
 ---
 

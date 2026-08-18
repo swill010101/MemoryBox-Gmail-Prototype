@@ -364,7 +364,7 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
                 reason="Not available",
                 note=(
                     "Set MEMORYBOX_SOURCES_ROOT to "
-                    r"P:\MemoryBox\Sources "
+                    r"P:\photos\memorybox\sources "
                     "(email / calendar / sms staged there; PG Evidence may only have smoke ingest)"
                 ),
             )

@@ -4,10 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# 10 TB USB layout after Sources left the NAS. Env always wins.
-_LOCAL_SOURCES = Path(r"P:\MemoryBox\Sources")
+# USB layout after Sources left the NAS. Env always wins.
+# Owner path: P:\photos\memorybox\sources\email\<takeout mbox>
+_LOCAL_SOURCES = Path(r"P:\photos\memorybox\sources")
+_LOCAL_SOURCES_ALT = Path(r"P:\MemoryBox\Sources")
 _LEGACY_UNC = Path(r"\\media-server\photos\MemoryBox\Sources")
 _LEGACY_UNC_ALT = Path(r"\\media-server\photos\memorybox\sources")
+PREFERRED_MBOX_NAME = "all mail including spam and trash-002.mbox"
 
 
 def sources_root_candidates() -> list[Path]:
@@ -17,7 +20,7 @@ def sources_root_candidates() -> list[Path]:
     ordered = []
     if raw:
         ordered.append(Path(raw))
-    ordered.extend([_LOCAL_SOURCES, _LEGACY_UNC, _LEGACY_UNC_ALT])
+    ordered.extend([_LOCAL_SOURCES, _LOCAL_SOURCES_ALT, _LEGACY_UNC, _LEGACY_UNC_ALT])
     for p in ordered:
         key = str(p).casefold()
         if key in seen:
@@ -57,7 +60,9 @@ def email_source_candidates() -> list[Path]:
     if env:
         _add(Path(env))
     for root in sources_root_candidates():
-        _add(root / "email")
+        email_dir = root / "email"
+        _add(email_dir / PREFERRED_MBOX_NAME)
+        _add(email_dir)
     return out
 
 

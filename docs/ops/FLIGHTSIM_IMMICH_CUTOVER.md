@@ -3,7 +3,7 @@
 **Status:** Ops runbook · **Date:** 2026-08-17  
 **Owner:** Tom  
 **Scope:** Point MemoryBox **photo/Immich** config at Immich running **on FlightSim**.  
-**Not this cutover:** family-video library / artifact binaries may still use their own env paths. **Sources (SMS / mbox / ICS) now live on FlightSim `P:\MemoryBox\Sources`.** Point `config/memorybox_sources.env` at that tree; do not leave `MEMORYBOX_SOURCES_ROOT` on `\\media-server\photos\…`.
+**Sources (SMS / mbox / ICS) live on `P:\photos\memorybox\sources`.** Point `config/memorybox_sources.env` at that tree. The Gmail Takeout file is `email\all mail including spam and trash-002.mbox`. `ingest-email` skips Gmail Spam/Trash **labels** by default (filename is not a filter).
 
 Immich is up on FlightSim. MemoryBox still reads `config/immich.env` (gitignored). If that file still has a media-server URL or `\\media-server\immich\thumbs`, Ask/Explore will talk to the old box or miss thumbs.
 
@@ -136,7 +136,7 @@ Activity (optional): `http://127.0.0.1:8790/dev/api/immich-activity`
 
 | Still on media-server (leave UNC) | Env / code |
 |---|---|
-| SMS / mbox / ICS Sources | `config/memorybox_sources.env` → `P:\MemoryBox\Sources` |
+| SMS / mbox / ICS Sources | `config/memorybox_sources.env` → `P:\photos\memorybox\sources` |
 | Family videos | `MEMORYBOX_VIDEO_MEDIA_ROOT` |
 | Artifact binaries | `MEMORYBOX_ARTIFACT_MEDIA_ROOT` |
 

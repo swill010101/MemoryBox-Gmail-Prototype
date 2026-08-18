@@ -60,3 +60,5 @@ class EmailMessageDto:
     thread_status: str = "unthreaded"
     header_provenance: tuple[tuple[str, str], ...] = ()
     html_only: bool = False
+    gmail_labels: tuple[str, ...] = ()
+    mailbox_skip: str | None = None

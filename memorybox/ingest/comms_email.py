@@ -67,8 +67,8 @@ def inspect_default_or_uri(uri: str | None = None, *, limit: int | None = None) 
             "error": "not_found",
             "tried": tried,
             "note": (
-                "No staged mbox/Maildir found. Sources now live on the P: drive "
-                r"(P:\MemoryBox\Sources\email), not the old NAS UNC. "
+                "No staged mbox/Maildir found. Default is "
+                r"P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox. "
                 "Pass --uri, or set MEMORYBOX_MBOX_URI / MEMORYBOX_SOURCES_ROOT. "
                 "Missing source is not zero messages."
             ),
@@ -192,6 +192,8 @@ def _payload_from_dto(
         "thread_completeness": "n/a" if msg.thread_status == "unthreaded" else "pending",
         "attachments": attachments,
         "is_artifact": False,
+        "gmail_labels": list(msg.gmail_labels),
+        "mailbox_skip": msg.mailbox_skip,
     }
 
 
@@ -307,6 +309,7 @@ def ingest_mbox(
     *,
     limit: int | None = None,
     label: str | None = None,
+    include_spam_trash: bool = False,
 ) -> dict[str, Any]:
     path = Path(mbox_uri)
     job_id = store.start_job(
@@ -332,6 +335,8 @@ def ingest_mbox(
         provider = MboxEmailReadProvider()
         inserted = 0
         skipped = 0
+        skipped_spam = 0
+        skipped_trash = 0
         upgraded = 0
         attachments_stored = 0
         evidence_ids: list[str] = []
@@ -340,7 +345,9 @@ def ingest_mbox(
             handle_index = _index_confirmed_handles(conn)
             existing_hashes = store.hashes_for_source(source_id, conn=conn)
             for msg in provider.iter_messages(
-                EmailSourceRef(provider_key="mbox", uri=str(path)), limit=limit
+                EmailSourceRef(provider_key="mbox", uri=str(path)),
+                limit=limit,
+                skip_spam_trash=not include_spam_trash,
             ):
                 existing = existing_hashes.get(msg.content_hash)
                 payload = _payload_from_dto(
@@ -372,12 +379,15 @@ def ingest_mbox(
                 existing_hashes[msg.content_hash] = eid
                 inserted += 1
                 evidence_ids.append(str(eid))
+            skipped_spam = int(getattr(provider, "skipped_spam", 0) or 0)
+            skipped_trash = int(getattr(provider, "skipped_trash", 0) or 0)
             thread_stats = _apply_thread_completeness(source_id, conn)
         store.finish_job(
             job_id,
             status="done",
             message=(
                 f"inserted={inserted} skipped={skipped} upgraded={upgraded} "
+                f"skipped_spam={skipped_spam} skipped_trash={skipped_trash} "
                 f"attachments_stored={attachments_stored}"
             ),
         )
@@ -387,6 +397,9 @@ def ingest_mbox(
             "source_id": str(source_id),
             "inserted": inserted,
             "skipped": skipped,
+            "skipped_spam": skipped_spam,
+            "skipped_trash": skipped_trash,
+            "include_spam_trash": include_spam_trash,
             "upgraded": upgraded,
             "attachments_stored": attachments_stored,
             "thread_stats": thread_stats,

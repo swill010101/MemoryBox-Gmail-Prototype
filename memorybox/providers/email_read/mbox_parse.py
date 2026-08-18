@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from memorybox.providers.email_read.dto import EmailAddressDto, EmailPartDto
-from memorybox.ingest.sources_paths import email_source_candidates
+from memorybox.ingest.sources_paths import PREFERRED_MBOX_NAME, email_source_candidates
 
 PARSER_VERSION = "i8-email-1"
 
@@ -106,6 +106,33 @@ def iter_rfc822_bytes(path: Path) -> Iterator[bytes]:
             yield from iter_mbox_bytes(child)
 
 
+def pick_mbox_in_dir(path: Path) -> Path | None:
+    """Prefer the Takeout -002 mbox; match names case-insensitively."""
+    try:
+        kids = [
+            p
+            for p in path.iterdir()
+            if p.is_file() and p.suffix.lower() in {".mbox", ".mbx"}
+        ]
+    except OSError:
+        return None
+    if not kids:
+        return None
+    by_fold = {p.name.casefold(): p for p in kids}
+    if PREFERRED_MBOX_NAME in by_fold:
+        return by_fold[PREFERRED_MBOX_NAME]
+    for name, p in by_fold.items():
+        if name.endswith("-002.mbox") and "spam" in name and "trash" in name:
+            return p
+    for name, p in by_fold.items():
+        if "spam" in name and "trash" in name:
+            return p
+    dash002 = [p for p in kids if p.stem.casefold().endswith("-002")]
+    if dash002:
+        return max(dash002, key=lambda p: p.stat().st_size)
+    return max(kids, key=lambda p: p.stat().st_size)
+
+
 def default_email_source_path() -> Path | None:
     for path in email_source_candidates():
         try:
@@ -113,21 +140,9 @@ def default_email_source_path() -> Path | None:
                 return path
             if not path.is_dir():
                 continue
-            named = [
-                path / "All mail Including Spam and Trash.mbox",
-                path / "All Mail Including Spam and Trash.mbox",
-                path / "All mail Including Spam and Trash-002.mbox",
-            ]
-            for hit in named:
-                if hit.is_file():
-                    return hit
-            mboxes = sorted(
-                [p for p in path.iterdir() if p.is_file() and p.suffix.lower() in {".mbox", ".mbx"}],
-                key=lambda p: p.stat().st_size if p.is_file() else 0,
-                reverse=True,
-            )
-            if mboxes:
-                return mboxes[0]
+            hit = pick_mbox_in_dir(path)
+            if hit is not None:
+                return hit
             if (path / "cur").is_dir() or (path / "new").is_dir():
                 return path
         except OSError:
@@ -192,6 +207,41 @@ def header_provenance(msg: email.message.Message) -> tuple[tuple[str, str], ...]
         if text:
             out.append((key, text[:4000]))
     return tuple(out)
+
+
+def parse_gmail_labels(msg: email.message.Message) -> tuple[str, ...]:
+    raw = str(msg.get("X-Gmail-Labels") or msg.get("X-GM-LABELS") or "").strip()
+    if not raw:
+        return ()
+    parts: list[str] = []
+    seen: set[str] = set()
+    for piece in raw.split(","):
+        label = piece.strip().lstrip("\\").strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(label)
+    return tuple(parts)
+
+
+def mailbox_skip_reason(labels: tuple[str, ...] | list[str]) -> str | None:
+    """Spam/Trash from Gmail Takeout labels. Inbox+Spam still counts as spam."""
+    spam = False
+    trash = False
+    for label in labels:
+        token = str(label).casefold().replace("\\", "/").rsplit("/", 1)[-1]
+        if token in {"spam", "junk"}:
+            spam = True
+        elif token in {"trash", "bin", "deleted"}:
+            trash = True
+    if spam:
+        return "spam"
+    if trash:
+        return "trash"
+    return None
 
 
 def vendor_thread_id(msg: email.message.Message) -> str | None:
@@ -371,6 +421,8 @@ def inspect_mbox(path: Path, *, sample: int = 12, limit: int | None = None) -> d
     subject_sample: list[str] = []
     vendor_keys: set[str] = set()
     errors = 0
+    labeled_spam = 0
+    labeled_trash = 0
     for raw in iter_rfc822_bytes(path):
         if limit is not None and n >= limit:
             break
@@ -401,6 +453,11 @@ def inspect_mbox(path: Path, *, sample: int = 12, limit: int | None = None) -> d
         text, html = extract_bodies(msg)
         if html and not (text or "").strip():
             html_only += 1
+        skip = mailbox_skip_reason(parse_gmail_labels(msg))
+        if skip == "spam":
+            labeled_spam += 1
+        elif skip == "trash":
+            labeled_trash += 1
         if len(from_sample) < sample:
             frm = str(msg.get("From") or "").strip()
             if frm:
@@ -427,6 +484,15 @@ def inspect_mbox(path: Path, *, sample: int = 12, limit: int | None = None) -> d
         "messages_with_rfc_thread_headers": with_rfc_thread,
         "messages_unthreaded": unthreaded,
         "html_only_bodies": html_only,
+        "labeled_spam": labeled_spam,
+        "labeled_trash": labeled_trash,
+        "spam_trash_skipped_on_ingest_default": labeled_spam + labeled_trash,
+        "spam_trash_note": (
+            "Counts come from Gmail Takeout labels (X-Gmail-Labels / X-GM-LABELS), "
+            "not from the filename. inspect-mbox reports them; ingest-email skips "
+            "Spam/Junk and Trash/Bin/Deleted by default. Pass "
+            "--include-spam-trash to ingest those too. Originals are never rewritten."
+        ),
         "vendor_thread_headers_seen": sorted(vendor_keys),
         "from_sample": from_sample,
         "subject_sample": subject_sample,

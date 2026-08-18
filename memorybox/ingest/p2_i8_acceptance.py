@@ -110,19 +110,27 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     )
     _check(
         "i8_cli",
-        '"ingest-email"' in main and '"inspect-mbox"' in main and '"prove-p2-i8"' in main,
+        '"ingest-email"' in main
+        and '"inspect-mbox"' in main
+        and '"prove-p2-i8"' in main
+        and "include-spam-trash" in main,
         checks,
         problems,
         "CLI ingest/inspect/prove-p2-i8",
     )
     _check(
         "i8_sources_on_p_drive",
-        r"P:\MemoryBox\Sources" in sources_paths
+        r"P:\photos\memorybox\sources" in sources_paths
+        and "all mail including spam and trash-002.mbox" in sources_paths
         and "email_source_candidates" in sources_paths
-        and "email_source_candidates" in parse,
+        and "email_source_candidates" in parse
+        and "mailbox_skip_reason" in parse
+        and "skip_spam_trash" in (root / "providers" / "email_read" / "mbox.py").read_text(
+            encoding="utf-8"
+        ),
         checks,
         problems,
-        "Default inspect/ingest looks on P:\\MemoryBox\\Sources before leftover UNC",
+        "Default inspect/ingest uses P:\\photos\\memorybox\\sources and skips Spam/Trash labels",
     )
     _check(
         "i8_no_i85_i9_i10_i11",
@@ -181,7 +189,9 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         and inv.get("format") == "mbox"
         and inv.get("original_untouched")
         and before == after_inspect
-        and int(inv.get("message_count") or 0) >= 8
+        and int(inv.get("message_count") or 0) >= 10
+        and int(inv.get("labeled_spam") or 0) >= 1
+        and int(inv.get("labeled_trash") or 0) >= 1
         and peggy_addr.split("@")[0] in " ".join(inv.get("from_sample") or []).lower()
         and not any("See the snapshot" in str(x) for x in (inv.get("from_sample") or [])),
         checks,
@@ -203,10 +213,13 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     after_ingest = fixture.read_bytes()
     _check(
         "i8_ingest_ok",
-        bool(result.get("ok")) and int(result.get("inserted") or 0) >= 8,
+        bool(result.get("ok"))
+        and int(result.get("inserted") or 0) >= 8
+        and int(result.get("skipped_spam") or 0) >= 1
+        and int(result.get("skipped_trash") or 0) >= 1,
         checks,
         problems,
-        f"ingest inserted={result.get('inserted')} err={result.get('error')}",
+        f"ingest inserted={result.get('inserted')} spam={result.get('skipped_spam')} trash={result.get('skipped_trash')}",
     )
     _check(
         "i8_original_untouched",
@@ -219,6 +232,14 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
     eids = [UUID(x) for x in (result.get("evidence_ids") or [])]
     payloads = [_payload(store.get_evidence(eid) or {}) for eid in eids]
     by_mid = {str(p.get("rfc_message_id") or p.get("message_id") or ""): p for p in payloads}
+    _check(
+        "i8_spam_trash_skipped",
+        "<i8-spam@memorybox.test>" not in by_mid
+        and "<i8-trash@memorybox.test>" not in by_mid,
+        checks,
+        problems,
+        "Spam/Trash labeled messages are not Evidence unless --include-spam-trash",
+    )
 
     unth = by_mid.get("<i8-unthreaded@memorybox.test>") or {}
     same = by_mid.get("<i8-same-subject-not-a-thread@memorybox.test>") or {}

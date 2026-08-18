@@ -43,7 +43,8 @@ After this build + FlightSim owner pass (definition §9, including the three ext
 - Originals untouched; hash skip; I3 rows upgrade to `i8-email-1` on re-ingest.  
 - Unavailable ≠ 0.  
 - MBQL deterministic first; I7A on residual fill.  
-- Q1: `inspect-mbox` on the real path (`MEMORYBOX_SOURCES_ROOT/email` or `P:\MemoryBox\Sources\email`). Sources are on the P: drive, not the old NAS UNC.  
+- Q1: `inspect-mbox` on `P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox`.  
+- Spam/Trash: Gmail Takeout labels (`X-Gmail-Labels` / `X-GM-LABELS`), **not** the Takeout filename. Default ingest **skips** Spam/Junk and Trash/Bin/Deleted; originals untouched. Pass `--include-spam-trash` to ingest those too. `inspect-mbox` counts labels and does not skip.  
 - HTML-only bodies: preserve HTML; disclose empty plain text.  
 - Duplicate Message-IDs / broken threads: disclose; do not invent a thread.  
 - Inline/CID vs ordinary attachments distinguished.

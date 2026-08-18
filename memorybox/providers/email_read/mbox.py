@@ -20,7 +20,11 @@ class MboxEmailReadProvider:
         )
 
     def iter_messages(
-        self, source: EmailSourceRef, *, limit: int | None = None
+        self,
+        source: EmailSourceRef,
+        *,
+        limit: int | None = None,
+        skip_spam_trash: bool = False,
     ) -> Iterator[EmailMessageDto]:
         if source.provider_key not in (self.provider_key, "filesystem"):
             raise ProviderError(
@@ -29,14 +33,24 @@ class MboxEmailReadProvider:
         path = Path(source.uri)
         if not path.exists():
             raise ProviderUnavailable(f"mbox not found: {path}")
+        self.skipped_spam = 0
+        self.skipped_trash = 0
         yielded = 0
         for raw in mbox_parse.iter_rfc822_bytes(path):
-            if limit is not None and yielded >= limit:
-                break
             try:
                 msg = email.message_from_bytes(raw, policy=email.policy.default)
             except Exception:  # noqa: BLE001
                 continue
+            labels = mbox_parse.parse_gmail_labels(msg)
+            mailbox_skip = mbox_parse.mailbox_skip_reason(labels)
+            if skip_spam_trash and mailbox_skip:
+                if mailbox_skip == "spam":
+                    self.skipped_spam += 1
+                else:
+                    self.skipped_trash += 1
+                continue
+            if limit is not None and yielded >= limit:
+                break
             text, html = mbox_parse.extract_bodies(msg)
             mid = msg.get("Message-ID")
             rfc_id = str(mid).strip() if mid else None
@@ -88,5 +102,7 @@ class MboxEmailReadProvider:
                 thread_status=thread_status,
                 header_provenance=mbox_parse.header_provenance(msg),
                 html_only=bool(html) and not (text or "").strip(),
+                gmail_labels=labels,
+                mailbox_skip=mailbox_skip,
             )
             yielded += 1

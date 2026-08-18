@@ -20,13 +20,31 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("prove-synthetic", help="I1 prove Grandpa graph")
     sub.add_parser("prove-providers", help="I2 provider acceptance")
     p_email = sub.add_parser("ingest-email", help="Ingest mbox → Evidence")
-    p_email.add_argument("--uri", default=None, help="Path to mbox/Maildir (default: staged Sources/email)")
-    p_email.add_argument("--limit", type=int, default=None)
+    p_email.add_argument(
+        "--uri",
+        default=None,
+        help=r"Path to mbox/Maildir (default: P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox)",
+    )
+    p_email.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Stop after this many kept messages (Spam/Trash skipped first unless --include-spam-trash)",
+    )
+    p_email.add_argument(
+        "--include-spam-trash",
+        action="store_true",
+        help="Ingest Gmail Spam/Trash labeled messages (default: skip those labels; originals untouched)",
+    )
     p_inspect_mbox = sub.add_parser(
         "inspect-mbox",
-        help="Read-only mbox/Maildir inventory (headers/counts; no ingest; no rewrite; no bodies)",
+        help="Read-only mbox/Maildir inventory (counts Spam/Trash labels; does not skip them)",
     )
-    p_inspect_mbox.add_argument("--uri", default=None)
+    p_inspect_mbox.add_argument(
+        "--uri",
+        default=None,
+        help=r"Default: P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox",
+    )
     p_inspect_mbox.add_argument("--limit", type=int, default=None)
     p_prove_p2i8 = sub.add_parser(
         "prove-p2-i8",
@@ -353,7 +371,9 @@ def main(argv: list[str] | None = None) -> int:
             payload = inspect_default_or_uri(None)
             print(json.dumps(payload, indent=2, default=str))
             return 1
-        payload = ingest_mbox(uri, limit=args.limit)
+        payload = ingest_mbox(
+            uri, limit=args.limit, include_spam_trash=bool(args.include_spam_trash)
+        )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
