@@ -197,6 +197,26 @@
     return eligibleItems().filter(isDated);
   }
 
+  /** Dated items that should paint the Timeline rail (not the gallery).
+   *  Hidden SMS stay off cards (I7) but must still mark years on All. */
+  function timelineDatedItems() {
+    const filter = (state && state.domain && state.domain.typeFilter) || "all";
+    const place = state && state.domain ? state.domain.placeFilter : null;
+    const plotHiddenSms = !filter || filter === "all" || filter === "email";
+    return rawItems.filter((it) => {
+      if (!isDated(it)) return false;
+      if (isSmsTextItem(it)) {
+        if (!plotHiddenSms) return false;
+        if (it.gallery_default_hidden) return true;
+        return matchesType(it, filter);
+      }
+      return (
+        matchesType(it, filter) &&
+        matchesPlace(it, place)
+      );
+    });
+  }
+
   function undatedEligible() {
     return eligibleItems().filter(isUndated);
   }
@@ -492,7 +512,7 @@
 
   /** After type-filter change: Timeline = dated portion of new eligible set (full extent). */
   function syncTimelineToEligibleDatedExtent() {
-    const ext = extentOf(datedEligible());
+    const ext = extentOf(timelineDatedItems());
     if (ext.empty) {
       state.timeline.fullExtentStart = NaN;
       state.timeline.fullExtentEnd = NaN;
@@ -1022,15 +1042,23 @@
       if (!temporalWindows.length) temporalWindows = null;
     }
     const ext = extentOf(
-      rawItems.filter(
-        (it) =>
-          isDated(it) &&
+      rawItems.filter((it) => {
+        if (!isDated(it)) return false;
+        if (isSmsTextItem(it)) {
+          if (nextType === "photo" || nextType === "video") return false;
+          if (it.gallery_default_hidden) return nextType === "all" || nextType === "email";
+          return matchesType(it, nextType, {
+            includeTexts,
+            domain: { includeTexts, galleryShowSms, typeFilter: nextType },
+          });
+        }
+        return (
           matchesType(it, nextType, {
             includeTexts,
             domain: { includeTexts, galleryShowSms, typeFilter: nextType },
-          }) &&
-          matchesPlace(it, placeFilter)
-      )
+          }) && matchesPlace(it, placeFilter)
+        );
+      })
     );
     const emptyTl = Boolean(ext.empty);
     let rangeStart = emptyTl ? NaN : ext.start;
@@ -2164,17 +2192,16 @@
     }
 
     const dotsEl = document.getElementById("mb-tl-dots");
-    const typedDated = datedEligible();
+    const typedDated = timelineDatedItems();
     // Always clear first — prevents leftover dots after zoom
     if (dotsEl) dotsEl.innerHTML = "";
     if (!empty && dotsEl) {
       const span = Math.max(extentEnd - extentStart, 1);
       const parts = [];
-      // Year/month precision: one 7px dot per card stacks on Jan 1 (Immich YEAR
-      // buckets) and looks like Christmas lights. Draw year density instead.
+      // Year precision: one 7px dot per card stacks and looks empty. Hidden
+      // SMS stay off cards (I7) but still mark years. Always density on long spans.
       const useYearDensity =
-        (precision === "years" || (extentEnd - extentStart) / 86400000 > 900) &&
-        typedDated.length > 40;
+        precision === "years" || (extentEnd - extentStart) / 86400000 > 900;
       if (useYearDensity) {
         const bins = new Map();
         for (const it of typedDated) {
@@ -2192,9 +2219,9 @@
           const t1 = dayMs(y + 1, 1, 1);
           const left = ((t0 - extentStart) / span) * 100;
           const width = Math.max(((t1 - t0) / span) * 100, 0.35);
-          const h = 5 + Math.round((n / maxN) * 12);
+          const op = (0.22 + (n / maxN) * 0.7).toFixed(2);
           parts.push(
-            `<span class="mb-tl-bar" style="left:${Math.max(0, left)}%;width:${width}%;height:${h}px" title="${escapeAttr(
+            `<span class="mb-tl-bar" style="left:${Math.max(0, left)}%;width:${width}%;opacity:${op}" title="${escapeAttr(
               `${y}: ${n}`
             )}"></span>`
           );

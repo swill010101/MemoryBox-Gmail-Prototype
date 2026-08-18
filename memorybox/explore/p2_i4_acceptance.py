@@ -259,6 +259,7 @@ def _prove_harness() -> dict[str, Any]:
             "bindLazyThumbs",
             "mb-tl-bar",
             "useYearDensity",
+            "timelineDatedItems",
         ):
             if marker not in js:
                 missing.append(marker)
@@ -1063,9 +1064,8 @@ def _prove_harness() -> dict[str, Any]:
         got_peggy = client_peggy.search_by_person_ids(["person-1"], size=5000)
         _check(
             "immich_person_library_unions_faces_and_full_timeline",
-            len(got_peggy) >= 400
-            and client_peggy.timeline_calls <= 15
-            and client_peggy.timeline_calls >= 10
+            len(got_peggy) >= 700
+            and client_peggy.timeline_calls == 30
             and getattr(client_peggy, "_last_person_source", "") == "faces_or_timeline",
             checks,
             problems,
@@ -1098,7 +1098,7 @@ def _prove_harness() -> dict[str, Any]:
         )
         _check(
             "immich_month_buckets_collapse_to_years",
-            collapsed == ["2023-01-01", "2022-01-01"],
+            collapsed == ["2023-12-01", "2022-12-01"],
             checks,
             problems,
             f"collapsed={collapsed}",
@@ -1134,7 +1134,7 @@ def _prove_harness() -> dict[str, Any]:
         _check(
             "immich_does_not_walk_month_stamps_as_years",
             len(year_gets) == 2
-            and all("2023-01-01" in p or "2022-01-01" in p for p in year_gets)
+            and all("2023-12-01" in p or "2022-12-01" in p for p in year_gets)
             and any("size=YEAR" in p for p in year_gets),
             checks,
             problems,
@@ -1150,6 +1150,67 @@ def _prove_harness() -> dict[str, Any]:
             checks,
             problems,
             "Christmas windows must not walk 2010",
+        )
+        pinned = _ImmichIds._coerce_asset_dates_to_bucket_year(
+            [{"id": "a1", "fileCreatedAt": "2023-01-31T12:00:00.000Z"}],
+            "2010-12-01",
+        )
+        _check(
+            "immich_bucket_year_wins_over_import_stamp",
+            pinned
+            and str(pinned[0].get("localDateTime") or "").startswith("2010-"),
+            checks,
+            problems,
+            f"pinned={pinned}",
+        )
+
+        class _ManyYearImmich(ImmichHttpClient):
+            def __init__(self) -> None:
+                self.ui_root = "http://immich.test"
+                self.api_base = "http://immich.test/api"
+                self._key = "test"
+                self.thumbs_root = None
+                self.paths: list[str] = []
+
+            def _request(self, method, path, body=None, timeout=30, retries=2):  # noqa: ANN001
+                p = str(path)
+                self.paths.append(p)
+                if method == "POST":
+                    raise TimeoutError("search/metadata RST")
+                if "timeline/buckets" in p:
+                    return 200, [
+                        {"timeBucket": f"{y}-06-01"} for y in range(2025, 2004, -1)
+                    ]
+                if "timeline/bucket" in p:
+                    y = "2025"
+                    for part in p.split("timeBucket=", 1)[-1].split("&", 1)[0].split("-"):
+                        if len(part) == 4 and part.isdigit():
+                            y = part
+                            break
+                    return 200, [{"id": f"asset-{y}", "fileCreatedAt": f"{y}-06-01"}]
+                return 404, None
+
+        many = _ManyYearImmich()
+        got_many = many.search_by_person_ids(["person-1"], size=5000)
+        years_got = {str(r.get("id") or "")[-4:] for r in got_many}
+        bucket_gets = [p for p in many.paths if "timeline/bucket?" in p]
+        _check(
+            "immich_walks_full_person_year_span",
+            "2025" in years_got
+            and "2005" in years_got
+            and len(bucket_gets) >= 20
+            and not getattr(many, "_person_lib_incomplete", False),
+            checks,
+            problems,
+            f"years={sorted(years_got)} n_gets={len(bucket_gets)}",
+        )
+        many.search_by_person_ids(["person-1"], size=5000)
+        _check(
+            "immich_complete_walk_may_cache",
+            getattr(many, "_last_person_source", "") == "cache",
+            checks,
+            problems,
+            f"src={getattr(many, '_last_person_source', None)}",
         )
 
         class _HealthProbePhoto:

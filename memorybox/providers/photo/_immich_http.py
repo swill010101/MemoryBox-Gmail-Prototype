@@ -17,9 +17,9 @@ _LOG = logging.getLogger("memorybox.immich")
 _CIRCUIT_COOLDOWN_SEC = 300
 _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
-_PERSON_TIMELINE_YEAR_BUDGET = 15
+_PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_LIB_CACHE_VER = "v5"
+_PERSON_LIB_CACHE_VER = "v6"
 
 
 class ImmichAuthError(RuntimeError):
@@ -488,9 +488,9 @@ class ImmichHttpClient:
         # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
         if by_id:
             self._last_person_source = "faces_or_timeline"
-            out = list(by_id.values())[:target]
-            # Cache incomplete newest-N walks so a re-ask does not walk Immich again.
-            if out and not self._circuit():
+            out = self._year_fair_assets(list(by_id.values()), target)
+            # Never cache a truncated walk — FlightSim re-asks kept 2015-only Peggy.
+            if out and not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
                 self._write_person_lib_cache(cache_key, out)
             return out
         if self._circuit():
@@ -504,8 +504,8 @@ class ImmichHttpClient:
         except Exception as exc:  # noqa: BLE001
             self._note_transport_fail(exc)
         if by_id:
-            out = list(by_id.values())[:target]
-            if not self._circuit():
+            out = self._year_fair_assets(list(by_id.values()), target)
+            if not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
                 self._write_person_lib_cache(cache_key, out)
             return out
         self._last_person_source = "timeout" if self._circuit() else "empty"
@@ -558,18 +558,19 @@ class ImmichHttpClient:
                 self._collapse_buckets_to_years(self._list_person_time_buckets(pid)),
                 getattr(self, "_timeline_windows", ()) or (),
             )
-            # Cap live walks; completeness is a later cache pass, not 40 GETs.
+            # Count years walked, not template retries. Failed YEAR?timeBucket=YYYY-01-01
+            # used to burn the old 15-call budget and leave Peggy stuck in 2008-2015.
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
             if len(buckets) > budget:
                 self._person_lib_incomplete = True
+            years_walked = 0
             for bucket in buckets[:budget]:
-                if self._circuit() or int(getattr(self, "_timeline_http", 0) or 0) >= budget:
+                if self._circuit():
                     self._person_lib_incomplete = True
                     break
-                if len(by_id) >= target:
-                    return list(by_id.values())[:target]
+                years_walked += 1
                 for it in self._list_person_bucket_assets(pid, bucket):
                     eid = str(it.get("id") or "").strip()
                     if not eid or eid in by_id:
@@ -579,9 +580,9 @@ class ImmichHttpClient:
                         it = dict(it)
                         it["people"] = [{"id": pid}]
                     by_id[eid] = it
-                    if len(by_id) >= target:
-                        return list(by_id.values())[:target]
-        return list(by_id.values())[:target]
+            if years_walked < min(len(buckets), budget):
+                self._person_lib_incomplete = True
+        return list(by_id.values())
 
     def _list_person_time_buckets(self, person_id: str) -> list[str]:
         pid = (person_id or "").strip()
@@ -647,15 +648,20 @@ class ImmichHttpClient:
 
     @staticmethod
     def _collapse_buckets_to_years(buckets: list[str]) -> list[str]:
-        """One bucket per year. Immich YEAR lists are often month dates."""
+        """One Immich timeBucket string per year (keep the real stamp).
+
+        Rewriting to YYYY-01-01 makes GET /timeline/bucket miss recent years
+        when Immich only knows 2025-12-01 (FlightSim: latest looked like 2015).
+        """
         years: list[str] = []
         seen: set[str] = set()
         for raw in ImmichHttpClient._sort_time_buckets_newest_first(buckets):
-            y = str(raw or "").strip()[:4]
+            s = str(raw or "").strip()
+            y = s[:4]
             if len(y) != 4 or not y.isdigit() or y in seen:
                 continue
             seen.add(y)
-            years.append(f"{y}-01-01")
+            years.append(s)
         return years
 
     @staticmethod
@@ -708,7 +714,6 @@ class ImmichHttpClient:
             if self._circuit():
                 break
             try:
-                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 status, data = self._request("GET", path, timeout=6, retries=1)
             except Exception as exc:  # noqa: BLE001
                 self._note_transport_fail(exc)
@@ -719,9 +724,106 @@ class ImmichHttpClient:
                 continue
             items = self._normalize_timeline_assets(data)
             if items:
+                self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 self._person_bucket_tmpl = tmpl
-                return items
+                return self._coerce_asset_dates_to_bucket_year(items, tb)
         return []
+
+    @staticmethod
+    def _year_fair_assets(
+        rows: list[dict[str, Any]], target: int
+    ) -> list[dict[str, Any]]:
+        """Keep every year when the person library is larger than the Ask cap."""
+        if len(rows) <= target:
+            return rows
+        by_y: dict[int, list[dict[str, Any]]] = {}
+        for it in rows:
+            y = ImmichHttpClient._asset_year(it) or 0
+            by_y.setdefault(y, []).append(it)
+        years = sorted(by_y.keys(), reverse=True)
+        out: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        idxs = {y: 0 for y in years}
+        while len(out) < target:
+            progressed = False
+            for y in years:
+                i = idxs[y]
+                bucket = by_y[y]
+                if i >= len(bucket):
+                    continue
+                aid = id(bucket[i])
+                if aid in seen:
+                    idxs[y] = i + 1
+                    continue
+                seen.add(aid)
+                out.append(bucket[i])
+                idxs[y] = i + 1
+                progressed = True
+                if len(out) >= target:
+                    break
+            if not progressed:
+                break
+        return out
+
+    @staticmethod
+    def _asset_year(raw: Any) -> int | None:
+        if isinstance(raw, dict):
+            exif = raw.get("exifInfo") if isinstance(raw.get("exifInfo"), dict) else {}
+            candidates = (
+                exif.get("dateTimeOriginal"),
+                exif.get("dateTime"),
+                raw.get("localDateTime"),
+                raw.get("takenAt"),
+                raw.get("fileCreatedAt"),
+            )
+        else:
+            candidates = (raw,)
+        for taken in candidates:
+            if not isinstance(taken, str) or len(taken.strip()) < 4:
+                continue
+            y = taken.strip()[:4]
+            if y.isdigit():
+                yi = int(y)
+                if 1800 <= yi <= 2100:
+                    return yi
+        return None
+
+    @staticmethod
+    def _coerce_asset_dates_to_bucket_year(
+        items: list[dict[str, Any]], time_bucket: str
+    ) -> list[dict[str, Any]]:
+        """YEAR buckets often stamp fileCreatedAt as Immich import day (2023).
+
+        Keep EXIF when it matches the bucket year. Otherwise pin localDateTime
+        to mid-year so Explore timeline density follows the walk, not import.
+        """
+        y = str(time_bucket or "").strip()[:4]
+        if not (len(y) == 4 and y.isdigit()):
+            return items
+        year = int(y)
+        out: list[dict[str, Any]] = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            row = dict(it)
+            exif = row.get("exifInfo") if isinstance(row.get("exifInfo"), dict) else {}
+            exif_year = ImmichHttpClient._asset_year(
+                {
+                    "exifInfo": exif,
+                    "localDateTime": None,
+                    "takenAt": None,
+                    "fileCreatedAt": None,
+                }
+            )
+            if exif_year == year:
+                out.append(row)
+                continue
+            if ImmichHttpClient._asset_year(row) == year:
+                out.append(row)
+                continue
+            row["localDateTime"] = f"{year}-07-01T12:00:00"
+            out.append(row)
+        return out
 
     def _normalize_timeline_assets(self, data: Any) -> list[dict[str, Any]]:
         if isinstance(data, list):

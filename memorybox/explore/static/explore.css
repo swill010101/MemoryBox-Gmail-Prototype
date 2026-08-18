@@ -857,10 +857,11 @@ body {
 
 .mb-tl-bar {
   position: absolute;
-  bottom: 22px;
-  border-radius: 3px 3px 0 0;
+  top: 22px;
+  height: 10px;
+  border-radius: 2px;
   background: var(--mb-blue);
-  opacity: 0.72;
+  opacity: 0.55;
   pointer-events: none;
 }
 
