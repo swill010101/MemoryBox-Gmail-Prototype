@@ -113,6 +113,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         '"ingest-email"' in main
         and '"inspect-mbox"' in main
         and '"prove-p2-i8"' in main
+        and '"ingest-email-report"' in main
         and "include-spam-trash" in main,
         checks,
         problems,

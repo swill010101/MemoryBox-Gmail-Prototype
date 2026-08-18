@@ -46,6 +46,10 @@ def main(argv: list[str] | None = None) -> int:
         help=r"Default: P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox",
     )
     p_inspect_mbox.add_argument("--limit", type=int, default=None)
+    sub.add_parser(
+        "ingest-email-report",
+        help="Read-only: last ingest-email job + email Evidence count (no UUID dump)",
+    )
     p_prove_p2i8 = sub.add_parser(
         "prove-p2-i8",
         help="P2-I8 Richer Email acceptance prove",
@@ -374,6 +378,15 @@ def main(argv: list[str] | None = None) -> int:
         payload = ingest_mbox(
             uri, limit=args.limit, include_spam_trash=bool(args.include_spam_trash)
         )
+        from memorybox.ingest.comms_email import compact_ingest_cli_payload
+
+        print(json.dumps(compact_ingest_cli_payload(payload), indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "ingest-email-report":
+        from memorybox.ingest.comms_email import email_ingest_report
+
+        payload = email_ingest_report()
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

@@ -431,3 +431,62 @@ def ingest_mbox(
             job_id, status="error", message="ingest failed", error_message=str(exc)
         )
         return {"ok": False, "job_id": str(job_id), "error": str(exc)}
+
+
+def compact_ingest_cli_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """PowerShell cannot scroll ~90k evidence UUIDs. Keep counts; sample ids only."""
+    out = dict(payload)
+    ids = out.get("evidence_ids")
+    if isinstance(ids, list) and len(ids) > 12:
+        out["evidence_id_count"] = len(ids)
+        out["evidence_ids_sample"] = ids[:8]
+        del out["evidence_ids"]
+    return out
+
+
+def email_ingest_report() -> dict[str, Any]:
+    """Last ingest_email job + Evidence counts. Read-only; no mbox rewrite."""
+    with connection() as conn:
+        job = conn.execute(
+            """
+            SELECT id, status, message, error_message, started_at, finished_at
+            FROM jobs
+            WHERE job_kind = 'ingest_email'
+            ORDER BY started_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        counts = conn.execute(
+            """
+            SELECT
+              count(*) AS email_rows,
+              count(*) FILTER (
+                WHERE coalesce(payload_json->>'mailbox_skip', '') IN ('spam', 'trash')
+              ) AS labeled_spam_trash_ingested,
+              min(payload_json->>'sent_at') AS sent_min,
+              max(payload_json->>'sent_at') AS sent_max
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email')) = 'email'
+            """
+        ).fetchone()
+    job_d = dict(job) if job else None
+    if job_d:
+        for key in ("id", "started_at", "finished_at"):
+            if job_d.get(key) is not None:
+                job_d[key] = str(job_d[key])
+    row = dict(counts) if counts else {}
+    n = int(row.get("email_rows") or 0)
+    return {
+        "ok": True,
+        "last_ingest_email_job": job_d,
+        "email_rows": n,
+        "labeled_spam_trash_ingested": int(row.get("labeled_spam_trash_ingested") or 0),
+        "sent_min": row.get("sent_min"),
+        "sent_max": row.get("sent_max"),
+        "note": (
+            "email_rows is PostgreSQL Evidence, not the mbox on P:. "
+            "Inspect counted 93885 with ~2603 Spam/Trash skipped by default. "
+            "Re-run ingest-email only if this count is far below ~91000."
+        ),
+    }
