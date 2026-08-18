@@ -8,7 +8,7 @@
 **Depends:** MBQL-001 **ACCEPTED** (2026-08-18) · existing P1/I3 mbox ingest pattern (`ingest-email` / `comms_email.py`)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I4 Explore redesign / **P2-BL-I4-01** · I5 portrait **P2-BL-I5-01** · I6 kinship · **I8A** unified comms UX · **I8.5** face-evidence · **I9** spoken · **I10** cross-source correlation · **I11** narrative · I13/I14 Settings · multi-user · live Gmail sync / sending mail
 
-P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (definition written; not build-authorized). Do not reopen I8 for chrome. Do not start I8.5 until Tom authorizes that increment (after I8A unless Q1 reorders).
+P2-I8 is **ACCEPTED**. Unified Communications Gallery & Timeline Precision is **[P2-I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (revised; not build-authorized). Do not reopen I8 for chrome. Near-term after I8A is **I9**. Face-SoT is later.
 
 ## What shipped (ACCEPTED)
 
@@ -24,7 +24,7 @@ P2-I8 is **ACCEPTED**. Aesthetic / unified SMS+email viewer polish is **[P2-I8A]
 
 | ID | Item | Notes |
 |----|------|-------|
-| **P2-I8A** | Unified communications UX | Definition written. Viewer/hover/gallery density/noise + **P2-BL-I8-02**. Not I8.5. **Not BUILD AUTHORIZED.** |
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Definition revised. Combined cards + Timeline + Calendar + viewer + **P2-BL-I8-02**. **Not BUILD AUTHORIZED.** |
 | **P2-BL-I8-01** | Attachment files up front | **Absorbed in I8** (shipped). |
 | **P2-BL-I8-02** | Ask email count must lock canonical Person first | Owner 2026-08-18: “how many times did I send an email to Peggy?” counted and showed mail **without resolving Peggy George first**, so extra mail that is not Peggy George was included. Count path still worked. **Do not reopen I8.** Next increment: **I8A**. |
 
@@ -57,9 +57,9 @@ End-to-end:
 |-------|----------|------|
 | 1–3 | I7 / I7A / MBQL-001 | **ACCEPTED** |
 | 4 | **P2-I8** | **ACCEPTED** 2026-08-18 |
-| 4a | **P2-I8A** Unified Communications | After I8; before I8.5 unless Tom reorders |
-| 5 | **P2-I8.5** | Face evidence ownership — **after I8A**; not I8 |
-| 6+ | I9 / I10 / I11 | Speech; cross-source; narrative — **not this increment** |
+| 4a | **P2-I8A** Unified Communications Gallery & Timeline Precision | After I8; **before I9** |
+| 5 | **P2-I9** | Spoken — **after I8A**; not I8 |
+| later | **P2-I8.5** | Face evidence ownership — **later**, not next after I8A |
 
 ---
 
@@ -102,7 +102,7 @@ Additional rules (locked): preserve sufficient original MIME/header provenance f
 | Auto-promote attachments to Immich / Gallery photos | Out |
 | Infer Place / Event / Trip from mail + photos + SMS | **I10** |
 | Year / trip / person **multi-source narrative** | **I11** |
-| Face-evidence ownership / Immich decoupling | **I8.5 after I8A** (unless I8A Q1 reorders) |
+| Face-evidence ownership / Immich decoupling | **I8.5 later** (after I8A and after recognition/correction/merge/relearn are solid; I9 is next after I8A) |
 | Spoken moments / STT | **I9** |
 | I4 Explore chrome redesign / **P2-BL-I4-01** | Closed / polish |
 | Invented messages or guessed threads | Forbidden |
@@ -203,7 +203,8 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 | I8 build | **AUTHORIZED** — shipped |
 | I8 ACCEPTED | **ACCEPTED** 2026-08-18 |
 | P2-BL-I8-02 (Ask Person lock on email count) | **Parked for I8A** — first-name Peggy vs Peggy George |
-| I8A Unified Communications | **WRITTEN, not BUILD AUTHORIZED** — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
-| I8.5 / I9 / I10 / I11 | **NOT STARTED** |
+| I8A Unified Communications Gallery & Timeline Precision | **REVISED, not BUILD AUTHORIZED** — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
+| I9 Spoken | **NOT STARTED** (next after I8A) |
+| I8.5 / I10 / I11 | **NOT STARTED** (I8.5 later) |
 
-**Stop.** Do not reopen I8 for chrome. I8A is next definition (not authorized). Do not start I8.5, I9, I10, or I11.
+**Stop.** Do not reopen I8 for chrome. I8A is next (awaiting final founder lock). Do not start I8A runtime, I9, I8.5, I10, or I11 until authorized.
