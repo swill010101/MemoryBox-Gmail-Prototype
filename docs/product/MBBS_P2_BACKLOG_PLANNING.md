@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-18 (P2-I4 ACCEPTED)  
+**Status:** Living parking note · **Updated:** 2026-08-18 (I8 definition DRAFT, awaiting approval)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -74,4 +74,6 @@ Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md
 
 **MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”).
 
-**P2-I8 is not started** (needs explicit definition + build authorization). Sequence: **I7A ACCEPTED → MBQL-001 ACCEPTED → I8** when Tom authorizes (I8.5 remains after I8; I9 stays after I8.5). **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
+**P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **DRAFT 2026-08-18 — awaiting Tom approval. Not build authorized.**
+
+**P2-I8 is not started** (needs locked Q1–Q6 + explicit build authorization). Sequence: **I7A ACCEPTED → MBQL-001 ACCEPTED → I8** when Tom authorizes (I8.5 remains after I8; I9 stays after I8.5). **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
