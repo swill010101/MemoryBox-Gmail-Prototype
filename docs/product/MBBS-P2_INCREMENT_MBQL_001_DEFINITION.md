@@ -8,7 +8,7 @@
 **Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I8 email / **P2-BL-I8-01** · I8.5 · **I9 spoken product** (stays after I8.5) · I10 · I11 · I13/I14 · family nav · multi-user · Explore redesign
 
-**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. **P2-I8 is BUILD AUTHORIZED** (2026-08-18). Do not start I8.5. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
+**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A Unified Communications is DRAFT** (not build-authorized). Do not start I8.5 until Tom authorizes that increment. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -41,7 +41,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 | 6 | **P2-I9** Spoken Moments | **Stays here.** STT-ready contract only in MBQL-001; no I9 product |
 | 7+ | I10 / I11 | Same contract; do not pull them into MBQL-001 |
 
-**Build rule:** Definition locked. Build authorized 2026-08-15. Increment **ACCEPTED** 2026-08-18. **P2-I8 is BUILD AUTHORIZED** (do not start I8.5).
+**Build rule:** Definition locked. Build authorized 2026-08-15. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. Do not start I8.5 until Tom authorizes that increment.
 
 ---
 
@@ -54,7 +54,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 | **Q3** | Answers | **Confirm.** Normalize intent only. Retrieve and curator stay as they are unless a compile bug is proven. No narrative (not I11). |
 | **Q4** | Failure | **Confirm.** Fail back to deterministic `plan_ask` or clarification. Never fail the Ask because MBQL, model, or trace-store failed. |
 | **Q5** | Speech | **Confirm.** STT-ready contract. **I9 stays in its position** (after I8.5). Do not build spoken moments in MBQL-001. Later STT must call the same compile. |
-| **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. I8.5 remains after I8. |
+| **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. Planning delta 2026-08-18: **I8A** sits after I8 ACCEPTED, before I8.5, unless Tom reorders in I8A Q1. |
 | **Q7** | Explore UX | **Confirm.** Do not redesign I4. MBQL sits under the current Explore Ask row. |
 | **Q8** | Build gate | **Confirm, then authorized.** Tom 2026-08-15: “approved to build.” |
 
@@ -182,4 +182,4 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 | MBQL-001 ACCEPTED | **Yes** (2026-08-18 — Tom: “MBQL is accepted”) |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** **P2-I8 BUILD AUTHORIZED** 2026-08-18. Do not start I8.5 until Tom authorizes that increment. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.
+**Stop.** **P2-I8 ACCEPTED** 2026-08-18. **I8A is DRAFT** (not authorized). Do not start I8.5 until Tom authorizes that increment. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.
