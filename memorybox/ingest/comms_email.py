@@ -337,6 +337,8 @@ def ingest_mbox(
         skipped = 0
         skipped_spam = 0
         skipped_trash = 0
+        skipped_error = 0
+        error_samples: list[str] = []
         upgraded = 0
         attachments_stored = 0
         evidence_ids: list[str] = []
@@ -349,36 +351,49 @@ def ingest_mbox(
                 limit=limit,
                 skip_spam_trash=not include_spam_trash,
             ):
-                existing = existing_hashes.get(msg.content_hash)
-                payload = _payload_from_dto(
-                    msg, job_id=job_id, handle_index=handle_index, owners=owners
-                )
-                attachments_stored += _store_attachments(
-                    msg, payload, source_id=source_id, conn=conn
-                )
-                _persist_unique_email_contacts(payload.get("identity_resolution") or {}, conn)
-                if existing:
-                    row = store.get_evidence(existing, conn=conn)
-                    old_raw = (row or {}).get("payload_json")
-                    old = old_raw if isinstance(old_raw, dict) else {}
-                    old_ver = str((old.get("provenance") or {}).get("parser_version") or "")
-                    if old_ver != PARSER_VERSION:
-                        store.update_evidence_payload(existing, payload, conn=conn)
-                        upgraded += 1
-                    else:
-                        skipped += 1
-                    evidence_ids.append(str(existing))
-                    continue
-                eid = store.insert_evidence(
-                    evidence_kind="communication",
-                    source_id=source_id,
-                    summary=(msg.subject or "(no subject)")[:500],
-                    payload=payload,
-                    conn=conn,
-                )
-                existing_hashes[msg.content_hash] = eid
-                inserted += 1
-                evidence_ids.append(str(eid))
+                try:
+                    existing = existing_hashes.get(msg.content_hash)
+                    payload = _payload_from_dto(
+                        msg, job_id=job_id, handle_index=handle_index, owners=owners
+                    )
+                    attachments_stored += _store_attachments(
+                        msg, payload, source_id=source_id, conn=conn
+                    )
+                    _persist_unique_email_contacts(
+                        payload.get("identity_resolution") or {}, conn
+                    )
+                    if existing:
+                        row = store.get_evidence(existing, conn=conn)
+                        old_raw = (row or {}).get("payload_json")
+                        old = old_raw if isinstance(old_raw, dict) else {}
+                        old_ver = str(
+                            (old.get("provenance") or {}).get("parser_version") or ""
+                        )
+                        if old_ver != PARSER_VERSION:
+                            store.update_evidence_payload(existing, payload, conn=conn)
+                            upgraded += 1
+                        else:
+                            skipped += 1
+                        evidence_ids.append(str(existing))
+                        conn.commit()
+                        continue
+                    eid = store.insert_evidence(
+                        evidence_kind="communication",
+                        source_id=source_id,
+                        summary=(msg.subject or "(no subject)")[:500],
+                        payload=payload,
+                        conn=conn,
+                    )
+                    existing_hashes[msg.content_hash] = eid
+                    inserted += 1
+                    evidence_ids.append(str(eid))
+                    conn.commit()
+                except Exception as exc:  # noqa: BLE001
+                    conn.rollback()
+                    skipped_error += 1
+                    if len(error_samples) < 8:
+                        loc = msg.rfc_message_id or msg.subject or msg.content_hash
+                        error_samples.append(f"{str(loc)[:80]}: {exc}"[:400])
             skipped_spam = int(getattr(provider, "skipped_spam", 0) or 0)
             skipped_trash = int(getattr(provider, "skipped_trash", 0) or 0)
             thread_stats = _apply_thread_completeness(source_id, conn)
@@ -388,6 +403,7 @@ def ingest_mbox(
             message=(
                 f"inserted={inserted} skipped={skipped} upgraded={upgraded} "
                 f"skipped_spam={skipped_spam} skipped_trash={skipped_trash} "
+                f"skipped_error={skipped_error} "
                 f"attachments_stored={attachments_stored}"
             ),
         )
@@ -399,6 +415,8 @@ def ingest_mbox(
             "skipped": skipped,
             "skipped_spam": skipped_spam,
             "skipped_trash": skipped_trash,
+            "skipped_error": skipped_error,
+            "error_samples": error_samples,
             "include_spam_trash": include_spam_trash,
             "upgraded": upgraded,
             "attachments_stored": attachments_stored,

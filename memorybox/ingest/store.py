@@ -8,6 +8,29 @@ from uuid import UUID
 from memorybox.db import connection
 
 
+def strip_pg_nuls(value: str | None) -> str:
+    """PostgreSQL text/jsonb cannot store U+0000; strip, do not rewrite originals."""
+    if not value:
+        return value or ""
+    if "\x00" not in value:
+        return value
+    return value.replace("\x00", "")
+
+
+def sanitize_pg(obj: Any) -> Any:
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return strip_pg_nuls(obj)
+    if isinstance(obj, dict):
+        return {sanitize_pg(k) if isinstance(k, str) else k: sanitize_pg(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_pg(x) for x in obj]
+    if isinstance(obj, tuple):
+        return tuple(sanitize_pg(x) for x in obj)
+    return obj
+
+
 def start_job(job_kind: str, *, message: str = "", payload: dict | None = None) -> UUID:
     with connection() as conn:
         row = conn.execute(
@@ -16,7 +39,7 @@ def start_job(job_kind: str, *, message: str = "", payload: dict | None = None) 
             VALUES (%s, 'running', %s, %s::jsonb, now())
             RETURNING id
             """,
-            (job_kind, message, json.dumps(payload or {})),
+            (job_kind, strip_pg_nuls(message), json.dumps(sanitize_pg(payload or {}))),
         ).fetchone()
         assert row is not None
         return row["id"]
@@ -37,7 +60,12 @@ def finish_job(
                 finished_at = now(), updated_at = now()
             WHERE id = %s
             """,
-            (status, message, error_message, job_id),
+            (
+                status,
+                strip_pg_nuls(message),
+                None if error_message is None else strip_pg_nuls(error_message),
+                job_id,
+            ),
         )
 
 
@@ -137,7 +165,12 @@ def insert_evidence(
             VALUES (%s, %s, %s, %s::jsonb)
             RETURNING id
             """,
-            (evidence_kind, source_id, summary, json.dumps(payload)),
+            (
+                evidence_kind,
+                source_id,
+                strip_pg_nuls(summary),
+                json.dumps(sanitize_pg(payload)),
+            ),
         ).fetchone()
         assert row is not None
         return row["id"]
@@ -254,7 +287,7 @@ def update_evidence_payload(
             SET payload_json = %s::jsonb, updated_at = now()
             WHERE id = %s
             """,
-            (json.dumps(payload), evidence_id),
+            (json.dumps(sanitize_pg(payload)), evidence_id),
         )
 
     if conn is not None:

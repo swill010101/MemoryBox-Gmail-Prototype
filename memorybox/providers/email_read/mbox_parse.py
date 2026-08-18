@@ -205,7 +205,7 @@ def header_provenance(msg: email.message.Message) -> tuple[tuple[str, str], ...]
             continue
         text = str(value).strip()
         if text:
-            out.append((key, text[:4000]))
+            out.append((key, strip_nul(text)[:4000]))
     return tuple(out)
 
 
@@ -223,7 +223,7 @@ def parse_gmail_labels(msg: email.message.Message) -> tuple[str, ...]:
         if key in seen:
             continue
         seen.add(key)
-        parts.append(label)
+        parts.append(strip_nul(label))
     return tuple(parts)
 
 
@@ -272,6 +272,14 @@ def thread_fields(
     return None, "unthreaded"
 
 
+def strip_nul(text: str | None) -> str:
+    if not text:
+        return ""
+    if "\x00" not in text:
+        return text
+    return text.replace("\x00", "")
+
+
 def extract_bodies(msg: email.message.Message) -> tuple[str, str]:
     body_text = ""
     body_html = ""
@@ -302,13 +310,13 @@ def extract_bodies(msg: email.message.Message) -> tuple[str, str]:
                     body_html = text
                 else:
                     body_text = text
-    return body_text, body_html
+    return strip_nul(body_text), strip_nul(body_html)
 
 
 def _part_text(part: email.message.Message) -> str:
     try:
         content = part.get_content()
-        return content if isinstance(content, str) else ""
+        return strip_nul(content) if isinstance(content, str) else ""
     except Exception:  # noqa: BLE001
         payload = part.get_payload(decode=True)
         if isinstance(payload, bytes):
@@ -358,7 +366,7 @@ def extract_attachments(
             kind = "attachment"
         elif disp == "inline" or cid:
             kind = "inline"
-        name = filename or (f"inline-{cid}.bin" if cid else f"part-{index}.bin")
+        name = strip_nul(filename or (f"inline-{cid}.bin" if cid else f"part-{index}.bin"))
         index += 1
         data = _decode_bytes(part) if include_bytes else b""
         rec = {

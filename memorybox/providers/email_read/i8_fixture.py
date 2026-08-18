@@ -169,6 +169,21 @@ def build_i8_fixture_bytes(
     trash.set_content("Gmail Trash label — skipped on ingest by default.")
     chunks.append(_mbox_stamp("old@memorybox.test", "Tue Jun 04 09:00:00 2019").encode() + trash.as_bytes())
 
+    nul = EmailMessage()
+    nul["From"] = bot
+    nul["To"] = owner
+    nul["Subject"] = "NUL placeholder"
+    nul["Message-ID"] = "<i8-nul@memorybox.test>"
+    nul["Date"] = "Tue, 04 Jun 2019 10:00:00 -0500"
+    nul["X-GM-THRID"] = "8800112299"
+    nul.set_content("body placeholder")
+    nul_bytes = (
+        nul.as_bytes()
+        .replace(b"NUL placeholder", b"NUL\x00 in subject")
+        .replace(b"body placeholder", b"body\x00nul")
+    )
+    chunks.append(_mbox_stamp(bot, "Tue Jun 04 10:00:00 2019").encode() + nul_bytes)
+
     return b"\n".join(chunks)
 
 

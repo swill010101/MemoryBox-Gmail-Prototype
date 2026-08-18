@@ -34,7 +34,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     phone = (root / "person" / "phone_map.py").read_text(encoding="utf-8")
     attach = (root / "explore" / "email_attach.py").read_text(encoding="utf-8")
     orch = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
-    i85 = (root / "ingest" / "comms_email.py").read_text(encoding="utf-8")
+    store_py = (root / "ingest" / "store.py").read_text(encoding="utf-8")
 
     _check(
         "i8_inspect_mbox_cli",
@@ -127,14 +127,15 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "mailbox_skip_reason" in parse
         and "skip_spam_trash" in (root / "providers" / "email_read" / "mbox.py").read_text(
             encoding="utf-8"
-        ),
+        )
+        and "strip_pg_nuls" in store_py,
         checks,
         problems,
         "Default inspect/ingest uses P:\\photos\\memorybox\\sources and skips Spam/Trash labels",
     )
     _check(
         "i8_no_i85_i9_i10_i11",
-        "face evidence" not in i85.lower()
+        "face evidence" not in comms.lower()
         and "alaska trip narrative" not in comms.lower()
         and "infer_place" not in comms
         and "spoken" not in comms.lower()
@@ -239,6 +240,17 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "Spam/Trash labeled messages are not Evidence unless --include-spam-trash",
+    )
+    nul_p = by_mid.get("<i8-nul@memorybox.test>") or {}
+    _check(
+        "i8_nul_bytes_stripped",
+        bool(nul_p)
+        and "\x00" not in json.dumps(nul_p)
+        and "NUL in subject" in str(nul_p.get("subject") or "")
+        and "bodynul" in str(nul_p.get("body_text") or "").replace(" ", ""),
+        checks,
+        problems,
+        "Embedded NUL bytes are stripped before PostgreSQL text/jsonb",
     )
 
     unth = by_mid.get("<i8-unthreaded@memorybox.test>") or {}
