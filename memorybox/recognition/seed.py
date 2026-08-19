@@ -9,7 +9,11 @@ from memorybox.person.face_evidence import CONFIRM_SYSTEM
 from memorybox.person import AUTHORITY_TRUSTED_PROVIDER
 from memorybox.recognition.constants import MODEL_ID
 from memorybox.recognition.crops import crop_jpeg_bytes, parse_bbox, quality_flags
-from memorybox.recognition.embeddings import embed_jpeg_bytes, insightface_available
+from memorybox.recognition.embeddings import (
+    embed_image_bytes_for_bbox,
+    embed_jpeg_bytes,
+    insightface_available,
+)
 from memorybox.recognition.exemplars import persist_exemplar, select_exemplars
 
 
@@ -210,38 +214,59 @@ def seed_exemplars_from_immich(
             return data
 
         fetch = _fetch if callable(fb) else None
-    embed = embed_fn or embed_jpeg_bytes
+    embed = embed_fn
     enriched: list[dict[str, Any]] = []
     skipped = 0
     skip_reasons: dict[str, int] = {
         "unusable_or_no_bbox": 0,
-        "fetch_or_crop": 0,
+        "fetch": 0,
+        "crop": 0,
         "embed": 0,
     }
     embed_error: str | None = None
+    fetch_error: str | None = None
+    preview_by_asset: dict[str, bytes] = {}
     for c in raw:
         if not c.get("usable") or not c.get("bbox"):
             skipped += 1
             skip_reasons["unusable_or_no_bbox"] += 1
             continue
-        jpeg = None
-        if fetch and c.get("source_asset_id"):
+        aid = str(c.get("source_asset_id") or "")
+        img = preview_by_asset.get(aid)
+        if img is None and fetch and aid:
             try:
-                img = fetch(str(c["source_asset_id"]))
+                img = fetch(aid)
+            except Exception as exc:  # noqa: BLE001
+                img = None
+                if fetch_error is None:
+                    fetch_error = str(exc)[:240]
+            if img:
+                preview_by_asset[aid] = img
+        if not img:
+            skipped += 1
+            skip_reasons["fetch"] += 1
+            continue
+        emb = None
+        try:
+            if embed is not None:
                 jpeg = crop_jpeg_bytes(
                     img,
                     c["bbox"],
                     image_w=c.get("image_w"),
                     image_h=c.get("image_h"),
                 )
-            except Exception:
-                jpeg = None
-        if not jpeg:
-            skipped += 1
-            skip_reasons["fetch_or_crop"] += 1
-            continue
-        try:
-            emb = embed(jpeg)
+                if not jpeg:
+                    skipped += 1
+                    skip_reasons["crop"] += 1
+                    continue
+                emb = embed(jpeg)
+            else:
+                emb = embed_image_bytes_for_bbox(
+                    img,
+                    c["bbox"],
+                    image_w=c.get("image_w"),
+                    image_h=c.get("image_h"),
+                )
         except Exception as exc:  # noqa: BLE001
             emb = None
             if embed_error is None:
@@ -262,6 +287,8 @@ def seed_exemplars_from_immich(
     result["skipped"] = skipped
     result["skip_reasons"] = skip_reasons
     result["embed_error"] = embed_error
+    result["fetch_error"] = fetch_error
+    result["previews_fetched"] = len(preview_by_asset)
     result["insightface_available"] = insightface_available()
     result["collected"] = len(raw)
     return result

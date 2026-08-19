@@ -22,7 +22,7 @@ from memorybox.providers.video.fake import (
     PEGGY_FACE_ID,
     FakeVideoProvider,
 )
-from memorybox.recognition.crops import parse_bbox, quality_flags
+from memorybox.recognition.crops import mapped_pixel_box, parse_bbox, quality_flags
 from memorybox.recognition.exemplars import list_active_exemplars, select_exemplars
 from memorybox.recognition.learn import owner_learn_from_review, save_pending_review_crop
 from memorybox.recognition.observations import recognition_status
@@ -146,6 +146,29 @@ def _prove_harness() -> dict[str, Any]:
         checks,
         problems,
         str(immich_box),
+    )
+    preview_space = mapped_pixel_box(
+        {"x1": 10, "y1": 10, "x2": 90, "y2": 90, "w": 80, "h": 80},
+        pixel_w=200,
+        pixel_h=200,
+        image_w=4000,
+        image_h=3000,
+        pad_ratio=0.0,
+    )
+    orig_space = mapped_pixel_box(
+        {"x1": 1000, "y1": 500, "x2": 2000, "y2": 1500, "w": 1000, "h": 1000},
+        pixel_w=800,
+        pixel_h=600,
+        image_w=4000,
+        image_h=3000,
+        pad_ratio=0.0,
+    )
+    _check(
+        "p2i8b_bbox_preview_vs_original_space",
+        preview_space == (10, 10, 90, 90) and orig_space == (200, 100, 400, 300),
+        checks,
+        problems,
+        f"preview={preview_space} orig={orig_space}",
     )
 
     selected = select_exemplars(_peggy_candidates(), cap=8)
@@ -561,7 +584,11 @@ def _prove_flightsim() -> dict[str, Any]:
         problems,
     )
     name = _env("MEMORYBOX_P2_I8B_PERSON_NAME", "Peggy George")
-    second = _env("MEMORYBOX_P2_I8B_SECOND_PERSON_NAME")
+    second = _env("MEMORYBOX_P2_I8B_SECOND_PERSON_NAME", "Eugene Will")
+    meta["powershell_env_hint"] = (
+        "PowerShell does not apply cmd `set VAR=value` to python. Use "
+        "$env:MEMORYBOX_P2_I8B_SECOND_PERSON_NAME='Eugene Will'"
+    )
     person = None
     try:
         person = find_ask_person_by_name(name, photo=photo)
@@ -590,6 +617,8 @@ def _prove_flightsim() -> dict[str, Any]:
                 "skipped",
                 "skip_reasons",
                 "embed_error",
+                "fetch_error",
+                "previews_fetched",
                 "insightface_available",
             )
         }
@@ -653,6 +682,54 @@ def _prove_flightsim() -> dict[str, Any]:
             )
         st = recognition_status(person_id=pid)
         _check("p2i8b_status", bool(st), checks, problems, str(st)[:300])
+
+    second_person = None
+    if second:
+        try:
+            second_person = find_ask_person_by_name(second, photo=photo)
+        except Exception as exc:  # noqa: BLE001
+            meta["second_person_resolve_error"] = str(exc)
+        if second_person is None:
+            same2 = list_people_by_exact_name(second)
+            second_person = same2[0] if same2 else None
+    sid = str(getattr(second_person, "id", "") or "") if second_person else ""
+    _check(
+        "p2i8b_second_person",
+        bool(sid) and sid != pid,
+        checks,
+        problems,
+        (
+            f"name={second!r} id={sid or None}. "
+            "In PowerShell use $env:MEMORYBOX_P2_I8B_SECOND_PERSON_NAME='Eugene Will' "
+            "(cmd `set` does not export to python)."
+        ),
+    )
+    if sid and sid != pid:
+        seeded2 = seed_exemplars_from_immich(person_id=sid, photo_provider=photo, max_assets=40)
+        meta["seed_second"] = {
+            "person": second,
+            "selected_count": seeded2.get("selected_count"),
+            "skipped": seeded2.get("skipped"),
+            "skip_reasons": seeded2.get("skip_reasons"),
+            "fetch_error": seeded2.get("fetch_error"),
+        }
+        _check(
+            "p2i8b_second_person_exemplars",
+            int(seeded2.get("selected_count") or 0) >= 1,
+            checks,
+            problems,
+            str(meta["seed_second"]),
+        )
+        if int(seeded2.get("selected_count") or 0) >= 1:
+            rows_fn = getattr(video, "eligible_video_rows", None)
+            videos = list(rows_fn()) if callable(rows_fn) else []
+            enqueue_full_eligible_archive(
+                person_id=sid,
+                videos=videos[:8],
+                enqueue_reason="exemplar_change",
+                priority=60,
+                run_kind="provider_seeded",
+            )
     if second:
         meta["second_person_name"] = second
     meta["acceptance_people"] = [name] + ([second] if second else [])
