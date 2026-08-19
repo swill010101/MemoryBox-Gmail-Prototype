@@ -637,6 +637,8 @@
             provider_key,
             external_id,
             label,
+            video_external_id: document.getElementById("videoSel").value || undefined,
+            t_sec: player.currentTime || 0,
           }),
         });
         lastPersonId = data.person && data.person.id;
@@ -645,7 +647,9 @@
           document.getElementById("personSel").value = "mb:" + lastPersonId;
         }
         document.getElementById("archiveMsg").textContent =
-          "Archive Updated — Immich + video face on one Person (do not recreate per provider).";
+          (data.i8b_learn && data.i8b_learn.ok)
+            ? "Archive Updated — Teach saved an I8B exemplar; this video scanned first, others queued."
+            : "Archive Updated — Immich + video face on one Person (do not recreate per provider).";
         show(data);
       } catch (err) {
         const d = err && err.detail;

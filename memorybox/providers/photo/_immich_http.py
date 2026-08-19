@@ -1403,6 +1403,40 @@ class ImmichHttpClient:
                 return usable
         return []
 
+    def list_faces_for_asset(self, asset_id: str) -> list[dict[str, Any]]:
+        """GET /faces?id={assetId} — complete boxes + imageWidth/imageHeight.
+
+        Required for I8B crops. GET /people/{id} feature faces are not a catalog.
+        """
+        from urllib.parse import quote
+
+        aid = self._immich_asset_id(asset_id)
+        if not aid or self._circuit():
+            return []
+        try:
+            status, data = self._request(
+                "GET",
+                f"/faces?id={quote(aid)}",
+                timeout=8,
+                retries=1,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._note_transport_fail(exc)
+            return []
+        if status != 200:
+            return []
+        if isinstance(data, list):
+            rows = [f for f in data if isinstance(f, dict)]
+        elif isinstance(data, dict):
+            raw = data.get("faces") or data.get("items") or data.get("data") or []
+            rows = [f for f in raw if isinstance(f, dict)]
+        else:
+            rows = []
+        for f in rows:
+            if not f.get("assetId"):
+                f["assetId"] = aid
+        return rows
+
     def _faces_from_people_payload(
         self, pid: str, data: Any
     ) -> list[dict[str, Any]]:

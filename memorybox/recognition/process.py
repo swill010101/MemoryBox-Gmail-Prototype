@@ -97,9 +97,21 @@ def upsert_appearance_moment(
 def list_appearance_moments(
     person_id: str, *, limit: int = 100
 ) -> list[dict[str, Any]]:
-    with connection() as conn:
-        rows = conn.execute(
+    sql_i8b = """
+            SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                   start_sec, end_sec, face_external_id, method, confidence,
+                   confirmation_state, authority, play_url, meta_json, created_at,
+                   COALESCE(status, 'accepted') AS status,
+                   model_version,
+                   COALESCE(evidence_lineage,
+                     CASE WHEN method = 'mb_native_i8b' THEN 'mb_native_i8b' ELSE 'i1_hvrt' END
+                   ) AS evidence_lineage
+            FROM face_appearance_moments
+            WHERE person_id = %s::uuid
+            ORDER BY start_sec ASC
+            LIMIT %s
             """
+    sql_i1 = """
             SELECT id::text, person_id::text, video_provider_key, video_external_id,
                    start_sec, end_sec, face_external_id, method, confidence,
                    confirmation_state, authority, play_url, meta_json, created_at
@@ -107,9 +119,13 @@ def list_appearance_moments(
             WHERE person_id = %s::uuid
             ORDER BY start_sec ASC
             LIMIT %s
-            """,
-            (person_id, int(limit)),
-        ).fetchall()
+            """
+    with connection() as conn:
+        try:
+            rows = conn.execute(sql_i8b, (person_id, int(limit))).fetchall()
+        except Exception:
+            conn.execute("ROLLBACK")
+            rows = conn.execute(sql_i1, (person_id, int(limit))).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -132,14 +148,22 @@ def process_one(
     video_provider: Any,
     person_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Claim one queued item and process via video provider presence/search."""
+    """Claim one queued item and process via MB-native I8B scan or I1 HVRT search."""
     item = claim_next_item(person_id=person_id)
     if not item:
         return None
     pid = item["person_id"]
     veid = item["video_external_id"]
+    run_kind = str(item.get("enqueue_reason") or "newly_known_person")
+    if run_kind in {"owner_learn", "exemplar_change"}:
+        mapped_kind = "owner_learned" if run_kind == "owner_learn" else "provider_seeded"
+    elif run_kind == "correction":
+        mapped_kind = "correction"
+    elif run_kind == "new_video":
+        mapped_kind = "incremental"
+    else:
+        mapped_kind = "provider_seeded"
     try:
-        # Eligibility / processability probe
         videos = {v.external_id: v for v in video_provider.list_videos(limit=5000)}
         if veid not in videos:
             complete_item(
@@ -151,13 +175,49 @@ def process_one(
             return {"item_id": item["id"], "status": STATUS_EXCLUDED, "reason": "unavailable_source"}
 
         vpk = getattr(video_provider, "provider_key", None) or item["video_provider_key"]
+        from memorybox.recognition.exemplars import list_active_exemplars
+
+        exemplars = list_active_exemplars(pid)
+        if exemplars:
+            from memorybox.recognition.scan import scan_video_for_person
+
+            native = scan_video_for_person(
+                person_id=pid,
+                video_provider=video_provider,
+                video_external_id=veid,
+                video_provider_key=vpk,
+                run_kind=mapped_kind,
+                trigger=run_kind,
+            )
+            complete_item(
+                item["id"],
+                status=STATUS_COMPLETED,
+                result={
+                    "engine": "mb_native_i8b",
+                    "run_kind": mapped_kind,
+                    "ranges": native.get("ranges") or [],
+                    "hit_count": len(native.get("ranges") or []),
+                    "accepted_count": native.get("accepted_count"),
+                    "uncertain_count": native.get("uncertain_count"),
+                    "legacy_untouched": True,
+                },
+            )
+            return {
+                "item_id": item["id"],
+                "status": STATUS_COMPLETED,
+                "engine": "mb_native_i8b",
+                "run_kind": mapped_kind,
+                "moments": native.get("ranges") or [],
+                "person_id": pid,
+                "video_external_id": veid,
+            }
+
         face_ids: list[str] = []
         for pk in {vpk, "fake_video", "hvrt", "immich", "fake_photo"}:
             try:
                 face_ids.extend(list_provider_external_ids_for_person(pid, pk))
             except Exception:  # noqa: BLE001
                 continue
-        # de-dupe
         face_ids = list(dict.fromkeys(face_ids))
 
         from memorybox.providers.video.dto import VideoSearchQuery
@@ -187,17 +247,23 @@ def process_one(
                     start_sec=float(h.start_sec),
                     play_url=getattr(h, "play_url", None),
                 ),
-                meta={"queue_item_id": item["id"]},
+                meta={"queue_item_id": item["id"], "evidence_lineage": "i1_hvrt"},
             )
             moments.append(mid)
         complete_item(
             item["id"],
             status=STATUS_COMPLETED,
-            result={"moments": moments, "hit_count": len(moments)},
+            result={
+                "engine": "i1_hvrt",
+                "run_kind": mapped_kind,
+                "moments": moments,
+                "hit_count": len(moments),
+            },
         )
         return {
             "item_id": item["id"],
             "status": STATUS_COMPLETED,
+            "engine": "i1_hvrt",
             "moments": moments,
             "person_id": pid,
             "video_external_id": veid,
@@ -264,3 +330,44 @@ def owner_correct_appearance(
         meta={"face_evidence_id": fe["id"]},
     )
     return {"appearance_id": mid, "face_evidence": fe}
+
+
+def owner_withdraw_appearance(
+    *,
+    person_id: str,
+    video_provider_key: str,
+    video_external_id: str,
+    start_sec: float,
+    end_sec: float | None = None,
+    appearance_id: str | None = None,
+    reason: str = "owner_withdraw",
+) -> dict[str, Any]:
+    """Correction safety: withdrawn identity is not restored on rescan."""
+    from memorybox.recognition.observations import record_withdrawal
+    from memorybox.recognition.queue import enqueue_full_eligible_archive
+
+    end = float(end_sec if end_sec is not None else start_sec + 1.0)
+    wid = record_withdrawal(
+        person_id=person_id,
+        video_provider_key=video_provider_key,
+        video_external_id=video_external_id,
+        start_sec=float(start_sec),
+        end_sec=end,
+        appearance_id=appearance_id,
+        reason=reason,
+    )
+    enqueue_full_eligible_archive(
+        person_id=person_id,
+        videos=[
+            {
+                "video_provider_key": video_provider_key,
+                "video_external_id": video_external_id,
+                "eligible": True,
+                "priority": 1,
+            }
+        ],
+        enqueue_reason="correction",
+        priority=1,
+        run_kind="correction",
+    )
+    return {"ok": True, "withdrawal_id": wid, "appearance_id": appearance_id}

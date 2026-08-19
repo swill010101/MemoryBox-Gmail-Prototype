@@ -74,6 +74,19 @@ def main(argv: list[str] | None = None) -> int:
             "§11 ACCEPTED remains a manual owner pass."
         ),
     )
+    p_prove_p2i8b = sub.add_parser(
+        "prove-p2-i8b",
+        help="P2-I8B Person-seeded video recognition & owner Learn prove",
+    )
+    p_prove_p2i8b.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim: real Immich GET /faces + HVRT. Owner ACCEPTED is Peggy George "
+            "plus one additional Person, negative video, both-in-one where available. "
+            "Does not include I9 speech/voice."
+        ),
+    )
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
         help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
@@ -680,6 +693,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i8b":
+        from memorybox.recognition.p2_i8b_acceptance import prove_p2_i8b
+
+        payload = prove_p2_i8b(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package

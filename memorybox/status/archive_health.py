@@ -51,6 +51,9 @@ def _db_counts() -> dict[str, int]:
     out: dict[str, int] = {
         "face_appearance_moments": 0,
         "face_evidence": 0,
+        "video_face_observations": 0,
+        "i8b_native_ranges": 0,
+        "i1_hvrt_ranges": 0,
         "people_unresolved": 0,
         "journals_undated": 0,
         "artifacts_without_story": 0,
@@ -67,6 +70,26 @@ def _db_counts() -> dict[str, int]:
             try:
                 out["face_appearance_moments"] = c(
                     "SELECT COUNT(*) AS n FROM face_appearance_moments"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["video_face_observations"] = c(
+                    "SELECT COUNT(*) AS n FROM video_face_observations"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["i8b_native_ranges"] = c(
+                    "SELECT COUNT(*) AS n FROM face_appearance_moments "
+                    "WHERE COALESCE(evidence_lineage, '') = 'mb_native_i8b'"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["i1_hvrt_ranges"] = c(
+                    "SELECT COUNT(*) AS n FROM face_appearance_moments "
+                    "WHERE COALESCE(evidence_lineage, method, '') IN ('i1_hvrt', 'auto_associate')"
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -523,7 +546,7 @@ def build_concept_panels(
             state="available",
             source="postgresql:recognition_queue_items",
             last_updated=calculated_at,
-            note="Thin I1 observability — not a recognition redesign.",
+            note="I1 queue plus I8B run_kind (provider_seeded / owner_learned / incremental / correction).",
         ),
     ]
 
