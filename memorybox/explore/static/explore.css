@@ -1376,6 +1376,7 @@ body {
   position: relative;
   flex: 1;
   min-height: 0;
+  width: 100%;
   height: 100%;
   background: #020617;
   color: #e2e8f0;
@@ -1390,8 +1391,8 @@ body {
 
 .mb-ev-photo.is-zoomed {
   overflow: auto;
-  justify-content: flex-start;
-  align-items: flex-start;
+  justify-content: center;
+  align-items: center;
   cursor: grab;
 }
 
@@ -1402,29 +1403,52 @@ body {
 
 .mb-ev-photo img {
   max-width: 100%;
-  max-height: min(62vh, 560px);
+  max-height: 100%;
   object-fit: contain;
   transition: width 0.12s ease-out;
   display: block;
 }
 
+.mb-ev-photo:not(.is-zoomed) .mb-ev-photo-frame,
+.mb-ev-photo:not(.is-zoomed) .mb-ev-photo-zoom {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.mb-ev-photo:not(.is-zoomed) img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 .mb-ev-photo-frame {
   position: relative;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   max-width: 100%;
+  max-height: 100%;
   line-height: 0;
 }
 
 .mb-ev-photo-zoom {
   position: relative;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   max-width: 100%;
+  max-height: 100%;
   line-height: 0;
 }
 
 .mb-ev-photo.is-zoomed .mb-ev-photo-zoom {
   max-width: none;
+  max-height: none;
 }
 
 .mb-ev-photo-zoom img {
@@ -1440,6 +1464,8 @@ body {
 .mb-ev-photo.is-zoomed img {
   max-width: none;
   max-height: none;
+  width: 100%;
+  height: auto;
 }
 
 .mb-ev-video-shell {
@@ -1751,37 +1777,42 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
 }
 .mb-day-counts {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.35rem;
-  padding: 0.7rem 0.75rem 0.15rem;
-  font-size: 0.82rem;
+  padding: 0.55rem 0.55rem 0.2rem;
+  font-family: var(--mb-font-ui);
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
 .mb-day-pill {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
   border-radius: 999px;
   border: 1px solid var(--mb-line);
   background: rgba(15, 20, 28, 0.55);
-  padding: 0.28rem 0.7rem;
-  font: inherit;
+  padding: 0.2rem 0.5rem;
+  font-family: var(--mb-font-ui);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
 }
 .mb-day-e,
 .mb-day-t,
 .mb-day-c {
-  display: block;
+  display: inline;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 .mb-day-e { color: #93c5fd; }
 .mb-day-t { color: var(--mb-blue); }
 .mb-day-t-n,
-.mb-day-t-c { display: block; }
+.mb-day-t-c { display: inline; font-size: 0.72rem; font-weight: 600; }
 .mb-day-c { color: var(--mb-purple); }
 .mb-day-face {
   width: 28px;

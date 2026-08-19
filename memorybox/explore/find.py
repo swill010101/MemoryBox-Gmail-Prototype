@@ -387,14 +387,37 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         sent = _date_prefix(e.get("sent_at"))
         people = [str(p) for p in (e.get("people") or []) if str(p).strip()]
+        excerpt = str(e.get("excerpt") or "").strip()
+        summary = str(e.get("summary") or "").strip()
+        people_title = " & ".join(people) if people else ""
+        is_sms_item = type_ == "sms" or str(e.get("source") or "") == "sms_export"
+        if is_sms_item:
+            body = excerpt
+            if body and people_title and body.lower() == people_title.lower():
+                body = ""
+            if (
+                not body
+                and summary
+                and people_title
+                and summary.lower() != people_title.lower()
+                and summary.lower() != (people[0] or "").lower()
+            ):
+                body = summary
+            title = (people_title or summary or "Text")[:80]
+            preview = body[:160]
+            detail = body
+        else:
+            title = (summary or kind or "Evidence")[:80]
+            preview = excerpt or summary
+            detail = excerpt or summary
         item = _item_base(
             id=f"evidence:{eid}",
             type_=type_ if type_ != "communication" else "email",
-            title=(e.get("summary") or kind or "Evidence")[:80],
+            title=title,
             date=sent,
             undated=not sent,
-            preview=str(e.get("excerpt") or e.get("summary") or ""),
-            detail=str(e.get("excerpt") or e.get("summary") or ""),
+            preview=preview,
+            detail=detail,
             evidence_id=eid,
             evidence_kind=kind,
             score=e.get("score"),
@@ -403,6 +426,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             thread_id=e.get("thread_id"),
             direction=e.get("direction"),
         )
+        if is_sms_item:
+            item["preview"] = preview
+            item["detail"] = detail
+            item["title"] = title
         item["from"] = (
             e.get("from_header")
             or people[0]

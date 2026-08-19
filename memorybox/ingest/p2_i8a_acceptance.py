@@ -25,6 +25,13 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     planner = (root / "planner" / "__init__.py").read_text(encoding="utf-8")
 
     _check(
+        "i8a_pictures_of_a_and_b",
+        "PICTURES_OF_AND_PEOPLE_RE" in planner,
+        checks,
+        problems,
+        "Planner AND for pictures of A and B",
+    )
+    _check(
         "i8a_q3_hidden_defaults",
         "explicit_email_gallery" in find_py
         and "explicit_calendar_gallery" in find_py
@@ -122,10 +129,13 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "if (!includeTexts) return false;" in matches_fn
         and "applyPresentFlags" in explore_js
         and "mb-day-row-date" in explore_js
-        and "explore.js?v=i8a8" in explore_html
+        and "explore.js?v=i8a9" in explore_html
         and "promptNeedPersonOrTime" in explore_js
         and "openDayDetailThread" in explore_js
         and "applyPresentPayload" in explore_js
+        and "insertCombinedIntoGallery" in explore_js
+        and "uniqueSmsThreadItems" in explore_js
+        and "centerPhotoZoom" in explore_js
         and "data-day-tab" in explore_js,
         checks,
         problems,
@@ -231,6 +241,18 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         str(sms_ask[:1]),
+    )
+    p_and = plan_ask("show me pictures of tom will and matt will", ctx)
+    p_with = plan_ask("show me pictures of tom will with matt will", ctx)
+    def _two_people(plan, a, b):
+        blob = " ".join(n.lower() for n in (plan.person_names or ()))
+        return a in blob and b in blob
+    _check(
+        "i8a_pictures_and_equals_with",
+        _two_people(p_and, "tom", "matt") and _two_people(p_with, "tom", "matt"),
+        checks,
+        problems,
+        f"and={p_and.person_names} with={p_with.person_names}",
     )
     p_add = compile_ask("Add communications.", ctx, allow_model=False)
     p_cal = compile_ask("Add calendar.", ctx, allow_model=False)

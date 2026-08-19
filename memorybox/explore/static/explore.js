@@ -155,7 +155,10 @@
 
   function parseISO(s) {
     if (!s) return NaN;
-    const p = String(s || "").slice(0, 10).split("-");
+    const raw = String(s || "").trim();
+    if (/^\d{4}$/.test(raw)) return dayMs(+raw, 1, 1);
+    const p = raw.slice(0, 10).split("-");
+    if (p.length === 2 && p[0] && p[1]) return dayMs(+p[0], +p[1], 1);
     if (p.length < 3 || !p[0]) return NaN;
     return dayMs(+p[0], +p[1], +p[2]);
   }
@@ -1181,6 +1184,7 @@
     rawItems = mem.concat(comms);
     if (state && state.domain) state.domain.undatedFilter = false;
     applyPresentFlags(present);
+    syncTimelineToEligibleDatedExtent();
     setGalleryLocked(false);
     pendingPresent = null;
     render();
@@ -2398,6 +2402,12 @@
   function convoKey(it) {
     const tid = String((it && it.thread_id) || "").trim();
     if (tid) return "t:" + tid;
+    const handles = []
+      .concat(Array.isArray(it && it.identity_mapped) ? it.identity_mapped : [])
+      .map((m) => String((m && (m.normalized || m.handle)) || "").trim().toLowerCase())
+      .filter(Boolean)
+      .sort();
+    if (handles.length) return "h:" + handles.join("|");
     const names = []
       .concat(Array.isArray(it && it.people) ? it.people : [])
       .concat(it && it.from ? [it.from] : [])
@@ -2410,6 +2420,58 @@
     });
     if (uniq.length) return "p:" + uniq.join("|");
     return "id:" + String((it && it.id) || "msg");
+  }
+
+  function smsMessageBody(item) {
+    const title = String((item && item.title) || "").trim();
+    const peopleJoin = []
+      .concat((item && item.people) || [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean)
+      .join(" & ");
+    const from = String((item && item.from) || "").trim();
+    const skip = new Set(
+      [title, peopleJoin, from, peopleJoin.replace(/\s+&\s+/g, ", ")]
+        .map((s) => s.toLowerCase())
+        .filter(Boolean)
+    );
+    const candidates = [item && item.detail, item && item.preview];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const s = String(candidates[i] || "").trim();
+      if (!s) continue;
+      if (skip.has(s.toLowerCase())) continue;
+      return s;
+    }
+    return "";
+  }
+
+  function uniqueSmsThreadItems(items) {
+    const seenId = {};
+    const seenSig = {};
+    const out = [];
+    (items || []).forEach((it) => {
+      const eid = String(it.evidence_id || it.id || "");
+      if (eid && seenId[eid]) return;
+      const body = smsMessageBody(it);
+      const sig = [
+        convoKey(it),
+        String(it.date || ""),
+        String(it.from || "").toLowerCase(),
+        body.toLowerCase(),
+      ].join("|");
+      if (seenSig[sig]) return;
+      if (eid) seenId[eid] = 1;
+      seenSig[sig] = 1;
+      if (!body && itemAttachCount(it) < 1) return;
+      out.push(it);
+    });
+    return out;
+  }
+
+  function textListKey(it, grain) {
+    const ck = convoKey(it);
+    if (grain === "day") return ck;
+    return ck + "|" + (dayKey(it) || "undated");
   }
 
   function summarizeDay(items) {
@@ -2525,6 +2587,51 @@
     return shown.map((k) => makeCombinedCard(k, by[k], grain));
   }
 
+  function insertCombinedIntoGallery(combined, allItems) {
+    const mem = memoryLikeItems(allItems);
+    if (!mem.length) return combined;
+    const sort = state.gallery.sort || "newest";
+    const byYear = {};
+    const undatedMem = [];
+    mem.forEach((it) => {
+      if (isUndated(it)) {
+        undatedMem.push(it);
+        return;
+      }
+      const y = String(it.date || "").slice(0, 4);
+      if (!/^\d{4}$/.test(y)) {
+        undatedMem.push(it);
+        return;
+      }
+      (byYear[y] = byYear[y] || []).push(it);
+    });
+    const combinedByYear = {};
+    const undatedCombined = [];
+    (combined || []).forEach((c) => {
+      const y = String(c.date || "").slice(0, 4);
+      if (!y || c.undated || !/^\d{4}$/.test(y)) undatedCombined.push(c);
+      else combinedByYear[y] = c;
+    });
+    const years = new Set(
+      Object.keys(byYear).concat(Object.keys(combinedByYear))
+    );
+    const ordered = [...years].sort((a, b) =>
+      sort === "oldest" ? a.localeCompare(b) : b.localeCompare(a)
+    );
+    const out = [];
+    ordered.forEach((y) => {
+      if (combinedByYear[y]) out.push(combinedByYear[y]);
+      const pics = (byYear[y] || []).slice().sort((a, b) => {
+        const d = parseISO(a.date) - parseISO(b.date);
+        return sort === "oldest" ? d : -d;
+      });
+      out.push.apply(out, pics);
+    });
+    out.push.apply(out, undatedCombined);
+    out.push.apply(out, undatedMem);
+    return out;
+  }
+
   function galleryCardsFromVisible(items) {
     const d = state.domain || {};
     const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
@@ -2550,13 +2657,13 @@
           return sort === "oldest" ? da : -da;
         }).concat(other);
       }
-      return bucketCombined(threads, grain).concat(other);
+      return insertCombinedIntoGallery(bucketCombined(threads, grain), items);
     }
     if ((textOnly || (commsOn && !calOn && commsOnly) || mix || (commsOn && calOn)) && commsCalItems(items).length) {
       const cc = commsCalItems(items);
       const datedKeys = cc.map(dayKey).filter(Boolean);
       const grain = pickGrain(datedKeys);
-      return bucketCombined(cc, grain);
+      return insertCombinedIntoGallery(bucketCombined(cc, grain), items);
     }
     return items;
   }
@@ -2720,15 +2827,22 @@
       }));
     } else if (dayStack.tab === "text") {
       const by = {};
+      const grain = (dayStack.card && dayStack.card._grain) || "year";
       s.texts.forEach((it) => {
-        const k = threadKey(it);
+        const k = textListKey(it, grain);
         (by[k] = by[k] || []).push(it);
       });
-      rows = Object.keys(by).map((k) => ({
-        kind: "convo",
-        items: by[k],
-        title: convoTitle(by[k]),
-      }));
+      rows = Object.keys(by)
+        .map((k) => {
+          const group = uniqueSmsThreadItems(by[k]);
+          if (!group.length) return null;
+          return {
+            kind: "convo",
+            items: group,
+            title: convoTitle(group),
+          };
+        })
+        .filter(Boolean);
     } else {
       rows = s.cals.map((it) => ({ kind: "event", items: [it], title: it.title || "Event" }));
     }
@@ -2739,7 +2853,7 @@
     list.innerHTML = rows
       .map((row, i) => {
         const it = row.items[0];
-        const preview = escapeHtml(it.preview || it.detail || "");
+        const preview = escapeHtml(smsMessageBody(it) || it.preview || it.detail || "");
         let newest = it && it.date;
         let newestMs = parseISO(newest);
         (row.items || []).forEach((msg) => {
@@ -2810,11 +2924,19 @@
     const body = document.getElementById("mb-day-detail-body");
     if (!wrap || !body) return;
     wrap.hidden = false;
-    const n = (items || []).length;
-    const blocks = (items || []).map((item) => {
+    const unique = uniqueSmsThreadItems(items);
+    const n = unique.length;
+    const blocks = unique.map((item) => {
+      const text = smsMessageBody(item);
+      const attachN = itemAttachCount(item);
+      const bodyHtml = text
+        ? escapeHtml(text)
+        : attachN
+          ? escapeHtml(attachN + " attachment" + (attachN === 1 ? "" : "s"))
+          : "";
       return `<article class="mb-day-msg">
         <p class="mb-day-msg-meta">${escapeHtml(item.from || "")} · ${escapeHtml(fmtCardDate(item.date))}</p>
-        <div class="mb-day-msg-body">${escapeHtml(item.detail || item.preview || item.title || "")}</div>
+        <div class="mb-day-msg-body">${bodyHtml}</div>
       </article>`;
     });
     body.innerHTML =
@@ -3287,12 +3409,25 @@
       const y1 = new Date(extentEnd).getUTCFullYear();
       for (let y = y0; y <= y1; y++) years.push(y);
       const step = years.length > 16 ? 4 : years.length > 10 ? 2 : 1;
-      ticks.innerHTML = years
-        .filter((y, i) => i === 0 || i === years.length - 1 || y % step === 0)
+      const chosen = years.filter(
+        (y, i) => i === 0 || i === years.length - 1 || y % step === 0
+      );
+      const placed = [];
+      ticks.innerHTML = chosen
         .map((y) => {
-          const t = dayMs(y, 1, 1);
-          const x = ((t - extentStart) / span) * 100;
-          return `<span style="left:${Math.min(98, Math.max(0, x))}%">${y}</span>`;
+          const t0 = Math.max(extentStart, dayMs(y, 1, 1));
+          const t1 = Math.min(extentEnd, dayMs(y + 1, 1, 1));
+          const t = t1 > t0 ? (t0 + t1) / 2 : t0;
+          let x = ((t - extentStart) / span) * 100;
+          if (!Number.isFinite(x)) return "";
+          x = Math.min(97.5, Math.max(1.2, x));
+          const prev = placed.length ? placed[placed.length - 1] : -999;
+          if (x - prev < 3.2 && y !== years[0] && y !== years[years.length - 1]) {
+            return "";
+          }
+          if (x - prev < 2.2) return "";
+          placed.push(x);
+          return `<span style="left:${x}%">${y}</span>`;
         })
         .join("");
     }
@@ -4396,11 +4531,23 @@
     }
   }
 
+  function centerPhotoZoom() {
+    const stage = document.querySelector(".mb-ev-photo.is-zoomed");
+    if (!stage) return;
+    const center = () => {
+      stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
+      stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2);
+    };
+    center();
+    requestAnimationFrame(center);
+  }
+
   function bindPhotoPan() {
     if (state.modal._panCleanup) {
       state.modal._panCleanup();
       state.modal._panCleanup = null;
     }
+    centerPhotoZoom();
     const stage = document.querySelector(".mb-ev-photo.is-zoomed");
     if (!stage) return;
     let dragging = false;

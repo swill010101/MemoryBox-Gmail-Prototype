@@ -378,7 +378,13 @@ def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> E
         sent_at=payload.get("sent_at"),
         channel=str(payload.get("evidence_channel") or payload.get("service") or "text"),
         people=people or None,
-        thread_id=payload.get("thread_id") or payload.get("group_name"),
+        thread_id=(
+            payload.get("thread_id")
+            or payload.get("chat_identifier")
+            or payload.get("chat_id")
+            or payload.get("handle")
+            or payload.get("group_name")
+        ),
         direction=payload.get("direction"),
         attachments=_sms_attachments(payload) or None,
         identity_mapped=identity or None,
@@ -496,6 +502,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         keywords = [k for k in keywords if k not in holiday_stop]
 
     hits: list[EvidenceHit] = []
+    seen_sms_sig: set[tuple[str, str, str]] = set()
     with connection() as conn:
         rows = conn.execute(
             """
@@ -578,6 +585,20 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             blob = f"{r['summary'] or ''} {payload.get('body_text') or ''} {payload.get('thread_id') or ''}".lower()
             if not any(k in blob for k in keywords):
                 continue
+        sig = (
+            str(
+                payload.get("thread_id")
+                or payload.get("chat_identifier")
+                or payload.get("handle")
+                or ""
+            ),
+            str(payload.get("sent_at") or ""),
+            re.sub(r"\s+", " ", str(payload.get("body_text") or "")).strip().lower(),
+        )
+        if sig[2] and sig in seen_sms_sig:
+            continue
+        if sig[2]:
+            seen_sms_sig.add(sig)
         hits.append(_sms_hit(r, payload, score=1.0))
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     scope_bits = [

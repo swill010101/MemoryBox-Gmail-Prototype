@@ -184,6 +184,12 @@ PERSON_OF_RE = re.compile(
     rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
 )
+# "pictures of Tom Will and Matt Will" — same AND as "with"
+PICTURES_OF_AND_PEOPLE_RE = re.compile(
+    rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\s+and\s+"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
+)
 PERSON_EMAIL_FROM_RE = re.compile(
     rf"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+(?!and\b){_PERSON_NAME}\b"
 )
@@ -553,6 +559,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     }
     found: list[str] = []
     patterns = [
+        PICTURES_OF_AND_PEOPLE_RE,
         SHOW_ME_AND_PEOPLE_RE,
         PERSON_WITH_RE,
         PERSON_OF_RE,
