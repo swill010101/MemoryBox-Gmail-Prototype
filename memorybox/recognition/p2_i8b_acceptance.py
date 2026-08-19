@@ -128,6 +128,25 @@ def _prove_harness() -> dict[str, Any]:
     q_ok = quality_flags({"x1": 0, "y1": 0, "x2": 80, "y2": 90, "w": 80, "h": 90})
     _check("p2i8b_reject_unusable_crop", not q_bad.get("usable"), checks, problems, str(q_bad))
     _check("p2i8b_accept_usable_crop", bool(q_ok.get("usable")), checks, problems, str(q_ok))
+    immich_box = parse_bbox(
+        {
+            "boundingBoxX1": 12,
+            "boundingBoxY1": 20,
+            "boundingBoxX2": 90,
+            "boundingBoxY2": 110,
+            "x1": None,
+            "y1": None,
+            "x2": None,
+            "y2": None,
+        }
+    )
+    _check(
+        "p2i8b_immich_null_x1_uses_bounding_box",
+        bool(immich_box) and immich_box.get("x1") == 12.0 and immich_box.get("y2") == 110.0,
+        checks,
+        problems,
+        str(immich_box),
+    )
 
     selected = select_exemplars(_peggy_candidates(), cap=8)
     years = {str(c.get("capture_at"))[:4] for c in selected}

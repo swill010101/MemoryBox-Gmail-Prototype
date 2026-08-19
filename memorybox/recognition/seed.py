@@ -104,7 +104,10 @@ def collect_immich_face_candidates(
                     "x2": face.get("x2"),
                     "y2": face.get("y2"),
                 }
-                bbox = parse_bbox(bbox_src)
+                try:
+                    bbox = parse_bbox(bbox_src)
+                except (TypeError, ValueError):
+                    bbox = None
                 image_w = face.get("imageWidth") or face.get("image_width")
                 image_h = face.get("imageHeight") or face.get("image_height")
                 q = quality_flags(bbox, image_w=image_w, image_h=image_h) if bbox else {

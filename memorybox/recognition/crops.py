@@ -6,21 +6,38 @@ from typing import Any
 from memorybox.recognition.constants import MIN_CROP_PX
 
 
+def _num(value: Any) -> float | None:
+    if value is None or value is False:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_bbox(raw: dict[str, Any] | None) -> dict[str, float] | None:
+    """Parse Immich/Review boxes. Keys may be present with null values."""
     if not isinstance(raw, dict):
         return None
-    if all(k in raw for k in ("x1", "y1", "x2", "y2")):
-        x1, y1, x2, y2 = (float(raw["x1"]), float(raw["y1"]), float(raw["x2"]), float(raw["y2"]))
-    elif all(k in raw for k in ("x", "y", "w", "h")):
-        x1 = float(raw["x"])
-        y1 = float(raw["y"])
-        x2 = x1 + float(raw["w"])
-        y2 = y1 + float(raw["h"])
-    elif all(k in raw for k in ("boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2")):
-        x1 = float(raw["boundingBoxX1"])
-        y1 = float(raw["boundingBoxY1"])
-        x2 = float(raw["boundingBoxX2"])
-        y2 = float(raw["boundingBoxY2"])
+    # Immich GET /faces uses boundingBoxX1..Y2; x1..y2 are often absent/null.
+    bx1 = _num(raw.get("boundingBoxX1"))
+    by1 = _num(raw.get("boundingBoxY1"))
+    bx2 = _num(raw.get("boundingBoxX2"))
+    by2 = _num(raw.get("boundingBoxY2"))
+    x1 = _num(raw.get("x1"))
+    y1 = _num(raw.get("y1"))
+    x2 = _num(raw.get("x2"))
+    y2 = _num(raw.get("y2"))
+    x = _num(raw.get("x"))
+    y = _num(raw.get("y"))
+    w = _num(raw.get("w"))
+    h = _num(raw.get("h"))
+    if None not in (bx1, by1, bx2, by2):
+        x1, y1, x2, y2 = bx1, by1, bx2, by2
+    elif None not in (x1, y1, x2, y2):
+        pass
+    elif None not in (x, y, w, h):
+        x1, y1, x2, y2 = x, y, x + w, y + h
     else:
         return None
     if x2 < x1:
