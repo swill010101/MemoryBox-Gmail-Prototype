@@ -21,3 +21,9 @@ REQUEUE_REASONS = frozenset(
 
 PRIORITY_CURRENT_VIDEO = 1
 PRIORITY_OTHER_VIDEO = 50
+
+# Video sampling — same envelope as hvrt/hvrt/face_learn.py
+MAX_FRAME_SAMPLES = 80
+MIN_INTERVAL_SEC = 2.0
+MAX_INTERVAL_SEC = 10.0
+PROVE_FRAME_SAMPLES = 16

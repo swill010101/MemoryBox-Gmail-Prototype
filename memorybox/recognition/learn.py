@@ -139,10 +139,11 @@ def owner_learn_from_review(
         )
 
     enqueue = None
-    rows_fn = getattr(video_provider, "eligible_video_rows", None)
-    if callable(rows_fn) and video_external_id:
+    from memorybox.recognition.inventory import inventory_video_rows
+
+    if video_external_id:
         others = []
-        for v in rows_fn() or []:
+        for v in inventory_video_rows(video_provider):
             veid = str(v.get("video_external_id") or "")
             if not veid or veid == video_external_id:
                 continue

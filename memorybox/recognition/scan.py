@@ -39,12 +39,24 @@ def match_embedding(
     return best, best_score
 
 
-def collect_scan_samples(video_provider: Any, video_external_id: str) -> list[dict[str, Any]]:
-    """Prefer provider-injected samples (harness); else empty (InsightFace path later)."""
+def collect_scan_samples(
+    video_provider: Any,
+    video_external_id: str,
+    *,
+    max_samples: int | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Harness FakeVideo first; otherwise sample frames with buffalo_l."""
     fn = getattr(video_provider, "i8b_scan_samples", None)
     if callable(fn):
-        return list(fn(video_external_id) or [])
-    return []
+        return list(fn(video_external_id) or []), None
+    from memorybox.recognition.constants import MAX_FRAME_SAMPLES
+    from memorybox.recognition.frames import collect_insightface_scan_samples
+
+    return collect_insightface_scan_samples(
+        video_provider,
+        video_external_id,
+        max_samples=int(max_samples or MAX_FRAME_SAMPLES),
+    )
 
 
 def scan_video_for_person(
@@ -55,6 +67,7 @@ def scan_video_for_person(
     video_provider_key: str | None = None,
     run_kind: str = "provider_seeded",
     trigger: str | None = None,
+    max_samples: int | None = None,
 ) -> dict[str, Any]:
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     exemplars = list_active_exemplars(person_id)
@@ -66,7 +79,9 @@ def scan_video_for_person(
             "video_external_id": video_external_id,
             "ranges": [],
         }
-    samples = collect_scan_samples(video_provider, video_external_id)
+    samples, sample_error = collect_scan_samples(
+        video_provider, video_external_id, max_samples=max_samples
+    )
     withdrawals = list_withdrawals(
         person_id=person_id,
         video_provider_key=vpk,
@@ -162,4 +177,5 @@ def scan_video_for_person(
         "uncertain_count": uncertain,
         "ranges": range_ids,
         "observation_count": len(observations),
+        "sample_error": sample_error,
     }

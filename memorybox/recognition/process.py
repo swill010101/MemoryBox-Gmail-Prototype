@@ -199,6 +199,8 @@ def process_one(
                     "hit_count": len(native.get("ranges") or []),
                     "accepted_count": native.get("accepted_count"),
                     "uncertain_count": native.get("uncertain_count"),
+                    "sample_error": native.get("sample_error"),
+                    "candidate_count": native.get("candidate_count"),
                     "legacy_untouched": True,
                 },
             )

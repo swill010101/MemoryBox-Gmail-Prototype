@@ -94,6 +94,22 @@ class HvrtHttpVideoProvider:
             )
         return out
 
+    def eligible_video_rows(self) -> list[dict[str, Any]]:
+        vpk = self.provider_key
+        rows: list[dict[str, Any]] = []
+        for v in self.list_videos(limit=5000):
+            rows.append(
+                {
+                    "video_provider_key": vpk,
+                    "video_external_id": v.external_id,
+                    "eligible": True,
+                    "path_hint": v.path_hint,
+                    "duration_sec": v.duration_sec,
+                    "title": v.title,
+                }
+            )
+        return rows
+
     def list_face_candidates(
         self, *, video_external_id: str | None = None, limit: int = 100
     ) -> list[VideoFaceCandidate]:

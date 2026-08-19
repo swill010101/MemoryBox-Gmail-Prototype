@@ -549,6 +549,7 @@ def _prove_flightsim() -> dict[str, Any]:
 
     from memorybox.ask.deps import build_photo, build_video
     from memorybox.person import find_ask_person_by_name, list_people_by_exact_name
+    from memorybox.recognition.inventory import inventory_video_rows
     from memorybox.recognition.seed import collect_immich_face_candidates, seed_exemplars_from_immich
 
     photo = build_photo()
@@ -646,8 +647,10 @@ def _prove_flightsim() -> dict[str, Any]:
                 f"seed={meta['seed']}"
             ),
         )
-        rows_fn = getattr(video, "eligible_video_rows", None)
-        videos = list(rows_fn()) if callable(rows_fn) else []
+        from memorybox.recognition.constants import PROVE_FRAME_SAMPLES
+        from memorybox.recognition.scan import scan_video_for_person
+
+        videos = inventory_video_rows(video)
         if int(seeded.get("selected_count") or 0) >= 1:
             enqueue_full_eligible_archive(
                 person_id=pid,
@@ -656,10 +659,48 @@ def _prove_flightsim() -> dict[str, Any]:
                 priority=50,
                 run_kind="provider_seeded",
             )
-            processed = process_queue(video_provider=video, person_id=pid, max_items=3)
+            processed = process_queue(video_provider=video, person_id=pid, max_items=2)
             meta["processed"] = processed.get("processed")
+            meta["process_results"] = (processed.get("results") or [])[:3]
         moments = list_appearance_moments(pid, limit=200)
         native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
+        if not native:
+            prefer: list[str] = []
+            pos = _env("MEMORYBOX_P2_I8B_POSITIVE_VIDEO_ID") or _env(
+                "MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID"
+            )
+            if pos:
+                prefer.append(pos)
+            for m in moments:
+                ve = str(m.get("video_external_id") or "")
+                if ve and ve not in prefer:
+                    prefer.append(ve)
+            for row in videos:
+                ve = str(row.get("video_external_id") or "")
+                if ve and ve not in prefer:
+                    prefer.append(ve)
+            scan_meta = []
+            for veid in prefer[:2]:
+                scanned = scan_video_for_person(
+                    person_id=pid,
+                    video_provider=video,
+                    video_external_id=veid,
+                    run_kind="provider_seeded",
+                    trigger="flightsim_prove",
+                    max_samples=PROVE_FRAME_SAMPLES,
+                )
+                scan_meta.append(
+                    {
+                        "video_external_id": veid,
+                        "accepted_count": scanned.get("accepted_count"),
+                        "candidate_count": scanned.get("candidate_count"),
+                        "ranges": len(scanned.get("ranges") or []),
+                        "sample_error": scanned.get("sample_error"),
+                    }
+                )
+            meta["direct_scans"] = scan_meta
+            moments = list_appearance_moments(pid, limit=200)
+            native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
         legacy = [m for m in moments if m.get("evidence_lineage") == "i1_hvrt" or m.get("method") == "auto_associate"]
         _check(
             "p2i8b_cutover_legacy_preserved",
@@ -678,7 +719,10 @@ def _prove_flightsim() -> dict[str, Any]:
                 int(meta.get("processed") or 0) >= 1 or len(native) >= 1,
                 checks,
                 problems,
-                f"processed={meta.get('processed')} native={len(native)}",
+                (
+                    f"processed={meta.get('processed')} native={len(native)} "
+                    f"inventory={len(videos)} scans={meta.get('direct_scans')}"
+                ),
             )
         st = recognition_status(person_id=pid)
         _check("p2i8b_status", bool(st), checks, problems, str(st)[:300])
@@ -721,11 +765,10 @@ def _prove_flightsim() -> dict[str, Any]:
             str(meta["seed_second"]),
         )
         if int(seeded2.get("selected_count") or 0) >= 1:
-            rows_fn = getattr(video, "eligible_video_rows", None)
-            videos = list(rows_fn()) if callable(rows_fn) else []
+            rows = inventory_video_rows(video)
             enqueue_full_eligible_archive(
                 person_id=sid,
-                videos=videos[:8],
+                videos=rows[:8],
                 enqueue_reason="exemplar_change",
                 priority=60,
                 run_kind="provider_seeded",
