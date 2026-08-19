@@ -140,9 +140,14 @@
   let chromeBound = false;
   let timelineBound = false;
   let findGen = 0;
+  let pendingPresent = null;
   let histHydrate = null;
 
-  function dayMs(y, m, d) {
+  function bumpFindGen() {
+    pendingPresent = null;
+    setGalleryLocked(false);
+    return ++findGen;
+  }
     return Date.UTC(y, m - 1, d);
   }
 
@@ -1139,20 +1144,69 @@
     render();
   }
 
+  function setGalleryLocked(on) {
+    if (state && state.domain) state.domain.galleryLocked = Boolean(on);
+    const g = document.getElementById("mb-explore-gallery");
+    const root = document.getElementById("mb-explore-root");
+    if (g) g.classList.toggle("is-locked", Boolean(on));
+    if (root) root.classList.toggle("is-present-locked", Boolean(on));
+  }
+
+  function applyPresentPayload(payload, present) {
+    const priorMem = rawItems.filter((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    });
+    applyPayloadToState(payload, { keepPresentation: true });
+    const comms = rawItems.filter(
+      (it) => isSmsTextItem(it) || isEmailItem(it) || isCalendarItem(it)
+    );
+    const seen = {};
+    const mem = [];
+    priorMem.forEach((it) => {
+      seen[it.id] = 1;
+      mem.push(it);
+    });
+    rawItems.forEach((it) => {
+      const t = String(it.type || "").toLowerCase();
+      if (
+        (t === "photo" || t === "video" || t === "story" || t === "artifact") &&
+        !seen[it.id]
+      ) {
+        mem.push(it);
+      }
+    });
+    rawItems = mem.concat(comms);
+    if (state && state.domain) state.domain.undatedFilter = false;
+    applyPresentFlags(present);
+    setGalleryLocked(false);
+    pendingPresent = null;
+    render();
+  }
+
   function presentWithoutRewritingAsk(present) {
     const ask = currentAskText().trim();
     if (askNeedsPersonOrTime(ask)) {
       promptNeedPersonOrTime(present);
       return;
     }
+    const gen = bumpFindGen();
+    pendingPresent = null;
+    setGalleryLocked(true);
+    hideQuickPreview();
     showSearching(ask);
     liveFind(ask, { present: present })
       .then((payload) => {
-        applyPayloadToState(payload, { keepPresentation: true });
-        applyPresentFlags(present);
-        render();
+        if (gen !== findGen) return;
+        if (state.modal && state.modal.openId) {
+          pendingPresent = { payload: payload, present: present, gen: gen };
+          return;
+        }
+        applyPresentPayload(payload, present);
       })
       .catch(() => {
+        if (gen !== findGen) return;
+        setGalleryLocked(false);
         render();
       });
   }
@@ -1411,7 +1465,7 @@
       resetTimelineExtent(false);
       setViewMode("gallery");
       if (PERSON.memoryMode) PERSON.memoryMode = PERSON.memoryMode;
-      const gen = ++findGen;
+      const gen = bumpFindGen();
       showSearching("Show " + (PERSON.displayName || "person"));
       liveFind("Show " + (PERSON.displayName || "person"))
         .then((payload) => {
@@ -1709,7 +1763,7 @@
           );
           state.domain.chips = chips;
           ensureLockedPersonChip();
-          const gen = ++findGen;
+          const gen = bumpFindGen();
           showSearching("Show " + (PERSON.displayName || ""));
           liveFind("Show " + (PERSON.displayName || ""))
             .then((payload) => {
@@ -1731,7 +1785,7 @@
 
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
-      const gen = ++findGen;
+      const gen = bumpFindGen();
       showSearching(text);
       liveFind(text)
         .then((payload) => {
@@ -2056,6 +2110,7 @@
     }
     el.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (state.domain && state.domain.galleryLocked) return;
         const fid = btn.getAttribute("data-filter");
         if (fid === "email") {
           if (askNeedsPersonOrTime(currentAskText())) {
@@ -2075,6 +2130,7 @@
             state.domain.includeCalendar = true;
             state.domain.calendarPinned = true;
             state.domain.memoryPresentation = false;
+            state.domain.undatedFilter = false;
             state.domain.typeFilter = "calendar";
             syncTimelineToEligibleDatedExtent();
             render();
@@ -2495,30 +2551,10 @@
       return bucketCombined(threads, grain).concat(other);
     }
     if ((textOnly || (commsOn && !calOn && commsOnly) || mix || (commsOn && calOn)) && commsCalItems(items).length) {
-      const mem = memoryLikeItems(items);
       const cc = commsCalItems(items);
       const datedKeys = cc.map(dayKey).filter(Boolean);
       const grain = pickGrain(datedKeys);
-      const dayCards = bucketCombined(cc, grain);
-      if (mix || (commsOn && calOn && mem.length)) {
-        const used = {};
-        const out = [];
-        dayCards.forEach((card) => {
-          const y = String(card.date || "").slice(0, 4);
-          const pic = mem.find((p) => {
-            if (used[p.id]) return false;
-            if (y && String(p.date || "").slice(0, 4) !== y) return false;
-            return true;
-          });
-          if (pic) {
-            used[pic.id] = true;
-            out.push(pic);
-          }
-          out.push(card);
-        });
-        return out;
-      }
-      return dayCards;
+      return bucketCombined(cc, grain);
     }
     return items;
   }
@@ -2595,7 +2631,8 @@
     if (back) back.hidden = !has;
   }
 
-  function openDayStack(card) {
+  function openDayStack(card, tab) {
+    if (state.domain && state.domain.galleryLocked) return;
     const items = (card && card._dayItems) || [];
     if (!items.length) return;
     hideQuickPreview();
@@ -2616,7 +2653,11 @@
     const viewer0 = document.getElementById("mb-day-viewer");
     if (viewer0) viewer0.classList.add("is-detail");
     const s = card._daySummary || summarizeDay(items);
-    if (s.emailN) dayStack.tab = "email";
+    const want = String(tab || "");
+    if (want === "email" && s.emailN) dayStack.tab = "email";
+    else if (want === "text" && s.textN) dayStack.tab = "text";
+    else if (want === "calendar" && s.calN) dayStack.tab = "calendar";
+    else if (s.emailN) dayStack.tab = "email";
     else if (s.textN) dayStack.tab = "text";
     else dayStack.tab = "calendar";
     renderDayStack();
@@ -2894,32 +2935,35 @@
           const bits = [];
           if (s.emailThreads)
             bits.push(
-              `<span class="mb-day-e">${s.emailThreads} email thread${s.emailThreads === 1 ? "" : "s"}</span>`
+              `<button type="button" class="mb-day-pill mb-day-e" data-day-tab="email">${s.emailThreads} email thread${s.emailThreads === 1 ? "" : "s"}</button>`
             );
           if (s.textN)
             bits.push(
-              `<span class="mb-day-t"><span class="mb-day-t-n">${s.textN.toLocaleString()} texts</span><span class="mb-day-t-c">${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span></span>`
+              `<button type="button" class="mb-day-pill mb-day-t" data-day-tab="text"><span class="mb-day-t-n">${s.textN.toLocaleString()} texts</span><span class="mb-day-t-c">${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span></button>`
             );
           if (s.calN)
-            bits.push(`<span class="mb-day-c">${s.calN} event${s.calN === 1 ? "" : "s"}</span>`);
+            bits.push(
+              `<button type="button" class="mb-day-pill mb-day-c" data-day-tab="calendar">${s.calN} event${s.calN === 1 ? "" : "s"}</button>`
+            );
           if (!bits.length) bits.push(`<span class="mb-day-e">No matching groups</span>`);
           const face = it._personThumb
-            ? ` style="background-image:url('${escapeAttr(it._personThumb)}')"`
+            ? `<img class="mb-day-face" src="${escapeAttr(it._personThumb)}" alt="" />`
             : "";
-          return `<button type="button" class="mb-card mb-card-day" data-id="${escapeAttr(
+          return `<div class="mb-card mb-card-day" data-id="${escapeAttr(
             it.id
           )}" data-type="daycard">
-          <div class="mb-card-media${it._personThumb ? " has-face" : ""}" data-type="daycard"${face}>
+          <div class="mb-card-media" data-type="daycard">
             <div class="mb-day-counts">${bits.join("")}</div>
           </div>
           <div class="mb-card-meta">
+            ${face}
             <span class="mb-card-type" aria-hidden="true">▦</span>
             <div>
               <div class="mb-card-title">${escapeHtml(it.title || "Communications")}</div>
               <div class="mb-card-sub">${escapeHtml(fmtBucketDate(it.date))}</div>
             </div>
           </div>
-        </button>`;
+        </div>`;
         }
         const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
@@ -2949,10 +2993,13 @@
 
     gallery.querySelectorAll(".mb-card").forEach((card) => {
       const id = card.getAttribute("data-id");
-      card.addEventListener("click", () => {
+      card.addEventListener("click", (ev) => {
+        if (state.domain && state.domain.galleryLocked) return;
+        const pill = ev.target.closest("[data-day-tab]");
         if (String(card.getAttribute("data-type")) === "daycard") {
           const it = items.find((x) => x.id === id);
-          if (it) openDayStack(it);
+          if (!it) return;
+          openDayStack(it, pill ? pill.getAttribute("data-day-tab") : "");
           return;
         }
         openModal(id);
@@ -3288,6 +3335,7 @@
   }
 
   function openModal(id) {
+    if (state.domain && state.domain.galleryLocked) return;
     const item = rawItems.find((x) => x.id === id);
     if (!item) return;
     hideQuickPreview();
@@ -3369,6 +3417,12 @@
     const rail = document.getElementById("mb-rail-panel");
     if (rail) rail.innerHTML = "";
     document.getElementById("mb-modal").hidden = true;
+    if (pendingPresent && pendingPresent.gen === findGen) {
+      const p = pendingPresent;
+      pendingPresent = null;
+      applyPresentPayload(p.payload, p.present);
+      return;
+    }
     if (snap) restoreExplore(snap);
     if (pending) applyCorrectionConsequences(pending);
     render();
@@ -4973,7 +5027,7 @@
         bootFromPayload(emptyExplorePayload(""));
         return;
       }
-      const bootGen = ++findGen;
+      const bootGen = bumpFindGen();
       bootFromPayload(emptyExplorePayload(bootQ));
       const seed = PERSON_MODE
         ? bootQ || ("Show " + (PERSON.displayName || "person"))
