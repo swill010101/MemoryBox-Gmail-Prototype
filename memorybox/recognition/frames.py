@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,7 @@ def sample_faces_from_path(
     *,
     duration_sec: float = 0.0,
     max_samples: int = MAX_FRAME_SAMPLES,
+    extra_times: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     if not insightface_available():
         return []
@@ -97,9 +99,18 @@ def sample_faces_from_path(
         fps = float(cap.get(cv2.CAP_PROP_FPS) or 0) or 25.0
         frame_count = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         duration = float(duration_sec or 0) or (frame_count / fps if fps else 0)
+        times = sample_times(duration or 90.0, max_samples=max_samples)
+        for t in extra_times or []:
+            try:
+                ft = round(float(t), 2)
+            except (TypeError, ValueError):
+                continue
+            if ft not in times:
+                times.append(ft)
+        times = sorted(times)[: max(1, int(max_samples) + len(extra_times or []))]
         app = _face_app()
         out: list[dict[str, Any]] = []
-        for t in sample_times(duration, max_samples=max_samples):
+        for t in times:
             cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, t * 1000.0))
             ok, frame = cap.read()
             if not ok or frame is None:
@@ -178,6 +189,84 @@ def sample_faces_from_posters(
     return [], last_err or "poster_no_faces"
 
 
+def looks_like_uuid(value: str) -> bool:
+    raw = (value or "").strip()
+    if len(raw) != 36 or raw.count("-") != 4:
+        return False
+    hexpart = raw.replace("-", "")
+    return all(c in "0123456789abcdefABCDEF" for c in hexpart)
+
+
+def resolve_immich_video_path(asset_id: str) -> Path | None:
+    """Ask/Explore Immich videos (encoded-video on disk, then originalPath if local)."""
+    aid = (asset_id or "").strip()
+    if not looks_like_uuid(aid):
+        return None
+    try:
+        from memorybox.ask.deps import build_photo
+
+        photo = build_photo()
+    except Exception:
+        return None
+    client = getattr(photo, "_client", None)
+    finder = getattr(client, "find_local_encoded_video", None)
+    if callable(finder):
+        try:
+            found = finder(aid)
+        except Exception:
+            found = None
+        if found is not None:
+            p = Path(str(found))
+            if p.is_file():
+                return p
+    getter = getattr(client, "get_asset", None)
+    if callable(getter):
+        try:
+            asset = getter(aid) or {}
+        except Exception:
+            asset = {}
+        for key in ("originalPath", "encodedVideoPath", "path"):
+            raw = str(asset.get(key) or "").strip()
+            if not raw:
+                continue
+            p = Path(raw)
+            if p.is_file():
+                return p
+    opener = getattr(client, "open_video_playback", None)
+    if callable(opener):
+        dest = Path(tempfile.gettempdir()) / f"mb-i8b-{aid}.mp4"
+        try:
+            if dest.is_file() and dest.stat().st_size > 64:
+                return dest
+        except OSError:
+            pass
+        try:
+            resp = opener(aid, None)
+        except Exception:
+            resp = None
+        if resp is not None:
+            written = 0
+            limit = 250 * 1024 * 1024
+            try:
+                with dest.open("wb") as fh:
+                    while written < limit:
+                        chunk = resp.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        written += len(chunk)
+            except Exception:
+                dest = dest if dest.is_file() else None
+            finally:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+            if dest is not None and dest.is_file() and dest.stat().st_size > 64:
+                return dest
+    return None
+
+
 def collect_insightface_scan_samples(
     video_provider: Any,
     video_external_id: str,
@@ -196,8 +285,15 @@ def collect_insightface_scan_samples(
             times.append(ft)
     times = sorted(times)[: max(1, int(max_samples) + len(extra_times or []))]
     path = resolve_local_video_path(video_provider, video_external_id)
+    if path is None:
+        path = resolve_immich_video_path(video_external_id)
     if path is not None:
-        samples = sample_faces_from_path(path, duration_sec=duration, max_samples=max_samples)
+        samples = sample_faces_from_path(
+            path,
+            duration_sec=duration,
+            max_samples=max_samples,
+            extra_times=extra_times,
+        )
         if samples:
             return samples, None
     posters, err = sample_faces_from_posters(video_provider, video_external_id, times)

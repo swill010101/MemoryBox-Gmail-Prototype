@@ -37,6 +37,45 @@ def _capture_at(raw: dict[str, Any] | None) -> datetime | None:
     return None
 
 
+def list_person_immich_videos(
+    *,
+    person_id: str,
+    photo_provider: Any,
+    max_assets: int = 20,
+) -> list[str]:
+    """Immich VIDEO assets for a mapped Person (Ask/Explore video filter)."""
+    client = getattr(photo_provider, "_client", None)
+    search = getattr(client, "search_by_person_ids", None)
+    if not callable(search):
+        return []
+    ext_ids = resolve_immich_external_ids_for_person(person_id, photo=photo_provider) or []
+    out: list[str] = []
+    seen: set[str] = set()
+    for ext in ext_ids:
+        try:
+            rows = search([ext], size=max(50, int(max_assets) * 4)) or []
+        except Exception:
+            rows = []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            aid = str(raw.get("id") or "").strip()
+            if not aid or aid in seen:
+                continue
+            kind = str(raw.get("type") or "").upper()
+            name = str(raw.get("originalFileName") or raw.get("originalPath") or "").lower()
+            is_video = kind == "VIDEO" or name.endswith(
+                (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
+            )
+            if not is_video:
+                continue
+            seen.add(aid)
+            out.append(aid)
+            if len(out) >= int(max_assets):
+                return out
+    return out
+
+
 def collect_immich_face_candidates(
     *,
     person_id: str,

@@ -550,7 +550,12 @@ def _prove_flightsim() -> dict[str, Any]:
     from memorybox.ask.deps import build_photo, build_video
     from memorybox.person import find_ask_person_by_name, list_people_by_exact_name
     from memorybox.recognition.inventory import inventory_video_rows
-    from memorybox.recognition.seed import collect_immich_face_candidates, seed_exemplars_from_immich
+    from memorybox.recognition.process import get_appearance_moment, list_appearance_moments
+    from memorybox.recognition.seed import (
+        collect_immich_face_candidates,
+        list_person_immich_videos,
+        seed_exemplars_from_immich,
+    )
 
     photo = build_photo()
     video = build_video()
@@ -668,15 +673,48 @@ def _prove_flightsim() -> dict[str, Any]:
             ),
         )
         from memorybox.recognition.constants import PROVE_FRAME_SAMPLES
+        from memorybox.recognition.frames import looks_like_uuid, resolve_immich_video_path
         from memorybox.recognition.scan import scan_video_for_person
 
         videos = inventory_video_rows(video)
         inventory_ids = {str(r.get("video_external_id") or "") for r in videos}
+        confirmed_id = (
+            _env("MEMORYBOX_P2_I8B_POSITIVE_MOMENT_ID")
+            or _env("MEMORYBOX_P2_I8B_POSITIVE_ASSET_ID")
+            or _env("MEMORYBOX_P2_I8B_POSITIVE_VIDEO_ID")
+            or _env("MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID")
+            or "deb5c1f8-4d01-457c-9637-185268e4b820"
+        )
+        meta["confirmed_id"] = confirmed_id
+        confirmed_moment = get_appearance_moment(confirmed_id)
+        meta["confirmed_moment"] = (
+            {
+                "id": confirmed_moment.get("id"),
+                "video_external_id": confirmed_moment.get("video_external_id"),
+                "start_sec": confirmed_moment.get("start_sec"),
+                "authority": confirmed_moment.get("authority"),
+                "confirmation_state": confirmed_moment.get("confirmation_state"),
+            }
+            if confirmed_moment
+            else None
+        )
+        immich_videos = list_person_immich_videos(
+            person_id=pid, photo_provider=photo, max_assets=12
+        )
+        if looks_like_uuid(confirmed_id) and confirmed_id not in immich_videos:
+            immich_videos = [confirmed_id] + immich_videos
+        elif confirmed_moment:
+            ve = str(confirmed_moment.get("video_external_id") or "")
+            if ve and ve not in immich_videos:
+                immich_videos = [ve] + immich_videos
+        meta["immich_person_videos"] = immich_videos[:12]
 
         def _video_resolves(veid: str) -> bool:
             if not veid:
                 return False
             if veid in inventory_ids:
+                return True
+            if looks_like_uuid(veid) and resolve_immich_video_path(veid) is not None:
                 return True
             getter = getattr(video, "get_video", None)
             if not callable(getter):
@@ -697,7 +735,19 @@ def _prove_flightsim() -> dict[str, Any]:
             vpk = getattr(video, "provider_key", None) or "hvrt"
             prioritized: list[dict[str, Any]] = []
             have: set[str] = set()
+            for ve in immich_videos:
+                prioritized.append(
+                    {
+                        "video_provider_key": "immich",
+                        "video_external_id": ve,
+                        "eligible": True,
+                        "priority": 1,
+                    }
+                )
+                have.add(ve)
             for ve in i1_existing:
+                if ve in have:
+                    continue
                 prioritized.append(
                     {
                         "video_provider_key": vpk,
@@ -726,11 +776,15 @@ def _prove_flightsim() -> dict[str, Any]:
         native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
         if not native:
             prefer: list[str] = []
-            pos = _env("MEMORYBOX_P2_I8B_POSITIVE_VIDEO_ID") or _env(
-                "MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID"
-            )
-            if pos and _video_resolves(pos):
-                prefer.append(pos)
+            if confirmed_moment:
+                ve = str(confirmed_moment.get("video_external_id") or "")
+                if ve and _video_resolves(ve):
+                    prefer.append(ve)
+            if looks_like_uuid(confirmed_id) and confirmed_id not in prefer:
+                prefer.append(confirmed_id)
+            for ve in immich_videos:
+                if ve not in prefer:
+                    prefer.append(ve)
             for ve in i1_existing:
                 if ve not in prefer:
                     prefer.append(ve)
@@ -745,10 +799,18 @@ def _prove_flightsim() -> dict[str, Any]:
                     for m in moments
                     if m.get("video_external_id") == veid
                 ]
+                if confirmed_moment and str(confirmed_moment.get("video_external_id") or "") == veid:
+                    extra.insert(0, float(confirmed_moment.get("start_sec") or 0))
+                elif looks_like_uuid(confirmed_id) and veid == confirmed_id:
+                    extra.insert(0, float((confirmed_moment or {}).get("start_sec") or 0.5))
+                vpk = "immich" if looks_like_uuid(veid) else (
+                    getattr(video, "provider_key", None) or "hvrt"
+                )
                 scanned = scan_video_for_person(
                     person_id=pid,
                     video_provider=video,
                     video_external_id=veid,
+                    video_provider_key=vpk,
                     run_kind="provider_seeded",
                     trigger="flightsim_prove",
                     max_samples=PROVE_FRAME_SAMPLES,
@@ -757,6 +819,7 @@ def _prove_flightsim() -> dict[str, Any]:
                 scan_meta.append(
                     {
                         "video_external_id": veid,
+                        "video_provider_key": vpk,
                         "accepted_count": scanned.get("accepted_count"),
                         "candidate_count": scanned.get("candidate_count"),
                         "ranges": len(scanned.get("ranges") or []),
@@ -790,6 +853,8 @@ def _prove_flightsim() -> dict[str, Any]:
                 (
                     f"processed={meta.get('processed')} native={len(native)} "
                     f"inventory={len(videos)} i1_existing={i1_existing[:8]} "
+                    f"confirmed_id={meta.get('confirmed_id')} "
+                    f"immich_videos={meta.get('immich_person_videos')} "
                     f"scans={meta.get('direct_scans')}"
                 ),
             )

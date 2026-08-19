@@ -143,6 +143,46 @@ def list_appearance_moments(
     return out
 
 
+def get_appearance_moment(moment_id: str) -> dict[str, Any] | None:
+    mid = (moment_id or "").strip()
+    if not mid:
+        return None
+    sql = """
+            SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                   start_sec, end_sec, face_external_id, method, confidence,
+                   confirmation_state, authority, play_url, meta_json, created_at,
+                   COALESCE(status, 'accepted') AS status,
+                   model_version,
+                   COALESCE(evidence_lineage,
+                     CASE WHEN method = 'mb_native_i8b' THEN 'mb_native_i8b' ELSE 'i1_hvrt' END
+                   ) AS evidence_lineage
+            FROM face_appearance_moments
+            WHERE id = %s::uuid
+            """
+    with connection() as conn:
+        try:
+            row = conn.execute(sql, (mid,)).fetchone()
+        except Exception:
+            conn.execute("ROLLBACK")
+            return None
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("created_at") is not None:
+        d["created_at"] = d["created_at"].isoformat()
+    if isinstance(d.get("meta_json"), str):
+        try:
+            d["meta_json"] = json.loads(d["meta_json"])
+        except json.JSONDecodeError:
+            pass
+    d["play_url"] = ensure_timeslot_play_url(
+        video_external_id=str(d.get("video_external_id") or ""),
+        start_sec=float(d.get("start_sec") or 0),
+        play_url=d.get("play_url"),
+    )
+    return d
+
+
 def process_one(
     *,
     video_provider: Any,
@@ -174,6 +214,41 @@ def process_one(
                 except Exception:
                     found = None
             if found is None:
+                from memorybox.recognition.frames import looks_like_uuid, resolve_immich_video_path
+
+                if looks_like_uuid(veid) and resolve_immich_video_path(veid) is not None:
+                    vpk = "immich"
+                    from memorybox.recognition.scan import scan_video_for_person
+
+                    native = scan_video_for_person(
+                        person_id=pid,
+                        video_provider=video_provider,
+                        video_external_id=veid,
+                        video_provider_key=vpk,
+                        run_kind=mapped_kind,
+                        trigger=run_kind,
+                    )
+                    complete_item(
+                        item["id"],
+                        status=STATUS_COMPLETED,
+                        result={
+                            "engine": "mb_native_i8b",
+                            "run_kind": mapped_kind,
+                            "ranges": native.get("ranges") or [],
+                            "hit_count": len(native.get("ranges") or []),
+                            "accepted_count": native.get("accepted_count"),
+                            "source": "immich_video",
+                        },
+                    )
+                    return {
+                        "item_id": item["id"],
+                        "status": STATUS_COMPLETED,
+                        "engine": "mb_native_i8b",
+                        "run_kind": mapped_kind,
+                        "moments": native.get("ranges") or [],
+                        "person_id": pid,
+                        "video_external_id": veid,
+                    }
                 complete_item(
                     item["id"],
                     status=STATUS_EXCLUDED,
