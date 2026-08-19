@@ -12,7 +12,8 @@
    - [MBUX-001 v0.4](MBUX-001_MemoryBox_UX_Foundation_and_Design_Principles_v0.4.docx) — UX foundation (governing interaction / visual rules)  
    - [MBCAP-001 v0.2](MBCAP-001_MemoryBox_Capability_Catalog_P2_v0.2.docx) — reusable capabilities (EVS → Capability → Increment)  
 4. Execution sequencing: [MBRM-001A](../product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) · Increment definitions under `docs/product/MBBS-P2_INCREMENT_*.md`  
-   (Prior shell-first draft: [MBRM-001](../product/MBRM-001_P2_ROADMAP.md))
+   (Prior shell-first draft: [MBRM-001](../product/MBRM-001_P2_ROADMAP.md))  
+   P2-I9 Spoken Moments definition (v1.1, **hold for approval**, not build-authorized): [MBBS-P2_INCREMENT_9_DEFINITION.md](MBBS-P2_INCREMENT_9_DEFINITION.md)
 
 ## Readable markdown extracts (not substitutes for masters)
 

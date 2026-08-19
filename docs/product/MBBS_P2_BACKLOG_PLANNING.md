@@ -83,4 +83,4 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I8A Unified Communications Gallery & Timeline Precision** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **ACCEPTED** 2026-08-19. **P2-BL-I8-02 absorbed.**
 
-**Next:** **P2-I9 Spoken Moments** — not authorized. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**.
+**Next:** **P2-I9 Spoken Moments** — [v1.1 definition](../source/MBBS-P2_INCREMENT_9_DEFINITION.md) **HOLD FOR APPROVAL**; runtime **after I8B ACCEPTED** and explicit I9 build auth. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**.
