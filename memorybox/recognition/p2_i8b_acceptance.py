@@ -671,17 +671,57 @@ def _prove_flightsim() -> dict[str, Any]:
         from memorybox.recognition.scan import scan_video_for_person
 
         videos = inventory_video_rows(video)
+        inventory_ids = {str(r.get("video_external_id") or "") for r in videos}
+
+        def _video_resolves(veid: str) -> bool:
+            if not veid:
+                return False
+            if veid in inventory_ids:
+                return True
+            getter = getattr(video, "get_video", None)
+            if not callable(getter):
+                return False
+            try:
+                found = getter(veid)
+            except Exception:
+                return False
+            return found is not None
+
+        moments = list_appearance_moments(pid, limit=200)
+        i1_existing: list[str] = []
+        for m in moments:
+            ve = str(m.get("video_external_id") or "")
+            if ve and ve not in i1_existing and _video_resolves(ve):
+                i1_existing.append(ve)
         if int(seeded.get("selected_count") or 0) >= 1:
+            vpk = getattr(video, "provider_key", None) or "hvrt"
+            prioritized: list[dict[str, Any]] = []
+            have: set[str] = set()
+            for ve in i1_existing:
+                prioritized.append(
+                    {
+                        "video_provider_key": vpk,
+                        "video_external_id": ve,
+                        "eligible": True,
+                        "priority": 1,
+                    }
+                )
+                have.add(ve)
+            for row in videos:
+                ve = str(row.get("video_external_id") or "")
+                if ve and ve not in have:
+                    prioritized.append(row)
+                    have.add(ve)
             enqueue_full_eligible_archive(
                 person_id=pid,
-                videos=videos[:12],
+                videos=prioritized[:16],
                 enqueue_reason="exemplar_change",
                 priority=50,
                 run_kind="provider_seeded",
             )
-            processed = process_queue(video_provider=video, person_id=pid, max_items=2)
+            processed = process_queue(video_provider=video, person_id=pid, max_items=4)
             meta["processed"] = processed.get("processed")
-            meta["process_results"] = (processed.get("results") or [])[:3]
+            meta["process_results"] = (processed.get("results") or [])[:4]
         moments = list_appearance_moments(pid, limit=200)
         native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
         if not native:
@@ -689,18 +729,17 @@ def _prove_flightsim() -> dict[str, Any]:
             pos = _env("MEMORYBOX_P2_I8B_POSITIVE_VIDEO_ID") or _env(
                 "MEMORYBOX_P2_I1_POSITIVE_VIDEO_ID"
             )
-            if pos:
+            if pos and _video_resolves(pos):
                 prefer.append(pos)
-            for m in moments:
-                ve = str(m.get("video_external_id") or "")
-                if ve and ve not in prefer:
+            for ve in i1_existing:
+                if ve not in prefer:
                     prefer.append(ve)
             for row in videos:
                 ve = str(row.get("video_external_id") or "")
                 if ve and ve not in prefer:
                     prefer.append(ve)
             scan_meta = []
-            for veid in prefer[:2]:
+            for veid in prefer[:8]:
                 extra = [
                     float(m.get("start_sec") or 0)
                     for m in moments
@@ -721,9 +760,12 @@ def _prove_flightsim() -> dict[str, Any]:
                         "accepted_count": scanned.get("accepted_count"),
                         "candidate_count": scanned.get("candidate_count"),
                         "ranges": len(scanned.get("ranges") or []),
+                        "best_score": scanned.get("best_score"),
                         "sample_error": scanned.get("sample_error"),
                     }
                 )
+                if int(scanned.get("accepted_count") or 0) >= 1:
+                    break
             meta["direct_scans"] = scan_meta
             moments = list_appearance_moments(pid, limit=200)
             native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
@@ -742,12 +784,13 @@ def _prove_flightsim() -> dict[str, Any]:
         if int(seeded.get("selected_count") or 0) >= 2:
             _check(
                 "p2i8b_native_scan_or_queue",
-                int(meta.get("processed") or 0) >= 1 or len(native) >= 1,
+                len(native) >= 1,
                 checks,
                 problems,
                 (
                     f"processed={meta.get('processed')} native={len(native)} "
-                    f"inventory={len(videos)} scans={meta.get('direct_scans')}"
+                    f"inventory={len(videos)} i1_existing={i1_existing[:8]} "
+                    f"scans={meta.get('direct_scans')}"
                 ),
             )
         st = recognition_status(person_id=pid)

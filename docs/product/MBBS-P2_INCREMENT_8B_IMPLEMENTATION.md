@@ -9,7 +9,7 @@
 - After Learn: scan the current video first, then enqueue other eligible videos by priority. No synchronous full-library rescan.
 - I1/HVRT `face_appearance_moments` remain visible with `evidence_lineage=i1_hvrt`. I8B writes `method=mb_native_i8b` / `evidence_lineage=mb_native_i8b` only. Native rebuild deletes native rows for that person+video, never legacy rows.
 - Exemplar v1: reject tiny/unusable crops, drop near-duplicates (cosine ≥ 0.97), prefer year then pose buckets, cap 16.
-- Acceptance corpus: negative video + both-people video in harness; FlightSim scans HVRT inventory under `MEMORYBOX_VIDEO_MEDIA_ROOT` (`P:\photos\home videos` via `startmb` / `config/video_worker.env`).
+- Acceptance corpus: negative video + both-people video in harness; FlightSim scans HVRT inventory under `MEMORYBOX_VIDEO_MEDIA_ROOT` (`P:\photos\home videos` via `startmb` / `config/video_worker.env`). FlightSim prove requires at least one `mb_native_i8b` appearance range (queue completion alone is not enough).
 - I9 speech/voice is not implemented here.
 
 **APIs:** `POST /recognition/seed`, `POST /recognition/learn`, `GET /recognition/status`, `POST /recognition/appearances/correct` with `withdraw: true`. Teach `POST /people/{id}/map` also runs I8B Learn when a Review crop exists.

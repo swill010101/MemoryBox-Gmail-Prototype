@@ -2,7 +2,7 @@
 
 Run: python -m memorybox.video_worker
 Config (env only — no hard-coded hosts):
-  MEMORYBOX_VIDEO_MEDIA_ROOT   — family-video library (FlightSim: P:\photos\home videos)
+  MEMORYBOX_VIDEO_MEDIA_ROOT   — family-video library (FlightSim: P:/photos/home videos)
   MEMORYBOX_VIDEO_DERIVED_DIR  — rebuildable derived detections store
   MEMORYBOX_VIDEO_PRESENCE_GAP_SEC — merge gap (default 60)
   MEMORYBOX_VIDEO_WORKER_HOST / MEMORYBOX_VIDEO_WORKER_PORT
@@ -13,6 +13,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,7 +28,25 @@ from memorybox.providers.video.merge import (
 )
 from memorybox.video_worker.browser_proxy import BrowserProxyManager
 
-VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
+VIDEO_EXTS = {
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".avi",
+    ".m4v",
+    ".webm",
+    ".mts",
+    ".m2ts",
+    ".mpg",
+    ".mpeg",
+    ".wmv",
+    ".ts",
+    ".3gp",
+    ".mod",
+    ".tod",
+    ".flv",
+    ".vob",
+}
 
 _proxies: BrowserProxyManager | None = None
 
@@ -90,13 +109,38 @@ def _save_derived(data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _stable_video_id(path: Path, root: Path) -> str:
+def _rel_hint(path: Path, root: Path) -> str:
     try:
-        rel = str(path.relative_to(root)).replace("\\", "/")
+        return str(path.relative_to(root)).replace("\\", "/")
     except ValueError:
-        rel = path.name
-    digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:16]
+        return path.name
+
+
+def _stable_id_from_key(key: str) -> str:
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
     return f"vid-{digest}"
+
+
+def _stable_video_id(path: Path, root: Path) -> str:
+    return _stable_id_from_key(_rel_hint(path, root))
+
+
+def _alias_ids(path: Path, root: Path) -> list[str]:
+    """I1 rows may hash slash-normalized rel, Windows rel, or filename only."""
+    rel = _rel_hint(path, root)
+    try:
+        win_rel = str(path.relative_to(root))
+    except ValueError:
+        win_rel = path.name
+    keys = [rel, rel.lower(), win_rel, win_rel.lower(), path.name, path.name.lower()]
+    out: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        vid = _stable_id_from_key(key)
+        if vid not in seen:
+            seen.add(vid)
+            out.append(vid)
+    return out
 
 
 def _scan_videos(limit: int = 100) -> list[dict[str, Any]]:
@@ -104,40 +148,55 @@ def _scan_videos(limit: int = 100) -> list[dict[str, Any]]:
     if root is None or not root.is_dir():
         return []
     out: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() not in VIDEO_EXTS:
-            continue
-        # Never open for write — metadata only
-        try:
-            rel = str(path.relative_to(root)).replace("\\", "/")
-        except ValueError:
-            rel = path.name
-        out.append(
-            {
-                "external_id": _stable_video_id(path, root),
-                "title": path.stem,
-                "path_hint": rel,
-                "duration_sec": None,
-            }
-        )
-        if len(out) >= limit:
-            break
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
+        dirnames.sort()
+        filenames.sort()
+        for name in filenames:
+            suffix = Path(name).suffix.lower()
+            if suffix not in VIDEO_EXTS:
+                continue
+            path = Path(dirpath) / name
+            if not path.is_file():
+                continue
+            rel = _rel_hint(path, root)
+            aliases = _alias_ids(path, root)
+            out.append(
+                {
+                    "external_id": aliases[0],
+                    "alias_ids": aliases[1:],
+                    "title": path.stem,
+                    "path_hint": rel,
+                    "duration_sec": None,
+                }
+            )
+            if len(out) >= limit:
+                return out
     return out
 
 
 _VIDEO_INDEX: tuple[float, list[dict[str, Any]]] | None = None
-_VIDEO_INDEX_TTL_SEC = 120.0
+_VIDEO_BY_ID: dict[str, dict[str, Any]] = {}
+_VIDEO_INDEX_TTL_SEC = 300.0
+
+
+def _index_lookup() -> dict[str, dict[str, Any]]:
+    _video_index()
+    return _VIDEO_BY_ID
 
 
 def _video_index() -> list[dict[str, Any]]:
     """Full library index (cached). Lookup by id must not stop at 5000 files."""
-    global _VIDEO_INDEX
+    global _VIDEO_INDEX, _VIDEO_BY_ID
     now = time.monotonic()
     if _VIDEO_INDEX and (now - _VIDEO_INDEX[0]) < _VIDEO_INDEX_TTL_SEC:
         return _VIDEO_INDEX[1]
     rows = _scan_videos(limit=100000)
+    by_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        by_id[str(row["external_id"])] = row
+        for alias in row.get("alias_ids") or []:
+            by_id.setdefault(str(alias), row)
+    _VIDEO_BY_ID = by_id
     _VIDEO_INDEX = (now, rows)
     return rows
 
@@ -149,12 +208,13 @@ def _resolve_video_path(external_id: str) -> Path | None:
     want = (external_id or "").strip()
     if not want:
         return None
-    for row in _video_index():
-        if row["external_id"] == want:
-            hint = row.get("path_hint") or ""
-            candidate = root / hint
-            if candidate.is_file():
-                return candidate
+    row = _index_lookup().get(want)
+    if not row:
+        return None
+    hint = row.get("path_hint") or ""
+    candidate = root / hint
+    if candidate.is_file():
+        return candidate
     return None
 
 
@@ -296,19 +356,25 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/videos":
             limit = int((qs.get("limit") or ["100"])[0])
-            videos = _video_index()[: max(1, min(limit, 100000))]
-            self._json(200, {"ok": True, "videos": videos})
+            n = max(1, min(limit, 100000))
+            videos = [
+                {k: v for k, v in row.items() if k != "alias_ids"}
+                for row in _video_index()[:n]
+            ]
+            self._json(200, {"ok": True, "videos": videos, "indexed": len(_video_index())})
             return
 
         if path.startswith("/videos/") and not path.endswith("/browser-proxy"):
             vid = path[len("/videos/") :].strip("/")
             if vid and "/" not in vid:
-                row = next((r for r in _video_index() if r["external_id"] == vid), None)
+                row = _index_lookup().get(vid)
                 source = _resolve_video_path(vid)
                 if not row and not source:
                     self._json(404, {"ok": False, "detail": "video not found"})
                     return
-                payload = dict(row or {"external_id": vid})
+                payload = {k: v for k, v in dict(row or {"external_id": vid}).items() if k != "alias_ids"}
+                payload["external_id"] = vid
+                payload["canonical_id"] = (row or {}).get("external_id")
                 payload["exists"] = bool(source and source.is_file())
                 self._json(200, {"ok": True, "video": payload})
                 return
@@ -621,6 +687,15 @@ def serve() -> None:
     host = _env("MEMORYBOX_VIDEO_WORKER_HOST", "127.0.0.1") or "127.0.0.1"
     port = int(_env("MEMORYBOX_VIDEO_WORKER_PORT", "8791") or "8791")
     httpd = ThreadingHTTPServer((host, port), Handler)
+
+    def _warm() -> None:
+        try:
+            n = len(_video_index())
+            print(json.dumps({"ok": True, "event": "video_index_ready", "video_count": n}), flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(json.dumps({"ok": False, "event": "video_index_failed", "detail": str(exc)[:240]}), flush=True)
+
+    threading.Thread(target=_warm, name="video-index-warm", daemon=True).start()
     print(
         json.dumps(
             {

@@ -109,6 +109,29 @@ class HvrtHttpVideoProvider:
                 provider_key=self.provider_key, ok=False, detail=str(exc)
             )
 
+    def get_video(self, video_external_id: str) -> VideoAssetDto | None:
+        vid = (video_external_id or "").strip()
+        if not vid:
+            return None
+        try:
+            data = self._request(
+                "GET",
+                f"/videos/{urllib.parse.quote(vid)}",
+                timeout_sec=180.0,
+            )
+        except (ProviderError, ProviderUnavailable):
+            return None
+        row = data.get("video") or {}
+        if not row or data.get("ok") is False:
+            return None
+        return VideoAssetDto(
+            provider_key=self.provider_key,
+            external_id=str(row.get("canonical_id") or row.get("external_id") or vid),
+            title=row.get("title"),
+            path_hint=row.get("path_hint"),
+            duration_sec=row.get("duration_sec"),
+        )
+
     def list_videos(self, *, limit: int = 100) -> list[VideoAssetDto]:
         data = self._request("GET", f"/videos?limit={int(limit)}", timeout_sec=120.0)
         out: list[VideoAssetDto] = []

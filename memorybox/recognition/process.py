@@ -166,13 +166,22 @@ def process_one(
     try:
         videos = {v.external_id: v for v in video_provider.list_videos(limit=5000)}
         if veid not in videos:
-            complete_item(
-                item["id"],
-                status=STATUS_EXCLUDED,
-                reason="unavailable_source",
-                result={"detail": "video not in healthy source inventory"},
-            )
-            return {"item_id": item["id"], "status": STATUS_EXCLUDED, "reason": "unavailable_source"}
+            getter = getattr(video_provider, "get_video", None)
+            found = None
+            if callable(getter):
+                try:
+                    found = getter(veid)
+                except Exception:
+                    found = None
+            if found is None:
+                complete_item(
+                    item["id"],
+                    status=STATUS_EXCLUDED,
+                    reason="unavailable_source",
+                    result={"detail": "video not in healthy source inventory"},
+                )
+                return {"item_id": item["id"], "status": STATUS_EXCLUDED, "reason": "unavailable_source"}
+            videos[veid] = found
 
         vpk = getattr(video_provider, "provider_key", None) or item["video_provider_key"]
         from memorybox.recognition.exemplars import list_active_exemplars

@@ -107,12 +107,15 @@ def scan_video_for_person(
     observations: list[dict[str, Any]] = []
     accepted = 0
     uncertain = 0
+    best_score = -1.0
     for sample in samples:
         emb = sample.get("embedding")
         if not emb:
             continue
         t_sec = float(sample.get("t_sec") or 0)
         best, score = match_embedding(emb, exemplars)
+        if score > best_score:
+            best_score = score
         if overlaps_withdrawal(t_sec, withdrawals):
             state = "withdrawn"
             pid: str | None = None
@@ -183,5 +186,6 @@ def scan_video_for_person(
         "uncertain_count": uncertain,
         "ranges": range_ids,
         "observation_count": len(observations),
+        "best_score": best_score,
         "sample_error": sample_error,
     }
