@@ -122,12 +122,30 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "if (!includeTexts) return false;" in matches_fn
         and "applyPresentFlags" in explore_js
         and "mb-day-row-date" in explore_js
-        and "explore.js?v=i8a5" in explore_html
+        and "explore.js?v=i8a6" in explore_html
         and "promptNeedPersonOrTime" in explore_js
         and "openDayDetailThread" in explore_js,
         checks,
         problems,
         "Communications filter + list dates + cache bust",
+    )
+    email_click = explore_js.split('if (fid === "email")')[1].split('if (fid === "calendar")')[0]
+    cal_click = explore_js.split('if (fid === "calendar")')[1].split("setTypeFilter(fid)")[0]
+    _check(
+        "i8a_comms_pill_filter_before_fetch",
+        "openCommsFilter()" in email_click
+        and "presentWithoutRewritingAsk" not in email_click,
+        checks,
+        problems,
+        "Communications pill opens filter; Apply fetches",
+    )
+    _check(
+        "i8a_calendar_pill_fetches",
+        'presentWithoutRewritingAsk("calendar")' in cal_click
+        and "openCalFilter()" not in cal_click,
+        checks,
+        problems,
+        "Calendar pill searches; no filter box",
     )
 
 

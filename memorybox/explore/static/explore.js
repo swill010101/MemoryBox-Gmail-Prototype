@@ -2062,15 +2062,7 @@
             promptNeedPersonOrTime("communications");
             return;
           }
-          const visComms = rawItems.some(
-            (it) =>
-              (isSmsTextItem(it) || isEmailItem(it)) && !it.gallery_default_hidden
-          );
-          if (state.domain.typeFilter === "email" && visComms) {
-            openCommsFilter();
-            return;
-          }
-          presentWithoutRewritingAsk("communications");
+          openCommsFilter();
           return;
         }
         if (fid === "calendar") {
@@ -2079,8 +2071,13 @@
             return;
           }
           const visCal = rawItems.some((it) => isCalendarItem(it) && !it.gallery_default_hidden);
-          if (state.domain.typeFilter === "calendar" && visCal) {
-            openCalFilter();
+          if (visCal) {
+            state.domain.includeCalendar = true;
+            state.domain.calendarPinned = true;
+            state.domain.memoryPresentation = false;
+            state.domain.typeFilter = "calendar";
+            syncTimelineToEligibleDatedExtent();
+            render();
             return;
           }
           presentWithoutRewritingAsk("calendar");
@@ -2530,8 +2527,18 @@
     hideQuickPreview();
     const el = document.getElementById("mb-comms-filter");
     if (!el) return;
-    document.getElementById("mb-comms-src-email").checked = Boolean(state.domain.includeEmail);
-    document.getElementById("mb-comms-src-text").checked = Boolean(state.domain.includeTexts);
+    const pinned = Boolean(
+      state.domain.emailPinned ||
+        state.domain.textsPinned ||
+        state.domain.includeEmail ||
+        state.domain.includeTexts
+    );
+    document.getElementById("mb-comms-src-email").checked = pinned
+      ? Boolean(state.domain.includeEmail || state.domain.emailPinned)
+      : true;
+    document.getElementById("mb-comms-src-text").checked = pinned
+      ? Boolean(state.domain.includeTexts || state.domain.textsPinned)
+      : true;
     const att = state.domain.attachmentsOnly;
     el.querySelectorAll('input[name="mb-comms-show"]').forEach((r) => {
       r.checked = att ? r.value === "attachments" : r.value === "messages";
@@ -2805,12 +2812,16 @@
         state.domain.memoryPresentation = false;
         document.getElementById("mb-comms-filter").hidden = true;
         hideQuickPreview();
-        const needTexts =
-          state.domain.includeTexts && !rawItems.some((it) => isSmsTextItem(it));
-        const needMail =
-          state.domain.includeEmail && !rawItems.some((it) => isEmailItem(it));
         const wantEmail = state.domain.includeEmail;
         const wantText = state.domain.includeTexts;
+        const haveVisibleTexts = rawItems.some(
+          (it) => isSmsTextItem(it) && !it.gallery_default_hidden
+        );
+        const haveVisibleMail = rawItems.some(
+          (it) => isEmailItem(it) && !it.gallery_default_hidden
+        );
+        const needTexts = wantText && !haveVisibleTexts;
+        const needMail = wantEmail && !haveVisibleMail;
         if (needMail || needTexts) {
           if (wantEmail && wantText) presentWithoutRewritingAsk("communications");
           else if (wantEmail) presentWithoutRewritingAsk("email");
