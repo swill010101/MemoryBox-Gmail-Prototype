@@ -6,7 +6,7 @@
 **Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not start:** I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user · I8A runtime
 
-PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A definition is written** (not build-authorized).
+PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19.
 
 ---
 
@@ -108,7 +108,7 @@ Q8 is open. Q1–Q7 stay locked.
 3. Single compile function used by Ask + Explore (+ Person scope).
 4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. Do not start I8A runtime or I8.5 until authorized. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
+6. **Stop.** Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. Do not start I9 or I8.5 until authorized. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -129,4 +129,4 @@ Q8 is open. Q1–Q7 stay locked.
 
 ## 7. Decision status
 
-PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **P2-I8 ACCEPTED.** **I8A definition written, not authorized.**
+PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **P2-I8 ACCEPTED.** **I8A ACCEPTED** 2026-08-19.

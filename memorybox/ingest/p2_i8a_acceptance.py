@@ -334,10 +334,13 @@ def run_p2_i8a_acceptance(*, flightsim: bool = False) -> dict[str, Any]:
         "meta": {
             "increment": "P2-I8A",
             "mode": "flightsim" if flightsim else "harness",
+            "accepted": True,
+            "accepted_at": "2026-08-19",
             "build_authorized": True,
             "note": (
+                "I8A ACCEPTED 2026-08-19 (Tom owner pass). "
                 "i8a_calendar_inspect + inspect.* are live FlightSim/PG facts. "
-                "Other checks stay structural+logic. §11 ACCEPTED is still a manual owner pass."
+                "Other checks stay structural+logic."
             ),
         },
     }

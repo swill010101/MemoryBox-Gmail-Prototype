@@ -8,7 +8,7 @@
 **Depends:** I7A **ACCEPTED** 2026-08-15 · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
 **Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I8 email / **P2-BL-I8-01** · I8.5 · **I9 spoken product** (stays after I8.5) · I10 · I11 · I13/I14 · family nav · multi-user · Explore redesign
 
-**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A Unified Communications is written** (not build-authorized). Do not start I8.5 until Tom authorizes that increment. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
+**MBQL-001 is ACCEPTED.** Q1 residual · Q2 shared Explore contract. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A is ACCEPTED** (2026-08-19). Do not start I8.5 or I9 until Tom authorizes that increment. **P2-I4 is ACCEPTED** (2026-08-18); Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -41,7 +41,7 @@ I8 **reuses** this contract for communication semantics. I9 STT **calls** it whe
 | 6 | **P2-I9** Spoken Moments | **Stays here.** STT-ready contract only in MBQL-001; no I9 product |
 | 7+ | I10 / I11 | Same contract; do not pull them into MBQL-001 |
 
-**Build rule:** Definition locked. Build authorized 2026-08-15. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. Do not start I8.5 until Tom authorizes that increment.
+**Build rule:** Definition locked. Build authorized 2026-08-15. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. Do not start I8.5 until Tom authorizes that increment.
 
 ---
 
@@ -182,4 +182,4 @@ MBQL plans may name people and quote Ask text. They are **intent**, not Evidence
 | MBQL-001 ACCEPTED | **Yes** (2026-08-18 — Tom: “MBQL is accepted”) |
 | I8 / I9 runtime | **NOT STARTED** |
 
-**Stop.** **P2-I8 ACCEPTED** 2026-08-18. **I8A definition is written** (not authorized). Do not start I8.5 until Tom authorizes that increment. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.
+**Stop.** **P2-I8 ACCEPTED** 2026-08-18. **I8A ACCEPTED** 2026-08-19. Do not start I9 or I8.5 until Tom authorizes that increment. **P2-I4 ACCEPTED** 2026-08-18. Do not reopen MBQL-001. Do not reopen I4 for **P2-BL-I4-01** polish.

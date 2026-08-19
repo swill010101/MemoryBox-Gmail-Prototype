@@ -5,8 +5,8 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I7 **ACCEPTED** including **I4** 2026-08-18; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18; **P2-I8 ACCEPTED** 2026-08-18). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). **P2-I8A** is **REVISED** (awaiting final founder lock; **not** build-authorized). Near-term: I8 → I8A → I9. Face-SoT later.  
-**Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. Next is **P2-I8A** (definition revised; awaiting final founder lock; **not** build-authorized). After I8A: **I9**. Face-SoT later. Do not reopen I4 or I8 for aesthetic polish.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**: I4 **ACCEPTED** 2026-08-18; **P2-I7A ACCEPTED** 2026-08-15; **MBQL-001 ACCEPTED** 2026-08-18; **P2-I8 ACCEPTED** 2026-08-18; **P2-I8A ACCEPTED** 2026-08-19). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Near-term: **I9** (not authorized). Face-SoT later.  
+**Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. Next is **I9** (not authorized). Face-SoT later. Do not reopen I4, I8, or I8A for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
 ## 0. First-increment verdict (confirmed)
@@ -93,7 +93,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I7A** | AI Model Trace & Observability | F | **ACCEPTED** (2026-08-15) — after I7 ACCEPTED, before MBQL-001 — [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [schema](MBBS-P2_I7A_TRACE_SCHEMA.md) |
 | **MBQL-001** | Ask, Query & Command Language | F | **ACCEPTED** (2026-08-18 — Tom: “MBQL is accepted”) — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). After I7A ACCEPTED, before I8. |
 | **P2-I8** | Richer Email | A | **ACCEPTED** 2026-08-18 — [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md) |
-| **P2-I8A** | Unified Communications Gallery & Timeline Precision | U | **BUILD AUTHORIZED** 2026-08-18 (screens 00–11 + conflict locks). After I8 ACCEPTED, **before I9**. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | U | **ACCEPTED** 2026-08-19 — [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). After I8 ACCEPTED, **before I9**. **P2-BL-I8-02 absorbed.** |
 | **P2-I8.5** | Face Evidence Ownership & Immich Decoupling | F | Existing inserted increment; unchanged by I7A |
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | |
 | **P2-I10** | Cross-Source Correlation | A | |
@@ -168,15 +168,15 @@ Developer-only request→model→disposition traces. **ACCEPTED** 2026-08-15 (To
 
 ### MBQL-001 — Ask, Query & Command Language · F
 
-Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. **P2-I8 is ACCEPTED** (2026-08-18). **P2-I8A is REVISED** (not build-authorized). Near-term after I8A: **I9**. I8.5 later.
+Shared typed intent for Planner / Orchestrator / Explore commands. **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). Q1 residual model only. **P2-I8 ACCEPTED** (2026-08-18). **P2-I8A ACCEPTED** (2026-08-19). Near-term: **I9** (not authorized). I8.5 later.
 
 ### P2-I8 — Richer Email · A
 
-P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md). Attachment files up front = **P2-BL-I8-01** (absorbed). Ask first-name Peggy count without locking Peggy George = **P2-BL-I8-02** (next increment; does not reopen I8).
+P2-COM-02/03. **ACCEPTED** 2026-08-18 (Tom FlightSim §9). [I8 definition](MBBS-P2_INCREMENT_8_DEFINITION.md). Attachment files up front = **P2-BL-I8-01** (absorbed). Ask first-name Peggy count without locking Peggy George = **P2-BL-I8-02** (**absorbed in I8A ACCEPTED**).
 
 ### P2-I8A — Unified Communications Gallery & Timeline Precision · U
 
-Combined Email/SMS/Calendar **day** cards, density-aware aggregation, Communications + Calendar filters, Attachments only, drill-down (rollover → Open Day → tabs), shared viewer without send, Q3 visual-off defaults, **P2-BL-I8-02**. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **REVISED**, **not BUILD AUTHORIZED**. Next after I8A is **I9**. Not I8.5. Not I10/I11 generation.
+Combined Email/SMS/Calendar **day** cards, density-aware aggregation, Communications + Calendar filters, Attachments only, drill-down (rollover → Open Day → tabs), shared viewer without send, Q3 visual-off defaults, **P2-BL-I8-02**. [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) **ACCEPTED** 2026-08-19. Next is **I9** (not authorized). Not I8.5. Not I10/I11 generation.
 
 ### P2-I8.5 — Face Evidence Ownership · F
 

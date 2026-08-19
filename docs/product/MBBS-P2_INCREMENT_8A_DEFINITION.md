@@ -1,7 +1,7 @@
 # MBBS-P2 Increment 8A — Unified Communications Gallery & Timeline Precision
 
-**Status:** **BUILD AUTHORIZED** 2026-08-18 (founder: “approved…. build it.”) · Q1–Q6 **LOCKED** · visual baseline **ACCEPTED** · conflict resolution **LOCKED**  
-**Date:** 2026-08-18 (written) · 2026-08-18 (founder revise) · 2026-08-18 (visual verification + conflict locks — this document)  
+**Status:** **ACCEPTED** (2026-08-19 — Tom: owner-pass list fixed; “i8a is accepted, please close”)  
+**Date:** 2026-08-18 (written / authorized) · 2026-08-19 (accepted)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) — after **P2-I8 ACCEPTED**, **before P2-I9**. Face Evidence Ownership / Immich decoupling is **later**, not next after I8A.  
 **Thin PRD:** [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md)  
 **Visual baseline (approved):** [`docs/source/mockups/i8A/`](../source/mockups/i8A/) commit `3d46a86` and this document’s screen-authority rule. Product implementation **must not** reproduce **DRAFT · NOT YET FOR CURSOR**.  
@@ -11,7 +11,17 @@
 
 **I8 follow-up in this increment:** **P2-BL-I8-02** — Ask email/SMS counts lock canonical Person (Peggy George) before retrieve. Behavioral, not a required persistent Person-lock screen. Does not reopen I8.
 
-**Build rule:** Founder **authorized I8A build** 2026-08-18. Implement this definition. Do not start I9, I8.5, I10, or I11 as part of this increment.
+**Build rule:** Increment **ACCEPTED** 2026-08-19. Do not reopen I8A for chrome. Do not start I9, I8.5, I10, or I11 until Tom authorizes the next increment.
+
+## What shipped (ACCEPTED)
+
+- Q3: Email / SMS / Calendar **visually off** on broad Memory Gallery; eligibility unchanged until Communications / Calendar presentation.
+- Communications filter (Email + Text, Attachments only) and Calendar filter; Ask does not rewrite when chips change presentation.
+- Density-aware year/month/day combined cards; mixed gallery **inserts** comms year cards into the photo stream.
+- Drill-down: Open day → Email / Text / Calendar tabs → thread or day+conversation → shared viewer; **no** Reply / Forward.
+- **P2-BL-I8-02** absorbed: unique Person (Peggy George) before email/SMS retrieve/count.
+- Minimum calendar retrieve on existing `calendar_event`; originals untouched.
+- Owner pass 2026-08-19: mix insert, SMS transcript honesty, timeline ticks, photo fill/centered zoom, `pictures of A and B` AND.
 
 ---
 
@@ -58,7 +68,7 @@ Where prose and screens disagreed, **founder conflict resolution 2026-08-18** (t
 |-------|----------|------|
 | 1 | **P2-I7** SMS/Text | **ACCEPTED** 2026-08-15 |
 | 2 | **P2-I8** Richer Email | **ACCEPTED** 2026-08-18 (FlightSim §9) |
-| 3 | **P2-I8A** Unified Communications Gallery & Timeline Precision | **This increment** |
+| 3 | **P2-I8A** Unified Communications Gallery & Timeline Precision | **ACCEPTED** 2026-08-19 |
 | 4 | **P2-I9** Spoken Moments | **Next after I8A** (not I8.5) |
 | later | **P2-I8.5** Face Evidence Ownership & Immich decoupling | **Moved later.** After photo/video recognition, correction, merge/review, and relearning are operationally solid. Not the immediate next increment after I8A. |
 | later | I10 / I11 | Correlate; narrate — **not I8A** (I8A only preserves combined-card reuse for later Supporting Evidence) |
@@ -400,12 +410,13 @@ Do **not** start I9 / I8.5 / I10 / I11 in this increment. I8A build is authorize
 | Visual-conflict resolution | **LOCKED** 2026-08-18 (this document §2.1) |
 | I8A definition | **LOCKED** — this document — founder approved 2026-08-18 |
 | I8A PRD | **LOCKED** — [MBPRD-P2-I8A_UNIFIED_COMMS.md](MBPRD-P2-I8A_UNIFIED_COMMS.md) |
-| P2-BL-I8-02 | **In I8A** (behavioral; not a required lock screen) |
 | P2-BL-I8A-01 (promo classifier) | **Parked** |
 | P2-BL-I7-01 (SMS attachment bytes) | **Not in I8A** — disclose missing bytes |
-| I8A build | **AUTHORIZED** 2026-08-18 |
-| I9 Spoken | **NOT STARTED** (next after I8A) |
+| I8A build | **AUTHORIZED** 2026-08-18 · **shipped** |
+| I8A ACCEPTED | **ACCEPTED** 2026-08-19 |
+| P2-BL-I8-02 | **Absorbed in I8A ACCEPTED** |
+| I9 Spoken | **NOT STARTED** (next after I8A; not authorized) |
 | I8.5 Face ownership | **LATER** (not next after I8A) |
 | I10 / I11 | **NOT STARTED** (I8A preserves combined-card reuse only) |
 
-**Stop after I8A.** Do not start I9 / I8.5 / I10 / I11 in this increment.
+**Stop.** I8A is **ACCEPTED**. Do not reopen I8A. Do not start I9 / I8.5 / I10 / I11 until authorized.

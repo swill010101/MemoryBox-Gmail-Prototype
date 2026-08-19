@@ -1,11 +1,11 @@
 # MBPRD-P2-I8A — Unified Communications Gallery & Timeline Precision
 
-**Status:** **BUILD AUTHORIZED** 2026-08-18 · Q1–Q6 **LOCKED** · visual baseline **ACCEPTED** · conflict locks **LOCKED**  
-**Date:** 2026-08-18  
+**Status:** **LOCKED** · **ACCEPTED** 2026-08-19 (Tom: owner-pass complete; “i8a is accepted”)  
+**Date:** 2026-08-18 (locked) · 2026-08-19 (accepted)  
 **Increment definition:** [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md)  
 **Visual baseline:** [`docs/source/mockups/i8A/`](../source/mockups/i8A/)  
 **Depends:** I8 **ACCEPTED** · I7 **ACCEPTED** · I4 **ACCEPTED** · MBQL-001 **ACCEPTED** · existing ICS ingest path  
-**Does not start:** I8A runtime until “I8A build is authorized” · I9 spoken product inside I8A · I8.5 face SoT · I10 · I11 **narrative generation** · live Gmail / send · Calendar product redesign · Reply/Reply all/Forward
+**Does not start:** I9 spoken product · I8.5 face SoT · I10 · I11 **narrative generation** · live Gmail / send · Calendar product redesign · Reply/Reply all/Forward
 
 This PRD tracks the **locked definition**. Runtime follows MBBS-P2 I8A.
 
@@ -32,7 +32,7 @@ It matters **now** because both comms channels exist and the owner already uses 
 
 ## 2. Success criteria
 
-After final lock + build authorization + FlightSim definition §11 (all items).
+FlightSim owner pass 2026-08-19 — **met**. Increment **ACCEPTED**.
 
 ---
 
@@ -42,7 +42,7 @@ After final lock + build authorization + FlightSim definition §11 (all items).
 
 **IN:** combined day card; Communications + Calendar filters; Attachments only (stored evidence); density-aware aggregation; one shared Ask/Explore state; drill-down stack (§4.5); Q3 visual defaults + Memory presentation command; shared viewer without send; **P2-BL-I8-02**; minimum ICS ingest if FlightSim has no `calendar_event` rows; combined-card reuse for later Supporting Evidence.
 
-**OUT:** Evidence deletion; AI promo classifier (**P2-BL-I8A-01**); invented threads; Calendar-as-comms; I9/I8.5/I10/I11 generation; Reply/Forward; **P2-BL-I7-01** byte ingest; runtime before authorization.
+**OUT:** Evidence deletion; AI promo classifier (**P2-BL-I8A-01**); invented threads; Calendar-as-comms; I9/I8.5/I10/I11 generation; Reply/Forward; **P2-BL-I7-01** byte ingest.
 
 ---
 
@@ -75,4 +75,4 @@ Visual authority: definition §0.1.
 
 ## 7. Decision status
 
-PRD **LOCKED**. Definition **LOCKED**. Build **AUTHORIZED** 2026-08-18.
+PRD **LOCKED**. Definition **LOCKED**. Build **shipped**. Increment **ACCEPTED** 2026-08-19. **P2-BL-I8-02 absorbed.** Do not reopen I8A. Next is **I9** (not authorized).
