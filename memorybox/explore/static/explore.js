@@ -3671,7 +3671,7 @@
       ["Location", item.place || item.location || item.city || "—"],
       ["Provider", item.provider_key || item.source || "—"],
       ["Original preserved", item.original_preserved === false ? "No" : "Yes"],
-      ["File / id", item.original_filename || item.external_id || item.id || "—"],
+      ["File / id", item.original_filename || item.video_external_id || item.external_id || item.id || "—"],
     ];
     const exif =
       item.exif && typeof item.exif === "object" && !Array.isArray(item.exif)
@@ -4121,43 +4121,63 @@
   function bindExploreVideoPlayer(item) {
     const el = document.querySelector(".mb-ev-video-player");
     if (!el) return;
+    const t0 = item.t != null ? Number(item.t) : 0;
+    const seekOnMeta = () => {
+      try {
+        if (t0 > 0) el.currentTime = t0;
+      } catch (e) {}
+      el.removeEventListener("loadedmetadata", seekOnMeta);
+    };
     const immichSrc = immichVideoSrc(item);
     if (immichSrc) {
-      el.src = immichSrc;
+      el.src = String(immichSrc).split("?")[0];
       el.preload = "metadata";
+      el.addEventListener("loadedmetadata", seekOnMeta);
       el.load();
       return;
     }
     const vid = String((item && item.video_external_id) || "").trim();
     if (!vid) return;
-    const t0 = item.t != null ? Number(item.t) : 0;
     const encoded = encodeURIComponent(vid);
     fetch("/review/videos/" + encoded + "/browser-proxy", { method: "POST" })
       .then((res) => {
         el.src =
           "/review/media/" + encoded + (res.ok ? "?proxy=1" : "");
-        const onMeta = () => {
-          try {
-            if (t0 > 0) el.currentTime = t0;
-          } catch (e) {}
-          el.removeEventListener("loadedmetadata", onMeta);
-        };
-        el.addEventListener("loadedmetadata", onMeta);
+        el.addEventListener("loadedmetadata", seekOnMeta);
         el.load();
       })
       .catch(() => {
         el.src = "/review/media/" + encoded;
+        el.addEventListener("loadedmetadata", seekOnMeta);
         el.load();
       });
   }
 
+  function looksLikeUuid(value) {
+    const raw = String(value || "").trim();
+    return raw.length === 36 && (raw.match(/-/g) || []).length === 4;
+  }
+
   function immichVideoSrc(item) {
     const play = String((item && item.play_url) || "");
-    if (play.indexOf("/library/media/immich-video/") >= 0) return play;
+    if (play.indexOf("/library/media/immich-video/") >= 0) {
+      return play.split("?")[0];
+    }
     const pk = String((item && item.provider_key) || "").toLowerCase();
-    const eid = String((item && item.external_id) || "").trim();
-    if (pk === "immich" && eid && String(item.type || "").toLowerCase() === "video") {
-      return "/library/media/immich-video/" + encodeURIComponent(eid);
+    const asset = String(
+      (item && (item.video_external_id || item.external_id)) || ""
+    ).trim();
+    const useAsset =
+      looksLikeUuid(String((item && item.video_external_id) || "").trim())
+        ? String(item.video_external_id).trim()
+        : looksLikeUuid(asset) && pk === "immich"
+          ? asset
+          : "";
+    if (
+      useAsset &&
+      String((item && item.type) || "").toLowerCase() === "video"
+    ) {
+      return "/library/media/immich-video/" + encodeURIComponent(useAsset);
     }
     return "";
   }

@@ -2434,6 +2434,7 @@ def search_videos(
                             video_external_id=vid,
                             start_sec=t0,
                             play_url=mom.get("play_url"),
+                            video_provider_key=str(mom.get("video_provider_key") or ""),
                         )
                         pname = name_by_pid.get(pid) or None
                         hits.append(

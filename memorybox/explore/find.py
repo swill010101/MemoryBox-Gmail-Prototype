@@ -300,11 +300,25 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
         face = v.get("face_external_id")
-        play = f"/review/media/{vid}?t={t0:.3f}"
-        if face:
-            play += f"&face={face}"
+        pk = str(v.get("provider_key") or "hvrt")
+        hit_play = str(v.get("play_url") or "")
+        looks_immich = pk == "immich" or (
+            len(vid) == 36 and vid.count("-") == 4 and not vid.startswith("vid-")
+        )
+        if looks_immich:
+            play = (
+                hit_play
+                if "/library/media/immich-video/" in hit_play
+                else f"/library/media/immich-video/{vid}?t={t0:.3f}"
+            )
+        else:
+            play = f"/review/media/{vid}?t={t0:.3f}"
+            if face:
+                play += f"&face={face}"
         poster = ""
-        if not str(vid).startswith(("video-peggy-", "video-library-")):
+        if looks_immich:
+            poster = ""
+        elif not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
         # Appearance moments are in-video spans — calendar undated unless known
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
@@ -325,7 +339,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             provider_key=v.get("provider_key") or "hvrt",
             video_provider_key=v.get("provider_key") or "hvrt",
             video_external_id=vid,
-            external_id=v.get("external_id"),
+            external_id=vid or v.get("external_id"),
             face_external_id=face,
             t=t0,
             start_sec=t0,

@@ -215,6 +215,7 @@ def persist_native_range(
         play_url=ensure_timeslot_play_url(
             video_external_id=video_external_id,
             start_sec=start_sec,
+            video_provider_key=video_provider_key,
         ),
         meta={"processing_run_id": processing_run_id, **(meta or {})},
     )

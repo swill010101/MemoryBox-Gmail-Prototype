@@ -16,21 +16,38 @@ from memorybox.recognition.queue import (
 )
 
 
+def _looks_like_uuid(value: str) -> bool:
+    raw = (value or "").strip()
+    return len(raw) == 36 and raw.count("-") == 4
+
+
 def ensure_timeslot_play_url(
     *,
     video_external_id: str,
     start_sec: float,
     play_url: str | None = None,
+    video_provider_key: str | None = None,
 ) -> str:
     """Return a seekable play URL (must include t= for jump-to-timeslot).
 
-    Prefer keeping a provider media path when present, but always attach t=.
-    Fall back to Review UI deep-link when no provider URL is given.
+    Immich library videos stream at /library/media/immich-video/{asset}.
+    HVRT worker paths are /media/{id} and must go through the Review proxy.
     """
     t = float(start_sec)
+    vid = (video_external_id or "").strip()
     raw = (play_url or "").strip()
+    pk = (video_provider_key or "").strip().lower()
+    looks_immich = pk == "immich" or _looks_like_uuid(vid)
+    if looks_immich:
+        if (
+            not raw
+            or raw.startswith("/review/")
+            or raw.startswith("/media/")
+            or "/library/media/immich-video/" not in raw
+        ):
+            return f"/library/media/immich-video/{vid}?t={t}"
     if not raw:
-        return f"/review/ui?video={video_external_id}&t={t}"
+        return f"/review/ui?video={vid}&t={t}"
     # HVRT worker paths are /media/{id}. Explore/Ask serve :8790 — that 404s
     # unless we send the browser through the Review proxy.
     if raw.startswith("/media/"):
@@ -46,7 +63,7 @@ def ensure_timeslot_play_url(
         return urlunparse(
             (parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment)
         )
-    return f"/review/ui?video={video_external_id}&t={t}"
+    return f"/review/ui?video={vid}&t={t}"
 
 
 def upsert_appearance_moment(
@@ -138,6 +155,7 @@ def list_appearance_moments(
             video_external_id=str(d.get("video_external_id") or ""),
             start_sec=float(d.get("start_sec") or 0),
             play_url=d.get("play_url"),
+            video_provider_key=str(d.get("video_provider_key") or ""),
         )
         out.append(d)
     return out
@@ -179,6 +197,7 @@ def get_appearance_moment(moment_id: str) -> dict[str, Any] | None:
         video_external_id=str(d.get("video_external_id") or ""),
         start_sec=float(d.get("start_sec") or 0),
         play_url=d.get("play_url"),
+        video_provider_key=str(d.get("video_provider_key") or ""),
     )
     return d
 
@@ -332,6 +351,7 @@ def process_one(
                     video_external_id=veid,
                     start_sec=float(h.start_sec),
                     play_url=getattr(h, "play_url", None),
+                    video_provider_key=item.get("video_provider_key") or vpk,
                 ),
                 meta={"queue_item_id": item["id"], "evidence_lineage": "i1_hvrt"},
             )
