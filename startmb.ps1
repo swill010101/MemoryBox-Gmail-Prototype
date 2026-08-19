@@ -122,6 +122,53 @@ function Resolve-Python {
   return $cmd.Source
 }
 
+function Add-DirToUserPath([string]$Dir) {
+  if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { return }
+  $env:Path = "$Dir;" + $env:Path
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if ($null -eq $userPath) { $userPath = "" }
+  $parts = @($userPath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  $already = $false
+  foreach ($p in $parts) {
+    if ([string]::Equals($p, $Dir, [StringComparison]::OrdinalIgnoreCase)) { $already = $true; break }
+  }
+  if (-not $already) {
+    $next = if ($userPath.Trim()) { "$Dir;$userPath" } else { $Dir }
+    [Environment]::SetEnvironmentVariable("Path", $next, "User")
+    Write-Host "  User PATH += $Dir (open a new PowerShell for psql)"
+  }
+}
+
+function Ensure-PsqlOnPath {
+  Write-Step "Ensuring psql is on PATH"
+  $existing = Get-Command psql -ErrorAction SilentlyContinue
+  if ($existing) {
+    Write-Host "  psql already on PATH: $($existing.Source)"
+    return
+  }
+  $nativeDir = $null
+  $pgRoot = Join-Path ${env:ProgramFiles} "PostgreSQL"
+  if (Test-Path -LiteralPath $pgRoot) {
+    $hit = Get-ChildItem -LiteralPath $pgRoot -Directory -ErrorAction SilentlyContinue |
+      ForEach-Object { Join-Path $_.FullName "bin\psql.exe" } |
+      Where-Object { Test-Path -LiteralPath $_ } |
+      Select-Object -First 1
+    if ($hit) { $nativeDir = Split-Path -Parent $hit }
+  }
+  if ($nativeDir) {
+    Add-DirToUserPath $nativeDir
+    Write-Host "  using Windows PostgreSQL client: $nativeDir"
+    return
+  }
+  $tools = Join-Path $Root "tools"
+  if (-not (Test-Path -LiteralPath (Join-Path $tools "psql.cmd"))) {
+    Write-Host "  WARNING: no Windows psql.exe and no $tools\psql.cmd. Use: docker exec -it memorybox-pg psql -U memorybox -d memorybox" -ForegroundColor Yellow
+    return
+  }
+  Add-DirToUserPath $tools
+  Write-Host "  FlightSim Postgres is Docker (memorybox-pg). tools\psql.cmd is now on PATH."
+}
+
 function Wait-DockerReady([int]$Seconds) {
   Write-Step "Waiting for Docker engine (up to ${Seconds}s)"
   $deadline = (Get-Date).AddSeconds($Seconds)
@@ -255,6 +302,8 @@ Write-Host "  QDRANT_URL=$($env:MEMORYBOX_QDRANT_URL)"
 Write-Host "  VIDEO_WORKER_URL=$($env:MEMORYBOX_VIDEO_WORKER_URL)"
 Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
 Write-Host "  IMMICH_ENV=$($env:MEMORYBOX_IMMICH_ENV)"
+
+Ensure-PsqlOnPath
 
 Wait-DockerReady -Seconds $DockerWaitSec
 
