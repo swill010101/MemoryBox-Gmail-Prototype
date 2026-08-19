@@ -3543,6 +3543,7 @@
     state.modal.snapshot = null;
     state.modal.pendingCorrection = null;
     state.modal.transcriptOn = false;
+    stopLearnBoxing();
     document.getElementById("mb-modal-body").innerHTML = "";
     const teach = document.getElementById("mb-modal-teach");
     if (teach) {
@@ -3799,7 +3800,11 @@
     const teach = document.getElementById("mb-modal-teach");
     if (!panel) return;
     const tab = state.modal.railTab || "people";
-    if (teach) teach.hidden = tab !== "learn";
+    if (teach) {
+      teach.hidden = true;
+      teach.innerHTML = "";
+    }
+    if (tab !== "learn") stopLearnBoxing();
 
     if (tab === "people") {
       const peeps = peopleList(item);
@@ -3863,8 +3868,450 @@
 
 
     if (tab === "learn") {
-      panel.innerHTML = `<h3>Learn</h3>
-        <p class="mb-rail-empty">Teach / correct identity from this evidence. Actions appear below when this item is teachable.</p>`;
+      renderLearnRail(item);
+      return;
+    }
+  }
+
+  function knownPeopleOptions() {
+    return (peopleOptions || []).filter((p) => {
+      const key = String((p && (p.key || p.id)) || "");
+      if (!p || !key) return false;
+      if (key.startsWith("demo:")) return false;
+      if (String(p.id || "").startsWith("demo:")) return false;
+      return true;
+    });
+  }
+
+  function personSelectValue(p) {
+    return String((p && (p.key || p.id)) || "");
+  }
+
+  function personSelectHtml() {
+    const known = knownPeopleOptions();
+    const opts = ['<option value="">Choose a person…</option>'].concat(
+      known.map(
+        (p) =>
+          `<option value="${escapeAttr(personSelectValue(p))}" data-label="${escapeAttr(p.label)}">${escapeHtml(
+            p.label
+          )}</option>`
+      )
+    );
+    return opts.join("");
+  }
+
+  function fillLearnPersonSelect() {
+    const sel = document.getElementById("mb-learn-person");
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = personSelectHtml();
+    if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+    else sel.value = "";
+    syncLearnSubmitEnabled();
+  }
+
+  function renderLearnRail(item) {
+    const panel = document.getElementById("mb-rail-panel");
+    if (!panel) return;
+    const t = String(item.type || "").toLowerCase();
+    const canBox = t === "video" || t === "photo";
+    if (!canBox) {
+      panel.innerHTML = `<h3>Learn</h3><p class="mb-rail-empty">Pause a video or open a photo, then box a face.</p>`;
+      return;
+    }
+    const known = knownPeopleOptions();
+    panel.innerHTML = `<div class="mb-learn-panel">
+      <h3>Learn</h3>
+      <p class="mb-rail-empty">Crosshair is on. Drag a box on the paused face. A new drag starts over. When the crop is right, choose a person (nothing is pre-selected) and press <strong>Learn</strong>. <strong>Box face</strong> also starts over.</p>
+      ${
+        known.length
+          ? `<p class="mb-rail-empty">${known.length} known ${known.length === 1 ? "person" : "people"}.</p>`
+          : `<p class="mb-rail-empty" id="mb-learn-people-empty">Loading known people…</p>`
+      }
+      <label for="mb-learn-person">Person</label>
+      <select id="mb-learn-person">${personSelectHtml()}</select>
+      <div class="mb-learn-actions">
+        <button type="button" class="mb-viewer-footbtn" id="mb-learn-box">Box face</button>
+        <button type="button" class="mb-viewer-footbtn" id="mb-learn-submit" disabled>Learn</button>
+      </div>
+      <div class="mb-learn-crop" id="mb-learn-crop"><img id="mb-learn-crop-img" alt="" /><span class="mb-rail-empty" id="mb-learn-crop-meta"></span></div>
+      <p class="mb-rail-empty" id="mb-learn-status"></p>
+    </div>`;
+    const boxBtn = document.getElementById("mb-learn-box");
+    const learnBtn = document.getElementById("mb-learn-submit");
+    const personSel = document.getElementById("mb-learn-person");
+    if (boxBtn) boxBtn.addEventListener("click", () => startLearnBoxing(item));
+    if (learnBtn) learnBtn.addEventListener("click", () => submitExploreLearn(item));
+    if (personSel) {
+      personSel.value = "";
+      personSel.addEventListener("change", () => syncLearnSubmitEnabled());
+    }
+    pauseExploreMedia();
+    window.requestAnimationFrame(() => startLearnBoxing(item));
+    if (!known.length) {
+      loadPeopleOptions().then(() => {
+        if (state.modal.railTab !== "learn" || state.modal.openId !== item.id) return;
+        fillLearnPersonSelect();
+        const empty = document.getElementById("mb-learn-people-empty");
+        if (empty) {
+          empty.textContent = knownPeopleOptions().length
+            ? ""
+            : "No MemoryBox people yet — Teach a Person first, then return here.";
+        }
+      });
+    }
+  }
+
+  function pauseExploreMedia() {
+    const el = document.querySelector(".mb-ev-video-player");
+    if (el && typeof el.pause === "function") {
+      try {
+        el.pause();
+      } catch (e) {}
+    }
+  }
+
+  function learnMediaEl() {
+    return (
+      document.querySelector(".mb-ev-video-player") ||
+      document.querySelector(".mb-ev-photo-zoom img") ||
+      document.querySelector(".mb-ev-photo-frame img")
+    );
+  }
+
+  function learnFrameEl() {
+    return (
+      document.querySelector(".mb-ev-video-frame") ||
+      document.querySelector(".mb-ev-photo-frame")
+    );
+  }
+
+  function stopLearnBoxing() {
+    state.modal.learnBoxing = false;
+    state.modal.learnDrawing = false;
+    const overlay = document.getElementById("mb-learn-overlay");
+    if (overlay) overlay.classList.remove("is-boxing");
+    const frame = learnFrameEl();
+    if (frame) frame.classList.remove("is-learn-boxing");
+  }
+
+  function syncLearnOverlaySize() {
+    const overlay = document.getElementById("mb-learn-overlay");
+    const media = learnMediaEl();
+    const frame = learnFrameEl();
+    if (!overlay || !media || !frame) return;
+    const mr = media.getBoundingClientRect();
+    const fr = frame.getBoundingClientRect();
+    const w = Math.max(1, Math.round(mr.width));
+    const h = Math.max(1, Math.round(mr.height));
+    overlay.style.left = Math.round(mr.left - fr.left) + "px";
+    overlay.style.top = Math.round(mr.top - fr.top) + "px";
+    overlay.style.width = w + "px";
+    overlay.style.height = h + "px";
+    overlay.width = w;
+    overlay.height = h;
+  }
+
+  function mediaContentRect() {
+    const media = learnMediaEl();
+    const overlay = document.getElementById("mb-learn-overlay");
+    if (!media || !overlay) return null;
+    const nw = media.videoWidth || media.naturalWidth || 0;
+    const nh = media.videoHeight || media.naturalHeight || 0;
+    if (!nw || !nh) return null;
+    const ew = overlay.width;
+    const eh = overlay.height;
+    const scale = Math.min(ew / nw, eh / nh);
+    const drawW = nw * scale;
+    const drawH = nh * scale;
+    return {
+      nw,
+      nh,
+      drawW,
+      drawH,
+      offsetX: (ew - drawW) / 2,
+      offsetY: (eh - drawH) / 2,
+    };
+  }
+
+  function drawLearnBox() {
+    const overlay = document.getElementById("mb-learn-overlay");
+    if (!overlay) return;
+    const ctx = overlay.getContext("2d");
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    const box = state.modal.learnBox;
+    if (!box) return;
+    const x = Math.min(box.x0, box.x1);
+    const y = Math.min(box.y0, box.y1);
+    const w = Math.abs(box.x1 - box.x0);
+    const h = Math.abs(box.y1 - box.y0);
+    ctx.strokeStyle = "#5ad1ff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = "rgba(90,209,255,0.15)";
+    ctx.fillRect(x, y, w, h);
+  }
+
+  function overlayEventToLearnCanvas(e) {
+    const overlay = document.getElementById("mb-learn-overlay");
+    const r = overlay.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (overlay.width / Math.max(1, r.width)),
+      y: (e.clientY - r.top) * (overlay.height / Math.max(1, r.height)),
+    };
+  }
+
+  function learnBoxToMediaPixels() {
+    const content = mediaContentRect();
+    const box = state.modal.learnBox;
+    if (!content || !box) throw new Error("Pause until the picture is visible, then box again.");
+    const { nw, nh, drawW, drawH, offsetX, offsetY } = content;
+    let sx0 = ((Math.min(box.x0, box.x1) - offsetX) / drawW) * nw;
+    let sy0 = ((Math.min(box.y0, box.y1) - offsetY) / drawH) * nh;
+    let sx1 = ((Math.max(box.x0, box.x1) - offsetX) / drawW) * nw;
+    let sy1 = ((Math.max(box.y0, box.y1) - offsetY) / drawH) * nh;
+    sx0 = Math.max(0, Math.min(nw, sx0));
+    sy0 = Math.max(0, Math.min(nh, sy0));
+    sx1 = Math.max(0, Math.min(nw, sx1));
+    sy1 = Math.max(0, Math.min(nh, sy1));
+    const x = Math.floor(Math.min(sx0, sx1));
+    const y = Math.floor(Math.min(sy0, sy1));
+    const w = Math.ceil(Math.abs(sx1 - sx0));
+    const h = Math.ceil(Math.abs(sy1 - sy0));
+    if (w < 8 || h < 8) throw new Error("Face box too small — drag over the face.");
+    return { x, y, w, h, vw: nw, vh: nh };
+  }
+
+  function captureLearnCrop() {
+    const pix = learnBoxToMediaPixels();
+    const media = learnMediaEl();
+    const c = document.createElement("canvas");
+    c.width = pix.w;
+    c.height = pix.h;
+    c.getContext("2d").drawImage(media, pix.x, pix.y, pix.w, pix.h, 0, 0, pix.w, pix.h);
+    return { dataUrl: c.toDataURL("image/jpeg", 0.92), pix };
+  }
+
+  function updateLearnCropPreview() {
+    const wrap = document.getElementById("mb-learn-crop");
+    const img = document.getElementById("mb-learn-crop-img");
+    const meta = document.getElementById("mb-learn-crop-meta");
+    try {
+      const { dataUrl, pix } = captureLearnCrop();
+      if (img) img.src = dataUrl;
+      if (meta) meta.textContent = `${pix.w}×${pix.h}px`;
+      if (wrap) wrap.classList.add("is-on");
+      state.modal.learnCrop = dataUrl;
+      state.modal.learnPix = pix;
+    } catch (err) {
+      if (wrap) wrap.classList.remove("is-on");
+      state.modal.learnCrop = null;
+      state.modal.learnPix = null;
+      if (meta) meta.textContent = err.message || "";
+    }
+    syncLearnSubmitEnabled();
+  }
+
+  function syncLearnSubmitEnabled() {
+    const btn = document.getElementById("mb-learn-submit");
+    const sel = document.getElementById("mb-learn-person");
+    if (!btn) return;
+    btn.disabled = !(state.modal.learnCrop && sel && sel.value);
+  }
+
+  function startLearnBoxing(item) {
+    pauseExploreMedia();
+    state.modal.learnBoxing = true;
+    state.modal.learnBox = null;
+    state.modal.learnCrop = null;
+    state.modal.learnPix = null;
+    const overlay = document.getElementById("mb-learn-overlay");
+    const status = document.getElementById("mb-learn-status");
+    const frame = learnFrameEl();
+    if (!overlay) {
+      if (status) status.textContent = "Open the video/photo first, then Box face.";
+      return;
+    }
+    overlay.classList.add("is-boxing");
+    if (frame) frame.classList.add("is-learn-boxing");
+    syncLearnOverlaySize();
+    drawLearnBox();
+    bindLearnOverlayOnce();
+    const media = learnMediaEl();
+    if (media && media.getAttribute("data-learn-resize") !== "1") {
+      media.setAttribute("data-learn-resize", "1");
+      media.addEventListener("loadedmetadata", () => {
+        if (state.modal.learnBoxing) syncLearnOverlaySize();
+      });
+    }
+    if (status) status.textContent = "Crosshair on. Drag a box; a new drag starts over.";
+    const wrap = document.getElementById("mb-learn-crop");
+    if (wrap) wrap.classList.remove("is-on");
+    syncLearnSubmitEnabled();
+  }
+
+  function bindLearnOverlayOnce() {
+    const overlay = document.getElementById("mb-learn-overlay");
+    if (!overlay || overlay.getAttribute("data-bound") === "1") return;
+    overlay.setAttribute("data-bound", "1");
+    const onPoint = (e) => {
+      if (e.touches && e.touches[0]) {
+        return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      }
+      return e;
+    };
+    overlay.addEventListener("mousedown", (e) => {
+      if (!state.modal.learnBoxing) return;
+      e.preventDefault();
+      const p = overlayEventToLearnCanvas(onPoint(e));
+      state.modal.learnBox = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+      state.modal.learnDrawing = true;
+      drawLearnBox();
+    });
+    overlay.addEventListener("mousemove", (e) => {
+      if (!state.modal.learnDrawing || !state.modal.learnBox) return;
+      const p = overlayEventToLearnCanvas(onPoint(e));
+      state.modal.learnBox.x1 = p.x;
+      state.modal.learnBox.y1 = p.y;
+      drawLearnBox();
+    });
+    overlay.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!state.modal.learnBoxing) return;
+        e.preventDefault();
+        const p = overlayEventToLearnCanvas(onPoint(e));
+        state.modal.learnBox = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+        state.modal.learnDrawing = true;
+        drawLearnBox();
+      },
+      { passive: false }
+    );
+    overlay.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!state.modal.learnDrawing || !state.modal.learnBox) return;
+        e.preventDefault();
+        const p = overlayEventToLearnCanvas(onPoint(e));
+        state.modal.learnBox.x1 = p.x;
+        state.modal.learnBox.y1 = p.y;
+        drawLearnBox();
+      },
+      { passive: false }
+    );
+    const endDraw = () => {
+      if (!state.modal.learnDrawing) return;
+      state.modal.learnDrawing = false;
+      updateLearnCropPreview();
+    };
+    window.addEventListener("mouseup", endDraw);
+    window.addEventListener("touchend", endDraw);
+    if (!window.__mbLearnOverlayResize) {
+      window.__mbLearnOverlayResize = true;
+      window.addEventListener("resize", () => {
+        if (!state.modal.learnBoxing) return;
+        syncLearnOverlaySize();
+        drawLearnBox();
+      });
+    }
+  }
+
+  async function ensureLearnPersonId(personKey) {
+    const key = String(personKey || "").trim();
+    if (!key) return null;
+    if (key.startsWith("mb:")) {
+      const person_id = key.slice(3);
+      const res = await fetch("/people/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      return data.person && (data.person.id || person_id);
+    }
+    if (key.startsWith("immich:")) {
+      const rest = key.slice("immich:".length);
+      const i = rest.indexOf(":");
+      if (i < 0) throw new Error("Invalid photo-library person.");
+      const external_id = decodeURIComponent(rest.slice(0, i));
+      const display_name = decodeURIComponent(rest.slice(i + 1));
+      const res = await fetch("/people/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider_key: "immich",
+          external_id,
+          display_name,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      return data.person && data.person.id;
+    }
+    const res = await fetch("/people/ensure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ person_id: key }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    return data.person && (data.person.id || key);
+  }
+
+  async function submitExploreLearn(item) {
+    const status = document.getElementById("mb-learn-status");
+    const sel = document.getElementById("mb-learn-person");
+    try {
+      if (!state.modal.learnCrop || !state.modal.learnPix) {
+        throw new Error("Box a face first.");
+      }
+      if (!sel || !sel.value) throw new Error("Choose a person. Nothing is pre-selected.");
+      const personId = await ensureLearnPersonId(sel.value);
+      if (!personId) throw new Error("Could not resolve that person in MemoryBox.");
+      const media = learnMediaEl();
+      const tSec =
+        media && media.currentTime != null ? Number(media.currentTime) : Number(item.t || 0);
+      const pix = state.modal.learnPix;
+      const faceId = "explore-learn-" + String(Date.now());
+      const res = await fetch("/recognition/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          person_id: personId,
+          face_external_id: faceId,
+          video_external_id: item.video_external_id || item.external_id || null,
+          t_sec: tSec,
+          bbox: {
+            x: pix.x,
+            y: pix.y,
+            w: pix.w,
+            h: pix.h,
+            frame_w: pix.vw,
+            frame_h: pix.vh,
+          },
+          crop_jpeg_base64: state.modal.learnCrop,
+          provider_key: item.video_provider_key || item.provider_key || "immich",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.detail || data.reason || res.statusText);
+      }
+      if (status) {
+        status.textContent =
+          "Learned. This video is rescanned first; other clips queue after. Box another face to teach someone else.";
+      }
+      if (sel) sel.value = "";
+      state.modal.learnCrop = null;
+      state.modal.learnPix = null;
+      state.modal.learnBox = null;
+      drawLearnBox();
+      const wrap = document.getElementById("mb-learn-crop");
+      if (wrap) wrap.classList.remove("is-on");
+      syncLearnSubmitEnabled();
+    } catch (err) {
+      if (status) status.textContent = String(err.message || err);
     }
   }
 
@@ -3909,45 +4356,11 @@
   }
 
 
-  function renderTeachSlot(item) {
+  function renderTeachSlot(_item) {
     const slot = document.getElementById("mb-modal-teach");
     if (!slot) return;
-    const t = String(item.type || "").toLowerCase();
-    const teachable =
-      item.teachable ||
-      t === "photo" ||
-      (t === "video" && item.paused_frame !== false);
-    if (!teachable) {
-      slot.innerHTML =
-        "Contextual Review &amp; Learn attaches here for photos, paused video frames, and future voice/transcript teaching — same viewer shell.";
-      return;
-    }
-    const opts = (peopleOptions.length
-      ? peopleOptions
-      : [
-          { id: "demo:peggy", label: "Peggy" },
-          { id: "demo:rick", label: "Rick" },
-          { id: "demo:tom", label: "Tom Will" },
-        ]
-    )
-      .map(
-        (p) =>
-          `<option value="${escapeAttr(p.id)}" data-label="${escapeAttr(
-            p.label
-          )}">${escapeHtml(p.label)}</option>`
-      )
-      .join("");
-    slot.innerHTML = `
-      <div><strong>Selected face:</strong> <span id="mb-teach-current">${escapeHtml(
-        item.face_identity || "Unknown"
-      )}</span></div>
-      <label style="display:block;margin:0.4rem 0 0.25rem">Assign / reassign
-        <select id="mb-teach-person">${opts}</select>
-      </label>
-      <button type="button" class="mb-viewer-footbtn" id="mb-teach-confirm">Learn from this face</button>
-      <div id="mb-teach-status" style="margin-top:0.35rem"></div>`;
-    const btn = document.getElementById("mb-teach-confirm");
-    if (btn) btn.addEventListener("click", () => confirmIdentityCorrection(item));
+    slot.hidden = true;
+    slot.innerHTML = "";
   }
 
   async function confirmIdentityCorrection(item) {
@@ -4292,7 +4705,8 @@
           ? ""
           : ` style="width:${(zoom * 100).toFixed(2)}%;max-width:none"`;
       return `<div class="mb-ev-photo${zoom !== 1 ? " is-zoomed" : ""}" aria-label="Photo workspace">
-        <div class="mb-ev-photo-frame"><div class="mb-ev-photo-zoom"${zoomWrapStyle}>${img}${faceBoxHtml(item)}</div></div>
+        <div class="mb-ev-photo-frame"><div class="mb-ev-photo-zoom"${zoomWrapStyle}>${img}${faceBoxHtml(item)}</div>
+        <canvas class="mb-learn-overlay" id="mb-learn-overlay"></canvas></div>
       </div>`;
     }
     if (t === "video") {
@@ -4321,6 +4735,7 @@
         <div class="mb-ev-video-frame" id="mb-ev-video-frame">
           ${stage}
           ${faceBoxHtml(item)}
+          <canvas class="mb-learn-overlay" id="mb-learn-overlay"></canvas>
         </div>
         ${
           stream
@@ -5098,7 +5513,6 @@
         if (!item) return;
         syncRailTabs();
         renderRailPanel(item);
-        renderTeachSlot(item);
       });
     });
     document.addEventListener("keydown", (e) => {
@@ -5138,32 +5552,77 @@
       syncActivePersonContext();
       renderNav();
       applyCuratorPortrait();
+      if (state && state.modal && state.modal.openId && state.modal.railTab === "learn") {
+        fillLearnPersonSelect();
+      }
     });
+  }
+
+  async function fetchJsonTimeout(url, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(String(res.status));
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function mapPickerOption(p) {
+    const personId = String((p && (p.person_id || p.id)) || "").trim();
+    const key = String(
+      (p && p.key) ||
+        (personId ? "mb:" + personId : "") ||
+        (p && p.external_id
+          ? "immich:" + encodeURIComponent(p.external_id) + ":" + encodeURIComponent(p.display_name || p.name || "")
+          : "")
+    );
+    return {
+      key,
+      id: personId || key,
+      label: String((p && (p.label || p.display_name || p.name)) || "Person"),
+      immichId: String(
+        (p &&
+          ((Array.isArray(p.immich_external_ids) && p.immich_external_ids[0]) ||
+            p.external_id)) ||
+          ""
+      ),
+    };
   }
 
   async function loadPeopleOptions() {
     const fallback = [
-      { id: "demo:peggy", label: "Peggy" },
-      { id: "demo:rick", label: "Rick" },
-      { id: "demo:tom", label: "Tom Will" },
+      { key: "demo:peggy", id: "demo:peggy", label: "Peggy" },
+      { key: "demo:rick", id: "demo:rick", label: "Rick" },
+      { key: "demo:tom", id: "demo:tom", label: "Tom Will" },
     ];
+    const seen = {};
+    const uniq = [];
+    const add = (p) => {
+      const mapped = mapPickerOption(p);
+      if (!mapped.key || mapped.key.startsWith("demo:") || seen[mapped.key]) return;
+      seen[mapped.key] = 1;
+      uniq.push(mapped);
+    };
+    const publish = () => {
+      peopleOptions = uniq.length ? uniq.slice() : liveMode ? [] : fallback;
+      if (state && state.modal && state.modal.openId && state.modal.railTab === "learn") {
+        fillLearnPersonSelect();
+      }
+    };
     try {
-      const res = await fetch("/people/picker-options");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const opts = (data.options || data.people || []).map((p) => ({
-        id: String(p.id || p.person_id || ""),
-        label: String(p.display_name || p.name || p.label || "Person"),
-        immichId: String(
-          (Array.isArray(p.immich_external_ids) && p.immich_external_ids[0]) ||
-            p.external_id ||
-            ""
-        ),
-      })).filter((p) => p.id || p.immichId);
-      peopleOptions = opts.length ? opts : fallback;
-    } catch (_) {
-      peopleOptions = fallback;
-    }
+      const list = await fetchJsonTimeout("/people?limit=300", 8000);
+      (list.people || []).forEach(add);
+      publish();
+    } catch (_) {}
+    try {
+      const data = await fetchJsonTimeout("/people/picker-options", 12000);
+      (data.options || data.people || []).forEach(add);
+      publish();
+    } catch (_) {}
+    if (!peopleOptions.length) publish();
     return peopleOptions;
   }
 

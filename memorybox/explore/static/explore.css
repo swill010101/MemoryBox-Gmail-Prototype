@@ -1497,6 +1497,69 @@ body {
   width: 100%;
   max-height: min(52vh, 480px);
   background: #000;
+  object-fit: contain;
+}
+
+.mb-learn-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  display: none;
+  pointer-events: none;
+  cursor: crosshair;
+}
+.mb-learn-overlay.is-boxing {
+  display: block;
+  pointer-events: auto;
+}
+.mb-ev-video-frame.is-learn-boxing,
+.mb-ev-photo-frame.is-learn-boxing {
+  cursor: crosshair;
+}
+.mb-ev-video-frame.is-learn-boxing .mb-face-box,
+.mb-ev-photo-frame.is-learn-boxing .mb-face-box {
+  pointer-events: none;
+}
+
+.mb-learn-panel label {
+  display: block;
+  margin: 0.55rem 0 0.25rem;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+}
+.mb-learn-panel select,
+.mb-learn-panel button {
+  width: 100%;
+}
+.mb-learn-panel select {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+.mb-learn-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+.mb-learn-crop {
+  display: none;
+  margin-top: 0.5rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+.mb-learn-crop.is-on {
+  display: flex;
+}
+.mb-learn-crop img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  background: #020617;
+  border: 1px solid #334155;
 }
 
 .mb-ev-video-transport {

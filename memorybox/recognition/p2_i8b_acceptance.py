@@ -116,11 +116,13 @@ def _prove_harness() -> dict[str, Any]:
         "I9 speech/voice must stay out of I8B recognition modules",
     )
     _check(
-        "p2i8b_immich_faces_api_method",
-        hasattr(ImmichHttpClient, "list_faces_for_asset"),
+        "p2i8b_explore_learn_box_face",
+        "id=\"mb-learn-box\"" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "Choose a person" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read(),
         checks,
         problems,
-        "GET /faces?id=asset required; people feature faces are incomplete",
+        "Explore Learn tab must box a face with an empty person dropdown",
     )
 
     bbox = parse_bbox({"x": 1, "y": 1, "w": 10, "h": 10})

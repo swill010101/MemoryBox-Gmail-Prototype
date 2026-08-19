@@ -2118,36 +2118,50 @@ def people_picker_options(limit: int = Query(300, ge=1, le=1000)) -> dict[str, A
 
     immich_err: str | None = None
     immich_count = 0
-    try:
+
+    def _immich_named() -> tuple[list[Any], str | None]:
         photo = build_photo()
         h = photo.health()
         if not h.ok:
-            immich_err = h.detail or "Immich unavailable"
-        else:
-            refs = photo.list_people(limit=limit) or []
-            for r in refs:
-                eid = str(getattr(r, "external_id", "") or "").strip()
-                name = (getattr(r, "display_name", None) or "").strip()
-                if not eid or len(name) < 2:
-                    continue
-                immich_count += 1
-                if eid in mapped_ext:
-                    continue  # already represented via MB mapping
-                key = name.lower()
-                if key in by_name:
-                    continue  # same display name already in MB — show once
-                options.append(
-                    {
-                        "key": f"immich:{quote(eid, safe='')}:{quote(name, safe='')}",
-                        "label": name,
-                        "person_id": None,
-                        "display_name": name,
-                        "source": "immich",
-                        "external_id": eid,
-                        "status": "immich_only",
-                        "immich_external_ids": [eid],
-                    }
-                )
+            return [], h.detail or "Immich unavailable"
+        return list(photo.list_people(limit=limit) or []), None
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = pool.submit(_immich_named)
+            try:
+                refs, immich_err = fut.result(timeout=3.0)
+            except FuturesTimeout:
+                immich_err = "immich_people_timeout"
+                refs = []
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        for r in refs:
+            eid = str(getattr(r, "external_id", "") or "").strip()
+            name = (getattr(r, "display_name", None) or "").strip()
+            if not eid or len(name) < 2:
+                continue
+            immich_count += 1
+            if eid in mapped_ext:
+                continue  # already represented via MB mapping
+            key = name.lower()
+            if key in by_name:
+                continue  # same display name already in MB — show once
+            options.append(
+                {
+                    "key": f"immich:{quote(eid, safe='')}:{quote(name, safe='')}",
+                    "label": name,
+                    "person_id": None,
+                    "display_name": name,
+                    "source": "immich",
+                    "external_id": eid,
+                    "status": "immich_only",
+                    "immich_external_ids": [eid],
+                }
+            )
     except Exception as exc:  # noqa: BLE001
         immich_err = str(exc)
 
