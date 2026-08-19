@@ -694,10 +694,39 @@ def _prove_flightsim() -> dict[str, Any]:
                 "start_sec": confirmed_moment.get("start_sec"),
                 "authority": confirmed_moment.get("authority"),
                 "confirmation_state": confirmed_moment.get("confirmation_state"),
+                "play_url": confirmed_moment.get("play_url"),
             }
             if confirmed_moment
             else None
         )
+        client = getattr(photo, "_client", None)
+        getter = getattr(client, "get_asset", None)
+        if looks_like_uuid(confirmed_id) and callable(getter):
+            try:
+                asset = getter(confirmed_id) or {}
+            except Exception as exc:  # noqa: BLE001
+                asset = {"error": str(exc)[:200]}
+            orig = str(asset.get("originalFileName") or "")
+            opath = str(asset.get("originalPath") or "")
+            meta["immich_confirmed_asset"] = {
+                "id": confirmed_id,
+                "type": asset.get("type"),
+                "originalFileName": orig or None,
+                "originalPath": opath or None,
+                "put_back_under_home_videos": orig or (opath.replace("\\", "/").split("/")[-1] if opath else None),
+            }
+        moments_early = list_appearance_moments(pid, limit=200)
+        meta["legacy_hvrt_clips"] = [
+            {
+                "id": m.get("id"),
+                "video_external_id": m.get("video_external_id"),
+                "start_sec": m.get("start_sec"),
+                "play_url": m.get("play_url"),
+                "in_inventory": str(m.get("video_external_id") or "") in inventory_ids,
+            }
+            for m in moments_early
+            if m.get("evidence_lineage") == "i1_hvrt" or m.get("method") == "auto_associate"
+        ]
         immich_videos = list_person_immich_videos(
             person_id=pid, photo_provider=photo, max_assets=12
         )
