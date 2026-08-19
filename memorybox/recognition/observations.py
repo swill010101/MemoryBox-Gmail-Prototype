@@ -121,22 +121,23 @@ def delete_native_observations_for_video(
         conn.execute(
             """
             DELETE FROM video_face_observations
-            WHERE video_provider_key = %s
-              AND video_external_id = %s
+            WHERE video_external_id = %s
               AND (person_id = %s::uuid OR person_id IS NULL)
             """,
-            (video_provider_key, video_external_id, person_id),
+            (video_external_id, person_id),
         )
         conn.execute(
             """
             DELETE FROM face_appearance_moments
             WHERE person_id = %s::uuid
-              AND video_provider_key = %s
               AND video_external_id = %s
-              AND COALESCE(evidence_lineage, '') = %s
+              AND (
+                COALESCE(evidence_lineage, '') = %s
+                OR COALESCE(method, '') = %s
+              )
               AND COALESCE(status, 'accepted') <> 'withdrawn'
             """,
-            (person_id, video_provider_key, video_external_id, LINEAGE_NATIVE),
+            (person_id, video_external_id, LINEAGE_NATIVE, LINEAGE_NATIVE),
         )
 
 

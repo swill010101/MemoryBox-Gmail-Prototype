@@ -86,6 +86,7 @@ function Load-MbEnv {
   if (-not $env:MEMORYBOX_HOST) { $env:MEMORYBOX_HOST = "0.0.0.0" }
   if (-not $env:MEMORYBOX_PORT) { $env:MEMORYBOX_PORT = "$ServePort" }
   if (-not $env:MEMORYBOX_P1_RUNTIME_HOST) { $env:MEMORYBOX_P1_RUNTIME_HOST = "1" }
+  if (-not $env:MEMORYBOX_RECOGNITION_DRAIN) { $env:MEMORYBOX_RECOGNITION_DRAIN = "1" }
   if (-not $env:MEMORYBOX_PHOTO_PROVIDER) { $env:MEMORYBOX_PHOTO_PROVIDER = "immich" }
   if (-not $env:MEMORYBOX_VIDEO_PROVIDER) { $env:MEMORYBOX_VIDEO_PROVIDER = "hvrt" }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_URL) {

@@ -17,4 +17,6 @@
 
 **Explore Learn tab:** Same owner Learn semantics as Review box → Teach (not a new Person Learn product). Opening Learn pauses the clip, turns on a face-box crosshair, lists known MemoryBox people with **Choose a person…** (nothing pre-selected), and enables **Learn** only after a crop and a person. **Box face** / a new drag starts the box over. After Learn, this video is rescanned first.
 
-**Prove:** `python -m memorybox prove-p2-i8b` (harness). FlightSim: `MEMORYBOX_P1_RUNTIME_HOST=1 python -m memorybox prove-p2-i8b --flightsim`. Owner ACCEPTED remains a manual pass.
+**Explore cards:** Native appearance moments take **date + filename + Immich thumbnail** from the originating asset (`/library/media/photo/{asset}`), not an empty undated purple tile.
+
+**Archive pass:** `POST /recognition/archive-pass` or `python -m memorybox recognition-archive-pass [--seed-immich]` queues every known MB Person who has exemplars against Home Videos (`MEMORYBOX_VIDEO_MEDIA_ROOT`) plus Immich VIDEO assets. FlightSim serve drains `recognition_queue` one video at a time when `MEMORYBOX_P1_RUNTIME_HOST=1`. This is I8B (people clips for I9), not speech.

@@ -197,9 +197,28 @@ class VideoHit:
     mb_person_id: str | None = None
     mb_person_name: str | None = None
     attribution: str | None = None
+    taken_at: str | None = None
+    original_filename: str | None = None
+    thumb_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _origin_on_video_hit(h: VideoHit) -> VideoHit:
+    try:
+        from memorybox.recognition.origin import origin_card_fields
+
+        meta = origin_card_fields(h.video_external_id, t_sec=float(h.start_sec or 0))
+    except Exception:
+        return h
+    if not h.taken_at:
+        h.taken_at = meta.get("taken_at")
+    if not h.original_filename:
+        h.original_filename = meta.get("original_filename")
+    if not h.thumb_url:
+        h.thumb_url = meta.get("thumb_url")
+    return h
 
 
 @dataclass
@@ -2215,7 +2234,7 @@ def _dedupe_video_hits(
             continue
         if _score(h) > _score(prev):
             buckets[key] = h
-    return [buckets[k] for k in order][:limit]
+    return [_origin_on_video_hit(buckets[k]) for k in order][:limit]
 
 
 def search_videos(
@@ -2396,6 +2415,7 @@ def search_videos(
                         attribution=attrib,
                     )
                 )
+                hits[-1] = _origin_on_video_hit(hits[-1])
             status["ok"] = True
             status["detail"] = f"mapped_video_hits={len(hits)}"
             status["unmapped_person_names"] = list(unmapped)
@@ -2508,7 +2528,7 @@ def search_videos(
                 "Resolvable MB Person(s) exist without video provider mapping; "
                 "results are unconfirmed candidates only."
             )
-        return hits[:limit], status
+        return [_origin_on_video_hit(h) for h in hits[:limit]], status
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)

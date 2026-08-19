@@ -144,6 +144,12 @@ def _ai_trace_schema_on_startup() -> None:
         ensure_schema()
     except Exception:
         return
+    try:
+        from memorybox.recognition.drain import start_recognition_drain
+
+        start_recognition_drain()
+    except Exception:
+        return
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
@@ -1796,6 +1802,25 @@ def recognition_queue_process(
 
     video = build_video()
     return {"ok": True, **process_queue(video_provider=video, person_id=person_id, max_items=max_items)}
+
+
+@app.post("/recognition/archive-pass")
+def recognition_archive_pass(
+    seed_immich: bool = Query(False),
+    person_limit: int = Query(80, ge=1, le=300),
+) -> dict[str, Any]:
+    """Known MB people with exemplars × Home Videos + Immich videos (queued; drain one-by-one)."""
+    from memorybox.ask.deps import build_photo, build_video
+    from memorybox.recognition.archive_pass import enqueue_known_people_archive
+    from memorybox.recognition.drain import start_recognition_drain
+
+    start_recognition_drain()
+    return enqueue_known_people_archive(
+        video_provider=build_video(),
+        photo_provider=build_photo(),
+        seed_immich=seed_immich,
+        person_limit=person_limit,
+    )
 
 
 class AppearanceCorrectRequest(BaseModel):

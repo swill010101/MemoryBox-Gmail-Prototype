@@ -6,6 +6,7 @@ Does not hard-code people or events into product logic.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 _SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
@@ -315,22 +316,28 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             play = f"/review/media/{vid}?t={t0:.3f}"
             if face:
                 play += f"&face={face}"
-        poster = ""
+        poster = str(v.get("thumb_url") or "")
         if looks_immich:
-            poster = ""
-        elif not str(vid).startswith(("video-peggy-", "video-library-")):
+            if not poster:
+                poster = f"/library/media/photo/{vid}"
+        elif not poster and not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
-        # Appearance moments are in-video spans — calendar undated unless known
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
         if label == "face-appearance-moment":
             label = v.get("mb_person_name") or "Video moment"
+        taken = str(v.get("taken_at") or "").strip()
+        orig_name = str(v.get("original_filename") or "").strip()
+        if orig_name:
+            stem = Path(orig_name.replace("\\", "/")).stem
+            if stem and stem.lower() not in str(label).lower():
+                label = f"{label} · {stem}"
         face_box = v.get("face_box")
         item = _item_base(
             id=f"video:{v.get('provider_key') or 'hvrt'}:{v.get('external_id') or vid}:{t0}",
             type_="video",
             title=str(label)[:80],
-            date="",
-            undated=True,
+            date=taken,
+            undated=not taken,
             preview=f"Moment @ {t0:.1f}s",
             detail=f"{t0:.1f}s" + (f"–{float(t1):.1f}s" if t1 is not None else ""),
             people=[v["mb_person_name"]] if v.get("mb_person_name") else [],
@@ -348,6 +355,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             play_url=play,
             media_url=poster,
             thumb_url=poster,
+            original_filename=orig_name or None,
             teachable=True,
             paused_frame=True,
             face_identity=v.get("mb_person_name") or "Unknown",

@@ -120,7 +120,17 @@ def _prove_harness() -> dict[str, Any]:
         "id=\"mb-learn-box\"" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
         and "Choose a person" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
         and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
-        and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read(),
+        and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read()
+        and "/recognition/archive-pass" in open("memorybox/app.py", encoding="utf-8").read()
+        and "origin_thumb_url" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
+        and "undated=not taken" in open("memorybox/explore/find.py", encoding="utf-8").read(),
+        "id=\"mb-learn-box\"" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "Choose a person" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read()
+        and "/recognition/archive-pass" in open("memorybox/app.py", encoding="utf-8").read()
+        and "origin_thumb_url" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
+        and "undated=not taken" in open("memorybox/explore/find.py", encoding="utf-8").read(),
         checks,
         problems,
         "Explore Learn tab must box a face with an empty person dropdown",

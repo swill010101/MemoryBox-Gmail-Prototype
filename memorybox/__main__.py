@@ -87,6 +87,16 @@ def main(argv: list[str] | None = None) -> int:
             "Does not include I9 speech/voice."
         ),
     )
+    p_archive = sub.add_parser(
+        "recognition-archive-pass",
+        help="I8B: queue known MB people against Home Videos + Immich videos (one-by-one drain)",
+    )
+    p_archive.add_argument(
+        "--seed-immich",
+        action="store_true",
+        help="Try Immich still-photo seed when a Person has no exemplars yet",
+    )
+    p_archive.add_argument("--person-limit", type=int, default=80)
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
         help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
@@ -693,6 +703,19 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
+
+    if args.cmd == "recognition-archive-pass":
+        from memorybox.ask.deps import build_photo, build_video
+        from memorybox.recognition.archive_pass import enqueue_known_people_archive
+
+        payload = enqueue_known_people_archive(
+            video_provider=build_video(),
+            photo_provider=build_photo(),
+            seed_immich=bool(args.seed_immich),
+            person_limit=int(args.person_limit),
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-p2-i8b":
         from memorybox.recognition.p2_i8b_acceptance import prove_p2_i8b
