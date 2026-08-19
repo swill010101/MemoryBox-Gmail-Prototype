@@ -148,6 +148,8 @@
     setGalleryLocked(false);
     return ++findGen;
   }
+
+  function dayMs(y, m, d) {
     return Date.UTC(y, m - 1, d);
   }
 
