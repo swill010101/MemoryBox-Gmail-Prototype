@@ -108,6 +108,25 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         "Do not ship stale DRAFT badges",
     )
+    close_fn = explore_js.split("function closeDayStack(")[1].split("function renderDayStack(")[0]
+    matches_fn = explore_js.split("function matchesType(")[1].split("function resultSetItems(")[0]
+    _check(
+        "i8a_close_day_keeps_gallery",
+        "restoreExplore" not in close_fn,
+        checks,
+        problems,
+        "Close day stack must not restoreExplore (wipes live find)",
+    )
+    _check(
+        "i8a_comms_filter_respects_text",
+        "if (!includeTexts) return false;" in matches_fn
+        and "applyPresentFlags" in explore_js
+        and "mb-day-row-date" in explore_js
+        and "explore.js?v=i8a4" in explore_html,
+        checks,
+        problems,
+        "Communications filter + list dates + cache bust",
+    )
 
 
 def _logic(checks: dict[str, Any], problems: list[str]) -> None:

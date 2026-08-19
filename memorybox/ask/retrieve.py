@@ -930,15 +930,16 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                 # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
                 pass
             elif (
-                not person_ids
-                and person_names
+                person_names
                 and _sms_name_match(
                     _email_person_blob(payload),
                     person_names,
                     allow_first_token=False,
                 )
             ):
-                # Full display-name match only. First-name union is P2-BL-I8-02.
+                # Full display-name match even when Person ids are set.
+                # Ingest often leaves person_ids empty on email rows; unique
+                # Person lock still supplies person_names (P2-BL-I8-02).
                 pass
             else:
                 return False

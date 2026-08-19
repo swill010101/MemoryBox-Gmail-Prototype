@@ -966,8 +966,10 @@ def build_explore_find(
             show_email = True
         elif present_l in {"sms", "texts"}:
             show_sms = True
+            show_email = False
         elif present_l == "email":
             show_email = True
+            show_sms = False
     if present_l in {"calendar", "cal"}:
         show_calendar = True
     items, sms_available, sms_hidden = _attach_hidden_sms(
@@ -1002,6 +1004,11 @@ def build_explore_find(
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
+    if show_email and not email_available:
+        summary = (
+            (summary or "").rstrip()
+            + " 0 emails matched this person (Person id, confirmed address, or full display name)."
+        ).strip()
     if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
         summary = (
             (summary or "").rstrip()

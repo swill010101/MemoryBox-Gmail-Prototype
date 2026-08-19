@@ -324,15 +324,12 @@
 
   function matchesType(item, filter, opts) {
     const d = (opts && opts.domain) || (state && state.domain) || {};
+    // Communications chip uses typeFilter "email" (I7 leftover). That must not
+    // force Text or Email on — the Communications filter checkboxes own this.
     const includeTexts = Boolean(
-      (opts && opts.includeTexts) ||
-        d.includeTexts ||
-        d.galleryShowSms ||
-        filter === "email"
+      (opts && opts.includeTexts) || d.includeTexts || d.galleryShowSms
     );
-    const includeEmail = Boolean(
-      d.includeEmail || d.galleryShowEmail || (filter === "email" && !d.memoryPresentation)
-    );
+    const includeEmail = Boolean(d.includeEmail || d.galleryShowEmail);
     const includeCalendar = Boolean(
       d.includeCalendar || d.galleryShowCalendar || filter === "calendar"
     );
@@ -343,6 +340,7 @@
     }
     if (isSmsTextItem(item)) {
       if (filter === "email") {
+        if (!includeTexts) return false;
         if (attachmentsOnly && !itemAttachCount(item)) return false;
         return true;
       }
@@ -658,9 +656,14 @@
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
     if (id === "email") {
-      state.domain.includeTexts = true;
-      state.domain.includeEmail = true;
       state.domain.memoryPresentation = false;
+      if (state.domain.emailPinned || state.domain.textsPinned) {
+        state.domain.includeEmail = Boolean(state.domain.emailPinned);
+        state.domain.includeTexts = Boolean(state.domain.textsPinned);
+      } else if (!state.domain.includeEmail && !state.domain.includeTexts) {
+        state.domain.includeEmail = true;
+        state.domain.includeTexts = true;
+      }
     } else if (id === "calendar") {
       state.domain.includeCalendar = true;
       state.domain.memoryPresentation = false;
@@ -859,12 +862,14 @@
       cardNote =
         ` Gallery shows ${dayCards.length} ${grain || "grouped"} card${
           dayCards.length === 1 ? "" : "s"
-        } (conversations/threads, not one card per message).` +
+        } (texts grouped by conversation; emails by thread — not one card per message).` +
         (matchTexts > dayCards.length
           ? ` ${matchTexts} matching texts in the archive.`
           : "") +
-        (matchMail > 0 && c.email === 0
-          ? ` 0 emails matched this person identity.`
+        (state.domain.includeEmail && !c.email
+          ? matchMail > 0
+            ? ` 0 of ${matchMail} emails visible (identity filter).`
+            : ` 0 emails matched this person.`
           : matchMail
             ? ` ${matchMail} matching emails.`
             : "");
@@ -1089,6 +1094,35 @@
     );
   }
 
+  function applyPresentFlags(present) {
+    const kind = String(present || "").toLowerCase();
+    state.domain.memoryPresentation = false;
+    if (kind === "calendar" || kind === "cal") {
+      state.domain.includeCalendar = true;
+      state.domain.calendarPinned = true;
+      state.domain.typeFilter = "calendar";
+    } else if (kind === "email") {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = false;
+      state.domain.emailPinned = true;
+      state.domain.textsPinned = false;
+      state.domain.typeFilter = "email";
+    } else if (kind === "sms" || kind === "texts" || kind === "text") {
+      state.domain.includeEmail = false;
+      state.domain.includeTexts = true;
+      state.domain.emailPinned = false;
+      state.domain.textsPinned = true;
+      state.domain.typeFilter = "email";
+    } else {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = true;
+      state.domain.emailPinned = true;
+      state.domain.textsPinned = true;
+      state.domain.typeFilter = "email";
+    }
+    syncTimelineToEligibleDatedExtent();
+  }
+
   function presentWithoutRewritingAsk(present) {
     const ask = currentAskText().trim();
     if (!ask) {
@@ -1099,17 +1133,7 @@
     liveFind(ask, { present: present })
       .then((payload) => {
         applyPayloadToState(payload, { keepPresentation: true });
-        if (present === "calendar") {
-          state.domain.includeCalendar = true;
-          state.domain.calendarPinned = true;
-          setTypeFilter("calendar");
-        } else {
-          state.domain.includeEmail = true;
-          state.domain.includeTexts = true;
-          state.domain.emailPinned = true;
-          state.domain.textsPinned = true;
-          setTypeFilter("email");
-        }
+        applyPresentFlags(present);
         render();
       })
       .catch(() => {
@@ -2339,7 +2363,14 @@
       _openLabel: openLabel,
       preview:
         (s.emailThreads ? s.emailThreads + " email threads" : "") +
-        (s.textConvos ? (s.emailThreads ? " · " : "") + s.textConvos + " text conversations" : "") +
+        (s.textN
+          ? (s.emailThreads ? " · " : "") +
+            s.textN +
+            " texts · " +
+            s.textConvos +
+            " conversation" +
+            (s.textConvos === 1 ? "" : "s")
+          : "") +
         (s.calN ? (s.emailThreads || s.textConvos ? " · " : "") + s.calN + " events" : ""),
     };
   }
@@ -2467,10 +2498,18 @@
     const items = (card && card._dayItems) || [];
     if (!items.length) return;
     hideQuickPreview();
-    state.gallery.scrollTop =
-      (document.getElementById("mb-explore-gallery") || {}).scrollTop || 0;
-    if (!state.modal.snapshot) state.modal.snapshot = snapshotExplore();
-    dayStack = { day: card.date || "", tab: "email", items: items, card: card, rows: [], rowIndex: 0 };
+    const galleryEl = document.getElementById("mb-explore-gallery");
+    const scrollTop = (galleryEl || {}).scrollTop || 0;
+    state.gallery.scrollTop = scrollTop;
+    dayStack = {
+      day: card.date || "",
+      tab: "email",
+      items: items,
+      card: card,
+      rows: [],
+      rowIndex: 0,
+      scrollTop: scrollTop,
+    };
     const det0 = document.getElementById("mb-day-detail");
     if (det0) det0.hidden = true;
     const s = card._daySummary || summarizeDay(items);
@@ -2482,15 +2521,16 @@
   }
 
   function closeDayStack() {
+    const y = (dayStack && dayStack.scrollTop) || (state.gallery && state.gallery.scrollTop) || 0;
     const stack = document.getElementById("mb-day-stack");
     if (stack) stack.hidden = true;
     const det = document.getElementById("mb-day-detail");
     if (det) det.hidden = true;
-    if (state.modal && state.modal.snapshot) {
-      restoreExplore(state.modal.snapshot);
-      state.modal.snapshot = null;
-    }
     render();
+    requestAnimationFrame(() => {
+      const g = document.getElementById("mb-explore-gallery");
+      if (g) g.scrollTop = y;
+    });
   }
 
   function renderDayStack() {
@@ -2499,7 +2539,9 @@
     document.getElementById("mb-day-title").textContent = fmtBucketDate(dayStack.day);
     document.getElementById("mb-day-sub").textContent = [
       s.emailThreads ? s.emailThreads + " email thread" + (s.emailThreads === 1 ? "" : "s") : "",
-      s.textConvos ? s.textConvos + " text conversation" + (s.textConvos === 1 ? "" : "s") : "",
+      s.textN
+        ? s.textN + " texts · " + s.textConvos + " conversation" + (s.textConvos === 1 ? "" : "s")
+        : "",
       s.calN ? s.calN + " calendar event" + (s.calN === 1 ? "" : "s") : "",
     ]
       .filter(Boolean)
@@ -2507,7 +2549,7 @@
     const tabs = document.getElementById("mb-day-tabs");
     tabs.innerHTML =
       `<button type="button" data-tab="email" class="${dayStack.tab === "email" ? "is-on" : ""}">Email · ${s.emailThreads} threads · ${s.emailN} messages</button>` +
-      `<button type="button" data-tab="text" class="${dayStack.tab === "text" ? "is-on" : ""}">Text · ${s.textConvos} conversations · ${s.textN} messages</button>` +
+      `<button type="button" data-tab="text" class="${dayStack.tab === "text" ? "is-on" : ""}">Text · ${s.textN} texts · ${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</button>` +
       `<button type="button" data-tab="calendar" class="${dayStack.tab === "calendar" ? "is-on" : ""}">Calendar · ${s.calN} events</button>`;
     tabs.querySelectorAll("[data-tab]").forEach((b) => {
       b.addEventListener("click", () => {
@@ -2552,10 +2594,20 @@
       .map((row, i) => {
         const it = row.items[0];
         const preview = escapeHtml(it.preview || it.detail || "");
+        let newest = it && it.date;
+        let newestMs = parseISO(newest);
+        (row.items || []).forEach((msg) => {
+          const ms = parseISO(msg.date);
+          if (Number.isFinite(ms) && (!Number.isFinite(newestMs) || ms >= newestMs)) {
+            newestMs = ms;
+            newest = msg.date;
+          }
+        });
+        const dateLabel = escapeHtml(fmtCardDate(newest));
         const on = i === dayStack.rowIndex && document.getElementById("mb-day-detail") && !document.getElementById("mb-day-detail").hidden;
         return `<button type="button" class="mb-day-row${on ? " is-on" : ""}" data-row="${i}"><strong>${escapeHtml(
           row.title
-        )}</strong><div>${preview}</div></button>`;
+        )}</strong><div class="mb-day-row-date">${dateLabel}</div><div>${preview}</div></button>`;
       })
       .join("");
     list.querySelectorAll("[data-row]").forEach((btn) => {
@@ -2613,11 +2665,19 @@
           state.domain.includeTexts && !rawItems.some((it) => isSmsTextItem(it));
         const needMail =
           state.domain.includeEmail && !rawItems.some((it) => isEmailItem(it));
-        if (needTexts || needMail) {
-          presentWithoutRewritingAsk("communications");
+        const wantEmail = state.domain.includeEmail;
+        const wantText = state.domain.includeTexts;
+        if (needMail || needTexts) {
+          if (wantEmail && wantText) presentWithoutRewritingAsk("communications");
+          else if (wantEmail) presentWithoutRewritingAsk("email");
+          else presentWithoutRewritingAsk("sms");
           return;
         }
-        if (state.domain.includeEmail || state.domain.includeTexts) setTypeFilter("email");
+        if (wantEmail || wantText) {
+          state.domain.typeFilter = "email";
+          state.domain.memoryPresentation = false;
+          syncTimelineToEligibleDatedExtent();
+        }
         render();
       };
     const kcan = document.getElementById("mb-cal-cancel");
@@ -2676,15 +2736,14 @@
       .map((it) => {
         if (String(it.type) === "daycard") {
           const s = it._daySummary || {};
-          const groupN = (s.emailThreads || 0) + (s.textConvos || 0) + (s.calN || 0);
           const bits = [];
           if (s.emailThreads)
             bits.push(
               `<span class="mb-day-e">${s.emailThreads} email thread${s.emailThreads === 1 ? "" : "s"}</span>`
             );
-          if (s.textConvos)
+          if (s.textN)
             bits.push(
-              `<span class="mb-day-t">${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span>`
+              `<span class="mb-day-t">${s.textN.toLocaleString()} texts · ${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span>`
             );
           if (s.calN)
             bits.push(`<span class="mb-day-c">${s.calN} event${s.calN === 1 ? "" : "s"}</span>`);
@@ -2699,9 +2758,7 @@
             <span class="mb-card-type" aria-hidden="true">▦</span>
             <div>
               <div class="mb-card-title">${escapeHtml(it.title || "Communications")}</div>
-              <div class="mb-card-sub">${escapeHtml(fmtBucketDate(it.date))} · ${groupN} ${
-            groupN === 1 ? "group" : "groups"
-          }</div>
+              <div class="mb-card-sub">${escapeHtml(fmtBucketDate(it.date))}</div>
             </div>
           </div>
         </button>`;
@@ -4010,7 +4067,7 @@
       <div class="mb-qp-type">${escapeHtml(fmtBucketDate(item.date))} · matching groups</div>
       <ul>
         <li>${s.emailThreads} email threads · ${s.emailN} messages · ${s.attachN} attachments</li>
-        <li>${s.textConvos} text conversations · ${s.textN} messages</li>
+        <li>${s.textN} texts · ${s.textConvos} conversations</li>
         <li>${s.calN} calendar events</li>
       </ul>
       <div class="mb-qp-line">Open day →</div>
