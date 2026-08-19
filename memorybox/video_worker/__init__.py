@@ -2,7 +2,7 @@
 
 Run: python -m memorybox.video_worker
 Config (env only — no hard-coded hosts):
-  MEMORYBOX_VIDEO_MEDIA_ROOT   — media-server family-video library path (LAN)
+  MEMORYBOX_VIDEO_MEDIA_ROOT   — family-video library (FlightSim: P:\photos\home videos)
   MEMORYBOX_VIDEO_DERIVED_DIR  — rebuildable derived detections store
   MEMORYBOX_VIDEO_PRESENCE_GAP_SEC — merge gap (default 60)
   MEMORYBOX_VIDEO_WORKER_HOST / MEMORYBOX_VIDEO_WORKER_PORT
@@ -13,6 +13,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -126,12 +127,30 @@ def _scan_videos(limit: int = 100) -> list[dict[str, Any]]:
     return out
 
 
+_VIDEO_INDEX: tuple[float, list[dict[str, Any]]] | None = None
+_VIDEO_INDEX_TTL_SEC = 120.0
+
+
+def _video_index() -> list[dict[str, Any]]:
+    """Full library index (cached). Lookup by id must not stop at 5000 files."""
+    global _VIDEO_INDEX
+    now = time.monotonic()
+    if _VIDEO_INDEX and (now - _VIDEO_INDEX[0]) < _VIDEO_INDEX_TTL_SEC:
+        return _VIDEO_INDEX[1]
+    rows = _scan_videos(limit=100000)
+    _VIDEO_INDEX = (now, rows)
+    return rows
+
+
 def _resolve_video_path(external_id: str) -> Path | None:
     root = _media_root()
     if root is None:
         return None
-    for row in _scan_videos(limit=5000):
-        if row["external_id"] == external_id:
+    want = (external_id or "").strip()
+    if not want:
+        return None
+    for row in _video_index():
+        if row["external_id"] == want:
             hint = row.get("path_hint") or ""
             candidate = root / hint
             if candidate.is_file():
@@ -232,6 +251,10 @@ class Handler(BaseHTTPRequestHandler):
                     "presence_gap_sec": _gap_sec(),
                     "media_root_configured": root is not None,
                     "media_root_readable": media_ok,
+                    "media_root": str(root) if root else None,
+                    "video_count": (
+                        len(_VIDEO_INDEX[1]) if _VIDEO_INDEX is not None else None
+                    ),
                     "derived_dir": str(_derived_dir()),
                     "originals_read_only": True,
                 },
@@ -273,9 +296,22 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/videos":
             limit = int((qs.get("limit") or ["100"])[0])
-            videos = _scan_videos(limit=limit)
+            videos = _video_index()[: max(1, min(limit, 100000))]
             self._json(200, {"ok": True, "videos": videos})
             return
+
+        if path.startswith("/videos/") and not path.endswith("/browser-proxy"):
+            vid = path[len("/videos/") :].strip("/")
+            if vid and "/" not in vid:
+                row = next((r for r in _video_index() if r["external_id"] == vid), None)
+                source = _resolve_video_path(vid)
+                if not row and not source:
+                    self._json(404, {"ok": False, "detail": "video not found"})
+                    return
+                payload = dict(row or {"external_id": vid})
+                payload["exists"] = bool(source and source.is_file())
+                self._json(200, {"ok": True, "video": payload})
+                return
 
         if path == "/faces":
             limit = int((qs.get("limit") or ["100"])[0])

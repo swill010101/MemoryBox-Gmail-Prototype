@@ -44,6 +44,7 @@ def collect_scan_samples(
     video_external_id: str,
     *,
     max_samples: int | None = None,
+    extra_times: list[float] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Harness FakeVideo first; otherwise sample frames with buffalo_l."""
     fn = getattr(video_provider, "i8b_scan_samples", None)
@@ -56,6 +57,7 @@ def collect_scan_samples(
         video_provider,
         video_external_id,
         max_samples=int(max_samples or MAX_FRAME_SAMPLES),
+        extra_times=extra_times,
     )
 
 
@@ -68,6 +70,7 @@ def scan_video_for_person(
     run_kind: str = "provider_seeded",
     trigger: str | None = None,
     max_samples: int | None = None,
+    extra_times: list[float] | None = None,
 ) -> dict[str, Any]:
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     exemplars = list_active_exemplars(person_id)
@@ -80,7 +83,10 @@ def scan_video_for_person(
             "ranges": [],
         }
     samples, sample_error = collect_scan_samples(
-        video_provider, video_external_id, max_samples=max_samples
+        video_provider,
+        video_external_id,
+        max_samples=max_samples,
+        extra_times=extra_times,
     )
     withdrawals = list_withdrawals(
         person_id=person_id,

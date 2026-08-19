@@ -59,15 +59,45 @@ class HvrtHttpVideoProvider:
         except TimeoutError as exc:
             raise ProviderUnavailable("video worker timeout") from exc
 
+    def _request_bytes(
+        self,
+        path: str,
+        *,
+        timeout_sec: float | None = None,
+    ) -> bytes:
+        url = f"{self.base_url}{path}"
+        req = urllib.request.Request(url, headers={"Accept": "image/jpeg,image/*,*/*"}, method="GET")
+        timeout = self.timeout_sec if timeout_sec is None else timeout_sec
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise ProviderError(f"video worker HTTP {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise ProviderUnavailable(f"video worker unreachable: {exc}") from exc
+        except TimeoutError as exc:
+            raise ProviderUnavailable("video worker timeout") from exc
+
+    def fetch_poster(self, video_external_id: str, t_sec: float) -> bytes:
+        vid = urllib.parse.quote(str(video_external_id or "").strip())
+        t = float(t_sec or 0)
+        return self._request_bytes(f"/poster?video_external_id={vid}&t={t:.3f}", timeout_sec=60.0)
+
     def health(self) -> ProviderHealth:
         try:
             # Short timeout so Library/Ask degrade fast when worker is down.
             data = self._request("GET", "/health", timeout_sec=min(3.0, self.timeout_sec))
             ok = bool(data.get("ok"))
+            extra = ""
+            if data.get("media_root"):
+                extra = f" media_root={data.get('media_root')}"
+            if data.get("media_root_readable") is False:
+                extra += " media_root_readable=false"
             return ProviderHealth(
                 provider_key=self.provider_key,
                 ok=ok,
-                detail=str(data.get("detail") or ("ok" if ok else "unhealthy")),
+                detail=str(data.get("detail") or ("ok" if ok else "unhealthy")) + extra,
                 meta={k: v for k, v in data.items() if k not in {"ok", "detail"}},
             )
         except ProviderUnavailable as exc:
@@ -80,7 +110,7 @@ class HvrtHttpVideoProvider:
             )
 
     def list_videos(self, *, limit: int = 100) -> list[VideoAssetDto]:
-        data = self._request("GET", f"/videos?limit={int(limit)}")
+        data = self._request("GET", f"/videos?limit={int(limit)}", timeout_sec=120.0)
         out: list[VideoAssetDto] = []
         for row in data.get("videos") or []:
             out.append(

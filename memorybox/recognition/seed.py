@@ -11,7 +11,6 @@ from memorybox.recognition.constants import MODEL_ID
 from memorybox.recognition.crops import crop_jpeg_bytes, parse_bbox, quality_flags
 from memorybox.recognition.embeddings import (
     embed_image_bytes_for_bbox,
-    embed_jpeg_bytes,
     insightface_available,
 )
 from memorybox.recognition.exemplars import persist_exemplar, select_exemplars

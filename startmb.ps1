@@ -93,6 +93,16 @@ function Load-MbEnv {
   }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_HOST) { $env:MEMORYBOX_VIDEO_WORKER_HOST = "127.0.0.1" }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_PORT) { $env:MEMORYBOX_VIDEO_WORKER_PORT = "$WorkerPort" }
+  $flightsimHomeVideos = "P:\photos\home videos"
+  if (-not $env:MEMORYBOX_VIDEO_MEDIA_ROOT) {
+    $env:MEMORYBOX_VIDEO_MEDIA_ROOT = $flightsimHomeVideos
+  }
+  if ($env:MEMORYBOX_VIDEO_MEDIA_ROOT -and -not (Test-Path -LiteralPath $env:MEMORYBOX_VIDEO_MEDIA_ROOT)) {
+    if (Test-Path -LiteralPath $flightsimHomeVideos) {
+      Write-Host "  WARNING: MEMORYBOX_VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT) is not a readable folder. Using $flightsimHomeVideos" -ForegroundColor Yellow
+      $env:MEMORYBOX_VIDEO_MEDIA_ROOT = $flightsimHomeVideos
+    }
+  }
   $immichPath = Join-Path $Root "config\immich.env"
   if (-not $env:MEMORYBOX_IMMICH_ENV -and (Test-Path -LiteralPath $immichPath)) {
     $env:MEMORYBOX_IMMICH_ENV = $immichPath
@@ -225,6 +235,7 @@ if ($Role -eq "worker" -or $Role -eq "serve") {
   $PythonExe = Resolve-Python
   if ($Role -eq "worker") {
     Write-Host "Starting video worker on :$($env:MEMORYBOX_VIDEO_WORKER_PORT)"
+    Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
     & $PythonExe -m memorybox.video_worker
     exit $LASTEXITCODE
   }
@@ -242,6 +253,7 @@ Load-MbEnv
 Write-Host "  DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL)"
 Write-Host "  QDRANT_URL=$($env:MEMORYBOX_QDRANT_URL)"
 Write-Host "  VIDEO_WORKER_URL=$($env:MEMORYBOX_VIDEO_WORKER_URL)"
+Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
 Write-Host "  IMMICH_ENV=$($env:MEMORYBOX_IMMICH_ENV)"
 
 Wait-DockerReady -Seconds $DockerWaitSec

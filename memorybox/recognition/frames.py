@@ -127,15 +127,82 @@ def sample_faces_from_path(
         cap.release()
 
 
+def sample_faces_from_posters(
+    video_provider: Any,
+    video_external_id: str,
+    times: list[float],
+) -> tuple[list[dict[str, Any]], str | None]:
+    fetch = getattr(video_provider, "fetch_poster", None)
+    if not callable(fetch):
+        return [], "poster_api_unavailable"
+    if not insightface_available():
+        return [], "insightface_unavailable"
+    from memorybox.recognition.embeddings import _face_app, decode_to_bgr
+
+    app = _face_app()
+    out: list[dict[str, Any]] = []
+    last_err: str | None = None
+    for t in times:
+        try:
+            jpeg = fetch(video_external_id, float(t))
+        except Exception as exc:  # noqa: BLE001
+            last_err = str(exc)[:200]
+            continue
+        if not jpeg or jpeg[:1] in (b"{", b"["):
+            last_err = last_err or "poster_not_jpeg"
+            continue
+        frame = decode_to_bgr(jpeg)
+        if frame is None:
+            last_err = last_err or "poster_decode_failed"
+            continue
+        faces = app.get(frame)
+        for face in faces or []:
+            emb = getattr(face, "embedding", None)
+            if emb is None:
+                continue
+            bbox = None
+            try:
+                bb = [float(x) for x in list(face.bbox[:4])]
+                bbox = {"x1": bb[0], "y1": bb[1], "x2": bb[2], "y2": bb[3]}
+            except Exception:
+                bbox = None
+            out.append(
+                {
+                    "t_sec": float(t),
+                    "embedding": [float(x) for x in list(emb)],
+                    "bbox": bbox,
+                }
+            )
+    if out:
+        return out, None
+    return [], last_err or "poster_no_faces"
+
+
 def collect_insightface_scan_samples(
     video_provider: Any,
     video_external_id: str,
     *,
     max_samples: int = MAX_FRAME_SAMPLES,
+    extra_times: list[float] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    path = resolve_local_video_path(video_provider, video_external_id)
-    if path is None:
-        return [], "video_file_not_found"
     duration = video_duration_sec(video_provider, video_external_id)
-    samples = sample_faces_from_path(path, duration_sec=duration, max_samples=max_samples)
-    return samples, None
+    times = sample_times(duration or 90.0, max_samples=max_samples)
+    for t in extra_times or []:
+        try:
+            ft = round(float(t), 2)
+        except (TypeError, ValueError):
+            continue
+        if ft not in times:
+            times.append(ft)
+    times = sorted(times)[: max(1, int(max_samples) + len(extra_times or []))]
+    path = resolve_local_video_path(video_provider, video_external_id)
+    if path is not None:
+        samples = sample_faces_from_path(path, duration_sec=duration, max_samples=max_samples)
+        if samples:
+            return samples, None
+    posters, err = sample_faces_from_posters(video_provider, video_external_id, times)
+    if posters:
+        return posters, None
+    if path is None:
+        return [], err or "video_file_not_found"
+    return [], err or "no_faces_in_samples"

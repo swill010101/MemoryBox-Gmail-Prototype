@@ -558,7 +558,12 @@ def _prove_flightsim() -> dict[str, Any]:
     vh = video.health()
     meta["providers"] = {
         "photo": {"provider_key": ph.provider_key, "ok": ph.ok, "detail": ph.detail},
-        "video": {"provider_key": vh.provider_key, "ok": vh.ok, "detail": vh.detail},
+        "video": {
+            "provider_key": vh.provider_key,
+            "ok": vh.ok,
+            "detail": vh.detail,
+            "meta": getattr(vh, "meta", None) or {},
+        },
     }
     _check(
         "p2i8b_flightsim_immich",
@@ -567,12 +572,27 @@ def _prove_flightsim() -> dict[str, Any]:
         problems,
         str(ph.detail),
     )
+    vmeta = getattr(vh, "meta", None) or {}
     _check(
         "p2i8b_flightsim_hvrt",
         bool(vh.ok) and vh.provider_key == "hvrt",
         checks,
         problems,
         str(vh.detail),
+    )
+    _check(
+        "p2i8b_worker_media_root",
+        bool(vmeta.get("media_root_readable")) or int(vmeta.get("video_count") or 0) > 0,
+        checks,
+        problems,
+        (
+            "Video worker needs MEMORYBOX_VIDEO_MEDIA_ROOT "
+            r"(FlightSim: P:\photos\home videos, same as startmb). "
+            f"media_root={vmeta.get('media_root')} "
+            f"media_root_configured={vmeta.get('media_root_configured')} "
+            f"media_root_readable={vmeta.get('media_root_readable')} "
+            f"video_count={vmeta.get('video_count')}"
+        ),
     )
     if problems:
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
@@ -681,6 +701,11 @@ def _prove_flightsim() -> dict[str, Any]:
                     prefer.append(ve)
             scan_meta = []
             for veid in prefer[:2]:
+                extra = [
+                    float(m.get("start_sec") or 0)
+                    for m in moments
+                    if m.get("video_external_id") == veid
+                ]
                 scanned = scan_video_for_person(
                     person_id=pid,
                     video_provider=video,
@@ -688,6 +713,7 @@ def _prove_flightsim() -> dict[str, Any]:
                     run_kind="provider_seeded",
                     trigger="flightsim_prove",
                     max_samples=PROVE_FRAME_SAMPLES,
+                    extra_times=extra[:8],
                 )
                 scan_meta.append(
                     {
