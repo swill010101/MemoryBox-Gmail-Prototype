@@ -236,8 +236,9 @@ def seed_exemplars_from_immich(
     fetch_bytes: Callable[[str], bytes] | None = None,
     embed_fn: Callable[[bytes], list[float] | None] | None = None,
     max_assets: int = 80,
+    candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raw = collect_immich_face_candidates(
+    raw = candidates if candidates is not None else collect_immich_face_candidates(
         person_id=person_id,
         photo_provider=photo_provider,
         max_assets=max_assets,

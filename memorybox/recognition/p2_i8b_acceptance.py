@@ -124,16 +124,37 @@ def _prove_harness() -> dict[str, Any]:
         and "/recognition/archive-pass" in open("memorybox/app.py", encoding="utf-8").read()
         and "origin_thumb_url" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
         and "undated=not taken" in open("memorybox/explore/find.py", encoding="utf-8").read(),
-        "id=\"mb-learn-box\"" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
-        and "Choose a person" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
-        and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
-        and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read()
-        and "/recognition/archive-pass" in open("memorybox/app.py", encoding="utf-8").read()
-        and "origin_thumb_url" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
-        and "undated=not taken" in open("memorybox/explore/find.py", encoding="utf-8").read(),
         checks,
         problems,
         "Explore Learn tab must box a face with an empty person dropdown",
+    )
+    ap_src = open("memorybox/recognition/archive_pass.py", encoding="utf-8").read()
+    cli_src = open("memorybox/__main__.py", encoding="utf-8").read()
+    _check(
+        "p2i8b_archive_pass_incremental",
+        "unchanged" in ap_src
+        and "exemplar_change" in ap_src
+        and "new_video" in ap_src
+        and "immich_catalog" in ap_src
+        and "recognition_person_watermark" in ap_src
+        and "--full" in cli_src
+        and "Does not restart unchanged people" in cli_src,
+        checks,
+        problems,
+        "Overnight --seed-immich must be incremental (new names / merges), not a full restart",
+    )
+    from memorybox.recognition.archive_pass import catalog_fingerprint, exemplar_fingerprint
+
+    face_a = [{"id": "f1", "external_face_id": "f1", "source_asset_id": "a1", "external_person_id": "p1"}]
+    face_b = face_a + [{"id": "f2", "external_face_id": "f2", "source_asset_id": "a2", "external_person_id": "p1"}]
+    _check(
+        "p2i8b_watermark_fingerprint_merge_or_new_still",
+        catalog_fingerprint(face_a) != catalog_fingerprint(face_b)
+        and exemplar_fingerprint(face_a, ["p1"]) != exemplar_fingerprint(face_a, ["p1", "p2"])
+        and exemplar_fingerprint(face_a, ["p1"]) == exemplar_fingerprint(face_a, ["p1"]),
+        checks,
+        problems,
+        "New stills or Immich merge must change the overnight watermark",
     )
 
     bbox = parse_bbox({"x": 1, "y": 1, "w": 10, "h": 10})

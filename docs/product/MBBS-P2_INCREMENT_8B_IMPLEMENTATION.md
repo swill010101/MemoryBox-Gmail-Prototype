@@ -19,4 +19,11 @@
 
 **Explore cards:** Native appearance moments take **date + filename + Immich thumbnail** from the originating asset (`/library/media/photo/{asset}`), not an empty undated purple tile.
 
-**Archive pass:** `POST /recognition/archive-pass` or `python -m memorybox recognition-archive-pass [--seed-immich]` queues every known MB Person who has exemplars against Home Videos (`MEMORYBOX_VIDEO_MEDIA_ROOT`) plus Immich VIDEO assets. FlightSim serve drains `recognition_queue` one video at a time when `MEMORYBOX_P1_RUNTIME_HOST=1`. This is I8B (people clips for I9), not speech.
+**Archive pass (incremental overnight):** `POST /recognition/archive-pass` or `python -m memorybox recognition-archive-pass [--seed-immich]` does **not** restart everyone.
+
+- **New Immich name** with enough still faces → seed exemplars for that Person → queue **all** Home Videos + Immich VIDEO assets for that Person only.
+- **Immich merge** (or more stills on a mapped Person) → that Person’s exemplar catalog changes → that Person is rescanned against all video sources that night.
+- **Unchanged People** are skipped (no re-embed, no re-queue). Brand-new video files still get `new_video`.
+- **`--full`** / `full=true` ignores watermarks and rescans everyone.
+
+Serve drains `recognition_queue` one video at a time when `MEMORYBOX_P1_RUNTIME_HOST=1`. This is I8B (people clips for I9), not speech. Owner Learn still scans the current clip in-request, then enqueues other videos for that Person only.

@@ -1807,9 +1807,10 @@ def recognition_queue_process(
 @app.post("/recognition/archive-pass")
 def recognition_archive_pass(
     seed_immich: bool = Query(False),
+    full: bool = Query(False, description="Rescan every named person against every video."),
     person_limit: int = Query(80, ge=1, le=300),
 ) -> dict[str, Any]:
-    """Known MB people with exemplars × Home Videos + Immich videos (queued; drain one-by-one)."""
+    """Incremental overnight pass. Unchanged people are skipped; new names/merges rescan all videos."""
     from memorybox.ask.deps import build_photo, build_video
     from memorybox.recognition.archive_pass import enqueue_known_people_archive
     from memorybox.recognition.drain import start_recognition_drain
@@ -1820,6 +1821,7 @@ def recognition_archive_pass(
         photo_provider=build_photo(),
         seed_immich=seed_immich,
         person_limit=person_limit,
+        full=bool(full),
     )
 
 

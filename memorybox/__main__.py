@@ -89,12 +89,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_archive = sub.add_parser(
         "recognition-archive-pass",
-        help="I8B: queue known MB people against Home Videos + Immich videos (one-by-one drain)",
+        help="I8B incremental overnight: new/changed people only, then drain one video at a time",
     )
     p_archive.add_argument(
         "--seed-immich",
         action="store_true",
-        help="Try Immich still-photo seed when a Person has no exemplars yet",
+        help=(
+            "Refresh Immich people, then seed only when still-face catalogs changed "
+            "(new named person, new stills, Immich merge). Does not restart unchanged people."
+        ),
+    )
+    p_archive.add_argument(
+        "--full",
+        action="store_true",
+        help="Ignore watermarks: re-seed and queue every named Person against every video",
     )
     p_archive.add_argument("--person-limit", type=int, default=80)
     p_inspect_cal = sub.add_parser(
@@ -713,6 +721,7 @@ def main(argv: list[str] | None = None) -> int:
             photo_provider=build_photo(),
             seed_immich=bool(args.seed_immich),
             person_limit=int(args.person_limit),
+            full=bool(args.full),
         )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
