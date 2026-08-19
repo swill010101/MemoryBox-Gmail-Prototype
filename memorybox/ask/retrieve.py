@@ -917,7 +917,12 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         if person_ids or person_names:
             have = {str(x) for x in (payload.get("person_ids") or [])}
             addrs = _payload_email_addresses(payload)
-            if person_ids and (have & person_ids):
+            mapped_ids = {
+                str(m.get("person_id"))
+                for m in ((payload.get("identity_resolution") or {}).get("mapped") or [])
+                if isinstance(m, dict) and m.get("person_id")
+            }
+            if person_ids and (have & person_ids or mapped_ids & person_ids):
                 pass
             elif confirmed_addrs and (addrs & confirmed_addrs):
                 pass
@@ -1028,6 +1033,7 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
         for n in (plan.person_names or ())
         if n.strip()
     ]
+    confirmed_addrs = _confirmed_emails_for_people(person_ids) if person_ids else set()
     windows = list(plan.temporal_windows or ())
     if not windows and plan.time_start and plan.time_end:
         windows = [(plan.time_start, plan.time_end)]
@@ -1062,6 +1068,8 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
             if person_ids and (have & person_ids):
                 pass
             elif person_names and _sms_name_match(blob, person_names, allow_first_token=False):
+                pass
+            elif confirmed_addrs and any(a in blob for a in confirmed_addrs):
                 pass
             elif not person_ids and not person_names:
                 pass

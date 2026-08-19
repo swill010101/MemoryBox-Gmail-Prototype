@@ -1004,7 +1004,7 @@ def build_explore_find(
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
-    if show_email and not email_available:
+    if show_email and not show_sms and not email_available:
         summary = (
             (summary or "").rstrip()
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
