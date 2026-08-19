@@ -244,10 +244,23 @@
     }
 
     function captureCropJpeg() {
-      const { x, y, w, h } = boxToVideoPixels(box);
+      const pix = boxToVideoPixels(box);
+      const pad = 0.45;
+      const fw = player.videoWidth || pix.vw;
+      const fh = player.videoHeight || pix.vh;
+      const x = Math.max(0, Math.floor(pix.x - pix.w * pad));
+      const y = Math.max(0, Math.floor(pix.y - pix.h * pad));
+      const x2 = Math.min(fw, Math.ceil(pix.x + pix.w + pix.w * pad));
+      const y2 = Math.min(fh, Math.ceil(pix.y + pix.h + pix.h * pad));
+      const w = Math.max(8, x2 - x);
+      const h = Math.max(8, y2 - y);
+      const full = document.createElement("canvas");
+      full.width = Math.max(1, fw);
+      full.height = Math.max(1, fh);
+      full.getContext("2d").drawImage(player, 0, 0, full.width, full.height);
       const c = document.createElement("canvas");
       c.width = w; c.height = h;
-      c.getContext("2d").drawImage(player, x, y, w, h, 0, 0, w, h);
+      c.getContext("2d").drawImage(full, x, y, w, h, 0, 0, w, h);
       return c.toDataURL("image/jpeg", 0.92);
     }
 

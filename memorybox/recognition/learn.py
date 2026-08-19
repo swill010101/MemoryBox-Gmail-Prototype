@@ -98,13 +98,23 @@ def owner_learn_from_review(
 
     emb = embedding
     jpeg = decode_data_url_jpeg(crop_jpeg_base64)
+    if emb is None and not jpeg:
+        return {
+            "ok": False,
+            "reason": "crop_decode_failed",
+            "detail": "Could not read the boxed face JPEG. Box again on the paused picture.",
+        }
     if emb is None and jpeg:
         try:
             emb = embed_jpeg_bytes(jpeg)
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "reason": f"embed_failed:{exc}"}
+            return {"ok": False, "reason": f"embed_failed:{exc}", "detail": str(exc)}
     if not emb:
-        return {"ok": False, "reason": "no_embedding"}
+        return {
+            "ok": False,
+            "reason": "no_embedding",
+            "detail": "buffalo_l found no face in that box. Drag a larger box around the whole head, then Learn again.",
+        }
 
     row = persist_exemplar(
         person_id=person_id,

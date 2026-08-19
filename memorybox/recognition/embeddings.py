@@ -165,6 +165,25 @@ def embed_image_bytes_for_bbox(
     return [float(x) for x in list(best.embedding)]
 
 
+def pad_bgr_for_detector(bgr: Any, *, pad_ratio: float = 0.45, min_side: int = 160) -> Any:
+    """Widen a tight owner box so buffalo_l can still detect a face."""
+    import cv2
+
+    h, w = int(bgr.shape[0]), int(bgr.shape[1])
+    pad_w = max(8, int(w * pad_ratio))
+    pad_h = max(8, int(h * pad_ratio))
+    out = cv2.copyMakeBorder(bgr, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_REPLICATE)
+    oh, ow = int(out.shape[0]), int(out.shape[1])
+    scale = max(1.0, float(min_side) / float(max(1, min(oh, ow))))
+    if scale > 1.05:
+        out = cv2.resize(
+            out,
+            (max(min_side, int(ow * scale)), max(min_side, int(oh * scale))),
+            interpolation=cv2.INTER_CUBIC,
+        )
+    return out
+
+
 def embed_jpeg_bytes(data: bytes) -> list[float] | None:
     if not data:
         return None
@@ -175,7 +194,14 @@ def embed_jpeg_bytes(data: bytes) -> list[float] | None:
         except ImportError as exc:
             raise RuntimeError("opencv-python required to embed JPEG crops") from exc
         return None
-    return embed_bgr_crop(img)
+    got = embed_bgr_crop(img)
+    if got:
+        return got
+    try:
+        padded = pad_bgr_for_detector(img)
+    except Exception:
+        return None
+    return embed_bgr_crop(padded)
 
 
 def model_id() -> str:

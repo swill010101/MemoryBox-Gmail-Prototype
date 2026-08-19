@@ -4085,11 +4085,28 @@
   function captureLearnCrop() {
     const pix = learnBoxToMediaPixels();
     const media = learnMediaEl();
+    const fw = media.videoWidth || media.naturalWidth || pix.vw;
+    const fh = media.videoHeight || media.naturalHeight || pix.vh;
+    const pad = 0.45;
+    const x = Math.max(0, Math.floor(pix.x - pix.w * pad));
+    const y = Math.max(0, Math.floor(pix.y - pix.h * pad));
+    const x2 = Math.min(fw, Math.ceil(pix.x + pix.w + pix.w * pad));
+    const y2 = Math.min(fh, Math.ceil(pix.y + pix.h + pix.h * pad));
+    const w = Math.max(8, x2 - x);
+    const h = Math.max(8, y2 - y);
+    const full = document.createElement("canvas");
+    full.width = Math.max(1, fw);
+    full.height = Math.max(1, fh);
+    const fctx = full.getContext("2d", { willReadFrequently: true });
+    fctx.drawImage(media, 0, 0, full.width, full.height);
     const c = document.createElement("canvas");
-    c.width = pix.w;
-    c.height = pix.h;
-    c.getContext("2d").drawImage(media, pix.x, pix.y, pix.w, pix.h, 0, 0, pix.w, pix.h);
-    return { dataUrl: c.toDataURL("image/jpeg", 0.92), pix };
+    c.width = w;
+    c.height = h;
+    c.getContext("2d").drawImage(full, x, y, w, h, 0, 0, w, h);
+    return {
+      dataUrl: c.toDataURL("image/jpeg", 0.92),
+      pix: { x, y, w, h, vw: fw, vh: fh },
+    };
   }
 
   function updateLearnCropPreview() {

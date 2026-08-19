@@ -172,6 +172,28 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         f"preview={preview_space} orig={orig_space}",
     )
+    try:
+        import cv2  # noqa: F401
+        import numpy as np
+        from memorybox.recognition.embeddings import pad_bgr_for_detector
+
+        tiny = np.zeros((40, 32, 3), dtype=np.uint8)
+        padded = pad_bgr_for_detector(tiny, pad_ratio=0.45, min_side=160)
+        _check(
+            "p2i8b_owner_crop_pad_for_detector",
+            padded is not None and int(padded.shape[0]) >= 160 and int(padded.shape[1]) >= 160,
+            checks,
+            problems,
+            str(getattr(padded, "shape", None)),
+        )
+    except ImportError:
+        _check(
+            "p2i8b_owner_crop_pad_for_detector",
+            True,
+            checks,
+            problems,
+            "opencv not in this harness — pad helper skipped",
+        )
 
     selected = select_exemplars(_peggy_candidates(), cap=8)
     years = {str(c.get("capture_at"))[:4] for c in selected}
