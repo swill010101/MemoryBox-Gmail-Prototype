@@ -1229,42 +1229,17 @@ def library_video_poster(
     video: str = Query(..., min_length=1),
     t: float = Query(0.0),
 ) -> Response:
-    """Poster frame for a video segment via the sibling video worker."""
-    import os
-    import urllib.error
-    import urllib.parse
-    import urllib.request
-
+    """Poster at appearance start (t=), not the first frame of the file."""
     if str(video).startswith(("video-peggy-", "video-library-")):
         return Response(status_code=204)
-    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
-    if not base:
-        raise HTTPException(
-            status_code=503,
-            detail="MEMORYBOX_VIDEO_WORKER_URL required for video posters",
-        )
-    q = urllib.parse.urlencode(
-        {"video_external_id": video, "t": f"{max(0.0, float(t)):.3f}"}
-    )
-    url = f"{base}/poster?{q}"
-    try:
-        with urllib.request.urlopen(url, timeout=45) as resp:
-            data = resp.read()
-            ctype = resp.headers.get("Content-Type") or "image/jpeg"
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(
-            status_code=exc.code, detail=detail or "poster failed"
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=503, detail=f"video poster unavailable: {exc}"
-        ) from exc
+    from memorybox.recognition.origin import poster_jpeg_bytes
+
+    data = poster_jpeg_bytes(video, float(t))
     if not data:
-        raise HTTPException(status_code=404, detail="empty poster")
+        raise HTTPException(status_code=404, detail="poster frame unavailable")
     return Response(
         content=data,
-        media_type=ctype,
+        media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=600"},
     )
 

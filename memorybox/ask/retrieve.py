@@ -216,8 +216,7 @@ def _origin_on_video_hit(h: VideoHit) -> VideoHit:
         h.taken_at = meta.get("taken_at")
     if not h.original_filename:
         h.original_filename = meta.get("original_filename")
-    if not h.thumb_url:
-        h.thumb_url = meta.get("thumb_url")
+    h.thumb_url = meta.get("thumb_url") or h.thumb_url
     return h
 
 
@@ -2205,22 +2204,69 @@ def search_photos(
         return _finish([])
 
 
+def _hit_score(h: VideoHit) -> tuple[int, int, int, float, int]:
+    named = 1 if (h.mb_person_name or (h.label and h.label != "face-appearance-moment")) else 0
+    trust = {"confirmed": 3, "trusted_provider": 2, "candidate": 1}.get(
+        h.identity_trust or "", 0
+    )
+    native = 1 if "mb_native" in str(h.attribution or "") else 0
+    dur = max(0.0, float(h.end_sec or 0) - float(h.start_sec or 0))
+    has_face = 1 if h.face_external_id else 0
+    return (named, trust, native, dur, has_face)
+
+
+def _merge_overlapping_video_hits(
+    hits: list[VideoHit], *, gap_sec: float = 8.0
+) -> list[VideoHit]:
+    """One gallery card per presence span. Stacked native writes of the same visit collapse."""
+    from memorybox.recognition.process import ensure_timeslot_play_url
+
+    by_vid: dict[str, list[VideoHit]] = {}
+    order: list[str] = []
+    for h in hits:
+        vid = str(h.video_external_id or h.external_id or "")
+        if vid not in by_vid:
+            order.append(vid)
+            by_vid[vid] = []
+        by_vid[vid].append(h)
+    out: list[VideoHit] = []
+    for vid in order:
+        group = sorted(by_vid[vid], key=lambda x: float(x.start_sec or 0))
+        merged: list[VideoHit] = []
+        for h in group:
+            if not merged:
+                merged.append(h)
+                continue
+            prev = merged[-1]
+            if float(h.start_sec or 0) <= float(prev.end_sec or 0) + float(gap_sec):
+                start = min(float(prev.start_sec or 0), float(h.start_sec or 0))
+                end = max(float(prev.end_sec or 0), float(h.end_sec or 0))
+                keep = h if _hit_score(h) > _hit_score(prev) else prev
+                keep.start_sec = start
+                keep.end_sec = end
+                keep.play_url = ensure_timeslot_play_url(
+                    video_external_id=str(keep.video_external_id or vid),
+                    start_sec=start,
+                    play_url=keep.play_url,
+                    video_provider_key=str(keep.provider_key or ""),
+                )
+                keep.thumb_url = None
+                merged[-1] = keep
+            else:
+                merged.append(h)
+        out.extend(merged)
+    return [_origin_on_video_hit(h) for h in out]
+
+
 def _dedupe_video_hits(
     hits: list[VideoHit], *, window_sec: float = 2.5, limit: int = 48
 ) -> list[VideoHit]:
-    """Collapse near-duplicate moments (HVRT segment + appearance merge).
+    """Collapse near-duplicate moments (HVRT segment + stacked native ranges).
 
     Prefer labeled / named / confirmed hits over generic face-appearance copies.
+    Overlapping or adjacent spans on the same file become one card whose
+    entry time (and poster) is the earliest start_sec — not file t=0.
     """
-
-    def _score(h: VideoHit) -> tuple[int, int, int]:
-        named = 1 if (h.mb_person_name or (h.label and h.label != "face-appearance-moment")) else 0
-        trust = {"confirmed": 3, "trusted_provider": 2, "candidate": 1}.get(
-            h.identity_trust or "", 0
-        )
-        has_face = 1 if h.face_external_id else 0
-        return (named, trust, has_face)
-
     buckets: dict[tuple[str, int], VideoHit] = {}
     order: list[tuple[str, int]] = []
     for h in hits:
@@ -2232,9 +2278,10 @@ def _dedupe_video_hits(
             buckets[key] = h
             order.append(key)
             continue
-        if _score(h) > _score(prev):
+        if _hit_score(h) > _hit_score(prev):
             buckets[key] = h
-    return [_origin_on_video_hit(buckets[k]) for k in order][:limit]
+    collapsed = [buckets[k] for k in order]
+    return _merge_overlapping_video_hits(collapsed)[:limit]
 
 
 def search_videos(
@@ -2445,6 +2492,8 @@ def search_videos(
                 }
                 for pid in person_ids:
                     for mom in list_appearance_moments(pid, limit=limit):
+                        if str(mom.get("status") or "accepted") == "withdrawn":
+                            continue
                         vid = str(mom["video_external_id"])
                         t0 = float(mom["start_sec"])
                         slot_key = (vid, int(t0 // 2.5))

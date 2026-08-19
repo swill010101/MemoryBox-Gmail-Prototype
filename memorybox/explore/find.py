@@ -317,10 +317,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             if face:
                 play += f"&face={face}"
         poster = str(v.get("thumb_url") or "")
-        if looks_immich:
-            if not poster:
-                poster = f"/library/media/photo/{vid}"
-        elif not poster and not str(vid).startswith(("video-peggy-", "video-library-")):
+        if not poster and not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
         if label == "face-appearance-moment":
@@ -371,9 +368,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             }
         video_raw.append(item)
 
-    # Collapse near-duplicate video moments (same clip / ~same seek)
+    # Collapse stacked ranges on the same file (same visit / overlapping starts)
     video_kept: list[dict[str, Any]] = []
     video_slots: set[tuple[str, int]] = set()
+    pending: dict[str, list[dict[str, Any]]] = {}
+    pending_order: list[str] = []
     for it in video_raw:
         vid = str(it.get("video_external_id") or "")
         slot = int(float(it.get("start_sec") or 0) // 2.5)
@@ -381,7 +380,53 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if key in video_slots:
             continue
         video_slots.add(key)
-        video_kept.append(it)
+        if vid not in pending:
+            pending_order.append(vid)
+            pending[vid] = []
+        pending[vid].append(it)
+    for vid in pending_order:
+        group = sorted(pending[vid], key=lambda x: float(x.get("start_sec") or 0))
+        merged: list[dict[str, Any]] = []
+        for it in group:
+            if not merged:
+                merged.append(it)
+                continue
+            prev = merged[-1]
+            gap = 8.0
+            if float(it.get("start_sec") or 0) <= float(prev.get("end_sec") or 0) + gap:
+                start = min(float(prev.get("start_sec") or 0), float(it.get("start_sec") or 0))
+                end_a = prev.get("end_sec")
+                end_b = it.get("end_sec")
+                ends = [float(x) for x in (end_a, end_b) if x is not None]
+                end = max(ends) if ends else start
+                prev["start_sec"] = start
+                prev["t"] = start
+                prev["end_sec"] = end
+                prev["duration_sec"] = (end - start) if end is not None else prev.get("duration_sec")
+                prev["preview"] = f"Moment @ {start:.1f}s"
+                play = str(prev.get("play_url") or "")
+                if "t=" in play:
+                    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                    parts = urlparse(play)
+                    q = parse_qs(parts.query, keep_blank_values=True)
+                    q["t"] = [f"{start:.3f}"]
+                    prev["play_url"] = urlunparse(
+                        (
+                            parts.scheme,
+                            parts.netloc,
+                            parts.path,
+                            parts.params,
+                            urlencode(q, doseq=True),
+                            parts.fragment,
+                        )
+                    )
+                poster = f"/library/media/video-poster?video={vid}&t={start:.3f}"
+                prev["thumb_url"] = poster
+                prev["media_url"] = poster
+            else:
+                merged.append(it)
+        video_kept.extend(merged)
     for it in video_kept:
         add(it)
 

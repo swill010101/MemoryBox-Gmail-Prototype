@@ -123,6 +123,8 @@ def _prove_harness() -> dict[str, Any]:
         and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read()
         and "/recognition/archive-pass" in open("memorybox/app.py", encoding="utf-8").read()
         and "origin_thumb_url" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
+        and "video-poster" in open("memorybox/recognition/origin.py", encoding="utf-8").read()
+        and "/library/media/photo/{vid}" not in open("memorybox/recognition/origin.py", encoding="utf-8").read()
         and "undated=not taken" in open("memorybox/explore/find.py", encoding="utf-8").read(),
         checks,
         problems,
@@ -144,6 +146,61 @@ def _prove_harness() -> dict[str, Any]:
         "Overnight --seed-immich must be incremental (new names / merges), not a full restart",
     )
     from memorybox.recognition.archive_pass import catalog_fingerprint, exemplar_fingerprint
+    from memorybox.recognition.origin import origin_thumb_url
+
+    _check(
+        "p2i8b_gallery_poster_is_appearance_start",
+        "t=12.500" in origin_thumb_url("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", t_sec=12.5)
+        and "video-poster" in origin_thumb_url("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", t_sec=12.5)
+        and "/library/media/photo/" not in origin_thumb_url("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", t_sec=12.5),
+        checks,
+        problems,
+        "Explore entry frame must be the appearance start, not the file's Immich still",
+    )
+    from memorybox.ask.retrieve import VideoHit, _dedupe_video_hits
+
+    stacked = _dedupe_video_hits(
+        [
+            VideoHit(
+                provider_key="immich",
+                external_id="a",
+                video_external_id="clip-1",
+                start_sec=0.5,
+                end_sec=10.5,
+                label="Peggy George",
+                mb_person_name="Peggy George",
+                attribution="face-appearance moment (mb_native_i8b, system_associated)",
+            ),
+            VideoHit(
+                provider_key="immich",
+                external_id="b",
+                video_external_id="clip-1",
+                start_sec=3.0,
+                end_sec=13.0,
+                label="Peggy George",
+                mb_person_name="Peggy George",
+                attribution="face-appearance moment (mb_native_i8b, system_associated)",
+            ),
+            VideoHit(
+                provider_key="immich",
+                external_id="c",
+                video_external_id="clip-1",
+                start_sec=9.0,
+                end_sec=9.5,
+                label="Peggy George",
+                mb_person_name="Peggy George",
+            ),
+        ]
+    )
+    _check(
+        "p2i8b_stacked_ranges_collapse_to_entry_start",
+        len(stacked) == 1
+        and abs(float(stacked[0].start_sec) - 0.5) < 0.01
+        and float(stacked[0].end_sec) >= 13.0,
+        checks,
+        problems,
+        f"n={len(stacked)} start={getattr(stacked[0], 'start_sec', None) if stacked else None}",
+    )
 
     face_a = [{"id": "f1", "external_face_id": "f1", "source_asset_id": "a1", "external_person_id": "p1"}]
     face_b = face_a + [{"id": "f2", "external_face_id": "f2", "source_asset_id": "a2", "external_person_id": "p1"}]

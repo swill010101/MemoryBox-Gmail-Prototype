@@ -2232,16 +2232,17 @@
       return `${bg}<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "video") {
-      const dur = it.duration_sec
-        ? `${Math.floor(it.duration_sec / 60)}:${String(Math.floor(it.duration_sec % 60)).padStart(2, "0")}`
-        : it.t != null
-          ? `@ ${Number(it.t).toFixed(0)}s`
+      const startClock =
+        it.t != null
+          ? `${Math.floor(Number(it.t) / 60)}:${String(
+              Math.floor(Number(it.t) % 60)
+            ).padStart(2, "0")}`
           : "";
       const bg = media
         ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
         : "";
       return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
-        dur ? `<span class="mb-card-dur">${dur}</span>` : ""
+        startClock ? `<span class="mb-card-dur">${startClock}</span>` : ""
       }<span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "audio" || t === "voice") {
@@ -4662,7 +4663,7 @@
     const t0 = item.t != null ? Number(item.t) : 0;
     const seekOnMeta = () => {
       try {
-        if (t0 > 0) el.currentTime = t0;
+        if (Number.isFinite(t0) && t0 >= 0) el.currentTime = t0;
       } catch (e) {}
       el.removeEventListener("loadedmetadata", seekOnMeta);
     };

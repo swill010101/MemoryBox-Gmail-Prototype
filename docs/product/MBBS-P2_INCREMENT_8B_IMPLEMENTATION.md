@@ -17,7 +17,7 @@
 
 **Explore Learn tab:** Same owner Learn semantics as Review box → Teach (not a new Person Learn product). Opening Learn pauses the clip, turns on a face-box crosshair, lists known MemoryBox people with **Choose a person…** (nothing pre-selected), and enables **Learn** only after a crop and a person. **Box face** / a new drag starts the box over. After Learn, this video is rescanned first.
 
-**Explore cards:** Native appearance moments take **date + filename + Immich thumbnail** from the originating asset (`/library/media/photo/{asset}`), not an empty undated purple tile.
+**Explore cards:** Native appearance moments take **date + filename** from the originating Immich asset. The gallery **entry frame and playhead** are the appearance `start_sec` (`/library/media/video-poster?t=`), not the first frame of the file. Overlapping stacked ranges on the same file collapse to one card.
 
 **Archive pass (incremental overnight):** `POST /recognition/archive-pass` or `python -m memorybox recognition-archive-pass [--seed-immich]` does **not** restart everyone.
 
