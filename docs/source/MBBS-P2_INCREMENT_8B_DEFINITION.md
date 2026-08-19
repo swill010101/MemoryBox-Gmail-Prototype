@@ -1,8 +1,8 @@
 # MBBS-P2 Increment 8B — Person-Seeded Video Recognition & Learning
 
 **Document:** MBBS-P2 Increment 8B Definition  
-**Version:** Draft v0.1  
-**Status:** DRAFT — Founder review required; NOT build-authorized  
+**Version:** v0.1  
+**Status:** Approve — Definition locked; NOT build-authorized  
 **Roadmap placement:** Immediately after P2-I8A Unified Communications Gallery & Timeline Precision and before P2-I9 Spoken Moments.
 
 ## 1. Purpose
