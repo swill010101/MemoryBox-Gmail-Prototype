@@ -582,17 +582,44 @@ def _prove_flightsim() -> dict[str, Any]:
             f"collected={len(collected)} (GET /faces per asset; no Immich DB)",
         )
         seeded = seed_exemplars_from_immich(person_id=pid, photo_provider=photo, max_assets=40)
-        meta["seed"] = {k: seeded.get(k) for k in ("selected_count", "collected", "skipped", "insightface_available")}
+        meta["seed"] = {
+            k: seeded.get(k)
+            for k in (
+                "selected_count",
+                "collected",
+                "skipped",
+                "skip_reasons",
+                "embed_error",
+                "insightface_available",
+            )
+        }
+        from memorybox.recognition.embeddings import insightface_available
+
         _check(
-            "p2i8b_seed_or_insightface_honest",
-            int(seeded.get("selected_count") or 0) >= 1 or seeded.get("insightface_available") is False,
+            "p2i8b_insightface_required",
+            insightface_available(),
             checks,
             problems,
-            str(meta["seed"]),
+            (
+                "FlightSim I8B needs InsightFace buffalo_l in the same Python as "
+                "`python -m memorybox` (usually not the HVRT process_videos venv). "
+                "Install: python -m pip install insightface onnxruntime opencv-python-headless numpy. "
+                f"seed={meta['seed']}"
+            ),
         )
+        _check(
+            "p2i8b_exemplars_from_multiple_faces",
+            int(seeded.get("selected_count") or 0) >= 2,
+            checks,
+            problems,
+            (
+                "Need MemoryBox embeddings from multiple Immich faces, not only a feature photo. "
+                f"seed={meta['seed']}"
+            ),
+        )
+        rows_fn = getattr(video, "eligible_video_rows", None)
+        videos = list(rows_fn()) if callable(rows_fn) else []
         if int(seeded.get("selected_count") or 0) >= 1:
-            rows_fn = getattr(video, "eligible_video_rows", None)
-            videos = list(rows_fn()) if callable(rows_fn) else []
             enqueue_full_eligible_archive(
                 person_id=pid,
                 videos=videos[:12],
@@ -602,15 +629,27 @@ def _prove_flightsim() -> dict[str, Any]:
             )
             processed = process_queue(video_provider=video, person_id=pid, max_items=3)
             meta["processed"] = processed.get("processed")
-            moments = list_appearance_moments(pid, limit=200)
-            native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
-            legacy = [m for m in moments if m.get("evidence_lineage") == "i1_hvrt" or m.get("method") == "auto_associate"]
+        moments = list_appearance_moments(pid, limit=200)
+        native = [m for m in moments if m.get("evidence_lineage") == "mb_native_i8b"]
+        legacy = [m for m in moments if m.get("evidence_lineage") == "i1_hvrt" or m.get("method") == "auto_associate"]
+        _check(
+            "p2i8b_cutover_legacy_preserved",
+            not any(
+                (m.get("method") == "mb_native_i8b" and m.get("evidence_lineage") == "i1_hvrt")
+                or (m.get("method") == "auto_associate" and m.get("evidence_lineage") == "mb_native_i8b")
+                for m in moments
+            ),
+            checks,
+            problems,
+            f"native={len(native)} legacy={len(legacy)} (I1/HVRT rows must remain distinguishable)",
+        )
+        if int(seeded.get("selected_count") or 0) >= 2:
             _check(
-                "p2i8b_cutover_legacy_preserved",
-                True,
+                "p2i8b_native_scan_or_queue",
+                int(meta.get("processed") or 0) >= 1 or len(native) >= 1,
                 checks,
                 problems,
-                f"native={len(native)} legacy={len(legacy)} (legacy may be 0 if I1 never ran)",
+                f"processed={meta.get('processed')} native={len(native)}",
             )
         st = recognition_status(person_id=pid)
         _check("p2i8b_status", bool(st), checks, problems, str(st)[:300])

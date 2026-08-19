@@ -213,9 +213,16 @@ def seed_exemplars_from_immich(
     embed = embed_fn or embed_jpeg_bytes
     enriched: list[dict[str, Any]] = []
     skipped = 0
+    skip_reasons: dict[str, int] = {
+        "unusable_or_no_bbox": 0,
+        "fetch_or_crop": 0,
+        "embed": 0,
+    }
+    embed_error: str | None = None
     for c in raw:
         if not c.get("usable") or not c.get("bbox"):
             skipped += 1
+            skip_reasons["unusable_or_no_bbox"] += 1
             continue
         jpeg = None
         if fetch and c.get("source_asset_id"):
@@ -231,13 +238,17 @@ def seed_exemplars_from_immich(
                 jpeg = None
         if not jpeg:
             skipped += 1
+            skip_reasons["fetch_or_crop"] += 1
             continue
         try:
             emb = embed(jpeg)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             emb = None
+            if embed_error is None:
+                embed_error = str(exc)[:240]
         if not emb:
             skipped += 1
+            skip_reasons["embed"] += 1
             continue
         c = dict(c)
         c["embedding"] = emb
@@ -249,6 +260,8 @@ def seed_exemplars_from_immich(
         provider_key=getattr(photo_provider, "provider_key", None) or "immich",
     )
     result["skipped"] = skipped
+    result["skip_reasons"] = skip_reasons
+    result["embed_error"] = embed_error
     result["insightface_available"] = insightface_available()
     result["collected"] = len(raw)
     return result
