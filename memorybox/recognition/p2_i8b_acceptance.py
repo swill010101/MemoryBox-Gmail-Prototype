@@ -119,7 +119,8 @@ def _prove_harness() -> dict[str, Any]:
         "p2i8b_explore_learn_box_face",
         "id=\"mb-learn-box\"" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
         and "Choose a person" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
-        and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read(),
+        and "startLearnBoxing" in open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+        and "/recognition/video-people" in open("memorybox/app.py", encoding="utf-8").read(),
         checks,
         problems,
         "Explore Learn tab must box a face with an empty person dropdown",

@@ -1922,6 +1922,17 @@ def recognition_learn(body: RecognitionLearnRequest) -> dict[str, Any]:
     return {"ok": bool(result.get("ok")), **result}
 
 
+@app.get("/recognition/video-people")
+def recognition_video_people(
+    video_external_id: str = Query(..., min_length=1, max_length=500),
+) -> dict[str, Any]:
+    """People already owner-taught or ranged on this video — Learn tab confirmation."""
+    from memorybox.recognition.observations import list_people_on_video
+
+    people = list_people_on_video(video_external_id)
+    return {"ok": True, "video_external_id": video_external_id, "people": people, "count": len(people)}
+
+
 @app.get("/people/{person_id}/face-evidence")
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence

@@ -137,6 +137,16 @@ def owner_learn_from_review(
         confidence=1.0,
     )
 
+    display_name = person_id
+    try:
+        from memorybox.person import get_person
+
+        view = get_person(person_id)
+        if view and view.display_name:
+            display_name = view.display_name
+    except Exception:
+        pass
+
     current_scan = None
     if video_external_id:
         current_scan = scan_video_for_person(
@@ -172,6 +182,7 @@ def owner_learn_from_review(
     return {
         "ok": True,
         "exemplar": row,
+        "person": {"id": person_id, "display_name": display_name},
         "current_video_scan": current_scan,
         "enqueue_others": enqueue,
         "rescan_policy": "current_video_first_then_priority_enqueue",

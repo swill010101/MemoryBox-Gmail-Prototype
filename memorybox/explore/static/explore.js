@@ -3887,6 +3887,109 @@
     return String((p && (p.key || p.id)) || "");
   }
 
+  function videoLearnId(item) {
+    return String((item && (item.video_external_id || item.external_id)) || "").trim();
+  }
+
+  function learnSessionForItem(item) {
+    if (!state.modal.learnOnVideo) state.modal.learnOnVideo = {};
+    const vid = videoLearnId(item) || String(item.id || "");
+    if (!state.modal.learnOnVideo[vid]) {
+      state.modal.learnOnVideo[vid] = { people: [], lastLabel: "", lastCrop: "" };
+    }
+    return state.modal.learnOnVideo[vid];
+  }
+
+  function rememberLearnPerson(item, person) {
+    const sess = learnSessionForItem(item);
+    const id = String((person && (person.id || person.person_id)) || "");
+    const label = String((person && (person.label || person.display_name)) || "Person");
+    sess.lastLabel = label;
+    if (person && person.crop) sess.lastCrop = person.crop;
+    const rest = (sess.people || []).filter((p) => p.id !== id);
+    sess.people = [{ id, label, taught: true, justNow: true }].concat(rest);
+  }
+
+  function learnOnVideoHtml(item) {
+    const sess = learnSessionForItem(item);
+    const rows = sess.people || [];
+    if (!rows.length && !sess.lastLabel) return "";
+    const list = rows
+      .map((p) => {
+        const mark = p.justNow || p.taught ? "Taught just now" : p.native ? "Already on this video" : "Known on this video";
+        return `<div class="mb-rail-person"><span class="mb-rail-avatar" aria-hidden="true">${escapeHtml(
+          (p.label || "?")[0] || "?"
+        ).toUpperCase()}</span><div><strong>${escapeHtml(p.label)}</strong><div style="font-size:0.72rem;color:#86efac">${escapeHtml(
+          mark
+        )}</div></div></div>`;
+      })
+      .join("");
+    const crop =
+      sess.lastCrop
+        ? `<div class="mb-learn-confirm-crop"><img src="${escapeAttr(sess.lastCrop)}" alt="" /><span>Confirmed crop</span></div>`
+        : "";
+    return `<div class="mb-learn-confirm" id="mb-learn-confirm">
+      <p class="mb-learn-confirm-title">Learned${sess.lastLabel ? ": " + escapeHtml(sess.lastLabel) : ""}</p>
+      <p class="mb-rail-empty">Already known on this video — no need to re-teach them. Box a different face to add someone else. Person dropdown stays empty until you choose.</p>
+      ${crop}
+      ${list}
+    </div>`;
+  }
+
+  function mergeVideoPeopleIntoSession(item, apiPeople) {
+    const sess = learnSessionForItem(item);
+    const have = {};
+    (sess.people || []).forEach((p) => {
+      have[p.id] = p;
+    });
+    (apiPeople || []).forEach((p) => {
+      const id = String(p.person_id || p.id || "");
+      if (!id) return;
+      const label = String(p.display_name || p.label || "Person");
+      if (have[id]) {
+        have[id].taught = have[id].taught || Boolean(p.taught);
+        have[id].native = have[id].native || Boolean(p.native);
+        have[id].label = have[id].label || label;
+      } else {
+        have[id] = {
+          id,
+          label,
+          taught: Boolean(p.taught),
+          native: Boolean(p.native),
+          justNow: false,
+        };
+      }
+    });
+    sess.people = Object.keys(have)
+      .map((k) => have[k])
+      .sort((a, b) => {
+        const ar = a.justNow ? 0 : a.taught ? 1 : 2;
+        const br = b.justNow ? 0 : b.taught ? 1 : 2;
+        if (ar !== br) return ar - br;
+        return String(a.label || "").localeCompare(String(b.label || ""));
+      });
+  }
+
+  function refreshLearnOnVideo(item) {
+    const vid = videoLearnId(item);
+    const host = document.getElementById("mb-learn-on-video");
+    if (!vid) {
+      if (host) host.innerHTML = learnOnVideoHtml(item);
+      return;
+    }
+    fetch("/recognition/video-people?video_external_id=" + encodeURIComponent(vid))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.people)) mergeVideoPeopleIntoSession(item, data.people);
+        const el = document.getElementById("mb-learn-on-video");
+        if (el) el.innerHTML = learnOnVideoHtml(item);
+      })
+      .catch(() => {
+        const el = document.getElementById("mb-learn-on-video");
+        if (el) el.innerHTML = learnOnVideoHtml(item);
+      });
+  }
+
   function personSelectHtml() {
     const known = knownPeopleOptions();
     const opts = ['<option value="">Choose a person…</option>'].concat(
@@ -3919,13 +4022,15 @@
       panel.innerHTML = `<h3>Learn</h3><p class="mb-rail-empty">Pause a video or open a photo, then box a face.</p>`;
       return;
     }
+    const sess = learnSessionForItem(item);
     const known = knownPeopleOptions();
     panel.innerHTML = `<div class="mb-learn-panel">
       <h3>Learn</h3>
-      <p class="mb-rail-empty">Crosshair is on. Drag a box on the paused face. A new drag starts over. When the crop is right, choose a person (nothing is pre-selected) and press <strong>Learn</strong>. <strong>Box face</strong> also starts over.</p>
+      <div id="mb-learn-on-video">${learnOnVideoHtml(item)}</div>
+      <p class="mb-rail-empty">Crosshair is on. Drag a box on a face that is not already listed above. A new drag starts over. Choose a person (nothing is pre-selected) and press <strong>Learn</strong>.</p>
       ${
         known.length
-          ? `<p class="mb-rail-empty">${known.length} known ${known.length === 1 ? "person" : "people"}.</p>`
+          ? `<p class="mb-rail-empty">${known.length} people in MemoryBox (dropdown below).</p>`
           : `<p class="mb-rail-empty" id="mb-learn-people-empty">Loading known people…</p>`
       }
       <label for="mb-learn-person">Person</label>
@@ -3935,7 +4040,9 @@
         <button type="button" class="mb-viewer-footbtn" id="mb-learn-submit" disabled>Learn</button>
       </div>
       <div class="mb-learn-crop" id="mb-learn-crop"><img id="mb-learn-crop-img" alt="" /><span class="mb-rail-empty" id="mb-learn-crop-meta"></span></div>
-      <p class="mb-rail-empty" id="mb-learn-status"></p>
+      <p class="mb-rail-empty" id="mb-learn-status">${
+        sess.lastLabel ? "Learned " + escapeHtml(sess.lastLabel) + ". Box another face to add someone else." : ""
+      }</p>
     </div>`;
     const boxBtn = document.getElementById("mb-learn-box");
     const learnBtn = document.getElementById("mb-learn-submit");
@@ -3948,6 +4055,7 @@
     }
     pauseExploreMedia();
     window.requestAnimationFrame(() => startLearnBoxing(item));
+    refreshLearnOnVideo(item);
     if (!known.length) {
       loadPeopleOptions().then(() => {
         if (state.modal.railTab !== "learn" || state.modal.openId !== item.id) return;
@@ -4315,18 +4423,18 @@
       if (!res.ok || data.ok === false) {
         throw new Error(data.detail || data.reason || res.statusText);
       }
-      if (status) {
-        status.textContent =
-          "Learned. This video is rescanned first; other clips queue after. Box another face to teach someone else.";
-      }
-      if (sel) sel.value = "";
-      state.modal.learnCrop = null;
-      state.modal.learnPix = null;
-      state.modal.learnBox = null;
-      drawLearnBox();
-      const wrap = document.getElementById("mb-learn-crop");
-      if (wrap) wrap.classList.remove("is-on");
-      syncLearnSubmitEnabled();
+      const learnedLabel =
+        (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].getAttribute("data-label")) ||
+        (data.person && data.person.display_name) ||
+        "Person";
+      rememberLearnPerson(item, {
+        id: personId,
+        label: learnedLabel,
+        crop: state.modal.learnCrop,
+      });
+      if (!Array.isArray(item.people)) item.people = [];
+      if (!item.people.includes(learnedLabel)) item.people.push(learnedLabel);
+      renderLearnRail(item);
     } catch (err) {
       if (status) status.textContent = String(err.message || err);
     }

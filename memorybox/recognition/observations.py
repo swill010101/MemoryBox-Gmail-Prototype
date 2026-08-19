@@ -423,3 +423,67 @@ def recognition_status(*, person_id: str | None = None) -> dict[str, Any]:
         ],
         "recent_runs": runs,
     }
+
+
+def list_people_on_video(video_external_id: str) -> list[dict[str, Any]]:
+    """People already taught or ranged on this clip (owner Learn first)."""
+    vid = (video_external_id or "").strip()
+    if not vid:
+        return []
+    by_id: dict[str, dict[str, Any]] = {}
+    with connection() as conn:
+        taught = conn.execute(
+            """
+            SELECT p.id::text AS person_id,
+                   p.display_name,
+                   MAX(e.created_at) AS last_at
+            FROM face_evidence e
+            JOIN people p ON p.id = e.person_id
+            WHERE COALESCE(e.withdrawn, false) = false
+              AND e.method IN ('owner_learn', 'owner_confirm', 'owner_correct')
+              AND (
+                e.source_asset_id = %s
+                OR COALESCE(e.exemplar_meta_json->>'video_external_id', '') = %s
+              )
+            GROUP BY p.id, p.display_name
+            """,
+            (vid, vid),
+        ).fetchall()
+        seen = conn.execute(
+            """
+            SELECT p.id::text AS person_id,
+                   p.display_name,
+                   MAX(m.updated_at) AS last_at,
+                   BOOL_OR(COALESCE(m.evidence_lineage, '') = 'mb_native_i8b') AS native
+            FROM face_appearance_moments m
+            JOIN people p ON p.id = m.person_id
+            WHERE m.video_external_id = %s
+              AND COALESCE(m.status, 'accepted') <> 'withdrawn'
+            GROUP BY p.id, p.display_name
+            """,
+            (vid,),
+        ).fetchall()
+    for r in taught:
+        pid = str(r["person_id"])
+        by_id[pid] = {
+            "person_id": pid,
+            "display_name": r.get("display_name") or "Person",
+            "taught": True,
+            "on_video": True,
+            "native": False,
+        }
+    for r in seen:
+        pid = str(r["person_id"])
+        cur = by_id.get(pid) or {
+            "person_id": pid,
+            "display_name": r.get("display_name") or "Person",
+            "taught": False,
+            "on_video": True,
+            "native": False,
+        }
+        cur["on_video"] = True
+        cur["native"] = cur.get("native") or bool(r.get("native"))
+        by_id[pid] = cur
+    people = list(by_id.values())
+    people.sort(key=lambda p: (0 if p.get("taught") else 1, str(p.get("display_name") or "").lower()))
+    return people
