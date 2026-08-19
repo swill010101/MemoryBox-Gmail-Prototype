@@ -928,9 +928,11 @@ def build_explore_find(
     ask_text: str,
     session_id: str | None = None,
     orchestrator: Any | None = None,
+    present: str | None = None,
 ) -> dict[str, Any]:
     """Run Ask and return an Explore-ready payload (same shape as demo_payload)."""
     text = (ask_text or "").strip()
+    present_l = str(present or "").strip().lower()
     if not text:
         return {
             "ok": True,
@@ -958,6 +960,16 @@ def build_explore_find(
     show_sms = explicit_text_gallery(result, text)
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
+    if present_l in {"communications", "comms", "email", "sms", "texts"}:
+        if present_l in {"communications", "comms"}:
+            show_sms = True
+            show_email = True
+        elif present_l in {"sms", "texts"}:
+            show_sms = True
+        elif present_l == "email":
+            show_email = True
+    if present_l in {"calendar", "cal"}:
+        show_calendar = True
     items, sms_available, sms_hidden = _attach_hidden_sms(
         items, result, ask_text=text, show_sms=show_sms
     )
@@ -1038,6 +1050,15 @@ def build_explore_find(
         ).strip()
     counts["email_available"] = email_available
     counts["calendar_available"] = calendar_available
+    if re.search(
+        r"(?i)\b(create|write|generate)\b.+\b(narrative|story)\b|\bnarrative of\b|\bnarrate\b",
+        text,
+    ):
+        summary = (
+            (summary or "").rstrip()
+            + " Narrative generation is I11 — not implemented in I8A. "
+            "Showing matching texts as evidence only."
+        ).strip()
 
     plan = result.get("plan") or {}
     return {

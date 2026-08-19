@@ -849,9 +849,29 @@
         ` ${availableSms || hiddenSms} text message(s) are in the archive ` +
         "(hidden in Gallery — say Add texts to show them).";
     }
+    const cards = galleryCardsFromVisible(vis);
+    const dayCards = cards.filter((it) => String(it.type) === "daycard");
+    const grain = (state.domain._showingDays || {}).grain;
+    const matchTexts = Number(state.domain.smsMatchTotal || 0) || c.text;
+    const matchMail = Number(state.domain.emailMatchTotal || 0) || c.email;
+    let cardNote = "";
+    if (dayCards.length && (c.text || c.email)) {
+      cardNote =
+        ` Gallery shows ${dayCards.length} ${grain || "grouped"} card${
+          dayCards.length === 1 ? "" : "s"
+        } (conversations/threads, not one card per message).` +
+        (matchTexts > dayCards.length
+          ? ` ${matchTexts} matching texts in the archive.`
+          : "") +
+        (matchMail > 0 && c.email === 0
+          ? ` 0 emails matched this person identity.`
+          : matchMail
+            ? ` ${matchMail} matching emails.`
+            : "");
+    }
     state.domain.summary = `Showing ${archiveN} memories (${filterLabel}) for ${range}${
       parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}${extra}${hideNote}`;
+    }${trunc}${extra}${hideNote}${cardNote}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -1028,8 +1048,10 @@
       : "Memories";
     const titleEl = document.getElementById("mb-explore-curator-title");
     const bodyEl = document.getElementById("mb-explore-curator-body");
+    const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
     if (bodyEl) bodyEl.textContent = "Searching…";
+    if (curator) curator.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
       state.domain.summary = "Searching…";
@@ -1046,15 +1068,53 @@
     if (el) el.dataset.mbAskDirty = "";
   }
 
-  async function liveFind(askText) {
+  async function liveFind(askText, extras) {
     const q = personScopedAsk(askText);
-    const url =
+    let url =
       "/explore/api/find?q=" +
       encodeURIComponent(q) +
       (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
+    const present = extras && extras.present;
+    if (present) url += "&present=" + encodeURIComponent(present);
     const res = await fetch(url);
     if (!res.ok) throw new Error("find " + res.status);
     return res.json();
+  }
+
+  function currentAskText() {
+    return (
+      (state && state.domain && state.domain.askText) ||
+      (document.getElementById("mb-explore-ask") || {}).value ||
+      ""
+    );
+  }
+
+  function presentWithoutRewritingAsk(present) {
+    const ask = currentAskText().trim();
+    if (!ask) {
+      applyAskCommand(present === "calendar" ? "Add calendar." : "Add communications.");
+      return;
+    }
+    showSearching(ask);
+    liveFind(ask, { present: present })
+      .then((payload) => {
+        applyPayloadToState(payload, { keepPresentation: true });
+        if (present === "calendar") {
+          state.domain.includeCalendar = true;
+          state.domain.calendarPinned = true;
+          setTypeFilter("calendar");
+        } else {
+          state.domain.includeEmail = true;
+          state.domain.includeTexts = true;
+          state.domain.emailPinned = true;
+          state.domain.textsPinned = true;
+          setTypeFilter("email");
+        }
+        render();
+      })
+      .catch(() => {
+        render();
+      });
   }
 
   function applyPayloadToState(payload, { keepPresentation } = {}) {
@@ -1185,6 +1245,7 @@
         smsAvailable: Number(exploreHint.sms_available || 0) || 0,
         smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
+        emailMatchTotal: Number(exploreHint.email_match_total || exploreHint.email_available || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
@@ -1816,6 +1877,10 @@
       state.domain.title || "Memories";
     document.getElementById("mb-explore-curator-body").textContent =
       state.domain.summary || "";
+    const curator = document.getElementById("mb-explore-curator");
+    if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
+      curator.classList.remove("is-searching");
+    }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
     chips.innerHTML = (state.domain.chips || [])
@@ -1941,7 +2006,7 @@
         if (fid === "email") {
           const hasComms = rawItems.some((it) => isSmsTextItem(it) || isEmailItem(it));
           if (!hasComms) {
-            applyAskCommand("Add communications.");
+            presentWithoutRewritingAsk("communications");
             return;
           }
           if (state.domain.typeFilter === "email") {
@@ -1952,7 +2017,7 @@
         if (fid === "calendar") {
           const hasCal = rawItems.some(isCalendarItem);
           if (!hasCal) {
-            applyAskCommand("Add calendar.");
+            presentWithoutRewritingAsk("calendar");
             return;
           }
           if (state.domain.typeFilter === "calendar") {
@@ -2361,7 +2426,42 @@
     el.hidden = false;
   }
 
-  let dayStack = { day: null, tab: "email", items: [] };
+  let dayStack = { day: null, tab: "email", items: [], rows: [], rowIndex: 0 };
+
+  function convoTitle(items) {
+    const names = [];
+    const seen = {};
+    (items || []).forEach((it) => {
+      const bag = []
+        .concat(Array.isArray(it.people) ? it.people : [])
+        .concat(it.from ? [it.from] : []);
+      bag.forEach((n) => {
+        const s = String(n || "").trim();
+        const k = s.toLowerCase();
+        if (!s || seen[k]) return;
+        seen[k] = 1;
+        names.push(s);
+      });
+    });
+    return names.slice(0, 4).join(" · ") || (items[0] && items[0].title) || "Conversation";
+  }
+
+  function syncDayNav() {
+    const n = (dayStack.rows || []).length;
+    const i = Number(dayStack.rowIndex) || 0;
+    const det = document.getElementById("mb-day-detail");
+    const has = Boolean(det && !det.hidden);
+    const viewer = document.querySelector(".mb-day-viewer");
+    if (viewer) viewer.classList.toggle("is-detail", has);
+    const prev = document.getElementById("mb-day-prev");
+    const next = document.getElementById("mb-day-next");
+    const count = document.getElementById("mb-day-count");
+    const back = document.getElementById("mb-day-detail-back");
+    if (count) count.textContent = has && n ? i + 1 + " of " + n : n ? n + " groups" : "—";
+    if (prev) prev.disabled = !has || i <= 0;
+    if (next) next.disabled = !has || i >= n - 1;
+    if (back) back.hidden = !has;
+  }
 
   function openDayStack(card) {
     const items = (card && card._dayItems) || [];
@@ -2370,7 +2470,9 @@
     state.gallery.scrollTop =
       (document.getElementById("mb-explore-gallery") || {}).scrollTop || 0;
     if (!state.modal.snapshot) state.modal.snapshot = snapshotExplore();
-    dayStack = { day: card.date || "", tab: "email", items: items, card: card };
+    dayStack = { day: card.date || "", tab: "email", items: items, card: card, rows: [], rowIndex: 0 };
+    const det0 = document.getElementById("mb-day-detail");
+    if (det0) det0.hidden = true;
     const s = card._daySummary || summarizeDay(items);
     if (s.emailN) dayStack.tab = "email";
     else if (s.textN) dayStack.tab = "text";
@@ -2410,6 +2512,9 @@
     tabs.querySelectorAll("[data-tab]").forEach((b) => {
       b.addEventListener("click", () => {
         dayStack.tab = b.getAttribute("data-tab");
+        const det = document.getElementById("mb-day-detail");
+        if (det) det.hidden = true;
+        dayStack.rowIndex = 0;
         renderDayStack();
       });
     });
@@ -2420,7 +2525,11 @@
         const k = threadKey(it);
         (by[k] = by[k] || []).push(it);
       });
-      rows = Object.keys(by).map((k) => ({ kind: "thread", items: by[k], title: by[k][0].title || k }));
+      rows = Object.keys(by).map((k) => ({
+        kind: "thread",
+        items: by[k],
+        title: convoTitle(by[k]) || by[k][0].title || k,
+      }));
     } else if (dayStack.tab === "text") {
       const by = {};
       s.texts.forEach((it) => {
@@ -2430,30 +2539,42 @@
       rows = Object.keys(by).map((k) => ({
         kind: "convo",
         items: by[k],
-        title: by[k][0].from || by[k][0].title || k,
+        title: convoTitle(by[k]),
       }));
     } else {
       rows = s.cals.map((it) => ({ kind: "event", items: [it], title: it.title || "Event" }));
     }
     const list = document.getElementById("mb-day-list");
-    const shown = rows;
+    dayStack.rows = rows;
     document.getElementById("mb-day-showing").textContent =
-      "Showing " + shown.length + " of " + rows.length;
-    list.innerHTML = shown
+      "Showing " + rows.length + " of " + rows.length;
+    list.innerHTML = rows
       .map((row, i) => {
         const it = row.items[0];
         const preview = escapeHtml(it.preview || it.detail || "");
-        return `<button type="button" class="mb-day-row" data-row="${i}"><strong>${escapeHtml(
+        const on = i === dayStack.rowIndex && document.getElementById("mb-day-detail") && !document.getElementById("mb-day-detail").hidden;
+        return `<button type="button" class="mb-day-row${on ? " is-on" : ""}" data-row="${i}"><strong>${escapeHtml(
           row.title
         )}</strong><div>${preview}</div></button>`;
       })
       .join("");
     list.querySelectorAll("[data-row]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const row = shown[+btn.getAttribute("data-row")];
-        openDayDetail(row.items[0]);
+        openDayDetailAt(+btn.getAttribute("data-row"));
       });
     });
+    syncDayNav();
+  }
+
+  function openDayDetailAt(index) {
+    const row = (dayStack.rows || [])[index];
+    if (!row) return;
+    dayStack.rowIndex = index;
+    openDayDetail(row.items[0]);
+    document.querySelectorAll(".mb-day-row").forEach((el) => {
+      el.classList.toggle("is-on", +el.getAttribute("data-row") === index);
+    });
+    syncDayNav();
   }
 
   function openDayDetail(item) {
@@ -2493,7 +2614,7 @@
         const needMail =
           state.domain.includeEmail && !rawItems.some((it) => isEmailItem(it));
         if (needTexts || needMail) {
-          applyAskCommand("Add communications.");
+          presentWithoutRewritingAsk("communications");
           return;
         }
         if (state.domain.includeEmail || state.domain.includeTexts) setTypeFilter("email");
@@ -2516,14 +2637,28 @@
         render();
       };
     const close = document.getElementById("mb-day-close");
-    const back = document.getElementById("mb-day-back");
     const dback = document.getElementById("mb-day-detail-back");
+    const prev = document.getElementById("mb-day-prev");
+    const next = document.getElementById("mb-day-next");
     if (close) close.onclick = closeDayStack;
-    if (back) back.onclick = closeDayStack;
     if (dback)
       dback.onclick = () => {
-        document.getElementById("mb-day-detail").hidden = true;
+        const det = document.getElementById("mb-day-detail");
+        if (det) det.hidden = true;
+        document.querySelectorAll(".mb-day-row").forEach((el) => el.classList.remove("is-on"));
+        syncDayNav();
       };
+    if (prev)
+      prev.onclick = () => {
+        if (dayStack.rowIndex > 0) openDayDetailAt(dayStack.rowIndex - 1);
+      };
+    if (next)
+      next.onclick = () => {
+        if (dayStack.rowIndex < (dayStack.rows || []).length - 1) {
+          openDayDetailAt(dayStack.rowIndex + 1);
+        }
+      };
+    syncDayNav();
   }
 
   function renderGallery() {
@@ -2543,16 +2678,22 @@
           const s = it._daySummary || {};
           const groupN = (s.emailThreads || 0) + (s.textConvos || 0) + (s.calN || 0);
           const bits = [];
-          if (s.emailThreads) bits.push(`<span class="mb-day-e">Email · ${s.emailThreads}</span>`);
-          if (s.textConvos) bits.push(`<span class="mb-day-t">Text · ${s.textConvos}</span>`);
-          if (s.calN) bits.push(`<span class="mb-day-c">Calendar · ${s.calN}</span>`);
+          if (s.emailThreads)
+            bits.push(
+              `<span class="mb-day-e">${s.emailThreads} email thread${s.emailThreads === 1 ? "" : "s"}</span>`
+            );
+          if (s.textConvos)
+            bits.push(
+              `<span class="mb-day-t">${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span>`
+            );
+          if (s.calN)
+            bits.push(`<span class="mb-day-c">${s.calN} event${s.calN === 1 ? "" : "s"}</span>`);
           if (!bits.length) bits.push(`<span class="mb-day-e">No matching groups</span>`);
           return `<button type="button" class="mb-card mb-card-day" data-id="${escapeAttr(
             it.id
           )}" data-type="daycard">
           <div class="mb-card-media" data-type="daycard">
             <div class="mb-day-counts">${bits.join("")}</div>
-            <span class="mb-day-open">${escapeHtml(it._openLabel || "Open →")}</span>
           </div>
           <div class="mb-card-meta">
             <span class="mb-card-type" aria-hidden="true">▦</span>

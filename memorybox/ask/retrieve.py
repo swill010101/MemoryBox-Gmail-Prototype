@@ -558,6 +558,18 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
                 f"{blob} {handles}", person_names, allow_first_token=True
             ):
                 continue
+        # "Peggy and I send" = messages Peggy or the owner sent, not a third sender
+        # in a group that merely includes Peggy.
+        if (person_ids or person_names) and re.search(
+            r"(?i)\band i\b|\bi and\b|\band me\b", ask
+        ):
+            if not (
+                payload.get("from_owner")
+                or _sms_sender_matches_person(
+                    payload, person_ids=person_ids, person_names=person_names
+                )
+            ):
+                continue
         if attach_only and not _sms_attachments(payload):
             continue
         if heart_only and not _sms_has_heart(payload, str(r["summary"] or "")):
@@ -890,7 +902,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         rows_payload.append((r, payload))
 
     def _keep(payload: dict[str, Any], row: dict[str, Any]) -> bool:
-        if outbound_only and not payload.get("from_owner"):
+        owner_intent = asked_owner or bool(
+            re.search(r"(?i)\b(i|me|my)\b", plan.original_ask or "")
+        )
+        if outbound_only and not payload.get("from_owner") and not owner_intent:
             return False
         if inbound_only and payload.get("from_owner"):
             return False

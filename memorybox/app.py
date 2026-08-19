@@ -608,6 +608,10 @@ def _remember_ask_text(text: str) -> None:
 def explore_find(
     q: str = Query("", description="Natural-language Ask / find"),
     session_id: str | None = Query(None),
+    present: str | None = Query(
+        None,
+        description="Presentation overlay: communications|calendar (does not rewrite Ask)",
+    ),
 ) -> dict[str, Any]:
     """Live Mixed-Media Find → Explore item contract (I4 real path)."""
     from memorybox.explore.find import build_explore_find
@@ -621,6 +625,7 @@ def explore_find(
             ask_text=q,
             session_id=session_id,
             orchestrator=orch,
+            present=present,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
