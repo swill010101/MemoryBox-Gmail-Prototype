@@ -143,11 +143,73 @@
     </div>
   </div>
 
+  <div class="mb-comms-filter" id="mb-comms-filter" hidden>
+    <div class="mb-comms-filter-card" role="dialog" aria-labelledby="mb-comms-filter-title">
+      <h2 id="mb-comms-filter-title">Communications filter</h2>
+      <p class="mb-comms-kicker">SOURCES</p>
+      <label class="mb-comms-row"><input type="checkbox" id="mb-comms-src-email" /> Email</label>
+      <label class="mb-comms-row"><input type="checkbox" id="mb-comms-src-text" /> Text</label>
+      <p class="mb-comms-kicker">SHOW</p>
+      <label class="mb-comms-row"><input type="radio" name="mb-comms-show" value="messages" checked /> Messages</label>
+      <label class="mb-comms-row"><input type="radio" name="mb-comms-show" value="attachments" /> Attachments only</label>
+      <p class="mb-comms-ctx" id="mb-comms-ctx">CURRENT CONTEXT</p>
+      <div class="mb-comms-actions">
+        <button type="button" class="mb-pill-btn" id="mb-comms-cancel">Cancel</button>
+        <button type="button" class="mb-pill-btn mb-pill-btn-on" id="mb-comms-apply">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-comms-filter" id="mb-cal-filter" hidden>
+    <div class="mb-comms-filter-card" role="dialog" aria-labelledby="mb-cal-filter-title">
+      <h2 id="mb-cal-filter-title">Calendar filter</h2>
+      <p class="mb-comms-kicker">SHOW</p>
+      <label class="mb-comms-row"><input type="radio" name="mb-cal-show" value="events" checked /> Events</label>
+      <label class="mb-comms-row"><input type="radio" name="mb-cal-show" value="attachments" /> Attachments only</label>
+      <label class="mb-comms-row"><input type="radio" name="mb-cal-show" value="both" /> Events + attachments</label>
+      <div class="mb-comms-actions">
+        <button type="button" class="mb-pill-btn" id="mb-cal-cancel">Cancel</button>
+        <button type="button" class="mb-pill-btn mb-pill-btn-on" id="mb-cal-apply">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-day-stack" id="mb-day-stack" hidden>
+    <div class="mb-day-viewer" role="dialog" aria-modal="true" aria-labelledby="mb-day-title">
+      <header class="mb-viewer-chrome">
+        <div class="mb-viewer-nav">
+          <button type="button" class="mb-viewer-navbtn" id="mb-day-detail-back">Back to list</button>
+          <button type="button" class="mb-viewer-navbtn" id="mb-day-prev" aria-label="Previous">‹ Previous</button>
+          <span class="mb-viewer-count" id="mb-day-count">—</span>
+          <button type="button" class="mb-viewer-navbtn" id="mb-day-next" aria-label="Next">Next ›</button>
+        </div>
+        <div class="mb-viewer-heading">
+          <div class="mb-modal-kicker" id="mb-day-kicker">Communications &amp; calendar</div>
+          <h2 class="mb-modal-title" id="mb-day-title">—</h2>
+          <p class="mb-day-sub" id="mb-day-sub"></p>
+        </div>
+        <button type="button" class="mb-modal-close" id="mb-day-close">Close ✕</button>
+      </header>
+      <div class="mb-day-stage">
+        <div class="mb-day-list-pane">
+          <div class="mb-day-tabs" id="mb-day-tabs"></div>
+          <div class="mb-day-list" id="mb-day-list"></div>
+          <p class="mb-day-showing" id="mb-day-showing"></p>
+        </div>
+        <div class="mb-day-detail" id="mb-day-detail" hidden>
+          <div class="mb-day-detail-card">
+            <div id="mb-day-detail-body" class="mb-day-detail-scroll"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="mb-quick-preview" id="mb-quick-preview" hidden role="tooltip"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
-  <script src="/static/explore/explore.js?v=mbql12"></script>
+  <script src="/static/explore/explore.js?v=i8a9"></script>
   <script>
     setTimeout(function () {
       if (window.mbExploreApplyAsk) return;

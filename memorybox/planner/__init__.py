@@ -184,6 +184,12 @@ PERSON_OF_RE = re.compile(
     rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
 )
+# "pictures of Tom Will and Matt Will" — same AND as "with"
+PICTURES_OF_AND_PEOPLE_RE = re.compile(
+    rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\s+and\s+"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
+)
 PERSON_EMAIL_FROM_RE = re.compile(
     rf"(?i)\b(?:emails?|e-mails?|mail|messages?)\s+from\s+(?!and\b){_PERSON_NAME}\b"
 )
@@ -459,6 +465,10 @@ class QueryPlan:
     refine_verb: str | None = None
     navigate_target: str | None = None
     gallery_show_sms: bool | None = None
+    gallery_show_email: bool | None = None
+    gallery_show_calendar: bool | None = None
+    attachments_only: bool | None = None
+    memory_presentation: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -549,6 +559,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     }
     found: list[str] = []
     patterns = [
+        PICTURES_OF_AND_PEOPLE_RE,
         SHOW_ME_AND_PEOPLE_RE,
         PERSON_WITH_RE,
         PERSON_OF_RE,
@@ -1356,6 +1367,10 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
 
     if want_sms:
         notes.append("want_sms_modality")
+    if want_email:
+        notes.append("want_email_modality")
+    if want_cal and not requires_clarification and not journal_capture_intent:
+        notes.append("want_calendar_modality")
 
     return QueryPlan(
         original_ask=q,

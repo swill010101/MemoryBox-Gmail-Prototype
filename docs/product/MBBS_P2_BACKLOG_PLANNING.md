@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-18 (I8 definition LOCKED + BUILD AUTHORIZED)  
+**Status:** Living parking note · **Updated:** 2026-08-19 (I8A **ACCEPTED**)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -66,14 +66,21 @@ Authority: [MBBS-P2_INCREMENT_7_DEFINITION.md](MBBS-P2_INCREMENT_7_DEFINITION.md
 
 | ID | Theme | Why now | Home |
 |----|--------|---------|------|
-| **P2-BL-I8-01** | I8 email ingest must include **attachment files up front** | I7 accepted CSV-only; attachment bytes were missing and had to be parked. Do not repeat that gap for email. | **P2-I8** richer email — part of I8 definition/build, not a later surprise |
+| **P2-BL-I8-01** | I8 email ingest must include **attachment files up front** | I7 accepted CSV-only; attachment bytes were missing and had to be parked. Do not repeat that gap for email. | **Absorbed in P2-I8 ACCEPTED** 2026-08-18 |
+
+## Post–I8 carry-forward (ACCEPTED with gap)
+
+P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass). The following did **not** block acceptance and must not reopen I8:
+
+| ID | Theme | Evidence | Suggested home |
+|----|--------|----------|----------------|
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | Founder: combined day cards + density-aware aggregation + Calendar filter + Attachments only; screens 00–11 accepted | **ACCEPTED** 2026-08-19 — [I8A definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
+| **P2-BL-I8-02** | Ask “how many times did I send an email to Peggy?” must **lock Peggy George** (canonical Person) **before** count + Gallery | Owner 2026-08-18: curator count + Gallery showed email and it worked, but first-name Peggy was not resolved to Peggy George first, so extra mail that is not Peggy George was included. Does not reopen I8. | **Absorbed in P2-I8A ACCEPTED** 2026-08-19 |
 
 ## Next increment
 
-**P2-I7A AI Model Trace & Observability** — [definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · **ACCEPTED** 2026-08-15.
+**P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **ACCEPTED** 2026-08-18.
 
-**MBQL-001 Ask, Query & Command Language** — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) · [PRD](MBPRD-P2-MBQL-001_ASK_QUERY_COMMAND_LANGUAGE.md). **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”).
+**P2-I8A Unified Communications Gallery & Timeline Precision** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **ACCEPTED** 2026-08-19. **P2-BL-I8-02 absorbed.**
 
-**P2-I8 Richer Email** — [definition](MBBS-P2_INCREMENT_8_DEFINITION.md) · [PRD](MBPRD-P2-I8_RICHER_EMAIL.md). **LOCKED + BUILD AUTHORIZED** 2026-08-18. **Not yet ACCEPTED** (FlightSim §9). Do not start I8.5 / I9 / I10 / I11.
-
-Sequence: **I7A ACCEPTED → MBQL-001 ACCEPTED → I8 (this revision)**. I8.5 remains after I8. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
+**Next:** **P2-I9 Spoken Moments** — not authorized. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**.

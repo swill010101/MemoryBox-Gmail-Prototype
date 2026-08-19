@@ -95,4 +95,4 @@ Keep the 10 TB as **Sources**, not as the database disk.
 1. Immich app + library on **local NVMe** (not UNC).  
 2. `config/immich.env`: `IMMICH_BASE_URL` → localhost; thumbs path local; thumbs API off unless needed.  
 3. Restart Ask/serve.  
-4. **P2-I4 ACCEPTED** 2026-08-18. Remaining Explore visual defects are **P2-BL-I4-01**. **MBQL-001 is ACCEPTED**. Do not start I8 until authorized.
+4. **P2-I4 ACCEPTED** 2026-08-18. Remaining Explore visual defects are **P2-BL-I4-01**. **MBQL-001**, **P2-I8**, and **P2-I8A** are **ACCEPTED**.

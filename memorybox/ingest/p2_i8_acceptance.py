@@ -102,7 +102,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         and "_attach_visible_email" in find_py,
         checks,
         problems,
-        "SMS default-hide remains SMS-only; emails stay visible",
+        "SMS default-hide; I8A also hides email until presentation",
     )
     _check(
         "i8_ask_email_path",
@@ -445,15 +445,15 @@ def _logic(checks: dict[str, Any], problems: list[str]) -> None:
         "i8_mbql_default_gallery",
         email_items
         and all(i.get("type") == "email" for i in email_items)
-        and all(not i.get("gallery_default_hidden") for i in email_items)
+        and all(i.get("gallery_default_hidden") for i in email_items)
         and any(
             i.get("type") == "sms" and i.get("gallery_default_hidden") for i in mixed
         )
-        and any(i.get("type") == "email" and not i.get("gallery_default_hidden") for i in mixed)
+        and any(i.get("type") == "email" and i.get("gallery_default_hidden") for i in mixed)
         and not explicit_text_gallery({"plan": {"notes": ()}}, "Show me Peggy"),
         checks,
         problems,
-        "Emails visible on default Gallery; SMS hide unchanged",
+        "I8A Q3: Email and SMS eligible but hidden on a broad Gallery ask",
     )
 
     metric = _email_ingested_metric(

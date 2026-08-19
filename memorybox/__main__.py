@@ -62,8 +62,36 @@ def main(argv: list[str] | None = None) -> int:
             "Harness uses the in-repo I8 fixture; inspect-mbox the real export separately."
         ),
     )
-    p_cal = sub.add_parser("ingest-calendar", help="Ingest ICS → Evidence")
-    p_cal.add_argument("--uri", required=True)
+    p_prove_p2i8a = sub.add_parser(
+        "prove-p2-i8a",
+        help="P2-I8A Unified Communications Gallery & Timeline Precision prove",
+    )
+    p_prove_p2i8a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "Includes live calendar_event / Archive Health inspect. "
+            "§11 ACCEPTED remains a manual owner pass."
+        ),
+    )
+    p_inspect_cal = sub.add_parser(
+        "inspect-calendar",
+        help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
+    )
+    p_inspect_cal.add_argument(
+        "--uri",
+        default=None,
+        help=r"ICS file or calendar/ folder. Default: Sources/calendar under MEMORYBOX_SOURCES_ROOT",
+    )
+    p_cal = sub.add_parser(
+        "ingest-calendar",
+        help="Ingest ICS file or staged calendar/ folder → calendar_event Evidence",
+    )
+    p_cal.add_argument(
+        "--uri",
+        required=True,
+        help=r"ICS file or folder (e.g. P:\photos\memorybox\sources\calendar)",
+    )
     p_cal.add_argument("--limit", type=int, default=None)
     p_sms = sub.add_parser("ingest-sms", help="Ingest SMS/iMessage CSV → Evidence")
     p_sms.add_argument("--uri", default=None, help="Path to export CSV (default: staged Sources/sms)")
@@ -397,11 +425,21 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
-    if args.cmd == "ingest-calendar":
-        from memorybox.ingest.comms_calendar import ingest_ics
+    if args.cmd == "inspect-calendar":
+        from memorybox.ingest.comms_calendar import inspect_calendar_state
 
-        payload = ingest_ics(args.uri, limit=args.limit)
+        payload = inspect_calendar_state(uri=args.uri)
         print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "ingest-calendar":
+        from memorybox.ingest.comms_calendar import (
+            compact_calendar_cli_payload,
+            ingest_calendar_uri,
+        )
+
+        payload = ingest_calendar_uri(args.uri, limit=args.limit)
+        print(json.dumps(compact_calendar_cli_payload(payload), indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "ingest-sms":
@@ -625,6 +663,17 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ingest.p2_i8_acceptance import run_p2_i8_acceptance
 
         payload = run_p2_i8_acceptance(flightsim=bool(args.flightsim))
+        out = {
+            "ok": bool(payload.get("overall_ok")),
+            **payload,
+        }
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out["ok"] else 1
+
+    if args.cmd == "prove-p2-i8a":
+        from memorybox.ingest.p2_i8a_acceptance import run_p2_i8a_acceptance
+
+        payload = run_p2_i8a_acceptance(flightsim=bool(args.flightsim))
         out = {
             "ok": bool(payload.get("overall_ok")),
             **payload,

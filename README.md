@@ -50,7 +50,8 @@ Immich on FlightSim (leave media-server): [docs/ops/FLIGHTSIM_IMMICH_CUTOVER.md]
 - **P2-I2 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_2_DEFINITION.md)
 - **P2-I3 definition (ACCEPTED 2026-08-13):** [docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_3_DEFINITION.md)
 - **P2-I4 definition (ACCEPTED 2026-08-18):** [docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_4_DEFINITION.md)
-- **P2-I8 definition (LOCKED + BUILD AUTHORIZED 2026-08-18; not yet ACCEPTED):** [docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md)
+- **P2-I8 definition (ACCEPTED 2026-08-18):** [docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_8_DEFINITION.md)
+- **P2-I8A definition (ACCEPTED 2026-08-19):** [docs/product/MBBS-P2_INCREMENT_8A_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_8A_DEFINITION.md)
 - **MBUX-001 v0.4 I4 addendum:** [docs/product/MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md](docs/product/MBUX-001_v0.4_I4_MIXED_MEDIA_EXPLORATION_ADDENDUM.md)
 - Approved roadmap: [docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md](docs/product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md)
 

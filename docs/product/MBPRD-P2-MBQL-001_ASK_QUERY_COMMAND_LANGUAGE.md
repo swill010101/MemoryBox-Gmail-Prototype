@@ -4,9 +4,9 @@
 **Date:** 2026-08-15 (PRD) · 2026-08-18 (increment accepted)  
 **Increment definition:** [MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md)  
 **Depends:** P2-I7A **ACCEPTED** (2026-08-15) · I1–I7 **ACCEPTED** (I4 **ACCEPTED** 2026-08-18)  
-**Does not start:** I8 email · I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user
+**Does not start:** I8.5 face SoT · I9 spoken product · I10 correlation · I11 narrative · Settings · multi-user · I8A runtime
 
-PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. Do not start I8.
+PRD accepted. Definition locked. Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19.
 
 ---
 
@@ -108,7 +108,7 @@ Q8 is open. Q1–Q7 stay locked.
 3. Single compile function used by Ask + Explore (+ Person scope).
 4. Residual model fill: traced + schema validate + fail back.
 5. Prove harness + FlightSim phrase list.
-6. **Stop.** Increment **ACCEPTED** 2026-08-18. Do not start I8. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
+6. **Stop.** Increment **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. Do not start I9 or I8.5 until authorized. **P2-I4 ACCEPTED** 2026-08-18; Explore visual polish is **P2-BL-I4-01**.
 
 ---
 
@@ -121,7 +121,7 @@ Q8 is open. Q1–Q7 stay locked.
 | **Q3** | Change answers? | **Confirm.** Normalize intent only. No narrative. |
 | **Q4** | Fail path | **Confirm.** Fail back to deterministic `plan_ask` or clarification. |
 | **Q5** | Speech | **Confirm.** STT-ready. **I9 stays in its position** (after I8.5). Do not build I9 here. |
-| **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. I8.5 remains after I8. |
+| **Q6** | Sequence | **Confirm.** I7A ACCEPTED → MBQL-001 → I8. Planning delta 2026-08-18: **I8A** sits after I8 ACCEPTED, before I8.5, unless Tom reorders in I8A Q1. |
 | **Q7** | I4 Explore | **Confirm.** Do not redesign. |
 | **Q8** | Build gate | **Confirm, then authorized** 2026-08-15 (“approved to build”). |
 
@@ -129,4 +129,4 @@ Q8 is open. Q1–Q7 stay locked.
 
 ## 7. Decision status
 
-PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). Do not start I8.
+PRD **ACCEPTED**. Increment definition **LOCKED**. Increment **ACCEPTED** 2026-08-18 (Tom: “MBQL is accepted”). **P2-I8 ACCEPTED.** **I8A ACCEPTED** 2026-08-19.

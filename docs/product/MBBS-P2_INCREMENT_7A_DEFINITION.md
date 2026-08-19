@@ -151,7 +151,7 @@ Traces may contain the most sensitive prompt material in MemoryBox. They are **d
 | I7A ACCEPTED | **Yes** (2026-08-15 — Tom FlightSim owner pass) |
 | MBQL-001 | **ACCEPTED** 2026-08-18 — [definition](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) |
 
-**I7A ACCEPTED.** Keep `/dev/ai-trace` off when not diagnosing; emission stays on for later increments. MBQL-001 is a separate increment (**ACCEPTED** 2026-08-18). Do not start I8 until Tom authorizes I8.
+**I7A ACCEPTED.** Keep `/dev/ai-trace` off when not diagnosing; emission stays on for later increments. MBQL-001 **ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19.
 
 ## 8. FlightSim deploy (this branch)
 

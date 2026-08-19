@@ -66,6 +66,31 @@ def email_source_candidates() -> list[Path]:
     return out
 
 
+def calendar_dir_candidates() -> list[Path]:
+    """ICS / Takeout calendar folders inspect-calendar / ingest-calendar will try."""
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        key = str(p).casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(p)
+
+    env = (
+        os.environ.get("MEMORYBOX_ICS_URI")
+        or os.environ.get("MEMORYBOX_CALENDAR_URI")
+        or ""
+    ).strip()
+    if env:
+        p = Path(env)
+        _add(p.parent if p.suffix.lower() in {".ics", ".ical"} else p)
+    for root in sources_root_candidates():
+        _add(root / "calendar")
+    return out
+
+
 def sms_source_dir_candidates() -> list[Path]:
     out: list[Path] = []
     seen: set[str] = set()

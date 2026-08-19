@@ -1,12 +1,32 @@
 # MBBS-P2 Increment 8 — Richer Email
 
-**Status:** **LOCKED** · **BUILD AUTHORIZED** 2026-08-18 (Tom: Q1–Q6 locks below + “P2-I8 build is authorized”) · implementation **this revision** · **not yet ACCEPTED** (FlightSim §9 owner pass remaining)  
-**Date:** 2026-08-18  
+**Status:** **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 “All pass….. accepted”)  
+**Date:** 2026-08-18 (build) · 2026-08-18 (accepted)  
 **Roadmap:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) § P2-I8 (Richer Email · A)  
 **Thin PRD:** [MBPRD-P2-I8_RICHER_EMAIL.md](MBPRD-P2-I8_RICHER_EMAIL.md)  
 **Authority:** [MBPS-002](MBPS-002_P2_PRODUCT_SPECIFICATION.md) **P2-COM-02 / P2-COM-03** · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) **CAP-P2-019** · [MBEVS-001 v1.0](MBEVS-001_EVS_CATALOG_v1.0.md) · I1–I7 **ACCEPTED** · I7A **ACCEPTED** · MBQL-001 **ACCEPTED** · I4 **ACCEPTED**  
 **Depends:** MBQL-001 **ACCEPTED** (2026-08-18) · existing P1/I3 mbox ingest pattern (`ingest-email` / `comms_email.py`)  
-**Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I4 Explore redesign / **P2-BL-I4-01** · I5 portrait **P2-BL-I5-01** · I6 kinship · **I8.5** face-evidence · **I9** spoken · **I10** cross-source correlation · **I11** narrative · I13/I14 Settings · multi-user · live Gmail sync / sending mail
+**Does not reopen / does not absorb:** I7 SMS · **P2-BL-I7-01** · I4 Explore redesign / **P2-BL-I4-01** · I5 portrait **P2-BL-I5-01** · I6 kinship · **I8A** unified comms UX · **I8.5** face-evidence · **I9** spoken · **I10** cross-source correlation · **I11** narrative · I13/I14 Settings · multi-user · live Gmail sync / sending mail
+
+P2-I8 is **ACCEPTED**. Unified Communications Gallery & Timeline Precision is **[P2-I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (**ACCEPTED** 2026-08-19). Do not reopen I8 or I8A for chrome. Near-term next is **I9** (not authorized). Face-SoT is later.
+
+## What shipped (ACCEPTED)
+
+- `inspect-mbox` on `P:\photos\memorybox\sources\email\all mail including spam and trash-002.mbox` (~19.7 GB, 93,885 messages)
+- `ingest-email` `i8-email-1`: 91,275 inserted; Spam 240 / Trash 2,363 skipped; 28,464 attachment files; originals untouched; NUL bytes stripped
+- RFC + Gmail `X-GM-THRID` threads; incomplete/unthreaded honest
+- I7 identity ladder on email; MIME attachments with the message; not Immich; explicit Artifact only
+- Ask: person / holiday window / keyword / count+scope; Explore Email/Text; SMS hide unchanged
+- Owner pass: Show me email; Christmas window; Sue Will mail with photos; §9 all pass
+- Follow-up (did not fail I8): Ask “how many times did I send an email to Peggy?” returned a count and Gallery showed mail, but **Peggy was not locked to Peggy George first**, so extra non–Peggy-George messages were included. Parked **P2-BL-I8-02** for the next increment (I8A).
+
+## Carry-forward (not ACCEPTED blockers)
+
+| ID | Item | Notes |
+|----|------|-------|
+| **P2-I8A** | Unified Communications Gallery & Timeline Precision | **ACCEPTED** 2026-08-19. Combined day cards + density-aware aggregation + Calendar filter + viewer + **P2-BL-I8-02** (absorbed). |
+| **P2-BL-I8-01** | Attachment files up front | **Absorbed in I8** (shipped). |
+| **P2-BL-I8-02** | Ask email count must lock canonical Person first | **Absorbed in I8A ACCEPTED** 2026-08-19. Do not reopen I8. |
 
 ---
 
@@ -36,9 +56,10 @@ End-to-end:
 | Order | Artifact | Role |
 |-------|----------|------|
 | 1–3 | I7 / I7A / MBQL-001 | **ACCEPTED** |
-| 4 | **P2-I8** | This increment — **building** |
-| 5 | **P2-I8.5** | Face evidence ownership — **after I8**; not this increment |
-| 6+ | I9 / I10 / I11 | Speech; cross-source; narrative — **not this increment** |
+| 4 | **P2-I8** | **ACCEPTED** 2026-08-18 |
+| 4a | **P2-I8A** Unified Communications Gallery & Timeline Precision | **ACCEPTED** 2026-08-19 |
+| 5 | **P2-I9** | Spoken — **after I8A**; not I8 |
+| later | **P2-I8.5** | Face evidence ownership — **later**, not next after I8A |
 
 ---
 
@@ -81,7 +102,7 @@ Additional rules (locked): preserve sufficient original MIME/header provenance f
 | Auto-promote attachments to Immich / Gallery photos | Out |
 | Infer Place / Event / Trip from mail + photos + SMS | **I10** |
 | Year / trip / person **multi-source narrative** | **I11** |
-| Face-evidence ownership / Immich decoupling | **I8.5 after I8** |
+| Face-evidence ownership / Immich decoupling | **I8.5 later** (after I8A and after recognition/correction/merge/relearn are solid; I9 is next after I8A) |
 | Spoken moments / STT | **I9** |
 | I4 Explore chrome redesign / **P2-BL-I4-01** | Closed / polish |
 | Invented messages or guessed threads | Forbidden |
@@ -151,7 +172,7 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 1. Real staged mail is ingested **without modifying originals**.  
 2. At least one real message fidelity-checked: subject, timestamp, from/to, body (or disclosed HTML-only), thread association.  
 3. At least one real **attachment file** opens from that message.  
-4. “How many times did I email **[Q2 Person]**” returns a count **with scope**.  
+4. “How many times did I email **[Q2 Person]**” returns a count **with scope**. *(Owner 2026-08-18: first-name “Peggy” counted without locking **Peggy George** — **P2-BL-I8-02**, next increment; did not fail I8.)*  
 5. Person filtering works.  
 6. Year / holiday-window filtering works (reuse I4 windows).  
 7. Keyword filtering works.  
@@ -175,12 +196,15 @@ Pass **all**. Structural `prove-p2-i8` does **not** equal ACCEPTED.
 | Step | Status |
 |------|--------|
 | I7 / I7A / MBQL-001 / I4 | **ACCEPTED** |
-| P2-BL-I8-01 (files up front) | **In I8 scope — implementing** |
+| P2-BL-I8-01 (files up front) | **Absorbed in I8 ACCEPTED** |
 | I8 definition | **LOCKED** 2026-08-18 |
 | I8 PRD | **LOCKED** — [MBPRD-P2-I8_RICHER_EMAIL.md](MBPRD-P2-I8_RICHER_EMAIL.md) |
 | Q1–Q6 | **LOCKED** (this table §2) |
-| I8 build | **AUTHORIZED** — this revision |
-| I8 ACCEPTED | **Pending FlightSim §9** |
-| I8.5 / I9 / I10 / I11 | **NOT STARTED** |
+| I8 build | **AUTHORIZED** — shipped |
+| I8 ACCEPTED | **ACCEPTED** 2026-08-18 |
+| P2-BL-I8-02 (Ask Person lock on email count) | **Absorbed in I8A ACCEPTED** 2026-08-19 |
+| I8A Unified Communications Gallery & Timeline Precision | **ACCEPTED** 2026-08-19 — [MBBS-P2_INCREMENT_8A_DEFINITION.md](MBBS-P2_INCREMENT_8A_DEFINITION.md) |
+| I9 Spoken | **NOT STARTED** (next after I8A; not authorized) |
+| I8.5 / I10 / I11 | **NOT STARTED** (I8.5 later) |
 
-**Stop.** Do not start I8.5, I9, I10, or I11.
+**Stop.** Do not reopen I8 for chrome. **I8A is ACCEPTED.** Do not start I9, I8.5, I10, or I11 until authorized.

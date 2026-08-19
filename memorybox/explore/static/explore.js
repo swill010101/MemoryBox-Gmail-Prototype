@@ -19,9 +19,11 @@
 
   const FILTERS = [
     { id: "all", label: "All" },
+    { id: "memory", label: "Memory" },
     { id: "photo", label: "Photos" },
     { id: "video", label: "Video" },
-    { id: "email", label: "Email/Text" },
+    { id: "email", label: "Communications" }, // I7 Email/Text
+    { id: "calendar", label: "Calendar" },
     { id: "artifact", label: "Artifacts" },
     { id: "story", label: "Stories" },
   ];
@@ -56,7 +58,8 @@
   if (PERSON_MODE) {
     // I5 visual lock order: All · Photos · Video · Audio · Email/Text · Artifacts · Stories · Location
     // Audio empty-OK; Location = has GPS/Place (locked option D); Map toggle stays separate.
-    FILTERS.splice(3, 0, { id: "audio", label: "Audio" });
+    const commsAt = FILTERS.findIndex((f) => f.id === "email");
+    FILTERS.splice(commsAt >= 0 ? commsAt : 3, 0, { id: "audio", label: "Audio" });
     FILTERS.push({ id: "location", label: "Location" });
     const teachNav = NAV.find((n) => n.id === "teach");
     if (teachNav) teachNav.label = "Teach";
@@ -85,7 +88,14 @@
     only_video: /^only videos?\.?$/i,
     add_video: /^add video\.?$/i,
     add_texts: /^(add|include)\s+(texts?|sms|imessage|i-?message)s?\.?$|^add texts?\.?$/i,
-    only_texts: /^only (email|emails|texts?|sms|imessage)\b/i,
+    only_texts: /^only (texts?|sms|imessage|i-?message)\b/i,
+    add_email: /^(add|include)\s+(e-?mails?)\.?$/i,
+    only_email: /^only (e-?mails?)\b/i,
+    add_communications: /^(add|include)\s+communications?\.?$|^add comms\.?$/i,
+    add_calendar: /^(add|include)\s+calendar\.?$/i,
+    only_calendar: /^only calendar\.?$/i,
+    attachments_only: /^attachments only\.?$|^only attachments\.?$/i,
+    show_memory: /^memory\.?$|^show memory\.?$|^memory view\.?$/i,
     only_artifacts: /^only artifacts?\.?$/i,
     only_stories: /^only stories?\.?$/i,
     go_to_people: /clear context.*people|go to people/i,
@@ -130,7 +140,14 @@
   let chromeBound = false;
   let timelineBound = false;
   let findGen = 0;
+  let pendingPresent = null;
   let histHydrate = null;
+
+  function bumpFindGen() {
+    pendingPresent = null;
+    setGalleryLocked(false);
+    return ++findGen;
+  }
 
   function dayMs(y, m, d) {
     return Date.UTC(y, m - 1, d);
@@ -138,7 +155,10 @@
 
   function parseISO(s) {
     if (!s) return NaN;
-    const p = String(s || "").slice(0, 10).split("-");
+    const raw = String(s || "").trim();
+    if (/^\d{4}$/.test(raw)) return dayMs(+raw, 1, 1);
+    const p = raw.slice(0, 10).split("-");
+    if (p.length === 2 && p[0] && p[1]) return dayMs(+p[0], +p[1], 1);
     if (p.length < 3 || !p[0]) return NaN;
     return dayMs(+p[0], +p[1], +p[2]);
   }
@@ -298,35 +318,83 @@
     return t === "sms" || t === "text" || t === "imessage" || t === "mms" || t === "rcs";
   }
 
+  function isEmailItem(item) {
+    return String((item && item.type) || "").toLowerCase() === "email";
+  }
+
+  function isCalendarItem(item) {
+    return String((item && item.type) || "").toLowerCase() === "calendar";
+  }
+
+  function itemAttachCount(item) {
+    if (!item) return 0;
+    if (Array.isArray(item.attachments)) return item.attachments.length;
+    return Number(item.attachment_count || 0) || 0;
+  }
+
   function matchesType(item, filter, opts) {
     const d = (opts && opts.domain) || (state && state.domain) || {};
+    // Communications chip uses typeFilter "email" (I7 leftover). That must not
+    // force Text or Email on — the Communications filter checkboxes own this.
     const includeTexts = Boolean(
-      (opts && opts.includeTexts) ||
-        d.includeTexts ||
-        d.galleryShowSms ||
-        filter === "email"
+      (opts && opts.includeTexts) || d.includeTexts || d.galleryShowSms
     );
+    const includeEmail = Boolean(d.includeEmail || d.galleryShowEmail);
+    const includeCalendar = Boolean(
+      d.includeCalendar || d.galleryShowCalendar || filter === "calendar"
+    );
+    const memoryOn = Boolean(d.memoryPresentation || filter === "memory");
+    const attachmentsOnly = Boolean(d.attachmentsOnly);
+    if (memoryOn && (isSmsTextItem(item) || isEmailItem(item) || isCalendarItem(item))) {
+      return false;
+    }
     if (isSmsTextItem(item)) {
-      if (filter === "email") return true;
-      // All = every type already in this result, including texts that are
-      // on-screen or explicitly requested. Hidden-by-default SMS stay out
-      // until Add texts / an explicit text ask — never empty a text result.
-      if (!filter || filter === "all") {
-        if (item.gallery_default_hidden && !includeTexts) return false;
+      if (filter === "email") {
+        if (!includeTexts) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
         return true;
       }
-      // Photos / video / artifact / story are not texts. includeTexts must
-      // not leak SMS into the Photos pill (FlightSim: All texts + Photos on).
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeTexts) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return includeTexts;
+      }
+      return false;
+    }
+    if (isEmailItem(item)) {
+      if (filter === "email") {
+        if (!includeEmail) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return true;
+      }
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeEmail) return false;
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return includeEmail;
+      }
+      return false;
+    }
+    if (isCalendarItem(item)) {
+      if (filter === "calendar") return true;
+      if (!filter || filter === "all") {
+        if (item.gallery_default_hidden && !includeCalendar) return false;
+        return includeCalendar;
+      }
       return false;
     }
     if (!filter || filter === "all") return true;
     if (filter === "location") {
-      // Option D: Location pill = has GPS/Place evidence (Map toggle is separate).
       if (itemLatLng(item)) return true;
       return Boolean(itemPlaceBlob(item).trim());
     }
     const t = String(item.type || "").toLowerCase();
-    if (filter === "email") return t === "email" || t === "sms" || t === "text";
+    if (filter === "memory") {
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    }
+    if (filter === "email" || filter === "calendar") {
+      // Communications / Calendar surface keeps photos & video in the mixed gallery.
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    }
     if (filter === "audio") return t === "audio" || t === "voice";
     return t === filter;
   }
@@ -601,13 +669,35 @@
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
     if (id === "email") {
-      state.domain.includeTexts = true;
+      state.domain.memoryPresentation = false;
+      if (state.domain.emailPinned || state.domain.textsPinned) {
+        state.domain.includeEmail = Boolean(state.domain.emailPinned);
+        state.domain.includeTexts = Boolean(state.domain.textsPinned);
+      } else if (!state.domain.includeEmail && !state.domain.includeTexts) {
+        state.domain.includeEmail = true;
+        state.domain.includeTexts = true;
+      }
+    } else if (id === "calendar") {
+      state.domain.includeCalendar = true;
+      state.domain.memoryPresentation = false;
+    } else if (id === "memory") {
+      state.domain.memoryPresentation = true;
+      state.domain.includeTexts = false;
+      state.domain.includeEmail = false;
+      state.domain.includeCalendar = false;
     } else if (id === "all") {
       // Filter-only Email/Text must not pin SMS onto All. I7 hides texts
       // on All unless this find was an explicit text ask or Add texts.
       if (!state.domain.galleryShowSms && !state.domain.textsPinned) {
         state.domain.includeTexts = false;
       }
+      if (!state.domain.galleryShowEmail && !state.domain.emailPinned) {
+        state.domain.includeEmail = false;
+      }
+      if (!state.domain.galleryShowCalendar && !state.domain.calendarPinned) {
+        state.domain.includeCalendar = false;
+      }
+      state.domain.memoryPresentation = false;
     }
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
@@ -761,23 +851,34 @@
     }
     const trunc =
       state.domain.smsTruncated && state.domain.smsMatchTotal
-        ? ` ${vis.length} of ${state.domain.smsMatchTotal} matching texts; every year is on the Timeline.`
+        ? ` Showing ${vis.length} of ${state.domain.smsMatchTotal} texts.`
         : "";
-    let extra = "";
     const archiveN =
       allAsk && !includeTexts && hiddenSms ? vis.length + hiddenSms : vis.length;
     let hideNote = "";
-    const alreadyHid = /are in the archive/.test(
-      String(state.domain._askSummary || "") + extra
-    );
-    if (allAsk && !includeTexts && (hiddenSms || availableSms) && !alreadyHid) {
-      hideNote =
-        ` ${availableSms || hiddenSms} text message(s) are in the archive ` +
-        "(hidden in Gallery — say Add texts to show them).";
+    if (allAsk && !includeTexts && (hiddenSms || availableSms)) {
+      hideNote = ` ${availableSms || hiddenSms} texts are in the archive (Communications to show them).`;
     }
-    state.domain.summary = `Showing ${archiveN} memories (${filterLabel}) for ${range}${
-      parts.length ? ": " + parts.join(", ") + "." : "."
-    }${trunc}${extra}${hideNote}`;
+    const cards = galleryCardsFromVisible(vis);
+    const dayCards = cards.filter((it) => String(it.type) === "daycard");
+    const grain = (state.domain._showingDays || {}).grain;
+    let cardNote = "";
+    if (dayCards.length) {
+      cardNote = ` ${dayCards.length} ${grain || "grouped"} card${
+        dayCards.length === 1 ? "" : "s"
+      }.`;
+    }
+    const emailOnly =
+      Boolean(state.domain.includeEmail) &&
+      !state.domain.includeTexts &&
+      state.domain.typeFilter === "email";
+    if (emailOnly && !c.email) {
+      cardNote += " No emails matched this person.";
+    }
+    const shown = parts.length
+      ? parts.join(", ")
+      : `${archiveN} memor${archiveN === 1 ? "y" : "ies"}`;
+    state.domain.summary = `${shown} · ${range} (${filterLabel}).${trunc}${hideNote}${cardNote}`;
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -954,8 +1055,10 @@
       : "Memories";
     const titleEl = document.getElementById("mb-explore-curator-title");
     const bodyEl = document.getElementById("mb-explore-curator-body");
+    const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
     if (bodyEl) bodyEl.textContent = "Searching…";
+    if (curator) curator.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
       state.domain.summary = "Searching…";
@@ -972,15 +1075,146 @@
     if (el) el.dataset.mbAskDirty = "";
   }
 
-  async function liveFind(askText) {
+  async function liveFind(askText, extras) {
     const q = personScopedAsk(askText);
-    const url =
+    let url =
       "/explore/api/find?q=" +
       encodeURIComponent(q) +
       (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
+    const present = extras && extras.present;
+    if (present) url += "&present=" + encodeURIComponent(present);
     const res = await fetch(url);
     if (!res.ok) throw new Error("find " + res.status);
     return res.json();
+  }
+
+  function currentAskText() {
+    return (
+      (state && state.domain && state.domain.askText) ||
+      (document.getElementById("mb-explore-ask") || {}).value ||
+      ""
+    );
+  }
+
+  function applyPresentFlags(present) {
+    const kind = String(present || "").toLowerCase();
+    state.domain.memoryPresentation = false;
+    if (kind === "calendar" || kind === "cal") {
+      state.domain.includeCalendar = true;
+      state.domain.calendarPinned = true;
+      state.domain.typeFilter = "calendar";
+    } else if (kind === "email") {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = false;
+      state.domain.emailPinned = true;
+      state.domain.textsPinned = false;
+      state.domain.typeFilter = "email";
+    } else if (kind === "sms" || kind === "texts" || kind === "text") {
+      state.domain.includeEmail = false;
+      state.domain.includeTexts = true;
+      state.domain.emailPinned = false;
+      state.domain.textsPinned = true;
+      state.domain.typeFilter = "email";
+    } else {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = true;
+      state.domain.emailPinned = true;
+      state.domain.textsPinned = true;
+      state.domain.typeFilter = "email";
+    }
+    syncTimelineToEligibleDatedExtent();
+  }
+
+  function askNeedsPersonOrTime(ask) {
+    const q = String(ask || "").trim();
+    if (!q) return true;
+    return /^(add communications|add calendar)\.?$/i.test(q);
+  }
+
+  function promptNeedPersonOrTime(present) {
+    hideQuickPreview();
+    const cal = String(present || "").toLowerCase() === "calendar";
+    if (!state) return;
+    state.domain.title = cal ? "Calendar" : "Communications";
+    state.domain.summary = cal
+      ? "Who would you like to see on the calendar? Add a person and/or a time in Ask."
+      : "Who would you like to see? Communications needs a person and/or a time in Ask.";
+    const askEl = document.getElementById("mb-explore-ask");
+    if (askEl && /^(add communications|add calendar)\.?$/i.test(String(askEl.value || "").trim())) {
+      askEl.value = "";
+      state.domain.askText = "";
+    }
+    const curator = document.getElementById("mb-explore-curator");
+    if (curator) curator.classList.remove("is-searching");
+    render();
+  }
+
+  function setGalleryLocked(on) {
+    if (state && state.domain) state.domain.galleryLocked = Boolean(on);
+    const g = document.getElementById("mb-explore-gallery");
+    const root = document.getElementById("mb-explore-root");
+    if (g) g.classList.toggle("is-locked", Boolean(on));
+    if (root) root.classList.toggle("is-present-locked", Boolean(on));
+  }
+
+  function applyPresentPayload(payload, present) {
+    const priorMem = rawItems.filter((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    });
+    applyPayloadToState(payload, { keepPresentation: true });
+    const comms = rawItems.filter(
+      (it) => isSmsTextItem(it) || isEmailItem(it) || isCalendarItem(it)
+    );
+    const seen = {};
+    const mem = [];
+    priorMem.forEach((it) => {
+      seen[it.id] = 1;
+      mem.push(it);
+    });
+    rawItems.forEach((it) => {
+      const t = String(it.type || "").toLowerCase();
+      if (
+        (t === "photo" || t === "video" || t === "story" || t === "artifact") &&
+        !seen[it.id]
+      ) {
+        mem.push(it);
+      }
+    });
+    rawItems = mem.concat(comms);
+    if (state && state.domain) state.domain.undatedFilter = false;
+    applyPresentFlags(present);
+    syncTimelineToEligibleDatedExtent();
+    setGalleryLocked(false);
+    pendingPresent = null;
+    render();
+  }
+
+  function presentWithoutRewritingAsk(present) {
+    const ask = currentAskText().trim();
+    if (askNeedsPersonOrTime(ask)) {
+      promptNeedPersonOrTime(present);
+      return;
+    }
+    const gen = bumpFindGen();
+    pendingPresent = null;
+    setGalleryLocked(true);
+    hideQuickPreview();
+    showSearching(ask);
+    liveFind(ask, { present: present })
+      .then((payload) => {
+        if (gen !== findGen) return;
+        if (state.modal && state.modal.openId) {
+          pendingPresent = { payload: payload, present: present, gen: gen };
+          return;
+        }
+        applyPresentPayload(payload, present);
+      })
+      .catch(() => {
+        if (gen !== findGen) return;
+        setGalleryLocked(false);
+        render();
+      });
   }
 
   function applyPayloadToState(payload, { keepPresentation } = {}) {
@@ -1012,12 +1246,20 @@
     }
     let nextType = typeFilter;
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
+    const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
+    const galleryShowCalendar = Boolean(exploreHint.gallery_show_calendar);
     // New find owns visibility. Do not keep includeTexts from a prior SMS ask
     // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
+    // Photos pill must not leak SMS.
     const includeTexts = galleryShowSms;
-    if (galleryShowSms) {
+    const keepTexts = includeTexts;
+    const includeEmail = galleryShowEmail;
+    const includeCalendar = galleryShowCalendar;
+    if (galleryShowSms || galleryShowEmail) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";
+    } else if (galleryShowCalendar) {
+      nextType = "calendar";
     } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
       if (vs === "still_only") nextType = "photo";
@@ -1090,11 +1332,20 @@
         chips: chips,
         typeFilter: nextType,
         includeTexts: includeTexts,
+        includeEmail: includeEmail,
+        includeCalendar: includeCalendar,
         galleryShowSms: galleryShowSms,
+        galleryShowEmail: galleryShowEmail,
+        galleryShowCalendar: galleryShowCalendar,
         textsPinned: Boolean(galleryShowSms),
+        emailPinned: Boolean(galleryShowEmail),
+        calendarPinned: Boolean(galleryShowCalendar),
+        memoryPresentation: false,
+        attachmentsOnly: false,
         smsAvailable: Number(exploreHint.sms_available || 0) || 0,
         smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
+        emailMatchTotal: Number(exploreHint.email_match_total || exploreHint.email_available || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
         undatedFilter: undatedFilter,
@@ -1220,7 +1471,7 @@
       resetTimelineExtent(false);
       setViewMode("gallery");
       if (PERSON.memoryMode) PERSON.memoryMode = PERSON.memoryMode;
-      const gen = ++findGen;
+      const gen = bumpFindGen();
       showSearching("Show " + (PERSON.displayName || "person"));
       liveFind("Show " + (PERSON.displayName || "person"))
         .then((payload) => {
@@ -1262,6 +1513,9 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      state.domain.includeEmail = Boolean(state.domain.galleryShowEmail);
+      state.domain.includeCalendar = Boolean(state.domain.galleryShowCalendar);
+      state.domain.memoryPresentation = false;
       render();
       return;
     }
@@ -1271,7 +1525,12 @@
       setUndatedFilter(false);
       setViewMode("gallery");
       state.domain.includeTexts = true;
+      state.domain.includeEmail = true;
+      state.domain.includeCalendar = true;
       state.domain.textsPinned = true;
+      state.domain.emailPinned = true;
+      state.domain.calendarPinned = true;
+      state.domain.memoryPresentation = false;
       render();
       return;
     }
@@ -1316,6 +1575,9 @@
       clearPlaceFilter();
       setUndatedFilter(false);
       state.domain.includeTexts = Boolean(state.domain.galleryShowSms);
+      state.domain.includeEmail = Boolean(state.domain.galleryShowEmail);
+      state.domain.includeCalendar = Boolean(state.domain.galleryShowCalendar);
+      state.domain.memoryPresentation = false;
       state.domain.temporalWindows = null;
       resetTimelineExtent(false);
       setViewMode("gallery");
@@ -1385,14 +1647,65 @@
     if (MBQL_VERBS.add_texts.test(text)) {
       state.domain.includeTexts = true;
       state.domain.textsPinned = true;
+      state.domain.memoryPresentation = false;
       syncTimelineToEligibleDatedExtent();
       render();
       return;
     }
     if (MBQL_VERBS.only_texts.test(text)) {
       state.domain.includeTexts = true;
+      state.domain.includeEmail = false;
       state.domain.textsPinned = true;
+      state.domain.memoryPresentation = false;
       setTypeFilter("email");
+      state.domain.includeEmail = false;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_email.test(text)) {
+      state.domain.includeEmail = true;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (MBQL_VERBS.only_email.test(text)) {
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = false;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      setTypeFilter("email");
+      state.domain.includeTexts = false;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_communications.test(text)) {
+      state.domain.includeTexts = true;
+      state.domain.includeEmail = true;
+      state.domain.textsPinned = true;
+      state.domain.emailPinned = true;
+      state.domain.memoryPresentation = false;
+      setTypeFilter("email");
+      render();
+      return;
+    }
+    if (MBQL_VERBS.add_calendar.test(text) || MBQL_VERBS.only_calendar.test(text)) {
+      state.domain.includeCalendar = true;
+      state.domain.calendarPinned = true;
+      state.domain.memoryPresentation = false;
+      if (MBQL_VERBS.only_calendar.test(text)) setTypeFilter("calendar");
+      else syncTimelineToEligibleDatedExtent();
+      render();
+      return;
+    }
+    if (MBQL_VERBS.attachments_only.test(text)) {
+      state.domain.attachmentsOnly = true;
+      render();
+      return;
+    }
+    if (MBQL_VERBS.show_memory.test(text)) {
+      setTypeFilter("memory");
       render();
       return;
     }
@@ -1456,7 +1769,7 @@
           );
           state.domain.chips = chips;
           ensureLockedPersonChip();
-          const gen = ++findGen;
+          const gen = bumpFindGen();
           showSearching("Show " + (PERSON.displayName || ""));
           liveFind("Show " + (PERSON.displayName || ""))
             .then((payload) => {
@@ -1478,7 +1791,7 @@
 
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
-      const gen = ++findGen;
+      const gen = bumpFindGen();
       showSearching(text);
       liveFind(text)
         .then((payload) => {
@@ -1660,10 +1973,21 @@
 
   function renderCurator() {
     refreshCuratorFromVisible();
-    document.getElementById("mb-explore-curator-title").textContent =
-      state.domain.title || "Memories";
+    const askRaw = String(state.domain.askText || "").trim();
+    const personChip = (state.domain.chips || []).find((c) => c && c.kind === "person");
+    const personLabel = (personChip && personChip.label) || "";
+    let heading = state.domain.title || "Memories";
+    if (personLabel) heading = personLabel;
+    else if (askRaw && String(heading).trim().toLowerCase() === askRaw.toLowerCase()) {
+      heading = "Memories";
+    }
+    document.getElementById("mb-explore-curator-title").textContent = heading;
     document.getElementById("mb-explore-curator-body").textContent =
       state.domain.summary || "";
+    const curator = document.getElementById("mb-explore-curator");
+    if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
+      curator.classList.remove("is-searching");
+    }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
     chips.innerHTML = (state.domain.chips || [])
@@ -1722,6 +2046,13 @@
     }
     if (!url && opt && opt.immichId) {
       url = "/library/media/immich-person/" + encodeURIComponent(opt.immichId);
+    }
+    if (!url) {
+      const pic = rawItems.find((it) => {
+        const ty = String(it.type || "").toLowerCase();
+        return (ty === "photo" || ty === "video") && (it.thumb_url || it.media_url);
+      });
+      if (pic) url = pic.thumb_url || pic.media_url;
     }
     const initial = String(label || state.domain.title || "M").trim().charAt(0).toUpperCase() || "M";
     if (!url) {
@@ -1785,7 +2116,36 @@
     }
     el.querySelectorAll("[data-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        setTypeFilter(btn.getAttribute("data-filter"));
+        if (state.domain && state.domain.galleryLocked) return;
+        const fid = btn.getAttribute("data-filter");
+        if (fid === "email") {
+          if (askNeedsPersonOrTime(currentAskText())) {
+            promptNeedPersonOrTime("communications");
+            return;
+          }
+          openCommsFilter();
+          return;
+        }
+        if (fid === "calendar") {
+          if (askNeedsPersonOrTime(currentAskText())) {
+            promptNeedPersonOrTime("calendar");
+            return;
+          }
+          const visCal = rawItems.some((it) => isCalendarItem(it) && !it.gallery_default_hidden);
+          if (visCal) {
+            state.domain.includeCalendar = true;
+            state.domain.calendarPinned = true;
+            state.domain.memoryPresentation = false;
+            state.domain.undatedFilter = false;
+            state.domain.typeFilter = "calendar";
+            syncTimelineToEligibleDatedExtent();
+            render();
+            return;
+          }
+          presentWithoutRewritingAsk("calendar");
+          return;
+        }
+        setTypeFilter(fid);
         render();
       });
     });
@@ -1853,12 +2213,17 @@
     const prev = escapeHtml(it.preview || "");
     const media = it.thumb_url || it.media_url || "";
     if (t === "email" || t === "sms" || t === "text") {
-      const from = escapeHtml(it.from || "Message");
+      const from = String(it.from || "").trim();
+      const to = String(it.to || "").trim();
+      const who =
+        t === "email" && from && to
+          ? escapeHtml(from) + " → " + escapeHtml(to)
+          : escapeHtml(from || to || "Message");
       const nAtt = Array.isArray(it.attachments) ? it.attachments.length : Number(it.attachment_count || 0);
       const att = nAtt
         ? `<span class="mb-card-attach" title="${nAtt} attachment${nAtt === 1 ? "" : "s"} linked to this message">📎 ${nAtt}</span>`
         : "";
-      return `${att}<div class="mb-card-textbody"><strong>${from}</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
+      return `${att}<div class="mb-card-textbody"><strong>${who}</strong>${escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "story") {
       const bg = media
@@ -1952,10 +2317,734 @@
     root._mbLazyIo = io;
   }
 
+  const I8A_BUCKET_CAP = 80;
+
+  function dayKey(item) {
+    const s = String((item && item.date) || "").slice(0, 10);
+    return s.length >= 10 ? s : "";
+  }
+
+  function bucketKeyFor(item, grain) {
+    const d = dayKey(item);
+    if (!d) return "undated";
+    if (grain === "month") return d.slice(0, 7);
+    if (grain === "year") return d.slice(0, 4);
+    return d;
+  }
+
+  function pickGrain(datedKeys) {
+    if (datedKeys.length <= I8A_BUCKET_CAP) return "day";
+    const months = new Set(datedKeys.map((k) => String(k).slice(0, 7)));
+    if (months.size <= I8A_BUCKET_CAP) return "month";
+    return "year";
+  }
+
+  function yearFairTake(keysNewestFirst, cap) {
+    const byYear = {};
+    keysNewestFirst.forEach((k) => {
+      const y = String(k).slice(0, 4);
+      (byYear[y] = byYear[y] || []).push(k);
+    });
+    const years = Object.keys(byYear).sort().reverse();
+    const out = [];
+    let i = 0;
+    while (out.length < cap) {
+      let added = false;
+      years.forEach((y) => {
+        if (out.length >= cap) return;
+        const k = byYear[y][i];
+        if (k) {
+          out.push(k);
+          added = true;
+        }
+      });
+      if (!added) break;
+      i += 1;
+    }
+    return out;
+  }
+
+  function orderBucketKeys(keys, sort) {
+    const dated = keys.filter((k) => k && k !== "undated").sort();
+    const undated = keys.filter((k) => !k || k === "undated");
+    if (sort === "oldest") return dated.concat(undated);
+    return dated.reverse().concat(undated);
+  }
+
+  function fmtBucketDate(k) {
+    if (!k || k === "undated") return "Undated";
+    if (/^\d{4}$/.test(k)) return k;
+    if (/^\d{4}-\d{2}$/.test(k)) {
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const m = Number(k.slice(5, 7)) - 1;
+      return (months[m] || k) + " " + k.slice(0, 4);
+    }
+    return fmtCardDate(k);
+  }
+
+  function commsCalItems(list) {
+    return (list || []).filter(
+      (it) => isSmsTextItem(it) || isEmailItem(it) || isCalendarItem(it)
+    );
+  }
+
+  function memoryLikeItems(list) {
+    return (list || []).filter((it) => {
+      const t = String(it.type || "").toLowerCase();
+      return t === "photo" || t === "video" || t === "story" || t === "artifact";
+    });
+  }
+
+  function threadKey(it) {
+    return convoKey(it);
+  }
+
+  function convoKey(it) {
+    const tid = String((it && it.thread_id) || "").trim();
+    if (tid) return "t:" + tid;
+    const handles = []
+      .concat(Array.isArray(it && it.identity_mapped) ? it.identity_mapped : [])
+      .map((m) => String((m && (m.normalized || m.handle)) || "").trim().toLowerCase())
+      .filter(Boolean)
+      .sort();
+    if (handles.length) return "h:" + handles.join("|");
+    const names = []
+      .concat(Array.isArray(it && it.people) ? it.people : [])
+      .concat(it && it.from ? [it.from] : [])
+      .map((n) => String(n || "").trim().toLowerCase())
+      .filter(Boolean)
+      .sort();
+    const uniq = [];
+    names.forEach((n) => {
+      if (uniq.indexOf(n) < 0) uniq.push(n);
+    });
+    if (uniq.length) return "p:" + uniq.join("|");
+    return "id:" + String((it && it.id) || "msg");
+  }
+
+  function smsMessageBody(item) {
+    const title = String((item && item.title) || "").trim();
+    const peopleJoin = []
+      .concat((item && item.people) || [])
+      .map((n) => String(n || "").trim())
+      .filter(Boolean)
+      .join(" & ");
+    const from = String((item && item.from) || "").trim();
+    const skip = new Set(
+      [title, peopleJoin, from, peopleJoin.replace(/\s+&\s+/g, ", ")]
+        .map((s) => s.toLowerCase())
+        .filter(Boolean)
+    );
+    const candidates = [item && item.detail, item && item.preview];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const s = String(candidates[i] || "").trim();
+      if (!s) continue;
+      if (skip.has(s.toLowerCase())) continue;
+      return s;
+    }
+    return "";
+  }
+
+  function uniqueSmsThreadItems(items) {
+    const seenId = {};
+    const seenSig = {};
+    const out = [];
+    (items || []).forEach((it) => {
+      const eid = String(it.evidence_id || it.id || "");
+      if (eid && seenId[eid]) return;
+      const body = smsMessageBody(it);
+      const sig = [
+        convoKey(it),
+        String(it.date || ""),
+        String(it.from || "").toLowerCase(),
+        body.toLowerCase(),
+      ].join("|");
+      if (seenSig[sig]) return;
+      if (eid) seenId[eid] = 1;
+      seenSig[sig] = 1;
+      if (!body && itemAttachCount(it) < 1) return;
+      out.push(it);
+    });
+    return out;
+  }
+
+  function textListKey(it, grain) {
+    const ck = convoKey(it);
+    if (grain === "day") return ck;
+    return ck + "|" + (dayKey(it) || "undated");
+  }
+
+  function summarizeDay(items) {
+    const emails = items.filter(isEmailItem);
+    const texts = items.filter(isSmsTextItem);
+    const cals = items.filter(isCalendarItem);
+    const eThreads = new Set(emails.map(convoKey));
+    const tConv = new Set(texts.map(convoKey));
+    return {
+      emails,
+      texts,
+      cals,
+      emailN: emails.length,
+      textN: texts.length,
+      calN: cals.length,
+      emailThreads: eThreads.size,
+      textConvos: tConv.size,
+      attachN:
+        emails.reduce((n, it) => n + itemAttachCount(it), 0) +
+        texts.reduce((n, it) => n + itemAttachCount(it), 0),
+    };
+  }
+
+  function threadCards(items) {
+    const by = {};
+    (items || []).forEach((it) => {
+      const k = convoKey(it) || it.id || "msg";
+      (by[k] = by[k] || []).push(it);
+    });
+    return Object.keys(by).map((k) => {
+      const group = by[k].slice().sort((a, b) => {
+        const da = parseISO(a.date);
+        const db = parseISO(b.date);
+        const sa = Number.isFinite(da) ? da : 0;
+        const sb = Number.isFinite(db) ? db : 0;
+        return sb - sa;
+      });
+      const head = Object.assign({}, group[0]);
+      head._threadItems = group;
+      if (group.length > 1) {
+        head.id = "thread:" + k;
+        head.preview = group.length + " messages in this thread";
+      }
+      return head;
+    });
+  }
+
+  function photoThumbForBucket(k) {
+    const key = String(k || "");
+    if (!key || key === "undated") return "";
+    const y = key.slice(0, 4);
+    const mo = key.length >= 7 ? key.slice(0, 7) : "";
+    const pics = rawItems.filter((it) => {
+      const ty = String(it.type || "").toLowerCase();
+      if (ty !== "photo" && ty !== "video") return false;
+      if (!(it.thumb_url || it.media_url)) return false;
+      const d = String(it.date || "");
+      if (mo) return d.slice(0, 7) === mo;
+      return d.slice(0, 4) === y;
+    });
+    if (!pics.length) return "";
+    let h = 0;
+    for (let i = 0; i < key.length; i += 1) h = (h + key.charCodeAt(i) * (i + 1)) % 997;
+    const pick = pics[h % pics.length];
+    return pick.thumb_url || pick.media_url || "";
+  }
+
+  function makeCombinedCard(k, group, grain) {
+    const s = summarizeDay(group);
+    const openLabel = grain === "day" ? "Open day →" : "Open →";
+    return {
+      id: "daycard:" + k,
+      type: "daycard",
+      title: "Communications" + (s.calN ? " & calendar" : ""),
+      date: k === "undated" ? "" : k,
+      undated: k === "undated",
+      _dayItems: group,
+      _daySummary: s,
+      _grain: grain,
+      _openLabel: openLabel,
+      _personThumb: photoThumbForBucket(k),
+      preview:
+        (s.emailThreads ? s.emailThreads + " email threads" : "") +
+        (s.textN
+          ? (s.emailThreads ? " · " : "") +
+            s.textN +
+            " texts · " +
+            s.textConvos +
+            " conversation" +
+            (s.textConvos === 1 ? "" : "s")
+          : "") +
+        (s.calN ? (s.emailThreads || s.textConvos ? " · " : "") + s.calN + " events" : ""),
+    };
+  }
+
+  function bucketCombined(items, grain) {
+    const by = {};
+    items.forEach((it) => {
+      const k = bucketKeyFor(it, grain);
+      (by[k] = by[k] || []).push(it);
+    });
+    const keys = Object.keys(by);
+    const dated = keys.filter((k) => k && k !== "undated");
+    const sort = state.gallery.sort || "newest";
+    let shownDated = orderBucketKeys(dated, sort).filter((k) => k !== "undated");
+    if (shownDated.length > I8A_BUCKET_CAP) {
+      const newestFirst = sort === "oldest" ? shownDated.slice().reverse() : shownDated;
+      shownDated = yearFairTake(newestFirst, I8A_BUCKET_CAP);
+      if (sort === "oldest") shownDated = shownDated.slice().reverse();
+    }
+    const shown = orderBucketKeys(shownDated.concat(keys.filter((k) => k === "undated")), sort);
+    state.domain._showingDays = { shown: shown.length, total: keys.length, grain: grain };
+    return shown.map((k) => makeCombinedCard(k, by[k], grain));
+  }
+
+  function insertCombinedIntoGallery(combined, allItems) {
+    const mem = memoryLikeItems(allItems);
+    if (!mem.length) return combined;
+    const sort = state.gallery.sort || "newest";
+    const byYear = {};
+    const undatedMem = [];
+    mem.forEach((it) => {
+      if (isUndated(it)) {
+        undatedMem.push(it);
+        return;
+      }
+      const y = String(it.date || "").slice(0, 4);
+      if (!/^\d{4}$/.test(y)) {
+        undatedMem.push(it);
+        return;
+      }
+      (byYear[y] = byYear[y] || []).push(it);
+    });
+    const combinedByYear = {};
+    const undatedCombined = [];
+    (combined || []).forEach((c) => {
+      const y = String(c.date || "").slice(0, 4);
+      if (!y || c.undated || !/^\d{4}$/.test(y)) undatedCombined.push(c);
+      else combinedByYear[y] = c;
+    });
+    const years = new Set(
+      Object.keys(byYear).concat(Object.keys(combinedByYear))
+    );
+    const ordered = [...years].sort((a, b) =>
+      sort === "oldest" ? a.localeCompare(b) : b.localeCompare(a)
+    );
+    const out = [];
+    ordered.forEach((y) => {
+      if (combinedByYear[y]) out.push(combinedByYear[y]);
+      const pics = (byYear[y] || []).slice().sort((a, b) => {
+        const d = parseISO(a.date) - parseISO(b.date);
+        return sort === "oldest" ? d : -d;
+      });
+      out.push.apply(out, pics);
+    });
+    out.push.apply(out, undatedCombined);
+    out.push.apply(out, undatedMem);
+    return out;
+  }
+
+  function galleryCardsFromVisible(items) {
+    const d = state.domain || {};
+    const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
+    const calOn = Boolean(d.includeCalendar || d.typeFilter === "calendar");
+    const mix = memoryLikeItems(items).length > 0 && commsCalItems(items).length > 0;
+    const commsOnly =
+      commsCalItems(items).length > 0 && memoryLikeItems(items).length === 0;
+    if (!commsOn && !calOn) return items;
+    const emailOnly = Boolean(d.includeEmail) && !d.includeTexts && !d.includeCalendar;
+    const textOnly = Boolean(d.includeTexts) && !d.includeEmail && !d.includeCalendar;
+    if (emailOnly && commsOnly) {
+      const threads = threadCards(items.filter(isEmailItem));
+      const other = items.filter((it) => !isEmailItem(it));
+      const dated = threads.filter((it) => dayKey(it));
+      const grain = pickGrain(dated.map(dayKey));
+      if (grain === "day" && threads.length <= I8A_BUCKET_CAP) {
+        const sort = state.gallery.sort || "newest";
+        return threads.slice().sort((a, b) => {
+          if (isUndated(a) && isUndated(b)) return 0;
+          if (isUndated(a)) return 1;
+          if (isUndated(b)) return -1;
+          const da = parseISO(a.date) - parseISO(b.date);
+          return sort === "oldest" ? da : -da;
+        }).concat(other);
+      }
+      return insertCombinedIntoGallery(bucketCombined(threads, grain), items);
+    }
+    if ((textOnly || (commsOn && !calOn && commsOnly) || mix || (commsOn && calOn)) && commsCalItems(items).length) {
+      const cc = commsCalItems(items);
+      const datedKeys = cc.map(dayKey).filter(Boolean);
+      const grain = pickGrain(datedKeys);
+      return insertCombinedIntoGallery(bucketCombined(cc, grain), items);
+    }
+    return items;
+  }
+
+  function openCommsFilter() {
+    hideQuickPreview();
+    const el = document.getElementById("mb-comms-filter");
+    if (!el) return;
+    const pinned = Boolean(
+      state.domain.emailPinned ||
+        state.domain.textsPinned ||
+        state.domain.includeEmail ||
+        state.domain.includeTexts
+    );
+    document.getElementById("mb-comms-src-email").checked = pinned
+      ? Boolean(state.domain.includeEmail || state.domain.emailPinned)
+      : true;
+    document.getElementById("mb-comms-src-text").checked = pinned
+      ? Boolean(state.domain.includeTexts || state.domain.textsPinned)
+      : true;
+    const att = state.domain.attachmentsOnly;
+    el.querySelectorAll('input[name="mb-comms-show"]').forEach((r) => {
+      r.checked = att ? r.value === "attachments" : r.value === "messages";
+    });
+    const ctx = document.getElementById("mb-comms-ctx");
+    if (ctx) {
+      const person = ((state.domain.chips || []).find((c) => c.kind === "person") || {}).label || "—";
+      ctx.textContent = "CURRENT CONTEXT · " + person + " · Person and timeline unchanged";
+    }
+    el.hidden = false;
+  }
+
+  function openCalFilter() {
+    hideQuickPreview();
+    const el = document.getElementById("mb-cal-filter");
+    if (!el) return;
+    el.hidden = false;
+  }
+
+  let dayStack = { day: null, tab: "email", items: [], rows: [], rowIndex: 0 };
+
+  function convoTitle(items) {
+    const names = [];
+    const seen = {};
+    (items || []).forEach((it) => {
+      const bag = []
+        .concat(Array.isArray(it.people) ? it.people : [])
+        .concat(it.from ? [it.from] : []);
+      bag.forEach((n) => {
+        const s = String(n || "").trim();
+        const k = s.toLowerCase();
+        if (!s || seen[k]) return;
+        seen[k] = 1;
+        names.push(s);
+      });
+    });
+    return names.slice(0, 4).join(" · ") || (items[0] && items[0].title) || "Conversation";
+  }
+
+  function syncDayNav() {
+    const n = (dayStack.rows || []).length;
+    const i = Number(dayStack.rowIndex) || 0;
+    const det = document.getElementById("mb-day-detail");
+    const has = Boolean(det && !det.hidden);
+    const viewer = document.querySelector(".mb-day-viewer");
+    if (viewer) viewer.classList.toggle("is-detail", has);
+    const prev = document.getElementById("mb-day-prev");
+    const next = document.getElementById("mb-day-next");
+    const count = document.getElementById("mb-day-count");
+    const back = document.getElementById("mb-day-detail-back");
+    if (count) count.textContent = has && n ? i + 1 + " of " + n : n ? n + " groups" : "—";
+    if (prev) prev.disabled = !has || i <= 0;
+    if (next) next.disabled = !has || i >= n - 1;
+    if (back) back.hidden = !has;
+  }
+
+  function openDayStack(card, tab) {
+    if (state.domain && state.domain.galleryLocked) return;
+    const items = (card && card._dayItems) || [];
+    if (!items.length) return;
+    hideQuickPreview();
+    const galleryEl = document.getElementById("mb-explore-gallery");
+    const scrollTop = (galleryEl || {}).scrollTop || 0;
+    state.gallery.scrollTop = scrollTop;
+    dayStack = {
+      day: card.date || "",
+      tab: "email",
+      items: items,
+      card: card,
+      rows: [],
+      rowIndex: 0,
+      scrollTop: scrollTop,
+    };
+    const det0 = document.getElementById("mb-day-detail");
+    if (det0) det0.hidden = true;
+    const viewer0 = document.getElementById("mb-day-viewer");
+    if (viewer0) viewer0.classList.add("is-detail");
+    const s = card._daySummary || summarizeDay(items);
+    const want = String(tab || "");
+    if (want === "email" && s.emailN) dayStack.tab = "email";
+    else if (want === "text" && s.textN) dayStack.tab = "text";
+    else if (want === "calendar" && s.calN) dayStack.tab = "calendar";
+    else if (s.emailN) dayStack.tab = "email";
+    else if (s.textN) dayStack.tab = "text";
+    else dayStack.tab = "calendar";
+    renderDayStack();
+    document.getElementById("mb-day-stack").hidden = false;
+  }
+
+  function closeDayStack() {
+    const y = (dayStack && dayStack.scrollTop) || (state.gallery && state.gallery.scrollTop) || 0;
+    const stack = document.getElementById("mb-day-stack");
+    if (stack) stack.hidden = true;
+    const det = document.getElementById("mb-day-detail");
+    if (det) det.hidden = true;
+    render();
+    requestAnimationFrame(() => {
+      const g = document.getElementById("mb-explore-gallery");
+      if (g) g.scrollTop = y;
+    });
+  }
+
+  function renderDayStack() {
+    const card = dayStack.card || {};
+    const s = card._daySummary || summarizeDay(dayStack.items);
+    document.getElementById("mb-day-title").textContent = fmtBucketDate(dayStack.day);
+    document.getElementById("mb-day-sub").textContent = [
+      s.emailThreads ? s.emailThreads + " email thread" + (s.emailThreads === 1 ? "" : "s") : "",
+      s.textN
+        ? s.textN + " texts · " + s.textConvos + " conversation" + (s.textConvos === 1 ? "" : "s")
+        : "",
+      s.calN ? s.calN + " calendar event" + (s.calN === 1 ? "" : "s") : "",
+    ]
+      .filter(Boolean)
+      .join(" · ") || "No matching groups";
+    const tabs = document.getElementById("mb-day-tabs");
+    tabs.innerHTML =
+      `<button type="button" data-tab="email" class="${dayStack.tab === "email" ? "is-on" : ""}">Email · ${s.emailThreads} threads · ${s.emailN} messages</button>` +
+      `<button type="button" data-tab="text" class="${dayStack.tab === "text" ? "is-on" : ""}">Text · ${s.textN} texts · ${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</button>` +
+      `<button type="button" data-tab="calendar" class="${dayStack.tab === "calendar" ? "is-on" : ""}">Calendar · ${s.calN} events</button>`;
+    tabs.querySelectorAll("[data-tab]").forEach((b) => {
+      b.addEventListener("click", () => {
+        dayStack.tab = b.getAttribute("data-tab");
+        const det = document.getElementById("mb-day-detail");
+        if (det) det.hidden = true;
+        dayStack.rowIndex = 0;
+        renderDayStack();
+      });
+    });
+    let rows = [];
+    if (dayStack.tab === "email") {
+      const by = {};
+      s.emails.forEach((it) => {
+        const k = threadKey(it);
+        (by[k] = by[k] || []).push(it);
+      });
+      rows = Object.keys(by).map((k) => ({
+        kind: "thread",
+        items: by[k],
+        title: convoTitle(by[k]) || by[k][0].title || k,
+      }));
+    } else if (dayStack.tab === "text") {
+      const by = {};
+      const grain = (dayStack.card && dayStack.card._grain) || "year";
+      s.texts.forEach((it) => {
+        const k = textListKey(it, grain);
+        (by[k] = by[k] || []).push(it);
+      });
+      rows = Object.keys(by)
+        .map((k) => {
+          const group = uniqueSmsThreadItems(by[k]);
+          if (!group.length) return null;
+          return {
+            kind: "convo",
+            items: group,
+            title: convoTitle(group),
+          };
+        })
+        .filter(Boolean);
+    } else {
+      rows = s.cals.map((it) => ({ kind: "event", items: [it], title: it.title || "Event" }));
+    }
+    const list = document.getElementById("mb-day-list");
+    dayStack.rows = rows;
+    document.getElementById("mb-day-showing").textContent =
+      "Showing " + rows.length + " of " + rows.length;
+    list.innerHTML = rows
+      .map((row, i) => {
+        const it = row.items[0];
+        const preview = escapeHtml(smsMessageBody(it) || it.preview || it.detail || "");
+        let newest = it && it.date;
+        let newestMs = parseISO(newest);
+        (row.items || []).forEach((msg) => {
+          const ms = parseISO(msg.date);
+          if (Number.isFinite(ms) && (!Number.isFinite(newestMs) || ms >= newestMs)) {
+            newestMs = ms;
+            newest = msg.date;
+          }
+        });
+        const n = (row.items || []).length;
+        const countBit =
+          row.kind === "convo"
+            ? n + " text" + (n === 1 ? "" : "s")
+            : row.kind === "thread"
+              ? n + " message" + (n === 1 ? "" : "s")
+              : "";
+        const dateLabel = escapeHtml(fmtCardDate(newest));
+        const on = i === dayStack.rowIndex;
+        return `<button type="button" class="mb-day-row${on ? " is-on" : ""}" data-row="${i}"><strong>${escapeHtml(
+          row.title
+        )}</strong><div class="mb-day-row-date">${dateLabel}${
+          countBit ? " · " + countBit : ""
+        }</div><div>${preview}</div></button>`;
+      })
+      .join("");
+    list.querySelectorAll("[data-row]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openDayDetailAt(+btn.getAttribute("data-row"));
+      });
+    });
+    const viewer = document.getElementById("mb-day-viewer");
+    if (viewer) viewer.classList.add("is-detail");
+    if (rows.length) {
+      if (dayStack.rowIndex >= rows.length) dayStack.rowIndex = 0;
+      openDayDetailAt(dayStack.rowIndex);
+    } else {
+      syncDayNav();
+    }
+  }
+
+  function sortMessages(items, oldestFirst) {
+    return (items || []).slice().sort((a, b) => {
+      const da = parseISO(a.date);
+      const db = parseISO(b.date);
+      const sa = Number.isFinite(da) ? da : 0;
+      const sb = Number.isFinite(db) ? db : 0;
+      return oldestFirst ? sa - sb : sb - sa;
+    });
+  }
+
+  function openDayDetailAt(index) {
+    const row = (dayStack.rows || [])[index];
+    if (!row) return;
+    dayStack.rowIndex = index;
+    if (dayStack.tab === "text") {
+      openDayDetailThread(sortMessages(row.items, true));
+    } else {
+      openDayDetail(sortMessages(row.items, false)[0] || row.items[0]);
+    }
+    document.querySelectorAll(".mb-day-row").forEach((el) => {
+      el.classList.toggle("is-on", +el.getAttribute("data-row") === index);
+    });
+    syncDayNav();
+  }
+
+  function openDayDetailThread(items) {
+    const wrap = document.getElementById("mb-day-detail");
+    const body = document.getElementById("mb-day-detail-body");
+    if (!wrap || !body) return;
+    wrap.hidden = false;
+    const unique = uniqueSmsThreadItems(items);
+    const n = unique.length;
+    const blocks = unique.map((item) => {
+      const text = smsMessageBody(item);
+      const attachN = itemAttachCount(item);
+      const bodyHtml = text
+        ? escapeHtml(text)
+        : attachN
+          ? escapeHtml(attachN + " attachment" + (attachN === 1 ? "" : "s"))
+          : "";
+      return `<article class="mb-day-msg">
+        <p class="mb-day-msg-meta">${escapeHtml(item.from || "")} · ${escapeHtml(fmtCardDate(item.date))}</p>
+        <div class="mb-day-msg-body">${bodyHtml}</div>
+      </article>`;
+    });
+    body.innerHTML =
+      `<p class="mb-day-msg-count">${n.toLocaleString()} text${n === 1 ? "" : "s"} in this conversation</p>` +
+      blocks.join("");
+  }
+
+  function openDayDetail(item) {
+    const wrap = document.getElementById("mb-day-detail");
+    const body = document.getElementById("mb-day-detail-body");
+    if (!wrap || !body) return;
+    wrap.hidden = false;
+    body.innerHTML = `<h3>${escapeHtml(item.title || "Detail")}</h3>
+      <p>${escapeHtml(item.from || "")} · ${escapeHtml(fmtCardDate(item.date))}</p>
+      <div>${escapeHtml(item.detail || item.preview || "")}</div>`;
+    if (isEmailItem(item) && item.evidence_id && typeof bindEmailStructuredView === "function") {
+      body.innerHTML += `<div class="mb-ev-email-wrap" data-evidence-id="${escapeAttr(
+        item.evidence_id
+      )}"></div>`;
+      bindEmailStructuredView(body.querySelector(".mb-ev-email-wrap"), item);
+    }
+  }
+
+  function bindI8aChrome() {
+    const cc = document.getElementById("mb-comms-cancel");
+    const ca = document.getElementById("mb-comms-apply");
+    if (cc) cc.onclick = () => {
+      document.getElementById("mb-comms-filter").hidden = true;
+    };
+    if (ca)
+      ca.onclick = () => {
+        state.domain.includeEmail = document.getElementById("mb-comms-src-email").checked;
+        state.domain.includeTexts = document.getElementById("mb-comms-src-text").checked;
+        state.domain.emailPinned = state.domain.includeEmail;
+        state.domain.textsPinned = state.domain.includeTexts;
+        const att = document.querySelector('input[name="mb-comms-show"]:checked');
+        state.domain.attachmentsOnly = Boolean(att && att.value === "attachments");
+        state.domain.memoryPresentation = false;
+        document.getElementById("mb-comms-filter").hidden = true;
+        hideQuickPreview();
+        const wantEmail = state.domain.includeEmail;
+        const wantText = state.domain.includeTexts;
+        const haveVisibleTexts = rawItems.some(
+          (it) => isSmsTextItem(it) && !it.gallery_default_hidden
+        );
+        const haveVisibleMail = rawItems.some(
+          (it) => isEmailItem(it) && !it.gallery_default_hidden
+        );
+        const needTexts = wantText && !haveVisibleTexts;
+        const needMail = wantEmail && !haveVisibleMail;
+        if (needMail || needTexts) {
+          if (wantEmail && wantText) presentWithoutRewritingAsk("communications");
+          else if (wantEmail) presentWithoutRewritingAsk("email");
+          else presentWithoutRewritingAsk("sms");
+          return;
+        }
+        if (wantEmail || wantText) {
+          state.domain.typeFilter = "email";
+          state.domain.memoryPresentation = false;
+          syncTimelineToEligibleDatedExtent();
+        }
+        render();
+      };
+    const kcan = document.getElementById("mb-cal-cancel");
+    const kap = document.getElementById("mb-cal-apply");
+    if (kcan) kcan.onclick = () => {
+      document.getElementById("mb-cal-filter").hidden = true;
+    };
+    if (kap)
+      kap.onclick = () => {
+        const mode = document.querySelector('input[name="mb-cal-show"]:checked');
+        state.domain.includeCalendar = true;
+        state.domain.calendarPinned = true;
+        state.domain.calShowMode = (mode && mode.value) || "events";
+        state.domain.memoryPresentation = false;
+        document.getElementById("mb-cal-filter").hidden = true;
+        setTypeFilter("calendar");
+        render();
+      };
+    const close = document.getElementById("mb-day-close");
+    const dback = document.getElementById("mb-day-detail-back");
+    const prev = document.getElementById("mb-day-prev");
+    const next = document.getElementById("mb-day-next");
+    if (close) close.onclick = closeDayStack;
+    if (dback)
+      dback.onclick = () => {
+        const det = document.getElementById("mb-day-detail");
+        if (det) det.hidden = true;
+        document.querySelectorAll(".mb-day-row").forEach((el) => el.classList.remove("is-on"));
+        syncDayNav();
+      };
+    if (prev)
+      prev.onclick = () => {
+        if (dayStack.rowIndex > 0) openDayDetailAt(dayStack.rowIndex - 1);
+      };
+    if (next)
+      next.onclick = () => {
+        if (dayStack.rowIndex < (dayStack.rows || []).length - 1) {
+          openDayDetailAt(dayStack.rowIndex + 1);
+        }
+      };
+    syncDayNav();
+  }
+
   function renderGallery() {
     const gallery = document.getElementById("mb-explore-gallery");
     if (!gallery) return;
-    const items = visibleItems();
+    const items = galleryCardsFromVisible(visibleItems());
     state.domain.items = items;
     gallery.dataset.density = String(state.gallery.density);
     const densLabel = document.getElementById("mb-density-label");
@@ -1965,6 +3054,41 @@
 
     gallery.innerHTML = items
       .map((it) => {
+        if (String(it.type) === "daycard") {
+          const s = it._daySummary || {};
+          const bits = [];
+          if (s.emailThreads)
+            bits.push(
+              `<button type="button" class="mb-day-pill mb-day-e" data-day-tab="email">${s.emailThreads} email thread${s.emailThreads === 1 ? "" : "s"}</button>`
+            );
+          if (s.textN)
+            bits.push(
+              `<button type="button" class="mb-day-pill mb-day-t" data-day-tab="text"><span class="mb-day-t-n">${s.textN.toLocaleString()} texts</span><span class="mb-day-t-c">${s.textConvos} conversation${s.textConvos === 1 ? "" : "s"}</span></button>`
+            );
+          if (s.calN)
+            bits.push(
+              `<button type="button" class="mb-day-pill mb-day-c" data-day-tab="calendar">${s.calN} event${s.calN === 1 ? "" : "s"}</button>`
+            );
+          if (!bits.length) bits.push(`<span class="mb-day-e">No matching groups</span>`);
+          const face = it._personThumb
+            ? `<img class="mb-day-face" src="${escapeAttr(it._personThumb)}" alt="" />`
+            : "";
+          return `<div class="mb-card mb-card-day" data-id="${escapeAttr(
+            it.id
+          )}" data-type="daycard">
+          <div class="mb-card-media" data-type="daycard">
+            <div class="mb-day-counts">${bits.join("")}</div>
+          </div>
+          <div class="mb-card-meta">
+            ${face}
+            <span class="mb-card-type" aria-hidden="true">▦</span>
+            <div>
+              <div class="mb-card-title">${escapeHtml(it.title || "Communications")}</div>
+              <div class="mb-card-sub">${escapeHtml(fmtBucketDate(it.date))}</div>
+            </div>
+          </div>
+        </div>`;
+        }
         const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
         const date = escapeHtml(fmtCardDate(it.date));
@@ -1993,7 +3117,17 @@
 
     gallery.querySelectorAll(".mb-card").forEach((card) => {
       const id = card.getAttribute("data-id");
-      card.addEventListener("click", () => openModal(id));
+      card.addEventListener("click", (ev) => {
+        if (state.domain && state.domain.galleryLocked) return;
+        const pill = ev.target.closest("[data-day-tab]");
+        if (String(card.getAttribute("data-type")) === "daycard") {
+          const it = items.find((x) => x.id === id);
+          if (!it) return;
+          openDayStack(it, pill ? pill.getAttribute("data-day-tab") : "");
+          return;
+        }
+        openModal(id);
+      });
       bindCardPreview(card, id);
     });
     bindLazyThumbs(gallery);
@@ -2275,12 +3409,25 @@
       const y1 = new Date(extentEnd).getUTCFullYear();
       for (let y = y0; y <= y1; y++) years.push(y);
       const step = years.length > 16 ? 4 : years.length > 10 ? 2 : 1;
-      ticks.innerHTML = years
-        .filter((y, i) => i === 0 || i === years.length - 1 || y % step === 0)
+      const chosen = years.filter(
+        (y, i) => i === 0 || i === years.length - 1 || y % step === 0
+      );
+      const placed = [];
+      ticks.innerHTML = chosen
         .map((y) => {
-          const t = dayMs(y, 1, 1);
-          const x = ((t - extentStart) / span) * 100;
-          return `<span style="left:${Math.min(98, Math.max(0, x))}%">${y}</span>`;
+          const t0 = Math.max(extentStart, dayMs(y, 1, 1));
+          const t1 = Math.min(extentEnd, dayMs(y + 1, 1, 1));
+          const t = t1 > t0 ? (t0 + t1) / 2 : t0;
+          let x = ((t - extentStart) / span) * 100;
+          if (!Number.isFinite(x)) return "";
+          x = Math.min(97.5, Math.max(1.2, x));
+          const prev = placed.length ? placed[placed.length - 1] : -999;
+          if (x - prev < 3.2 && y !== years[0] && y !== years[years.length - 1]) {
+            return "";
+          }
+          if (x - prev < 2.2) return "";
+          placed.push(x);
+          return `<span style="left:${x}%">${y}</span>`;
         })
         .join("");
     }
@@ -2325,6 +3472,7 @@
   }
 
   function openModal(id) {
+    if (state.domain && state.domain.galleryLocked) return;
     const item = rawItems.find((x) => x.id === id);
     if (!item) return;
     hideQuickPreview();
@@ -2406,6 +3554,12 @@
     const rail = document.getElementById("mb-rail-panel");
     if (rail) rail.innerHTML = "";
     document.getElementById("mb-modal").hidden = true;
+    if (pendingPresent && pendingPresent.gen === findGen) {
+      const p = pendingPresent;
+      pendingPresent = null;
+      applyPresentPayload(p.payload, p.present);
+      return;
+    }
     if (snap) restoreExplore(snap);
     if (pending) applyCorrectionConsequences(pending);
     render();
@@ -3256,6 +4410,18 @@
   }
 
   function quickPreviewHtml(item) {
+    if (String(item.type || "") === "daycard") {
+      const s = item._daySummary || summarizeDay(item._dayItems || []);
+      return `<div class="mb-qp-body mb-qp-day">
+      <div class="mb-qp-type">${escapeHtml(fmtBucketDate(item.date))} · matching groups</div>
+      <ul>
+        <li>${s.emailThreads} email threads · ${s.emailN} messages · ${s.attachN} attachments</li>
+        <li>${s.textN} texts · ${s.textConvos} conversations</li>
+        <li>${s.calN} calendar events</li>
+      </ul>
+      <div class="mb-qp-line">Open day →</div>
+    </div>`;
+    }
     const t = String(item.type || "memory");
     const media = item.thumb_url || item.media_url || "";
     const peeps = peopleList(item).slice(0, 4).join(", ");
@@ -3297,7 +4463,7 @@
     }
     if (isText) {
       const turns = parseQuotedEmail(body);
-      return `<div class="mb-qp-body mb-qp-text">
+      return `<div class="mb-qp-body mb-qp-text mb-qp-textbody">
       <div class="mb-qp-type">${escapeHtml(t)}${nAtt ? " · 📎 " + nAtt : ""}</div>
       <div class="mb-qp-title">${escapeHtml(item.from || item.title || "Message")}</div>
       <div class="mb-qp-line">${escapeHtml(fmtCardDate(item.date))}${
@@ -3365,11 +4531,23 @@
     }
   }
 
+  function centerPhotoZoom() {
+    const stage = document.querySelector(".mb-ev-photo.is-zoomed");
+    if (!stage) return;
+    const center = () => {
+      stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
+      stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2);
+    };
+    center();
+    requestAnimationFrame(center);
+  }
+
   function bindPhotoPan() {
     if (state.modal._panCleanup) {
       state.modal._panCleanup();
       state.modal._panCleanup = null;
     }
+    centerPhotoZoom();
     const stage = document.querySelector(".mb-ev-photo.is-zoomed");
     if (!stage) return;
     let dragging = false;
@@ -3408,6 +4586,7 @@
 
   const QUICK_PREVIEW_DELAY_MS = 2500;
   const ATTACH_PREVIEW_DELAY_MS = 1000;
+  const DAY_PREVIEW_DELAY_MS = 500;
 
   function clearPreviewTimer() {
     if (state.preview && state.preview.timer) {
@@ -3465,7 +4644,12 @@
     state.preview.x = clientX;
     state.preview.y = clientY;
     state.preview.attach = !!(opts && opts.attach);
-    const delay = state.preview.attach ? ATTACH_PREVIEW_DELAY_MS : QUICK_PREVIEW_DELAY_MS;
+    const delay =
+      String(item.type || "") === "daycard"
+        ? DAY_PREVIEW_DELAY_MS
+        : state.preview.attach
+          ? ATTACH_PREVIEW_DELAY_MS
+          : QUICK_PREVIEW_DELAY_MS;
     state.preview.timer = setTimeout(() => {
       state.preview.timer = null;
       if (state.modal.openId) return;
@@ -3477,7 +4661,9 @@
     card.addEventListener("mouseenter", (ev) => {
       if (state.modal.openId) return;
       if (ev.target && ev.target.closest && ev.target.closest(".mb-card-attach")) return;
-      const it = rawItems.find((x) => x.id === id);
+      const it =
+        ((state.domain && state.domain.items) || []).find((x) => x.id === id) ||
+        rawItems.find((x) => x.id === id);
       if (it) scheduleQuickPreview(it, ev.clientX, ev.clientY);
     });
     card.addEventListener("mousemove", (ev) => {
@@ -3822,6 +5008,7 @@
   function bindChrome() {
     if (chromeBound) return;
     chromeBound = true;
+    bindI8aChrome();
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
@@ -3989,7 +5176,7 @@
         bootFromPayload(emptyExplorePayload(""));
         return;
       }
-      const bootGen = ++findGen;
+      const bootGen = bumpFindGen();
       bootFromPayload(emptyExplorePayload(bootQ));
       const seed = PERSON_MODE
         ? bootQ || ("Show " + (PERSON.displayName || "person"))

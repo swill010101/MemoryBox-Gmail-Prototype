@@ -19,24 +19,40 @@ def _command_plan(text: str, spec: Any) -> QueryPlan:
     visual = spec.visual_scope or "none"
     want_still = visual in ("still_only", "broad")
     want_video = visual in ("video_only", "broad")
-    want_comms = spec.verb in ("add_texts", "only_texts")
+    want_comms = spec.verb in (
+        "add_texts",
+        "only_texts",
+        "add_email",
+        "only_email",
+        "add_communications",
+        "attachments_only",
+        "show_everything",
+    )
+    want_cal = spec.verb in ("add_calendar", "only_calendar", "show_everything")
+    if spec.memory_presentation:
+        want_comms = False
+        want_cal = False
     target = navigate_target(q, spec)
     return QueryPlan(
         original_ask=q,
         effective_ask="mbql:" + spec.verb + (f":{target}" if target else ""),
         is_followup=spec.act == "refine",
-        want_photo=want_still,
+        want_photo=want_still or bool(spec.memory_presentation),
         want_communication=want_comms,
-        want_calendar=False,
-        visual_scope=visual if visual != "none" else "none",
-        want_visual=want_still or want_video,
-        want_still=want_still,
+        want_calendar=want_cal,
+        visual_scope=visual if visual != "none" else ("broad" if spec.memory_presentation else "none"),
+        want_visual=want_still or want_video or bool(spec.memory_presentation),
+        want_still=want_still or bool(spec.memory_presentation),
         want_video=want_video,
         act=spec.act,
         compile_provenance="deterministic",
         refine_verb=spec.verb if spec.act == "refine" else None,
         navigate_target=target,
         gallery_show_sms=spec.gallery_show_sms,
+        gallery_show_email=spec.gallery_show_email,
+        gallery_show_calendar=spec.gallery_show_calendar,
+        attachments_only=spec.attachments_only,
+        memory_presentation=spec.memory_presentation,
         notes=("mbql_command", spec.verb),
     )
 

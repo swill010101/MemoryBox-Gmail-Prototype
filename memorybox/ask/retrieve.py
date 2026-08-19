@@ -34,6 +34,8 @@ class EvidenceHit:
     match_total: int | None = None
     truncated: bool = False
     identity_mapped: list[dict[str, str]] | None = None
+    from_header: str | None = None
+    to_header: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -281,19 +283,28 @@ def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _sms_name_match(blob: str, names: list[str]) -> bool:
+def _sms_name_match(blob: str, names: list[str], *, allow_first_token: bool = False) -> bool:
+    """Match display names on a participant blob.
+
+    P2-BL-I8-02: a single first-name token must not union every matching person.
+    Unique Person lock supplies person_ids; full display names may still match.
+    """
     text = (blob or "").lower()
     if not text or not names:
         return False
     for n in names:
         if not n:
             continue
-        if n in text or (text.strip() and text.strip() in n):
-            return True
         parts = [p for p in re.findall(r"[a-z0-9']+", n) if len(p) > 2]
-        if parts and all(re.search(rf"\b{re.escape(p)}\b", text) for p in parts):
-            return True
-        if parts and re.search(rf"\b{re.escape(parts[0])}\b", text):
+        if len(parts) >= 2:
+            if n in text or (text.strip() and text.strip() in n):
+                return True
+            if all(re.search(rf"\b{re.escape(p)}\b", text) for p in parts):
+                return True
+            if allow_first_token and re.search(rf"\b{re.escape(parts[0])}\b", text):
+                return True
+            continue
+        if allow_first_token and parts and re.search(rf"\b{re.escape(parts[0])}\b", text):
             return True
     return False
 
@@ -318,7 +329,9 @@ def _sms_sender_matches_person(
 ) -> bool:
     sender = str(payload.get("sender_name") or "").strip().lower()
     handle = str(payload.get("sender_handle") or "").strip().lower()
-    if person_names and _sms_name_match(f"{sender} {handle}", person_names):
+    if person_names and _sms_name_match(
+        f"{sender} {handle}", person_names, allow_first_token=True
+    ):
         return True
     mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
     for m in mapped:
@@ -365,7 +378,13 @@ def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> E
         sent_at=payload.get("sent_at"),
         channel=str(payload.get("evidence_channel") or payload.get("service") or "text"),
         people=people or None,
-        thread_id=payload.get("thread_id") or payload.get("group_name"),
+        thread_id=(
+            payload.get("thread_id")
+            or payload.get("chat_identifier")
+            or payload.get("chat_id")
+            or payload.get("handle")
+            or payload.get("group_name")
+        ),
         direction=payload.get("direction"),
         attachments=_sms_attachments(payload) or None,
         identity_mapped=identity or None,
@@ -483,6 +502,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         keywords = [k for k in keywords if k not in holiday_stop]
 
     hits: list[EvidenceHit] = []
+    seen_sms_sig: set[tuple[str, str, str]] = set()
     with connection() as conn:
         rows = conn.execute(
             """
@@ -523,7 +543,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
                         " ".join(str(p) for p in (payload.get("participants") or [])),
                     ]
                 ).lower()
-                if person_names and not _sms_name_match(blob, person_names):
+                if person_names and not _sms_name_match(
+                    blob, person_names, allow_first_token=True
+                ):
                     continue
                 if not person_names:
                     continue
@@ -539,7 +561,21 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             handles = " ".join(
                 normalize_handle(str(p)) for p in (payload.get("participants") or [])
             )
-            if not _sms_name_match(f"{blob} {handles}", person_names):
+            if not _sms_name_match(
+                f"{blob} {handles}", person_names, allow_first_token=True
+            ):
+                continue
+        # "Peggy and I send" = messages Peggy or the owner sent, not a third sender
+        # in a group that merely includes Peggy.
+        if (person_ids or person_names) and re.search(
+            r"(?i)\band i\b|\bi and\b|\band me\b", ask
+        ):
+            if not (
+                payload.get("from_owner")
+                or _sms_sender_matches_person(
+                    payload, person_ids=person_ids, person_names=person_names
+                )
+            ):
                 continue
         if attach_only and not _sms_attachments(payload):
             continue
@@ -549,6 +585,20 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             blob = f"{r['summary'] or ''} {payload.get('body_text') or ''} {payload.get('thread_id') or ''}".lower()
             if not any(k in blob for k in keywords):
                 continue
+        sig = (
+            str(
+                payload.get("thread_id")
+                or payload.get("chat_identifier")
+                or payload.get("handle")
+                or ""
+            ),
+            str(payload.get("sent_at") or ""),
+            re.sub(r"\s+", " ", str(payload.get("body_text") or "")).strip().lower(),
+        )
+        if sig[2] and sig in seen_sms_sig:
+            continue
+        if sig[2]:
+            seen_sms_sig.add(sig)
         hits.append(_sms_hit(r, payload, score=1.0))
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     scope_bits = [
@@ -717,7 +767,19 @@ def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) ->
         direction=payload.get("direction"),
         attachments=_email_attachments(payload) or None,
         identity_mapped=identity or None,
+        from_header=(str(payload.get("from") or "").strip() or None),
+        to_header=_fmt_addr_header(payload.get("to")),
     )
+
+
+def _fmt_addr_header(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, (list, tuple)):
+        bits = [str(x).strip() for x in val if str(x).strip()]
+        return ", ".join(bits)[:160] or None
+    s = str(val).strip()
+    return s[:160] if s else None
 
 
 def _email_person_blob(payload: dict[str, Any]) -> str:
@@ -861,7 +923,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         rows_payload.append((r, payload))
 
     def _keep(payload: dict[str, Any], row: dict[str, Any]) -> bool:
-        if outbound_only and not payload.get("from_owner"):
+        owner_intent = asked_owner or bool(
+            re.search(r"(?i)\b(i|me|my)\b", plan.original_ask or "")
+        )
+        if outbound_only and not payload.get("from_owner") and not owner_intent:
             return False
         if inbound_only and payload.get("from_owner"):
             return False
@@ -873,7 +938,12 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         if person_ids or person_names:
             have = {str(x) for x in (payload.get("person_ids") or [])}
             addrs = _payload_email_addresses(payload)
-            if person_ids and (have & person_ids):
+            mapped_ids = {
+                str(m.get("person_id"))
+                for m in ((payload.get("identity_resolution") or {}).get("mapped") or [])
+                if isinstance(m, dict) and m.get("person_id")
+            }
+            if person_ids and (have & person_ids or mapped_ids & person_ids):
                 pass
             elif confirmed_addrs and (addrs & confirmed_addrs):
                 pass
@@ -885,7 +955,17 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                 # Owner Person + personal Takeout: mailbox is theirs even when
                 # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
                 pass
-            elif person_names and _sms_name_match(_email_person_blob(payload), person_names):
+            elif (
+                person_names
+                and _sms_name_match(
+                    _email_person_blob(payload),
+                    person_names,
+                    allow_first_token=False,
+                )
+            ):
+                # Full display-name match even when Person ids are set.
+                # Ingest often leaves person_ids empty on email rows; unique
+                # Person lock still supplies person_names (P2-BL-I8-02).
                 pass
             else:
                 return False
@@ -966,14 +1046,105 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     return sliced
 
 
+def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
+    """Person / date retrieve over ingested calendar_event Evidence."""
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    person_names = [
+        n.strip().lower()
+        for n in (plan.person_names or ())
+        if n.strip()
+    ]
+    confirmed_addrs = _confirmed_emails_for_people(person_ids) if person_ids else set()
+    windows = list(plan.temporal_windows or ())
+    if not windows and plan.time_start and plan.time_end:
+        windows = [(plan.time_start, plan.time_end)]
+    hits: list[EvidenceHit] = []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE evidence_kind = 'calendar_event'
+            """
+        ).fetchall()
+    for r in rows:
+        payload = _payload_dict(r["payload_json"])
+        start = str(payload.get("start") or "")
+        day = start[:10]
+        if windows:
+            if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
+                continue
+        blob = " ".join(
+            [
+                str(payload.get("title") or ""),
+                str(payload.get("summary") or ""),
+                str(payload.get("description") or ""),
+                str(payload.get("location") or ""),
+                str(payload.get("organizer") or ""),
+                " ".join(str(a) for a in (payload.get("attendees") or [])),
+            ]
+        ).lower()
+        if person_ids or person_names:
+            have = {str(x) for x in (payload.get("person_ids") or [])}
+            if person_ids and (have & person_ids):
+                pass
+            elif person_names and _sms_name_match(blob, person_names, allow_first_token=False):
+                pass
+            elif confirmed_addrs and any(a in blob for a in confirmed_addrs):
+                pass
+            elif not person_ids and not person_names:
+                pass
+            elif person_ids and not (have & person_ids) and not person_names:
+                continue
+            elif person_names and not _sms_name_match(blob, person_names, allow_first_token=False):
+                if not (person_ids and (have & person_ids)):
+                    continue
+        people = [str(a) for a in (payload.get("attendees") or []) if str(a).strip()]
+        org = str(payload.get("organizer") or "").strip()
+        if org and org not in people:
+            people.insert(0, org)
+        hits.append(
+            EvidenceHit(
+                evidence_id=str(r["id"]),
+                evidence_kind="calendar_event",
+                summary=str(payload.get("title") or r["summary"] or "Calendar"),
+                score=1.0,
+                excerpt=str(payload.get("description") or payload.get("location") or "")[:240],
+                source="ics",
+                sent_at=start or None,
+                channel="calendar",
+                people=people or None,
+                thread_id=str(payload.get("event_uid") or "") or None,
+            )
+        )
+    hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    total = len(hits)
+    cap_n = max(1, int(limit))
+    sliced = hits[:cap_n] if hits else []
+    truncated = total > len(sliced)
+    if sliced:
+        sliced[0].match_total = total
+        sliced[0].truncated = truncated
+        sliced[0].count_scope = f"ingested calendar_event; n={total}"
+        for h in sliced:
+            h.match_total = total
+            h.truncated = truncated
+    return sliced
+
+
 def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]:
     """Keyword search over authoritative PostgreSQL Evidence (always available)."""
     sms_q = _sms_ask(plan) and plan.want_communication
     email_q = _email_ask(plan) and plan.want_communication
+    cal_q = bool(plan.want_calendar)
+    if cal_q and not sms_q and not email_q:
+        return search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
     if sms_q and email_q:
         sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
         mail = search_email_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
         combined = list(mail) + list(sms)
+        if cal_q:
+            combined.extend(search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP)))
         if combined:
             scope = (
                 f"email+sms; email_n={mail[0].match_total if mail else 0}; "
@@ -987,11 +1158,16 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         return combined
     if sms_q:
         sms = search_sms_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        if cal_q:
+            sms = list(sms) + list(search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP)))
         # SMS-specific asks stay on the SMS corpus (do not pad with email keyword dump).
         if sms or sms_q:
             return sms
     if email_q:
-        return search_email_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        mail = search_email_messages(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
+        if cal_q:
+            mail = list(mail) + list(search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP)))
+        return mail
     kinds: list[str] = []
     if plan.want_communication:
         kinds.append("communication")

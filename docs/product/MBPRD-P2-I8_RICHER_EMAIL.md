@@ -1,6 +1,6 @@
 # MBPRD-P2-I8 — Richer Email
 
-**Status:** **LOCKED** · **BUILD AUTHORIZED** 2026-08-18 · **not yet ACCEPTED** (FlightSim definition §9)  
+**Status:** **LOCKED** · **ACCEPTED** 2026-08-18 (FlightSim §9)  
 **Date:** 2026-08-18  
 **Increment definition:** [MBBS-P2_INCREMENT_8_DEFINITION.md](MBBS-P2_INCREMENT_8_DEFINITION.md)  
 **Depends:** I7 / I7A / MBQL-001 / I4 **ACCEPTED**  
@@ -53,7 +53,7 @@ After this build + FlightSim owner pass (definition §9, including the three ext
 
 ## 5. Build plan
 
-Definition §7 — **authorized and implementing** this revision (`inspect-mbox`, richer `ingest-email`, Ask/Explore/Archive Health, `prove-p2-i8`).
+Definition §7 — **shipped**. Increment **ACCEPTED** 2026-08-18. Unified comms UX is **I8A** (**ACCEPTED** 2026-08-19).
 
 ---
 
@@ -72,4 +72,4 @@ Locked in the increment definition §2 (Tom 2026-08-18). Short form:
 
 ## 7. Decision status
 
-PRD **LOCKED**. Definition **LOCKED**. Build **AUTHORIZED**. ACCEPTED waits on FlightSim §9 (including attachment/MIME fidelity, incomplete-thread honesty, and MBQL/default-Gallery checks).
+PRD **LOCKED**. Definition **LOCKED**. Build **shipped**. **ACCEPTED** 2026-08-18. Unified comms UX is **[I8A](MBBS-P2_INCREMENT_8A_DEFINITION.md)** (**ACCEPTED** 2026-08-19). Ask first-name Peggy count without locking Peggy George is **P2-BL-I8-02** (**absorbed in I8A**).

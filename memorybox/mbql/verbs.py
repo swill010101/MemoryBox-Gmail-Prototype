@@ -17,6 +17,10 @@ class CommandSpec:
     act: Act
     pattern: re.Pattern[str]
     gallery_show_sms: bool | None = None
+    gallery_show_email: bool | None = None
+    gallery_show_calendar: bool | None = None
+    attachments_only: bool | None = None
+    memory_presentation: bool | None = None
     visual_scope: str | None = None
 
 
@@ -27,7 +31,14 @@ def _rx(src: str) -> re.Pattern[str]:
 # FlightSim phrase list + I4/I7 refine verbs. Keep in sync with explore.js MBQL_VERBS.
 COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("clear_filters", "refine", _rx(r"^clear filters\.?$")),
-    CommandSpec("show_everything", "refine", _rx(r"^show everything\.?$")),
+    CommandSpec(
+        "show_everything",
+        "refine",
+        _rx(r"^show everything\.?$"),
+        gallery_show_sms=True,
+        gallery_show_email=True,
+        gallery_show_calendar=True,
+    ),
     CommandSpec("only_undated", "refine", _rx(r"^only undated\.?$|^undated\.?$|^show undated\.?$")),
     CommandSpec("clear_undated", "refine", _rx(r"^clear undated\.?$|^include dated\.?$")),
     CommandSpec("show_map", "refine", _rx(r"^show map\.?$|^map view\.?$|^on the map\.?$")),
@@ -58,8 +69,54 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec(
         "only_texts",
         "refine",
-        _rx(r"^only (email|emails|texts?|sms|imessage)\b"),
+        _rx(r"^only (texts?|sms|imessage|i-?message)\b"),
         gallery_show_sms=True,
+    ),
+    CommandSpec(
+        "add_email",
+        "refine",
+        _rx(r"^(add|include)\s+(e-?mails?)\.?$"),
+        gallery_show_email=True,
+    ),
+    CommandSpec(
+        "only_email",
+        "refine",
+        _rx(r"^only (e-?mails?)\b"),
+        gallery_show_email=True,
+    ),
+    CommandSpec(
+        "add_communications",
+        "refine",
+        _rx(r"^(add|include)\s+communications?\.?$|^add comms\.?$"),
+        gallery_show_sms=True,
+        gallery_show_email=True,
+    ),
+    CommandSpec(
+        "add_calendar",
+        "refine",
+        _rx(r"^(add|include)\s+calendar\.?$"),
+        gallery_show_calendar=True,
+    ),
+    CommandSpec(
+        "only_calendar",
+        "refine",
+        _rx(r"^only calendar\.?$"),
+        gallery_show_calendar=True,
+    ),
+    CommandSpec(
+        "attachments_only",
+        "refine",
+        _rx(r"^attachments only\.?$|^only attachments\.?$"),
+        attachments_only=True,
+    ),
+    CommandSpec(
+        "show_memory",
+        "refine",
+        _rx(r"^memory\.?$|^show memory\.?$|^memory view\.?$"),
+        memory_presentation=True,
+        gallery_show_sms=False,
+        gallery_show_email=False,
+        gallery_show_calendar=False,
     ),
     CommandSpec("only_artifacts", "refine", _rx(r"^only artifacts?\.?$")),
     CommandSpec("only_stories", "refine", _rx(r"^only stories?\.?$")),
