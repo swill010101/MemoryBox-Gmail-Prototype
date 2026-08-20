@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-19 (I8A **ACCEPTED**)  
+**Status:** Living parking note · **Updated:** 2026-08-20 (ACR-P2-001 parked; I9 authorized to build)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -83,4 +83,15 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I8A Unified Communications Gallery & Timeline Precision** — [definition](MBBS-P2_INCREMENT_8A_DEFINITION.md) · [PRD](MBPRD-P2-I8A_UNIFIED_COMMS.md). **ACCEPTED** 2026-08-19. **P2-BL-I8-02 absorbed.**
 
-**Next:** **P2-I9 Spoken Moments** — not authorized. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**.
+## Post–I8B park (do not reopen I8B for playback UX)
+
+I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seeks to start and **does not stop**. Owner 2026-08-20: HVRT-style visit playback as a **view into the original** (no physical cut).
+
+| ID | Theme | Evidence | Suggested home |
+|----|--------|----------|----------------|
+| **ACR-P2-001** | Person appearance view: play start → stop, then end; gallery thumb = frame at `start_sec` | Card already has the range; player ignores stop. No derived clip files. | [MBACR-P2-001](MBACR-P2-001_PERSON_APPEARANCE_VIEW.md) — PARKED, not authorized |
+| **ACR-P2-001-A** | Continue on tape after stop | Learn / watch past `end_sec` on the same original | Work list on that ACR; **not now** |
+
+## Next increment
+
+**Next:** **P2-I9 Spoken Moments** (authorized to build; same I8B add-person / add-video / incremental jobs). Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I9.
