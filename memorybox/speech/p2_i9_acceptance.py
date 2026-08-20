@@ -726,6 +726,50 @@ def _prove_harness() -> dict[str, Any]:
         f"n={len(hits_names_only)} ids={[h.get('video_external_id') for h in hits_names_only[:5]]}",
     )
 
+    from memorybox.ask.orchestrator import AskOrchestrator
+    from memorybox.context import InMemoryContextStore
+    from memorybox.explore.find import items_from_ask_result
+    from memorybox.providers.llm.fake import FakeLlmProvider
+    from memorybox.providers.photo.fake import FakePhotoProvider
+
+    who_ask = str(peggy.display_name or f"PeggyGeorge{tag}")
+    orch = AskOrchestrator(
+        store=InMemoryContextStore(),
+        photo=FakePhotoProvider(),
+        video=video,
+        llm=FakeLlmProvider(),
+    )
+    ask_talk = orch.ask(f"show me videos of {who_ask} talking")
+    ask_vid = orch.ask(f"show me videos of {who_ask}")
+    talk_items = [
+        it
+        for it in items_from_ask_result(ask_talk.to_dict())
+        if str(it.get("type") or "") == "video"
+    ]
+    vid_items = [
+        it
+        for it in items_from_ask_result(ask_vid.to_dict())
+        if str(it.get("type") or "") == "video"
+    ]
+    talk_kind = str((ask_talk.plan or {}).get("answer_kind") or ask_talk.answer_kind or "")
+    _check(
+        "p2i9_ask_talking_and_show_videos_not_empty",
+        len(ask_talk.video_hits or []) >= 1
+        and len(talk_items) >= 1
+        and len(ask_vid.video_hits or []) >= 1
+        and len(vid_items) >= 1
+        and str(ask_talk.answer_kind or "") != "clarification"
+        and str(ask_vid.answer_kind or "") != "clarification",
+        checks,
+        problems,
+        (
+            f"talk_hits={len(ask_talk.video_hits or [])} talk_items={len(talk_items)} "
+            f"talk_kind={ask_talk.answer_kind} vid_hits={len(ask_vid.video_hits or [])} "
+            f"vid_items={len(vid_items)} vid_kind={ask_vid.answer_kind} "
+            f"who={who_ask} extra={talk_kind}"
+        ),
+    )
+
     wid = record_withdrawal(
         person_id=peggy_id,
         video_provider_key="fake_video",

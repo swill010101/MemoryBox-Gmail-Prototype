@@ -55,28 +55,31 @@ def list_voice_presence_videos(person_ids: list[str]) -> list[dict[str, str]]:
     pids = [str(p) for p in person_ids if str(p).strip()]
     if not pids:
         return []
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT video_provider_key, video_external_id
-            FROM (
-                SELECT video_provider_key, video_external_id
-                FROM speech_voice_exemplars
-                WHERE person_id = ANY(%s::uuid[]) AND withdrawn = false
-                UNION
-                SELECT video_provider_key, video_external_id
-                FROM speech_speaker_turns
-                WHERE person_id = ANY(%s::uuid[])
-                UNION
-                SELECT video_provider_key, video_external_id
-                FROM speech_spoken_moments
-                WHERE person_id = ANY(%s::uuid[])
-                  AND COALESCE(status, 'accepted') <> 'withdrawn'
-            ) voice_files
-            WHERE COALESCE(video_external_id, '') <> ''
-            """,
-            (pids, pids, pids),
-        ).fetchall()
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT video_provider_key, video_external_id
+                FROM (
+                    SELECT video_provider_key, video_external_id
+                    FROM speech_voice_exemplars
+                    WHERE person_id::text = ANY(%s) AND withdrawn = false
+                    UNION
+                    SELECT video_provider_key, video_external_id
+                    FROM speech_speaker_turns
+                    WHERE person_id::text = ANY(%s)
+                    UNION
+                    SELECT video_provider_key, video_external_id
+                    FROM speech_spoken_moments
+                    WHERE person_id::text = ANY(%s)
+                      AND COALESCE(status, 'accepted') <> 'withdrawn'
+                ) voice_files
+                WHERE COALESCE(video_external_id, '') <> ''
+                """,
+                (pids, pids, pids),
+            ).fetchall()
+    except Exception:
+        return []
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for r in rows:
@@ -95,23 +98,26 @@ def list_voice_presence_videos(person_ids: list[str]) -> list[dict[str, str]]:
 
 def list_transcribed_videos(*, limit: int = 48) -> list[dict[str, str]]:
     """Every file that already has words — used when Learn/tags have not joined yet."""
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT video_provider_key, video_external_id
-            FROM (
-                SELECT video_provider_key, video_external_id
-                FROM speech_spoken_moments
-                WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-                UNION
-                SELECT video_provider_key, video_external_id
-                FROM speech_transcript_words
-            ) transcribed
-            WHERE COALESCE(video_external_id, '') <> ''
-            LIMIT %s
-            """,
-            (max(int(limit), 1),),
-        ).fetchall()
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT video_provider_key, video_external_id
+                FROM (
+                    SELECT video_provider_key, video_external_id
+                    FROM speech_spoken_moments
+                    WHERE COALESCE(status, 'accepted') <> 'withdrawn'
+                    UNION
+                    SELECT video_provider_key, video_external_id
+                    FROM speech_transcript_words
+                ) transcribed
+                WHERE COALESCE(video_external_id, '') <> ''
+                LIMIT %s
+                """,
+                (max(int(limit), 1),),
+            ).fetchall()
+    except Exception:
+        return []
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for r in rows:
@@ -233,13 +239,19 @@ def presence_hits_for_people(
 def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str, Any]]:
     if not getattr(plan, "want_spoken", False):
         return []
-    pids = _person_ids(plan)
+    try:
+        pids = _person_ids(plan)
+    except Exception:
+        pids = []
     phrase = (getattr(plan, "spoken_phrase", None) or "").strip()
     about = (getattr(plan, "spoken_about", None) or "").strip()
     if pids:
-        hits = presence_hits_for_people(
-            pids, phrase=phrase, about=about, limit=int(limit)
-        )
+        try:
+            hits = presence_hits_for_people(
+                pids, phrase=phrase, about=about, limit=int(limit)
+            )
+        except Exception:
+            hits = []
         if hits or phrase or about:
             return hits
     if phrase or about:
@@ -267,7 +279,10 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
         with connection() as conn:
             rows = [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
         return _collapse_voice_to_videos(rows, phrase=phrase, about=about, limit=int(limit))
-    return presence_hits_for_people([], phrase="", about="", limit=int(limit))
+    try:
+        return presence_hits_for_people([], phrase="", about="", limit=int(limit))
+    except Exception:
+        return []
 
 
 def _collapse_voice_to_videos(
