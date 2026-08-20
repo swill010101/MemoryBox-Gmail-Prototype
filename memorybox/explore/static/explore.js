@@ -3473,9 +3473,10 @@
   }
 
   function openModal(id) {
-    if (state.domain && state.domain.galleryLocked) return;
+    const modal = document.getElementById("mb-modal");
     const item = rawItems.find((x) => x.id === id);
-    if (!item) return;
+    if (!item || !modal) return;
+    if (state.domain && state.domain.galleryLocked && !String(id).startsWith("video:direct:")) return;
     hideQuickPreview();
     state.gallery.scrollTop =
       document.getElementById("mb-explore-gallery").scrollTop || 0;
@@ -3487,7 +3488,7 @@
     state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
-    document.getElementById("mb-modal").hidden = false;
+    modal.hidden = false;
     document.getElementById("mb-modal-close").focus();
   }
 
@@ -5974,8 +5975,16 @@
         payload.title = "Video";
         payload.summary = "Opened from video id. Transcript is on for voice Learn.";
         bootFromPayload(payload);
-        state.modal.transcriptOn = true;
+        if (state && state.domain) state.domain.galleryLocked = false;
         openModal(item.id);
+        state.modal.transcriptOn = true;
+        const box = document.getElementById("mb-ev-transcript");
+        if (box) box.classList.add("is-on");
+        const tr = document.getElementById("mb-transcript-toggle");
+        if (tr) {
+          tr.setAttribute("aria-pressed", "true");
+          tr.textContent = "Transcript on";
+        }
         return;
       }
       let bootQ = String(q).trim();

@@ -469,9 +469,22 @@ def health() -> dict[str, Any]:
 
 
 @app.get("/")
-def root() -> RedirectResponse:
-    """P2-I2: Ask/Home is the product front door."""
-    return RedirectResponse(url="/explore/ui", status_code=307)
+def root(request: Request) -> RedirectResponse:
+    """P2-I2: Ask/Home is the product front door. Keep ?video= / ?q=."""
+    qs = request.url.query
+    dest = "/explore/ui"
+    if qs:
+        dest = f"{dest}?{qs}"
+    return RedirectResponse(url=dest, status_code=307)
+
+
+@app.get("/explore")
+def explore_short(request: Request) -> RedirectResponse:
+    qs = request.url.query
+    dest = "/explore/ui"
+    if qs:
+        dest = f"{dest}?{qs}"
+    return RedirectResponse(url=dest, status_code=307)
 
 
 @app.get("/ask/ui")
