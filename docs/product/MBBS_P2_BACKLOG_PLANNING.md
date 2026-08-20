@@ -94,4 +94,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **P2-I10 Cross-Source Correlation** — definition for review, **not build-authorized**: [MBBS-P2_INCREMENT_10_DEFINITION.md](MBBS-P2_INCREMENT_10_DEFINITION.md). **P2-I9 ACCEPTED** 2026-08-20. Face-SoT (**I8.5**) **later**. I11 narrative after I10. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
+**Next:** **P2-I10 Cross-Source Correlation** — definition **v1.1 for founder approval**, **not build-authorized**: [MBBS-P2_INCREMENT_10_DEFINITION.md](MBBS-P2_INCREMENT_10_DEFINITION.md). Occurrence = Event/Trip; Place is an anchor. **P2-I9 ACCEPTED** 2026-08-20. Face-SoT (**I8.5**) **later**. I11 narrative after I10. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.

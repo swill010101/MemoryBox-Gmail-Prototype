@@ -188,7 +188,7 @@ P2-AUD-01..04; Chain B. Authentic voice only. **ACCEPTED** 2026-08-20. [I9 defin
 
 ### P2-I10 — Cross-Source Correlation · A
 
-P2-GRAPH-02/03. Definition for review, not build-authorized: [I10 definition](../source/MBBS-P2_INCREMENT_10_DEFINITION.md). After I9 ACCEPTED; before I11 narrative. Not I8.5. Not ACR-P2-001.
+P2-GRAPH-02/03. Definition v1.1 for founder approval, not build-authorized: [I10 definition](../source/MBBS-P2_INCREMENT_10_DEFINITION.md). Occurrence = Event or Trip; Place is an anchor. After I9 ACCEPTED; before I11 narrative. Not I8.5. Not ACR-P2-001.
 
 ### P2-I11 — Narrative & Summaries · E+A
 

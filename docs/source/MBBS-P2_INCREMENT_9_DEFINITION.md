@@ -560,4 +560,4 @@ Code-grounded assessment (2026-08-19, I8B tree): Explore Transcript control is a
 
 ## 15. Hold / build authorization
 
-v1.1 locks stand. **I9 build authorized** 2026-08-20 (Tom). Runtime may proceed on a dedicated I9 branch. Do not cartesian people × videos. Do not ingest cassettes/memos. **ACR-P2-001-A** continue-on-tape is not I9.
+v1.1 locks stand. **I9 ACCEPTED** 2026-08-20 (Tom). Do not cartesian people × videos. Do not ingest cassettes/memos. **ACR-P2-001-A** continue-on-tape is not I9. Next increment definition is **P2-I10**; I10 is not authorized by I9 acceptance.
