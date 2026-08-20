@@ -703,6 +703,28 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         f"untagged={[(h.get('video_external_id'), h.get('clip_kind')) for h in hits_untagged]}",
     )
+    hits_names_only = search_spoken_moments(
+        QueryPlan(
+            original_ask="tom will talking",
+            effective_ask="tom will talking",
+            is_followup=False,
+            want_photo=False,
+            want_communication=False,
+            want_calendar=False,
+            want_video=True,
+            want_spoken=True,
+            person_names=("Tom Will",),
+        )
+    )
+    _check(
+        "p2i9_talking_without_resolved_person_id_still_lists_tapes",
+        len(hits_names_only) >= 1
+        and len({str(h.get("video_external_id") or "") for h in hits_names_only})
+        == len(hits_names_only),
+        checks,
+        problems,
+        f"n={len(hits_names_only)} ids={[h.get('video_external_id') for h in hits_names_only[:5]]}",
+    )
 
     wid = record_withdrawal(
         person_id=peggy_id,

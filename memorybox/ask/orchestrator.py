@@ -1344,35 +1344,79 @@ class AskOrchestrator:
         # many→Please specify which X you would like.
         for st in (photo_status, video_status):
             mode = str((st or {}).get("identity_mode") or "")
-            if mode in ("ambiguous_identity", "unknown_person"):
-                msg = str(
-                    (st or {}).get("clarify_message")
-                    or (st or {}).get("disclosure")
-                    or ""
-                ).strip()
-                if not msg:
-                    names = (st or {}).get("ambiguous_person_names") or (
-                        st or {}
-                    ).get("unknown_person_names") or plan.person_names
-                    label = (list(names)[0] if names else "this person")
-                    if mode == "unknown_person":
-                        msg = f"Who is {label}?"
-                    else:
-                        first = str(label).split()[0]
-                        msg = f"Please specify which {first} you would like."
-                plan = replace(
-                    plan,
-                    requires_clarification=True,
-                    ambiguity_message=msg,
+            if mode not in ("ambiguous_identity", "unknown_person"):
+                continue
+            keep_voice = getattr(plan, "want_spoken", False) or any(
+                str(getattr(v, "attribution", "") or "").startswith("voice_in_video")
+                for v in videos
+            )
+            if mode == "unknown_person" and (
+                keep_voice or getattr(plan, "person_ids", ())
+            ):
+                continue
+            if mode == "ambiguous_identity" and keep_voice:
+                continue
+            msg = str(
+                (st or {}).get("clarify_message")
+                or (st or {}).get("disclosure")
+                or ""
+            ).strip()
+            if not msg:
+                names = (st or {}).get("ambiguous_person_names") or (
+                    st or {}
+                ).get("unknown_person_names") or plan.person_names
+                label = (list(names)[0] if names else "this person")
+                if mode == "unknown_person":
+                    msg = f"Who is {label}?"
+                else:
+                    first = str(label).split()[0]
+                    msg = f"Please specify which {first} you would like."
+            plan = replace(
+                plan,
+                requires_clarification=True,
+                ambiguity_message=msg,
+            )
+            photos = []
+            videos = []
+            stories = []
+            journals = []
+            artifacts = []
+            guided_capture = []
+            evidence = []
+            break
+
+        if not videos and (
+            getattr(plan, "want_spoken", False) or getattr(plan, "want_video", False)
+        ):
+            from memorybox.speech.retrieve import search_spoken_moments
+            from dataclasses import replace as _replace_plan
+
+            spoken_plan = (
+                plan
+                if getattr(plan, "want_spoken", False)
+                else _replace_plan(plan, want_spoken=True)
+            )
+            seen = {str(v.video_external_id or "") for v in videos}
+            for r in search_spoken_moments(spoken_plan):
+                vid = str(r.get("video_external_id") or "")
+                if not vid or vid in seen:
+                    continue
+                videos.append(
+                    R.VideoHit(
+                        provider_key=str(r.get("provider_key") or "hvrt"),
+                        external_id=str(r.get("external_id") or vid),
+                        video_external_id=vid,
+                        start_sec=0.0,
+                        end_sec=0.0,
+                        label=str(r.get("label") or "Video"),
+                        play_url=r.get("play_url"),
+                        identity_trust=str(r.get("identity_trust") or "candidate"),
+                        mb_person_id=r.get("mb_person_id"),
+                        attribution="voice_in_video",
+                        spoken_text=r.get("spoken_text"),
+                    )
                 )
-                photos = []
-                videos = []
-                stories = []
-                journals = []
-                artifacts = []
-                guided_capture = []
-                evidence = []
-                break
+                seen.add(vid)
 
         # Disclose failed relational resolve when no other answer path
         if (
