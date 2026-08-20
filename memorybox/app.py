@@ -150,6 +150,12 @@ def _ai_trace_schema_on_startup() -> None:
         start_recognition_drain()
     except Exception:
         return
+    try:
+        from memorybox.speech.drain import start_speech_drain
+
+        start_speech_drain()
+    except Exception:
+        return
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
@@ -1933,6 +1939,97 @@ def recognition_video_people(
 
     people = list_people_on_video(video_external_id)
     return {"ok": True, "video_external_id": video_external_id, "people": people, "count": len(people)}
+
+
+@app.get("/speech/transcript")
+def speech_transcript_get(video_external_id: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:
+    from memorybox.speech.store import list_transcript
+
+    return list_transcript(video_external_id)
+
+
+@app.get("/speech/status")
+def speech_status_get() -> dict[str, Any]:
+    from memorybox.speech.queue import queue_summary
+
+    return {"ok": True, "queue": queue_summary()}
+
+
+@app.post("/speech/archive-pass")
+def speech_archive_pass() -> dict[str, Any]:
+    from memorybox.ask.deps import build_photo, build_video
+    from memorybox.speech.archive_pass import enqueue_new_videos_for_transcribe
+    from memorybox.speech.drain import start_speech_drain
+
+    start_speech_drain()
+    return enqueue_new_videos_for_transcribe(
+        video_provider=build_video(),
+        photo_provider=build_photo(),
+    )
+
+
+@app.post("/speech/queue/process")
+def speech_queue_process(max_items: int = Query(25, ge=1, le=500)) -> dict[str, Any]:
+    from memorybox.ask.deps import build_video
+    from memorybox.speech.process import process_queue
+
+    return process_queue(video_provider=build_video(), max_items=max_items)
+
+
+class SpeechLearnRequest(BaseModel):
+    person_id: str
+    video_external_id: str
+    t_start: float
+    t_end: float
+    video_provider_key: str | None = None
+    embedding: list[float] | None = None
+
+
+@app.post("/speech/learn")
+def speech_learn(body: SpeechLearnRequest) -> dict[str, Any]:
+    from memorybox.speech.learn import owner_learn_voice
+
+    video = build_video()
+    try:
+        result = owner_learn_voice(
+            person_id=body.person_id,
+            video_external_id=body.video_external_id,
+            t_start=body.t_start,
+            t_end=body.t_end,
+            video_provider=video,
+            video_provider_key=body.video_provider_key,
+            embedding=body.embedding,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": bool(result.get("ok")), **result}
+
+
+class SpeechCorrectRequest(BaseModel):
+    person_id: str
+    video_provider_key: str = "hvrt"
+    video_external_id: str
+    t_start: float
+    t_end: float | None = None
+    withdraw: bool = True
+    reason: str | None = None
+
+
+@app.post("/speech/moments/correct")
+def speech_moment_correct(body: SpeechCorrectRequest) -> dict[str, Any]:
+    from memorybox.speech.store import record_withdrawal
+
+    if not body.withdraw:
+        raise HTTPException(status_code=400, detail="I9 correction supports withdraw: true")
+    wid = record_withdrawal(
+        person_id=body.person_id,
+        video_provider_key=body.video_provider_key,
+        video_external_id=body.video_external_id,
+        t_start=body.t_start,
+        t_end=body.t_end,
+        reason=body.reason or "owner_withdraw",
+    )
+    return {"ok": True, "withdrawal_id": wid}
 
 
 @app.get("/people/{person_id}/face-evidence")

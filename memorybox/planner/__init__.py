@@ -53,6 +53,11 @@ SAID_ABOUT_RE = re.compile(
     r"\btell\s+me\s+what\b[\w\s,'-]{0,40}\bsaid\b"
     r")\b"
 )
+SAYING_PHRASE_RE = re.compile(
+    r"(?i)\bsaying\s+[“\"']([^“\"']+)[”\"']|\bsaying\s+(.+)$"
+)
+TALKING_ABOUT_RE = re.compile(r"(?i)\btalking\s+about\s+(.+)$")
+TALKING_RE = re.compile(r"(?i)\b(?:show\s+me\s+)?(?:everything\s+)?[\w'’.-]+\s+talking\b|\btalking\b")
 ABOUT_SUBJECT_RE = re.compile(
     r"(?i)\b(?:(?:what\s+do\s+(?:you|i|we)\s+know\s+about)|(?:tell\s+me\s+about)|"
     r"(?:what\s+do\s+(?:i|we)\s+have\s+(?:about|on))|\babout)\s+"
@@ -431,6 +436,9 @@ class QueryPlan:
     want_visual: bool = False
     want_still: bool = False
     want_video: bool = False
+    want_spoken: bool = False
+    spoken_phrase: str | None = None
+    spoken_about: str | None = None
     person_names: tuple[str, ...] = ()
     person_ids: tuple[str, ...] = ()
     """MB Person ids from relational resolve (I9A) — preferred over name lookup."""
@@ -483,6 +491,8 @@ class QueryPlan:
             out.append("photo")
         if self.want_video:
             out.append("video")
+        if self.want_spoken:
+            out.append("spoken")
         if self.want_communication:
             out.append("communication")
         if self.want_calendar:
@@ -770,7 +780,23 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
 
     about_trip = bool(PLACE_TRIP_RE.search(q) or TRIP_TO_RE.search(q) or re.search(r"(?i)\btrip\b", q))
     exploratory = bool(EXPLORATORY_RE.search(q))
-    said_about = bool(SAID_ABOUT_RE.search(q))
+    spoken_phrase = None
+    spoken_about = None
+    want_spoken = False
+    sm = SAYING_PHRASE_RE.search(q)
+    if sm:
+        want_spoken = True
+        spoken_phrase = (sm.group(1) or sm.group(2) or "").strip().strip(".,")
+        notes.append("want_spoken_phrase")
+    am = TALKING_ABOUT_RE.search(q)
+    if am:
+        want_spoken = True
+        spoken_about = (am.group(1) or "").strip().strip(".,")
+        notes.append("want_spoken_about")
+    elif TALKING_RE.search(q):
+        want_spoken = True
+        notes.append("want_spoken_talking")
+    said_about = bool(SAID_ABOUT_RE.search(q)) and not want_spoken
     # Explicit modality narrowing always wins over exploratory multimodal.
     narrowed_comms = bool(want_email or want_sms or want_relationship or said_about)
     narrowed_visual = bool(STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q) or BROAD_VISUAL_RE.search(q))
@@ -840,6 +866,14 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_visual = True
         want_photo = True
         notes.append("exploratory_multimodal_i4")
+
+    if want_spoken:
+        visual_scope = "video_only"
+        want_still = False
+        want_video = True
+        want_visual = True
+        want_photo = False
+        notes.append("want_spoken_modality")
 
     if said_about and not narrowed_visual:
         want_email = True
@@ -1365,6 +1399,19 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_guided_capture:
             notes.append("want_guided_capture_modality")
 
+    if want_spoken:
+        visual_scope = "video_only"
+        want_still = False
+        want_video = True
+        want_visual = True
+        want_photo = False
+        if not EMAIL_RE.search(q) and not SMS_ASK_RE.search(q):
+            want_email = False
+            want_sms = False
+            want_cal = False
+            want_guided_capture = False
+        notes.append("want_spoken_final")
+
     if want_sms:
         notes.append("want_sms_modality")
     if want_email:
@@ -1390,6 +1437,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_visual=want_visual and not requires_clarification and not journal_capture_intent,
         want_still=want_still and not requires_clarification and not journal_capture_intent,
         want_video=want_video and not requires_clarification and not journal_capture_intent,
+        want_spoken=want_spoken and not requires_clarification and not journal_capture_intent,
+        spoken_phrase=spoken_phrase,
+        spoken_about=spoken_about,
         person_names=tuple(people),
         place_names=tuple(places),
         event_labels=tuple(event_labels),

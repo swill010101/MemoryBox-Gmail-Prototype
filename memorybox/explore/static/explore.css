@@ -1618,9 +1618,17 @@ body {
   display: block;
 }
 
-.mb-ev-transcript .is-active {
-  background: rgba(37, 99, 235, 0.25);
-  border-radius: 4px;
+.mb-ev-transcript .mb-ev-word {
+  cursor: pointer;
+  padding: 0 0.08rem;
+  border-radius: 3px;
+}
+.mb-ev-transcript .mb-ev-word.is-active {
+  background: rgba(37, 99, 235, 0.35);
+  color: #fff;
+}
+.mb-ev-transcript-empty {
+  color: #94a3b8;
 }
 
 .mb-ev-meta {

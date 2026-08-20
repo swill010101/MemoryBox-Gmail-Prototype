@@ -356,7 +356,12 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             teachable=True,
             paused_frame=True,
             face_identity=v.get("mb_person_name") or "Unknown",
+            spoken_text=v.get("spoken_text"),
         )
+        if v.get("spoken_text"):
+            item["preview"] = str(v.get("spoken_text"))[:160]
+            item["detail"] = str(v.get("spoken_text"))
+            item["title"] = str(v.get("label") or v.get("spoken_text") or "Spoken moment")[:80]
         if isinstance(face_box, dict) and all(
             isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
         ):
@@ -375,6 +380,12 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     pending_order: list[str] = []
     for it in video_raw:
         vid = str(it.get("video_external_id") or "")
+        if it.get("spoken_text"):
+            if vid not in pending:
+                pending_order.append(vid)
+                pending[vid] = []
+            pending[vid].append(it)
+            continue
         slot = int(float(it.get("start_sec") or 0) // 2.5)
         key = (vid, slot)
         if key in video_slots:
@@ -392,6 +403,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 merged.append(it)
                 continue
             prev = merged[-1]
+            if it.get("spoken_text") or prev.get("spoken_text"):
+                merged.append(it)
+                continue
             gap = 8.0
             if float(it.get("start_sec") or 0) <= float(prev.get("end_sec") or 0) + gap:
                 start = min(float(prev.get("start_sec") or 0), float(it.get("start_sec") or 0))

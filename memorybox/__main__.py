@@ -107,6 +107,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Ignore watermarks: re-seed and queue every named Person against every video",
     )
     p_archive.add_argument("--person-limit", type=int, default=80)
+    p_speech_archive = sub.add_parser(
+        "speech-archive-pass",
+        help="I9 incremental: transcribe newly added videos only (not people × files)",
+    )
+    p_prove_p2i9 = sub.add_parser(
+        "prove-p2-i9",
+        help="P2-I9 Spoken Moments prove (harness; --flightsim structural only)",
+    )
+    p_prove_p2i9.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Structural FlightSim check. Owner ACCEPTED is a later manual pass on real video.",
+    )
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
         help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
@@ -732,6 +745,24 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.recognition.p2_i8b_acceptance import prove_p2_i8b
 
         payload = prove_p2_i8b(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "speech-archive-pass":
+        from memorybox.ask.deps import build_photo, build_video
+        from memorybox.speech.archive_pass import enqueue_new_videos_for_transcribe
+
+        payload = enqueue_new_videos_for_transcribe(
+            video_provider=build_video(),
+            photo_provider=build_photo(),
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i9":
+        from memorybox.speech.p2_i9_acceptance import prove_p2_i9
+
+        payload = prove_p2_i9(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

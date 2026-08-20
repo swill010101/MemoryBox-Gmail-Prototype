@@ -408,11 +408,16 @@ def _build_answer(
             prefix = "Trusted-provider-seeded identity (not owner-confirmed) — "
         else:
             prefix = ""
+        spoken = getattr(v, "spoken_text", None)
         statements.append(
             {
                 "text": (
-                    f"{prefix}Video segment {v.video_external_id} "
-                    f"[{v.start_sec:.1f}s–{v.end_sec:.1f}s]."
+                    f"{prefix}Spoken passage: {spoken}"
+                    if spoken
+                    else (
+                        f"{prefix}Video segment {v.video_external_id} "
+                        f"[{v.start_sec:.1f}s–{v.end_sec:.1f}s]."
+                    )
                 ),
                 "label": (
                     "Fact"
@@ -880,7 +885,12 @@ class AskOrchestrator:
             rel.intent == "none"
             and plan.person_names
             and not getattr(plan, "person_ids", ())
-            and (plan.want_visual or plan.want_communication or plan.want_calendar)
+            and (
+                plan.want_visual
+                or plan.want_communication
+                or plan.want_calendar
+                or getattr(plan, "want_spoken", False)
+            )
         ):
             # Named Ask → attach MB Person id so photo/video/email/SMS share identity.
             # P2-BL-I8-02: unique Peggy → Peggy George; genuine ambiguity clarifies.
@@ -1266,7 +1276,32 @@ class AskOrchestrator:
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
-            if plan.want_video:
+            if getattr(plan, "want_spoken", False):
+                from memorybox.speech.retrieve import search_spoken_moments
+
+                spoken_rows = search_spoken_moments(plan)
+                videos = [
+                    R.VideoHit(
+                        provider_key=str(r.get("provider_key") or "hvrt"),
+                        external_id=str(r.get("external_id") or r.get("id") or ""),
+                        video_external_id=str(r.get("video_external_id") or ""),
+                        start_sec=float(r.get("start_sec") or 0),
+                        end_sec=float(r.get("end_sec") or 0),
+                        label=str(r.get("label") or "Spoken moment"),
+                        play_url=r.get("play_url"),
+                        identity_trust=str(r.get("identity_trust") or "candidate"),
+                        mb_person_id=r.get("mb_person_id"),
+                        attribution=str(r.get("attribution") or "spoken_moment"),
+                        spoken_text=r.get("spoken_text"),
+                    )
+                    for r in spoken_rows
+                ]
+                video_status = {
+                    "ok": True,
+                    "detail": f"spoken_moments={len(videos)}",
+                    "evidence_first": True,
+                }
+            elif plan.want_video:
                 videos, video_status = R.search_videos(
                     plan, self.video, photo=self.photo
                 )

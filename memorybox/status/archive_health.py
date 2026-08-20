@@ -25,6 +25,21 @@ OWNER_JOBS = [
             "everyone-times-every-video scan. Continue?"
         ),
     },
+    {
+        "id": "speech_incremental",
+        "label": "Transcribe new home videos",
+        "text": (
+            "Queue transcription for newly added videos only (one job per file). "
+            "Does not multiply people × videos. Voice Learn is separate and is that Person only."
+        ),
+        "action_label": "Run now",
+        "method": "POST",
+        "href": "/speech/archive-pass",
+        "confirm": (
+            "Queue incremental video transcription for new files only. "
+            "This will not restart completed transcripts or cartesian-expand people. Continue?"
+        ),
+    },
 ]
 
 

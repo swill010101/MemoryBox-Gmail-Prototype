@@ -200,6 +200,7 @@ class VideoHit:
     taken_at: str | None = None
     original_filename: str | None = None
     thumb_url: str | None = None
+    spoken_text: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
