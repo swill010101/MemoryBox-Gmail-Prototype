@@ -132,6 +132,13 @@ class HvrtHttpVideoProvider:
             duration_sec=row.get("duration_sec"),
         )
 
+    def inventory_count(self) -> dict[str, Any]:
+        """Cheap count for Archive Health. Does not wait for a cold folder walk."""
+        try:
+            return dict(self._request("GET", "/videos/count", timeout_sec=4.0) or {})
+        except Exception:
+            return {"ok": False, "ready": False, "indexed": None}
+
     def list_videos(self, *, limit: int = 100) -> list[VideoAssetDto]:
         data = self._request("GET", f"/videos?limit={int(limit)}", timeout_sec=120.0)
         out: list[VideoAssetDto] = []

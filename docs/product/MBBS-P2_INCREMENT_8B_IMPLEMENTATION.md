@@ -33,7 +33,9 @@ Each nightly pass **walks that folder tree now** (does not rely on the video-wor
 - **Owner Learn** still scans the current clip in-request, then enqueues other videos known at Learn time for that Person only. Files added later are picked up on the next incremental pass as `new_video`.
 - **`--full`** / `full=true` ignores watermarks and rescans everyone. Do not use while a cartesian backlog is draining.
 
-**Run from Archive Health (owner/admin job):** Archive Health → Processing state → **Scan new home videos** → **Run now**. That POSTs `/recognition/archive-pass?seed_immich=true` (incremental; never `--full`). Same job as the CLI. Drain continues in serve; the button only enqueues.
+**Archive Health speed:** `/status/summary` must not walk the whole `MEMORYBOX_VIDEO_MEDIA_ROOT` tree before painting panels. Folder inventory is the video worker’s cached index (`GET /videos/count`). Filesystem count is budgeted (2s) and cached. Full walks belong to the incremental job / drain, not the health page.
+
+**I9 operational reuse (authorized to build):** I9 Spoken Moments uses the **same owner runs as I8B** — incremental Archive Health **Scan new home videos**, add a known person, add a file to the MB-owned folder (or Immich). Do not invent a second people×videos cartesian queue. Speech jobs enqueue on top of that inventory, one video at a time.
 
 CLI / Task Scheduler (same job):
 

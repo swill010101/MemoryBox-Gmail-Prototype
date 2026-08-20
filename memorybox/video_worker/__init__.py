@@ -376,6 +376,21 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        if path == "/videos/count":
+            snap = _VIDEO_INDEX
+            if snap:
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "ready": True,
+                        "indexed": len(snap[1]),
+                    },
+                )
+            else:
+                self._json(200, {"ok": True, "ready": False, "indexed": None})
+            return
+
         if path == "/videos":
             refresh = str((qs.get("refresh") or ["0"])[0]).strip().lower()
             if refresh in {"1", "true", "yes", "on"}:

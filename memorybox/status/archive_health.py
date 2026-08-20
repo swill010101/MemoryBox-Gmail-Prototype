@@ -658,19 +658,13 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
     calculated_at = payload.get("calculated_at") or ""
     tabs = payload.get("tabs") or {}
 
-    # Pull live health from Sources tab metrics if present; else re-probe lightly
-    photo_health = {"ok": False, "detail": "unknown"}
-    video_health = {"ok": False, "detail": "unknown"}
-    try:
-        from memorybox.ask.deps import build_photo, build_video
-
-        ph = build_photo().health()
-        photo_health = {"ok": bool(ph.ok), "detail": ph.detail}
-        vh = build_video().health()
-        video_health = {"ok": bool(vh.ok), "detail": vh.detail}
-    except Exception as exc:  # noqa: BLE001
-        photo_health = {"ok": False, "detail": str(exc)}
-        video_health = {"ok": False, "detail": str(exc)}
+    # Reuse health already probed in build_status_summary — do not ping Immich/HVRT again.
+    photo_health = payload.get("photo_health") or {"ok": False, "detail": "unknown"}
+    video_health = payload.get("video_health") or {"ok": False, "detail": "unknown"}
+    if not isinstance(photo_health, dict):
+        photo_health = {"ok": False, "detail": "unknown"}
+    if not isinstance(video_health, dict):
+        video_health = {"ok": False, "detail": "unknown"}
 
     # Locate existing metrics from tabs
     def _find_metric(key: str) -> dict[str, Any] | None:
