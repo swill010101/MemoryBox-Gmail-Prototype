@@ -4861,30 +4861,44 @@
           : moments.length
             ? moments.map((m) => ({ token: m.text, t_start: m.t_start, t_end: m.t_end }))
             : [{ token: fullText, t_start: 0, t_end: 0 }];
-        setSpeechStatus(tokens.length + " word" + (tokens.length === 1 ? "" : "s"));
-        box.innerHTML = tokens
-          .map((w, i) => {
-            const st = Number(w.t_start != null ? w.t_start : w.start_sec || 0);
-            const en = Number(w.t_end != null ? w.t_end : w.end_sec || st);
-            const spk = (turns.find((t) => Number(t.t_start) <= st && Number(t.t_end) >= st) || {})
-              .status;
-            const who = spk && spk !== "anonymous" ? " " + String(spk) : "";
-            return (
-              '<span class="mb-ev-word" data-i="' +
-              i +
-              '" data-start="' +
-              st +
-              '" data-end="' +
-              en +
-              '" title="' +
-              st.toFixed(1) +
-              "s'>" +
-              escapeHtml(String(w.token || "")) +
-              who +
-              "</span>"
-            );
-          })
+        const preview = tokens
+          .map((w) => String(w.token || w.text || w.word || "").trim())
+          .filter(Boolean)
           .join(" ");
+        setSpeechStatus(
+          tokens.length +
+            " word" +
+            (tokens.length === 1 ? "" : "s") +
+            (preview ? " · " + preview.slice(0, 80) : "")
+        );
+        box.innerHTML =
+          (preview
+            ? '<p class="mb-ev-transcript-text">' + escapeHtml(preview) + "</p>"
+            : "") +
+          tokens
+            .map((w, i) => {
+              const st = Number(w.t_start != null ? w.t_start : w.start_sec || 0);
+              const en = Number(w.t_end != null ? w.t_end : w.end_sec || st);
+              const label = String(w.token || w.text || w.word || "").trim();
+              const spk = (turns.find((t) => Number(t.t_start) <= st && Number(t.t_end) >= st) || {})
+                .status;
+              const who = spk && spk !== "anonymous" ? " " + String(spk) : "";
+              return (
+                '<span class="mb-ev-word" data-i="' +
+                i +
+                '" data-start="' +
+                st +
+                '" data-end="' +
+                en +
+                '" title="' +
+                escapeAttr(st.toFixed(1) + "s") +
+                '">' +
+                escapeHtml(label) +
+                who +
+                "</span>"
+              );
+            })
+            .join(" ");
         const player = document.querySelector(".mb-ev-video-player");
         const markActive = () => {
           if (!player) return;

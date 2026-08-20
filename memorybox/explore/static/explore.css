@@ -1675,6 +1675,19 @@ body {
   font-weight: 600;
 }
 
+.mb-ev-transcript-text {
+  margin: 0 0 0.45rem;
+  color: #f8fafc;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.mb-ev-transcript .mb-ev-word {
+  color: #e2e8f0;
+}
+
 .mb-ev-meta {
   color: #94a3b8;
   font-size: 0.8rem;

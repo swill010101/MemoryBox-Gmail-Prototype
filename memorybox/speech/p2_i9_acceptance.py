@@ -306,6 +306,7 @@ def _prove_harness() -> dict[str, Any]:
         and "/speech/learn" in js
         and "Choose a person" in js
         and "Transcribe this tape" in js
+        and "escapeAttr(st.toFixed(1) + \"s\")" in js
         and "/speech/transcript" in app
         and "/speech/transcribe-now" in app
         and "/speech/learn" in app
