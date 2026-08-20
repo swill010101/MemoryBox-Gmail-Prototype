@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from memorybox.db import connection
+from memorybox.recognition.constants import REQUEUE_REASONS
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -20,6 +21,7 @@ def enqueue_full_eligible_archive(
     videos: list[dict[str, Any]],
     enqueue_reason: str = "newly_known_person",
     priority: int = 100,
+    run_kind: str = "provider_seeded",
 ) -> dict[str, Any]:
     """Enqueue every listed video (or record exclusion). Never silently omit.
 
@@ -27,11 +29,18 @@ def enqueue_full_eligible_archive(
       video_provider_key, video_external_id,
       eligible?: bool (default True),
       reason?: str when not eligible / pre-excluded
+      priority?: int (overrides default)
     }
+
+    I8B: exemplar_change / owner_learn / correction / new_video requeue
+    completed/failed items. Excluded (e.g. bad codec) stays excluded.
+    I1 newly_known_person still does not silently re-run completed work.
     """
     pid = str(person_id)
     created = 0
     excluded = 0
+    requeued = 0
+    allow_requeue = enqueue_reason in REQUEUE_REASONS
     with connection() as conn:
         for v in videos:
             vpk = str(v.get("video_provider_key") or "").strip()
@@ -43,40 +52,92 @@ def enqueue_full_eligible_archive(
             status = STATUS_QUEUED if eligible else STATUS_EXCLUDED
             if not eligible and not reason:
                 reason = "excluded_unspecified"
+            item_priority = int(v.get("priority") if v.get("priority") is not None else priority)
             row = conn.execute(
                 """
                 INSERT INTO recognition_queue_items (
                     person_id, video_provider_key, video_external_id,
-                    status, reason, priority, enqueue_reason
-                ) VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
+                    status, reason, priority, enqueue_reason, run_kind
+                ) VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (person_id, video_provider_key, video_external_id, enqueue_reason)
                 DO UPDATE SET
                     updated_at = now(),
                     priority = LEAST(recognition_queue_items.priority, EXCLUDED.priority),
+                    run_kind = EXCLUDED.run_kind,
                     status = CASE
+                        WHEN recognition_queue_items.status = 'running'
+                        THEN recognition_queue_items.status
+                        WHEN recognition_queue_items.status = 'excluded'
+                        THEN recognition_queue_items.status
+                        WHEN EXCLUDED.status = 'queued'
+                             AND recognition_queue_items.status IN ('completed', 'failed')
+                             AND EXCLUDED.enqueue_reason IN ('exemplar_change', 'correction', 'owner_learn', 'new_video')
+                        THEN 'queued'
                         WHEN recognition_queue_items.status IN ('completed', 'excluded', 'failed')
                              AND EXCLUDED.status = 'queued'
                         THEN recognition_queue_items.status
-                        WHEN recognition_queue_items.status = 'running'
-                        THEN recognition_queue_items.status
                         ELSE EXCLUDED.status
                     END,
-                    reason = COALESCE(EXCLUDED.reason, recognition_queue_items.reason)
+                    reason = COALESCE(EXCLUDED.reason, recognition_queue_items.reason),
+                    finished_at = CASE
+                        WHEN EXCLUDED.status = 'queued'
+                             AND recognition_queue_items.status IN ('completed', 'failed')
+                             AND EXCLUDED.enqueue_reason IN ('exemplar_change', 'correction', 'owner_learn', 'new_video')
+                        THEN NULL
+                        ELSE recognition_queue_items.finished_at
+                    END
                 RETURNING id, status
                 """,
-                (pid, vpk, veid, status, reason, int(priority), enqueue_reason),
+                (
+                    pid,
+                    vpk,
+                    veid,
+                    status,
+                    reason,
+                    item_priority,
+                    enqueue_reason,
+                    run_kind,
+                ),
             ).fetchone()
             if row and row["status"] == STATUS_EXCLUDED:
                 excluded += 1
+            elif row and row["status"] == STATUS_QUEUED:
+                created += 1
+                if allow_requeue:
+                    requeued += 1
             elif row:
                 created += 1
     return {
         "person_id": pid,
         "enqueue_reason": enqueue_reason,
+        "run_kind": run_kind,
         "enqueued_or_updated": created,
         "excluded": excluded,
+        "requeued_hint": requeued,
         "total_input": len(videos),
     }
+
+
+def retry_failed_items(*, person_id: str | UUID | None = None) -> int:
+    with connection() as conn:
+        if person_id:
+            row = conn.execute(
+                """
+                UPDATE recognition_queue_items
+                SET status = 'queued', updated_at = now(), finished_at = NULL
+                WHERE status = 'failed' AND person_id = %s::uuid
+                """,
+                (str(person_id),),
+            )
+        else:
+            row = conn.execute(
+                """
+                UPDATE recognition_queue_items
+                SET status = 'queued', updated_at = now(), finished_at = NULL
+                WHERE status = 'failed'
+                """
+            )
+    return int(getattr(row, "rowcount", 0) or 0)
 
 
 def queue_summary(person_id: str | UUID | None = None) -> dict[str, Any]:
@@ -128,7 +189,8 @@ def list_queue_items(
             f"""
             SELECT id::text, person_id::text, video_provider_key, video_external_id,
                    status, reason, priority, enqueue_reason, attempt_count,
-                   result_json, created_at, updated_at, started_at, finished_at
+                   result_json, created_at, updated_at, started_at, finished_at,
+                   COALESCE(run_kind, 'provider_seeded') AS run_kind
             FROM recognition_queue_items
             {where}
             ORDER BY priority ASC, created_at ASC

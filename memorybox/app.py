@@ -144,6 +144,12 @@ def _ai_trace_schema_on_startup() -> None:
         ensure_schema()
     except Exception:
         return
+    try:
+        from memorybox.recognition.drain import start_recognition_drain
+
+        start_recognition_drain()
+    except Exception:
+        return
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
@@ -260,6 +266,9 @@ class TeachRequest(BaseModel):
     provider_key: str = "immich"
     external_id: str = Field(..., min_length=1)
     label: str | None = None
+    video_external_id: str | None = None
+    t_sec: float | None = None
+    crop_jpeg_base64: str | None = None
 
 
 class BulkTeachRequest(BaseModel):
@@ -1220,42 +1229,17 @@ def library_video_poster(
     video: str = Query(..., min_length=1),
     t: float = Query(0.0),
 ) -> Response:
-    """Poster frame for a video segment via the sibling video worker."""
-    import os
-    import urllib.error
-    import urllib.parse
-    import urllib.request
-
+    """Poster at appearance start (t=), not the first frame of the file."""
     if str(video).startswith(("video-peggy-", "video-library-")):
         return Response(status_code=204)
-    base = (os.environ.get("MEMORYBOX_VIDEO_WORKER_URL") or "").strip().rstrip("/")
-    if not base:
-        raise HTTPException(
-            status_code=503,
-            detail="MEMORYBOX_VIDEO_WORKER_URL required for video posters",
-        )
-    q = urllib.parse.urlencode(
-        {"video_external_id": video, "t": f"{max(0.0, float(t)):.3f}"}
-    )
-    url = f"{base}/poster?{q}"
-    try:
-        with urllib.request.urlopen(url, timeout=45) as resp:
-            data = resp.read()
-            ctype = resp.headers.get("Content-Type") or "image/jpeg"
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(
-            status_code=exc.code, detail=detail or "poster failed"
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=503, detail=f"video poster unavailable: {exc}"
-        ) from exc
+    from memorybox.recognition.origin import poster_jpeg_bytes
+
+    data = poster_jpeg_bytes(video, float(t))
     if not data:
-        raise HTTPException(status_code=404, detail="empty poster")
+        raise HTTPException(status_code=404, detail="poster frame unavailable")
     return Response(
         content=data,
-        media_type=ctype,
+        media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=600"},
     )
 
@@ -1795,6 +1779,27 @@ def recognition_queue_process(
     return {"ok": True, **process_queue(video_provider=video, person_id=person_id, max_items=max_items)}
 
 
+@app.post("/recognition/archive-pass")
+def recognition_archive_pass(
+    seed_immich: bool = Query(False),
+    full: bool = Query(False, description="Rescan every named person against every video."),
+    person_limit: int = Query(80, ge=1, le=300),
+) -> dict[str, Any]:
+    """Incremental overnight pass. Unchanged people are skipped; new names/merges rescan all videos."""
+    from memorybox.ask.deps import build_photo, build_video
+    from memorybox.recognition.archive_pass import enqueue_known_people_archive
+    from memorybox.recognition.drain import start_recognition_drain
+
+    start_recognition_drain()
+    return enqueue_known_people_archive(
+        video_provider=build_video(),
+        photo_provider=build_photo(),
+        seed_immich=seed_immich,
+        person_limit=person_limit,
+        full=bool(full),
+    )
+
+
 class AppearanceCorrectRequest(BaseModel):
     person_id: str
     video_provider_key: str = "hvrt"
@@ -1802,13 +1807,29 @@ class AppearanceCorrectRequest(BaseModel):
     start_sec: float
     end_sec: float | None = None
     face_external_id: str | None = None
+    appearance_id: str | None = None
+    withdraw: bool = False
+    reason: str | None = None
 
 
 @app.post("/recognition/appearances/correct")
 def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, Any]:
-    from memorybox.recognition.process import owner_correct_appearance
+    from memorybox.recognition.process import owner_correct_appearance, owner_withdraw_appearance
 
     try:
+        if body.withdraw:
+            return {
+                "ok": True,
+                **owner_withdraw_appearance(
+                    person_id=body.person_id,
+                    video_provider_key=body.video_provider_key,
+                    video_external_id=body.video_external_id,
+                    start_sec=body.start_sec,
+                    end_sec=body.end_sec,
+                    appearance_id=body.appearance_id,
+                    reason=body.reason or "owner_withdraw",
+                ),
+            }
         return {
             "ok": True,
             **owner_correct_appearance(
@@ -1822,6 +1843,96 @@ def recognition_appearance_correct(body: AppearanceCorrectRequest) -> dict[str, 
         }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/recognition/status")
+def recognition_status_get(person_id: str | None = None) -> dict[str, Any]:
+    from memorybox.recognition.observations import recognition_status
+    from memorybox.recognition.queue import queue_summary
+
+    return {
+        "ok": True,
+        "queue": queue_summary(person_id),
+        "recognition": recognition_status(person_id=person_id),
+    }
+
+
+class RecognitionSeedRequest(BaseModel):
+    person_id: str
+    max_assets: int = 80
+
+
+@app.post("/recognition/seed")
+def recognition_seed(body: RecognitionSeedRequest) -> dict[str, Any]:
+    """Provider-seeded Immich faces → MB embeddings (does not use Immich vectors)."""
+    from memorybox.ask.deps import build_photo, build_video
+    from memorybox.recognition.queue import enqueue_full_eligible_archive
+    from memorybox.recognition.seed import seed_exemplars_from_immich
+
+    photo = build_photo()
+    try:
+        seeded = seed_exemplars_from_immich(
+            person_id=body.person_id,
+            photo_provider=photo,
+            max_assets=body.max_assets,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    video = build_video()
+    rows_fn = getattr(video, "eligible_video_rows", None)
+    enqueue = None
+    if callable(rows_fn):
+        enqueue = enqueue_full_eligible_archive(
+            person_id=body.person_id,
+            videos=list(rows_fn()),
+            enqueue_reason="exemplar_change",
+            priority=50,
+            run_kind="provider_seeded",
+        )
+    return {"ok": True, "seed": seeded, "enqueue": enqueue}
+
+
+class RecognitionLearnRequest(BaseModel):
+    person_id: str
+    face_external_id: str
+    video_external_id: str | None = None
+    t_sec: float | None = None
+    bbox: dict[str, Any] | None = None
+    crop_jpeg_base64: str | None = None
+    provider_key: str | None = None
+
+
+@app.post("/recognition/learn")
+def recognition_learn(body: RecognitionLearnRequest) -> dict[str, Any]:
+    """Owner Learn via existing Review box — not a new Person Learn surface."""
+    from memorybox.recognition.learn import owner_learn_from_review
+
+    video = build_video()
+    try:
+        result = owner_learn_from_review(
+            person_id=body.person_id,
+            face_external_id=body.face_external_id,
+            video_provider=video,
+            video_external_id=body.video_external_id,
+            t_sec=body.t_sec,
+            bbox=body.bbox,
+            crop_jpeg_base64=body.crop_jpeg_base64,
+            provider_key=body.provider_key,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": bool(result.get("ok")), **result}
+
+
+@app.get("/recognition/video-people")
+def recognition_video_people(
+    video_external_id: str = Query(..., min_length=1, max_length=500),
+) -> dict[str, Any]:
+    """People already owner-taught or ranged on this video — Learn tab confirmation."""
+    from memorybox.recognition.observations import list_people_on_video
+
+    people = list_people_on_video(video_external_id)
+    return {"ok": True, "video_external_id": video_external_id, "people": people, "count": len(people)}
 
 
 @app.get("/people/{person_id}/face-evidence")
@@ -1914,6 +2025,13 @@ def people_learn_stats(person_id: str) -> dict[str, Any]:
                     immich_photos += 1
     except Exception:
         pass
+    i8b: dict[str, Any] = {}
+    try:
+        from memorybox.recognition.observations import recognition_status
+
+        i8b = recognition_status(person_id=person_id)
+    except Exception:
+        i8b = {}
     return {
         "ok": True,
         "person_id": person_id,
@@ -1923,6 +2041,7 @@ def people_learn_stats(person_id: str) -> dict[str, Any]:
         "taught_faces": taught_faces,
         "taught_video": taught_video,
         "voice": 0,
+        "i8b": i8b,
     }
 
 
@@ -2012,36 +2131,50 @@ def people_picker_options(limit: int = Query(300, ge=1, le=1000)) -> dict[str, A
 
     immich_err: str | None = None
     immich_count = 0
-    try:
+
+    def _immich_named() -> tuple[list[Any], str | None]:
         photo = build_photo()
         h = photo.health()
         if not h.ok:
-            immich_err = h.detail or "Immich unavailable"
-        else:
-            refs = photo.list_people(limit=limit) or []
-            for r in refs:
-                eid = str(getattr(r, "external_id", "") or "").strip()
-                name = (getattr(r, "display_name", None) or "").strip()
-                if not eid or len(name) < 2:
-                    continue
-                immich_count += 1
-                if eid in mapped_ext:
-                    continue  # already represented via MB mapping
-                key = name.lower()
-                if key in by_name:
-                    continue  # same display name already in MB — show once
-                options.append(
-                    {
-                        "key": f"immich:{quote(eid, safe='')}:{quote(name, safe='')}",
-                        "label": name,
-                        "person_id": None,
-                        "display_name": name,
-                        "source": "immich",
-                        "external_id": eid,
-                        "status": "immich_only",
-                        "immich_external_ids": [eid],
-                    }
-                )
+            return [], h.detail or "Immich unavailable"
+        return list(photo.list_people(limit=limit) or []), None
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = pool.submit(_immich_named)
+            try:
+                refs, immich_err = fut.result(timeout=3.0)
+            except FuturesTimeout:
+                immich_err = "immich_people_timeout"
+                refs = []
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        for r in refs:
+            eid = str(getattr(r, "external_id", "") or "").strip()
+            name = (getattr(r, "display_name", None) or "").strip()
+            if not eid or len(name) < 2:
+                continue
+            immich_count += 1
+            if eid in mapped_ext:
+                continue  # already represented via MB mapping
+            key = name.lower()
+            if key in by_name:
+                continue  # same display name already in MB — show once
+            options.append(
+                {
+                    "key": f"immich:{quote(eid, safe='')}:{quote(name, safe='')}",
+                    "label": name,
+                    "person_id": None,
+                    "display_name": name,
+                    "source": "immich",
+                    "external_id": eid,
+                    "status": "immich_only",
+                    "immich_external_ids": [eid],
+                }
+            )
     except Exception as exc:  # noqa: BLE001
         immich_err = str(exc)
 
@@ -2500,7 +2633,33 @@ def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
         )
     except PersonServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "person": view.to_dict(), "archive_updated": True}
+    learn: dict[str, Any] | None = None
+    try:
+        from memorybox.recognition.learn import owner_learn_from_review, save_pending_review_crop
+
+        if body.crop_jpeg_base64 or body.video_external_id:
+            save_pending_review_crop(
+                face_external_id=body.external_id,
+                video_external_id=body.video_external_id,
+                t_sec=body.t_sec,
+                bbox=None,
+                crop_jpeg_base64=body.crop_jpeg_base64,
+            )
+        video = build_video()
+        learn = owner_learn_from_review(
+            person_id=person_id,
+            face_external_id=body.external_id,
+            video_provider=video,
+            video_external_id=body.video_external_id,
+            t_sec=body.t_sec,
+            crop_jpeg_base64=body.crop_jpeg_base64,
+            provider_key=body.provider_key,
+        )
+        if not learn.get("ok") and learn.get("reason") == "no_embedding":
+            learn = {"ok": False, "reason": "no_embedding", "detail": "I8B Learn needs a boxed crop embedding"}
+    except Exception as exc:  # noqa: BLE001
+        learn = {"ok": False, "reason": str(exc)}
+    return {"ok": True, "person": view.to_dict(), "archive_updated": True, "i8b_learn": learn}
 
 
 @app.post("/people/{person_id}/reconcile")
@@ -2676,6 +2835,19 @@ def review_box_face(face_external_id: str, body: ReviewFaceBoxRequest) -> dict[s
         raise HTTPException(
             status_code=400, detail=result.get("detail") or "box save failed"
         )
+    try:
+        from memorybox.recognition.learn import save_pending_review_crop
+
+        bbox = body.bbox if isinstance(body.bbox, dict) else None
+        save_pending_review_crop(
+            face_external_id=face_external_id,
+            video_external_id=str((bbox or {}).get("video_external_id") or "") or None,
+            t_sec=float((bbox or {}).get("t_sec") or 0) if bbox and bbox.get("t_sec") is not None else None,
+            bbox=bbox,
+            crop_jpeg_base64=body.crop_jpeg_base64,
+        )
+    except Exception:
+        pass
     return result
 
 

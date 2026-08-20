@@ -6,6 +6,7 @@ Does not hard-code people or events into product logic.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 _SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
@@ -300,23 +301,40 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
         face = v.get("face_external_id")
-        play = f"/review/media/{vid}?t={t0:.3f}"
-        if face:
-            play += f"&face={face}"
-        poster = ""
-        if not str(vid).startswith(("video-peggy-", "video-library-")):
+        pk = str(v.get("provider_key") or "hvrt")
+        hit_play = str(v.get("play_url") or "")
+        looks_immich = pk == "immich" or (
+            len(vid) == 36 and vid.count("-") == 4 and not vid.startswith("vid-")
+        )
+        if looks_immich:
+            play = (
+                hit_play
+                if "/library/media/immich-video/" in hit_play
+                else f"/library/media/immich-video/{vid}?t={t0:.3f}"
+            )
+        else:
+            play = f"/review/media/{vid}?t={t0:.3f}"
+            if face:
+                play += f"&face={face}"
+        poster = str(v.get("thumb_url") or "")
+        if not poster and not str(vid).startswith(("video-peggy-", "video-library-")):
             poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
-        # Appearance moments are in-video spans — calendar undated unless known
         label = v.get("label") or v.get("mb_person_name") or "Video moment"
         if label == "face-appearance-moment":
             label = v.get("mb_person_name") or "Video moment"
+        taken = str(v.get("taken_at") or "").strip()
+        orig_name = str(v.get("original_filename") or "").strip()
+        if orig_name:
+            stem = Path(orig_name.replace("\\", "/")).stem
+            if stem and stem.lower() not in str(label).lower():
+                label = f"{label} · {stem}"
         face_box = v.get("face_box")
         item = _item_base(
             id=f"video:{v.get('provider_key') or 'hvrt'}:{v.get('external_id') or vid}:{t0}",
             type_="video",
             title=str(label)[:80],
-            date="",
-            undated=True,
+            date=taken,
+            undated=not taken,
             preview=f"Moment @ {t0:.1f}s",
             detail=f"{t0:.1f}s" + (f"–{float(t1):.1f}s" if t1 is not None else ""),
             people=[v["mb_person_name"]] if v.get("mb_person_name") else [],
@@ -325,7 +343,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             provider_key=v.get("provider_key") or "hvrt",
             video_provider_key=v.get("provider_key") or "hvrt",
             video_external_id=vid,
-            external_id=v.get("external_id"),
+            external_id=vid or v.get("external_id"),
             face_external_id=face,
             t=t0,
             start_sec=t0,
@@ -334,6 +352,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             play_url=play,
             media_url=poster,
             thumb_url=poster,
+            original_filename=orig_name or None,
             teachable=True,
             paused_frame=True,
             face_identity=v.get("mb_person_name") or "Unknown",
@@ -349,9 +368,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             }
         video_raw.append(item)
 
-    # Collapse near-duplicate video moments (same clip / ~same seek)
+    # Collapse stacked ranges on the same file (same visit / overlapping starts)
     video_kept: list[dict[str, Any]] = []
     video_slots: set[tuple[str, int]] = set()
+    pending: dict[str, list[dict[str, Any]]] = {}
+    pending_order: list[str] = []
     for it in video_raw:
         vid = str(it.get("video_external_id") or "")
         slot = int(float(it.get("start_sec") or 0) // 2.5)
@@ -359,7 +380,53 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         if key in video_slots:
             continue
         video_slots.add(key)
-        video_kept.append(it)
+        if vid not in pending:
+            pending_order.append(vid)
+            pending[vid] = []
+        pending[vid].append(it)
+    for vid in pending_order:
+        group = sorted(pending[vid], key=lambda x: float(x.get("start_sec") or 0))
+        merged: list[dict[str, Any]] = []
+        for it in group:
+            if not merged:
+                merged.append(it)
+                continue
+            prev = merged[-1]
+            gap = 8.0
+            if float(it.get("start_sec") or 0) <= float(prev.get("end_sec") or 0) + gap:
+                start = min(float(prev.get("start_sec") or 0), float(it.get("start_sec") or 0))
+                end_a = prev.get("end_sec")
+                end_b = it.get("end_sec")
+                ends = [float(x) for x in (end_a, end_b) if x is not None]
+                end = max(ends) if ends else start
+                prev["start_sec"] = start
+                prev["t"] = start
+                prev["end_sec"] = end
+                prev["duration_sec"] = (end - start) if end is not None else prev.get("duration_sec")
+                prev["preview"] = f"Moment @ {start:.1f}s"
+                play = str(prev.get("play_url") or "")
+                if "t=" in play:
+                    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                    parts = urlparse(play)
+                    q = parse_qs(parts.query, keep_blank_values=True)
+                    q["t"] = [f"{start:.3f}"]
+                    prev["play_url"] = urlunparse(
+                        (
+                            parts.scheme,
+                            parts.netloc,
+                            parts.path,
+                            parts.params,
+                            urlencode(q, doseq=True),
+                            parts.fragment,
+                        )
+                    )
+                poster = f"/library/media/video-poster?video={vid}&t={start:.3f}"
+                prev["thumb_url"] = poster
+                prev["media_url"] = poster
+            else:
+                merged.append(it)
+        video_kept.extend(merged)
     for it in video_kept:
         add(it)
 

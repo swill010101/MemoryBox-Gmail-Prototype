@@ -6,6 +6,27 @@ from typing import Any
 WORK_ON_NOW_TARGET = 5
 WORK_ON_NOW_CEILING = 7
 
+# Owner/admin runnable jobs (Immich-style: run from Archive Health, not CLI-only).
+OWNER_JOBS = [
+    {
+        "id": "recognition_incremental",
+        "label": "Scan new home videos",
+        "text": (
+            "Walk the MemoryBox-owned home-video folder and subfolders (not Immich ingest). "
+            "Queue each new tape against people who already have exemplars. "
+            "Also seeds new or changed Immich-named people. Does not rescan everyone."
+        ),
+        "action_label": "Run now",
+        "method": "POST",
+        "href": "/recognition/archive-pass?seed_immich=true",
+        "confirm": (
+            "Queue incremental recognition only: new files in the home-video folder, "
+            "plus new or changed Immich-named people. This will not restart a full "
+            "everyone-times-every-video scan. Continue?"
+        ),
+    },
+]
+
 
 def _metric(
     key: str,
@@ -51,6 +72,9 @@ def _db_counts() -> dict[str, int]:
     out: dict[str, int] = {
         "face_appearance_moments": 0,
         "face_evidence": 0,
+        "video_face_observations": 0,
+        "i8b_native_ranges": 0,
+        "i1_hvrt_ranges": 0,
         "people_unresolved": 0,
         "journals_undated": 0,
         "artifacts_without_story": 0,
@@ -67,6 +91,26 @@ def _db_counts() -> dict[str, int]:
             try:
                 out["face_appearance_moments"] = c(
                     "SELECT COUNT(*) AS n FROM face_appearance_moments"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["video_face_observations"] = c(
+                    "SELECT COUNT(*) AS n FROM video_face_observations"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["i8b_native_ranges"] = c(
+                    "SELECT COUNT(*) AS n FROM face_appearance_moments "
+                    "WHERE COALESCE(evidence_lineage, '') = 'mb_native_i8b'"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                out["i1_hvrt_ranges"] = c(
+                    "SELECT COUNT(*) AS n FROM face_appearance_moments "
+                    "WHERE COALESCE(evidence_lineage, method, '') IN ('i1_hvrt', 'auto_associate')"
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -523,7 +567,7 @@ def build_concept_panels(
             state="available",
             source="postgresql:recognition_queue_items",
             last_updated=calculated_at,
-            note="Thin I1 observability — not a recognition redesign.",
+            note="I1 queue plus I8B run_kind (provider_seeded / owner_learned / incremental / correction).",
         ),
     ]
 
@@ -614,19 +658,13 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
     calculated_at = payload.get("calculated_at") or ""
     tabs = payload.get("tabs") or {}
 
-    # Pull live health from Sources tab metrics if present; else re-probe lightly
-    photo_health = {"ok": False, "detail": "unknown"}
-    video_health = {"ok": False, "detail": "unknown"}
-    try:
-        from memorybox.ask.deps import build_photo, build_video
-
-        ph = build_photo().health()
-        photo_health = {"ok": bool(ph.ok), "detail": ph.detail}
-        vh = build_video().health()
-        video_health = {"ok": bool(vh.ok), "detail": vh.detail}
-    except Exception as exc:  # noqa: BLE001
-        photo_health = {"ok": False, "detail": str(exc)}
-        video_health = {"ok": False, "detail": str(exc)}
+    # Reuse health already probed in build_status_summary — do not ping Immich/HVRT again.
+    photo_health = payload.get("photo_health") or {"ok": False, "detail": "unknown"}
+    video_health = payload.get("video_health") or {"ok": False, "detail": "unknown"}
+    if not isinstance(photo_health, dict):
+        photo_health = {"ok": False, "detail": "unknown"}
+    if not isinstance(video_health, dict):
+        video_health = {"ok": False, "detail": "unknown"}
 
     # Locate existing metrics from tabs
     def _find_metric(key: str) -> dict[str, Any] | None:
@@ -734,6 +772,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
                 "intro": concepts["processing_state"]["intro"],
                 "concept": "processing_state",
                 "metrics": concepts["processing_state"]["metrics"],
+                "jobs": list(OWNER_JOBS),
             },
             {
                 "title": concepts["knowledge_gaps"]["title"],
@@ -764,6 +803,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
     payload["product"] = "archive_health"
     payload["increment"] = "P2-I3"
     payload["concepts"] = concepts
+    payload["owner_jobs"] = list(OWNER_JOBS)
     payload["work_on_these_now"] = work
     payload["work_on_these_now_meta"] = {
         "target": WORK_ON_NOW_TARGET,

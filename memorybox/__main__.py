@@ -74,6 +74,39 @@ def main(argv: list[str] | None = None) -> int:
             "§11 ACCEPTED remains a manual owner pass."
         ),
     )
+    p_prove_p2i8b = sub.add_parser(
+        "prove-p2-i8b",
+        help="P2-I8B Person-seeded video recognition & owner Learn prove",
+    )
+    p_prove_p2i8b.add_argument(
+        "--flightsim",
+        action="store_true",
+        help=(
+            "FlightSim: real Immich GET /faces + HVRT. Owner ACCEPTED is Peggy George "
+            "plus one additional Person, negative video, both-in-one where available. "
+            "Does not include I9 speech/voice."
+        ),
+    )
+    p_archive = sub.add_parser(
+        "recognition-archive-pass",
+        help="I8B incremental overnight: new/changed people only, then drain one video at a time",
+    )
+    p_archive.add_argument(
+        "--seed-immich",
+        action="store_true",
+        help=(
+            "Refresh Immich people, then seed only when still-face catalogs changed "
+            "(new named person, new stills, Immich merge). Walks the MB-owned home-video "
+            "folder for new files (not Immich ingest) and queues them as new_video for "
+            "people who already have exemplars. Does not restart unchanged people."
+        ),
+    )
+    p_archive.add_argument(
+        "--full",
+        action="store_true",
+        help="Ignore watermarks: re-seed and queue every named Person against every video",
+    )
+    p_archive.add_argument("--person-limit", type=int, default=80)
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
         help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
@@ -680,6 +713,27 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(out, indent=2, default=str))
         return 0 if out["ok"] else 1
+
+    if args.cmd == "recognition-archive-pass":
+        from memorybox.ask.deps import build_photo, build_video
+        from memorybox.recognition.archive_pass import enqueue_known_people_archive
+
+        payload = enqueue_known_people_archive(
+            video_provider=build_video(),
+            photo_provider=build_photo(),
+            seed_immich=bool(args.seed_immich),
+            person_limit=int(args.person_limit),
+            full=bool(args.full),
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i8b":
+        from memorybox.recognition.p2_i8b_acceptance import prove_p2_i8b
+
+        payload = prove_p2_i8b(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "export":
         from memorybox.export.package import ExportError, build_export_package

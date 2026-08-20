@@ -137,7 +137,7 @@ Activity (optional): `http://127.0.0.1:8790/dev/api/immich-activity`
 | Still on media-server (leave UNC) | Env / code |
 |---|---|
 | SMS / mbox / ICS Sources | `config/memorybox_sources.env` → `P:\photos\memorybox\sources` |
-| Family videos | `MEMORYBOX_VIDEO_MEDIA_ROOT` |
+| Family videos | `MEMORYBOX_VIDEO_MEDIA_ROOT` → `P:\photos\home videos` |
 | Artifact binaries | `MEMORYBOX_ARTIFACT_MEDIA_ROOT` |
 
 Those are not Immich. Do not point them at `127.0.0.1:2283`.

@@ -468,10 +468,24 @@ def _staged_sources_metrics(calculated_at: str) -> list[dict[str, Any]]:
     return out
 
 
+_MEDIA_ROOT_COUNT_CACHE: tuple[float, int | None, str] | None = None
+_MEDIA_ROOT_COUNT_TTL_SEC = 600.0
+
+
 def _count_media_root_videos() -> tuple[int | None, str]:
-    """Count video files under MEMORYBOX_VIDEO_MEDIA_ROOT (filesystem; not HVRT SoT)."""
+    """Count video files under MEMORYBOX_VIDEO_MEDIA_ROOT (filesystem; not HVRT SoT).
+
+    Archive Health must not rglob/stat the whole P: tree on every Refresh — that
+    is what made /status/ui sit for minutes before any panel rendered.
+    """
     import os
+    import time
     from pathlib import Path
+
+    global _MEDIA_ROOT_COUNT_CACHE
+    now = time.monotonic()
+    if _MEDIA_ROOT_COUNT_CACHE and (now - _MEDIA_ROOT_COUNT_CACHE[0]) < _MEDIA_ROOT_COUNT_TTL_SEC:
+        return _MEDIA_ROOT_COUNT_CACHE[1], _MEDIA_ROOT_COUNT_CACHE[2]
 
     raw = (os.environ.get("MEMORYBOX_VIDEO_MEDIA_ROOT") or "").strip()
     if not raw:
@@ -479,17 +493,26 @@ def _count_media_root_videos() -> tuple[int | None, str]:
     root = Path(raw)
     if not root.is_dir():
         return None, f"media root not reachable: {raw}"
-    exts = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm", ".flv"}
+    from memorybox.video_worker import VIDEO_EXTS
+
     n = 0
+    deadline = now + 2.0
+    timed_out = False
     try:
-        for path in root.rglob("*"):
-            try:
-                if path.is_file() and path.suffix.lower() in exts:
+        for dirpath, _dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
+            if time.monotonic() > deadline:
+                timed_out = True
+                break
+            for name in filenames:
+                if Path(name).suffix.lower() in VIDEO_EXTS:
                     n += 1
-            except OSError:
-                continue
     except OSError as exc:
         return None, f"media root scan failed: {exc}"
+    if timed_out:
+        detail = f"{raw} (partial count={n}; folder walk budget 2s — use HVRT indexed count)"
+        # Do not cache a truncated walk as the library total.
+        return n, detail
+    _MEDIA_ROOT_COUNT_CACHE = (now, n, raw)
     return n, raw
 
 
@@ -1128,6 +1151,7 @@ def build_status_summary() -> dict[str, Any]:
             "provider": vh.provider_key,
         }
         media_n, media_detail = _count_media_root_videos()
+        media_partial = "partial count" in str(media_detail)
         media_root_metric = (
             _metric(
                 "source_videos_media_root",
@@ -1136,7 +1160,11 @@ def build_status_summary() -> dict[str, Any]:
                 state="partial",
                 source="filesystem:MEMORYBOX_VIDEO_MEDIA_ROOT",
                 last_updated=calculated_at,
-                reason="Partial — filesystem scan of configured media root",
+                reason=(
+                    "Partial — folder walk budget 2s"
+                    if media_partial
+                    else "Partial — filesystem scan of configured media root"
+                ),
                 note=(
                     f"Recursive count under {media_detail}. "
                     "This is the family-video library on disk — not the same as "
@@ -1193,50 +1221,47 @@ def build_status_summary() -> dict[str, Any]:
             )
         elif vh.ok:
             try:
-                vids = video.list_videos(limit=5000)
-                n_vids = len(vids)
-                bounded = n_vids >= 5000
-                dur = 0.0
-                dur_known = 0
-                for v in vids:
-                    if v.duration_sec is not None:
-                        dur += float(v.duration_sec)
-                        dur_known += 1
-                source_videos = _metric(
-                    "source_videos",
-                    "Source videos (via video provider)",
-                    value=n_vids,
-                    display=f"{n_vids:,}{'+' if bounded else ''}",
-                    state="partial" if bounded else "available",
-                    source="hvrt:list_videos",
-                    last_updated=calculated_at,
-                    href="/review/ui",
-                    note=(
-                        f"Provider={vh.provider_key}. Bounded list ≤5000."
-                        + (" Count may be incomplete." if bounded else "")
-                    ),
-                    reason="Bounded list" if bounded else None,
-                )
-                if dur_known > 0:
-                    video_duration = _metric(
-                        "source_video_duration_sec",
-                        "Source video duration (sec)",
-                        value=int(dur),
-                        state="partial",
-                        source="hvrt:list_videos.duration_sec",
+                inv = getattr(video, "inventory_count", None)
+                snap = inv() if callable(inv) else {}
+                if not isinstance(snap, dict):
+                    snap = {}
+                n_ready = snap.get("ready")
+                n_idx = snap.get("indexed")
+                if n_ready and isinstance(n_idx, int):
+                    n_vids = int(n_idx)
+                    source_videos = _metric(
+                        "source_videos",
+                        "Source videos (via video provider)",
+                        value=n_vids,
+                        state="available",
+                        source="hvrt:/videos/count",
                         last_updated=calculated_at,
-                        reason=f"Summed from {dur_known}/{n_vids} videos with duration",
-                        note=f"Partial — {dur_known}/{n_vids} videos expose duration_sec",
+                        href="/review/ui",
+                        note=f"Provider={vh.provider_key}. Indexed folder count (no full list).",
                     )
                 else:
-                    video_duration = _metric(
-                        "source_video_duration_sec",
-                        "Source video duration (sec)",
-                        state="unavailable",
-                        source="hvrt:list_videos.duration_sec",
+                    source_videos = _metric(
+                        "source_videos",
+                        "Source videos (via video provider)",
+                        state="partial",
+                        source="hvrt:/videos/count",
                         last_updated=calculated_at,
-                        reason="Not available",
+                        href="/review/ui",
+                        reason="Video inventory still warming",
+                        note=(
+                            f"Provider={vh.provider_key}. Worker is walking the home-video "
+                            "folder in the background. Refresh in a bit — do not block Archive Health."
+                        ),
                     )
+                video_duration = _metric(
+                    "source_video_duration_sec",
+                    "Source video duration (sec)",
+                    state="unavailable",
+                    source="hvrt:list_videos.duration_sec",
+                    last_updated=calculated_at,
+                    reason="Not available",
+                    note="Worker inventory does not expose duration on the cheap count path.",
+                )
                 source_video_dates = _metric(
                     "source_videos_dated_undated",
                     "Source videos dated / undated",
@@ -2531,6 +2556,8 @@ def build_status_summary() -> dict[str, Any]:
     payload = {
         "ok": True,
         "calculated_at": calculated_at,
+        "photo_health": photo_health,
+        "video_health": video_health,
         "default_tab": "archive_summary",
         "metric_contract": {
             "fields": [

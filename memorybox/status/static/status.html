@@ -32,6 +32,7 @@
       font-size: 0.88rem;
     }
     .ah-work-btn { text-decoration: none; display: inline-block; margin-top: 0.35rem; }
+    .ah-job-status { display: block; margin-top: 0.35rem; font-size: 0.82rem; color: #5a564c; }
     .tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0 1rem; }
     .tabs button {
       border: 1px solid rgba(197, 206, 200, 0.28);
@@ -95,10 +96,10 @@
       <button type="button" id="refreshBtn">Refresh</button>
       <a class="ah-work-btn" href="/settings/ui?mb_return=1">Settings / providers</a>
     </div>
-    <p class="muted" id="calcAt"></p>
+    <p class="muted" id="calcAt">Loading Archive Health…</p>
   </div>
   <div class="tabs" id="tabs"></div>
-  <div id="panel"></div>
+  <div id="panel"><p class="muted">Loading panels from Postgres and cached provider counts. The home-video folder is not fully walked on this page.</p></div>
   <p class="err" id="loadErr"></p>
 </main>
 <script>
@@ -158,6 +159,21 @@
         sec.metrics.forEach(m => { html += metricRow(m); });
         html += `</tbody></table>`;
       }
+      if (sec.jobs && sec.jobs.length) {
+        html += `<ul class="tasks">`;
+        sec.jobs.forEach(j => {
+          const label = j.action_label || "Run now";
+          const jid = esc(j.id || "job");
+          html += `<li>` +
+            `<span class="task-text"><strong>${esc(j.label || "Job")}</strong> — ${esc(j.text || "")}</span>` +
+            `<button type="button" class="ah-work-btn" data-job-run="1" data-job-id="${jid}" ` +
+            `data-href="${esc(j.href || "")}" data-method="${esc(j.method || "POST")}" ` +
+            `data-confirm="${esc(j.confirm || "")}">${esc(label)}</button>` +
+            `<span class="ah-job-status" id="jobStatus-${jid}"></span>` +
+            `</li>`;
+        });
+        html += `</ul>`;
+      }
       if (sec.tasks && sec.tasks.length) {
         html += `<ul class="tasks">`;
         sec.tasks.forEach(t => {
@@ -176,6 +192,40 @@
       html += `</section>`;
     });
     panel.innerHTML = html;
+    panel.querySelectorAll("[data-job-run]").forEach((btn) => {
+      btn.addEventListener("click", () => runOwnerJob(btn));
+    });
+  }
+
+  async function runOwnerJob(btn) {
+    const href = btn.getAttribute("data-href") || "";
+    const method = (btn.getAttribute("data-method") || "POST").toUpperCase();
+    const confirmMsg = btn.getAttribute("data-confirm") || "";
+    const jid = btn.getAttribute("data-job-id") || "job";
+    const statusEl = document.getElementById("jobStatus-" + jid);
+    if (!href) return;
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Running…";
+    try {
+      const r = await fetch(href, { method });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.detail || r.statusText);
+      const queued = body.people_queued != null ? String(body.people_queued) : "?";
+      const unchanged = body.unchanged != null ? String(body.unchanged) : "?";
+      if (statusEl) {
+        statusEl.textContent =
+          "Queued. Drain continues in the background. people_queued=" +
+          queued +
+          " unchanged=" +
+          unchanged +
+          ". Open Refresh to update queue counts.";
+      }
+    } catch (err) {
+      if (statusEl) statusEl.textContent = String(err.message || err);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function load() {

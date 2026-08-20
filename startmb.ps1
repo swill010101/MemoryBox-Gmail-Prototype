@@ -86,6 +86,7 @@ function Load-MbEnv {
   if (-not $env:MEMORYBOX_HOST) { $env:MEMORYBOX_HOST = "0.0.0.0" }
   if (-not $env:MEMORYBOX_PORT) { $env:MEMORYBOX_PORT = "$ServePort" }
   if (-not $env:MEMORYBOX_P1_RUNTIME_HOST) { $env:MEMORYBOX_P1_RUNTIME_HOST = "1" }
+  if (-not $env:MEMORYBOX_RECOGNITION_DRAIN) { $env:MEMORYBOX_RECOGNITION_DRAIN = "1" }
   if (-not $env:MEMORYBOX_PHOTO_PROVIDER) { $env:MEMORYBOX_PHOTO_PROVIDER = "immich" }
   if (-not $env:MEMORYBOX_VIDEO_PROVIDER) { $env:MEMORYBOX_VIDEO_PROVIDER = "hvrt" }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_URL) {
@@ -93,6 +94,16 @@ function Load-MbEnv {
   }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_HOST) { $env:MEMORYBOX_VIDEO_WORKER_HOST = "127.0.0.1" }
   if (-not $env:MEMORYBOX_VIDEO_WORKER_PORT) { $env:MEMORYBOX_VIDEO_WORKER_PORT = "$WorkerPort" }
+  $flightsimHomeVideos = "P:\photos\home videos"
+  if (-not $env:MEMORYBOX_VIDEO_MEDIA_ROOT) {
+    $env:MEMORYBOX_VIDEO_MEDIA_ROOT = $flightsimHomeVideos
+  }
+  if ($env:MEMORYBOX_VIDEO_MEDIA_ROOT -and -not (Test-Path -LiteralPath $env:MEMORYBOX_VIDEO_MEDIA_ROOT)) {
+    if (Test-Path -LiteralPath $flightsimHomeVideos) {
+      Write-Host "  WARNING: MEMORYBOX_VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT) is not a readable folder. Using $flightsimHomeVideos" -ForegroundColor Yellow
+      $env:MEMORYBOX_VIDEO_MEDIA_ROOT = $flightsimHomeVideos
+    }
+  }
   $immichPath = Join-Path $Root "config\immich.env"
   if (-not $env:MEMORYBOX_IMMICH_ENV -and (Test-Path -LiteralPath $immichPath)) {
     $env:MEMORYBOX_IMMICH_ENV = $immichPath
@@ -110,6 +121,53 @@ function Resolve-Python {
   if (-not $cmd) { $cmd = Get-Command py -ErrorAction SilentlyContinue }
   if (-not $cmd) { throw "python not found on PATH" }
   return $cmd.Source
+}
+
+function Add-DirToUserPath([string]$Dir) {
+  if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { return }
+  $env:Path = "$Dir;" + $env:Path
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if ($null -eq $userPath) { $userPath = "" }
+  $parts = @($userPath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  $already = $false
+  foreach ($p in $parts) {
+    if ([string]::Equals($p, $Dir, [StringComparison]::OrdinalIgnoreCase)) { $already = $true; break }
+  }
+  if (-not $already) {
+    $next = if ($userPath.Trim()) { "$Dir;$userPath" } else { $Dir }
+    [Environment]::SetEnvironmentVariable("Path", $next, "User")
+    Write-Host "  User PATH += $Dir (open a new PowerShell for psql)"
+  }
+}
+
+function Ensure-PsqlOnPath {
+  Write-Step "Ensuring psql is on PATH"
+  $existing = Get-Command psql -ErrorAction SilentlyContinue
+  if ($existing) {
+    Write-Host "  psql already on PATH: $($existing.Source)"
+    return
+  }
+  $nativeDir = $null
+  $pgRoot = Join-Path ${env:ProgramFiles} "PostgreSQL"
+  if (Test-Path -LiteralPath $pgRoot) {
+    $hit = Get-ChildItem -LiteralPath $pgRoot -Directory -ErrorAction SilentlyContinue |
+      ForEach-Object { Join-Path $_.FullName "bin\psql.exe" } |
+      Where-Object { Test-Path -LiteralPath $_ } |
+      Select-Object -First 1
+    if ($hit) { $nativeDir = Split-Path -Parent $hit }
+  }
+  if ($nativeDir) {
+    Add-DirToUserPath $nativeDir
+    Write-Host "  using Windows PostgreSQL client: $nativeDir"
+    return
+  }
+  $tools = Join-Path $Root "tools"
+  if (-not (Test-Path -LiteralPath (Join-Path $tools "psql.cmd"))) {
+    Write-Host "  WARNING: no Windows psql.exe and no $tools\psql.cmd. Use: docker exec -it memorybox-pg psql -U memorybox -d memorybox" -ForegroundColor Yellow
+    return
+  }
+  Add-DirToUserPath $tools
+  Write-Host "  FlightSim Postgres is Docker (memorybox-pg). tools\psql.cmd is now on PATH."
 }
 
 function Wait-DockerReady([int]$Seconds) {
@@ -225,6 +283,7 @@ if ($Role -eq "worker" -or $Role -eq "serve") {
   $PythonExe = Resolve-Python
   if ($Role -eq "worker") {
     Write-Host "Starting video worker on :$($env:MEMORYBOX_VIDEO_WORKER_PORT)"
+    Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
     & $PythonExe -m memorybox.video_worker
     exit $LASTEXITCODE
   }
@@ -242,7 +301,10 @@ Load-MbEnv
 Write-Host "  DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL)"
 Write-Host "  QDRANT_URL=$($env:MEMORYBOX_QDRANT_URL)"
 Write-Host "  VIDEO_WORKER_URL=$($env:MEMORYBOX_VIDEO_WORKER_URL)"
+Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
 Write-Host "  IMMICH_ENV=$($env:MEMORYBOX_IMMICH_ENV)"
+
+Ensure-PsqlOnPath
 
 Wait-DockerReady -Seconds $DockerWaitSec
 

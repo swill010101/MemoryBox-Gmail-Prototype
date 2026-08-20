@@ -5,6 +5,7 @@ from memorybox.recognition.queue import (
     enqueue_full_eligible_archive,
     list_queue_items,
     queue_summary,
+    retry_failed_items,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "enqueue_full_eligible_archive",
     "list_queue_items",
     "queue_summary",
+    "retry_failed_items",
 ]

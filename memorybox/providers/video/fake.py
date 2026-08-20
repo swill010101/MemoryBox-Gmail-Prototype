@@ -18,12 +18,19 @@ PROVIDER_KEY = "fake_video"
 PEGGY_FACE_ID = "face-peggy-1"
 OTHER_FACE_ID = "face-other-9"
 
+# Orthogonal synthetic embeddings for I8B harness (no InsightFace required).
+I8B_PEGGY_VEC = [1.0] + [0.0] * 15
+I8B_OTHER_VEC = [0.0, 1.0] + [0.0] * 14
+# Cosine vs Peggy exemplars ≈ 0.30 (uncertain band 0.28–0.38)
+I8B_UNCERTAIN_PEGGY_VEC = [0.32] + [0.0] * 14 + [0.947]
+
 
 class FakeVideoProvider:
     provider_key = PROVIDER_KEY
 
-    def __init__(self, *, presence_gap_sec: float = 60.0, peggy_corpus: bool = False) -> None:
+    def __init__(self, *, presence_gap_sec: float = 60.0, peggy_corpus: bool = False, i8b_corpus: bool = False) -> None:
         self.presence_gap_sec = presence_gap_sec
+        self.i8b_corpus = bool(i8b_corpus)
         if peggy_corpus:
             # Enough videos to demonstrate full-library queue + §1.D corpus
             self._videos = [
@@ -70,6 +77,15 @@ class FakeVideoProvider:
                     duration_sec=None,
                 ),
             ]
+            if i8b_corpus:
+                self._videos.append(
+                    VideoAssetDto(
+                        provider_key=self.provider_key,
+                        external_id="video-both-people",
+                        title="Peggy and second person both appear",
+                        duration_sec=40.0,
+                    )
+                )
             self._raw: list[tuple[str, RawDetection]] = [
                 ("video-peggy-clear", RawDetection(PEGGY_FACE_ID, 5.0, 8.0, "Peggy")),
                 ("video-peggy-clear", RawDetection(PEGGY_FACE_ID, 20.0, 22.0, "Peggy")),
@@ -81,6 +97,13 @@ class FakeVideoProvider:
                 ("video-library-02", RawDetection(PEGGY_FACE_ID, 7.0, 9.0, "Peggy")),
                 ("video-library-03", RawDetection(OTHER_FACE_ID, 2.0, 3.0, "Other")),
             ]
+            if i8b_corpus:
+                self._raw.append(
+                    ("video-both-people", RawDetection(PEGGY_FACE_ID, 4.0, 6.0, "Peggy"))
+                )
+                self._raw.append(
+                    ("video-both-people", RawDetection(OTHER_FACE_ID, 18.0, 20.0, "Other"))
+                )
             self._unprocessable = {"video-corrupt-demo": "unsupported_codec"}
         else:
             self._videos = [
@@ -217,6 +240,36 @@ class FakeVideoProvider:
                 )
             )
         return hits[: query.limit]
+
+    def i8b_scan_samples(self, video_external_id: str) -> list[dict]:
+        """Synthetic per-frame embeddings for I8B (same vectors as seeded exemplars)."""
+        out: list[dict] = []
+        if video_external_id == "video-peggy-ambiguous":
+            return [
+                {
+                    "t_sec": 12.0,
+                    "embedding": list(I8B_UNCERTAIN_PEGGY_VEC),
+                    "bbox": {"x1": 10, "y1": 10, "x2": 80, "y2": 80},
+                }
+            ]
+        for vid, det in self._raw:
+            if vid != video_external_id:
+                continue
+            if det.candidate_id == PEGGY_FACE_ID:
+                vec = I8B_PEGGY_VEC
+            elif det.candidate_id == OTHER_FACE_ID:
+                vec = I8B_OTHER_VEC
+            else:
+                continue
+            out.append(
+                {
+                    "t_sec": float(det.t_sec),
+                    "embedding": list(vec),
+                    "bbox": {"x1": 8, "y1": 8, "x2": 90, "y2": 90},
+                    "face_external_id": det.candidate_id,
+                }
+            )
+        return out
 
     def get_segment(self, external_id: str) -> VideoSegmentHit | None:
         for h in self.search_segments(VideoSearchQuery(limit=500)):

@@ -97,6 +97,33 @@ Default DB URL the script uses when unset:
 postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
 ```
 
+`psql` is **not** a Windows install on FlightSim. It lives inside Docker (`memorybox-pg`). `startmb` puts `tools\` on your **User PATH** (or `C:\Program Files\PostgreSQL\<ver>\bin` if a client is installed). **Open a new PowerShell** after the first `startmb` so PATH updates.
+
+Until then, from any PowerShell:
+
+```powershell
+docker exec -it memorybox-pg psql -U memorybox -d memorybox
+```
+
+One-shot PATH (repo tools wrapper) if you do not want to wait for `startmb`:
+
+```powershell
+$tools = "C:\MemoryBox\tools"
+if (-not (Test-Path $tools)) { $tools = "C:\memorybox\tools" }
+$user = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($user -notmatch [regex]::Escape($tools)) {
+  [Environment]::SetEnvironmentVariable("Path", "$tools;$user", "User")
+}
+$env:Path = "$tools;$env:Path"
+psql
+```
+
+At the `memorybox=#` prompt, type SQL. `\q` to quit. For a one-liner, stay inside `psql` or:
+
+```powershell
+docker exec -i memorybox-pg psql -U memorybox -d memorybox -c "SELECT 1"
+```
+
 ---
 
 ## After reboot checklist (if startmb fails)
