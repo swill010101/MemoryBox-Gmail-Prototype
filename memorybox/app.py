@@ -1270,6 +1270,74 @@ def ask_endpoint(body: AskRequest) -> dict[str, Any]:
     return result.to_dict()
 
 
+class OccurrenceMemberAction(BaseModel):
+    reason: str | None = None
+
+
+@app.get("/occurrences/inventory")
+def occurrences_inventory() -> dict[str, Any]:
+    from memorybox.occurrence.inventory import inventory_proof_candidates
+
+    return {"ok": True, "candidates": inventory_proof_candidates()}
+
+
+@app.get("/occurrences/{occurrence_id}")
+def occurrence_get(occurrence_id: str) -> dict[str, Any]:
+    from memorybox.occurrence.retrieve import hydrate_memberships
+    from memorybox.occurrence.store import get_occurrence, list_places
+
+    occ = get_occurrence(occurrence_id)
+    if not occ:
+        raise HTTPException(status_code=404, detail="occurrence not found")
+    hydrated = hydrate_memberships(occurrence_id)
+    occ["places"] = list_places(occurrence_id)
+    occ["memberships"] = hydrated.get("members") or []
+    occ["spoken_precise"] = hydrated.get("spoken_precise") or []
+    return {"ok": True, "occurrence": occ}
+
+
+@app.post("/occurrences/{occurrence_id}/members/{membership_id}/confirm")
+def occurrence_member_confirm(
+    occurrence_id: str, membership_id: str, body: OccurrenceMemberAction | None = None
+) -> dict[str, Any]:
+    from memorybox.occurrence.owner import confirm_membership
+
+    row = confirm_membership(
+        membership_id, reason=(body.reason if body else None) or "owner_confirm"
+    )
+    if str(row.get("occurrence_id")) != occurrence_id:
+        raise HTTPException(status_code=404, detail="membership not on this occurrence")
+    return {"ok": True, "membership": row}
+
+
+@app.post("/occurrences/{occurrence_id}/members/{membership_id}/reject")
+def occurrence_member_reject(
+    occurrence_id: str, membership_id: str, body: OccurrenceMemberAction | None = None
+) -> dict[str, Any]:
+    from memorybox.occurrence.owner import reject_membership
+
+    row = reject_membership(
+        membership_id, reason=(body.reason if body else None) or "owner_reject"
+    )
+    if str(row.get("occurrence_id")) != occurrence_id:
+        raise HTTPException(status_code=404, detail="membership not on this occurrence")
+    return {"ok": True, "membership": row}
+
+
+@app.post("/occurrences/{occurrence_id}/members/{membership_id}/unlink")
+def occurrence_member_unlink(
+    occurrence_id: str, membership_id: str, body: OccurrenceMemberAction | None = None
+) -> dict[str, Any]:
+    from memorybox.occurrence.owner import unlink_membership
+
+    row = unlink_membership(
+        membership_id, reason=(body.reason if body else None) or "owner_unlink"
+    )
+    if str(row.get("occurrence_id")) != occurrence_id:
+        raise HTTPException(status_code=404, detail="membership not on this occurrence")
+    return {"ok": True, "membership": row}
+
+
 @app.post("/ask/api/compile")
 def ask_compile(body: AskRequest) -> dict[str, Any]:
     """MBQL-001 compile — STT-ready. Deterministic first; no model on this route."""

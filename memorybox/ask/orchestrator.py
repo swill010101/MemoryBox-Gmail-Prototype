@@ -265,6 +265,7 @@ class AskResult:
     provider_status: dict[str, Any]
     inventing: bool = False
     trace_id: str | None = None
+    occurrence: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -287,6 +288,7 @@ class AskResult:
             "provider_status": self.provider_status,
             "inventing": self.inventing,
             "trace_id": self.trace_id,
+            "occurrence": self.occurrence,
         }
 
 
@@ -1317,7 +1319,49 @@ class AskOrchestrator:
                 inventing=False,
             )
 
+        occurrence_info: dict[str, Any] | None = None
+        occ_hydrated: dict[str, Any] | None = None
         if not plan.requires_clarification and not plan.journal_capture_intent:
+            try:
+                from memorybox.occurrence.apply import (
+                    apply_occurrence_retrieve,
+                    occurrence_payload,
+                )
+
+                # Do not feed unconstrained photo OR-search into membership.
+                # Photos join by owner assertion, date+Place/GPS on the Occurrence, or explicit seed.
+                plan, occ_row, occ_hydrated = apply_occurrence_retrieve(
+                    plan, photo_hits=None
+                )
+                if occ_row and occ_hydrated:
+                    occurrence_info = occurrence_payload(occ_row, occ_hydrated)
+                    evidence = list(occ_hydrated.get("evidence") or [])
+                    photos = list(occ_hydrated.get("photos") or [])
+                    videos = list(occ_hydrated.get("videos") or [])
+                    artifacts = list(occ_hydrated.get("artifacts") or [])
+                    photo_status = {
+                        "ok": True,
+                        "detail": "occurrence_membership",
+                        "identity_mode": "occurrence",
+                    }
+                    video_status = {
+                        "ok": True,
+                        "detail": (
+                            "occurrence_membership "
+                            f"spoken_precise={len(occ_hydrated.get('spoken_precise') or [])}"
+                        ),
+                        "identity_mode": "occurrence",
+                    }
+                    qdrant_status = {"ok": True, "detail": "skipped_occurrence_membership"}
+            except Exception:
+                occ_hydrated = None
+                occurrence_info = None
+
+        if (
+            not occ_hydrated
+            and not plan.requires_clarification
+            and not plan.journal_capture_intent
+        ):
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
                 if (R._sms_ask(plan) or R._email_ask(plan)) and plan.want_communication:
@@ -1393,7 +1437,7 @@ class AskOrchestrator:
         # Learned-voice files (FlightSim: Tom Will talking → 0 memories).
         skip_identity_wipe = getattr(plan, "want_spoken", False) or getattr(
             plan, "want_video", False
-        )
+        ) or bool(occ_hydrated)
         for st in (photo_status, video_status):
             mode = str((st or {}).get("identity_mode") or "")
             if mode not in ("ambiguous_identity", "unknown_person"):
@@ -1482,6 +1526,15 @@ class AskOrchestrator:
             artifacts=artifacts,
             guided_capture=guided_capture,
         )
+        if occurrence_info:
+            answer_kind = "occurrence_membership"
+            answer_text = str(occurrence_info.get("disclosure") or answer_text)
+            cand_n = int(occurrence_info.get("candidate_n") or 0)
+            if cand_n:
+                extra_c = (
+                    f"{cand_n} nearby item(s) are candidates, not silently added history."
+                )
+                missing = f"{missing} {extra_c}".strip() if missing else extra_c
 
         # I10: disclose cross-modality mapping gaps (Ask + Library share same Person X)
         cross: list[str] = []
@@ -1568,6 +1621,17 @@ class AskOrchestrator:
                 else "not_requested"
             ),
         }
+        if occurrence_info:
+            providers["occurrence"] = {
+                "ok": True,
+                "detail": "membership",
+                "occurrence_id": occurrence_info.get("id"),
+                "kind": occurrence_info.get("kind"),
+                "label": occurrence_info.get("label"),
+                "retrieval": "membership",
+                "confirmed_n": occurrence_info.get("confirmed_n"),
+                "candidate_n": occurrence_info.get("candidate_n"),
+            }
 
         return AskResult(
             session_id=new_ctx.session_id,
@@ -1588,6 +1652,7 @@ class AskOrchestrator:
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,
+            occurrence=occurrence_info,
         )
 
     def get_context(self, session_id: str) -> AskContext:

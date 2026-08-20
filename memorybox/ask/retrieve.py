@@ -36,6 +36,10 @@ class EvidenceHit:
     identity_mapped: list[dict[str, str]] | None = None
     from_header: str | None = None
     to_header: str | None = None
+    membership_status: str | None = None
+    membership_id: str | None = None
+    occurrence_id: str | None = None
+    join_method: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -178,6 +182,10 @@ class PhotoHit:
     exif: dict[str, str] | None = None
     # Immich-named faces on the asset (+ optional boxes)
     faces: list[dict[str, Any]] | None = None
+    membership_status: str | None = None
+    membership_id: str | None = None
+    occurrence_id: str | None = None
+    join_method: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -202,6 +210,11 @@ class VideoHit:
     thumb_url: str | None = None
     spoken_text: str | None = None
     clip_kind: str | None = None
+    spoken_moment_id: str | None = None
+    membership_status: str | None = None
+    membership_id: str | None = None
+    occurrence_id: str | None = None
+    join_method: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

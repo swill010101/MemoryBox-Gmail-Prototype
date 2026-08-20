@@ -25,7 +25,12 @@ _CAL_ASK_RE = re.compile(
 
 
 def _is_voice_presence(item: dict[str, Any]) -> bool:
-    """Voice identifies a Person in a file. Face owns start:end gallery clips."""
+    """Voice identifies a Person in a file. Face owns start:end gallery clips.
+
+    I10 Spoken Moment members keep t_start/t_end — do not collapse those to file start.
+    """
+    if str(item.get("clip_kind") or "") == "spoken_moment" or item.get("spoken_moment_id"):
+        return False
     if str(item.get("clip_kind") or "") == "voice_presence":
         return True
     if str(item.get("attribution") or "").startswith("voice_in_video"):
@@ -263,6 +268,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             "original_filename": p.get("original_filename"),
             "exif": p.get("exif") if isinstance(p.get("exif"), dict) else None,
             "faces": list(p.get("faces") or []) if isinstance(p.get("faces"), list) else [],
+            "membership_status": p.get("membership_status"),
+            "membership_id": p.get("membership_id"),
+            "occurrence_id": p.get("occurrence_id"),
         }
         if lat_f is not None and lng_f is not None:
             extra["lat"] = lat_f
@@ -370,7 +378,11 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             paused_frame=not voice_presence,
             face_identity=v.get("mb_person_name") or "Unknown",
             spoken_text=v.get("spoken_text"),
-            clip_kind="voice_presence" if voice_presence else None,
+            clip_kind="voice_presence" if voice_presence else (v.get("clip_kind") or None),
+            membership_status=v.get("membership_status"),
+            membership_id=v.get("membership_id"),
+            occurrence_id=v.get("occurrence_id"),
+            spoken_moment_id=v.get("spoken_moment_id"),
         )
         if v.get("spoken_text") and voice_presence:
             item["preview"] = str(v.get("spoken_text"))[:160]
@@ -567,6 +579,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             attachments=e.get("attachments") or None,
             thread_id=e.get("thread_id"),
             direction=e.get("direction"),
+            membership_status=e.get("membership_status"),
+            membership_id=e.get("membership_id"),
+            occurrence_id=e.get("occurrence_id"),
         )
         if is_sms_item:
             item["preview"] = preview
@@ -574,7 +589,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["title"] = title
         item["from"] = (
             e.get("from_header")
-            or people[0]
+            or (people[0] if people else None)
             or e.get("thread_id")
             or "Message"
         )
@@ -668,6 +683,9 @@ def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
         add("event", str(ev))
     for tr in slots.get("trip") or plan.get("trip_labels") or []:
         add("trip", str(tr))
+    occ = result.get("occurrence") or {}
+    if occ.get("label"):
+        add(str(occ.get("kind") or "event"), str(occ.get("label")))
     # Temporal chip — prefer holiday/season label over raw year range chip later
     tlabel = plan.get("temporal_label") or slots.get("time_label")
     if tlabel:
