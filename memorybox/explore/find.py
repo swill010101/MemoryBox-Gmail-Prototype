@@ -607,6 +607,8 @@ def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
         add("event", str(ev))
     for tr in slots.get("trip") or plan.get("trip_labels") or []:
         add("trip", str(tr))
+    for th in slots.get("theme") or plan.get("theme_labels") or []:
+        add("theme", str(th))
     # Temporal chip — prefer holiday/season label over raw year range chip later
     tlabel = plan.get("temporal_label") or slots.get("time_label")
     if tlabel:
@@ -1068,6 +1070,11 @@ def build_explore_find(
     show_sms = explicit_text_gallery(result, text)
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
+    plan_early = result.get("plan") or {}
+    if plan_early.get("want_cross_source") or plan_early.get("gallery_show_email"):
+        show_sms = True
+        show_email = True
+        show_calendar = True
     if present_l in {"communications", "comms", "email", "sms", "texts"}:
         if present_l in {"communications", "comms"}:
             show_sms = True
@@ -1176,6 +1183,11 @@ def build_explore_find(
         ).strip()
 
     plan = result.get("plan") or {}
+    coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
+    if coverage and coverage.get("summary"):
+        summary = (
+            str(coverage.get("summary") or "").strip() + " " + (summary or "")
+        ).strip()
     return {
         "ok": True,
         "demo": False,
@@ -1193,6 +1205,7 @@ def build_explore_find(
         "provider_status": result.get("provider_status") or {},
         "plan": plan,
         "context": result.get("context"),
+        "coverage": coverage,
         # Shared exploration hints for Gallery/Timeline/Map sync
         "explore_state": {
             "person_names": list(plan.get("person_names") or []),

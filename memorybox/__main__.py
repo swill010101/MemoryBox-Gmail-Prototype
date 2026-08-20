@@ -148,6 +148,15 @@ def main(argv: list[str] | None = None) -> int:
         default=8,
         help="Also enqueue this many newly added videos (per-video, not people × files)",
     )
+    p_prove_p2i10 = sub.add_parser(
+        "prove-p2-i10",
+        help="P2-I10 Cross-Source Correlation prove (harness; optional DB pack)",
+    )
+    p_prove_p2i10.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Includes definition-authorized check. Owner ACCEPTED remains a manual mixed-pack pass.",
+    )
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
         help="Read-only: staged ICS vs PG calendar_event (Archive Health calendar slice; no ingest)",
@@ -798,6 +807,13 @@ def main(argv: list[str] | None = None) -> int:
             video_id=getattr(args, "video_id", None),
             more=int(getattr(args, "more", 8) or 8),
         )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-p2-i10":
+        from memorybox.correlate.p2_i10_acceptance import prove_p2_i10
+
+        payload = prove_p2_i10(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

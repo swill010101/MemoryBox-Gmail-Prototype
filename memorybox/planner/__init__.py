@@ -39,6 +39,14 @@ BROAD_VISUAL_RE = re.compile(
     r"(?i)\b(pictures?|images?|snapshots?|gallery|album|visuals?)\b"
 )
 SHOW_ME_RE = re.compile(r"(?i)\bshow\s+me\b")
+EVERYTHING_ABOUT_RE = re.compile(
+    r"(?i)\b(?:"
+    r"show\s+me\s+everything(?:\s+(?:that\s+)?i\s+have)?\s+about|"
+    r"everything\s+(?:that\s+)?(?:i\s+have\s+)?about|"
+    r"what\s+do\s+i\s+have\s+about|"
+    r"find\s+everything\s+about"
+    r")\s+(.+)$"
+)
 EXPLORATORY_RE = re.compile(
     r"(?i)\b(?:"
     r"what\s+do\s+(?:you|i|we)\s+know\s+about|"
@@ -227,6 +235,7 @@ SHOW_ME_PERSON_RE = re.compile(
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|all\b|"
     r"stories?\b|story\b|artifacts?\b|journals?\b|"
+    r"everything\b|what\b|"
     r"the\b|last\b|first\b|next\b|recent\b|how\b|write\b|attachments?\b)"
     rf"{_PERSON_NAME}\b"
 )
@@ -477,6 +486,8 @@ class QueryPlan:
     gallery_show_calendar: bool | None = None
     attachments_only: bool | None = None
     memory_presentation: bool | None = None
+    want_cross_source: bool = False
+    theme_labels: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -505,6 +516,8 @@ class QueryPlan:
             out.append("artifact")
         if self.want_guided_capture:
             out.append("guided_capture")
+        if self.want_cross_source:
+            out.append("cross_source")
         return tuple(out)
 
 
@@ -532,6 +545,38 @@ def _dedupe(items: list[str]) -> list[str]:
             seen.add(k)
             out.append(i)
     return out
+
+
+def _theme_from_about(
+    about: str,
+    *,
+    people: list[str],
+    places: list[str],
+    trips: list[str],
+    events: list[str],
+) -> tuple[list[str], list[str]]:
+    """Possessive person + leftover theme tokens from an everything-about clause."""
+    extra_people: list[str] = []
+    text = (about or "").strip().strip(".,")
+    poss = re.match(r"(?i)^([A-Za-z][A-Za-z'’.-]*?)(?:'s|’s)\s+(.+)$", text)
+    if poss:
+        who = _clean_entity(poss.group(1))
+        rest = poss.group(2)
+        if who and who.lower() not in {p.lower() for p in people}:
+            extra_people.append(who)
+        text = rest
+    for name in list(people) + extra_people + list(places) + list(trips) + list(events):
+        if not name:
+            continue
+        text = re.sub(rf"(?i)\b{re.escape(name)}(?:'s|’s)?\b", " ", text)
+    text = re.sub(
+        r"(?i)\b(the|a|an|our|my|his|her|their|trip|story|stories)\b",
+        " ",
+        text,
+    )
+    theme = " ".join(text.split()).strip(" .")
+    themes = [theme] if theme and len(theme) >= 3 else []
+    return extra_people, themes
 
 
 def _extract_people(text: str, *, want_email: bool) -> list[str]:
@@ -797,7 +842,25 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_spoken = True
         notes.append("want_spoken_talking")
     said_about = bool(SAID_ABOUT_RE.search(q)) and not want_spoken
+    everything_m = EVERYTHING_ABOUT_RE.search(q)
+    want_cross_source = bool(everything_m) and not want_spoken
+    theme_labels: list[str] = []
+    if want_cross_source:
+        extra_p, theme_labels = _theme_from_about(
+            everything_m.group(1) if everything_m else "",
+            people=u_people,
+            places=u_places,
+            trips=u_trips,
+            events=u_events,
+        )
+        for p in extra_p:
+            if p.lower() not in {x.lower() for x in u_people}:
+                u_people.append(p)
+        notes.append("p2_i10_cross_source")
+        if theme_labels:
+            notes.append("theme=" + ",".join(theme_labels))
     # Explicit modality narrowing always wins over exploratory multimodal.
+    # Everything-about is an explicit all-source ask, not a narrowing.
     narrowed_comms = bool(want_email or want_sms or want_relationship or said_about)
     narrowed_visual = bool(STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q) or BROAD_VISUAL_RE.search(q))
 
@@ -867,13 +930,25 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_photo = True
         notes.append("exploratory_multimodal_i4")
 
-    if want_spoken:
+    if want_spoken and not want_cross_source:
         visual_scope = "video_only"
         want_still = False
         want_video = True
         want_visual = True
         want_photo = False
         notes.append("want_spoken_modality")
+
+    if want_cross_source:
+        want_email = True
+        want_sms = True
+        want_cal = True
+        visual_scope = "broad"
+        want_still = True
+        want_video = True
+        want_visual = True
+        want_photo = True
+        want_spoken = True
+        notes.append("p2_i10_all_modalities")
 
     if said_about and not narrowed_visual:
         want_email = True
@@ -1290,6 +1365,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     constraints.extend(places)
     constraints.extend(trips)
     constraints.extend(events)
+    constraints.extend(theme_labels)
     if t0:
         constraints.append(t0[:4] if len(t0) >= 4 else t0)
     constraints = _dedupe(constraints)
@@ -1326,7 +1402,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     # so Immich hangs/empties don't leave Explore at 0 (FlightSim: Tom Will stories gone).
     want_story = False
     if not requires_clarification:
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_story = True
         if any(
             n in notes
@@ -1360,7 +1436,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     elif not requires_clarification:
         if JOURNAL_ASK_RE.search(q):
             want_journal = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_journal = True
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_journal = False
@@ -1376,7 +1452,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if not requires_clarification and not journal_capture_intent:
         if ARTIFACT_ASK_RE.search(q):
             want_artifact = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_artifact = True
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_artifact = False
@@ -1392,14 +1468,14 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if not requires_clarification and not journal_capture_intent:
         if said_about or GUIDED_CAPTURE_ASK_RE.search(q):
             want_guided_capture = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes:
+        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_guided_capture = True
         if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
             want_guided_capture = False
         if want_guided_capture:
             notes.append("want_guided_capture_modality")
 
-    if want_spoken:
+    if want_spoken and not want_cross_source:
         visual_scope = "video_only"
         want_still = False
         want_video = True
@@ -1473,4 +1549,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         retrieval_constraints=tuple(constraints),
         act="clarify" if requires_clarification else "find",
         compile_provenance="deterministic",
+        gallery_show_sms=True if want_cross_source else None,
+        gallery_show_email=True if want_cross_source else None,
+        gallery_show_calendar=True if want_cross_source else None,
+        want_cross_source=want_cross_source and not journal_capture_intent,
+        theme_labels=tuple(theme_labels),
     )
