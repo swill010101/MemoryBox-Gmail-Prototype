@@ -179,6 +179,19 @@ _VIDEO_BY_ID: dict[str, dict[str, Any]] = {}
 _VIDEO_INDEX_TTL_SEC = 300.0
 
 
+def invalidate_video_index() -> None:
+    """Drop the 5-minute walk cache so a newly copied file is visible."""
+    global _VIDEO_INDEX, _VIDEO_BY_ID
+    _VIDEO_INDEX = None
+    _VIDEO_BY_ID = {}
+
+
+def list_owned_folder_videos(*, limit: int = 100000) -> list[dict[str, Any]]:
+    """Recursive walk of MEMORYBOX_VIDEO_MEDIA_ROOT (MB-owned tapes, not Immich)."""
+    invalidate_video_index()
+    return _scan_videos(limit=int(limit))
+
+
 def _index_lookup() -> dict[str, dict[str, Any]]:
     _video_index()
     return _VIDEO_BY_ID
@@ -216,6 +229,15 @@ def _resolve_video_path(external_id: str) -> Path | None:
     if candidate.is_file():
         return candidate
     return None
+
+
+def resolve_owned_folder_path(external_id: str) -> Path | None:
+    """Resolve a vid-* id against the MB-owned folder. Refresh cache on miss."""
+    found = _resolve_video_path(external_id)
+    if found is not None:
+        return found
+    invalidate_video_index()
+    return _resolve_video_path(external_id)
 
 
 def _spans_payload(
@@ -355,6 +377,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/videos":
+            refresh = str((qs.get("refresh") or ["0"])[0]).strip().lower()
+            if refresh in {"1", "true", "yes", "on"}:
+                invalidate_video_index()
             limit = int((qs.get("limit") or ["100"])[0])
             n = max(1, min(limit, 100000))
             videos = [

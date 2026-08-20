@@ -8,7 +8,7 @@ from typing import Any
 from memorybox.db import connection
 from memorybox.person import list_people, resolve_immich_external_ids_for_person
 from memorybox.recognition.exemplars import list_active_exemplars
-from memorybox.recognition.inventory import inventory_video_rows
+from memorybox.recognition.inventory import inventory_video_rows, list_owned_folder_video_rows
 from memorybox.recognition.queue import enqueue_full_eligible_archive
 
 
@@ -58,6 +58,14 @@ def list_immich_video_rows(*, photo_provider: Any, limit: int = 2000) -> list[di
 def combined_eligible_videos(*, video_provider: Any, photo_provider: Any | None = None) -> list[dict[str, Any]]:
     rows = list(inventory_video_rows(video_provider) or [])
     seen = {str(r.get("video_external_id") or "") for r in rows}
+    # Walk the MB-owned tape folder on this pass (not Immich). New files in
+    # subfolders become vid-* rows even if the video-worker index is stale.
+    for r in list_owned_folder_video_rows():
+        vid = str(r.get("video_external_id") or "")
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        rows.append(r)
     if photo_provider is not None:
         for r in list_immich_video_rows(photo_provider=photo_provider):
             vid = str(r.get("video_external_id") or "")

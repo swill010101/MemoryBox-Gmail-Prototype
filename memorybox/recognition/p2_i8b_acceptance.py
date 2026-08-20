@@ -48,6 +48,61 @@ def _check(name: str, ok: bool, checks: dict[str, Any], problems: list[str], det
         problems.append(f"{name}: {detail or 'failed'}")
 
 
+def _prove_owned_folder_inventory(checks: dict[str, Any], problems: list[str]) -> None:
+    """Nightly inventory must see a new file in a subfolder without Immich."""
+    import tempfile
+    from pathlib import Path
+
+    from memorybox.recognition.archive_pass import combined_eligible_videos
+    from memorybox.recognition.inventory import list_owned_folder_video_rows
+    from memorybox.video_worker import invalidate_video_index
+
+    prev = os.environ.get("MEMORYBOX_VIDEO_MEDIA_ROOT")
+    root = Path(tempfile.mkdtemp(prefix="mb-owned-vids-"))
+    held = root / "held_out"
+    held.mkdir()
+    (held / "new_tape.mp4").write_bytes(b"mb-owned-not-immich")
+    os.environ["MEMORYBOX_VIDEO_MEDIA_ROOT"] = str(root)
+
+    class _EmptyVideo:
+        provider_key = "hvrt"
+
+        def list_videos(self, *, limit: int = 100) -> list[Any]:
+            return []
+
+    try:
+        invalidate_video_index()
+        rows = list_owned_folder_video_rows()
+        ids = [str(r.get("video_external_id") or "") for r in rows]
+        folder_ok = (
+            len(ids) >= 1
+            and all(i.startswith("vid-") for i in ids)
+            and all(r.get("source") == "mb_owned_folder" for r in rows)
+        )
+        _check(
+            "p2i8b_owned_folder_walk",
+            folder_ok,
+            checks,
+            problems,
+            f"rows={len(rows)} ids={ids[:3]}",
+        )
+        combo = combined_eligible_videos(video_provider=_EmptyVideo(), photo_provider=None)
+        combo_ids = {str(r.get("video_external_id") or "") for r in combo}
+        _check(
+            "p2i8b_nightly_includes_owned_folder",
+            bool(ids) and set(ids) <= combo_ids,
+            checks,
+            problems,
+            f"folder={ids[:3]} combo={len(combo)}",
+        )
+    finally:
+        if prev is None:
+            os.environ.pop("MEMORYBOX_VIDEO_MEDIA_ROOT", None)
+        else:
+            os.environ["MEMORYBOX_VIDEO_MEDIA_ROOT"] = prev
+        invalidate_video_index()
+
+
 def _env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or default).strip()
 
@@ -145,6 +200,16 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         "Overnight --seed-immich must be incremental (new names / merges), not a full restart",
     )
+    _check(
+        "p2i8b_archive_pass_walks_owned_folder",
+        "list_owned_folder_video_rows" in ap_src
+        and "mb_owned_folder" in open("memorybox/recognition/inventory.py", encoding="utf-8").read()
+        and "Walks the MB-owned home-video" in cli_src,
+        checks,
+        problems,
+        "Nightly must walk MB-owned folder files, not only Immich VIDEO assets",
+    )
+    _prove_owned_folder_inventory(checks, problems)
     from memorybox.recognition.archive_pass import catalog_fingerprint, exemplar_fingerprint
     from memorybox.recognition.origin import origin_thumb_url
 

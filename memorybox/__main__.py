@@ -96,7 +96,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "Refresh Immich people, then seed only when still-face catalogs changed "
-            "(new named person, new stills, Immich merge). Does not restart unchanged people."
+            "(new named person, new stills, Immich merge). Walks the MB-owned home-video "
+            "folder for new files (not Immich ingest) and queues them as new_video for "
+            "people who already have exemplars. Does not restart unchanged people."
         ),
     )
     p_archive.add_argument(

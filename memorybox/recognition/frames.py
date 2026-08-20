@@ -64,6 +64,14 @@ def resolve_local_video_path(video_provider: Any, video_external_id: str) -> Pat
                 return c
         except OSError:
             continue
+    try:
+        from memorybox.video_worker import resolve_owned_folder_path
+
+        owned = resolve_owned_folder_path(vid)
+        if owned is not None:
+            return owned
+    except Exception:
+        pass
     return None
 
 

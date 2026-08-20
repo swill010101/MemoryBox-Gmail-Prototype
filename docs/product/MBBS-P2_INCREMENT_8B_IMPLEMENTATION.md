@@ -21,9 +21,20 @@
 
 **Archive pass (incremental overnight):** `POST /recognition/archive-pass` or `python -m memorybox recognition-archive-pass [--seed-immich]` does **not** restart everyone.
 
-- **New Immich name** with enough still faces → seed exemplars for that Person → queue **all** Home Videos + Immich VIDEO assets for that Person only.
+Two video sources, both scanned for people with MemoryBox exemplars (Immich-seeded stills and/or owner Learn):
+
+1. **Immich** library videos (UUID assets).
+2. **MB-owned home movies** on FlightSim under `MEMORYBOX_VIDEO_MEDIA_ROOT` (`P:\photos\home videos` and subfolders). These are files MemoryBox owns as source. They are **not** Immich ingest. Each file gets a stable `vid-*` id from its path relative to that root.
+
+Each nightly pass **walks that folder tree now** (does not rely on the video-worker 5-minute list cache). A file copied into the folder or a subfolder after the last pass is `new_video`: one queue row per known Person who already has exemplars, for **that file only** (or multiple new files). Unchanged people are not re-queued against tapes they already completed.
+
+- **New Immich name** with enough still faces → seed exemplars for that Person → queue **all** MB-owned Home Videos + Immich VIDEO assets for that Person only.
 - **Immich merge** (or more stills on a mapped Person) → that Person’s exemplar catalog changes → that Person is rescanned against all video sources that night.
-- **Unchanged People** are skipped (no re-embed, no re-queue). Brand-new video files still get `new_video`.
-- **`--full`** / `full=true` ignores watermarks and rescans everyone.
+- **Owner Learn** still scans the current clip in-request, then enqueues other videos known at Learn time for that Person only. Files added later are picked up on the next incremental pass as `new_video`.
+- **`--full`** / `full=true` ignores watermarks and rescans everyone. Do not use while a cartesian backlog is draining.
+
+Nightly is this CLI (Task Scheduler or manual), not `.\startmb.cmd -Restart`:
+
+`python -m memorybox recognition-archive-pass --seed-immich`
 
 Serve drains `recognition_queue` one video at a time when `MEMORYBOX_P1_RUNTIME_HOST=1`. This is I8B (people clips for I9), not speech. Owner Learn still scans the current clip in-request, then enqueues other videos for that Person only.
