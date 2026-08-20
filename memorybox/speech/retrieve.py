@@ -29,76 +29,96 @@ def _person_ids(plan: QueryPlan) -> list[str]:
     return out
 
 
-def _exemplar_video_ids(person_ids: list[str]) -> list[str]:
-    if not person_ids:
+def _provider_key_for_video_id(video_external_id: str) -> str:
+    raw = (video_external_id or "").strip()
+    if len(raw) == 36 and raw.count("-") == 4:
+        return "immich"
+    return "hvrt"
+
+
+def list_voice_presence_videos(person_ids: list[str]) -> list[dict[str, str]]:
+    """Videos where this Person's voice was Learned or assigned — one row per file."""
+    pids = [str(p) for p in person_ids if str(p).strip()]
+    if not pids:
         return []
     with connection() as conn:
         rows = conn.execute(
             """
-            SELECT DISTINCT video_external_id
-            FROM speech_voice_exemplars
-            WHERE person_id = ANY(%s::uuid[]) AND withdrawn = false
+            SELECT DISTINCT video_provider_key, video_external_id
+            FROM (
+                SELECT video_provider_key, video_external_id
+                FROM speech_voice_exemplars
+                WHERE person_id = ANY(%s::uuid[]) AND withdrawn = false
+                UNION
+                SELECT video_provider_key, video_external_id
+                FROM speech_speaker_turns
+                WHERE person_id = ANY(%s::uuid[])
+                UNION
+                SELECT video_provider_key, video_external_id
+                FROM speech_spoken_moments
+                WHERE person_id = ANY(%s::uuid[])
+                  AND COALESCE(status, 'accepted') <> 'withdrawn'
+            ) voice_files
+            WHERE COALESCE(video_external_id, '') <> ''
             """,
-            (person_ids,),
+            (pids, pids, pids),
         ).fetchall()
-    return [str(r["video_external_id"]) for r in rows if r.get("video_external_id")]
-
-
-def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str, Any]]:
-    if not getattr(plan, "want_spoken", False):
-        return []
-    pids = _person_ids(plan)
-    phrase = (getattr(plan, "spoken_phrase", None) or "").strip()
-    about = (getattr(plan, "spoken_about", None) or "").strip()
-    clauses = ["COALESCE(status, 'accepted') <> 'withdrawn'"]
-    args: list[Any] = []
-    if pids:
-        clauses.append("person_id = ANY(%s::uuid[])")
-        args.append(pids)
-    elif plan.person_names:
-        # Person asked but unresolved — do not return anonymous everyone-talking.
-        return []
-    if phrase:
-        clauses.append("text ILIKE %s")
-        args.append("%" + phrase + "%")
-    if about and not phrase:
-        clauses.append(
-            "(to_tsvector('simple', text) @@ plainto_tsquery('simple', %s) OR text ILIKE %s)"
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for r in rows:
+        vid = str(r.get("video_external_id") or "").strip()
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        out.append(
+            {
+                "video_provider_key": str(r.get("video_provider_key") or _provider_key_for_video_id(vid)),
+                "video_external_id": vid,
+            }
         )
-        args.extend([about, "%" + about + "%"])
-    args.append(max(int(limit) * 12, 96))
-    sql = f"""
-        SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
-               text, person_id::text, speaker_state, confidence, status
-        FROM speech_spoken_moments
-        WHERE {' AND '.join(clauses)}
-        ORDER BY t_start ASC
-        LIMIT %s
-    """
+    return out
+
+
+def _moments_on_videos(video_ids: list[str], *, limit: int) -> list[dict[str, Any]]:
+    vids = [str(v).strip() for v in video_ids if str(v).strip()]
+    if not vids:
+        return []
     with connection() as conn:
-        rows = [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
-    if pids and not rows and not phrase and not about:
-        # Owner Learn may have an exemplar before every overlapping moment is tagged.
-        vids = _exemplar_video_ids(pids)
-        if vids:
-            with connection() as conn:
-                rows = [
-                    dict(r)
-                    for r in conn.execute(
-                        """
-                        SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
-                               text, person_id::text, speaker_state, confidence, status
-                        FROM speech_spoken_moments
-                        WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-                          AND video_external_id = ANY(%s)
-                        ORDER BY t_start ASC
-                        LIMIT %s
-                        """,
-                        (vids, max(int(limit) * 12, 96)),
-                    ).fetchall()
-                ]
-    if about and not phrase:
-        extra_ids = {str(r["id"]) for r in rows}
+        return [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
+                       text, person_id::text, speaker_state, confidence, status
+                FROM speech_spoken_moments
+                WHERE COALESCE(status, 'accepted') <> 'withdrawn'
+                  AND video_external_id = ANY(%s)
+                ORDER BY t_start ASC
+                LIMIT %s
+                """,
+                (vids, int(limit)),
+            ).fetchall()
+        ]
+
+
+def presence_hits_for_people(
+    person_ids: list[str],
+    *,
+    phrase: str = "",
+    about: str = "",
+    limit: int = 48,
+) -> list[dict[str, Any]]:
+    """Whole-video voice presence. Does not mint start:end gallery clips."""
+    presence = list_voice_presence_videos(person_ids)
+    vids = [p["video_external_id"] for p in presence]
+    rows = _moments_on_videos(vids, limit=max(int(limit) * 12, 96))
+    if phrase:
+        needle = phrase.lower()
+        rows = [r for r in rows if needle in str(r.get("text") or "").lower()]
+    elif about:
+        needle = about.lower()
+        matched = [r for r in rows if needle in str(r.get("text") or "").lower()]
+        extra_ids = {str(r.get("id") or "") for r in matched}
         for h in search_similar(about, limit=limit):
             hid = str(h.get("id") or "")
             if hid and hid not in extra_ids:
@@ -114,10 +134,85 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
                     ).fetchone()
                 if row:
                     d = dict(row)
-                    if pids and str(d.get("person_id") or "") not in pids:
+                    if str(d.get("video_external_id") or "") not in set(vids) and vids:
                         continue
-                    rows.append(d)
+                    matched.append(d)
                     extra_ids.add(hid)
+        rows = matched
+    hits = _collapse_voice_to_videos(rows, phrase=phrase, about=about, limit=int(limit))
+    if phrase or about:
+        return hits
+    have = {str(h.get("video_external_id") or "") for h in hits}
+    for p in presence:
+        vid = p["video_external_id"]
+        if vid in have:
+            continue
+        if len(hits) >= int(limit):
+            break
+        vpk = p.get("video_provider_key") or _provider_key_for_video_id(vid)
+        play = ensure_timeslot_play_url(
+            video_external_id=vid,
+            start_sec=0.0,
+            video_provider_key=vpk,
+        )
+        hits.append(
+            {
+                "id": f"voice-video:{vid}",
+                "provider_key": vpk,
+                "video_external_id": vid,
+                "external_id": vid,
+                "start_sec": 0.0,
+                "end_sec": None,
+                "label": "Video",
+                "spoken_text": None,
+                "play_url": play,
+                "mb_person_id": person_ids[0] if person_ids else None,
+                "identity_trust": "confirmed",
+                "attribution": "voice_in_video",
+                "speaker_state": "owner_confirmed",
+                "clip_kind": "voice_presence",
+            }
+        )
+        have.add(vid)
+    return hits[: int(limit)]
+
+
+def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str, Any]]:
+    if not getattr(plan, "want_spoken", False):
+        return []
+    pids = _person_ids(plan)
+    phrase = (getattr(plan, "spoken_phrase", None) or "").strip()
+    about = (getattr(plan, "spoken_about", None) or "").strip()
+    if not pids and plan.person_names:
+        return []
+    if pids:
+        return presence_hits_for_people(
+            pids, phrase=phrase, about=about, limit=int(limit)
+        )
+    # No person asked: phrase/about may still retrieve authentic transcript text.
+    clauses = ["COALESCE(status, 'accepted') <> 'withdrawn'"]
+    args: list[Any] = []
+    if phrase:
+        clauses.append("text ILIKE %s")
+        args.append("%" + phrase + "%")
+    if about and not phrase:
+        clauses.append(
+            "(to_tsvector('simple', text) @@ plainto_tsquery('simple', %s) OR text ILIKE %s)"
+        )
+        args.extend([about, "%" + about + "%"])
+    if len(clauses) == 1:
+        return []
+    args.append(max(int(limit) * 12, 96))
+    sql = f"""
+        SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
+               text, person_id::text, speaker_state, confidence, status
+        FROM speech_spoken_moments
+        WHERE {' AND '.join(clauses)}
+        ORDER BY t_start ASC
+        LIMIT %s
+    """
+    with connection() as conn:
+        rows = [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
     return _collapse_voice_to_videos(rows, phrase=phrase, about=about, limit=int(limit))
 
 

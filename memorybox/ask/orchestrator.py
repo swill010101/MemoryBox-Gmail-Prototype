@@ -1305,6 +1305,31 @@ class AskOrchestrator:
                 videos, video_status = R.search_videos(
                     plan, self.video, photo=self.photo
                 )
+                pids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+                if pids:
+                    from memorybox.speech.retrieve import presence_hits_for_people
+
+                    seen = {str(v.video_external_id or "") for v in videos}
+                    for r in presence_hits_for_people(pids, limit=48):
+                        vid = str(r.get("video_external_id") or "")
+                        if not vid or vid in seen:
+                            continue
+                        videos.append(
+                            R.VideoHit(
+                                provider_key=str(r.get("provider_key") or "hvrt"),
+                                external_id=str(r.get("external_id") or vid),
+                                video_external_id=vid,
+                                start_sec=0.0,
+                                end_sec=0.0,
+                                label=str(r.get("label") or "Video"),
+                                play_url=r.get("play_url"),
+                                identity_trust=str(r.get("identity_trust") or "candidate"),
+                                mb_person_id=r.get("mb_person_id"),
+                                attribution="voice_in_video",
+                                spoken_text=r.get("spoken_text"),
+                            )
+                        )
+                        seen.add(vid)
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)

@@ -685,6 +685,24 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         f"talk_vids={talk_vids} kinds={[h.get('clip_kind') for h in hits_talk]}",
     )
+    with connection() as conn:
+        conn.execute(
+            """
+            UPDATE speech_spoken_moments
+            SET person_id = NULL
+            WHERE video_external_id LIKE 'video-%'
+            """
+        )
+    hits_untagged = search_spoken_moments(talk_plan)
+    _check(
+        "p2i9_talking_uses_learn_video_without_moment_tags",
+        any(str(h.get("video_external_id") or "") == "video-peggy-clear" for h in hits_untagged)
+        and len({str(h.get("video_external_id") or "") for h in hits_untagged})
+        == len(hits_untagged),
+        checks,
+        problems,
+        f"untagged={[(h.get('video_external_id'), h.get('clip_kind')) for h in hits_untagged]}",
+    )
 
     wid = record_withdrawal(
         person_id=peggy_id,
