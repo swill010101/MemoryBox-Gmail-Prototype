@@ -167,7 +167,10 @@ def presence_hits_for_people(
 ) -> list[dict[str, Any]]:
     """Whole-video voice presence. Does not mint start:end gallery clips."""
     presence = list_voice_presence_videos(person_ids)
-    if not presence and not phrase and not about:
+    # Untagged library dump is only for unscoped talking (no Person). A named
+    # Person with no Learned voice must not inherit someone else's tapes
+    # (FlightSim: Show me Eugene Will kept Tom Will talking videos).
+    if not presence and not person_ids and not phrase and not about:
         presence = list_transcribed_videos(limit=int(limit))
     vids = [p["video_external_id"] for p in presence]
     rows = _moments_on_videos(vids, limit=max(int(limit) * 12, 96))
@@ -252,8 +255,7 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
             )
         except Exception:
             hits = []
-        if hits or phrase or about:
-            return hits
+        return hits
     if phrase or about:
         if plan.person_names and not pids:
             return []

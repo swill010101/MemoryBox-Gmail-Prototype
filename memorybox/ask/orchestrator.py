@@ -1440,19 +1440,11 @@ class AskOrchestrator:
             evidence = []
             break
 
-        if not videos and (
-            getattr(plan, "want_spoken", False) or getattr(plan, "want_video", False)
-        ):
+        if not videos and getattr(plan, "want_spoken", False):
             from memorybox.speech.retrieve import search_spoken_moments
-            from dataclasses import replace as _replace_plan
 
-            spoken_plan = (
-                plan
-                if getattr(plan, "want_spoken", False)
-                else _replace_plan(plan, want_spoken=True)
-            )
             try:
-                refill = search_spoken_moments(spoken_plan)
+                refill = search_spoken_moments(plan)
             except Exception:
                 refill = []
             videos = _union_voice_videos(videos, _spoken_rows_to_video_hits(refill))

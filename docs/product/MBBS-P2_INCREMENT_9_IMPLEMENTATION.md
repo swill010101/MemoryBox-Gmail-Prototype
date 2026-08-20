@@ -19,6 +19,6 @@
 
 **Gallery lock (2026-08-20, Tom):** Voice identifies that a Person is speaking **in a video**. Ask/Explore shows **one card per source file**. Only face recognition may mint start:end clips inside a video. Transcript timing stays in Video Detail Text (click-to-seek), not as extra gallery cards.
 
-**Ask identity wipe (2026-08-20):** Immich `unknown_person` / `Who is X?` must not clear video or talking results. `{Name} talking` and `show me videos of {Name}` keep Learned-voice files and transcribed tapes even when that Person has no Immich stills.
+**Ask identity wipe (2026-08-20):** Immich `unknown_person` / `Who is X?` must not clear talking results. `{Name} talking` keeps that Person's Learned-voice files. Untagged transcribed-library dump is **unscoped talking only** — `show me {Other}` must not keep the previous Person's talking tapes.
 
 **Prove:** `python -m memorybox prove-p2-i9`

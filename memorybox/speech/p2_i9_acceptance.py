@@ -406,8 +406,10 @@ def _prove_harness() -> dict[str, Any]:
 
     video = FakeVideoProvider(peggy_corpus=True, i8b_corpus=True)
     tag = uuid4().hex[:8]
-    peggy = resolve_person_by_name(f"PeggyGeorge{tag}", create_if_missing=True, confirm=True)
-    other = resolve_person_by_name(f"SecondPerson{tag}", create_if_missing=True, confirm=True)
+    peggy_name = "Peggy " + "".join(chr(97 + (int(c, 16) % 26)) for c in tag)
+    other_name = "Owen " + "".join(chr(97 + ((int(c, 16) + 7) % 26)) for c in tag)
+    peggy = resolve_person_by_name(peggy_name, create_if_missing=True, confirm=True)
+    other = resolve_person_by_name(other_name, create_if_missing=True, confirm=True)
     peggy_id = peggy.person_id
     other_id = other.person_id
     meta["peggy_person_id"] = peggy_id
@@ -732,15 +734,16 @@ def _prove_harness() -> dict[str, Any]:
     from memorybox.providers.llm.fake import FakeLlmProvider
     from memorybox.providers.photo.fake import FakePhotoProvider
 
-    who_ask = str(peggy.display_name or f"PeggyGeorge{tag}")
+    who_ask = str(peggy.display_name or peggy_name)
     orch = AskOrchestrator(
         store=InMemoryContextStore(),
         photo=FakePhotoProvider(),
         video=video,
         llm=FakeLlmProvider(),
     )
-    ask_talk = orch.ask(f"show me videos of {who_ask} talking")
-    ask_vid = orch.ask(f"show me videos of {who_ask}")
+    sid = "p2i9-session"
+    ask_talk = orch.ask(f"show me videos of {who_ask} talking", session_id=sid)
+    ask_vid = orch.ask(f"show me videos of {who_ask}", session_id=sid)
     talk_items = [
         it
         for it in items_from_ask_result(ask_talk.to_dict())
@@ -752,6 +755,28 @@ def _prove_harness() -> dict[str, Any]:
         if str(it.get("type") or "") == "video"
     ]
     talk_kind = str((ask_talk.plan or {}).get("answer_kind") or ask_talk.answer_kind or "")
+    other_ask = str(other.display_name or other_name)
+    ask_other = orch.ask(f"show me {other_ask}", session_id=sid)
+    other_vids = {
+        str(h.get("video_external_id") or "")
+        for h in (ask_other.video_hits or [])
+        if str(h.get("video_external_id") or "")
+    }
+    leaked = {
+        vid
+        for vid in other_vids
+        if vid.startswith("video-peggy-") or vid == "video-library-02"
+    }
+    _check(
+        "p2i9_show_other_person_does_not_keep_talking_videos",
+        str(ask_other.answer_kind or "") != "clarification" and not leaked,
+        checks,
+        problems,
+        (
+            f"other={other_ask} kind={ask_other.answer_kind} "
+            f"video_hits={len(ask_other.video_hits or [])} leaked={sorted(leaked)}"
+        ),
+    )
     _check(
         "p2i9_ask_talking_and_show_videos_not_empty",
         len(ask_talk.video_hits or []) >= 1
