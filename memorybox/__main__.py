@@ -114,8 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     p_speech_archive.add_argument(
         "--limit",
         type=int,
-        default=8,
-        help="Max new videos to queue this pass (default 8 for first review). Raise later.",
+        default=500,
+        help="Max new videos to queue this pass (home-folder + source libraries + Immich).",
     )
     p_speech_archive.add_argument(
         "--video-id",

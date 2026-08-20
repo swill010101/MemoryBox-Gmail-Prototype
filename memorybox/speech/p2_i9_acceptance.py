@@ -277,6 +277,73 @@ def _wipe_harness_speech() -> None:
         )
 
 
+def _prove_source_library_speech_inventory(checks: dict[str, Any], problems: list[str]) -> None:
+    """Voice inventory must include P: home videos and extra marked source libraries."""
+    import tempfile
+    from pathlib import Path
+
+    from memorybox.recognition.archive_pass import combined_eligible_videos
+    from memorybox.recognition.inventory import list_owned_folder_video_rows
+    from memorybox.video_worker import invalidate_video_index
+
+    keys = (
+        "MEMORYBOX_VIDEO_MEDIA_ROOT",
+        "MEMORYBOX_VIDEO_SOURCE_ROOTS",
+        "HVRT_MEDIA_ROOT",
+        "MEMORYBOX_SOURCES_ROOT",
+    )
+    prev = {k: os.environ.get(k) for k in keys}
+    home = Path(tempfile.mkdtemp(prefix="mb-i9-home-"))
+    extra = Path(tempfile.mkdtemp(prefix="mb-i9-lib-"))
+    (home / "home.mp4").write_bytes(b"mb-home-video")
+    (extra / "library.mp4").write_bytes(b"mb-source-library")
+    os.environ["MEMORYBOX_VIDEO_MEDIA_ROOT"] = str(home)
+    os.environ["MEMORYBOX_VIDEO_SOURCE_ROOTS"] = str(extra)
+    for k in ("HVRT_MEDIA_ROOT", "MEMORYBOX_SOURCES_ROOT"):
+        os.environ.pop(k, None)
+
+    class _EmptyVideo:
+        provider_key = "hvrt"
+
+        def list_videos(self, *, limit: int = 100) -> list[Any]:
+            return []
+
+    try:
+        invalidate_video_index()
+        rows = list_owned_folder_video_rows()
+        sources = {str(r.get("source") or "") for r in rows}
+        folder_ok = (
+            len(rows) >= 2
+            and "mb_owned_folder" in sources
+            and "source_library" in sources
+            and all(str(r.get("video_external_id") or "").startswith("vid-") for r in rows)
+        )
+        _check(
+            "p2i9_voice_inventory_home_and_source_library",
+            folder_ok,
+            checks,
+            problems,
+            f"rows={len(rows)} sources={sorted(sources)}",
+        )
+        combo = combined_eligible_videos(video_provider=_EmptyVideo(), photo_provider=None)
+        combo_ids = {str(r.get("video_external_id") or "") for r in combo}
+        owned_ids = {str(r.get("video_external_id") or "") for r in rows}
+        _check(
+            "p2i9_speech_archive_inventory_not_immich_only",
+            bool(owned_ids) and owned_ids <= combo_ids,
+            checks,
+            problems,
+            f"owned={len(owned_ids)} combo={len(combo)}",
+        )
+    finally:
+        for k, val in prev.items():
+            if val is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = val
+        invalidate_video_index()
+
+
 def _prove_harness() -> dict[str, Any]:
     checks: dict[str, Any] = {}
     problems: list[str] = []
@@ -320,10 +387,13 @@ def _prove_harness() -> dict[str, Any]:
     )
     _check(
         "p2i9_archive_health_transcribe_job",
-        "Transcribe new home videos" in ah and "/speech/archive-pass" in ah,
+        "Transcribe new home videos" in ah
+        and "/speech/archive-pass" in ah
+        and "home-video folder" in ah
+        and "combined_eligible_videos" in open("memorybox/speech/learn.py", encoding="utf-8").read(),
         checks,
         problems,
-        "Archive Health needs incremental transcribe Run now",
+        "Archive Health + Learn must use the same non-Immich folder inventory as face",
     )
     _check(
         "p2i9_acr_continue_not_built",
@@ -332,6 +402,7 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         "I9 must not build continue-on-tape",
     )
+    _prove_source_library_speech_inventory(checks, problems)
 
     video = FakeVideoProvider(peggy_corpus=True, i8b_corpus=True)
     tag = uuid4().hex[:8]
@@ -495,6 +566,16 @@ def _prove_harness() -> dict[str, Any]:
     plan_phrase = compile_ask(f"{peggy.display_name} saying \"I love you\"")
     plan_talk = compile_ask(f"{peggy.display_name} talking")
     plan_about = compile_ask(f"{peggy.display_name} talking about Christmas")
+    plan_show_talk = compile_ask("show me videos of Peggy George talking")
+    plan_show_video = compile_ask("show me videos of Peggy George")
+    plan_named_talk = compile_ask("Peggy George talking")
+    plan_tom_talk = compile_ask("show me videos of Tom Will talking")
+    plan_tom_bare = compile_ask("tom will talking")
+    plan_tom_video = compile_ask("show me videos of Tom Will")
+
+    def _people(p) -> tuple[str, ...]:
+        return tuple(str(n).strip().lower() for n in (p.person_names or ()))
+
     _check(
         "p2i9_mbql_saying_talking_about",
         bool(getattr(plan_phrase, "want_spoken", False))
@@ -504,7 +585,29 @@ def _prove_harness() -> dict[str, Any]:
         and "christmas" in (getattr(plan_about, "spoken_about", "") or "").lower(),
         checks,
         problems,
-        f"phrase={plan_phrase.spoken_phrase} about={plan_about.spoken_about} notes={plan_phrase.notes}",
+        f"phrase={plan_phrase.spoken_phrase} about={plan_about.spoken_about} talk_people={plan_talk.person_names}",
+    )
+    _check(
+        "p2i9_mbql_show_videos_of_person_talking",
+        bool(plan_show_talk.want_spoken)
+        and "peggy george" in _people(plan_show_talk)
+        and not any("talking" in n for n in _people(plan_show_talk))
+        and bool(plan_named_talk.want_spoken)
+        and "peggy george" in _people(plan_named_talk)
+        and (not bool(plan_show_video.want_spoken))
+        and bool(plan_show_video.want_video)
+        and "peggy george" in _people(plan_show_video)
+        and bool(plan_tom_talk.want_spoken)
+        and "tom will" in _people(plan_tom_talk)
+        and bool(plan_tom_bare.want_spoken)
+        and "tom will" in _people(plan_tom_bare)
+        and (not bool(plan_tom_video.want_spoken))
+        and bool(plan_tom_video.want_video)
+        and "tom will" in _people(plan_tom_video),
+        checks,
+        problems,
+        f"show_talk={plan_show_talk.person_names} spoken={plan_show_talk.want_spoken} "
+        f"show_video_spoken={plan_show_video.want_spoken} people={plan_show_video.person_names}",
     )
 
     phrase_plan = QueryPlan(
@@ -548,14 +651,29 @@ def _prove_harness() -> dict[str, Any]:
         person_names=(peggy.display_name,),
     )
     hits_talk = search_spoken_moments(talk_plan)
+    hits_show = search_spoken_moments(
+        QueryPlan(
+            original_ask=plan_show_talk.original_ask,
+            effective_ask=plan_show_talk.effective_ask,
+            is_followup=False,
+            want_photo=False,
+            want_communication=False,
+            want_calendar=False,
+            want_video=True,
+            want_spoken=True,
+            person_ids=(peggy_id,),
+            person_names=plan_show_talk.person_names,
+        )
+    )
     _check(
         "p2i9_retrieval_evidence_first",
         any("love you" in str(h.get("spoken_text") or "").lower() for h in hits_phrase)
         and any("christmas" in str(h.get("spoken_text") or "").lower() for h in hits_about)
-        and len(hits_talk) >= 1,
+        and len(hits_talk) >= 1
+        and len(hits_show) >= 1,
         checks,
         problems,
-        f"phrase={len(hits_phrase)} about={len(hits_about)} talk={len(hits_talk)}",
+        f"phrase={len(hits_phrase)} about={len(hits_about)} talk={len(hits_talk)} show={len(hits_show)}",
     )
 
     wid = record_withdrawal(

@@ -72,9 +72,22 @@ def owner_learn_voice(
     )
     others = list(other_videos or [])
     if not others:
-        rows_fn = getattr(video_provider, "eligible_video_rows", None)
-        if callable(rows_fn):
-            others = [r for r in (rows_fn() or []) if r.get("eligible") is not False]
+        try:
+            from memorybox.recognition.archive_pass import combined_eligible_videos
+
+            others = [
+                r
+                for r in combined_eligible_videos(
+                    video_provider=video_provider, photo_provider=None
+                )
+                if r.get("eligible") is not False
+            ]
+        except Exception:
+            others = []
+        if not others:
+            rows_fn = getattr(video_provider, "eligible_video_rows", None)
+            if callable(rows_fn):
+                others = [r for r in (rows_fn() or []) if r.get("eligible") is not False]
     rest = [
         r
         for r in others

@@ -58,8 +58,9 @@ def list_immich_video_rows(*, photo_provider: Any, limit: int = 2000) -> list[di
 def combined_eligible_videos(*, video_provider: Any, photo_provider: Any | None = None) -> list[dict[str, Any]]:
     rows = list(inventory_video_rows(video_provider) or [])
     seen = {str(r.get("video_external_id") or "") for r in rows}
-    # Walk the MB-owned tape folder on this pass (not Immich). New files in
-    # subfolders become vid-* rows even if the video-worker index is stale.
+    # Walk MB-owned home movies and any extra marked video source libraries
+    # (not Immich ingest). New files in subfolders become vid-* rows even if
+    # the video-worker index is stale.
     for r in list_owned_folder_video_rows():
         vid = str(r.get("video_external_id") or "")
         if not vid or vid in seen:

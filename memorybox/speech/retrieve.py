@@ -29,6 +29,21 @@ def _person_ids(plan: QueryPlan) -> list[str]:
     return out
 
 
+def _exemplar_video_ids(person_ids: list[str]) -> list[str]:
+    if not person_ids:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT video_external_id
+            FROM speech_voice_exemplars
+            WHERE person_id = ANY(%s::uuid[]) AND withdrawn = false
+            """,
+            (person_ids,),
+        ).fetchall()
+    return [str(r["video_external_id"]) for r in rows if r.get("video_external_id")]
+
+
 def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str, Any]]:
     if not getattr(plan, "want_spoken", False):
         return []
@@ -62,6 +77,26 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
     """
     with connection() as conn:
         rows = [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
+    if pids and not rows and not phrase and not about:
+        # Owner Learn may have an exemplar before every overlapping moment is tagged.
+        vids = _exemplar_video_ids(pids)
+        if vids:
+            with connection() as conn:
+                rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        """
+                        SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
+                               text, person_id::text, speaker_state, confidence, status
+                        FROM speech_spoken_moments
+                        WHERE COALESCE(status, 'accepted') <> 'withdrawn'
+                          AND video_external_id = ANY(%s)
+                        ORDER BY t_start ASC
+                        LIMIT %s
+                        """,
+                        (vids, int(limit)),
+                    ).fetchall()
+                ]
     if about and not phrase:
         extra_ids = {str(r["id"]) for r in rows}
         for h in search_similar(about, limit=limit):

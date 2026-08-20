@@ -80,6 +80,50 @@ def _media_root() -> Path | None:
     return Path(raw)
 
 
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return str(a).casefold() == str(b).casefold()
+
+
+def _video_library_roots() -> list[tuple[Path, str]]:
+    """Configured video libraries: home-folder first, then extra marked source roots.
+
+    Extra roots: MEMORYBOX_VIDEO_SOURCE_ROOTS (os.pathsep or ;) and optional
+    MEMORYBOX_SOURCES_ROOT/videos. Primary MEMORYBOX_VIDEO_MEDIA_ROOT ids stay stable.
+    """
+    ordered: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+
+    def add(raw: str | None, source: str) -> None:
+        text = (raw or "").strip()
+        if not text:
+            return
+        path = Path(text)
+        key = str(path).casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        try:
+            if not path.is_dir():
+                return
+        except OSError:
+            return
+        ordered.append((path, source))
+
+    add(_env("MEMORYBOX_VIDEO_MEDIA_ROOT"), "mb_owned_folder")
+    add(_env("HVRT_MEDIA_ROOT"), "mb_owned_folder")
+    extra = _env("MEMORYBOX_VIDEO_SOURCE_ROOTS") or ""
+    for part in extra.replace(";", os.pathsep).split(os.pathsep):
+        add(part, "source_library")
+    src = (_env("MEMORYBOX_SOURCES_ROOT") or "").strip()
+    if src:
+        add(str(Path(src) / "videos"), "source_library")
+        add(str(Path(src) / "home videos"), "source_library")
+    return ordered
+
+
 def _derived_dir() -> Path:
     raw = _env("MEMORYBOX_VIDEO_DERIVED_DIR")
     if raw:
@@ -144,33 +188,48 @@ def _alias_ids(path: Path, root: Path) -> list[str]:
 
 
 def _scan_videos(limit: int = 100) -> list[dict[str, Any]]:
-    root = _media_root()
-    if root is None or not root.is_dir():
+    roots = _video_library_roots()
+    if not roots:
         return []
+    primary = _media_root()
     out: list[dict[str, Any]] = []
-    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
-        dirnames.sort()
-        filenames.sort()
-        for name in filenames:
-            suffix = Path(name).suffix.lower()
-            if suffix not in VIDEO_EXTS:
-                continue
-            path = Path(dirpath) / name
-            if not path.is_file():
-                continue
-            rel = _rel_hint(path, root)
-            aliases = _alias_ids(path, root)
-            out.append(
-                {
-                    "external_id": aliases[0],
-                    "alias_ids": aliases[1:],
-                    "title": path.stem,
-                    "path_hint": rel,
-                    "duration_sec": None,
-                }
-            )
-            if len(out) >= limit:
-                return out
+    seen_ids: set[str] = set()
+    for root, source in roots:
+        primary_ids = primary is not None and _same_dir(root, primary)
+        for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
+            dirnames.sort()
+            filenames.sort()
+            for name in filenames:
+                suffix = Path(name).suffix.lower()
+                if suffix not in VIDEO_EXTS:
+                    continue
+                path = Path(dirpath) / name
+                if not path.is_file():
+                    continue
+                rel = _rel_hint(path, root)
+                if primary_ids:
+                    aliases = _alias_ids(path, root)
+                    eid = aliases[0]
+                    alias_rest = aliases[1:]
+                else:
+                    eid = _stable_id_from_key(f"lib:{str(root).casefold()}|{rel}")
+                    alias_rest = []
+                if eid in seen_ids:
+                    continue
+                seen_ids.add(eid)
+                out.append(
+                    {
+                        "external_id": eid,
+                        "alias_ids": alias_rest,
+                        "title": path.stem,
+                        "path_hint": rel,
+                        "library_root": str(root),
+                        "source": source,
+                        "duration_sec": None,
+                    }
+                )
+                if len(out) >= limit:
+                    return out
     return out
 
 
@@ -215,9 +274,6 @@ def _video_index() -> list[dict[str, Any]]:
 
 
 def _resolve_video_path(external_id: str) -> Path | None:
-    root = _media_root()
-    if root is None:
-        return None
     want = (external_id or "").strip()
     if not want:
         return None
@@ -225,9 +281,20 @@ def _resolve_video_path(external_id: str) -> Path | None:
     if not row:
         return None
     hint = row.get("path_hint") or ""
-    candidate = root / hint
-    if candidate.is_file():
-        return candidate
+    lib = (row.get("library_root") or "").strip()
+    roots: list[Path] = []
+    if lib:
+        roots.append(Path(lib))
+    primary = _media_root()
+    if primary is not None:
+        roots.append(primary)
+    for root in roots:
+        candidate = root / hint
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
     return None
 
 

@@ -13,6 +13,8 @@
 - Ask `saying "…"`, `talking`, `talking about` retrieve stored transcript evidence (SQL + optional Qdrant). Residual chat does not invent passages.
 - ACR-P2-001-A continue-on-tape is not built.
 
-**Ops:** Archive Health **Transcribe new home videos** → `POST /speech/archive-pass`. CLI: `python -m memorybox speech-archive-pass`. Serve drains `speech_queue_items` when `MEMORYBOX_P1_RUNTIME_HOST=1` (or `MEMORYBOX_SPEECH_DRAIN=1`).
+**Ops:** Archive Health **Transcribe new home videos** → `POST /speech/archive-pass` (default 500). Inventory is the same as face: HVRT + `MEMORYBOX_VIDEO_MEDIA_ROOT` (`P:\photos\home videos`) + `MEMORYBOX_VIDEO_SOURCE_ROOTS` + Immich VIDEO. CLI: `python -m memorybox speech-archive-pass`. Serve drains `speech_queue_items` when `MEMORYBOX_P1_RUNTIME_HOST=1` (or `MEMORYBOX_SPEECH_DRAIN=1`).
+
+**Ask compile (2026-08-20):** `{Name} talking` and `show me videos of {Name} talking` must resolve Person and retrieve Spoken Moments. `show me videos of {Name}` (no talking) stays I8B video gallery, not spoken-only.
 
 **Prove:** `python -m memorybox prove-p2-i9`

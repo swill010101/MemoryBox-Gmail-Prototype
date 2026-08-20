@@ -317,6 +317,19 @@ def assign_turn_person(turn_id: str, person_id: str | None, *, status: str, conf
             """,
             (person_id, status, confidence, turn_id),
         )
+        conn.execute(
+            """
+            UPDATE speech_spoken_moments AS m
+            SET person_id = %s, speaker_state = %s, confidence = %s
+            FROM speech_speaker_turns AS t
+            WHERE t.id = %s::uuid
+              AND m.video_external_id = t.video_external_id
+              AND COALESCE(m.status, 'accepted') <> 'withdrawn'
+              AND m.t_end >= t.t_start
+              AND m.t_start <= t.t_end
+            """,
+            (person_id, status, confidence, turn_id),
+        )
 
 
 def record_withdrawal(

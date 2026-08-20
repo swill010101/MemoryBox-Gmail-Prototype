@@ -1970,7 +1970,7 @@ def speech_status_get() -> dict[str, Any]:
 
 @app.post("/speech/archive-pass")
 def speech_archive_pass(
-    limit: int = Query(8, ge=1, le=5000),
+    limit: int = Query(500, ge=1, le=5000),
     video_id: list[str] | None = Query(None),
 ) -> dict[str, Any]:
     from memorybox.ask.deps import build_photo, build_video

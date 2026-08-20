@@ -170,6 +170,7 @@ _PERSON_NAME_STOP2 = (
     r"only|just|through|thru|"
     r"last|first|next|recent|past|myself|my|how|many|all|"
     r"attachments?|messages?|texts?|emails?|"
+    r"talking|talks|talk|speaking|speaks|saying|says|"
     r"summer|winter|spring|fall|autumn|"
     r"christmas|xmas|easter|thanksgiving|halloween|birthday|bday|anniversary|"
     r"january|february|march|april|may|june|july|august|september|october|november|december|"
@@ -188,6 +189,13 @@ SMS_PERSON_AND_I_RE = re.compile(
 PERSON_OF_RE = re.compile(
     rf"(?i)\b(?:pictures?|photos?|images?|videos?)\s+of\s+"
     rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\b"
+)
+# "{Name} talking" / "show me videos of {Name} talking" — Name is Person, talking is spoken intent.
+PERSON_TALKING_RE = re.compile(
+    rf"(?i)\b(?:(?:show\s+me|show|find)\s+(?:(?:all|everything)\s+)?)?"
+    rf"(?:(?:videos?|clips?|footage)\s+of\s+)?"
+    rf"(?:(?:our|my|the|a|an)\s+)?{_PERSON_NAME}\s+"
+    rf"(?:talking|talks|speaking)\b"
 )
 # "pictures of Tom Will and Matt Will" — same AND as "with"
 PICTURES_OF_AND_PEOPLE_RE = re.compile(
@@ -415,6 +423,10 @@ _ENTITY_STOP = frozenset(
         "was",
         "were",
         "being",
+        "talking",
+        "talks",
+        "speaking",
+        "saying",
     }
 )
 
@@ -569,6 +581,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     }
     found: list[str] = []
     patterns = [
+        PERSON_TALKING_RE,
         PICTURES_OF_AND_PEOPLE_RE,
         SHOW_ME_AND_PEOPLE_RE,
         PERSON_WITH_RE,

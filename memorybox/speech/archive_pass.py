@@ -74,5 +74,9 @@ def enqueue_new_videos_for_transcribe(
         "enqueue": queued,
         "queue": queue_summary(),
         "cartesian": False,
-        "note": "per-video transcribe only; Learn for a Person is a separate owner_learn queue",
+        "note": (
+            "per-video transcribe only; inventory is HVRT + MEMORYBOX_VIDEO_MEDIA_ROOT "
+            "+ MEMORYBOX_VIDEO_SOURCE_ROOTS + Immich VIDEO (same as face). "
+            "Learn for a Person is a separate owner_learn queue"
+        ),
     }
