@@ -209,6 +209,19 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         "Nightly must walk MB-owned folder files, not only Immich VIDEO assets",
     )
+    ah_html = open("memorybox/status/static/status.html", encoding="utf-8").read()
+    ah_py = open("memorybox/status/archive_health.py", encoding="utf-8").read()
+    _check(
+        "p2i8b_archive_health_run_folder_job",
+        "data-job-run" in ah_html
+        and "runOwnerJob" in ah_html
+        and "/recognition/archive-pass?seed_immich=true" in ah_py
+        and "Scan new home videos" in ah_py
+        and "full=true" not in ah_py.split("OWNER_JOBS")[1][:800],
+        checks,
+        problems,
+        "Archive Health must expose an incremental Run now job like Immich jobs",
+    )
     _prove_owned_folder_inventory(checks, problems)
     from memorybox.recognition.archive_pass import catalog_fingerprint, exemplar_fingerprint
     from memorybox.recognition.origin import origin_thumb_url

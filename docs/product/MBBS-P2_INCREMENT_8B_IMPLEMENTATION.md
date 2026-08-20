@@ -33,7 +33,9 @@ Each nightly pass **walks that folder tree now** (does not rely on the video-wor
 - **Owner Learn** still scans the current clip in-request, then enqueues other videos known at Learn time for that Person only. Files added later are picked up on the next incremental pass as `new_video`.
 - **`--full`** / `full=true` ignores watermarks and rescans everyone. Do not use while a cartesian backlog is draining.
 
-Nightly is this CLI (Task Scheduler or manual), not `.\startmb.cmd -Restart`:
+**Run from Archive Health (owner/admin job):** Archive Health → Processing state → **Scan new home videos** → **Run now**. That POSTs `/recognition/archive-pass?seed_immich=true` (incremental; never `--full`). Same job as the CLI. Drain continues in serve; the button only enqueues.
+
+CLI / Task Scheduler (same job):
 
 `python -m memorybox recognition-archive-pass --seed-immich`
 

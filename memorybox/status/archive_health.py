@@ -6,6 +6,27 @@ from typing import Any
 WORK_ON_NOW_TARGET = 5
 WORK_ON_NOW_CEILING = 7
 
+# Owner/admin runnable jobs (Immich-style: run from Archive Health, not CLI-only).
+OWNER_JOBS = [
+    {
+        "id": "recognition_incremental",
+        "label": "Scan new home videos",
+        "text": (
+            "Walk the MemoryBox-owned home-video folder and subfolders (not Immich ingest). "
+            "Queue each new tape against people who already have exemplars. "
+            "Also seeds new or changed Immich-named people. Does not rescan everyone."
+        ),
+        "action_label": "Run now",
+        "method": "POST",
+        "href": "/recognition/archive-pass?seed_immich=true",
+        "confirm": (
+            "Queue incremental recognition only: new files in the home-video folder, "
+            "plus new or changed Immich-named people. This will not restart a full "
+            "everyone-times-every-video scan. Continue?"
+        ),
+    },
+]
+
 
 def _metric(
     key: str,
@@ -757,6 +778,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
                 "intro": concepts["processing_state"]["intro"],
                 "concept": "processing_state",
                 "metrics": concepts["processing_state"]["metrics"],
+                "jobs": list(OWNER_JOBS),
             },
             {
                 "title": concepts["knowledge_gaps"]["title"],
@@ -787,6 +809,7 @@ def enrich_status_for_p2_i3(payload: dict[str, Any]) -> dict[str, Any]:
     payload["product"] = "archive_health"
     payload["increment"] = "P2-I3"
     payload["concepts"] = concepts
+    payload["owner_jobs"] = list(OWNER_JOBS)
     payload["work_on_these_now"] = work
     payload["work_on_these_now_meta"] = {
         "target": WORK_ON_NOW_TARGET,
