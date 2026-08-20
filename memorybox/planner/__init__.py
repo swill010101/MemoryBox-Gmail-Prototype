@@ -244,6 +244,10 @@ SHOW_ME_AND_PEOPLE_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     rf"{_PERSON_NAME}\s+and\s+{_PERSON_NAME}\b"
 )
+# Bare "Tom Will and Florida" / "tell me about Tom Will and Florida"
+PERSON_AND_PERSON_RE = re.compile(
+    rf"(?i)\b{_PERSON_NAME}\s+and\s+{_PERSON_NAME}\b"
+)
 # "Show Tom Will" / "Show Eugene" — owners often omit "me"; same person visual intent
 SHOW_PERSON_RE = re.compile(
     r"(?i)\bshow\s+"
@@ -310,17 +314,72 @@ _PERSON_BARE_BLOCKED = frozenset(
 )
 
 # Places: geographic/locative — never "from <Person>" for email.
+# Capture is case-insensitive: owners type "in florida", not only "in Florida".
+_PLACE_NAME = r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)"
 PLACE_IN_AT_RE = re.compile(
-    r"(?i)\b(?:in|at|near|around|to)\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    rf"(?i)\b(?:in|at|near|around|to)\s+{_PLACE_NAME}\b"
 )
 PLACE_TRIP_RE = re.compile(
-    r"(?i)\b(?:our|the|a|an|my|your)?\s*"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\s+trip\b"
+    rf"(?i)\b(?:our|the|a|an|my|your)?\s*{_PLACE_NAME}\s+trip\b"
 )
 TRIP_TO_RE = re.compile(
-    r"(?i)\btrip\s+(?:to|in|around)\s+"
-    r"(?-i:([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?))\b"
+    rf"(?i)\btrip\s+(?:to|in|around)\s+{_PLACE_NAME}\b"
+)
+# "Tom Will and Florida" — second slot is a place, not a Person named Florida.
+GEO_PLACE_WORDS = frozenset(
+    {
+        "alabama",
+        "alaska",
+        "arizona",
+        "arkansas",
+        "california",
+        "colorado",
+        "connecticut",
+        "delaware",
+        "florida",
+        "hawaii",
+        "idaho",
+        "illinois",
+        "indiana",
+        "iowa",
+        "kansas",
+        "kentucky",
+        "louisiana",
+        "maine",
+        "maryland",
+        "massachusetts",
+        "michigan",
+        "minnesota",
+        "mississippi",
+        "missouri",
+        "montana",
+        "nebraska",
+        "nevada",
+        "ohio",
+        "oklahoma",
+        "oregon",
+        "pennsylvania",
+        "tennessee",
+        "texas",
+        "utah",
+        "vermont",
+        "virginia",
+        "wisconsin",
+        "wyoming",
+        "new york",
+        "new jersey",
+        "new mexico",
+        "new hampshire",
+        "north carolina",
+        "south carolina",
+        "north dakota",
+        "south dakota",
+        "rhode island",
+        "west virginia",
+        "washington dc",
+        "washington d.c.",
+        "district of columbia",
+    }
 )
 
 KNOWN_EVENT_WORDS = (
@@ -616,6 +675,7 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     patterns = [
         PICTURES_OF_AND_PEOPLE_RE,
         SHOW_ME_AND_PEOPLE_RE,
+        PERSON_AND_PERSON_RE,
         PERSON_WITH_RE,
         PERSON_OF_RE,
         PERSON_POSSESSIVE_RE,
@@ -677,6 +737,10 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
             trips.append(ent)
             places.append(ent)
     for m in PLACE_IN_AT_RE.finditer(q):
+        raw = m.group(0) or ""
+        # "email to Peggy" is a person, not Place Peggy
+        if want_email and re.match(r"(?i)to\s+", raw):
+            continue
         ent = _clean_entity(m.group(1))
         # "at Christmas" is an event, not a place
         if ent and ent.lower() in {e.lower() for e in KNOWN_EVENT_WORDS}:
@@ -761,11 +825,37 @@ def _resolve_visual_scope(
     return "none", notes
 
 
+def _person_and_geo_place(
+    people: list[str], places: list[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """Person + geo token: Florida is a Place, not a second Person.
+
+    Only when the first name is First Last (Tom Will / Peggy George). Bare
+    "Peggy and Georgia" stays two people — Georgia is also a given name.
+    """
+    notes: list[str] = []
+    if len(people) < 2 or len((people[0] or "").split()) < 2:
+        return people, places, notes
+    kept = [people[0]]
+    extra_places: list[str] = []
+    for p in people[1:]:
+        if (p or "").strip().lower() in GEO_PLACE_WORDS:
+            extra_places.append(p)
+        else:
+            kept.append(p)
+    if extra_places:
+        notes.append("typed_slots_person_and_place")
+        places = _dedupe(list(places) + extra_places)
+    return kept, places, notes
+
+
 def _enforce_typed_slots(
     people: list[str], places: list[str], trips: list[str], events: list[str]
 ) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     """Rule C: a Person must not occupy Place/Trip/Event slots."""
     notes: list[str] = []
+    people, places, geo_notes = _person_and_geo_place(people, places)
+    notes.extend(geo_notes)
     people_l = {p.lower() for p in people}
     # Remove people names from place/trip
     places2 = [p for p in places if p.lower() not in people_l]
@@ -806,6 +896,8 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     # SMS/text conversation "between me and X" is not I6 kinship.
     want_relationship = bool(RELATIONSHIP_RE.search(q)) and not want_sms
     u_places, u_trips = _extract_places_and_trips(q, want_email=want_email or want_sms)
+    u_people, u_places, geo_notes = _person_and_geo_place(u_people, u_places)
+    notes.extend(geo_notes)
     u_events = _extract_events(q)
     temporal = parse_temporal(q)
     u_t0, u_t1 = temporal.time_start, temporal.time_end

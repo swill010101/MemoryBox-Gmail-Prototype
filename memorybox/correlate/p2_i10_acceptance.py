@@ -209,6 +209,58 @@ def _compile(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         f"show_me notes={show.notes}",
     )
+    in_fl = compile_ask("show me peggy george in florida")
+    _check(
+        "p2i10_in_florida_lowercase_is_place",
+        "Peggy" in " ".join(in_fl.person_names)
+        and any(p.lower() == "florida" for p in (in_fl.place_names or ())),
+        checks,
+        problems,
+        f"people={in_fl.person_names} places={in_fl.place_names}",
+    )
+    and_fl = compile_ask("show me Peggy George and florida")
+    _check(
+        "p2i10_and_florida_is_place_not_person",
+        any("Peggy" in n for n in (and_fl.person_names or ()))
+        and not any(n.lower() == "florida" for n in (and_fl.person_names or ()))
+        and any(p.lower() == "florida" for p in (and_fl.place_names or ())),
+        checks,
+        problems,
+        f"people={and_fl.person_names} places={and_fl.place_names}",
+    )
+    from memorybox.context import AskContext
+    from memorybox.planner import plan_ask as _plan_ask
+
+    sticky_eugene = AskContext(session_id="p2-i10-eugene", person_names=("Eugene Will",))
+    tom_and_fl = _plan_ask("tom will and florida", sticky_eugene)
+    _check(
+        "p2i10_tom_and_florida_does_not_keep_eugene",
+        any("Tom" in n for n in (tom_and_fl.person_names or ()))
+        and "Eugene Will" not in (tom_and_fl.person_names or ())
+        and any(p.lower() == "florida" for p in (tom_and_fl.place_names or ())),
+        checks,
+        problems,
+        f"people={tom_and_fl.person_names} places={tom_and_fl.place_names} notes={tom_and_fl.notes}",
+    )
+    tell_tom = _plan_ask("tell me about tom will and florida", sticky_eugene)
+    _check(
+        "p2i10_tell_tom_does_not_keep_eugene",
+        any("Tom" in n for n in (tell_tom.person_names or ()))
+        and "Eugene Will" not in (tell_tom.person_names or ()),
+        checks,
+        problems,
+        f"people={tell_tom.person_names} places={tell_tom.place_names} notes={tell_tom.notes}",
+    )
+    two_people = compile_ask("show me tom will and peggy")
+    _check(
+        "p2i10_person_and_person_still_two_people",
+        any("Tom" in n for n in (two_people.person_names or ()))
+        and any("Peggy" in n for n in (two_people.person_names or ()))
+        and not two_people.place_names,
+        checks,
+        problems,
+        f"people={two_people.person_names} places={two_people.place_names}",
+    )
     _check(
         "p2i10_compile_note",
         "p2_i10_cross_source" in notes,
