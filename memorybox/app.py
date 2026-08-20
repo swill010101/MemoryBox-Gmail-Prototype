@@ -2067,6 +2067,104 @@ def speech_moment_correct(body: SpeechCorrectRequest) -> dict[str, Any]:
     return {"ok": True, "withdrawal_id": wid}
 
 
+class CorrelateLinkRequest(BaseModel):
+    subject_type: str
+    subject_id: str
+    object_type: str
+    object_id: str
+    predicate: str = "about"
+    evidence_id: str | None = None
+    authority: str = "owner"
+    status: str = "candidate"
+    observed_date: str | None = None
+
+
+class CorrelateEventRequest(BaseModel):
+    display_name: str
+    event_kind: str = "theme"
+    start_date: str | None = None
+    end_date: str | None = None
+    place_id: str | None = None
+
+
+class CorrelatePlaceRequest(BaseModel):
+    display_name: str
+    aliases: list[str] | None = None
+
+
+@app.post("/correlate/place")
+def correlate_place(body: CorrelatePlaceRequest) -> dict[str, Any]:
+    from memorybox.correlate.store import upsert_place
+
+    try:
+        return {"ok": True, "place": upsert_place(body.display_name, aliases=body.aliases)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/correlate/event")
+def correlate_event(body: CorrelateEventRequest) -> dict[str, Any]:
+    from memorybox.correlate.store import upsert_event
+
+    try:
+        return {
+            "ok": True,
+            "event": upsert_event(
+                body.display_name,
+                event_kind=body.event_kind,
+                start_date=body.start_date,
+                end_date=body.end_date,
+                place_id=body.place_id,
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/correlate/link")
+def correlate_link(body: CorrelateLinkRequest) -> dict[str, Any]:
+    from memorybox.correlate.store import upsert_link
+
+    try:
+        return {
+            "ok": True,
+            **upsert_link(
+                subject_type=body.subject_type,
+                subject_id=body.subject_id,
+                object_type=body.object_type,
+                object_id=body.object_id,
+                predicate=body.predicate,
+                evidence_id=body.evidence_id,
+                authority=body.authority,
+                status=body.status,
+                observed_date=body.observed_date,
+                provenance={"via": "api"},
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/correlate/link/{link_id}/confirm")
+def correlate_link_confirm(link_id: str) -> dict[str, Any]:
+    from memorybox.correlate.store import confirm_link
+
+    try:
+        return {"ok": True, "link": confirm_link(link_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/correlate/link/{link_id}/reject")
+def correlate_link_reject(link_id: str) -> dict[str, Any]:
+    from memorybox.correlate.store import reject_link
+
+    try:
+        return {"ok": True, "link": reject_link(link_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/people/{person_id}/face-evidence")
 def people_face_evidence(person_id: str) -> dict[str, Any]:
     from memorybox.person.face_evidence import list_face_evidence

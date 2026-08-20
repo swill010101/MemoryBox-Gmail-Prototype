@@ -1255,7 +1255,9 @@
     const keepTexts = includeTexts;
     const includeEmail = galleryShowEmail;
     const includeCalendar = galleryShowCalendar;
-    if (galleryShowSms || galleryShowEmail) {
+    if (plan.want_cross_source) {
+      nextType = "all";
+    } else if (galleryShowSms || galleryShowEmail) {
       // Text-only ask → Email/Text filter selected (stay in sync with gallery)
       nextType = "email";
     } else if (galleryShowCalendar) {
@@ -1329,6 +1331,7 @@
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
         _askSummary: payload.summary || "",
         _askKind: payload.answer_kind || "",
+        coverage: payload.coverage || null,
         chips: chips,
         typeFilter: nextType,
         includeTexts: includeTexts,
@@ -1984,6 +1987,29 @@
     document.getElementById("mb-explore-curator-title").textContent = heading;
     document.getElementById("mb-explore-curator-body").textContent =
       state.domain.summary || "";
+    const covEl = document.getElementById("mb-explore-coverage");
+    if (covEl) {
+      const cov = state.domain.coverage;
+      if (cov && (cov.summary || cov.missing)) {
+        const bits = [];
+        const keys = ["photos", "video", "spoken", "email", "sms", "calendar", "story", "journal", "artifact"];
+        keys.forEach((k) => {
+          const n = Number(cov[k] || 0);
+          if (n > 0) bits.push(`${k} ${n}`);
+        });
+        const miss = Array.isArray(cov.missing) ? cov.missing : [];
+        let line = bits.length ? bits.join(" · ") : "No sourced items yet";
+        if (miss.length) line += ` · missing ${miss.join(", ")} (0)`;
+        if (Array.isArray(cov.conflicts) && cov.conflicts.length > 1) {
+          line += " · date conflict kept (not elected)";
+        }
+        covEl.textContent = line;
+        covEl.hidden = false;
+      } else {
+        covEl.textContent = "";
+        covEl.hidden = true;
+      }
+    }
     const curator = document.getElementById("mb-explore-curator");
     if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
       curator.classList.remove("is-searching");

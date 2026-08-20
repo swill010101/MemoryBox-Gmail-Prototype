@@ -209,6 +209,7 @@ class AskResult:
     provider_status: dict[str, Any]
     inventing: bool = False
     trace_id: str | None = None
+    coverage: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -231,6 +232,7 @@ class AskResult:
             "provider_status": self.provider_status,
             "inventing": self.inventing,
             "trace_id": self.trace_id,
+            "coverage": self.coverage,
         }
 
 
@@ -1276,11 +1278,12 @@ class AskOrchestrator:
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
+            spoken_videos: list[R.VideoHit] = []
             if getattr(plan, "want_spoken", False):
                 from memorybox.speech.retrieve import search_spoken_moments
 
                 spoken_rows = search_spoken_moments(plan)
-                videos = [
+                spoken_videos = [
                     R.VideoHit(
                         provider_key=str(r.get("provider_key") or "hvrt"),
                         external_id=str(r.get("external_id") or r.get("id") or ""),
@@ -1298,13 +1301,33 @@ class AskOrchestrator:
                 ]
                 video_status = {
                     "ok": True,
-                    "detail": f"spoken_moments={len(videos)}",
+                    "detail": f"spoken_moments={len(spoken_videos)}",
                     "evidence_first": True,
                 }
-            elif plan.want_video:
-                videos, video_status = R.search_videos(
+            appearance: list[R.VideoHit] = []
+            if plan.want_video and (
+                not getattr(plan, "want_spoken", False)
+                or getattr(plan, "want_cross_source", False)
+            ):
+                appearance, appear_status = R.search_videos(
                     plan, self.video, photo=self.photo
                 )
+                if not spoken_videos:
+                    video_status = appear_status
+                else:
+                    video_status = {
+                        **(video_status or {}),
+                        "ok": bool((video_status or {}).get("ok", True))
+                        and bool((appear_status or {}).get("ok", True)),
+                        "appearance": appear_status,
+                    }
+            if spoken_videos and appearance:
+                seen_v = {v.external_id for v in spoken_videos}
+                videos = spoken_videos + [v for v in appearance if v.external_id not in seen_v]
+            elif spoken_videos:
+                videos = spoken_videos
+            else:
+                videos = appearance
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)
@@ -1314,6 +1337,51 @@ class AskOrchestrator:
                 artifacts = R.search_artifacts(plan)
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
+
+        coverage: dict[str, Any] | None = None
+        if getattr(plan, "want_cross_source", False) and not plan.requires_clarification:
+            try:
+                from memorybox.correlate.pack import apply_cross_source, propose_theme_links
+                from memorybox.correlate.store import upsert_event
+
+                themes = list(getattr(plan, "theme_labels", ()) or ())
+                trips = list(plan.trip_labels or ())
+                label = (themes[0] if themes else None) or (trips[0] if trips else None)
+                event_id = None
+                if label:
+                    kind = "theme" if themes else "trip"
+                    event_id = upsert_event(label, event_kind=kind)["id"]
+                    propose_theme_links(
+                        event_id=event_id,
+                        evidence_hits=evidence,
+                        theme=label,
+                    )
+                pack, filtered = apply_cross_source(
+                    plan,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                    event_id=event_id,
+                )
+                evidence = filtered["evidence"]
+                photos = filtered["photos"]
+                videos = filtered["videos"]
+                stories = filtered["stories"]
+                journals = filtered["journals"]
+                artifacts = filtered["artifacts"]
+                coverage = {
+                    **pack.coverage,
+                    "missing": pack.missing,
+                    "conflicts": pack.conflicts,
+                    "event_id": pack.event_id,
+                    "dropped_rejected": pack.dropped_rejected,
+                    "summary": pack.summary,
+                }
+            except Exception as exc:  # noqa: BLE001
+                coverage = {"ok": False, "error": str(exc)}
 
         # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
         # many→Please specify which X you would like.
@@ -1376,6 +1444,10 @@ class AskOrchestrator:
             artifacts=artifacts,
             guided_capture=guided_capture,
         )
+        if coverage and coverage.get("summary") and answer_kind not in {"clarification", "journal_capture"}:
+            extra = str(coverage.get("summary") or "").strip()
+            if extra and extra not in (answer_text or ""):
+                answer_text = f"{extra} {answer_text}".strip()
 
         # I10: disclose cross-modality mapping gaps (Ask + Library share same Person X)
         cross: list[str] = []
@@ -1421,6 +1493,7 @@ class AskOrchestrator:
             "place": list(plan.place_names),
             "trip": list(plan.trip_labels),
             "event": [e for e in plan.event_labels if not e.lower().startswith("trip:")],
+            "theme": list(getattr(plan, "theme_labels", ()) or ()),
             "modality": list(plan.modalities),
             "time_label": getattr(plan, "temporal_label", None),
             "time_start": plan.time_start,
@@ -1482,6 +1555,7 @@ class AskOrchestrator:
             missing_disclosure=missing,
             provider_status=providers,
             inventing=False,
+            coverage=coverage,
         )
 
     def get_context(self, session_id: str) -> AskContext:

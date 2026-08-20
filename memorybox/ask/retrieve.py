@@ -261,6 +261,8 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
 
 
 def _sms_ask(plan: QueryPlan) -> bool:
+    if getattr(plan, "want_cross_source", False):
+        return True
     blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return (
         bool(SMS_ASK_RE.search(blob))
@@ -274,6 +276,8 @@ def _sms_ask(plan: QueryPlan) -> bool:
 
 
 def _email_ask(plan: QueryPlan) -> bool:
+    if getattr(plan, "want_cross_source", False):
+        return True
     blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return bool(EMAIL_ASK_RE.search(blob))
 
@@ -477,6 +481,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         "did", "text", "texts", "texted", "sms", "imessage", "message",
         "messages", "all", "my", "each", "other", "sent", "send", "total",
         "summarize", "summary",
+        "everything", "about", "have",
     } | _SMS_KEYWORD_EXTRA_STOP | name_tokens | set(person_names)
     keywords = [
         t.lower().replace("'", "")
@@ -885,6 +890,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         "replies",
         "any",
         "about",
+        "everything",
+        "have",
     } | name_tokens | set(person_names)
     keywords = [
         t.lower().replace("'", "")
@@ -1210,6 +1217,8 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
             terms.append(name.split(":", 1)[1])
         else:
             terms.append(name)
+    for name in getattr(plan, "theme_labels", ()) or ():
+        terms.append(name)
     # tokens from original ask (drop tiny words)
     for tok in re.findall(r"[A-Za-z0-9']{3,}", plan.original_ask):
         if tok.lower() not in {
