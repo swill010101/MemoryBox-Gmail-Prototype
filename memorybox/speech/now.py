@@ -33,6 +33,18 @@ def start_transcribe_now(
     if not veid:
         return {"ok": False, "error": "missing_video_id"}
     vpk = (video_provider_key or "").strip() or _provider_key(veid, video_provider)
+    from memorybox.speech.store import has_transcript, list_transcript
+
+    if has_transcript(veid):
+        tr = list_transcript(veid)
+        return {
+            "ok": True,
+            "skipped": True,
+            "already_transcribed": True,
+            "word_count": len(tr.get("words") or []),
+            "video_external_id": veid,
+            "cartesian": False,
+        }
     inject = getattr(video_provider, "i9_scan_transcript", None)
     can_inject = False
     if callable(inject):

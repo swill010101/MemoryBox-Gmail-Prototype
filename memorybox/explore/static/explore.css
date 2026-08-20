@@ -1649,15 +1649,50 @@ body {
 
 .mb-viewer-footer .mb-ev-transcript {
   display: block !important;
-  min-height: 4.5rem;
-  max-height: 11rem;
+  min-height: 8rem;
+  max-height: 18rem;
+}
+
+.mb-learn-block {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #334155;
+}
+.mb-learn-block h4 {
+  margin: 0 0 0.35rem;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mb-learn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+}
+.mb-learn-actions-primary {
+  margin-top: 0.85rem;
+}
+.mb-share-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.mb-share-menu[hidden] {
+  display: none;
+}
+.mb-share-menu .mb-viewer-footbtn {
+  text-decoration: none;
+  text-align: center;
 }
 
 .mb-ev-transcript.is-on {
   display: block;
   flex: 0 0 auto;
-  max-height: 9rem;
-  min-height: 3.2rem;
+  max-height: 18rem;
+  min-height: 8rem;
 }
 
 .mb-ev-transcript .mb-ev-word {

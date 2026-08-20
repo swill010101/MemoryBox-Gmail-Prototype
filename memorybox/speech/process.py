@@ -223,7 +223,18 @@ def transcribe_this_video_now(
     video_external_id: str,
     video_provider: Any | None = None,
 ) -> dict[str, Any]:
-    """Owner-open tape: persist this video only, even if a prior empty pass completed."""
+    """Owner-open video: persist this video only, even if a prior empty pass completed."""
+    from memorybox.speech.store import has_transcript, list_transcript
+
+    if has_transcript(video_external_id):
+        tr = list_transcript(video_external_id)
+        return {
+            "ok": True,
+            "skipped": True,
+            "already_transcribed": True,
+            "word_count": len(tr.get("words") or []),
+            "video_external_id": video_external_id,
+        }
     saved = persist_transcript(
         video_provider_key=video_provider_key,
         video_external_id=video_external_id,
