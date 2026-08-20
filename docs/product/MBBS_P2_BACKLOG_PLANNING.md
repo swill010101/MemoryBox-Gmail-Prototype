@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-20 (ACR-P2-001 parked; I9 authorized to build)  
+**Status:** Living parking note · **Updated:** 2026-08-20 (I9 ACCEPTED; I10 definition for review)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -94,4 +94,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **P2-I9 Spoken Moments** (authorized to build; same I8B add-person / add-video / incremental jobs). Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I9.
+**Next:** **P2-I10 Cross-Source Correlation** — definition **v1.1 for founder approval**, **not build-authorized**: [MBBS-P2_INCREMENT_10_DEFINITION.md](MBBS-P2_INCREMENT_10_DEFINITION.md). Occurrence = Event/Trip; Place is an anchor. **P2-I9 ACCEPTED** 2026-08-20. Face-SoT (**I8.5**) **later**. I11 narrative after I10. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.

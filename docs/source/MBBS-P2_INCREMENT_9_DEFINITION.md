@@ -2,9 +2,9 @@
 
 **Document:** MBBS-P2 Increment 9 Definition  
 **Version:** v1.1  
-**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “build i9 authorized”) — founder locks ingested 2026-08-19  
+**Status:** **ACCEPTED** 2026-08-20 (Tom: “i9 is accepted”) — founder locks ingested 2026-08-19; runtime authorized 2026-08-20  
 **Lineage:** Product body from `docs/source/MBBS-P2_INCREMENT_9_DEFINITION_v1.0_APPROVED.md` at `bfbba2fd9d71a36b452fae378e3d612d7a871bbb` (`cursor/marvin-capture-v01-3344`). This v1.1 records founder locks that close §14 of v1.0.  
-**Roadmap placement:** After **P2-I8A** (ACCEPTED 2026-08-19) and **P2-I8B** Person-Seeded Video Recognition & Learning. **I9 runtime is authorized 2026-08-20.** I8.5 Face-SoT stays later.
+**Roadmap placement:** After **P2-I8A** (ACCEPTED 2026-08-19) and **P2-I8B** Person-Seeded Video Recognition & Learning. **I9 runtime authorized 2026-08-20 and ACCEPTED 2026-08-20.** Next definition is **P2-I10**. I8.5 Face-SoT stays later.
 
 ## Founder locks (2026-08-19)
 
@@ -560,4 +560,4 @@ Code-grounded assessment (2026-08-19, I8B tree): Explore Transcript control is a
 
 ## 15. Hold / build authorization
 
-v1.1 locks stand. **I9 build authorized** 2026-08-20 (Tom). Runtime may proceed on a dedicated I9 branch. Do not cartesian people × videos. Do not ingest cassettes/memos. **ACR-P2-001-A** continue-on-tape is not I9.
+v1.1 locks stand. **I9 ACCEPTED** 2026-08-20 (Tom). Do not cartesian people × videos. Do not ingest cassettes/memos. **ACR-P2-001-A** continue-on-tape is not I9. Next increment definition is **P2-I10**; I10 is not authorized by I9 acceptance.

@@ -1,9 +1,9 @@
 # P2-I9 Spoken Moments — definition pointer
 
-**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “build i9 authorized”) · v1.1 source below  
+**Status:** **ACCEPTED** 2026-08-20 (Tom: “i9 is accepted”) · v1.1 source below  
 **Authority:** [docs/source/MBBS-P2_INCREMENT_9_DEFINITION.md](../source/MBBS-P2_INCREMENT_9_DEFINITION.md)
 
-**Sequence:** P2-I8A **ACCEPTED** → P2-I8B (runtime in flight) → **I9 Spoken Moments**. Tom authorized I9 build 2026-08-20. I8B founder ACCEPTED remains the FlightSim face gate; I9 does not reopen I8B and does not wait on ACR-P2-001-A.
+**Sequence:** P2-I8A **ACCEPTED** → P2-I8B → **I9 Spoken Moments ACCEPTED** 2026-08-20. I9 does not reopen I8B. Next definition is **P2-I10** (not build-authorized).
 
 **Ops:** Same owner runs as I8B — incremental Archive Health job, add a known person, add a video file. Transcription queue is **per video**, never people × every file. Voice Learn enqueues **that Person** only.
 
