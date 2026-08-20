@@ -1,6 +1,6 @@
 # P2-I10 Cross-Source Correlation — definition pointer
 
-**Status:** **DEFINITION FOR FOUNDER APPROVAL** v1.1 — 2026-08-20 — not build-authorized  
+**Status:** **BUILD AUTHORIZED** v1.1 — 2026-08-20  
 **Authority:** [docs/source/MBBS-P2_INCREMENT_10_DEFINITION.md](../source/MBBS-P2_INCREMENT_10_DEFINITION.md)
 
 **Sequence:** P2-I9 Spoken Moments **ACCEPTED** (2026-08-20) → **I10 Cross-Source Correlation**. I8.5 Face-SoT stays later. I11 narrative is after I10. ACR-P2-001 / 001-A are not I10.
@@ -9,4 +9,4 @@ I10 **joins** already-ingested evidence into owner-correctable **Event / Trip** 
 
 **MBPS:** P2-GRAPH-02, P2-GRAPH-03.
 
-**Gate:** No I10 code until Tom approves this definition and says to build.
+**Gate:** Tom approved v1.1 and authorized build 2026-08-20.

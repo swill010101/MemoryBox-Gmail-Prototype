@@ -2,7 +2,7 @@
 
 **Document:** MBBS-P2 Increment 10 Definition  
 **Version:** v1.1  
-**Status:** **DEFINITION FOR FOUNDER APPROVAL** — not build-authorized  
+**Status:** **BUILD AUTHORIZED** — 2026-08-20 (Tom: “Approved to build”)  
 **Date:** 2026-08-20  
 **Lineage:** [MBRM-001A](../product/MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) P2-I10 · [MBPS-002](../product/MBPS-002_P2_PRODUCT_SPECIFICATION.md) **P2-GRAPH-02 / P2-GRAPH-03** · v1.0 review 2026-08-20 · founder locks below  
 **Roadmap placement:** After **P2-I9 Spoken Moments ACCEPTED** (2026-08-20). Before **P2-I11** evidence-backed narrative. **I8.5 Face-SoT stays later.** **ACR-P2-001 / 001-A** are not I10.
@@ -11,7 +11,7 @@
 
 ## Founder locks (2026-08-20)
 
-Tom: approve after these corrections. I10 runtime is **not** authorized by this revision.
+Tom: approved to build 2026-08-20. Runtime is on a dedicated I10 branch.
 
 1. **Place is not an Occurrence type.** An Occurrence is an **Event or Trip**. Place remains a first-class MemoryBox **anchor** (like Person): it may be linked to evidence and to an Event/Trip, and it may strongly support or constrain correlation. Do not treat “Dad's house” or “Yellowstone” as events.
 2. **Preserve I9 evidence precision.** Where I9 provides a time-addressable Spoken Moment, I10 membership shall retain that precise evidence reference (source video + start/end). UI density may group multiple Spoken Moments through one source-video card per I9 / MBUX rules, but correlation must **not** reduce an exact Spoken Moment to an undifferentiated whole-file association. I11 will narrate from this precision.
@@ -33,7 +33,7 @@ These remain. I10 does not reopen them.
 - GRAPH-03. Corrections to People, relationships, dates, Places, or Events update discovery without erasing historical provenance of prior assertions.
 - No I11 in I10. I10 discovers, members, and retrieves. It does not write a trip/year/Person narrative.
 
-**P2-I9** is **ACCEPTED**. That does not authorize I10 build.
+**P2-I9** is **ACCEPTED**. I10 runtime is authorized 2026-08-20.
 
 ---
 
@@ -257,7 +257,7 @@ Canonical homes from MBRM-001A Appendix A.1. I10 **bar** is join + retrieve + pr
 
 ### A. Definition / honesty
 
-1. I10 definition founder-approved; build not started until Tom authorizes runtime.
+1. I10 definition founder-approved; Tom authorized runtime 2026-08-20.
 2. I8B, I9, I8A, I4, I6 remain ACCEPTED and unreopened.
 3. Prove command (when built) does not cartesian recognition or re-transcribe the archive.
 4. Implementation start includes a short FlightSim inventory and records the chosen proof Occurrence (name, year/window, modalities present). Alaska/Christmas are not assumed.
@@ -311,6 +311,4 @@ Controlled FlightSim subset. Not “correlate the entire archive” as a prerequ
 
 ## 13. Hold / build authorization
 
-v1.1 is **definition for founder approval**. **Do not write I10 runtime** until Tom approves this document **and** explicitly authorizes build.
-
-Sequence: **I9 ACCEPTED** → I10 definition (this) → Tom approval → Tom “build i10 authorized” → dedicated I10 branch. I8.5 and ACR-P2-001 remain off this path unless Tom reorders.
+v1.1 is **approved to build** (2026-08-20). Runtime proceeds on a dedicated I10 branch. I8.5 and ACR-P2-001 remain off this path unless Tom reorders.
