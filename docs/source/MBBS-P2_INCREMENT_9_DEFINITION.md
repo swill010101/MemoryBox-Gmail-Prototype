@@ -2,9 +2,9 @@
 
 **Document:** MBBS-P2 Increment 9 Definition  
 **Version:** v1.1  
-**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “build i9 authorized”) — founder locks ingested 2026-08-19  
+**Status:** **ACCEPTED** 2026-08-20 (Tom: “i9 is accepted”) — founder locks ingested 2026-08-19; runtime authorized 2026-08-20  
 **Lineage:** Product body from `docs/source/MBBS-P2_INCREMENT_9_DEFINITION_v1.0_APPROVED.md` at `bfbba2fd9d71a36b452fae378e3d612d7a871bbb` (`cursor/marvin-capture-v01-3344`). This v1.1 records founder locks that close §14 of v1.0.  
-**Roadmap placement:** After **P2-I8A** (ACCEPTED 2026-08-19) and **P2-I8B** Person-Seeded Video Recognition & Learning. **I9 runtime is authorized 2026-08-20.** I8.5 Face-SoT stays later.
+**Roadmap placement:** After **P2-I8A** (ACCEPTED 2026-08-19) and **P2-I8B** Person-Seeded Video Recognition & Learning. **I9 runtime authorized 2026-08-20 and ACCEPTED 2026-08-20.** Next definition is **P2-I10**. I8.5 Face-SoT stays later.
 
 ## Founder locks (2026-08-19)
 
