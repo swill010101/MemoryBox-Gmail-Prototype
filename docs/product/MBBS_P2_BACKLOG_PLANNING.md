@@ -89,7 +89,7 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 | ID | Theme | Evidence | Suggested home |
 |----|--------|----------|----------------|
-| **ACR-P2-001** | Person appearance view: play start → stop, then end; gallery thumb = frame at `start_sec` | Card already has the range; player ignores stop. No derived clip files. | [MBACR-P2-001](MBACR-P2-001_PERSON_APPEARANCE_VIEW.md) — PARKED, not authorized |
+| **ACR-P2-001** | Person appearance view: play start → stop, then end; gallery thumb = frame at `start_sec` | Card already has the range; player ignored stop. No derived clip files. | [MBACR-P2-001](MBACR-P2-001_PERSON_APPEARANCE_VIEW.md) — **BUILD AUTHORIZED** 2026-08-20 |
 | **ACR-P2-001-A** | Continue on tape after stop | Learn / watch past `end_sec` on the same original | Work list on that ACR; **not now** |
 
 ## Next increment

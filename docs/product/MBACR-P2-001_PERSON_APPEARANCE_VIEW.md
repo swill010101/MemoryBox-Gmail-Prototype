@@ -1,8 +1,8 @@
 # MBACR-P2-001 — Person appearance view (start → stop, then end)
 
 **ID:** ACR-P2-001  
-**Status:** PARKED · not authorized to build · does not reopen I8B  
-**Date parked:** 2026-08-20  
+**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: ACR approved and approved to build) · does not reopen I8B definition  
+**Date parked:** 2026-08-20 · **Authorized:** 2026-08-20  
 **Owner:** Tom Will  
 **Depends:** P2-I8B Person-Seeded Video Recognition (ranges + gallery poster at `start_sec` already on the card)  
 **Does not start:** extracted/physical clips · face-crop-only thumbs · RANGE_GAP / HVRT 60s merge · I9 speech · continue-on-tape (see follow-on)
@@ -52,7 +52,7 @@ Harness: Explore player honors `item.start_sec` and `item.end_sec` already prese
 - Source video remains immutable original evidence (I8B §5.4 / §7.6).
 - Appearance ranges remain derived bookmarks (`start_sec` / `end_sec` already stored).
 - I8B §5.5: opening must still return to the source at or near the start offset — this ACR *is* that return, plus stop.
-- Do not build until Tom authorizes this ACR (or absorbs it into a named increment). Do not slip it into I8B acceptance or I9 speech.
+- Build authorized 2026-08-20. Do not absorb into I9 speech. **ACR-P2-001-A** (continue on tape) stays parked.
 
 ## 5. Build plan (when authorized — sequencing only)
 
@@ -73,4 +73,4 @@ Low. Explore player + poster URL consistency. No recognition schema. Learn on th
 
 ---
 
-**Stop.** PARKED 2026-08-20. No build. Continue-on-tape is **ACR-P2-001-A** (later).
+**Stop (follow-on).** Continue-on-tape is **ACR-P2-001-A** (later, not this build).

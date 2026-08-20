@@ -235,6 +235,17 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         "Explore entry frame must be the appearance start, not the file's Immich still",
     )
+    js_src = open("memorybox/explore/static/explore.js", encoding="utf-8").read()
+    _check(
+        "p2i8b_acr_p2_001_appearance_view",
+        "bindAppearanceView" in js_src
+        and "appearanceViewBounds" in js_src
+        and "ACR-P2-001" in js_src
+        and "continue-on-tape" in js_src,
+        checks,
+        problems,
+        "Explore must play appearance start→stop then end (view into original)",
+    )
     from memorybox.ask.retrieve import VideoHit, _dedupe_video_hits
 
     stacked = _dedupe_video_hits(

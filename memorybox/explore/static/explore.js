@@ -4657,21 +4657,59 @@
     frame.addEventListener("mouseleave", clearHold);
   }
 
+  function appearanceViewBounds(item) {
+    const t0raw = item && item.start_sec != null ? item.start_sec : item && item.t;
+    const t0 = Number(t0raw);
+    const t1 = item && item.end_sec != null ? Number(item.end_sec) : NaN;
+    const start = Number.isFinite(t0) && t0 >= 0 ? t0 : 0;
+    const stop = Number.isFinite(t1) && t1 > start ? t1 : null;
+    return { start, stop };
+  }
+
+  function bindAppearanceView(el, item) {
+    /* ACR-P2-001: view into the original [start, stop], then end. No continue-on-tape. */
+    const bounds = appearanceViewBounds(item);
+    const start = bounds.start;
+    const stop = bounds.stop;
+    const EPS = 0.08;
+    const seekToStart = () => {
+      try {
+        if (Number.isFinite(start)) el.currentTime = start;
+      } catch (e) {}
+    };
+    const clampVisit = () => {
+      if (stop == null) return;
+      try {
+        if (el.currentTime < start - EPS) el.currentTime = start;
+        if (el.currentTime >= stop - EPS) {
+          el.pause();
+          el.currentTime = stop;
+        }
+      } catch (e) {}
+    };
+    const onMeta = () => {
+      seekToStart();
+      el.removeEventListener("loadedmetadata", onMeta);
+    };
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("timeupdate", clampVisit);
+    el.addEventListener("seeking", clampVisit);
+    el.addEventListener("seeked", clampVisit);
+    el.addEventListener("play", () => {
+      if (stop != null && el.currentTime >= stop - EPS) seekToStart();
+    });
+    seekToStart();
+  }
+
   function bindExploreVideoPlayer(item) {
     const el = document.querySelector(".mb-ev-video-player");
     if (!el) return;
-    const t0 = item.t != null ? Number(item.t) : 0;
-    const seekOnMeta = () => {
-      try {
-        if (Number.isFinite(t0) && t0 >= 0) el.currentTime = t0;
-      } catch (e) {}
-      el.removeEventListener("loadedmetadata", seekOnMeta);
-    };
+    const attach = () => bindAppearanceView(el, item);
     const immichSrc = immichVideoSrc(item);
     if (immichSrc) {
       el.src = String(immichSrc).split("?")[0];
       el.preload = "metadata";
-      el.addEventListener("loadedmetadata", seekOnMeta);
+      attach();
       el.load();
       return;
     }
@@ -4682,12 +4720,12 @@
       .then((res) => {
         el.src =
           "/review/media/" + encoded + (res.ok ? "?proxy=1" : "");
-        el.addEventListener("loadedmetadata", seekOnMeta);
+        attach();
         el.load();
       })
       .catch(() => {
         el.src = "/review/media/" + encoded;
-        el.addEventListener("loadedmetadata", seekOnMeta);
+        attach();
         el.load();
       });
   }
