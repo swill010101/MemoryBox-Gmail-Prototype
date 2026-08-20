@@ -25,6 +25,24 @@ OWNER_JOBS = [
             "everyone-times-every-video scan. Continue?"
         ),
     },
+    {
+        "id": "speech_incremental",
+        "label": "Transcribe new home videos",
+        "text": (
+            "Queue transcription for newly added videos in the MemoryBox-owned home-video "
+            "folder (and other marked video source libraries), plus Immich VIDEO assets. "
+            "One job per file — same inventory as face Scan new home videos. "
+            "Does not multiply people × videos. Voice Learn is separate and is that Person only."
+        ),
+        "action_label": "Run now",
+        "method": "POST",
+        "href": "/speech/archive-pass?limit=500",
+        "confirm": (
+            "Queue incremental video transcription for up to 500 new files from the "
+            "home-video folder, marked source libraries, and Immich. This will not "
+            "cartesian-expand people. Continue?"
+        ),
+    },
 ]
 
 

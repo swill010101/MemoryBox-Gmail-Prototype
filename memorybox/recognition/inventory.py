@@ -8,6 +8,7 @@ def list_owned_folder_video_rows(*, limit: int = 100000) -> list[dict[str, Any]]
     """MB-owned home movies under MEMORYBOX_VIDEO_MEDIA_ROOT, including new subfolder files.
 
     These are not Immich ingest. IDs are the same vid-* hashes the video worker uses.
+    Extra marked libraries (MEMORYBOX_VIDEO_SOURCE_ROOTS) are included the same way.
     """
     from memorybox.video_worker import list_owned_folder_videos
 
@@ -24,7 +25,8 @@ def list_owned_folder_video_rows(*, limit: int = 100000) -> list[dict[str, Any]]
                 "path_hint": v.get("path_hint"),
                 "duration_sec": v.get("duration_sec"),
                 "title": v.get("title"),
-                "source": "mb_owned_folder",
+                "source": str(v.get("source") or "mb_owned_folder"),
+                "library_root": v.get("library_root"),
             }
         )
     return rows

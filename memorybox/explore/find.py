@@ -22,6 +22,15 @@ _EMAIL_ASK_RE = re.compile(r"(?i)\b(e-?mails?|inbox|correspondence)\b")
 _CAL_ASK_RE = re.compile(
     r"(?i)\b(calendar|appointment|schedule|meeting|ics)\b"
 )
+
+
+def _is_voice_presence(item: dict[str, Any]) -> bool:
+    """Voice identifies a Person in a file. Face owns start:end gallery clips."""
+    if str(item.get("clip_kind") or "") == "voice_presence":
+        return True
+    if str(item.get("attribution") or "").startswith("voice_in_video"):
+        return True
+    return bool(item.get("spoken_text")) and not item.get("face_external_id")
 # All-ask: small hidden sample so Email/Text works. Count is the real archive.
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
@@ -300,6 +309,10 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         t0 = float(v.get("start_sec") or 0)
         t1 = v.get("end_sec")
+        voice_presence = _is_voice_presence(v)
+        if voice_presence:
+            t0 = 0.0
+            t1 = None
         face = v.get("face_external_id")
         pk = str(v.get("provider_key") or "hvrt")
         hit_play = str(v.get("play_url") or "")
@@ -348,15 +361,21 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             t=t0,
             start_sec=t0,
             end_sec=t1,
-            duration_sec=(float(t1) - t0) if t1 is not None else None,
+            duration_sec=(float(t1) - t0) if t1 is not None and not voice_presence else None,
             play_url=play,
             media_url=poster,
             thumb_url=poster,
             original_filename=orig_name or None,
             teachable=True,
-            paused_frame=True,
+            paused_frame=not voice_presence,
             face_identity=v.get("mb_person_name") or "Unknown",
+            spoken_text=v.get("spoken_text"),
+            clip_kind="voice_presence" if voice_presence else None,
         )
+        if v.get("spoken_text") and voice_presence:
+            item["preview"] = str(v.get("spoken_text"))[:160]
+            item["detail"] = str(v.get("spoken_text"))
+            item["title"] = str(v.get("mb_person_name") or "Video")[:80]
         if isinstance(face_box, dict) and all(
             isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
         ):
@@ -375,6 +394,12 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     pending_order: list[str] = []
     for it in video_raw:
         vid = str(it.get("video_external_id") or "")
+        if _is_voice_presence(it):
+            if vid not in pending:
+                pending_order.append(vid)
+                pending[vid] = []
+            pending[vid].append(it)
+            continue
         slot = int(float(it.get("start_sec") or 0) // 2.5)
         key = (vid, slot)
         if key in video_slots:
@@ -386,9 +411,59 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         pending[vid].append(it)
     for vid in pending_order:
         group = sorted(pending[vid], key=lambda x: float(x.get("start_sec") or 0))
+        voice_group = [it for it in group if _is_voice_presence(it)]
+        face_group = [it for it in group if not _is_voice_presence(it)]
         merged: list[dict[str, Any]] = []
-        for it in group:
-            if not merged:
+        if voice_group:
+            keep = dict(voice_group[0])
+            texts: list[str] = []
+            seen_txt: set[str] = set()
+            for it in voice_group:
+                text = str(it.get("spoken_text") or it.get("preview") or "").strip()
+                key = text.lower()
+                if not text or key in seen_txt:
+                    continue
+                seen_txt.add(key)
+                texts.append(text)
+            snippet = " ".join(texts).strip()[:160]
+            keep["clip_kind"] = "voice_presence"
+            keep["t"] = 0
+            keep["start_sec"] = 0
+            keep["end_sec"] = None
+            keep["duration_sec"] = None
+            keep["paused_frame"] = False
+            if snippet:
+                keep["spoken_text"] = snippet
+                keep["preview"] = snippet
+                keep["detail"] = snippet
+            keep["id"] = f"video:{keep.get('provider_key') or 'hvrt'}:{vid}:0"
+            play = str(keep.get("play_url") or "")
+            if "t=" in play:
+                from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                parts = urlparse(play)
+                q = parse_qs(parts.query, keep_blank_values=True)
+                q["t"] = ["0.000"]
+                keep["play_url"] = urlunparse(
+                    (
+                        parts.scheme,
+                        parts.netloc,
+                        parts.path,
+                        parts.params,
+                        urlencode(q, doseq=True),
+                        parts.fragment,
+                    )
+                )
+            elif play:
+                sep = "&" if "?" in play else "?"
+                keep["play_url"] = f"{play}{sep}t=0.000"
+            if not str(vid).startswith(("video-peggy-", "video-library-")):
+                poster = f"/library/media/video-poster?video={vid}&t=0.000"
+                keep["thumb_url"] = poster
+                keep["media_url"] = poster
+            merged.append(keep)
+        for it in face_group:
+            if not merged or _is_voice_presence(merged[-1]):
                 merged.append(it)
                 continue
             prev = merged[-1]

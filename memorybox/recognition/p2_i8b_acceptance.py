@@ -58,11 +58,15 @@ def _prove_owned_folder_inventory(checks: dict[str, Any], problems: list[str]) -
     from memorybox.video_worker import invalidate_video_index
 
     prev = os.environ.get("MEMORYBOX_VIDEO_MEDIA_ROOT")
+    extra_keys = ("MEMORYBOX_VIDEO_SOURCE_ROOTS", "HVRT_MEDIA_ROOT", "MEMORYBOX_SOURCES_ROOT")
+    extra_prev = {k: os.environ.get(k) for k in extra_keys}
     root = Path(tempfile.mkdtemp(prefix="mb-owned-vids-"))
     held = root / "held_out"
     held.mkdir()
     (held / "new_tape.mp4").write_bytes(b"mb-owned-not-immich")
     os.environ["MEMORYBOX_VIDEO_MEDIA_ROOT"] = str(root)
+    for k in extra_keys:
+        os.environ.pop(k, None)
 
     class _EmptyVideo:
         provider_key = "hvrt"
@@ -100,6 +104,11 @@ def _prove_owned_folder_inventory(checks: dict[str, Any], problems: list[str]) -
             os.environ.pop("MEMORYBOX_VIDEO_MEDIA_ROOT", None)
         else:
             os.environ["MEMORYBOX_VIDEO_MEDIA_ROOT"] = prev
+        for k, val in extra_prev.items():
+            if val is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = val
         invalidate_video_index()
 
 

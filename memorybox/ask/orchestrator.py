@@ -20,6 +20,62 @@ from memorybox.providers.photo.protocol import PhotoProvider
 from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
 
+def _spoken_rows_to_video_hits(rows: list[dict[str, Any]]) -> list[R.VideoHit]:
+    """Map Spoken Moment / voice-presence rows onto gallery VideoHits."""
+    hits: list[R.VideoHit] = []
+    seen: set[str] = set()
+    for r in rows or []:
+        vid = str(r.get("video_external_id") or "").strip()
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        voice = (
+            str(r.get("clip_kind") or "") == "voice_presence"
+            or str(r.get("attribution") or "").startswith("voice_in_video")
+        )
+        end_raw = r.get("end_sec")
+        try:
+            end_sec = float(end_raw) if end_raw is not None else 0.0
+        except (TypeError, ValueError):
+            end_sec = 0.0
+        try:
+            start_sec = 0.0 if voice else float(r.get("start_sec") or 0)
+        except (TypeError, ValueError):
+            start_sec = 0.0
+        hit = R.VideoHit(
+            provider_key=str(r.get("provider_key") or "hvrt"),
+            external_id=str(r.get("external_id") or r.get("id") or vid),
+            video_external_id=vid,
+            start_sec=start_sec,
+            end_sec=end_sec,
+            label=str(r.get("label") or "Video"),
+            play_url=r.get("play_url"),
+            identity_trust=str(r.get("identity_trust") or "candidate"),
+            mb_person_id=r.get("mb_person_id"),
+            mb_person_name=r.get("mb_person_name"),
+            attribution=str(r.get("attribution") or "voice_in_video"),
+            spoken_text=r.get("spoken_text"),
+            clip_kind=str(r.get("clip_kind") or "voice_presence"),
+        )
+        hits.append(R._origin_on_video_hit(hit))
+    return hits
+
+
+def _union_voice_videos(
+    videos: list[R.VideoHit],
+    extra: list[R.VideoHit],
+) -> list[R.VideoHit]:
+    seen = {str(v.video_external_id or "") for v in videos}
+    out = list(videos)
+    for v in extra:
+        vid = str(v.video_external_id or "")
+        if not vid or vid in seen:
+            continue
+        out.append(v)
+        seen.add(vid)
+    return out
+
+
 def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
     """Fill birthday/anniversary temporal windows from MB People when recorded.
 
@@ -408,11 +464,25 @@ def _build_answer(
             prefix = "Trusted-provider-seeded identity (not owner-confirmed) — "
         else:
             prefix = ""
+        spoken = getattr(v, "spoken_text", None)
+        end_sec = getattr(v, "end_sec", None)
+        try:
+            end_label = f"{float(end_sec):.1f}s" if end_sec is not None else ""
+        except (TypeError, ValueError):
+            end_label = ""
+        span = (
+            f"[{v.start_sec:.1f}s–{end_label}]"
+            if end_label
+            else f"[{v.start_sec:.1f}s]"
+        )
         statements.append(
             {
                 "text": (
-                    f"{prefix}Video segment {v.video_external_id} "
-                    f"[{v.start_sec:.1f}s–{v.end_sec:.1f}s]."
+                    f"{prefix}Spoken passage: {spoken}"
+                    if spoken
+                    else (
+                        f"{prefix}Video segment {v.video_external_id} {span}."
+                    )
                 ),
                 "label": (
                     "Fact"
@@ -880,7 +950,12 @@ class AskOrchestrator:
             rel.intent == "none"
             and plan.person_names
             and not getattr(plan, "person_ids", ())
-            and (plan.want_visual or plan.want_communication or plan.want_calendar)
+            and (
+                plan.want_visual
+                or plan.want_communication
+                or plan.want_calendar
+                or getattr(plan, "want_spoken", False)
+            )
         ):
             # Named Ask → attach MB Person id so photo/video/email/SMS share identity.
             # P2-BL-I8-02: unique Peggy → Peggy George; genuine ambiguity clarifies.
@@ -1266,10 +1341,42 @@ class AskOrchestrator:
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 photos, photo_status = R.search_photos(plan, self.photo)
-            if plan.want_video:
+            if getattr(plan, "want_spoken", False):
+                from memorybox.speech.retrieve import search_spoken_moments
+
+                try:
+                    spoken_rows = search_spoken_moments(plan)
+                except Exception:
+                    spoken_rows = []
+                videos = _spoken_rows_to_video_hits(spoken_rows)
+                video_status = {
+                    "ok": True,
+                    "detail": f"spoken_moments={len(videos)}",
+                    "evidence_first": True,
+                    "identity_mode": "voice_presence" if videos else "none",
+                }
+            elif plan.want_video:
                 videos, video_status = R.search_videos(
                     plan, self.video, photo=self.photo
                 )
+                try:
+                    from memorybox.speech.retrieve import (
+                        _person_ids as speech_person_ids,
+                        presence_hits_for_people,
+                    )
+
+                    pids = speech_person_ids(plan) or [
+                        str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p
+                    ]
+                    if pids:
+                        videos = _union_voice_videos(
+                            videos,
+                            _spoken_rows_to_video_hits(
+                                presence_hits_for_people(pids, limit=48)
+                            ),
+                        )
+                except Exception:
+                    pass
 
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(plan)
@@ -1282,37 +1389,71 @@ class AskOrchestrator:
 
         # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
         # many→Please specify which X you would like.
+        # Video / talking asks keep tapes. Immich "Who is X?" must not wipe
+        # Learned-voice files (FlightSim: Tom Will talking → 0 memories).
+        skip_identity_wipe = getattr(plan, "want_spoken", False) or getattr(
+            plan, "want_video", False
+        )
         for st in (photo_status, video_status):
             mode = str((st or {}).get("identity_mode") or "")
-            if mode in ("ambiguous_identity", "unknown_person"):
-                msg = str(
-                    (st or {}).get("clarify_message")
-                    or (st or {}).get("disclosure")
-                    or ""
-                ).strip()
-                if not msg:
-                    names = (st or {}).get("ambiguous_person_names") or (
-                        st or {}
-                    ).get("unknown_person_names") or plan.person_names
-                    label = (list(names)[0] if names else "this person")
-                    if mode == "unknown_person":
-                        msg = f"Who is {label}?"
-                    else:
-                        first = str(label).split()[0]
-                        msg = f"Please specify which {first} you would like."
+            if mode not in ("ambiguous_identity", "unknown_person"):
+                continue
+            if skip_identity_wipe:
+                continue
+            keep_voice = any(
+                str(getattr(v, "attribution", "") or "").startswith("voice_in_video")
+                or str(getattr(v, "clip_kind", "") or "") == "voice_presence"
+                for v in videos
+            )
+            if mode == "unknown_person" and (
+                keep_voice or getattr(plan, "person_ids", ())
+            ):
+                continue
+            if mode == "ambiguous_identity" and keep_voice:
+                continue
+            msg = str(
+                (st or {}).get("clarify_message")
+                or (st or {}).get("disclosure")
+                or ""
+            ).strip()
+            if not msg:
+                names = (st or {}).get("ambiguous_person_names") or (
+                    st or {}
+                ).get("unknown_person_names") or plan.person_names
+                label = (list(names)[0] if names else "this person")
+                if mode == "unknown_person":
+                    msg = f"Who is {label}?"
+                else:
+                    first = str(label).split()[0]
+                    msg = f"Please specify which {first} you would like."
+            plan = replace(
+                plan,
+                requires_clarification=True,
+                ambiguity_message=msg,
+            )
+            photos = []
+            videos = []
+            stories = []
+            journals = []
+            artifacts = []
+            guided_capture = []
+            evidence = []
+            break
+
+        if not videos and getattr(plan, "want_spoken", False):
+            from memorybox.speech.retrieve import search_spoken_moments
+
+            try:
+                refill = search_spoken_moments(plan)
+            except Exception:
+                refill = []
+            videos = _union_voice_videos(videos, _spoken_rows_to_video_hits(refill))
+            if videos and plan.requires_clarification:
                 plan = replace(
                     plan,
-                    requires_clarification=True,
-                    ambiguity_message=msg,
+                    requires_clarification=False,
+                    ambiguity_message=None,
                 )
-                photos = []
-                videos = []
-                stories = []
-                journals = []
-                artifacts = []
-                guided_capture = []
-                evidence = []
-                break
 
         # Disclose failed relational resolve when no other answer path
         if (

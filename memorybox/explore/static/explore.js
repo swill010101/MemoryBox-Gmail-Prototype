@@ -2232,8 +2232,9 @@
       return `${bg}<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "video") {
+      const voicePresence = String(it.clip_kind || "") === "voice_presence";
       const startClock =
-        it.t != null
+        !voicePresence && it.t != null
           ? `${Math.floor(Number(it.t) / 60)}:${String(
               Math.floor(Number(it.t) % 60)
             ).padStart(2, "0")}`
@@ -3473,9 +3474,10 @@
   }
 
   function openModal(id) {
-    if (state.domain && state.domain.galleryLocked) return;
+    const modal = document.getElementById("mb-modal");
     const item = rawItems.find((x) => x.id === id);
-    if (!item) return;
+    if (!item || !modal) return;
+    if (state.domain && state.domain.galleryLocked && !String(id).startsWith("video:direct:")) return;
     hideQuickPreview();
     state.gallery.scrollTop =
       document.getElementById("mb-explore-gallery").scrollTop || 0;
@@ -3483,10 +3485,13 @@
     state.modal.openId = id;
     state.modal.pendingCorrection = null;
     if (!state.modal.railTab) state.modal.railTab = "people";
-    state.modal.transcriptOn = false;
+    state.modal.transcriptOn = String(item.type || "").toLowerCase() === "video";
+    state.modal.speechAutoStarted = false;
+    state.modal.transcriptHasWords = false;
+    state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
-    document.getElementById("mb-modal").hidden = false;
+    modal.hidden = false;
     document.getElementById("mb-modal-close").focus();
   }
 
@@ -3512,6 +3517,7 @@
     bindExploreVideoPlayer(item);
     bindFaceHoldReveal();
     renderViewerFooter(item);
+    bindSpeechTranscript(item);
     syncRailTabs();
     renderRailPanel(item);
     renderRailTools(item);
@@ -3530,7 +3536,8 @@
     if (!item) return;
     state.modal.openId = next;
     state.modal.pendingCorrection = null;
-    state.modal.transcriptOn = false;
+    state.modal.transcriptOn = String(item.type || "").toLowerCase() === "video";
+    state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
   }
@@ -3544,6 +3551,8 @@
     state.modal.snapshot = null;
     state.modal.pendingCorrection = null;
     state.modal.transcriptOn = false;
+    state.modal.speechSpan = null;
+    stopSpeechPoll();
     stopLearnBoxing();
     document.getElementById("mb-modal-body").innerHTML = "";
     const teach = document.getElementById("mb-modal-teach");
@@ -3653,7 +3662,8 @@
     const t = String(item.type || "").toLowerCase();
     if (t !== "email" && t !== "sms" && t !== "text") {
       const titleHead = String(item.title || "").split(" · ")[0].trim();
-      push(titleHead);
+      const vid = String(item.video_external_id || item.external_id || "").trim();
+      if (titleHead && titleHead !== vid && !looksLikeUuid(titleHead)) push(titleHead);
     }
     return seen;
   }
@@ -4028,22 +4038,49 @@
     panel.innerHTML = `<div class="mb-learn-panel">
       <h3>Learn</h3>
       <div id="mb-learn-on-video">${learnOnVideoHtml(item)}</div>
-      <p class="mb-rail-empty">Crosshair is on. Drag a box on a face that is not already listed above. A new drag starts over. Choose a person (nothing is pre-selected) and press <strong>Learn</strong>.</p>
+      <p class="mb-rail-empty">Choose a person, then box a face and/or highlight transcript words. <strong>Learn</strong> teaches MemoryBox whichever evidence you captured.</p>
       ${
         known.length
-          ? `<p class="mb-rail-empty">${known.length} people in MemoryBox (dropdown below).</p>`
+          ? `<p class="mb-rail-empty">${known.length} people in MemoryBox.</p>`
           : `<p class="mb-rail-empty" id="mb-learn-people-empty">Loading known people…</p>`
       }
       <label for="mb-learn-person">Person</label>
       <select id="mb-learn-person">${personSelectHtml()}</select>
-      <div class="mb-learn-actions">
-        <button type="button" class="mb-viewer-footbtn" id="mb-learn-box">Box face</button>
+      <div class="mb-learn-block">
+        <h4>Face</h4>
+        <p class="mb-rail-empty">Pause the video, then box a face.</p>
+        <div class="mb-learn-actions">
+          <button type="button" class="mb-viewer-footbtn" id="mb-learn-box"${t === "photo" || t === "video" ? "" : " disabled"}>Box face</button>
+        </div>
+        <div class="mb-learn-crop" id="mb-learn-crop"><img id="mb-learn-crop-img" alt="" /><span class="mb-rail-empty" id="mb-learn-crop-meta"></span></div>
+      </div>
+      ${
+        t === "video"
+          ? `<div class="mb-learn-block">
+        <h4>Voice</h4>
+        <p class="mb-rail-empty">Highlight words in the transcript under the video, then Learn. MemoryBox scores <em>this Person</em> on other videos — not every person against every file.</p>
+        <div class="mb-learn-actions">
+          <button type="button" class="mb-viewer-footbtn" id="mb-transcribe-this" data-transcribe-this="1">Transcribe this video</button>
+        </div>
+      </div>`
+          : ""
+      }
+      <div class="mb-learn-actions mb-learn-actions-primary">
         <button type="button" class="mb-viewer-footbtn" id="mb-learn-submit" disabled>Learn</button>
       </div>
-      <div class="mb-learn-crop" id="mb-learn-crop"><img id="mb-learn-crop-img" alt="" /><span class="mb-rail-empty" id="mb-learn-crop-meta"></span></div>
       <p class="mb-rail-empty" id="mb-learn-status">${
-        sess.lastLabel ? "Learned " + escapeHtml(sess.lastLabel) + ". Box another face to add someone else." : ""
+        sess.lastLabel ? "Learned " + escapeHtml(sess.lastLabel) + ". Capture another face or voice span for someone else." : ""
       }</p>
+      <div class="mb-learn-block">
+        <h4>Share</h4>
+        <div class="mb-learn-actions">
+          <button type="button" class="mb-viewer-footbtn" id="mb-share-toggle">Share</button>
+        </div>
+        <div class="mb-share-menu" id="mb-share-menu" hidden>
+          <a class="mb-viewer-footbtn" id="mb-share-download" href="#" download>Download</a>
+          <a class="mb-viewer-footbtn" id="mb-share-email" href="mailto:">Send via email</a>
+        </div>
+      </div>
     </div>`;
     const boxBtn = document.getElementById("mb-learn-box");
     const learnBtn = document.getElementById("mb-learn-submit");
@@ -4054,8 +4091,10 @@
       personSel.value = "";
       personSel.addEventListener("change", () => syncLearnSubmitEnabled());
     }
+    bindTranscribeThisTape(item);
+    bindShareMenu(item);
+    syncTranscribeButton();
     pauseExploreMedia();
-    window.requestAnimationFrame(() => startLearnBoxing(item));
     refreshLearnOnVideo(item);
     if (!known.length) {
       loadPeopleOptions().then(() => {
@@ -4242,7 +4281,9 @@
     const btn = document.getElementById("mb-learn-submit");
     const sel = document.getElementById("mb-learn-person");
     if (!btn) return;
-    btn.disabled = !(state.modal.learnCrop && sel && sel.value);
+    const span = state.modal.speechSpan;
+    const hasSpan = span && Number(span.tEnd) > Number(span.tStart);
+    btn.disabled = !((state.modal.learnCrop || hasSpan) && sel && sel.value);
   }
 
   function startLearnBoxing(item) {
@@ -4389,53 +4430,85 @@
     const status = document.getElementById("mb-learn-status");
     const sel = document.getElementById("mb-learn-person");
     try {
-      if (!state.modal.learnCrop || !state.modal.learnPix) {
-        throw new Error("Box a face first.");
+      const span = state.modal.speechSpan;
+      const hasSpan = span && Number(span.tEnd) > Number(span.tStart);
+      if ((!state.modal.learnCrop || !state.modal.learnPix) && !hasSpan) {
+        throw new Error("Box a face or select a transcript span first.");
       }
       if (!sel || !sel.value) throw new Error("Choose a person. Nothing is pre-selected.");
       const personId = await ensureLearnPersonId(sel.value);
       if (!personId) throw new Error("Could not resolve that person in MemoryBox.");
-      const media = learnMediaEl();
-      const tSec =
-        media && media.currentTime != null ? Number(media.currentTime) : Number(item.t || 0);
-      const pix = state.modal.learnPix;
-      const faceId = "explore-learn-" + String(Date.now());
-      const res = await fetch("/recognition/learn", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          person_id: personId,
-          face_external_id: faceId,
-          video_external_id: item.video_external_id || item.external_id || null,
-          t_sec: tSec,
-          bbox: {
-            x: pix.x,
-            y: pix.y,
-            w: pix.w,
-            h: pix.h,
-            frame_w: pix.vw,
-            frame_h: pix.vh,
-          },
-          crop_jpeg_base64: state.modal.learnCrop,
-          provider_key: item.video_provider_key || item.provider_key || "immich",
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.detail || data.reason || res.statusText);
-      }
       const learnedLabel =
         (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].getAttribute("data-label")) ||
-        (data.person && data.person.display_name) ||
         "Person";
+      const did = [];
+      if (hasSpan) {
+        const res = await fetch("/speech/learn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: personId,
+            video_external_id: item.video_external_id || item.external_id,
+            t_start: Number(span.tStart),
+            t_end: Number(span.tEnd),
+            video_provider_key: item.video_provider_key || item.provider_key || "hvrt",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.detail || data.reason || res.statusText);
+        }
+        const n = Number(data.queued_other_videos || 0);
+        did.push(
+          "voice on this video" +
+            (n
+              ? "; scoring " + learnedLabel + " on " + n + " other videos (this Person only)"
+              : "")
+        );
+      }
+      if (state.modal.learnCrop && state.modal.learnPix) {
+        const media = learnMediaEl();
+        const tSec =
+          media && media.currentTime != null ? Number(media.currentTime) : Number(item.t || 0);
+        const pix = state.modal.learnPix;
+        const faceId = "explore-learn-" + String(Date.now());
+        const res = await fetch("/recognition/learn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: personId,
+            face_external_id: faceId,
+            video_external_id: item.video_external_id || item.external_id || null,
+            t_sec: tSec,
+            bbox: {
+              x: pix.x,
+              y: pix.y,
+              w: pix.w,
+              h: pix.h,
+              frame_w: pix.vw,
+              frame_h: pix.vh,
+            },
+            crop_jpeg_base64: state.modal.learnCrop,
+            provider_key: item.video_provider_key || item.provider_key || "immich",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.detail || data.reason || res.statusText);
+        }
+        did.push("face on this video");
+        if (!Array.isArray(item.people)) item.people = [];
+        if (!item.people.includes(learnedLabel)) item.people.push(learnedLabel);
+      }
       rememberLearnPerson(item, {
         id: personId,
         label: learnedLabel,
-        crop: state.modal.learnCrop,
+        crop: state.modal.learnCrop || null,
       });
-      if (!Array.isArray(item.people)) item.people = [];
-      if (!item.people.includes(learnedLabel)) item.people.push(learnedLabel);
+      if (status)
+        status.textContent = "Learned " + learnedLabel + " — " + did.join("; ") + ".";
       renderLearnRail(item);
+      return;
     } catch (err) {
       if (status) status.textContent = String(err.message || err);
     }
@@ -4449,18 +4522,7 @@
     if (t === "photo") {
       // Photo tools live in the right rail (zoom / exif / share / add story).
     } else if (t === "video") {
-      const t0 = item.t != null ? Number(item.t).toFixed(1) + "s" : "—";
-      bits.push(`<span class="mb-ev-meta">Moment @ ${escapeHtml(t0)}</span>`);
-      bits.push(
-        `<button type="button" class="mb-viewer-footbtn" id="mb-transcript-toggle" aria-pressed="${
-          state.modal.transcriptOn ? "true" : "false"
-        }">Transcript ${state.modal.transcriptOn ? "on" : "off"}</button>`
-      );
-      if (item.play_url) {
-        bits.push(
-          `<a class="mb-viewer-footbtn" href="${escapeAttr(item.play_url)}">Open in Review</a>`
-        );
-      }
+      /* Learn / Share / Transcribe live on the Learn tab. Footer is transcript only. */
     } else {
       bits.push(
         `<span class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(
@@ -4468,17 +4530,12 @@
         )}</span>`
       );
     }
-    foot.innerHTML = bits.join("");
-    const tr = document.getElementById("mb-transcript-toggle");
-    if (tr) {
-      tr.addEventListener("click", () => {
-        state.modal.transcriptOn = !state.modal.transcriptOn;
-        const box = document.getElementById("mb-ev-transcript");
-        if (box) box.classList.toggle("is-on", state.modal.transcriptOn);
-        tr.setAttribute("aria-pressed", state.modal.transcriptOn ? "true" : "false");
-        tr.textContent = `Transcript ${state.modal.transcriptOn ? "on" : "off"}`;
-      });
-    }
+    foot.innerHTML =
+      (bits.length ? `<div class="mb-viewer-footrow">${bits.join("")}</div>` : "") +
+      (t === "video"
+        ? `<div class="mb-ev-transcript is-on" id="mb-ev-transcript" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
+        : "");
+    bindTranscribeThisTape(item);
   }
 
 
@@ -4657,6 +4714,307 @@
     frame.addEventListener("mouseleave", clearHold);
   }
 
+  function stopSpeechPoll() {
+    if (state.modal && state.modal.speechPoll) {
+      window.clearTimeout(state.modal.speechPoll);
+      state.modal.speechPoll = 0;
+    }
+  }
+
+  function setSpeechStatus(message) {
+    const msg = String(message || "");
+    const learn = document.getElementById("mb-learn-status");
+    if (learn && msg) learn.textContent = msg;
+    const box = document.getElementById("mb-ev-transcript");
+    if (!box) return;
+    box.classList.add("is-on");
+    const empty = box.querySelector(".mb-ev-transcript-empty");
+    if (empty) empty.textContent = msg;
+  }
+
+  function syncTranscribeButton() {
+    document.querySelectorAll("[data-transcribe-this]").forEach((el) => {
+      if (state.modal.transcriptHasWords) {
+        el.disabled = true;
+        el.textContent = "Already transcribed";
+        el.title = "This video already has a transcript. Pressing it again will not duplicate words.";
+      } else {
+        el.disabled = false;
+        el.textContent = "Transcribe this video";
+        el.title = "";
+      }
+    });
+  }
+
+  function bindShareMenu(item) {
+    const href = String(item.play_url || item.media_url || "").split("?")[0];
+    const toggle = document.getElementById("mb-share-toggle");
+    const menu = document.getElementById("mb-share-menu");
+    if (toggle && menu) {
+      toggle.addEventListener("click", () => {
+        menu.hidden = !menu.hidden;
+      });
+    }
+    const dl = document.getElementById("mb-share-download");
+    if (dl) {
+      if (href) {
+        dl.href = href;
+        dl.setAttribute("download", String(item.video_external_id || item.external_id || "memory") + ".mp4");
+      } else {
+        dl.setAttribute("aria-disabled", "true");
+      }
+    }
+    const em = document.getElementById("mb-share-email");
+    if (em) {
+      const title = String(item.title || item.video_external_id || "MemoryBox video");
+      em.href =
+        "mailto:?subject=" +
+        encodeURIComponent("MemoryBox: " + title) +
+        "&body=" +
+        encodeURIComponent(
+          "Sharing a MemoryBox video.\n\n" +
+            title +
+            "\nId: " +
+            String(item.video_external_id || item.external_id || "") +
+            "\n\nDownload the file from MemoryBox first if you need to attach it."
+        );
+    }
+  }
+
+  function bindTranscribeThisTape(item) {
+    document.querySelectorAll("[data-transcribe-this]").forEach((btn) => {
+      btn.onclick = () => {
+        if (state.modal.transcriptHasWords || btn.disabled) return;
+        queueThisTape(item, btn);
+      };
+    });
+    syncTranscribeButton();
+  }
+
+  function queueThisTape(item, btn) {
+    const vid = String(item.video_external_id || item.external_id || "").trim();
+    const box = document.getElementById("mb-ev-transcript");
+    if (!vid) return;
+    if (state.modal.transcriptHasWords) {
+      syncTranscribeButton();
+      return;
+    }
+    state.modal.transcriptOn = true;
+    document.querySelectorAll("[data-transcribe-this]").forEach((el) => {
+      el.disabled = true;
+      el.textContent = "Transcribing…";
+    });
+    setSpeechStatus("Transcribing this video…");
+    if (box) {
+      box.classList.add("is-on");
+      box.innerHTML = '<div class="mb-ev-transcript-empty">Transcribing this video…</div>';
+    }
+    const pk = String(item.video_provider_key || item.provider_key || "").trim();
+    let url = "/speech/transcribe-now?video_external_id=" + encodeURIComponent(vid);
+    if (pk) url += "&video_provider_key=" + encodeURIComponent(pk);
+    fetch(url, { method: "POST" })
+      .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || (data && data.ok === false)) {
+          const err = (data && (data.detail || data.error)) || "transcribe failed";
+          throw new Error(err);
+        }
+        if (data && data.already_transcribed) {
+          state.modal.transcriptHasWords = true;
+          syncTranscribeButton();
+          bindSpeechTranscript(item);
+          return;
+        }
+        setSpeechStatus("Transcribing this video… words appear here when faster-whisper finishes.");
+        state.modal.speechPoll = window.setTimeout(() => bindSpeechTranscript(item), 1500);
+      })
+      .catch((err) => {
+        document.querySelectorAll("[data-transcribe-this]").forEach((el) => {
+          el.disabled = false;
+          el.textContent = "Transcribe this video";
+        });
+        setSpeechStatus(String(err.message || err));
+        if (box) {
+          box.innerHTML =
+            '<div class="mb-ev-transcript-empty">' +
+            escapeHtml(String(err.message || err)) +
+            "</div>";
+        }
+      });
+  }
+
+  function paintTranscriptEmpty(box, item, message, opts) {
+    const busy = !!(opts && opts.busy);
+    state.modal.transcriptHasWords = false;
+    setSpeechStatus(message);
+    box.innerHTML = '<div class="mb-ev-transcript-empty">' + escapeHtml(message) + "</div>";
+    bindTranscribeThisTape(item);
+    if (state.modal.transcriptOn) box.classList.add("is-on");
+    syncTranscribeButton();
+    const footBtn = document.getElementById("mb-transcribe-this");
+    if (footBtn && busy) {
+      footBtn.disabled = true;
+      footBtn.textContent = "Transcribing…";
+    }
+  }
+
+  function bindSpeechTranscript(item) {
+    const box = document.getElementById("mb-ev-transcript");
+    if (!box) return;
+    stopSpeechPoll();
+    const vid = String(item.video_external_id || item.external_id || "").trim();
+    if (!vid) {
+      paintTranscriptEmpty(box, item, "No video id for transcript.", {});
+      return;
+    }
+    const ac = new AbortController();
+    const abortTimer = window.setTimeout(() => ac.abort(), 12000);
+    fetch("/speech/transcript?video_external_id=" + encodeURIComponent(vid), {
+      signal: ac.signal,
+    })
+      .then((r) =>
+        r.json().then(
+          (data) => ({ ok: r.ok, data }),
+          () => ({ ok: false, data: null })
+        )
+      )
+      .then(({ ok, data }) => {
+        window.clearTimeout(abortTimer);
+        if (!ok || !data) {
+          paintTranscriptEmpty(
+            box,
+            item,
+            "Transcript API did not return words. Use Learn → Transcribe this video (restart Serve if the button fails).",
+            {}
+          );
+          return;
+        }
+        const words = Array.isArray(data.words) ? data.words : [];
+        const turns = Array.isArray(data.turns) ? data.turns : [];
+        const moments = Array.isArray(data.moments) ? data.moments : [];
+        const fullText = String(data.full_text || "").trim();
+        const qst = String((data.queue && data.queue.status) || "");
+        const reason = String((data.queue && data.queue.reason) || "").trim();
+        if (!words.length && !moments.length && !fullText) {
+          let empty =
+            "No words on this video yet. Use Learn → Transcribe this video.";
+          let busy = false;
+          if (qst === "queued" || qst === "running") {
+            empty = "Transcribing this video… words appear here when faster-whisper finishes.";
+            busy = true;
+            state.modal.speechPoll = window.setTimeout(() => bindSpeechTranscript(item), 2000);
+          } else if (qst === "failed") {
+            empty =
+              "Transcribe failed" +
+              (reason ? ": " + reason : ".") +
+              " Use Learn → Transcribe this video to retry.";
+          } else if (qst === "completed") {
+            empty = "Last pass stored no speech. Use Learn → Transcribe this video to retry.";
+          }
+          paintTranscriptEmpty(box, item, empty, { busy: busy || !state.modal.speechAutoStarted });
+          if (!state.modal.speechAutoStarted && qst !== "running") {
+            state.modal.speechAutoStarted = true;
+            queueThisTape(item);
+          }
+          return;
+        }
+        const tokens = words.length
+          ? words
+          : moments.length
+            ? moments.map((m) => ({ token: m.text, t_start: m.t_start, t_end: m.t_end }))
+            : [{ token: fullText, t_start: 0, t_end: 0 }];
+        state.modal.transcriptHasWords = tokens.some((w) =>
+          String(w.token || w.text || w.word || "").trim()
+        );
+        box.innerHTML = tokens
+          .map((w, i) => {
+            const st = Number(w.t_start != null ? w.t_start : w.start_sec || 0);
+            const en = Number(w.t_end != null ? w.t_end : w.end_sec || st);
+            const label = String(w.token || w.text || w.word || "").trim();
+            const spk = (turns.find((t) => Number(t.t_start) <= st && Number(t.t_end) >= st) || {})
+              .status;
+            const who = spk && spk !== "anonymous" ? " " + String(spk) : "";
+            return (
+              '<span class="mb-ev-word" data-i="' +
+              i +
+              '" data-start="' +
+              st +
+              '" data-end="' +
+              en +
+              '" title="' +
+              escapeAttr(st.toFixed(1) + "s") +
+              '">' +
+              escapeHtml(label) +
+              who +
+              "</span>"
+            );
+          })
+          .join(" ");
+        syncTranscribeButton();
+        const player = document.querySelector(".mb-ev-video-player");
+        const markActive = () => {
+          if (!player) return;
+          const t = Number(player.currentTime || 0);
+          box.querySelectorAll(".mb-ev-word").forEach((el) => {
+            const a = Number(el.getAttribute("data-start") || 0);
+            const b = Number(el.getAttribute("data-end") || a);
+            el.classList.toggle("is-active", t >= a - 0.05 && t <= b + 0.12);
+          });
+        };
+        if (player) player.addEventListener("timeupdate", markActive);
+        box.addEventListener("click", (ev) => {
+          const el = ev.target.closest(".mb-ev-word");
+          if (!el || !player) return;
+          const st = Number(el.getAttribute("data-start") || 0);
+          try {
+            player.currentTime = st;
+          } catch (e) {}
+        });
+        box.addEventListener("mouseup", () => {
+          const sel = window.getSelection && window.getSelection();
+          if (!sel || sel.isCollapsed) return;
+          const wordsEls = Array.from(box.querySelectorAll(".mb-ev-word"));
+          const picked = wordsEls.filter((el) => sel.containsNode(el, true));
+          if (!picked.length) return;
+          const tStart = Number(picked[0].getAttribute("data-start") || 0);
+          const tEnd = Number(picked[picked.length - 1].getAttribute("data-end") || tStart);
+          state.modal.speechSpan = { tStart, tEnd };
+          syncLearnSubmitEnabled();
+          const status = document.getElementById("mb-learn-status");
+          if (status)
+            status.textContent =
+              "Voice span " + tStart.toFixed(1) + "s–" + tEnd.toFixed(1) + "s. Choose a person and Learn.";
+        });
+        box.addEventListener("keydown", (ev) => {
+          const span = state.modal.speechSpan;
+          if (!span) return;
+          if (ev.key === "ArrowLeft") {
+            span.tStart = Math.max(0, Number(span.tStart) - (ev.shiftKey ? 0.2 : 0.05));
+            ev.preventDefault();
+          }
+          if (ev.key === "ArrowRight") {
+            span.tEnd = Number(span.tEnd) + (ev.shiftKey ? 0.2 : 0.05);
+            ev.preventDefault();
+          }
+          state.modal.speechSpan = span;
+          syncLearnSubmitEnabled();
+        });
+        box.setAttribute("tabindex", "0");
+        if (state.modal.transcriptOn) box.classList.add("is-on");
+        syncTranscribeButton();
+      })
+      .catch(() => {
+        window.clearTimeout(abortTimer);
+        setSpeechStatus("Transcript unavailable. Restart Serve, then Learn → Transcribe this video.");
+        paintTranscriptEmpty(
+          box,
+          item,
+          "Transcript unavailable. Restart Serve, then Learn → Transcribe this video.",
+          {}
+        );
+      });
+  }
+
   function appearanceViewBounds(item) {
     const t0raw = item && item.start_sec != null ? item.start_sec : item && item.t;
     const t0 = Number(t0raw);
@@ -4733,6 +5091,29 @@
   function looksLikeUuid(value) {
     const raw = String(value || "").trim();
     return raw.length === 36 && (raw.match(/-/g) || []).length === 4;
+  }
+
+  function videoDeepLinkItem(videoId, t0) {
+    const vid = String(videoId || "").trim();
+    const t = Number(t0) || 0;
+    const immich = looksLikeUuid(vid);
+    return {
+      id: "video:direct:" + vid + ":" + t,
+      type: "video",
+      kind: "video",
+      title: vid,
+      video_external_id: vid,
+      external_id: vid,
+      provider_key: immich ? "immich" : "hvrt",
+      video_provider_key: immich ? "immich" : "hvrt",
+      t: t,
+      start_sec: t,
+      play_url: immich
+        ? "/library/media/immich-video/" + encodeURIComponent(vid) + "?t=" + t
+        : "/review/media/" + encodeURIComponent(vid) + "?t=" + t,
+      teachable: true,
+      paused_frame: true,
+    };
   }
 
   function immichVideoSrc(item) {
@@ -4909,12 +5290,6 @@
           <span>${t0.toFixed(1)}s · paused frame</span>
         </div>`
         }
-        <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Optional transcript (off by default)">
-          <div class="is-active">[${String(Math.max(0, Math.floor(t0 - 2))).padStart(2, "0")}] …selectable speech span for speaker Learn…</div>
-          <div>[${t0.toFixed(0)}] ${escapeHtml(
-        item.detail || "Video moment ready for time-aligned teaching."
-      )}</div>
-        </div>
       </div>`;
     }
     if (t === "email" || isSmsTextItem(item)) {
@@ -5794,6 +6169,7 @@
     const params = new URLSearchParams(location.search);
     const demo = params.get("demo");
     const q = params.get("q") || "";
+    const videoId = (params.get("video") || "").trim();
     sessionId =
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
@@ -5808,6 +6184,26 @@
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
         bootFromPayload(payload);
+        return;
+      }
+      if (videoId) {
+        const t0 = Number(params.get("t") || 0) || 0;
+        const item = videoDeepLinkItem(videoId, t0);
+        payload = emptyExplorePayload("");
+        payload.items = [item];
+        payload.title = "Video";
+        payload.summary = "Opened from video id. Transcript is on for voice Learn.";
+        bootFromPayload(payload);
+        if (state && state.domain) state.domain.galleryLocked = false;
+        openModal(item.id);
+        state.modal.transcriptOn = true;
+        const box = document.getElementById("mb-ev-transcript");
+        if (box) box.classList.add("is-on");
+        const tr = document.getElementById("mb-transcript-toggle");
+        if (tr) {
+          tr.setAttribute("aria-pressed", "true");
+          tr.textContent = "Transcript on";
+        }
         return;
       }
       let bootQ = String(q).trim();

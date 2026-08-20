@@ -23,6 +23,8 @@ I8B_PEGGY_VEC = [1.0] + [0.0] * 15
 I8B_OTHER_VEC = [0.0, 1.0] + [0.0] * 14
 # Cosine vs Peggy exemplars ≈ 0.30 (uncertain band 0.28–0.38)
 I8B_UNCERTAIN_PEGGY_VEC = [0.32] + [0.0] * 14 + [0.947]
+I9_PEGGY_VOICE = [1.0] + [0.0] * 15
+I9_OTHER_VOICE = [0.0, 1.0] + [0.0] * 14
 
 
 class FakeVideoProvider:
@@ -270,6 +272,94 @@ class FakeVideoProvider:
                 }
             )
         return out
+
+    def i9_scan_transcript(self, video_external_id: str) -> dict | None:
+        """Harness word/turn inject — not capture-journal STT."""
+        if video_external_id == "video-peggy-clear":
+            return {
+                "full_text": "I love you hello there",
+                "words": [
+                    {"token": "I", "t_start": 5.0, "t_end": 5.2},
+                    {"token": "love", "t_start": 5.2, "t_end": 5.5},
+                    {"token": "you", "t_start": 5.5, "t_end": 5.9},
+                    {"token": "hello", "t_start": 20.0, "t_end": 20.4},
+                    {"token": "there", "t_start": 20.4, "t_end": 20.8},
+                ],
+                "turns": [
+                    {
+                        "t_start": 5.0,
+                        "t_end": 5.9,
+                        "text": "I love you",
+                        "anonymous_speaker_key": "speaker-0",
+                        "embedding": list(I9_PEGGY_VOICE),
+                        "diarization_model": "pause_gap_local",
+                    },
+                    {
+                        "t_start": 20.0,
+                        "t_end": 20.8,
+                        "text": "hello there",
+                        "anonymous_speaker_key": "speaker-1",
+                        "embedding": list(I9_OTHER_VOICE),
+                        "diarization_model": "pause_gap_local",
+                    },
+                ],
+            }
+        if video_external_id == "video-library-02":
+            return {
+                "full_text": "we used to go there every Christmas",
+                "words": [
+                    {"token": "we", "t_start": 7.0, "t_end": 7.2},
+                    {"token": "used", "t_start": 7.2, "t_end": 7.4},
+                    {"token": "to", "t_start": 7.4, "t_end": 7.5},
+                    {"token": "go", "t_start": 7.5, "t_end": 7.7},
+                    {"token": "there", "t_start": 7.7, "t_end": 7.9},
+                    {"token": "every", "t_start": 7.9, "t_end": 8.2},
+                    {"token": "Christmas", "t_start": 8.2, "t_end": 8.8},
+                ],
+                "turns": [
+                    {
+                        "t_start": 7.0,
+                        "t_end": 8.8,
+                        "text": "we used to go there every Christmas",
+                        "anonymous_speaker_key": "speaker-0",
+                        "embedding": list(I9_PEGGY_VOICE),
+                        "diarization_model": "pause_gap_local",
+                    }
+                ],
+            }
+        if video_external_id == "video-peggy-absent":
+            return {
+                "full_text": "not that voice",
+                "words": [
+                    {"token": "not", "t_start": 3.0, "t_end": 3.2},
+                    {"token": "that", "t_start": 3.2, "t_end": 3.4},
+                    {"token": "voice", "t_start": 3.4, "t_end": 3.8},
+                ],
+                "turns": [
+                    {
+                        "t_start": 3.0,
+                        "t_end": 3.8,
+                        "text": "not that voice",
+                        "anonymous_speaker_key": "speaker-0",
+                        "embedding": list(I9_OTHER_VOICE),
+                        "diarization_model": "pause_gap_local",
+                    }
+                ],
+            }
+        return None
+
+    def i9_voice_vec_for_turn(self, video_external_id: str, t_start: float, t_end: float):
+        tr = self.i9_scan_transcript(video_external_id) or {}
+        for t in tr.get("turns") or []:
+            a = float(t.get("t_start") or 0)
+            b = float(t.get("t_end") or a)
+            if b < t_start or a > t_end:
+                continue
+            return list(t.get("embedding") or [])
+        return None
+
+    def i9_voice_vec_for_span(self, video_external_id: str, t_start: float, t_end: float):
+        return self.i9_voice_vec_for_turn(video_external_id, t_start, t_end)
 
     def get_segment(self, external_id: str) -> VideoSegmentHit | None:
         for h in self.search_segments(VideoSearchQuery(limit=500)):
