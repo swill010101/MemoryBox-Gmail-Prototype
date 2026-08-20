@@ -4870,6 +4870,29 @@
     return raw.length === 36 && (raw.match(/-/g) || []).length === 4;
   }
 
+  function videoDeepLinkItem(videoId, t0) {
+    const vid = String(videoId || "").trim();
+    const t = Number(t0) || 0;
+    const immich = looksLikeUuid(vid);
+    return {
+      id: "video:direct:" + vid + ":" + t,
+      type: "video",
+      kind: "video",
+      title: vid,
+      video_external_id: vid,
+      external_id: vid,
+      provider_key: immich ? "immich" : "hvrt",
+      video_provider_key: immich ? "immich" : "hvrt",
+      t: t,
+      start_sec: t,
+      play_url: immich
+        ? "/library/media/immich-video/" + encodeURIComponent(vid) + "?t=" + t
+        : "/review/media/" + encodeURIComponent(vid) + "?t=" + t,
+      teachable: true,
+      paused_frame: true,
+    };
+  }
+
   function immichVideoSrc(item) {
     const play = String((item && item.play_url) || "");
     if (play.indexOf("/library/media/immich-video/") >= 0) {
@@ -5926,6 +5949,7 @@
     const params = new URLSearchParams(location.search);
     const demo = params.get("demo");
     const q = params.get("q") || "";
+    const videoId = (params.get("video") || "").trim();
     sessionId =
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
@@ -5940,6 +5964,18 @@
         if (!res.ok) throw new Error(`demo ${res.status}`);
         payload = await res.json();
         bootFromPayload(payload);
+        return;
+      }
+      if (videoId) {
+        const t0 = Number(params.get("t") || 0) || 0;
+        const item = videoDeepLinkItem(videoId, t0);
+        payload = emptyExplorePayload("");
+        payload.items = [item];
+        payload.title = "Video";
+        payload.summary = "Opened from video id. Transcript is on for voice Learn.";
+        bootFromPayload(payload);
+        state.modal.transcriptOn = true;
+        openModal(item.id);
         return;
       }
       let bootQ = String(q).trim();
