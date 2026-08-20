@@ -164,11 +164,19 @@ def replace_video_transcript(
     return {"word_count": len(words), "turn_count": len(turns), "moment_ids": moment_ids}
 
 
+def _speech_api_row(row: Any) -> dict[str, Any]:
+    d = dict(row)
+    for k in ("t_start", "t_end", "confidence"):
+        if d.get(k) is not None:
+            d[k] = float(d[k])
+    return d
+
+
 def list_transcript(video_external_id: str) -> dict[str, Any]:
     vid = (video_external_id or "").strip()
     with connection() as conn:
         words = [
-            dict(r)
+            _speech_api_row(r)
             for r in conn.execute(
                 """
                 SELECT token, t_start, t_end, confidence
@@ -180,7 +188,7 @@ def list_transcript(video_external_id: str) -> dict[str, Any]:
             ).fetchall()
         ]
         turns = [
-            dict(r)
+            _speech_api_row(r)
             for r in conn.execute(
                 """
                 SELECT id::text, t_start, t_end, anonymous_speaker_key,
@@ -193,7 +201,7 @@ def list_transcript(video_external_id: str) -> dict[str, Any]:
             ).fetchall()
         ]
         moments = [
-            dict(r)
+            _speech_api_row(r)
             for r in conn.execute(
                 """
                 SELECT id::text, t_start, t_end, text, person_id::text,
@@ -206,7 +214,26 @@ def list_transcript(video_external_id: str) -> dict[str, Any]:
                 (vid,),
             ).fetchall()
         ]
-    return {"ok": True, "video_external_id": vid, "words": words, "turns": turns, "moments": moments}
+        qrow = conn.execute(
+            """
+            SELECT status, reason, enqueue_reason
+            FROM speech_queue_items
+            WHERE video_external_id = %s
+              AND enqueue_reason = 'transcribe'
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """,
+            (vid,),
+        ).fetchone()
+    queue = dict(qrow) if qrow else None
+    return {
+        "ok": True,
+        "video_external_id": vid,
+        "words": words,
+        "turns": turns,
+        "moments": moments,
+        "queue": queue,
+    }
 
 
 def persist_voice_exemplar(

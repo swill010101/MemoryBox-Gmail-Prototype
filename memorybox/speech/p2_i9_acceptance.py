@@ -117,6 +117,7 @@ def _prove_harness() -> dict[str, Any]:
         "bindSpeechTranscript" in js
         and "/speech/learn" in js
         and "Choose a person" in js
+        and "Transcribe this tape" in js
         and "/speech/transcript" in app
         and "/speech/learn" in app
         and "/speech/moments/correct" in app
@@ -269,6 +270,20 @@ def _prove_harness() -> dict[str, Any]:
         checks,
         problems,
         str(inc),
+    )
+    orphan = enqueue_new_videos_for_transcribe(
+        video_provider=video,
+        photo_provider=None,
+        video_ids=["video-orphan-disk"],
+    )
+    _check(
+        "p2i9_explicit_video_id_not_inventory_bound",
+        orphan.get("ok")
+        and orphan.get("cartesian") is False
+        and int(orphan.get("new_videos") or 0) == 1,
+        checks,
+        problems,
+        str(orphan),
     )
 
     plan_phrase = compile_ask(f"{peggy.display_name} saying \"I love you\"")

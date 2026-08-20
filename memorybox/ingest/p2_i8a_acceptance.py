@@ -129,7 +129,7 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "if (!includeTexts) return false;" in matches_fn
         and "applyPresentFlags" in explore_js
         and "mb-day-row-date" in explore_js
-        and "explore.js?v=i8a9" in explore_html
+        and "explore.js?v=" in explore_html
         and "promptNeedPersonOrTime" in explore_js
         and "openDayDetailThread" in explore_js
         and "applyPresentPayload" in explore_js

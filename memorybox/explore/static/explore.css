@@ -1175,6 +1175,29 @@ body {
   flex-direction: column;
 }
 
+.mb-modal-body > .mb-ev-video-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.mb-viewer-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem 0.7rem;
+  border-top: 1px solid #1f2937;
+  background: #020617;
+  min-height: 0;
+}
+
+.mb-viewer-footrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .mb-viewer-footer:empty {
   display: none;
 }
@@ -1473,12 +1496,13 @@ body {
   flex-direction: column;
   gap: 0.55rem;
   height: 100%;
+  min-height: 0;
 }
 
 .mb-ev-video-frame {
   position: relative;
-  flex: 1;
-  min-height: 240px;
+  flex: 1 1 auto;
+  min-height: 0;
   background: #020617;
   border-radius: 10px;
   overflow: hidden;
@@ -1616,6 +1640,9 @@ body {
 
 .mb-ev-transcript.is-on {
   display: block;
+  flex: 0 0 auto;
+  max-height: 9rem;
+  min-height: 3.2rem;
 }
 
 .mb-ev-transcript .mb-ev-word {

@@ -3484,7 +3484,7 @@
     state.modal.openId = id;
     state.modal.pendingCorrection = null;
     if (!state.modal.railTab) state.modal.railTab = "people";
-    state.modal.transcriptOn = false;
+    state.modal.transcriptOn = String(item.type || "").toLowerCase() === "video";
     state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
@@ -3512,9 +3512,9 @@
     bindSmsAttachActions(item);
     bindEmailStructuredView(item);
     bindExploreVideoPlayer(item);
-    bindSpeechTranscript(item);
     bindFaceHoldReveal();
     renderViewerFooter(item);
+    bindSpeechTranscript(item);
     syncRailTabs();
     renderRailPanel(item);
     renderRailTools(item);
@@ -3533,7 +3533,7 @@
     if (!item) return;
     state.modal.openId = next;
     state.modal.pendingCorrection = null;
-    state.modal.transcriptOn = false;
+    state.modal.transcriptOn = String(item.type || "").toLowerCase() === "video";
     state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
@@ -3658,7 +3658,8 @@
     const t = String(item.type || "").toLowerCase();
     if (t !== "email" && t !== "sms" && t !== "text") {
       const titleHead = String(item.title || "").split(" · ")[0].trim();
-      push(titleHead);
+      const vid = String(item.video_external_id || item.external_id || "").trim();
+      if (titleHead && titleHead !== vid && !looksLikeUuid(titleHead)) push(titleHead);
     }
     return seen;
   }
@@ -4506,7 +4507,12 @@
         )}</span>`
       );
     }
-    foot.innerHTML = bits.join("");
+    const trOn = t === "video" && state.modal.transcriptOn;
+    foot.innerHTML =
+      `<div class="mb-viewer-footrow">${bits.join("")}</div>` +
+      (t === "video"
+        ? `<div class="mb-ev-transcript${trOn ? " is-on" : ""}" id="mb-ev-transcript" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
+        : "");
     const tr = document.getElementById("mb-transcript-toggle");
     if (tr) {
       tr.addEventListener("click", () => {
@@ -4704,14 +4710,50 @@
       return;
     }
     fetch("/speech/transcript?video_external_id=" + encodeURIComponent(vid))
-      .then((r) => r.json())
-      .then((data) => {
+      .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || !data) throw new Error("transcript http");
         const words = (data && data.words) || [];
         const turns = (data && data.turns) || [];
         const moments = (data && data.moments) || [];
         if (!words.length && !moments.length) {
+          const qst = String((data.queue && data.queue.status) || "");
+          const reason = String((data.queue && data.queue.reason) || "").trim();
+          let empty =
+            "No Spoken Moments transcript yet. Archive Health → Transcribe new home videos, or Transcribe this tape.";
+          if (qst === "queued" || qst === "running") {
+            empty = "Transcribing this tape… words appear here when the pass finishes.";
+          } else if (qst === "failed") {
+            empty = "Transcribe failed" + (reason ? ": " + reason : ".") + " You can retry this tape.";
+          } else if (qst === "completed") {
+            empty = "Transcribe finished with no speech on this tape.";
+          }
           box.innerHTML =
-            '<div class="mb-ev-transcript-empty">No Spoken Moments transcript yet. Archive Health → Transcribe new home videos.</div>';
+            '<div class="mb-ev-transcript-empty">' +
+            escapeHtml(empty) +
+            (qst === "queued" || qst === "running" || qst === "completed"
+              ? ""
+              : ' <button type="button" class="mb-viewer-footbtn" id="mb-transcribe-this">Transcribe this tape</button>') +
+            "</div>";
+          const go = document.getElementById("mb-transcribe-this");
+          if (go) {
+            go.addEventListener("click", () => {
+              go.disabled = true;
+              const hint = box.querySelector(".mb-ev-transcript-empty");
+              if (hint) hint.textContent = "Queueing this tape…";
+              fetch(
+                "/speech/archive-pass?limit=1&video_id=" + encodeURIComponent(vid),
+                { method: "POST" }
+              )
+                .then((r) => r.json())
+                .then(() => bindSpeechTranscript(item))
+                .catch(() => {
+                  box.innerHTML =
+                    '<div class="mb-ev-transcript-empty">Could not queue this tape.</div>';
+                });
+            });
+          }
+          if (state.modal.transcriptOn) box.classList.add("is-on");
           return;
         }
         const tokens = words.length
@@ -5068,9 +5110,6 @@
           <span>${t0.toFixed(1)}s · paused frame</span>
         </div>`
         }
-        <div class="mb-ev-transcript" id="mb-ev-transcript" aria-label="Synchronized transcript">
-          <div class="mb-ev-transcript-empty">Loading transcript…</div>
-        </div>
       </div>`;
     }
     if (t === "email" || isSmsTextItem(item)) {
