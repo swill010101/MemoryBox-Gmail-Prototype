@@ -125,12 +125,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_prove_p2i9 = sub.add_parser(
         "prove-p2-i9",
-        help="P2-I9 Spoken Moments prove (harness; --flightsim structural only)",
+        help="P2-I9 Spoken Moments prove (harness; --flightsim live tape when P1=1)",
     )
     p_prove_p2i9.add_argument(
         "--flightsim",
         action="store_true",
-        help="Structural FlightSim check. Owner ACCEPTED is a later manual pass on real video.",
+        help="FlightSim: structural always; live tape+Person when MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
+    p_prove_p2i9.add_argument(
+        "--person",
+        default=None,
+        help='MemoryBox Person to prove (default: Sam LaMartina / MEMORYBOX_P2_I9_PERSON_NAME)',
+    )
+    p_prove_p2i9.add_argument(
+        "--video-id",
+        default=None,
+        help="video_external_id to transcribe for proof (default: the open Immich leftover tape)",
+    )
+    p_prove_p2i9.add_argument(
+        "--more",
+        type=int,
+        default=8,
+        help="Also enqueue this many newly added videos (per-video, not people × files)",
     )
     p_inspect_cal = sub.add_parser(
         "inspect-calendar",
@@ -776,7 +792,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "prove-p2-i9":
         from memorybox.speech.p2_i9_acceptance import prove_p2_i9
 
-        payload = prove_p2_i9(flightsim=bool(args.flightsim))
+        payload = prove_p2_i9(
+            flightsim=bool(args.flightsim),
+            person_name=getattr(args, "person", None),
+            video_id=getattr(args, "video_id", None),
+            more=int(getattr(args, "more", 8) or 8),
+        )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

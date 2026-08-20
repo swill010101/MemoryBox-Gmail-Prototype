@@ -5,6 +5,7 @@ FlightSim owner ACCEPTED remains a manual pass after I8B founder ACCEPTED.
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ from memorybox.speech.learn import owner_learn_voice
 from memorybox.speech.process import process_one, process_queue
 from memorybox.speech.queue import enqueue_videos, queue_summary
 from memorybox.speech.retrieve import search_spoken_moments
-from memorybox.speech.store import list_transcript, record_withdrawal
+from memorybox.speech.store import list_transcript, list_videos_with_word_counts, list_voice_exemplars, record_withdrawal
 from memorybox.planner import QueryPlan
 
 
@@ -28,16 +29,49 @@ def _check(name: str, ok: bool, checks: dict[str, Any], problems: list[str], det
         problems.append(f"{name}: {detail or 'failed'}")
 
 
-def prove_p2_i9(*, flightsim: bool = False) -> dict[str, Any]:
+I9_FLIGHTSIM_PERSON = "Sam LaMartina"
+I9_FLIGHTSIM_VIDEO = "0ceb8199-0874-45d7-8164-f58bb5395663"
+
+
+def prove_p2_i9(
+    *,
+    flightsim: bool = False,
+    person_name: str | None = None,
+    video_id: str | None = None,
+    more: int = 8,
+) -> dict[str, Any]:
     if flightsim:
-        return _prove_flightsim()
+        return _prove_flightsim(person_name=person_name, video_id=video_id, more=more)
     return _prove_harness()
 
 
-def _prove_flightsim() -> dict[str, Any]:
+def _prove_flightsim(
+    *,
+    person_name: str | None = None,
+    video_id: str | None = None,
+    more: int = 8,
+) -> dict[str, Any]:
     checks: dict[str, Any] = {}
     problems: list[str] = []
-    meta = {"increment": "P2-I9", "flightsim": True, "mode": "structural"}
+    who_name = (person_name or os.environ.get("MEMORYBOX_P2_I9_PERSON_NAME") or I9_FLIGHTSIM_PERSON).strip()
+    veid = (video_id or os.environ.get("MEMORYBOX_P2_I9_VIDEO_ID") or I9_FLIGHTSIM_VIDEO).strip()
+    meta: dict[str, Any] = {
+        "increment": "P2-I9",
+        "flightsim": True,
+        "mode": "structural",
+        "who": {
+            "person_display_name": who_name,
+            "person_id": None,
+            "video_external_id": veid,
+            "live": False,
+            "owner_accepted": False,
+            "note": (
+                "Proof Person is this MemoryBox Person only — not the owner unless they are "
+                "the same Person. Transcribe-in-Explore is not ACCEPTED. Owner Learn + "
+                f'Ask “{who_name} talking” is the gate.'
+            ),
+        },
+    }
     src = open("docs/source/MBBS-P2_INCREMENT_9_DEFINITION.md", encoding="utf-8").read()
     _check(
         "p2i9_definition_authorized",
@@ -45,6 +79,160 @@ def _prove_flightsim() -> dict[str, Any]:
         checks,
         problems,
         "definition must stay authorized and video-only",
+    )
+    p1 = (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip().lower() in {"1", "true", "yes"}
+    if not p1:
+        _check(
+            "p2i9_live_tape_skipped_not_p1",
+            True,
+            checks,
+            problems,
+            "Set MEMORYBOX_P1_RUNTIME_HOST=1 on FlightSim to prove this tape as " + who_name,
+        )
+        return {"ok": not problems, "checks": checks, "problems": problems, "meta": meta}
+
+    meta["mode"] = "live_tape"
+    meta["who"]["live"] = True
+    migrate()
+    from memorybox.person import find_ask_person_by_name, list_people
+
+    roster = [
+        {"id": p["id"], "display_name": p.get("display_name"), "status": p.get("status")}
+        for p in list_people(limit=40)
+        if str(p.get("display_name") or "").strip()
+    ]
+    meta["who"]["roster"] = roster
+    person = find_ask_person_by_name(who_name, photo=None, lazy_seed=False)
+    if person is None and " " not in who_name:
+        person = find_ask_person_by_name(who_name, photo=None, lazy_seed=False)
+    _check(
+        "p2i9_proof_person_resolved",
+        person is not None and bool(getattr(person, "id", None)),
+        checks,
+        problems,
+        f"who={who_name} roster={[r['display_name'] for r in roster[:12]]}",
+    )
+    if person is None:
+        return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
+
+    meta["who"]["person_id"] = person.id
+    meta["who"]["person_display_name"] = person.display_name or who_name
+    meta["who"]["person_status"] = getattr(person, "status", None)
+    who_name = str(person.display_name or who_name)
+
+    from memorybox.ask.deps import build_photo, build_video
+    from memorybox.speech.archive_pass import enqueue_new_videos_for_transcribe
+    from memorybox.speech.drain import start_speech_drain
+    from memorybox.speech.now import whisper_installed
+    from memorybox.speech.process import transcribe_this_video_now
+    from memorybox.speech.queue import queue_summary
+
+    video = build_video()
+    start_speech_drain()
+    more_n = max(0, int(more))
+    batch = enqueue_new_videos_for_transcribe(
+        video_provider=video,
+        photo_provider=build_photo(),
+        limit=max(more_n, 1),
+        video_ids=[veid],
+    )
+    extra = {"ok": True, "new_videos": 0, "cartesian": False}
+    if more_n:
+        extra = enqueue_new_videos_for_transcribe(
+            video_provider=video,
+            photo_provider=build_photo(),
+            limit=more_n,
+        )
+    _check(
+        "p2i9_live_not_cartesian",
+        batch.get("cartesian") is False and extra.get("cartesian") is False,
+        checks,
+        problems,
+        f"this_tape={batch} more={extra}",
+    )
+    whisper = whisper_installed()
+    _check(
+        "p2i9_faster_whisper_present",
+        whisper,
+        checks,
+        problems,
+        "faster-whisper required on FlightSim for real tape proof",
+    )
+    saved: dict[str, Any] = {"ok": False, "error": "whisper_missing"}
+    if whisper:
+        try:
+            saved = transcribe_this_video_now(
+                video_provider_key="immich" if veid.count("-") == 4 else "hvrt",
+                video_external_id=veid,
+                video_provider=video,
+            )
+        except Exception as exc:  # noqa: BLE001
+            saved = {"ok": False, "error": str(exc)}
+    tr = list_transcript(veid)
+    words = list(tr.get("words") or [])
+    meta["who"]["tape"] = {
+        "video_external_id": veid,
+        "word_count": len(words),
+        "full_text_preview": (tr.get("full_text") or "")[:240],
+        "transcribe": {
+            "ok": saved.get("ok"),
+            "error": saved.get("error"),
+            "engine": saved.get("engine"),
+            "word_count": saved.get("word_count"),
+        },
+        "queue": queue_summary(),
+        "more_enqueued": extra.get("new_videos"),
+    }
+    others = list_videos_with_word_counts(limit=8)
+    meta["who"]["other_tapes_with_words"] = others
+    _check(
+        "p2i9_this_tape_or_other_has_words",
+        len(words) > 0 or any(int(x.get("word_count") or 0) > 0 for x in others),
+        checks,
+        problems,
+        f"this_words={len(words)} others={others[:5]} err={saved.get('error')}",
+    )
+
+    exemplars = list_voice_exemplars(person.id)
+    meta["who"]["voice_exemplars"] = len(exemplars)
+    plan_talk = compile_ask(f"{who_name} talking")
+    hits = search_spoken_moments(
+        QueryPlan(
+            original_ask=plan_talk.original_ask,
+            effective_ask=plan_talk.effective_ask,
+            is_followup=False,
+            want_photo=False,
+            want_communication=False,
+            want_calendar=False,
+            want_video=True,
+            want_spoken=True,
+            person_ids=(person.id,),
+            person_names=(who_name,),
+        )
+    )
+    meta["who"]["ask_talking"] = f"{who_name} talking"
+    meta["who"]["spoken_hits"] = len(hits)
+    owner_ok = len(exemplars) > 0 and len(hits) > 0
+    meta["who"]["owner_accepted"] = owner_ok
+    meta["who"]["next_owner_step"] = (
+        f'Open a tape that has words. Pause. Select a clean span. Choose Person “{who_name}”. '
+        f'Learn. Then Ask “{who_name} talking”. I8B founder ACCEPTED stays a separate face gate.'
+    )
+    _check(
+        "p2i9_in_place_transcribe_is_not_accepted",
+        True,
+        checks,
+        problems,
+        "Explore transcribe-now is setup. ACCEPTED is Learn as "
+        + who_name
+        + " then Ask talking.",
+    )
+    _check(
+        "p2i9_owner_learn_and_talking_ask",
+        owner_ok,
+        checks,
+        problems,
+        f"exemplars={len(exemplars)} talking_hits={len(hits)} who={who_name} id={person.id}",
     )
     return {"ok": not problems, "checks": checks, "problems": problems, "meta": meta}
 

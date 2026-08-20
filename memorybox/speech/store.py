@@ -377,6 +377,22 @@ def has_transcript(video_external_id: str) -> bool:
     return bool(row)
 
 
+def list_videos_with_word_counts(*, limit: int = 12) -> list[dict[str, Any]]:
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT video_external_id, count(*)::int AS word_count
+            FROM speech_transcript_words
+            GROUP BY video_external_id
+            HAVING count(*) > 0
+            ORDER BY count(*) DESC
+            LIMIT %s
+            """,
+            (int(limit),),
+        ).fetchall()
+    return [{"video_external_id": str(r["video_external_id"]), "word_count": int(r["word_count"])} for r in rows]
+
+
 def set_moment_qdrant_id(moment_id: str, point_id: str) -> None:
     with connection() as conn:
         conn.execute(
