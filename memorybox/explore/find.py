@@ -1071,7 +1071,7 @@ def build_explore_find(
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
     plan_early = result.get("plan") or {}
-    if plan_early.get("want_cross_source") or plan_early.get("gallery_show_email"):
+    if plan_early.get("want_cross_source"):
         show_sms = True
         show_email = True
         show_calendar = True

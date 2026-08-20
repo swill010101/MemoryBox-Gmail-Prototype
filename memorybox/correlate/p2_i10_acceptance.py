@@ -26,7 +26,9 @@ def prove_p2_i10(*, flightsim: bool = False) -> dict[str, Any]:
         )
         _check(
             "p2i10_definition_authorized",
-            "BUILD AUTHORIZED" in src and "I11" in src,
+            "BUILD AUTHORIZED" in src
+            and "I10 is approved to build" in src
+            and "I11" in src,
             checks,
             problems,
             "definition must stay authorized and keep I11 out",
@@ -111,6 +113,35 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         "confirm/reject HTTP API",
+    )
+    _check(
+        "p2i10_unlink_api",
+        "/correlate/unlink" in app
+        and "unlink_subject" in app
+        and "/correlate/event/{event_id}" in app
+        and "Not this event" in explore_js
+        and "/correlate/unlink" in explore_js
+        and "unlink_subject" in store,
+        checks,
+        problems,
+        "owner unlink API + Learn rail Not this event",
+    )
+    _check(
+        "p2i10_find_comms_only_on_cross_source",
+        'plan_early.get("want_cross_source")' in find_py,
+        checks,
+        problems,
+        "Explore must not force SMS/email/calendar on ordinary Show-me",
+    )
+    _check(
+        "p2i10_authorized_quote",
+        "I10 is approved to build"
+        in (root.parent / "docs" / "source" / "MBBS-P2_INCREMENT_10_DEFINITION.md").read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+        "definition must stamp Tom's I10 build authorization",
     )
     _check(
         "p2i10_not_i11_narrative_save",
@@ -204,7 +235,7 @@ def _db_logic(checks: dict[str, Any], problems: list[str], meta: dict[str, Any])
 
     from memorybox.correlate.fixture import seed_i10_military_fixture
     from memorybox.correlate.pack import apply_cross_source
-    from memorybox.correlate.store import date_conflicts, list_links, upsert_link
+    from memorybox.correlate.store import date_conflicts, get_event, list_links, unlink_subject, upsert_link
     from memorybox.migrate import migrate
     from memorybox.planner import QueryPlan
 
@@ -308,5 +339,132 @@ def _db_logic(checks: dict[str, Any], problems: list[str], meta: dict[str, Any])
         checks,
         problems,
         pack.summary,
+    )
+    pack_h, filtered_h = apply_cross_source(
+        plan,
+        evidence=[],
+        photos=[],
+        videos=[],
+        stories=[],
+        journals=[],
+        artifacts=[],
+        event_id=event_id,
+    )
+    art_ids = {
+        str(a.get("artifact_id") or a.get("id") or "")
+        for a in filtered_h["artifacts"]
+        if isinstance(a, dict)
+    }
+    hyd_ev = set()
+    for h in filtered_h["evidence"]:
+        if isinstance(h, dict):
+            hyd_ev.add(str(h.get("evidence_id") or ""))
+        else:
+            hyd_ev.add(str(getattr(h, "evidence_id", "") or ""))
+    _check(
+        "p2i10_hydrate_confirmed_missed_by_retrieve",
+        seeded["artifact_id"] in art_ids
+        and seeded["letter_1968"] in hyd_ev
+        and seeded["noise_id"] not in hyd_ev
+        and pack_h.hydrated_confirmed >= 2
+        and int(pack_h.coverage.get("artifact") or 0) >= 1
+        and int(pack_h.coverage.get("email") or 0) >= 1,
+        checks,
+        problems,
+        f"arts={art_ids} ev={hyd_ev} coverage={pack_h.coverage} hydrated={pack_h.hydrated_confirmed}",
+    )
+    ev_row = get_event(event_id)
+    _check(
+        "p2i10_get_event",
+        bool(ev_row) and str(ev_row.get("id")) == str(event_id),
+        checks,
+        problems,
+        str(ev_row),
+    )
+
+    live_ok = False
+    live_detail = ""
+    try:
+        from memorybox.ask.orchestrator import AskOrchestrator
+        from memorybox.providers.llm.fake import FakeLlmProvider
+        from memorybox.providers.photo.fake import FakePhotoProvider
+        from memorybox.providers.video.fake import FakeVideoProvider
+
+        orch = AskOrchestrator(
+            photo=FakePhotoProvider(),
+            video=FakeVideoProvider(),
+            llm=FakeLlmProvider(),
+        )
+        live = orch.ask(
+            "Show me everything I have about Eugene Will's military service",
+            session_id="p2-i10-prove-live",
+        )
+        live_plan = live.plan if isinstance(live.plan, dict) else {}
+        live_cov = live.coverage if isinstance(live.coverage, dict) else {}
+        live_ev = {
+            str(h.get("evidence_id") or "")
+            for h in (live.evidence_hits or [])
+            if isinstance(h, dict)
+        }
+        live_art = {
+            str(h.get("artifact_id") or h.get("id") or "")
+            for h in (live.artifact_hits or [])
+            if isinstance(h, dict)
+        }
+        mixed = (
+            int(live_cov.get("email") or 0) >= 1 and int(live_cov.get("artifact") or 0) >= 1
+        ) or (bool(live_ev) and bool(live_art))
+        live_ok = (
+            bool(live_plan.get("want_cross_source"))
+            and mixed
+            and seeded["noise_id"] not in live_ev
+            and live.answer_kind not in {"story", "narrative"}
+            and "Everything about" in str(live_cov.get("summary") or live.answer_text or "")
+        )
+        live_detail = (
+            f"kind={live.answer_kind} cross={live_plan.get('want_cross_source')} "
+            f"coverage={live_cov} ev={live_ev} art={live_art} answer={(live.answer_text or '')[:240]}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        live_detail = f"live ask failed: {exc}"
+    _check(
+        "p2i10_live_ask_mixed_pack_not_story",
+        live_ok,
+        checks,
+        problems,
+        live_detail,
+    )
+
+    unlinked = unlink_subject(
+        subject_type="evidence",
+        subject_id=seeded["email_id"],
+        object_type="event",
+        object_id=event_id,
+    )
+    _check(
+        "p2i10_unlink_rejects",
+        str(unlinked.get("status") or "") == "rejected",
+        checks,
+        problems,
+        str(unlinked),
+    )
+    restored_unlinked = upsert_link(
+        subject_type="evidence",
+        subject_id=seeded["email_id"],
+        object_type="event",
+        object_id=event_id,
+        predicate="about",
+        evidence_id=seeded["email_id"],
+        authority="system",
+        status="candidate",
+        provenance={"retry": "after-unlink"},
+    )
+    _check(
+        "p2i10_unlink_sticks",
+        restored_unlinked.get("status") == "rejected"
+        and restored_unlinked.get("restored") is False,
+        checks,
+        problems,
+        str(restored_unlinked),
     )
     return True

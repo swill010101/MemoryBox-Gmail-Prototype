@@ -1,6 +1,6 @@
 # MBPRD-P2-I10 — Cross-Source Correlation
 
-**Status:** **LOCKED for I10 build** 2026-08-20 (Tom: “MB P2 Build from 9 on”)  
+**Status:** **LOCKED** · **BUILD AUTHORIZED** 2026-08-20 (Tom: “I10 is approved to build”)  
 **Increment definition:** [MBBS-P2_INCREMENT_10_DEFINITION.md](MBBS-P2_INCREMENT_10_DEFINITION.md)  
 **Depends:** I1–I8A **ACCEPTED** · I9 Spoken Moments on this tree · MBQL-001 **ACCEPTED**  
 **Does not start:** I11 narrative generation · I12 external history · I8.5 face SoT · Place GIS · OCR engines · Paprika
@@ -52,4 +52,4 @@ None blocking. Paprika, OCR, GIS, and narrative save stay parked.
 
 ## 7. Decision status
 
-PRD locked for this increment by Tom’s “build from 9 on.” Definition is the runtime contract.
+PRD locked. Tom 2026-08-20: **“I10 is approved to build.”** Runtime is this increment.

@@ -1,6 +1,6 @@
 # P2-I10 Cross-Source Correlation — definition pointer
 
-**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “MB P2 Build from 9 on”)  
+**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “I10 is approved to build”)  
 **Authority:** [docs/source/MBBS-P2_INCREMENT_10_DEFINITION.md](../source/MBBS-P2_INCREMENT_10_DEFINITION.md)  
 **Thin PRD:** [MBPRD-P2-I10_CROSS_SOURCE.md](MBPRD-P2-I10_CROSS_SOURCE.md)  
 **Implementation:** [MBBS-P2_INCREMENT_10_IMPLEMENTATION.md](MBBS-P2_INCREMENT_10_IMPLEMENTATION.md)

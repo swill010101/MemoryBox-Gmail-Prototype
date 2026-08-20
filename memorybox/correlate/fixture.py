@@ -63,10 +63,12 @@ def seed_i10_military_fixture() -> dict[str, Any]:
                 json.dumps(
                     {
                         "channel": "email",
+                        "evidence_channel": "email",
                         "sent_at": "1968-03-12T12:00:00Z",
                         "from": "eugene@example.com",
                         "people": ["Eugene Will"],
                         "body": "Army training at Fort Lewis. Military service notes.",
+                        "body_text": "Army training at Fort Lewis. Military service notes.",
                     }
                 ),
                 letter_good,
@@ -74,10 +76,12 @@ def seed_i10_military_fixture() -> dict[str, Any]:
                 json.dumps(
                     {
                         "channel": "email",
+                        "evidence_channel": "email",
                         "sent_at": "1968-06-01T12:00:00Z",
                         "from": "eugene@example.com",
                         "people": ["Eugene Will"],
                         "body": "Military discharge 1968 Fort Lewis.",
+                        "body_text": "Military discharge 1968 Fort Lewis.",
                     }
                 ),
                 letter_conflict,
@@ -85,10 +89,12 @@ def seed_i10_military_fixture() -> dict[str, Any]:
                 json.dumps(
                     {
                         "channel": "email",
+                        "evidence_channel": "email",
                         "sent_at": "1969-06-01T12:00:00Z",
                         "from": "eugene@example.com",
                         "people": ["Eugene Will"],
                         "body": "Military discharge 1969 copy.",
+                        "body_text": "Military discharge 1969 copy.",
                     }
                 ),
                 noise_id,
@@ -96,10 +102,12 @@ def seed_i10_military_fixture() -> dict[str, Any]:
                 json.dumps(
                     {
                         "channel": "email",
+                        "evidence_channel": "email",
                         "sent_at": "2012-12-01T12:00:00Z",
                         "from": "peggy@example.com",
                         "people": ["Peggy George"],
                         "body": "Walnut roll recipe. Not army.",
+                        "body_text": "Walnut roll recipe. Not army.",
                     }
                 ),
             ),

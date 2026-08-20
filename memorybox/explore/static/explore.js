@@ -3909,6 +3909,85 @@
     }
   }
 
+  function correlationSubjectForItem(item) {
+    if (!item) return null;
+    if (item.evidence_id) {
+      return { subject_type: "evidence", subject_id: String(item.evidence_id) };
+    }
+    if (item.artifact_id) {
+      return { subject_type: "artifact", subject_id: String(item.artifact_id) };
+    }
+    if (item.story_id) {
+      return { subject_type: "story", subject_id: String(item.story_id) };
+    }
+    if (item.journal_id) {
+      return { subject_type: "journal", subject_id: String(item.journal_id) };
+    }
+    const t = String(item.type || "").toLowerCase();
+    if (t === "photo" && item.external_id) {
+      return { subject_type: "photo", subject_id: String(item.external_id) };
+    }
+    if (t === "video") {
+      const vid = item.video_external_id || item.external_id;
+      if (vid) return { subject_type: "video", subject_id: String(vid) };
+    }
+    return null;
+  }
+
+  function notThisEventHtml(item) {
+    const eventId =
+      state && state.domain && state.domain.coverage && state.domain.coverage.event_id;
+    const subj = correlationSubjectForItem(item);
+    if (!eventId || !subj) return "";
+    return `<div class="mb-learn-block">
+      <h4>This event</h4>
+      <p class="mb-rail-empty">If this item does not belong here, reject the correlation. The rejection sticks.</p>
+      <div class="mb-learn-actions">
+        <button type="button" class="mb-viewer-footbtn" id="mb-not-this-event">Not this event</button>
+      </div>
+      <p class="mb-rail-empty" id="mb-not-this-event-status"></p>
+    </div>`;
+  }
+
+  function bindNotThisEvent(item) {
+    const btn = document.getElementById("mb-not-this-event");
+    if (!btn) return;
+    btn.addEventListener("click", () => unlinkItemFromEvent(item));
+  }
+
+  async function unlinkItemFromEvent(item) {
+    const eventId =
+      state && state.domain && state.domain.coverage && state.domain.coverage.event_id;
+    const subj = correlationSubjectForItem(item);
+    const statusEl = document.getElementById("mb-not-this-event-status");
+    const btn = document.getElementById("mb-not-this-event");
+    if (!eventId || !subj) return;
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/correlate/unlink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject_type: subj.subject_type,
+          subject_id: subj.subject_id,
+          object_type: "event",
+          object_id: String(eventId),
+        }),
+      });
+      if (!res.ok) throw new Error("unlink " + res.status);
+      closeModal();
+      const payload = await liveFind(currentAskText());
+      applyPayloadToState(payload, { keepPresentation: true });
+      render();
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent =
+          "Could not unlink: " + (err && err.message ? err.message : String(err));
+      }
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function knownPeopleOptions() {
     return (peopleOptions || []).filter((p) => {
       const key = String((p && (p.key || p.id)) || "");
@@ -4054,8 +4133,14 @@
     if (!panel) return;
     const t = String(item.type || "").toLowerCase();
     const canBox = t === "video" || t === "photo";
+    const unlinkHtml = notThisEventHtml(item);
     if (!canBox) {
-      panel.innerHTML = `<h3>Learn</h3><p class="mb-rail-empty">Pause a video or open a photo, then box a face.</p>`;
+      panel.innerHTML = `<div class="mb-learn-panel">
+        <h3>Learn</h3>
+        <p class="mb-rail-empty">Pause a video or open a photo, then box a face.</p>
+        ${unlinkHtml}
+      </div>`;
+      bindNotThisEvent(item);
       return;
     }
     const sess = learnSessionForItem(item);
@@ -4106,6 +4191,7 @@
           <a class="mb-viewer-footbtn" id="mb-share-email" href="mailto:">Send via email</a>
         </div>
       </div>
+      ${unlinkHtml}
     </div>`;
     const boxBtn = document.getElementById("mb-learn-box");
     const learnBtn = document.getElementById("mb-learn-submit");
@@ -4118,6 +4204,7 @@
     }
     bindTranscribeThisTape(item);
     bindShareMenu(item);
+    bindNotThisEvent(item);
     syncTranscribeButton();
     pauseExploreMedia();
     refreshLearnOnVideo(item);

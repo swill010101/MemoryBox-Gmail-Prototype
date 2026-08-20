@@ -2092,6 +2092,14 @@ class CorrelatePlaceRequest(BaseModel):
     aliases: list[str] | None = None
 
 
+class CorrelateUnlinkRequest(BaseModel):
+    subject_type: str
+    subject_id: str
+    object_type: str
+    object_id: str
+    predicate: str = "about"
+
+
 @app.post("/correlate/place")
 def correlate_place(body: CorrelatePlaceRequest) -> dict[str, Any]:
     from memorybox.correlate.store import upsert_place
@@ -2119,6 +2127,28 @@ def correlate_event(body: CorrelateEventRequest) -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/correlate/event/{event_id}")
+def correlate_event_get(event_id: str) -> dict[str, Any]:
+    from memorybox.correlate.store import date_conflicts, get_event, list_links
+
+    try:
+        event = get_event(event_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not event:
+        raise HTTPException(status_code=404, detail="event not found")
+    return {
+        "ok": True,
+        "event": event,
+        "links": list_links(
+            object_type="event",
+            object_id=event_id,
+            statuses=("candidate", "confirmed", "rejected"),
+        ),
+        "date_conflicts": date_conflicts(event_id),
+    }
 
 
 @app.post("/correlate/link")
@@ -2161,6 +2191,26 @@ def correlate_link_reject(link_id: str) -> dict[str, Any]:
 
     try:
         return {"ok": True, "link": reject_link(link_id)}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/correlate/unlink")
+def correlate_unlink(body: CorrelateUnlinkRequest) -> dict[str, Any]:
+    from memorybox.correlate.store import unlink_subject
+
+    try:
+        return {
+            "ok": True,
+            "link": unlink_subject(
+                subject_type=body.subject_type,
+                subject_id=body.subject_id,
+                object_type=body.object_type,
+                object_id=body.object_id,
+                predicate=body.predicate,
+                actor="owner",
+            ),
+        }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

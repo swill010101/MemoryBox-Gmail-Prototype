@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from typing import Any
+
 from memorybox.db import connection
 
 
@@ -230,6 +232,61 @@ def confirm_link(link_id: str, *, actor: str = "owner") -> dict[str, Any]:
 
 def reject_link(link_id: str, *, actor: str = "owner") -> dict[str, Any]:
     return _set_link_status(link_id, "rejected", actor=actor)
+
+
+def unlink_subject(
+    *,
+    subject_type: str,
+    subject_id: str,
+    object_type: str,
+    object_id: str,
+    predicate: str = "about",
+    actor: str = "owner",
+) -> dict[str, Any]:
+    """Reject this assignment so GRAPH-03 keeps it from restoring on re-index.
+
+    Does not delete the row. If no live link exists, inserts status=rejected so a
+    later system candidate for the same subject/object/predicate cannot return.
+    """
+    rows = list_links(
+        object_type=object_type,
+        object_id=object_id,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        statuses=("candidate", "confirmed", "rejected"),
+        limit=50,
+    )
+    live = [r for r in rows if str(r.get("status") or "") not in {"rejected", "superseded"}]
+    if live:
+        last: dict[str, Any] | None = None
+        for r in live:
+            last = reject_link(str(r["id"]), actor=actor)
+        if last is None:
+            raise RuntimeError("unlink_subject: reject failed")
+        return last
+    already = [r for r in rows if str(r.get("status") or "") == "rejected"]
+    if already:
+        return {
+            "ok": True,
+            "id": already[0]["id"],
+            "status": "rejected",
+            "restored": False,
+            "already_rejected": True,
+        }
+    return upsert_link(
+        subject_type=subject_type,
+        subject_id=subject_id,
+        object_type=object_type,
+        object_id=object_id,
+        predicate=predicate or "about",
+        authority=actor,
+        status="rejected",
+        provenance={
+            "via": "unlink",
+            "rationale": "Owner: not this event.",
+            "last_actor": actor,
+        },
+    )
 
 
 def list_links(

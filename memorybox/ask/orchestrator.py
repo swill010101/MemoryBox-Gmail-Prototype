@@ -1378,6 +1378,7 @@ class AskOrchestrator:
                     "conflicts": pack.conflicts,
                     "event_id": pack.event_id,
                     "dropped_rejected": pack.dropped_rejected,
+                    "hydrated_confirmed": pack.hydrated_confirmed,
                     "summary": pack.summary,
                 }
             except Exception as exc:  # noqa: BLE001

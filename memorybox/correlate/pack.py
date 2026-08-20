@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from memorybox.correlate.store import date_conflicts, rejected_subject_keys
+from memorybox.correlate.store import date_conflicts, list_links, rejected_subject_keys
 from memorybox.planner import QueryPlan
 
 
@@ -27,6 +27,7 @@ class CrossSourcePack:
     conflicts: list[dict[str, Any]] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     dropped_rejected: int = 0
+    hydrated_confirmed: int = 0
     event_id: str | None = None
     place_id: str | None = None
     summary: str = ""
@@ -102,6 +103,130 @@ def _filter_rejected(kind: str, items: list[Any], rejected: set[tuple[str, str]]
     return kept, dropped
 
 
+def _ids_in(kind: str, items: list[Any]) -> set[str]:
+    return {k[1] for k in (_hit_key(kind, it) for it in items) if k[1]}
+
+
+def _load_evidence_hit(evidence_id: str) -> Any | None:
+    from uuid import UUID
+
+    from memorybox.ask.retrieve import EvidenceHit, _excerpt, _payload_dict
+    from memorybox.ingest.store import get_evidence
+
+    try:
+        row = get_evidence(UUID(str(evidence_id)))
+    except Exception:  # noqa: BLE001
+        return None
+    if not row:
+        return None
+    payload = _payload_dict(row.get("payload_json"))
+    kind = str(row.get("evidence_kind") or "unknown")
+    people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
+    return EvidenceHit(
+        evidence_id=str(row["id"]),
+        evidence_kind=kind,
+        summary=str(row.get("summary") or ""),
+        score=1.0,
+        excerpt=_excerpt(payload, kind),
+        source="correlation_confirmed",
+        sent_at=str(payload.get("sent_at") or "") or None,
+        channel=str(payload.get("channel") or payload.get("evidence_channel") or "") or None,
+        people=people or None,
+    )
+
+
+def _load_artifact_hit(artifact_id: str) -> dict[str, Any] | None:
+    from memorybox.artifact import get_artifact
+
+    try:
+        view = get_artifact(str(artifact_id))
+    except Exception:  # noqa: BLE001
+        return None
+    if not view:
+        return None
+    return {
+        "artifact_id": view.id,
+        "kind": view.kind,
+        "label": view.label,
+        "description": view.description,
+        "person_ids": view.person_ids,
+        "story_ids": view.story_ids,
+        "hydrated": True,
+        "correlation_status": "confirmed",
+        "deep_link": f"/artifact/ui?id={view.id}",
+    }
+
+
+def _hydrate_confirmed(
+    event_id: str,
+    *,
+    evidence: list[Any],
+    photos: list[Any],
+    videos: list[Any],
+    stories: list[Any],
+    journals: list[Any],
+    artifacts: list[Any],
+    rejected: set[tuple[str, str]],
+) -> tuple[list[Any], list[Any], list[Any], list[Any], list[Any], list[Any], int]:
+    """Owner-confirmed links stay in the pack even when keyword retrieve missed them."""
+    confirmed = list_links(
+        object_type="event",
+        object_id=event_id,
+        statuses=("confirmed",),
+        limit=2000,
+    )
+    ev_ids = _ids_in("evidence", evidence)
+    photo_ids = _ids_in("photo", photos)
+    video_ids = _ids_in("video", videos)
+    story_ids = _ids_in("story", stories)
+    journal_ids = _ids_in("journal", journals)
+    art_ids = _ids_in("artifact", artifacts)
+    added = 0
+    for link in confirmed:
+        st = str(link.get("subject_type") or "")
+        sid = str(link.get("subject_id") or "")
+        if not st or not sid:
+            continue
+        if (st, sid) in rejected or (st == "evidence" and ("evidence", sid) in rejected):
+            continue
+        if st == "evidence" and sid not in ev_ids:
+            hit = _load_evidence_hit(sid)
+            if hit:
+                evidence.append(hit)
+                ev_ids.add(sid)
+                added += 1
+        elif st == "artifact" and sid not in art_ids:
+            hit = _load_artifact_hit(sid)
+            if hit:
+                artifacts.append(hit)
+                art_ids.add(sid)
+                added += 1
+        elif st == "photo" and sid not in photo_ids:
+            photos.append({"external_id": sid, "attribution": "correlation_confirmed", "hydrated": True})
+            photo_ids.add(sid)
+            added += 1
+        elif st == "video" and sid not in video_ids:
+            videos.append(
+                {
+                    "external_id": sid,
+                    "video_external_id": sid,
+                    "attribution": "correlation_confirmed",
+                    "hydrated": True,
+                }
+            )
+            video_ids.add(sid)
+            added += 1
+        elif st == "story" and sid not in story_ids:
+            stories.append({"story_id": sid, "title": "Confirmed story", "hydrated": True})
+            story_ids.add(sid)
+            added += 1
+        elif st == "journal" and sid not in journal_ids:
+            journals.append({"journal_id": sid, "hydrated": True})
+            journal_ids.add(sid)
+            added += 1
+    return evidence, photos, videos, stories, journals, artifacts, added
+
+
 def apply_cross_source(
     plan: QueryPlan,
     *,
@@ -114,12 +239,23 @@ def apply_cross_source(
     event_id: str | None = None,
     place_id: str | None = None,
 ) -> tuple[CrossSourcePack, dict[str, list[Any]]]:
-    """Filter rejected links and compute coverage. Does not invent hits."""
+    """Filter rejected links, hydrate confirmed extras, compute coverage. Does not invent hits."""
     rejected: set[tuple[str, str]] = set()
     conflicts: list[dict[str, Any]] = []
+    hydrated_confirmed = 0
     if event_id:
         rejected |= rejected_subject_keys("event", event_id)
         conflicts = date_conflicts(event_id)
+        evidence, photos, videos, stories, journals, artifacts, hydrated_confirmed = _hydrate_confirmed(
+            event_id,
+            evidence=list(evidence),
+            photos=list(photos),
+            videos=list(videos),
+            stories=list(stories),
+            journals=list(journals),
+            artifacts=list(artifacts),
+            rejected=rejected,
+        )
     if place_id:
         rejected |= rejected_subject_keys("place", place_id)
 
@@ -187,6 +323,7 @@ def apply_cross_source(
         conflicts=conflicts,
         missing=missing,
         dropped_rejected=dropped,
+        hydrated_confirmed=hydrated_confirmed,
         event_id=event_id,
         place_id=place_id,
         summary=summary,
