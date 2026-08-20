@@ -180,17 +180,53 @@
       item.state,
       item.country,
       item.title,
+      item.original_filename,
+      item.exif && item.exif.albums,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
   }
 
-  function matchesPlace(item, placeFilter) {
+  function matchesPlace(item, placeFilter, specOverride) {
     if (!placeFilter) return true;
-    const needle = String(placeFilter).trim().toLowerCase();
-    if (!needle) return true;
-    return itemPlaceBlob(item).includes(needle);
+    const spec = specOverride || (state && state.domain && state.domain.placeMatch) || {};
+    const needles = Array.isArray(spec.needles) && spec.needles.length
+      ? spec.needles.map((n) => String(n || "").trim().toLowerCase()).filter(Boolean)
+      : [String(placeFilter).trim().toLowerCase()].filter(Boolean);
+    if (!needles.length) return true;
+    const blob = itemPlaceBlob(item);
+    const stateVal = String(item && (item.state || "")).trim().toLowerCase().replace(/\./g, "");
+    for (let i = 0; i < needles.length; i++) {
+      const n = needles[i];
+      const compact = n.replace(/\./g, "");
+      if (compact.length <= 3) {
+        if (stateVal === compact) return true;
+        if (blob && new RegExp("(,\\s*|\\s)" + compact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:\\s|,|$)").test(blob)) {
+          return true;
+        }
+      } else if (blob.includes(n)) {
+        return true;
+      }
+    }
+    const bbox = spec.bbox;
+    const ll = itemLatLng(item);
+    if (bbox && bbox.length === 4 && ll) {
+      const latMin = Number(bbox[0]);
+      const latMax = Number(bbox[1]);
+      const lonMin = Number(bbox[2]);
+      const lonMax = Number(bbox[3]);
+      if (
+        Number.isFinite(latMin) &&
+        ll.lat >= latMin &&
+        ll.lat <= latMax &&
+        ll.lng >= lonMin &&
+        ll.lng <= lonMax
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function itemLatLng(item) {
@@ -1239,11 +1275,10 @@
     // mis-parse (e.g. "Show me Peggy" → place "Me Peggy George").
     let placeFilter = null;
     const planPlaces = exploreHint.place_names || plan.place_names || [];
-    if (Array.isArray(planPlaces) && planPlaces.length === 1) {
+    if (Array.isArray(planPlaces) && planPlaces.length >= 1) {
       placeFilter = planPlaces[0];
-    } else if (Array.isArray(planPlaces) && planPlaces.length > 1) {
-      placeFilter = null;
     }
+    const placeMatch = exploreHint.place_match || null;
     let nextType = typeFilter;
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
     const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
@@ -1301,7 +1336,7 @@
           matchesType(it, nextType, {
             includeTexts,
             domain: { includeTexts, galleryShowSms, typeFilter: nextType },
-          }) && matchesPlace(it, placeFilter)
+          }) && matchesPlace(it, placeFilter, placeMatch)
         );
       })
     );
@@ -1351,6 +1386,7 @@
         emailMatchTotal: Number(exploreHint.email_match_total || exploreHint.email_available || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
+        placeMatch: placeMatch,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
         temporalWindows: temporalWindows,

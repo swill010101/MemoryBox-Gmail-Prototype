@@ -78,3 +78,5 @@ class PhotoSearchQuery:
     text: str | None = None
     limit: int = 50
     time_windows: tuple[tuple[str, str], ...] = ()
+    # Place-scoped person asks need GPS/reverse-geocode; cache hits re-join map pins.
+    need_location: bool = False

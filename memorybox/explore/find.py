@@ -839,6 +839,7 @@ def _attach_hidden_sms(
             want_calendar=False,
             person_names=tuple(people),
             person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
             time_start=t0,
             time_end=t1,
             temporal_windows=tw,
@@ -927,6 +928,7 @@ def _attach_visible_email(
             want_calendar=False,
             person_names=tuple(people),
             person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
             time_start=t0,
             time_end=t1,
             temporal_windows=tw,
@@ -1001,6 +1003,7 @@ def _attach_calendar(
             want_calendar=True,
             person_names=tuple(people),
             person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
             time_start=t0,
             time_end=t1,
             temporal_windows=tw,
@@ -1188,6 +1191,28 @@ def build_explore_find(
         summary = (
             str(coverage.get("summary") or "").strip() + " " + (summary or "")
         ).strip()
+    place_names = list(plan.get("place_names") or [])
+    if not place_names:
+        slots = ((result.get("context") or {}).get("plan_slots") or {}).get("place") or []
+        place_names = [str(p) for p in slots if p]
+    place_match = None
+    if place_names:
+        from memorybox.ask.place_match import place_match_spec
+
+        place_match = place_match_spec(tuple(place_names))
+    photo_search = ((result.get("provider_status") or {}).get("photo_search") or {})
+    if isinstance(photo_search, dict) and photo_search.get("place_filter"):
+        before_n = int(photo_search.get("before_place_filter") or 0)
+        after_n = int(photo_search.get("after_place_filter") or 0)
+        if before_n > after_n:
+            dropped = before_n - after_n
+            label = (place_names[0] if place_names else "that place")
+            extra = (
+                f" Gallery is {label} photos only — {after_n} located there, "
+                f"{dropped} from this person had no {label} location."
+            )
+            if extra.strip() not in (summary or ""):
+                summary = ((summary or "").rstrip() + extra).strip()
     return {
         "ok": True,
         "demo": False,
@@ -1209,7 +1234,8 @@ def build_explore_find(
         # Shared exploration hints for Gallery/Timeline/Map sync
         "explore_state": {
             "person_names": list(plan.get("person_names") or []),
-            "place_names": list(plan.get("place_names") or []),
+            "place_names": place_names,
+            "place_match": place_match,
             "time_start": plan.get("time_start"),
             "time_end": plan.get("time_end"),
             "temporal_windows": list(plan.get("temporal_windows") or []),

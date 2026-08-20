@@ -439,6 +439,7 @@ class ImmichHttpClient:
         *,
         size: int = 50,
         time_windows: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None = None,
+        need_location: bool = False,
     ) -> list[dict[str, Any]]:
         """Fetch Immich assets for person id(s).
 
@@ -468,8 +469,21 @@ class ImmichHttpClient:
         cached = self._read_person_lib_cache(cache_key, allow_stale=True)
         if cached:
             self._last_person_source = "cache"
+            rows: list[dict[str, Any]] = [
+                dict(it) if isinstance(it, dict) else it for it in cached
+            ]
+            if need_location:
+                by_cached: dict[str, dict[str, Any]] = {}
+                for it in rows:
+                    if not isinstance(it, dict):
+                        continue
+                    eid = str(it.get("id") or "").strip()
+                    if eid:
+                        by_cached[eid] = it
+                self._merge_map_marker_gps(by_cached)
+                rows = list(by_cached.values()) or rows
             windowed = self._filter_assets_to_windows(
-                list(cached), getattr(self, "_timeline_windows", ()) or ()
+                rows, getattr(self, "_timeline_windows", ()) or ()
             )
             return self._year_fair_assets(windowed, target)
         if self._circuit():

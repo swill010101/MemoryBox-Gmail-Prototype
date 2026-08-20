@@ -7,6 +7,10 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from uuid import UUID
 
+from memorybox.ask.place_match import (
+    filter_photo_hits_to_places,
+    place_match_spec,
+)
 from memorybox.config import Settings, settings
 from memorybox.db import connection
 from memorybox.ingest import rebuild_index
@@ -1543,39 +1547,42 @@ def search_photos(
         windows = tuple(getattr(plan, "temporal_windows", ()) or ())
         if not windows and plan.time_start and plan.time_end:
             windows = ((plan.time_start, plan.time_end),)
-        places = [str(p).lower() for p in (plan.place_names or ()) if p]
+        places = [str(p) for p in (plan.place_names or ()) if p]
         if not windows and not places:
             return hits
-        out: list[PhotoHit] = []
-        for h in hits:
-            # Explore keeps undated in Gallery (off the Timeline). Dropping
-            # them here emptied Christmas / year asks: face stubs have no EXIF,
-            # so "Peggy during Christmas" showed 0 cards ("gallery is lost").
-            if windows and h.taken_at and not date_in_windows(h.taken_at, windows):
-                continue
-            if places:
-                blob = " ".join(
-                    str(x)
-                    for x in (
-                        h.location,
-                        getattr(h, "place", None),
-                        h.city,
-                        h.state,
-                        h.country,
-                    )
-                    if x
-                ).lower()
-                if not any(p in blob for p in places):
-                    continue
-            out.append(h)
+        timed = hits
         if windows:
+            timed = []
+            for h in hits:
+                # Explore keeps undated in Gallery (off the Timeline). Dropping
+                # them here emptied Christmas / year asks: face stubs have no EXIF,
+                # so "Peggy during Christmas" showed 0 cards ("gallery is lost").
+                if h.taken_at and not date_in_windows(h.taken_at, windows):
+                    continue
+                timed.append(h)
             status["temporal_windows"] = [list(w) for w in windows]
             status["temporal_label"] = getattr(plan, "temporal_label", None)
             status["before_temporal_filter"] = len(hits)
-            status["after_temporal_filter"] = len(out)
+            status["after_temporal_filter"] = len(timed)
+        out = timed
         if places:
+            before = len(timed)
+            out = filter_photo_hits_to_places(timed, places)
+            spec = place_match_spec(tuple(places))
             status["place_filter"] = list(plan.place_names)
+            status["place_match"] = spec
+            status["before_place_filter"] = before
             status["after_place_filter"] = len(out)
+            dropped = before - len(out)
+            if dropped > 0:
+                label = places[0]
+                status["disclosure"] = (
+                    (status.get("disclosure") or "")
+                    + (
+                        f" Showing {len(out)} photo(s) in {label}"
+                        f" ({dropped} in this person library had no {label} location)."
+                    )
+                ).strip()
         return out
 
     def _finish(hits: list[PhotoHit]) -> tuple[list[PhotoHit], dict[str, Any]]:
@@ -1808,6 +1815,7 @@ def search_photos(
                         time_windows=tuple(
                             getattr(plan, "temporal_windows", ()) or ()
                         ),
+                        need_location=bool(getattr(plan, "place_names", ()) or ()),
                     )
                 )
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
@@ -1943,6 +1951,10 @@ def search_photos(
                 attrib = (
                     "unconfirmed Immich name candidate (not MB-confirmed identity)"
                 )
+            exif_d = dict(getattr(a, "exif", ()) or ()) or {}
+            albums = tuple(getattr(a, "albums", ()) or ())
+            if albums and "albums" not in exif_d:
+                exif_d["albums"] = ", ".join(str(x) for x in albums if x)
             return PhotoHit(
                 provider_key=a.provider_key,
                 external_id=a.external_id,
@@ -1965,7 +1977,7 @@ def search_photos(
                 latitude=lat,
                 longitude=lon,
                 original_filename=getattr(a, "original_filename", None),
-                exif=dict(getattr(a, "exif", ()) or ()) or None,
+                exif=exif_d or None,
                 faces=_faces_for_hit(a),
             )
 

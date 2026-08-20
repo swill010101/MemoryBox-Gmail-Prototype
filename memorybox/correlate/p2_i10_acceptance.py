@@ -127,6 +127,16 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "owner unlink API + Learn rail Not this event",
     )
     _check(
+        "p2i10_place_photo_filter",
+        "filter_photo_hits_to_places" in retrieve
+        and "place_match" in find_py
+        and "placeMatch" in explore_js
+        and "need_location" in retrieve,
+        checks,
+        problems,
+        "person+place must filter photos (aliases/GPS), not dump the person library",
+    )
+    _check(
         "p2i10_find_comms_only_on_cross_source",
         'plan_early.get("want_cross_source")' in find_py,
         checks,
@@ -267,6 +277,72 @@ def _compile(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         notes,
+    )
+    from memorybox.ask.place_match import (
+        filter_photo_hits_to_places,
+        location_matches_place,
+        place_match_spec,
+    )
+    from memorybox.ask.retrieve import PhotoHit
+
+    def _hit(**kwargs: Any) -> PhotoHit:
+        return PhotoHit(
+            provider_key="fake_photo",
+            external_id=str(kwargs.pop("external_id", "ph-1")),
+            taken_at=kwargs.pop("taken_at", "2018-03-01"),
+            people=["Peggy George"],
+            location=kwargs.pop("location", None),
+            thumb_url=None,
+            web_url=None,
+            **kwargs,
+        )
+
+    miami = _hit(external_id="miami", city="Miami", state=None)
+    fl_abbr = _hit(external_id="fl", city="Naples", state="FL")
+    gps_fl = _hit(external_id="gps", latitude=26.14, longitude=-81.79)
+    castle = _hit(
+        external_id="nj",
+        city="Hoboken",
+        state="New Jersey",
+        latitude=40.74,
+        longitude=-74.03,
+    )
+    unnamed = _hit(external_id="none")
+    file_fl = _hit(external_id="fn", original_filename="Florida_2016_beach.JPG")
+    kept = filter_photo_hits_to_places(
+        [miami, fl_abbr, gps_fl, castle, unnamed, file_fl],
+        ("Florida",),
+    )
+    kept_ids = {h.external_id for h in kept}
+    _check(
+        "p2i10_place_keeps_city_abbrev_gps_filename",
+        kept_ids == {"miami", "fl", "gps", "fn"},
+        checks,
+        problems,
+        f"kept={kept_ids}",
+    )
+    _check(
+        "p2i10_place_drops_unlocated_and_other_state",
+        not location_matches_place("Florida")
+        and not location_matches_place(
+            "Florida", city="Hoboken", state="New Jersey", latitude=40.74, longitude=-74.03
+        ),
+        checks,
+        problems,
+        "unlocated and New Jersey must not count as Florida",
+    )
+    spec = place_match_spec(("Florida",))
+    needles = list((spec or {}).get("needles") or [])
+    bbox = (spec or {}).get("bbox")
+    _check(
+        "p2i10_place_match_spec_for_explore",
+        spec is not None
+        and "miami" in needles
+        and isinstance(bbox, list)
+        and len(bbox) == 4,
+        checks,
+        problems,
+        str(spec),
     )
 
 

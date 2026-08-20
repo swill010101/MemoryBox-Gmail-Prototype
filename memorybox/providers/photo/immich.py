@@ -87,6 +87,7 @@ class ImmichPhotoProvider:
                     list(query.person_external_ids),
                     size=query.limit,
                     time_windows=getattr(query, "time_windows", ()) or (),
+                    need_location=bool(getattr(query, "need_location", False)),
                 )
                 items = raw if isinstance(raw, list) else []
             else:

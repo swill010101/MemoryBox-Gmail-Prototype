@@ -172,7 +172,7 @@ YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 
 # Typed person extractors (not places).
 # Name capture is case-insensitive — owners often type "dan will"; _clean_entity title-cases.
-# Second token must not be a preposition / season / holiday ("Show me Peggy in 2021").
+# Second token must not be a preposition / season / holiday ("Show me Alex in 2021").
 _PERSON_NAME_STOP2 = (
     r"in|at|on|near|around|during|from|with|for|to|and|or|of|the|a|an|"
     r"only|just|through|thru|"
@@ -244,7 +244,7 @@ SHOW_ME_AND_PEOPLE_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     rf"{_PERSON_NAME}\s+and\s+{_PERSON_NAME}\b"
 )
-# Bare "Tom Will and Florida" / "tell me about Tom Will and Florida"
+# Bare "Pat Lee and Oregon" / "tell me about Pat Lee and Oregon"
 PERSON_AND_PERSON_RE = re.compile(
     rf"(?i)\b{_PERSON_NAME}\s+and\s+{_PERSON_NAME}\b"
 )
@@ -314,7 +314,7 @@ _PERSON_BARE_BLOCKED = frozenset(
 )
 
 # Places: geographic/locative — never "from <Person>" for email.
-# Capture is case-insensitive: owners type "in florida", not only "in Florida".
+# Capture is case-insensitive: owners type "in oregon", not only "in Oregon".
 _PLACE_NAME = r"([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)?)"
 PLACE_IN_AT_RE = re.compile(
     rf"(?i)\b(?:in|at|near|around|to)\s+{_PLACE_NAME}\b"
@@ -325,7 +325,7 @@ PLACE_TRIP_RE = re.compile(
 TRIP_TO_RE = re.compile(
     rf"(?i)\btrip\s+(?:to|in|around)\s+{_PLACE_NAME}\b"
 )
-# "Tom Will and Florida" — second slot is a place, not a Person named Florida.
+# "Pat Lee and Oregon" — second slot is a place, not a Person named Oregon.
 GEO_PLACE_WORDS = frozenset(
     {
         "alabama",
@@ -738,7 +738,7 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
             places.append(ent)
     for m in PLACE_IN_AT_RE.finditer(q):
         raw = m.group(0) or ""
-        # "email to Peggy" is a person, not Place Peggy
+        # "email to Alex" is a person, not Place Alex
         if want_email and re.match(r"(?i)to\s+", raw):
             continue
         ent = _clean_entity(m.group(1))
@@ -828,10 +828,10 @@ def _resolve_visual_scope(
 def _person_and_geo_place(
     people: list[str], places: list[str]
 ) -> tuple[list[str], list[str], list[str]]:
-    """Person + geo token: Florida is a Place, not a second Person.
+    """Person + geo token: a US state is a Place, not a second Person.
 
-    Only when the first name is First Last (Tom Will / Peggy George). Bare
-    "Peggy and Georgia" stays two people — Georgia is also a given name.
+    Only when the first name is First Last (Pat Lee / Alex Reed). Bare
+    "Alex and Georgia" stays two people — Georgia is also a given name.
     """
     notes: list[str] = []
     if len(people) < 2 or len((people[0] or "").split()) < 2:
@@ -1153,7 +1153,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         uttered = {p.lower() for p in u_people}
         prior = {p.lower() for p in ctx.person_names}
         if uttered and prior and uttered.isdisjoint(prior):
-            # "Show me Peggy George" after a Sue/year/text session must not
+            # "Show me Alex Reed" after a Sue/year/text session must not
             # keep that person's time/place (FlightSim: 1 leftover video).
             if not any(
                 u in p or p in u for u in uttered for p in prior
@@ -1258,7 +1258,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if t1 is None and not show_me:
             t1 = ctx.time_end
     # show me + partial name: upgrade to the longer related form only.
-    # Do not keep "Peggy" as a second person next to "Peggy George" — that
+    # Do not keep "Alex" as a second person next to "Alex Reed" — that
     # resolved two MB Person ids and searched Immich twice (FlightSim 129s).
     if show_me and u_people and ctx.person_names and not self_show:
         merged = list(u_people)
