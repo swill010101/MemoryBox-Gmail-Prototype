@@ -2232,8 +2232,9 @@
       return `${bg}<div class="mb-card-textbody"><strong>Story</strong>${prev || escapeHtml(it.title || "")}</div><span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "video") {
+      const voicePresence = String(it.clip_kind || "") === "voice_presence";
       const startClock =
-        it.t != null
+        !voicePresence && it.t != null
           ? `${Math.floor(Number(it.t) / 60)}:${String(
               Math.floor(Number(it.t) % 60)
             ).padStart(2, "0")}`

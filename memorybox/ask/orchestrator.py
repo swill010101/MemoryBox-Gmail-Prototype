@@ -1287,11 +1287,11 @@ class AskOrchestrator:
                         video_external_id=str(r.get("video_external_id") or ""),
                         start_sec=float(r.get("start_sec") or 0),
                         end_sec=float(r.get("end_sec") or 0),
-                        label=str(r.get("label") or "Spoken moment"),
+                        label=str(r.get("label") or "Video"),
                         play_url=r.get("play_url"),
                         identity_trust=str(r.get("identity_trust") or "candidate"),
                         mb_person_id=r.get("mb_person_id"),
-                        attribution=str(r.get("attribution") or "spoken_moment"),
+                        attribution=str(r.get("attribution") or "voice_in_video"),
                         spoken_text=r.get("spoken_text"),
                     )
                     for r in spoken_rows

@@ -66,7 +66,7 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
             "(to_tsvector('simple', text) @@ plainto_tsquery('simple', %s) OR text ILIKE %s)"
         )
         args.extend([about, "%" + about + "%"])
-    args.append(int(limit))
+    args.append(max(int(limit) * 12, 96))
     sql = f"""
         SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
                text, person_id::text, speaker_state, confidence, status
@@ -94,7 +94,7 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
                         ORDER BY t_start ASC
                         LIMIT %s
                         """,
-                        (vids, int(limit)),
+                        (vids, max(int(limit) * 12, 96)),
                     ).fetchall()
                 ]
     if about and not phrase:
@@ -118,32 +118,83 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
                         continue
                     rows.append(d)
                     extra_ids.add(hid)
-    hits = []
-    for r in rows[:limit]:
-        vid = str(r["video_external_id"])
-        t0 = float(r["t_start"])
+    return _collapse_voice_to_videos(rows, phrase=phrase, about=about, limit=int(limit))
+
+
+def _collapse_voice_to_videos(
+    rows: list[dict[str, Any]],
+    *,
+    phrase: str,
+    about: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """One gallery card per source video. Voice does not mint start:end clips (face does)."""
+    by_vid: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for r in rows:
+        vid = str(r.get("video_external_id") or "")
+        if not vid:
+            continue
+        if vid not in by_vid:
+            order.append(vid)
+            by_vid[vid] = []
+        by_vid[vid].append(r)
+    hits: list[dict[str, Any]] = []
+    want_phrase = (phrase or "").strip().lower()
+    want_about = (about or "").strip().lower()
+    for vid in order:
+        if len(hits) >= limit:
+            break
+        group = by_vid[vid]
+        snippet = ""
+        if want_phrase:
+            for r in group:
+                text = str(r.get("text") or "")
+                if want_phrase in text.lower():
+                    snippet = text.strip()
+                    break
+        if not snippet and want_about:
+            for r in group:
+                text = str(r.get("text") or "")
+                if want_about in text.lower():
+                    snippet = text.strip()
+                    break
+        if not snippet:
+            parts: list[str] = []
+            seen: set[str] = set()
+            for r in group:
+                text = str(r.get("text") or "").strip()
+                if not text or text.lower() in seen:
+                    continue
+                seen.add(text.lower())
+                parts.append(text)
+                if len(" ".join(parts)) >= 160:
+                    break
+            snippet = " ".join(parts).strip()[:160]
+        person_id = next((r.get("person_id") for r in group if r.get("person_id")), None)
+        confirmed = any(str(r.get("speaker_state") or "") == "owner_confirmed" for r in group)
+        vpk = str(group[0].get("video_provider_key") or "hvrt")
         play = ensure_timeslot_play_url(
             video_external_id=vid,
-            start_sec=t0,
-            video_provider_key=str(r.get("video_provider_key") or ""),
+            start_sec=0.0,
+            video_provider_key=vpk,
         )
         hits.append(
             {
-                "id": r["id"],
-                "provider_key": r["video_provider_key"],
+                "id": f"voice-video:{vid}",
+                "provider_key": vpk,
                 "video_external_id": vid,
-                "external_id": r["id"],
-                "start_sec": t0,
-                "end_sec": float(r["t_end"]),
-                "label": r.get("text") or "Spoken moment",
-                "spoken_text": r.get("text"),
+                "external_id": vid,
+                "start_sec": 0.0,
+                "end_sec": None,
+                "label": snippet or "Video",
+                "spoken_text": snippet or None,
                 "play_url": play,
-                "mb_person_id": r.get("person_id"),
-                "identity_trust": (
-                    "confirmed" if r.get("speaker_state") == "owner_confirmed" else "candidate"
-                ),
-                "attribution": f"spoken_moment ({r.get('speaker_state')})",
-                "speaker_state": r.get("speaker_state"),
+                "mb_person_id": person_id,
+                "identity_trust": "confirmed" if confirmed else "candidate",
+                "attribution": "voice_in_video",
+                "speaker_state": "owner_confirmed" if confirmed else "identified",
+                "clip_kind": "voice_presence",
             }
         )
     return hits

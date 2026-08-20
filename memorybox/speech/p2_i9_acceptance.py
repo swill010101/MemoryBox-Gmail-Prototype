@@ -665,6 +665,7 @@ def _prove_harness() -> dict[str, Any]:
             person_names=plan_show_talk.person_names,
         )
     )
+    talk_vids = [str(h.get("video_external_id") or "") for h in hits_talk]
     _check(
         "p2i9_retrieval_evidence_first",
         any("love you" in str(h.get("spoken_text") or "").lower() for h in hits_phrase)
@@ -674,6 +675,15 @@ def _prove_harness() -> dict[str, Any]:
         checks,
         problems,
         f"phrase={len(hits_phrase)} about={len(hits_about)} talk={len(hits_talk)} show={len(hits_show)}",
+    )
+    _check(
+        "p2i9_talking_one_card_per_video",
+        len(talk_vids) == len(set(talk_vids))
+        and all(float(h.get("start_sec") or 0) == 0 for h in hits_talk + hits_show)
+        and all(str(h.get("clip_kind") or "") == "voice_presence" for h in hits_talk),
+        checks,
+        problems,
+        f"talk_vids={talk_vids} kinds={[h.get('clip_kind') for h in hits_talk]}",
     )
 
     wid = record_withdrawal(
