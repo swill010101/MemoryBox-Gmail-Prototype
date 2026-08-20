@@ -226,6 +226,9 @@ def list_transcript(video_external_id: str) -> dict[str, Any]:
             (vid,),
         ).fetchone()
     queue = dict(qrow) if qrow else None
+    full_text = " ".join(str(m.get("text") or "").strip() for m in moments).strip()
+    if not full_text:
+        full_text = " ".join(str(w.get("token") or "").strip() for w in words).strip()
     return {
         "ok": True,
         "video_external_id": vid,
@@ -233,6 +236,8 @@ def list_transcript(video_external_id: str) -> dict[str, Any]:
         "turns": turns,
         "moments": moments,
         "queue": queue,
+        "full_text": full_text,
+        "word_count": len(words),
     }
 
 

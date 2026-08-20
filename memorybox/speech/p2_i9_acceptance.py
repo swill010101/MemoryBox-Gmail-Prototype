@@ -119,6 +119,7 @@ def _prove_harness() -> dict[str, Any]:
         and "Choose a person" in js
         and "Transcribe this tape" in js
         and "/speech/transcript" in app
+        and "/speech/transcribe-now" in app
         and "/speech/learn" in app
         and "/speech/moments/correct" in app
         and "/speech/archive-pass" in app,

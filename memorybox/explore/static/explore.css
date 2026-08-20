@@ -1625,17 +1625,32 @@ body {
   font-size: 0.8rem;
 }
 
+.mb-speech-status {
+  display: block;
+  margin: 0;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
+
 .mb-ev-transcript {
-  display: none;
   max-height: 9rem;
   overflow: auto;
   background: #0f172a;
   border: 1px solid #1f2937;
   border-radius: 8px;
   padding: 0.55rem 0.7rem;
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   line-height: 1.45;
-  color: #cbd5e1;
+  color: #f8fafc;
+}
+
+.mb-viewer-footer .mb-ev-transcript {
+  display: block !important;
+  min-height: 4.5rem;
+  max-height: 11rem;
 }
 
 .mb-ev-transcript.is-on {

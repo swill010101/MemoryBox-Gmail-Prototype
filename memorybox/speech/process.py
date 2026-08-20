@@ -1,6 +1,7 @@
 """Process one speech_queue_items row: transcribe per video, or voice-score for one Person."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from memorybox.speech.constants import (
@@ -214,6 +215,49 @@ def process_one(*, video_provider: Any | None = None) -> dict[str, Any] | None:
     except Exception as exc:  # noqa: BLE001
         complete_item(item["id"], status=STATUS_FAILED, reason=str(exc))
         return {"item_id": item["id"], "status": STATUS_FAILED, "error": str(exc)}
+
+
+def transcribe_this_video_now(
+    *,
+    video_provider_key: str,
+    video_external_id: str,
+    video_provider: Any | None = None,
+) -> dict[str, Any]:
+    """Owner-open tape: persist this video only, even if a prior empty pass completed."""
+    saved = persist_transcript(
+        video_provider_key=video_provider_key,
+        video_external_id=video_external_id,
+        video_provider=video_provider,
+        trigger="transcribe_now",
+    )
+    from memorybox.db import connection
+
+    status = STATUS_COMPLETED if saved.get("ok") else STATUS_FAILED
+    reason = None if saved.get("ok") else str(saved.get("error") or "transcribe_failed")
+    with connection() as conn:
+        conn.execute(
+            """
+            UPDATE speech_queue_items
+            SET status = %s, reason = %s, result_json = %s::jsonb,
+                finished_at = now(), updated_at = now()
+            WHERE video_external_id = %s
+              AND enqueue_reason = 'transcribe'
+              AND person_id IS NULL
+            """,
+            (
+                status,
+                reason,
+                json.dumps(
+                    {
+                        "engine": saved.get("engine"),
+                        "word_count": saved.get("word_count"),
+                        "error": saved.get("error"),
+                    }
+                ),
+                video_external_id,
+            ),
+        )
+    return saved
 
 
 def process_queue(*, video_provider: Any | None = None, max_items: int = 25) -> dict[str, Any]:

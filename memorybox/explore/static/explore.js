@@ -3485,6 +3485,7 @@
     state.modal.pendingCorrection = null;
     if (!state.modal.railTab) state.modal.railTab = "people";
     state.modal.transcriptOn = String(item.type || "").toLowerCase() === "video";
+    state.modal.speechAutoStarted = false;
     state.modal.speechSpan = null;
     state.modal.zoom = 1;
     renderViewer(item);
@@ -4515,7 +4516,7 @@
     foot.innerHTML =
       `<div class="mb-viewer-footrow">${bits.join("")}</div>` +
       (t === "video"
-        ? `<div class="mb-ev-transcript${trOn ? " is-on" : ""}" id="mb-ev-transcript" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
+        ? `<p class="mb-speech-status" id="mb-speech-status">Loading transcript…</p><div class="mb-ev-transcript${trOn ? " is-on" : ""}" id="mb-ev-transcript" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
         : "");
     const tr = document.getElementById("mb-transcript-toggle");
     if (tr) {
@@ -4713,6 +4714,17 @@
     }
   }
 
+  function setSpeechStatus(message) {
+    const msg = String(message || "");
+    const status = document.getElementById("mb-speech-status");
+    if (status) status.textContent = msg;
+    const box = document.getElementById("mb-ev-transcript");
+    if (!box) return;
+    box.classList.add("is-on");
+    const empty = box.querySelector(".mb-ev-transcript-empty");
+    if (empty) empty.textContent = msg;
+  }
+
   function bindTranscribeThisTape(item) {
     document.querySelectorAll("[data-transcribe-this]").forEach((btn) => {
       btn.onclick = () => queueThisTape(item, btn);
@@ -4723,42 +4735,51 @@
     const vid = String(item.video_external_id || item.external_id || "").trim();
     const box = document.getElementById("mb-ev-transcript");
     if (!vid) return;
+    state.modal.transcriptOn = true;
     document.querySelectorAll("[data-transcribe-this]").forEach((el) => {
       el.disabled = true;
-      el.textContent = "Queueing…";
+      el.textContent = "Transcribing…";
     });
+    setSpeechStatus("Transcribing this tape…");
     if (box) {
       box.classList.add("is-on");
-      state.modal.transcriptOn = true;
-      box.innerHTML =
-        '<div class="mb-ev-transcript-empty">Queueing this tape for transcribe…</div>';
+      box.innerHTML = '<div class="mb-ev-transcript-empty">Transcribing this tape…</div>';
     }
-    fetch("/speech/archive-pass?limit=1&video_id=" + encodeURIComponent(vid), {
-      method: "POST",
-    })
+    const pk = String(item.video_provider_key || item.provider_key || "").trim();
+    let url = "/speech/transcribe-now?video_external_id=" + encodeURIComponent(vid);
+    if (pk) url += "&video_provider_key=" + encodeURIComponent(pk);
+    fetch(url, { method: "POST" })
       .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
       .then(({ ok, data }) => {
-        if (!ok) throw new Error((data && data.detail) || "queue failed");
-        if (box) {
-          box.innerHTML =
-            '<div class="mb-ev-transcript-empty">Transcribing this tape… words appear here when the pass finishes.</div>';
+        if (!ok || (data && data.ok === false)) {
+          const err = (data && (data.detail || data.error)) || "transcribe failed";
+          throw new Error(err);
         }
-        bindSpeechTranscript(item);
+        if (data && data.error === "no_local_path_yet") {
+          setSpeechStatus("No local file yet — downloading from Immich, then transcribing…");
+        } else {
+          setSpeechStatus("Transcribing this tape… words appear here when faster-whisper finishes.");
+        }
+        state.modal.speechPoll = window.setTimeout(() => bindSpeechTranscript(item), 1500);
       })
-      .catch(() => {
+      .catch((err) => {
         document.querySelectorAll("[data-transcribe-this]").forEach((el) => {
           el.disabled = false;
           el.textContent = "Transcribe this tape";
         });
+        setSpeechStatus(String(err.message || err));
         if (box) {
           box.innerHTML =
-            '<div class="mb-ev-transcript-empty">Could not queue this tape. Serve needs a restart on this branch, then try again.</div>';
+            '<div class="mb-ev-transcript-empty">' +
+            escapeHtml(String(err.message || err)) +
+            "</div>";
         }
       });
   }
 
   function paintTranscriptEmpty(box, item, message, opts) {
     const busy = !!(opts && opts.busy);
+    setSpeechStatus(message);
     box.innerHTML =
       '<div class="mb-ev-transcript-empty">' +
       escapeHtml(message) +
@@ -4809,31 +4830,38 @@
         const words = Array.isArray(data.words) ? data.words : [];
         const turns = Array.isArray(data.turns) ? data.turns : [];
         const moments = Array.isArray(data.moments) ? data.moments : [];
+        const fullText = String(data.full_text || "").trim();
         const qst = String((data.queue && data.queue.status) || "");
         const reason = String((data.queue && data.queue.reason) || "").trim();
-        if (!words.length && !moments.length) {
+        if (!words.length && !moments.length && !fullText) {
           let empty =
-            "No words on this tape yet. Click Transcribe this tape — leftover Immich files are not in the overnight batch.";
+            "No words on this tape yet. Starting transcribe…";
           let busy = false;
           if (qst === "queued" || qst === "running") {
-            empty = "Transcribing this tape… words appear here when the pass finishes.";
+            empty = "Transcribing this tape… words appear here when faster-whisper finishes.";
             busy = true;
-            state.modal.speechPoll = window.setTimeout(() => bindSpeechTranscript(item), 2500);
+            state.modal.speechPoll = window.setTimeout(() => bindSpeechTranscript(item), 2000);
           } else if (qst === "failed") {
             empty =
               "Transcribe failed" +
               (reason ? ": " + reason : ".") +
               " Click Transcribe this tape to retry.";
           } else if (qst === "completed") {
-            empty =
-              "Last transcribe stored no speech. Click Transcribe this tape to run it again.";
+            empty = "Last pass stored no speech. Starting transcribe again…";
           }
-          paintTranscriptEmpty(box, item, empty, { busy });
+          paintTranscriptEmpty(box, item, empty, { busy: busy || !state.modal.speechAutoStarted });
+          if (!state.modal.speechAutoStarted && qst !== "running") {
+            state.modal.speechAutoStarted = true;
+            queueThisTape(item);
+          }
           return;
         }
         const tokens = words.length
           ? words
-          : moments.map((m) => ({ token: m.text, t_start: m.t_start, t_end: m.t_end }));
+          : moments.length
+            ? moments.map((m) => ({ token: m.text, t_start: m.t_start, t_end: m.t_end }))
+            : [{ token: fullText, t_start: 0, t_end: 0 }];
+        setSpeechStatus(tokens.length + " word" + (tokens.length === 1 ? "" : "s"));
         box.innerHTML = tokens
           .map((w, i) => {
             const st = Number(w.t_start != null ? w.t_start : w.start_sec || 0);
@@ -4915,10 +4943,11 @@
       })
       .catch(() => {
         window.clearTimeout(abortTimer);
+        setSpeechStatus("Transcript unavailable. Restart Serve on this branch, then Transcribe this tape.");
         paintTranscriptEmpty(
           box,
           item,
-          "Transcript unavailable. Click Transcribe this tape (restart Serve if this stays empty).",
+          "Transcript unavailable. Restart Serve on this branch, then Transcribe this tape.",
           {}
         );
       });

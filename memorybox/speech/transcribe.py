@@ -110,18 +110,31 @@ def transcribe_local_file(path: str) -> dict[str, Any]:
         parts: list[str] = []
         for seg in segments:
             parts.append(seg.text or "")
-            for w in getattr(seg, "words", None) or []:
-                tok = (getattr(w, "word", None) or "").strip()
-                if not tok:
-                    continue
-                words.append(
-                    {
-                        "token": tok,
-                        "t_start": float(getattr(w, "start", 0) or 0),
-                        "t_end": float(getattr(w, "end", 0) or 0),
-                        "confidence": float(getattr(w, "probability", 0) or 0) or None,
-                    }
-                )
+            seg_words = list(getattr(seg, "words", None) or [])
+            if seg_words:
+                for w in seg_words:
+                    tok = (getattr(w, "word", None) or "").strip()
+                    if not tok:
+                        continue
+                    words.append(
+                        {
+                            "token": tok,
+                            "t_start": float(getattr(w, "start", 0) or 0),
+                            "t_end": float(getattr(w, "end", 0) or 0),
+                            "confidence": float(getattr(w, "probability", 0) or 0) or None,
+                        }
+                    )
+            else:
+                tok = (seg.text or "").strip()
+                if tok:
+                    words.append(
+                        {
+                            "token": tok,
+                            "t_start": float(getattr(seg, "start", 0) or 0),
+                            "t_end": float(getattr(seg, "end", 0) or 0),
+                            "confidence": None,
+                        }
+                    )
         return {
             "words": words,
             "full_text": " ".join(p.strip() for p in parts).strip(),

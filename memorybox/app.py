@@ -1986,6 +1986,23 @@ def speech_archive_pass(
     )
 
 
+@app.post("/speech/transcribe-now")
+def speech_transcribe_now(
+    video_external_id: str = Query(..., min_length=1, max_length=500),
+    video_provider_key: str | None = Query(None),
+) -> dict[str, Any]:
+    from memorybox.ask.deps import build_video
+    from memorybox.speech.drain import start_speech_drain
+    from memorybox.speech.now import start_transcribe_now
+
+    start_speech_drain()
+    return start_transcribe_now(
+        video_external_id=video_external_id,
+        video_provider=build_video(),
+        video_provider_key=video_provider_key,
+    )
+
+
 @app.post("/speech/queue/process")
 def speech_queue_process(max_items: int = Query(25, ge=1, le=500)) -> dict[str, Any]:
     from memorybox.ask.deps import build_video
