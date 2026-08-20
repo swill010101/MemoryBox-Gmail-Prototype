@@ -34,10 +34,10 @@ OWNER_JOBS = [
         ),
         "action_label": "Run now",
         "method": "POST",
-        "href": "/speech/archive-pass",
+        "href": "/speech/archive-pass?limit=8",
         "confirm": (
-            "Queue incremental video transcription for new files only. "
-            "This will not restart completed transcripts or cartesian-expand people. Continue?"
+            "Queue incremental video transcription for a first batch of new files (default 8). "
+            "This will not cartesian-expand people. Continue?"
         ),
     },
 ]

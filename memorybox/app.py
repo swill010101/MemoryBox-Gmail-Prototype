@@ -1956,7 +1956,7 @@ def speech_status_get() -> dict[str, Any]:
 
 
 @app.post("/speech/archive-pass")
-def speech_archive_pass() -> dict[str, Any]:
+def speech_archive_pass(limit: int = Query(8, ge=1, le=5000)) -> dict[str, Any]:
     from memorybox.ask.deps import build_photo, build_video
     from memorybox.speech.archive_pass import enqueue_new_videos_for_transcribe
     from memorybox.speech.drain import start_speech_drain
@@ -1965,6 +1965,7 @@ def speech_archive_pass() -> dict[str, Any]:
     return enqueue_new_videos_for_transcribe(
         video_provider=build_video(),
         photo_provider=build_photo(),
+        limit=int(limit),
     )
 
 

@@ -12,13 +12,17 @@ def enqueue_new_videos_for_transcribe(
     video_provider: Any,
     photo_provider: Any | None = None,
     limit: int = 5000,
+    video_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     rows = combined_eligible_videos(video_provider=video_provider, photo_provider=photo_provider)
+    want = {str(v).strip() for v in (video_ids or []) if str(v).strip()}
     done = already_done_video_ids(enqueue_reason="transcribe")
     new_rows = []
     for r in rows:
         veid = str(r.get("video_external_id") or "")
         if not veid or veid in done:
+            continue
+        if want and veid not in want:
             continue
         if r.get("eligible") is False:
             continue

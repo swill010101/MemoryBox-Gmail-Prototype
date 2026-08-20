@@ -176,15 +176,28 @@ def transcribe_video_id(video_id: str, *, video_provider: Any | None = None) -> 
             path = str(getter(video_id) or "")
     if not path:
         try:
-            from memorybox.video_worker import path_for_video_id
+            from memorybox.recognition.frames import resolve_immich_video_path, resolve_local_video_path
 
-            path = str(path_for_video_id(video_id) or "")
+            found = resolve_local_video_path(video_provider, video_id) or resolve_immich_video_path(
+                video_id
+            )
+            path = str(found) if found is not None else ""
         except Exception:
             path = ""
     if not path:
         return {"ok": False, "error": "no_local_path", "video_id": video_id}
 
     raw = transcribe_local_file(path)
+    if not (raw.get("words") or []) and str(raw.get("engine") or "") in {"unavailable", "error"}:
+        return {
+            "ok": False,
+            "error": "faster_whisper_unavailable"
+            if raw.get("engine") == "unavailable"
+            else "transcribe_error",
+            "detail": raw.get("error"),
+            "video_id": video_id,
+            "engine": raw.get("engine"),
+        }
     words = [_norm_word(w) for w in (raw.get("words") or [])]
     py_turns = _try_pyannote_turns(path, words) if words else None
     turns = py_turns or _pause_gap_turns(words)

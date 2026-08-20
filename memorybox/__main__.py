@@ -111,6 +111,18 @@ def main(argv: list[str] | None = None) -> int:
         "speech-archive-pass",
         help="I9 incremental: transcribe newly added videos only (not people × files)",
     )
+    p_speech_archive.add_argument(
+        "--limit",
+        type=int,
+        default=8,
+        help="Max new videos to queue this pass (default 8 for first review). Raise later.",
+    )
+    p_speech_archive.add_argument(
+        "--video-id",
+        action="append",
+        default=[],
+        help="Queue only this video_external_id (repeatable).",
+    )
     p_prove_p2i9 = sub.add_parser(
         "prove-p2-i9",
         help="P2-I9 Spoken Moments prove (harness; --flightsim structural only)",
@@ -755,6 +767,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = enqueue_new_videos_for_transcribe(
             video_provider=build_video(),
             photo_provider=build_photo(),
+            limit=int(args.limit),
+            video_ids=list(args.video_id or []),
         )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
