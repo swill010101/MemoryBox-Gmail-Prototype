@@ -20,6 +20,7 @@ def enqueue_videos(
     enqueue_reason: str = "transcribe",
     person_id: str | UUID | None = None,
     priority: int = 100,
+    force_requeue: bool = False,
 ) -> dict[str, Any]:
     created = 0
     with connection() as conn:
@@ -29,6 +30,7 @@ def enqueue_videos(
             if not vpk or not veid:
                 continue
             pri = int(v.get("priority") or priority)
+            force = bool(force_requeue or v.get("force_requeue"))
             if person_id:
                 conn.execute(
                     """
@@ -65,14 +67,17 @@ def enqueue_videos(
                         status = CASE
                             WHEN speech_queue_items.status = 'running'
                             THEN speech_queue_items.status
+                            WHEN %s THEN 'queued'
                             WHEN speech_queue_items.status IN ('completed', 'excluded')
                             THEN speech_queue_items.status
                             ELSE 'queued'
                         END,
+                        reason = CASE WHEN %s THEN NULL ELSE speech_queue_items.reason END,
+                        finished_at = CASE WHEN %s THEN NULL ELSE speech_queue_items.finished_at END,
                         priority = LEAST(speech_queue_items.priority, EXCLUDED.priority),
                         updated_at = now()
                     """,
-                    (vpk, veid, pri, enqueue_reason),
+                    (vpk, veid, pri, enqueue_reason, force, force, force),
                 )
             created += 1
     return {"ok": True, "enqueued_or_updated": created, "enqueue_reason": enqueue_reason}

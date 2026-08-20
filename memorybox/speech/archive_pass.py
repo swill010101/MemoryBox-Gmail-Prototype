@@ -28,8 +28,6 @@ def enqueue_new_videos_for_transcribe(
     if want:
         by_id = {str(r.get("video_external_id") or ""): r for r in rows}
         for veid in want:
-            if veid in done:
-                continue
             r = by_id.get(veid) or {}
             if r.get("eligible") is False:
                 continue
@@ -39,7 +37,8 @@ def enqueue_new_videos_for_transcribe(
                         r.get("video_provider_key") or _provider_key_for_video_id(veid)
                     ),
                     "video_external_id": veid,
-                    "priority": 100,
+                    "priority": 50,
+                    "force_requeue": True,
                 }
             )
             if len(new_rows) >= int(limit):
@@ -60,7 +59,13 @@ def enqueue_new_videos_for_transcribe(
             )
             if len(new_rows) >= int(limit):
                 break
-    queued = enqueue_videos(videos=new_rows, enqueue_reason="transcribe", person_id=None, priority=100)
+    queued = enqueue_videos(
+        videos=new_rows,
+        enqueue_reason="transcribe",
+        person_id=None,
+        priority=100,
+        force_requeue=bool(want),
+    )
     return {
         "ok": True,
         "inventory": len(rows),

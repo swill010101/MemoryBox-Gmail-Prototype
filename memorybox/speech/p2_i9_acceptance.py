@@ -285,6 +285,20 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         str(orphan),
     )
+    requeue = enqueue_new_videos_for_transcribe(
+        video_provider=video,
+        photo_provider=None,
+        video_ids=["video-peggy-clear"],
+    )
+    _check(
+        "p2i9_explicit_video_id_requeues_completed",
+        requeue.get("ok")
+        and requeue.get("cartesian") is False
+        and int(requeue.get("new_videos") or 0) == 1,
+        checks,
+        problems,
+        str(requeue),
+    )
 
     plan_phrase = compile_ask(f"{peggy.display_name} saying \"I love you\"")
     plan_talk = compile_ask(f"{peggy.display_name} talking")
