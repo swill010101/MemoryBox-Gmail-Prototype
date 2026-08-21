@@ -6,6 +6,8 @@
 **Depends:** I10 **ACCEPTED** 2026-08-21 · I1–I8A **ACCEPTED** · I9 on this tree · MBQL-001 **ACCEPTED**  
 **Does not start:** **I11** narrative generation · compose-from-memories · Story dictation · multi-user ACL · Story-as-evidence-for-Story · in-rail authoring
 
+**After I10A:** **I10B Artifacts** then **I10C Journal**. I11 waits until I10A + I10B + I10C are done (owner 2026-08-21: HVRT→MB Stories / Artifacts / Journal first so face jobs can finish and I11 has more prove data).
+
 ## Intent
 
 A Story is a durable, human-authored MemoryBox knowledge object. Drafts are never Ask-visible. Ask retrieves only the current saved version. Supporting memories are mixed-type links on that version. Originals are never copied or altered.
