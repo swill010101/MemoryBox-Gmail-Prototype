@@ -1,10 +1,10 @@
 # P2-I10 Cross-Source Correlation — definition
 
-**Status:** **BUILD AUTHORIZED** 2026-08-20 (Tom: “I10 is approved to build”; earlier “MB P2 Build from 9 on”) · v1.0  
+**Status:** **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”) · **BUILD AUTHORIZED** 2026-08-20 (Tom: “I10 is approved to build”; earlier “MB P2 Build from 9 on”) · v1.0  
 **Authority:** this file. Readable pointer: [docs/product/MBBS-P2_INCREMENT_10_DEFINITION.md](../product/MBBS-P2_INCREMENT_10_DEFINITION.md)  
 **Thin PRD:** [docs/product/MBPRD-P2-I10_CROSS_SOURCE.md](../product/MBPRD-P2-I10_CROSS_SOURCE.md)
 
-**Sequence:** I1–I8A **ACCEPTED**. I8B runtime in flight (do not reopen). I9 Spoken Moments **BUILD AUTHORIZED** (this branch includes I9). Face-SoT (**I8.5**) later. **I11 narrative generation is OUT.**
+**Sequence:** I1–I8A **ACCEPTED**. I8B runtime in flight (do not reopen). I9 Spoken Moments **BUILD AUTHORIZED** (this branch includes I9). **I10 ACCEPTED** 2026-08-21. Face-SoT (**I8.5**) later. **I11 narrative generation is OUT.**
 
 ## 0. Product intent
 
@@ -61,9 +61,9 @@ I9 is authorized and on this tree. GRAPH-02/03 are the next locked capability af
 5. Two linked dates for one event are both disclosed; neither is silently dropped.
 6. Residual chat / curator text is not stored as Evidence.
 
-### FlightSim owner pass (ACCEPTED later)
+### FlightSim owner pass
 
-Use a real Person + theme Tom can recognize (military / trip / year). Mixed Gallery shows the pack. Coverage is honest. Unlink sticks. Do not require a generated story.
+**ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). Mixed evidence pack, coverage + gaps, unlink sticks, no generated Story. Do not reopen I10 for I11 narrative.
 
 ## 6. EVS / MBPS trace (primary)
 

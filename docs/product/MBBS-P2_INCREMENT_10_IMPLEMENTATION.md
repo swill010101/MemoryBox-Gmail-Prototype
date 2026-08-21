@@ -1,6 +1,6 @@
 # P2-I10 implementation note (definition is not rewritten)
 
-**Status:** Build authorized 2026-08-20 (Tom: “I10 is approved to build”). Definition remains `docs/source/MBBS-P2_INCREMENT_10_DEFINITION.md`.
+**Status:** **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). Build authorized 2026-08-20. Definition remains `docs/source/MBBS-P2_INCREMENT_10_DEFINITION.md`. Do not reopen I10 for I11 narrative or Stories authoring.
 
 **Locks honored:**
 - I9 speech modules are unchanged. Cross-source Ask may *include* spoken moments; it does not replace I9 Learn/transcribe.
