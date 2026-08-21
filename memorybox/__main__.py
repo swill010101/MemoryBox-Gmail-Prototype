@@ -214,11 +214,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (requires Immich + configured env)",
     )
-    p_prove5 = sub.add_parser("prove-story", help="Increment 5 Story acceptance prove")
+    p_prove5 = sub.add_parser("prove-story", help="P2-I10A Stories acceptance prove (includes I5)")
     p_prove5.add_argument(
         "--flightsim",
         action="store_true",
-        help="Final P1-runtime-host acceptance (set MEMORYBOX_I5_OWNER_STORY_ID after UX save)",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_I5_OWNER_STORY_ID after UX Save Story)",
     )
     p_prove5a = sub.add_parser("prove-journal", help="Increment 5A Journal acceptance prove")
     p_prove5a.add_argument(

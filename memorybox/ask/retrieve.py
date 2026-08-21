@@ -2668,8 +2668,15 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 WHERE r.from_type = 'story'
                   AND r.to_type = 'person'
                   AND r.to_id = ANY(%s)
+                UNION
+                SELECT s.id
+                FROM stories s
+                JOIN story_version_people sp
+                  ON sp.version_id = s.current_saved_version_id
+                WHERE s.current_saved_version_id IS NOT NULL
+                  AND sp.person_id = ANY(%s)
                 """,
-                (person_ids,),
+                (person_ids, person_ids),
             ).fetchall()
             about_ids = {str(r["from_id"]) for r in r_about}
 
@@ -2678,18 +2685,24 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             """
             SELECT
                 s.id AS story_id,
-                s.title,
-                s.narrator_person_id,
+                COALESCE(sv.title, s.title) AS title,
+                sv.description,
+                COALESCE(sv.narrator_person_id, s.narrator_person_id) AS narrator_person_id,
                 s.current_version,
                 sv.body_text,
                 sv.version,
                 sv.note,
-                p.display_name AS narrator_name
+                p.display_name AS narrator_name,
+                (
+                    SELECT string_agg(b.text, ' ')
+                    FROM story_version_blocks b
+                    WHERE b.version_id = sv.id AND COALESCE(b.text, '') <> ''
+                ) AS block_text
             FROM stories s
-            JOIN story_versions sv
-              ON sv.story_id = s.id AND sv.version = s.current_version
-            LEFT JOIN people p ON p.id = s.narrator_person_id
+            JOIN story_versions sv ON sv.id = s.current_saved_version_id
+            LEFT JOIN people p ON p.id = COALESCE(sv.narrator_person_id, s.narrator_person_id)
             WHERE s.status = 'active'
+              AND sv.lifecycle = 'saved'
             ORDER BY s.updated_at DESC
             LIMIT %s
             """,
@@ -2709,8 +2722,14 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 WHERE r.from_type = 'story'
                   AND r.to_type = 'person'
                   AND r.from_id = ANY(%s)
+                UNION
+                SELECT s.id, p.display_name
+                FROM stories s
+                JOIN story_version_people sp ON sp.version_id = s.current_saved_version_id
+                JOIN people p ON p.id = sp.person_id
+                WHERE s.id = ANY(%s)
                 """,
-                (ids,),
+                (ids, ids),
             ).fetchall()
             for rr in rrows:
                 rel_people.setdefault(str(rr["from_id"]), []).append(
@@ -2722,7 +2741,9 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             blob = " ".join(
                 [
                     r["title"] or "",
+                    r.get("description") or "",
                     r["body_text"] or "",
+                    r.get("block_text") or "",
                     r["narrator_name"] or "",
                     " ".join(rel_people.get(sid, [])),
                 ]

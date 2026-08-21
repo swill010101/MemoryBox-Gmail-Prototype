@@ -60,13 +60,22 @@ from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.capture import build_capture_stt
 from memorybox.story import (
     StoryServiceError,
+    add_working_memory,
     associate_evidence,
     associate_person,
+    begin_edit,
     create_story,
+    discard_working,
     get_story,
     list_stories,
+    list_version_history,
+    save_draft,
     save_new_version as save_story_version,
+    save_story,
+    set_visibility,
+    stories_using_media,
 )
+from memorybox.story.search import evidence_search as search_story_evidence
 
 # Domain tables created by migrations — listed for health/inventory (no provider schemas).
 DOMAIN_V0_TABLES = (
@@ -83,6 +92,9 @@ DOMAIN_V0_TABLES = (
     "relationships",
     "stories",
     "story_versions",
+    "story_version_blocks",
+    "story_version_memories",
+    "story_version_people",
     "journal_entries",
     "journal_versions",
     "jobs",
@@ -225,15 +237,54 @@ class ContextChangeRequest(BaseModel):
 
 class StoryCreateRequest(BaseModel):
     title: str | None = None
-    body_text: str = Field(..., min_length=1)
+    body_text: str = ""
+    description: str | None = None
     narrator_display_name: str | None = None
     narrator_person_id: str | None = None
     person_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
+    memories: list[dict[str, Any]] = Field(default_factory=list)
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    described_start_date: str | None = None
+    described_end_date: str | None = None
+    place_id: str | None = None
+    place_label: str | None = None
+    visibility: str | None = None
+    story_id: str | None = None
+    composed_by_model: bool = False
     note: str | None = None
     source_photo_id: str | None = None
     taken_at: str | None = None
     thumb_url: str | None = None
+
+
+class StoryDraftRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    body_text: str | None = None
+    blocks: list[dict[str, Any]] | None = None
+    memories: list[dict[str, Any]] | None = None
+    person_ids: list[str] | None = None
+    narrator_person_id: str | None = None
+    narrator_display_name: str | None = None
+    described_start_date: str | None = None
+    described_end_date: str | None = None
+    place_id: str | None = None
+    place_label: str | None = None
+    visibility: str | None = None
+    composed_by_model: bool = False
+
+
+class StoryVisibilityRequest(BaseModel):
+    visibility: str
+
+
+class StoryMemoryAddRequest(BaseModel):
+    source_kind: str
+    source_id: str
+    label_snapshot: str | None = None
+    thumb_url: str | None = None
+    occurred_on: str | None = None
 
 
 class StoryVersionRequest(BaseModel):
@@ -1456,23 +1507,36 @@ def journal_new_version(journal_id: str, body: JournalVersionRequest) -> dict[st
 
 
 @app.get("/story")
-def story_list() -> dict[str, Any]:
-    return {"ok": True, "stories": list_stories()}
+def story_list(
+    status: str | None = Query(default=None, description="all | drafts | saved"),
+    visibility: str | None = Query(default=None),
+    person_id: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, Any]:
+    items = list_stories(
+        status_filter=status,
+        visibility=visibility,
+        person_id=person_id,
+        q=q,
+        limit=limit,
+    )
+    return {"ok": True, "stories": items, "items": items, "count": len(items)}
 
 
 @app.post("/story")
 def story_create(body: StoryCreateRequest) -> dict[str, Any]:
     try:
-        note = body.note
-        bits: list[str] = []
+        mems = list(body.memories or [])
         if (body.source_photo_id or "").strip():
-            bits.append("mb_source_photo=" + str(body.source_photo_id).strip())
-        if (body.taken_at or "").strip():
-            bits.append("mb_taken_at=" + str(body.taken_at).strip()[:40])
-        if (body.thumb_url or "").strip():
-            bits.append("mb_thumb=" + str(body.thumb_url).strip()[:400])
-        if bits:
-            note = ((note or "") + " " + " ".join(bits)).strip()
+            mems.append(
+                {
+                    "source_kind": "photo",
+                    "source_id": str(body.source_photo_id).strip(),
+                    "thumb_url": (body.thumb_url or "").strip() or None,
+                    "occurred_on": (body.taken_at or "").strip()[:10] or None,
+                }
+            )
         view = create_story(
             title=body.title,
             body_text=body.body_text,
@@ -1480,8 +1544,17 @@ def story_create(body: StoryCreateRequest) -> dict[str, Any]:
             narrator_person_id=body.narrator_person_id,
             person_ids=body.person_ids,
             evidence_ids=body.evidence_ids,
-            note=note,
             actor_key="owner",
+            description=body.description,
+            memories=mems,
+            blocks=body.blocks or None,
+            visibility=body.visibility,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            story_id=body.story_id,
+            composed_by_model=body.composed_by_model,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1490,13 +1563,234 @@ def story_create(body: StoryCreateRequest) -> dict[str, Any]:
     return {"ok": True, "story": view.to_dict()}
 
 
+@app.post("/story/drafts")
+def story_new_draft(body: StoryDraftRequest) -> dict[str, Any]:
+    try:
+        view = save_draft(
+            title=body.title,
+            description=body.description,
+            body_text=body.body_text,
+            blocks=body.blocks,
+            memories=body.memories,
+            person_ids=body.person_ids,
+            narrator_person_id=body.narrator_person_id,
+            narrator_display_name=body.narrator_display_name,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            actor_key="owner",
+            composed_by_model=body.composed_by_model,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/story/evidence-search")
+def story_evidence_search(
+    q: str = Query(default=""),
+    kind: str | None = Query(default=None),
+    types: str | None = Query(default=None, description="comma-separated source kinds"),
+    person_id: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    place: str | None = Query(default=None),
+    limit: int = Query(default=40, ge=1, le=80),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    type_list = [t.strip() for t in (types or "").split(",") if t.strip()]
+    if kind:
+        type_list.append(kind)
+    try:
+        return search_story_evidence(
+            q=q,
+            person_id=person_id,
+            types=type_list or None,
+            time_start=date_from,
+            time_end=date_to,
+            place=place,
+            limit=limit,
+            offset=offset,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/story/by-media")
+def story_by_media(
+    kind: str | None = Query(default=None),
+    source_kind: str | None = Query(default=None),
+    source_id: str = Query(...),
+) -> dict[str, Any]:
+    items = stories_using_media(
+        source_kind=source_kind or kind or "photo",
+        source_id=source_id,
+    )
+    return {"ok": True, "items": items, "count": len(items)}
+
+
 @app.get("/story/{story_id}")
 def story_get(
-    story_id: str, version: int | None = Query(default=None)
+    story_id: str,
+    version: int | None = Query(default=None),
+    working: bool = Query(default=False),
 ) -> dict[str, Any]:
-    view = get_story(story_id, version=version)
+    view = get_story(story_id, version=version, working=working)
     if not view:
         raise HTTPException(status_code=404, detail="story not found")
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/story/{story_id}/working")
+def story_working(story_id: str) -> dict[str, Any]:
+    view = get_story(story_id, working=True)
+    if not view:
+        raise HTTPException(status_code=404, detail="no working draft")
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.put("/story/{story_id}/working")
+def story_put_working(story_id: str, body: StoryDraftRequest) -> dict[str, Any]:
+    try:
+        view = save_draft(
+            story_id=story_id,
+            title=body.title,
+            description=body.description,
+            body_text=body.body_text,
+            blocks=body.blocks,
+            memories=body.memories,
+            person_ids=body.person_ids,
+            narrator_person_id=body.narrator_person_id,
+            narrator_display_name=body.narrator_display_name,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            actor_key="owner",
+            composed_by_model=body.composed_by_model,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/edit")
+def story_begin_edit(story_id: str) -> dict[str, Any]:
+    try:
+        view = begin_edit(story_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/drafts")
+def story_save_draft(story_id: str, body: StoryDraftRequest) -> dict[str, Any]:
+    try:
+        view = save_draft(
+            story_id=story_id,
+            title=body.title,
+            description=body.description,
+            body_text=body.body_text,
+            blocks=body.blocks,
+            memories=body.memories,
+            person_ids=body.person_ids,
+            narrator_person_id=body.narrator_person_id,
+            narrator_display_name=body.narrator_display_name,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            actor_key="owner",
+            composed_by_model=body.composed_by_model,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/revisions")
+def story_save_revision(story_id: str, body: StoryDraftRequest) -> dict[str, Any]:
+    try:
+        view = save_story(
+            story_id=story_id,
+            title=body.title,
+            description=body.description,
+            body_text=body.body_text,
+            blocks=body.blocks,
+            memories=body.memories,
+            person_ids=body.person_ids,
+            narrator_person_id=body.narrator_person_id,
+            narrator_display_name=body.narrator_display_name,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            actor_key="owner",
+            composed_by_model=body.composed_by_model,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/working/discard")
+def story_discard(story_id: str) -> dict[str, Any]:
+    try:
+        result = discard_working(story_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    leftover = None if result.get("removed") else get_story(story_id)
+    return {
+        "ok": True,
+        **result,
+        "story": leftover.to_dict() if leftover else None,
+    }
+
+
+@app.post("/story/{story_id}/working/memories")
+def story_add_working_memory(story_id: str, body: StoryMemoryAddRequest) -> dict[str, Any]:
+    try:
+        view = add_working_memory(
+            story_id,
+            source_kind=body.source_kind,
+            source_id=body.source_id,
+            label_snapshot=body.label_snapshot,
+            thumb_url=body.thumb_url,
+            occurred_on=body.occurred_on,
+        )
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.patch("/story/{story_id}")
+def story_patch(story_id: str, body: StoryVisibilityRequest) -> dict[str, Any]:
+    try:
+        view = set_visibility(story_id, body.visibility)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "story": view.to_dict()}
+
+
+@app.get("/story/{story_id}/versions")
+def story_versions(story_id: str) -> dict[str, Any]:
+    try:
+        items = list_version_history(story_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "versions": items, "count": len(items)}
+
+
+@app.get("/story/{story_id}/versions/{version}")
+def story_version_get(story_id: str, version: int) -> dict[str, Any]:
+    view = get_story(story_id, version=version)
+    if not view:
+        raise HTTPException(status_code=404, detail="story version not found")
     return {"ok": True, "story": view.to_dict()}
 
 
@@ -1522,6 +1816,11 @@ def story_add_person(story_id: str, person_id: str) -> dict[str, Any]:
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "story": view.to_dict()}
+
+
+@app.post("/story/{story_id}/people/{person_id}")
+def story_add_person_alias(story_id: str, person_id: str) -> dict[str, Any]:
+    return story_add_person(story_id, person_id)
 
 
 @app.post("/story/{story_id}/evidence/{evidence_id}")

@@ -119,9 +119,9 @@ def _stories_for_person(person_id: UUID, *, limit: int) -> list[LibraryCard]:
             SELECT DISTINCT s.id, s.title, s.narrator_person_id, s.created_at, s.updated_at,
                    sv.body_text
             FROM stories s
-            LEFT JOIN story_versions sv
-              ON sv.story_id = s.id AND sv.version = s.current_version
+            LEFT JOIN story_versions sv ON sv.id = s.current_saved_version_id
             WHERE s.status = 'active'
+              AND s.current_saved_version_id IS NOT NULL
               AND (
                 s.narrator_person_id = %s
                 OR EXISTS (
@@ -131,11 +131,16 @@ def _stories_for_person(person_id: UUID, *, limit: int) -> list[LibraryCard]:
                     AND r.relationship_kind = 'about_person'
                     AND r.status IN ('candidate', 'confirmed')
                 )
+                OR EXISTS (
+                  SELECT 1 FROM story_version_people sp
+                  WHERE sp.version_id = s.current_saved_version_id
+                    AND sp.person_id = %s
+                )
               )
             ORDER BY s.updated_at DESC
             LIMIT %s
             """,
-            (person_id, person_id, limit),
+            (person_id, person_id, person_id, limit),
         ).fetchall()
     out: list[LibraryCard] = []
     for r in rows:
