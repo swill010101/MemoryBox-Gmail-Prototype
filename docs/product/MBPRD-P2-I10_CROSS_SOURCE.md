@@ -1,6 +1,6 @@
 # MBPRD-P2-I10 — Cross-Source Correlation
 
-**Status:** **LOCKED** · **BUILD AUTHORIZED** 2026-08-20 (Tom: “I10 is approved to build”)  
+**Status:** **LOCKED** · **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”) · **BUILD AUTHORIZED** 2026-08-20  
 **Increment definition:** [MBBS-P2_INCREMENT_10_DEFINITION.md](MBBS-P2_INCREMENT_10_DEFINITION.md)  
 **Depends:** I1–I8A **ACCEPTED** · I9 Spoken Moments on this tree · MBQL-001 **ACCEPTED**  
 **Does not start:** I11 narrative generation · I12 external history · I8.5 face SoT · Place GIS · OCR engines · Paprika
@@ -24,7 +24,7 @@ It matters **now** because I9 just made speech a source, I8/I8A made communicati
 5. Curator text is not stored as Evidence. No I11 story is auto-saved.
 6. `python -m memorybox prove-p2-i10` passes on the harness.
 
-FlightSim owner ACCEPTED is a later pass on a real Person + theme.
+FlightSim owner **ACCEPTED** 2026-08-21.
 
 ## 3. Scope
 
@@ -52,4 +52,4 @@ None blocking. Paprika, OCR, GIS, and narrative save stay parked.
 
 ## 7. Decision status
 
-PRD locked. Tom 2026-08-20: **“I10 is approved to build.”** Runtime is this increment.
+PRD locked. Tom 2026-08-20: **“I10 is approved to build.”** Tom 2026-08-21: **“i10 has been accepted.”** Increment **ACCEPTED**. Do not start I11. Stories UX is a separate PRD.
