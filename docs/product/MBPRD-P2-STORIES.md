@@ -17,9 +17,9 @@
 | `MBUX-Story-Add-Supporting-Memories-Modal-Draft-v1.png` | Add supporting memories |
 | `MB Stories video detail rail.png` | Photo/video Story rail |
 
-**Depends:** I1–I8A **ACCEPTED** · I9 Spoken Moments on the stacked tree · I10 Cross-Source **BUILD AUTHORIZED** (not owner ACCEPTED as of this PRD) · MBQL-001 **ACCEPTED** · P1 Story service (`memorybox/story`, Increment 5) · MBUX-001 v0.4 · MBPS-002 · MBEVS-001 · MBCAP-001 v0.2
+**Depends:** I1–I8A **ACCEPTED** · I9 Spoken Moments on the stacked tree · **I10 Cross-Source ACCEPTED** 2026-08-21 · MBQL-001 **ACCEPTED** · P1 Story service (`memorybox/story`, Increment 5) · MBUX-001 v0.4 · MBPS-002 · MBEVS-001 · MBCAP-001 v0.2
 
-**Implementation branch:** create later from the **accepted post-I10 baseline**. Not this I10 branch. Not `marvin-capture`.
+**Implementation branch:** create later from this **I10 ACCEPTED** baseline after this PRD is signed off. Not `marvin-capture`. Do not start I11.
 
 **Does not start:** I11 narrative generation · “compose from selected memories” · Family dictation on Story unless an approved Story STT path is proved · multi-user access control · in-rail Story authoring · Story-as-evidence-for-Story · confidence UX · I8.5 face SoT · Place GIS
 
