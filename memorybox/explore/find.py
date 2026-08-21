@@ -1074,7 +1074,11 @@ def build_explore_find(
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
     plan_early = result.get("plan") or {}
-    if plan_early.get("want_cross_source"):
+    clarifying = (
+        result.get("answer_kind") == "clarification"
+        or plan_early.get("requires_clarification")
+    )
+    if plan_early.get("want_cross_source") and not clarifying:
         show_sms = True
         show_email = True
         show_calendar = True

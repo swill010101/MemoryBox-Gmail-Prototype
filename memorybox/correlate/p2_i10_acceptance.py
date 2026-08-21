@@ -138,10 +138,25 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
     )
     _check(
         "p2i10_find_comms_only_on_cross_source",
-        'plan_early.get("want_cross_source")' in find_py,
+        'plan_early.get("want_cross_source")' in find_py
+        and "clarifying" in find_py,
         checks,
         problems,
-        "Explore must not force SMS/email/calendar on ordinary Show-me",
+        "Explore must not force SMS/email/calendar on ordinary Show-me or year-clarify",
+    )
+    _check(
+        "p2i10_birthday_not_a_person_token",
+        '"birthdays"' in planner and "life_event_all_years" in (root / "planner" / "temporal.py").read_text(encoding="utf-8"),
+        checks,
+        problems,
+        "birthdays must not compile as a Person; no-year birthday is all observances",
+    )
+    _check(
+        "p2i10_bare_year_followup_marker",
+        "year_only_followup_visual" in planner and "life_event_year_followup" in planner,
+        checks,
+        problems,
+        "bare 2017 must inherit person + birthday (voice path)",
     )
     _check(
         "p2i10_authorized_quote",
@@ -270,6 +285,62 @@ def _compile(checks: dict[str, Any], problems: list[str]) -> None:
         checks,
         problems,
         f"people={two_people.person_names} places={two_people.place_names}",
+    )
+    bday_all = compile_ask("show me everything about peggy george and birthdays")
+    bday_theme = " ".join(getattr(bday_all, "theme_labels", ()) or ()).lower()
+    _check(
+        "p2i10_everything_about_birthdays_not_person",
+        any("Peggy" in n for n in (bday_all.person_names or ()))
+        and not any(n.lower() in {"birthday", "birthdays"} for n in (bday_all.person_names or ()))
+        and bday_all.life_event_kind == "birthday"
+        and "Birthday" in (bday_all.event_labels or ())
+        and bool(getattr(bday_all, "want_cross_source", False))
+        and bool(bday_all.want_still)
+        and bool(bday_all.want_communication)
+        and not bday_all.requires_clarification
+        and "and" not in bday_theme.split(),
+        checks,
+        problems,
+        f"people={bday_all.person_names} events={bday_all.event_labels} "
+        f"theme={getattr(bday_all, 'theme_labels', ())} still={bday_all.want_still} "
+        f"cross={getattr(bday_all, 'want_cross_source', None)} "
+        f"clarify={bday_all.requires_clarification} msg={bday_all.ambiguity_message} "
+        f"notes={bday_all.notes}",
+    )
+    bday_ctx = AskContext(
+        session_id="p2-i10-bday-year",
+        person_names=bday_all.person_names,
+        event_labels=bday_all.event_labels,
+        last_ask=bday_all.original_ask,
+        modalities_active=bday_all.modalities,
+    )
+    year_only = _plan_ask("2017", bday_ctx)
+    _check(
+        "p2i10_bare_2017_keeps_person_birthday_visual",
+        any("Peggy" in n for n in (year_only.person_names or ()))
+        and year_only.life_event_kind == "birthday"
+        and year_only.life_event_years == (2017,)
+        and bool(year_only.want_still)
+        and year_only.visual_scope == "broad"
+        and bool(getattr(year_only, "want_cross_source", False))
+        and not year_only.requires_clarification
+        and not any(n.lower() in {"birthday", "birthdays"} for n in (year_only.person_names or ())),
+        checks,
+        problems,
+        f"people={year_only.person_names} kind={year_only.life_event_kind} "
+        f"years={year_only.life_event_years} still={year_only.want_still} "
+        f"scope={year_only.visual_scope} cross={getattr(year_only, 'want_cross_source', None)} "
+        f"comm={year_only.want_communication} notes={year_only.notes}",
+    )
+    year_dot = _plan_ask("2017.", bday_ctx)
+    _check(
+        "p2i10_bare_2017_period_same",
+        year_dot.life_event_kind == "birthday"
+        and year_dot.life_event_years == (2017,)
+        and bool(year_dot.want_still),
+        checks,
+        problems,
+        f"kind={year_dot.life_event_kind} years={year_dot.life_event_years} notes={year_dot.notes}",
     )
     _check(
         "p2i10_compile_note",

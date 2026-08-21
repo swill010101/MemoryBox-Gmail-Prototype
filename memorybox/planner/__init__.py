@@ -20,6 +20,8 @@ from typing import Any, Literal
 
 from memorybox.context import AskContext
 from memorybox.planner.temporal import (
+    ANNIVERSARY_RE,
+    BIRTHDAY_RE,
     TemporalParse,
     holiday_window,
     parse_temporal,
@@ -179,7 +181,7 @@ _PERSON_NAME_STOP2 = (
     r"last|first|next|recent|past|myself|my|how|many|all|"
     r"attachments?|messages?|texts?|emails?|"
     r"summer|winter|spring|fall|autumn|"
-    r"christmas|xmas|easter|thanksgiving|halloween|birthday|bday|anniversary|"
+    r"christmas|xmas|easter|thanksgiving|halloween|birthday|birthdays|bday|bdays|anniversary|anniversaries|"
     r"january|february|march|april|may|june|july|august|september|october|november|december|"
     r"nye|nyd|juneteenth|memorial|labor|presidents|columbus|veterans|valentine|mlk"
 )
@@ -268,7 +270,7 @@ PERSON_BARE_LEADING_RE = re.compile(
     rf"4th\b|fourth\b|nye\b|nyd\b|"
     rf"juneteenth\b|mlk\b|presidents?\b|columbus\b|veterans?\b|"
     rf"valentine\b|mother'?s?\b|father'?s?\b|"
-    rf"birthday\b|bday\b|anniversary\b|"
+    rf"birthday\b|birthdays\b|bday\b|bdays\b|anniversary\b|anniversaries\b|"
     rf"new\s+year)"
 )
 # Bare leading person must not swallow seasons / holidays as names ("summer 2024").
@@ -304,7 +306,11 @@ _PERSON_BARE_BLOCKED = frozenset(
         "father",
         "fathers",
         "birthday",
+        "birthdays",
+        "bday",
+        "bdays",
         "anniversary",
+        "anniversaries",
         "during",
         "in",
         "at",
@@ -629,7 +635,8 @@ def _theme_from_about(
             continue
         text = re.sub(rf"(?i)\b{re.escape(name)}(?:'s|’s)?\b", " ", text)
     text = re.sub(
-        r"(?i)\b(the|a|an|our|my|his|her|their|trip|story|stories)\b",
+        r"(?i)\b(the|a|an|our|my|his|her|their|and|or|trip|story|stories|"
+        r"birthdays?|b[\-\s]?days?|bdays?|anniversar(?:y|ies))\b",
         " ",
         text,
     )
@@ -1360,13 +1367,11 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     )
     notes.extend(type_notes)
 
-    # Season / birthday-anniversary without year: fill from session when available.
-    # Holidays without a year already expand to all archive years in parse_temporal
-    # (do NOT steal a sticky single context year like 2015).
-    if (
-        "temporal=season_needs_year" in temporal.notes
-        or "life_event_needs_year" in temporal.notes
-    ):
+    # Season without year: fill from session when available, else ask.
+    # Birthday / anniversary without a year expand to all archive observances
+    # (same as holidays). A later bare year is an optional narrow, including
+    # a spoken answer to a leftover year question.
+    if "temporal=season_needs_year" in temporal.notes:
         year_src = None
         for cand in (t0, t1, ctx.time_start, ctx.time_end):
             if cand and len(str(cand)) >= 4 and str(cand)[:4].isdigit():
@@ -1374,50 +1379,78 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
                 break
         if year_src is None:
             requires_clarification = True
-            if "temporal=season_needs_year" in temporal.notes:
-                ambiguity_message = (
-                    "Which year do you mean for that season?"
-                )
-            else:
-                kind = temporal.life_event_kind or "date"
-                ambiguity_message = f"Which year do you mean for that {kind}?"
+            ambiguity_message = "Which year do you mean for that season?"
             notes.append("clarify_temporal_needs_year")
         else:
-            if "temporal=season_needs_year" in temporal.notes:
-                m = re.search(r"(?i)\b(spring|summer|fall|autumn|winter)\b", q)
-                if m:
-                    season = m.group(1).lower()
-                    if season == "autumn":
-                        season = "fall"
-                    start, end = season_window(season, year_src)
-                    temporal = TemporalParse(
-                        time_start=start,
-                        time_end=end,
-                        windows=((start, end),),
-                        label=f"{season.title()} {year_src}",
-                        season=season,
-                        notes=(
-                            "temporal=season",
-                            "season_def=meteorological_nh",
-                            "season_year_from_context",
-                        ),
-                    )
-                    t0, t1 = start, end
-                    notes.append("season_year_from_context")
-            elif temporal.life_event_kind:
-                base = "Birthday" if temporal.life_event_kind == "birthday" else "Anniversary"
+            m = re.search(r"(?i)\b(spring|summer|fall|autumn|winter)\b", q)
+            if m:
+                season = m.group(1).lower()
+                if season == "autumn":
+                    season = "fall"
+                start, end = season_window(season, year_src)
                 temporal = TemporalParse(
-                    label=base,
-                    life_event_kind=temporal.life_event_kind,
-                    life_event_years=(year_src,),
-                    notes=tuple(
-                        n
-                        for n in temporal.notes
-                        if n != "life_event_needs_year"
-                    )
-                    + ("life_event_year_from_context",),
+                    time_start=start,
+                    time_end=end,
+                    windows=((start, end),),
+                    label=f"{season.title()} {year_src}",
+                    season=season,
+                    notes=(
+                        "temporal=season",
+                        "season_def=meteorological_nh",
+                        "season_year_from_context",
+                    ),
                 )
-                notes.append("life_event_year_from_context")
+                t0, t1 = start, end
+                notes.append("season_year_from_context")
+
+    # Bare "2017" / "2017." after a person Ask — voice-ready year answer.
+    # Do not treat it as a new comms-only Ask; keep the prior person + event.
+    year_only_m = re.match(r"^\s*((?:19|20)\d{2})\.?\s*$", q)
+    if year_only_m and people:
+        year_n = int(year_only_m.group(1))
+        is_followup = True
+        inherit = True
+        blob = " ".join(
+            list(events)
+            + list(ctx.event_labels or ())
+            + [ctx.last_ask or "", q]
+        )
+        if BIRTHDAY_RE.search(blob) or temporal.life_event_kind == "birthday":
+            temporal = TemporalParse(
+                label=f"Birthday {year_n}",
+                life_event_kind="birthday",
+                life_event_years=(year_n,),
+                notes=("temporal=life_event_birthday", "life_event_year_followup"),
+            )
+            t0, t1 = None, None
+            if "Birthday" not in events:
+                events.append("Birthday")
+            notes.append("life_event_year_followup")
+        elif ANNIVERSARY_RE.search(blob) or temporal.life_event_kind == "anniversary":
+            temporal = TemporalParse(
+                label=f"Anniversary {year_n}",
+                life_event_kind="anniversary",
+                life_event_years=(year_n,),
+                notes=("temporal=life_event_anniversary", "life_event_year_followup"),
+            )
+            t0, t1 = None, None
+            if "Anniversary" not in events:
+                events.append("Anniversary")
+            notes.append("life_event_year_followup")
+        visual_scope = "broad"
+        want_still = True
+        want_video = True
+        want_visual = True
+        want_photo = True
+        notes.append("year_only_followup_visual")
+        last = ctx.last_ask or ""
+        if EVERYTHING_ABOUT_RE.search(last):
+            want_cross_source = True
+            want_email = True
+            want_sms = True
+            want_cal = True
+            want_spoken = True
+            notes.append("year_only_followup_cross_source")
 
     # Modality inheritance for pure follow-ups without modality cue
     visual_ctx = any(

@@ -366,12 +366,12 @@ def parse_temporal(text: str) -> TemporalParse:
             label = f"Birthday {years[0]}"
         elif len(years) > 1:
             label = f"Birthday {years[0]}–{years[-1]}"
-        need = () if years else ("life_event_needs_year",)
+        extra = () if years else ("life_event_all_years",)
         return TemporalParse(
             label=label,
             life_event_kind="birthday",
             life_event_years=tuple(years),
-            notes=("temporal=life_event_birthday",) + need,
+            notes=("temporal=life_event_birthday",) + extra,
         )
     if ANNIVERSARY_RE.search(q):
         label = "Anniversary"
@@ -379,12 +379,12 @@ def parse_temporal(text: str) -> TemporalParse:
             label = f"Anniversary {years[0]}"
         elif len(years) > 1:
             label = f"Anniversary {years[0]}–{years[-1]}"
-        need = () if years else ("life_event_needs_year",)
+        extra = () if years else ("life_event_all_years",)
         return TemporalParse(
             label=label,
             life_event_kind="anniversary",
             life_event_years=tuple(years),
-            notes=("temporal=life_event_anniversary",) + need,
+            notes=("temporal=life_event_anniversary",) + extra,
         )
 
     holiday_key = _find_holiday_key(q)

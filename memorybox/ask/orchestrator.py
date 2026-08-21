@@ -32,13 +32,15 @@ def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
         return plan
 
     years = list(getattr(plan, "life_event_years", ()) or ())
+    notes = list(plan.notes)
     if not years:
-        # Planner should already clarify; keep as-is.
-        return plan
+        from memorybox.planner.temporal import holiday_years_all
+
+        years = holiday_years_all()
+        notes.append("life_event_all_years")
 
     person_id = (plan.person_ids[0] if plan.person_ids else None)
     display = plan.person_names[0] if plan.person_names else None
-    notes = list(plan.notes)
 
     try:
         from memorybox.person import find_ask_person_by_name, get_person
@@ -89,15 +91,26 @@ def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
         except Exception:
             fact = None
         if not fact or not fact.value_date:
+            msg = (
+                f"No birth_date recorded for {display}. "
+                "Add it on the person profile to search birthday photos."
+            )
+            if getattr(plan, "want_cross_source", False):
+                # Everything-about still returns the mixed pack; do not empty Gallery.
+                return replace(
+                    plan,
+                    person_ids=(person_id,),
+                    person_names=(display,) if display else plan.person_names,
+                    requires_clarification=False,
+                    ambiguity_message=None,
+                    notes=tuple(notes + ["life_event_birth_date_missing", "life_event_no_windows_cross_source"]),
+                )
             return replace(
                 plan,
                 person_ids=(person_id,),
                 person_names=(display,) if display else plan.person_names,
                 requires_clarification=True,
-                ambiguity_message=(
-                    f"No birth_date recorded for {display}. "
-                    "Add it on the person profile to search birthday photos."
-                ),
+                ambiguity_message=msg,
                 notes=tuple(notes + ["life_event_birth_date_missing"]),
             )
         try:
@@ -121,15 +134,25 @@ def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
         except Exception:
             events = []
         if not events:
+            msg = (
+                f"No marriage/anniversary date recorded for {display}. "
+                "Add a marriage life event to search anniversary photos."
+            )
+            if getattr(plan, "want_cross_source", False):
+                return replace(
+                    plan,
+                    person_ids=(person_id,),
+                    person_names=(display,) if display else plan.person_names,
+                    requires_clarification=False,
+                    ambiguity_message=None,
+                    notes=tuple(notes + ["life_event_anniversary_missing", "life_event_no_windows_cross_source"]),
+                )
             return replace(
                 plan,
                 person_ids=(person_id,),
                 person_names=(display,) if display else plan.person_names,
                 requires_clarification=True,
-                ambiguity_message=(
-                    f"No marriage/anniversary date recorded for {display}. "
-                    "Add a marriage life event to search anniversary photos."
-                ),
+                ambiguity_message=msg,
                 notes=tuple(notes + ["life_event_anniversary_missing"]),
             )
         if len(events) > 1:
@@ -1006,7 +1029,10 @@ class AskOrchestrator:
                 # Exception: birthday/anniversary Explore asks with years keep visual.
                 life_explore = bool(
                     getattr(plan, "life_event_kind", None)
-                    and getattr(plan, "life_event_years", ())
+                    and (
+                        getattr(plan, "life_event_years", ())
+                        or "life_event_all_years" in (plan.notes or ())
+                    )
                 )
                 if rel.intent in ("who", "birth", "anniversary") and not life_explore:
                     plan = replace(
