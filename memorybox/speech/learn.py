@@ -4,10 +4,26 @@ from __future__ import annotations
 from typing import Any
 
 from memorybox.speech.constants import PRIORITY_CURRENT, PRIORITY_OTHER, VOICE_MODEL
+from memorybox.speech.embeddings import embed_video_span
+from memorybox.speech.media import resolve_speech_media_path
 from memorybox.speech.process import persist_transcript, recognize_person_on_video
 from memorybox.speech.queue import enqueue_videos
 from memorybox.speech.store import assign_turn_person, persist_voice_exemplar
-from memorybox.speech.embeddings import embed_video_span
+
+_LEARN_FAIL_DETAIL = {
+    "no_source_audio": (
+        "MemoryBox could not open the original video file for this clip, "
+        "so it cannot Learn a voice from the highlighted words. "
+        "The transcript is text, not a voiceprint."
+    ),
+    "ffmpeg_extract_failed": (
+        "MemoryBox found the video but could not extract audio for the highlighted span."
+    ),
+    "ecapa_unavailable": (
+        "Voice encoding is not available on this machine (SpeechBrain ECAPA). "
+        "Install speechbrain, torch, and torchaudio to Learn a voice from a transcript span."
+    ),
+}
 
 
 def owner_learn_voice(
@@ -22,20 +38,22 @@ def owner_learn_voice(
     other_videos: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
-    path = None
-    getter = getattr(video_provider, "local_path_for", None)
-    if callable(getter):
-        path = getter(video_external_id)
+    path = resolve_speech_media_path(video_provider, video_external_id) or None
     injected = embedding
     inj_fn = getattr(video_provider, "i9_voice_vec_for_span", None)
     if injected is None and callable(inj_fn):
         injected = inj_fn(video_external_id, float(t_start), float(t_end))
     vec, model = embed_video_span(path, float(t_start), float(t_end), injected=injected)
     if not vec:
+        reason = model or "no_source_audio"
         return {
             "ok": False,
-            "reason": model,
-            "detail": "Need source audio (or harness inject) to Learn a voice from this span.",
+            "reason": reason,
+            "detail": _LEARN_FAIL_DETAIL.get(reason)
+            or (
+                "Could not Learn a voice from this highlighted span "
+                f"({reason}). The transcript is text, not a voiceprint."
+            ),
         }
     saved = persist_voice_exemplar(
         person_id=person_id,

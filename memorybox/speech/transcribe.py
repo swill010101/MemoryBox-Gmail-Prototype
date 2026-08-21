@@ -182,21 +182,9 @@ def transcribe_video_id(video_id: str, *, video_provider: Any | None = None) -> 
                 "diarization_provenance": turns[0]["diarization_model"] if turns else "pause_gap_local",
             }
 
-    path = ""
-    if video_provider is not None:
-        getter = getattr(video_provider, "local_path_for", None)
-        if callable(getter):
-            path = str(getter(video_id) or "")
-    if not path:
-        try:
-            from memorybox.recognition.frames import resolve_immich_video_path, resolve_local_video_path
+    from memorybox.speech.media import resolve_speech_media_path
 
-            found = resolve_local_video_path(video_provider, video_id) or resolve_immich_video_path(
-                video_id
-            )
-            path = str(found) if found is not None else ""
-        except Exception:
-            path = ""
+    path = resolve_speech_media_path(video_provider, video_id)
     if not path:
         return {"ok": False, "error": "no_local_path", "video_id": video_id}
 

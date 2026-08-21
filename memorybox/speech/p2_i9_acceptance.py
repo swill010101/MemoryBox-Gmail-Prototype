@@ -332,6 +332,74 @@ def _prove_harness() -> dict[str, Any]:
         problems,
         "I9 must not build continue-on-tape",
     )
+    learn_src = open("memorybox/speech/learn.py", encoding="utf-8").read()
+    media_src = open("memorybox/speech/media.py", encoding="utf-8").read()
+    _check(
+        "p2i9_learn_uses_same_source_file_as_transcribe",
+        "resolve_speech_media_path" in learn_src
+        and "resolve_immich_video_path" in media_src
+        and "harness inject" not in learn_src,
+        checks,
+        problems,
+        "Learn must open Immich/HVRT source audio, not require a harness inject",
+    )
+
+    class _NoLocalAudio:
+        provider_key = "hvrt"
+
+    fail_learn = owner_learn_voice(
+        person_id="no-person",
+        video_external_id="missing-clip",
+        t_start=0.0,
+        t_end=1.0,
+        video_provider=_NoLocalAudio(),
+    )
+    _check(
+        "p2i9_learn_fail_owner_language",
+        fail_learn.get("ok") is False
+        and fail_learn.get("reason") == "no_source_audio"
+        and "harness" not in (fail_learn.get("detail") or "").lower()
+        and "transcript is text" in (fail_learn.get("detail") or "").lower(),
+        checks,
+        problems,
+        str(fail_learn),
+    )
+    from pathlib import Path
+    from unittest.mock import patch
+
+    class _BareVideo:
+        provider_key = "hvrt"
+
+        def eligible_video_rows(self):
+            return []
+
+    seen_paths: list[str] = []
+
+    def _embed(path, t0, t1, injected=None):
+        seen_paths.append(str(path or ""))
+        return None, "no_source_audio"
+
+    with (
+        patch(
+            "memorybox.recognition.frames.resolve_immich_video_path",
+            return_value=Path("/tmp/mb-voice-rick.mp4"),
+        ),
+        patch("memorybox.speech.learn.embed_video_span", side_effect=_embed),
+    ):
+        owner_learn_voice(
+            person_id="no-person",
+            video_external_id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            t_start=1.0,
+            t_end=2.0,
+            video_provider=_BareVideo(),
+        )
+    _check(
+        "p2i9_learn_opens_immich_path_without_local_path_for",
+        seen_paths == ["/tmp/mb-voice-rick.mp4"],
+        checks,
+        problems,
+        f"seen={seen_paths}",
+    )
 
     video = FakeVideoProvider(peggy_corpus=True, i8b_corpus=True)
     tag = uuid4().hex[:8]
