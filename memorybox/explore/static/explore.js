@@ -1296,10 +1296,12 @@
     const includeCalendar = galleryShowCalendar;
     if (plan.want_cross_source) {
       nextType = "all";
-    } else if (galleryShowSms || galleryShowEmail) {
-      // Text-only ask → Email/Text filter selected (stay in sync with gallery)
+    } else if (exploreHint.prefer_story_filter) {
+      nextType = "story";
+    } else if ((galleryShowSms || galleryShowEmail) && !plan.want_story) {
+      // Text-only ask → Email/Text filter. A Story ask must not hide Stories.
       nextType = "email";
-    } else if (galleryShowCalendar) {
+    } else if (galleryShowCalendar && !plan.want_story) {
       nextType = "calendar";
     } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";

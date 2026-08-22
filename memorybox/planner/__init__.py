@@ -34,6 +34,72 @@ MbqlAct = Literal["find", "refine", "navigate", "clarify"]
 MbqlProvenance = Literal["deterministic", "model_fill", "mixed"]
 
 STILL_ONLY_RE = re.compile(r"(?i)\b(photos?|stills?)\b")
+STORY_ASK_RE = re.compile(r"(?i)\bstor(?:y|ies|ied|iest)\b")
+_TOPIC_STOP = frozenset(
+    {
+        "what",
+        "you",
+        "know",
+        "about",
+        "tell",
+        "have",
+        "from",
+        "our",
+        "the",
+        "and",
+        "show",
+        "me",
+        "my",
+        "please",
+        "some",
+        "any",
+        "all",
+        "that",
+        "this",
+        "with",
+        "for",
+        "email",
+        "emails",
+        "photos",
+        "photo",
+        "pictures",
+        "story",
+        "stories",
+        "storiest",
+        "dad",
+        "daddy",
+        "father",
+        "mom",
+        "mum",
+        "mother",
+        "grandma",
+        "grandpa",
+        "grandmother",
+        "grandfather",
+    }
+)
+
+
+def leftover_topic_tokens(
+    q: str,
+    people: list[str] | tuple[str, ...] | None = None,
+    places: list[str] | tuple[str, ...] | None = None,
+    trips: list[str] | tuple[str, ...] | None = None,
+    events: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Ask words that are not person/place names or stopwords (e.g. rabbits)."""
+    named: set[str] = set()
+    for blob in list(people or []) + list(places or []) + list(trips or []) + list(events or []):
+        for w in re.findall(r"[A-Za-z][A-Za-z']{2,}", str(blob or "")):
+            named.add(w.lower())
+    out: list[str] = []
+    for w in re.findall(r"[A-Za-z][A-Za-z']{2,}", q or ""):
+        lw = w.lower()
+        if lw in _TOPIC_STOP or lw in named:
+            continue
+        if lw not in out:
+            out.append(lw)
+    return out
 VIDEO_ONLY_RE = re.compile(
     r"(?i)\b(videos?|video\s+clips?|clips?|footage|home\s*movies?)\b"
 )
@@ -236,7 +302,7 @@ SHOW_ME_PERSON_RE = re.compile(
     r"(?i)\bshow\s+me\s+"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|all\b|"
-    r"stories?\b|story\b|artifacts?\b|journals?\b|"
+    r"stor(?:y|ies|ied|iest)\b|artifacts?\b|journals?\b|"
     r"everything\b|what\b|"
     r"the\b|last\b|first\b|next\b|recent\b|how\b|write\b|attachments?\b)"
     rf"{_PERSON_NAME}\b"
@@ -255,7 +321,7 @@ SHOW_PERSON_RE = re.compile(
     r"(?i)\bshow\s+"
     r"(?!me\b|myself\b|pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b|"
     r"texts?\b|sms\b|imessage\b|messages?\b|"
-    r"stories?\b|story\b|artifacts?\b|journals?\b|"
+    r"stor(?:y|ies|ied|iest)\b|artifacts?\b|journals?\b|"
     r"everything\b|map\b|gallery\b|undated\b)"
     rf"{_PERSON_NAME}\b"
 )
@@ -489,6 +555,9 @@ _ENTITY_STOP = frozenset(
         "was",
         "were",
         "being",
+        "story",
+        "stories",
+        "storiest",
     }
 )
 
@@ -1547,9 +1616,17 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             want_story = False
         if said_about:
             want_story = False
-        if re.search(r"(?i)\bstories?\b", q) and not said_about:
+        if STORY_ASK_RE.search(q) and not said_about:
             if not (STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q)):
                 want_story = True
+        if (
+            people
+            and leftover_topic_tokens(q, people, places, trips, events)
+            and not said_about
+            and not (STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q))
+        ):
+            want_story = True
+            notes.append("want_story_person_plus_topic")
         if want_story:
             notes.append("want_story_modality")
 
