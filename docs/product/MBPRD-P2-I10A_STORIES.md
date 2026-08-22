@@ -1,6 +1,6 @@
 # MBPRD-P2-I10A — Stories
 
-**Status:** PRD **LOCKED** · **BUILD AUTHORIZED** 2026-08-21 (Tom: “Name PRD i10A - Stories…. it goes next and you are approved to build i10A - Stories”)  
+**Status:** PRD **LOCKED** · increment **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”) · build authorized 2026-08-21  
 **Date:** 2026-08-21  
 **Increment definition:** [MBBS-P2_INCREMENT_10A_DEFINITION.md](MBBS-P2_INCREMENT_10A_DEFINITION.md)
 

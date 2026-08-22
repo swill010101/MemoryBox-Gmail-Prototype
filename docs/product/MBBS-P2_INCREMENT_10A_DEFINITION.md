@@ -1,6 +1,6 @@
 # P2-I10A — Stories
 
-**Status:** **BUILD AUTHORIZED** 2026-08-21 (Tom: “Name PRD i10A - Stories…. it goes next and you are approved to build i10A - Stories”)  
+**Status:** **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”) · build authorized 2026-08-21  
 **PRD:** [MBPRD-P2-I10A_STORIES.md](MBPRD-P2-I10A_STORIES.md)  
 **Visuals:** `docs/source/Screens/MBUX Story Screens/`  
 **Depends:** I10 **ACCEPTED** 2026-08-21 · I1–I8A **ACCEPTED** · I9 on this tree · MBQL-001 **ACCEPTED**  
