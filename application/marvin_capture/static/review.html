@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marvin Capture — Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/review.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand-block">
+      <p class="product">Marvin Capture</p>
+      <p class="tagline">Evidence first. Review before anything else.</p>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-view="inbox" role="tab" aria-selected="true">Inbox</button>
+      <button type="button" class="tab" data-view="reviewed" role="tab" aria-selected="false">Reviewed</button>
+    </nav>
+  </header>
+
+  <section class="keys-bar" aria-label="Capture addresses">
+    <p><strong>Capture addresses</strong> — send or reply to these Gmail plus-addresses:</p>
+    <table id="address-table" class="address-table">
+      <thead>
+        <tr><th>Address</th><th>Destination</th><th>Notes</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="keys-note">After capture, Marvin moves the message to Gmail Trash. MEM bank: when sends are ON, the next question goes out at the next <strong>01:00 local</strong> slot (PC clock), then every other day. Use <strong>Send next now</strong> to test. Unanswered get one resend after 7 days.</p>
+  </section>
+
+  <section class="batch-bar" aria-label="MEM bank actions">
+    <span class="batch-label">MEM bank</span>
+    <button type="button" id="btn-mem-sends" class="ghost" aria-pressed="false">MEM sends: …</button>
+    <button type="button" id="btn-mem-send-now" class="ghost">Send next now</button>
+    <button type="button" id="btn-mem-open-questions" class="ghost">Open questions JSON</button>
+    <button type="button" id="btn-mem-validate" class="ghost">Validate questions</button>
+    <button type="button" id="btn-mem-extract" class="primary">Extract MEM</button>
+    <span id="mem-status" class="batch-status" aria-live="polite"></span>
+  </section>
+
+  <main class="layout">
+    <aside class="list-pane">
+      <div class="list-head">
+        <h1 id="list-title">Inbox</h1>
+        <button type="button" id="btn-refresh" class="ghost">Refresh</button>
+      </div>
+      <ul id="response-list" class="response-list"></ul>
+      <p id="empty-state" class="empty hidden">Nothing here yet.</p>
+    </aside>
+
+    <section class="detail-pane" id="detail" aria-live="polite">
+      <div class="placeholder" id="placeholder">
+        <p>Select a response to read the prompt, Tom’s reply, attachments, and any transcript.</p>
+      </div>
+      <article class="detail hidden" id="detail-body">
+        <header class="detail-head">
+          <p class="meta" id="d-meta"></p>
+          <div class="actions">
+            <button type="button" id="btn-review" class="primary">Mark reviewed</button>
+            <button type="button" id="btn-unreview" class="ghost hidden">Move to inbox</button>
+          </div>
+        </header>
+
+        <section class="block">
+          <h2>Prompt</h2>
+          <p class="subject" id="d-prompt-subject"></p>
+          <div class="prose" id="d-prompt-body"></div>
+        </section>
+
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+
+        <section class="block">
+          <h2>Tom’s response</h2>
+          <div class="prose reply" id="d-reply"></div>
+        </section>
+
+        <div class="flow-arrow" aria-hidden="true">↓</div>
+
+        <section class="block">
+          <h2>Attachments</h2>
+          <ul id="d-attachments" class="attachments"></ul>
+          <p id="d-no-attachments" class="muted hidden">No attachments.</p>
+        </section>
+
+        <div class="flow-arrow transcript-arrow hidden" aria-hidden="true">↓</div>
+
+        <section class="block transcript-block hidden" id="transcript-section">
+          <h2>Transcript</h2>
+          <div class="prose" id="d-transcripts"></div>
+        </section>
+
+        <p class="evidence-note">Original email preserved on disk. Extraction and transcripts are additive — they never replace the source. After verified capture, Gmail copies are moved to Trash.</p>
+      </article>
+    </section>
+  </main>
+
+  <script src="/static/review.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+"""Ollama HTTP helpers (in-package; no POC path dependency)."""
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from typing import Any
+
+
+def _post_json(url: str, payload: dict[str, Any], *, timeout: int) -> dict[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def ollama_embed(
+    base_url: str, model: str, text: str, *, query: bool = False, timeout: int = 120
+) -> list[float]:
+    prefix = "search_query: " if query else "search_document: "
+    prompt = text if text.startswith("search_") else prefix + text
+    prompt = "".join(ch if (ord(ch) >= 32 or ch in "\n\t") else " " for ch in prompt)[
+        :5000
+    ]
+    base = base_url.rstrip("/")
+
+    # Newer Ollama: POST /api/embed  {"model","input"}
+    try:
+        data = _post_json(
+            f"{base}/api/embed",
+            {"model": model, "input": prompt},
+            timeout=timeout,
+        )
+        emb = data.get("embeddings") or data.get("embedding")
+        if isinstance(emb, list) and emb and isinstance(emb[0], list):
+            emb = emb[0]
+        if emb:
+            return list(emb)
+    except urllib.error.HTTPError as e:
+        if e.code not in (404, 405):
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"ollama embed HTTP {e.code}: {body[:400]}") from e
+    except Exception:
+        pass
+
+    # Older Ollama: POST /api/embeddings  {"model","prompt"}
+    try:
+        data = _post_json(
+            f"{base}/api/embeddings",
+            {"model": model, "prompt": prompt},
+            timeout=timeout,
+        )
+        emb = data.get("embedding")
+        if emb:
+            return list(emb)
+        raise RuntimeError("empty embedding")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ollama embeddings HTTP {e.code}: {body[:400]}") from e
+
+
+def ollama_chat(
+    base_url: str,
+    model: str,
+    system: str,
+    user: str,
+    *,
+    format_json: bool = False,
+    temperature: float = 0.1,
+    timeout: int = 300,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": model,
+        "stream": False,
+        "options": {"temperature": temperature},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if format_json:
+        payload["format"] = "json"
+    try:
+        data = _post_json(
+            f"{base_url.rstrip('/')}/api/chat", payload, timeout=timeout
+        )
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ollama chat HTTP {e.code}: {body[:400]}") from e
+    msg = data.get("message") or {}
+    content = msg.get("content")
+    if not content:
+        raise RuntimeError(f"empty chat response: {str(data)[:300]}")
+    return content
+
+
+def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
+    with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
+        return json.load(resp)

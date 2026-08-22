@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Status</title>
+  <style>
+    :root { --bg:#f3f0e8; --ink:#1c1a16; --line:#c9c2b4; --accent:#2f5d50; --panel:#fffcf6; --muted:#5a564c; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(160deg, #efe8da 0%, #dfe8e4 55%, #f3f0e8 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    header {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline;
+      justify-content: space-between;
+      padding: 1rem 1.25rem 0.5rem;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,252,246,0.85);
+    }
+    h1 { font-size: 1.35rem; margin: 0; }
+    .sub { color: var(--muted); font-size: 0.9rem; }
+    .shell a { color: var(--accent); margin-right: 0.75rem; font-size: 0.85rem; text-decoration: none; }
+    .shell a:hover { text-decoration: underline; }
+    main { max-width: 980px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.75rem 0 1rem; }
+    .tabs button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      padding: 0.4rem 0.65rem;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    .tabs button.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+    button.refresh {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.45rem 0.8rem;
+      cursor: pointer;
+      font: inherit;
+    }
+    section.block {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+    section.block h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+    .intro { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.6rem; }
+    table.metrics { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    table.metrics td { padding: 0.28rem 0.35rem; vertical-align: top; border-bottom: 1px solid #eee6d8; }
+    table.metrics td.k { color: var(--muted); width: 58%; }
+    table.metrics td.v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    table.metrics a { color: var(--accent); }
+    .na { color: var(--warn); }
+    .note { display: block; color: var(--muted); font-size: 0.75rem; font-weight: normal; text-align: left; margin-top: 0.15rem; }
+    ul.tasks { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+    ul.tasks li { margin: 0.35rem 0; }
+    .err { color: var(--warn); font-weight: 600; }
+    pre.debug { font-size: 0.7rem; max-height: 120px; overflow: auto; background: #1c1a16; color: #eee; padding: 0.5rem; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>MemoryBox Status</h1>
+    <div class="sub">Thin archive overview — not the final P2 Dashboard. <span id="calcAt"></span></div>
+    <nav class="shell" id="shell"></nav>
+  </div>
+  <button class="refresh" id="refreshBtn" type="button">Refresh</button>
+</header>
+<main>
+  <div class="tabs" id="tabs"></div>
+  <div id="panel"></div>
+  <p class="sub" id="loadErr"></p>
+</main>
+<script>
+  let data = null;
+  let active = "archive_summary";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderShell() {
+    const links = (data && data.links) || {};
+    const order = [
+      ["status", "Status"], ["ask", "Ask"], ["people", "People"], ["review", "Review"],
+      ["story", "Stories"], ["journal", "Journal"], ["artifact", "Artifacts"],
+      ["guided_capture", "Guided Capture"], ["library", "Library"], ["export", "Export"],
+    ];
+    document.getElementById("shell").innerHTML = order.map(([k, lab]) => {
+      const href = links[k] || ("/" + k + "/ui");
+      return `<a href="${esc(href)}">${esc(lab)}</a>`;
+    }).join("");
+  }
+
+  function renderTabs() {
+    const nav = (data && data.nav) || [];
+    document.getElementById("tabs").innerHTML = nav.map(t => {
+      const cls = t.id === active ? "active" : "";
+      return `<button type="button" class="${cls}" data-tab="${esc(t.id)}">${esc(t.label)}</button>`;
+    }).join("");
+    document.querySelectorAll("#tabs button").forEach(btn => {
+      btn.onclick = () => { active = btn.getAttribute("data-tab"); renderTabs(); renderPanel(); };
+    });
+  }
+
+  function metricRow(m) {
+    const state = m.state || (m.available ? "available" : "unavailable");
+    let val;
+    if (state === "unavailable" || state === "deferred") {
+      val = `<span class="na">${esc(m.display || m.reason || "Not available")}</span>`;
+    } else if (m.href && (state === "available" || state === "partial")) {
+      val = `<a href="${esc(m.href)}">${esc(m.display)}</a>`;
+    } else {
+      val = esc(m.display);
+    }
+    if (state === "partial" && !String(m.display || "").toLowerCase().includes("partial")) {
+      val += ` <span class="na">(partial)</span>`;
+    }
+    const bits = [];
+    if (m.note) bits.push(esc(m.note));
+    if (m.source) bits.push("source: " + esc(m.source));
+    if (m.reason && state !== "available") bits.push(esc(m.reason));
+    const note = bits.length ? `<span class="note">${bits.join(" · ")}</span>` : "";
+    return `<tr><td class="k">${esc(m.label)}${note}</td><td class="v">${val}</td></tr>`;
+  }
+
+  function renderPanel() {
+    const tab = data.tabs[active];
+    const panel = document.getElementById("panel");
+    if (!tab) { panel.innerHTML = "<p class='err'>Unknown tab</p>"; return; }
+    let html = "";
+    (tab.sections || []).forEach(sec => {
+      html += `<section class="block"><h2>${esc(sec.title)}</h2>`;
+      if (sec.intro) html += `<p class="intro">${esc(sec.intro)}</p>`;
+      if (sec.metrics && sec.metrics.length) {
+        html += `<table class="metrics"><tbody>`;
+        sec.metrics.forEach(m => { html += metricRow(m); });
+        html += `</tbody></table>`;
+      }
+      if (sec.tasks && sec.tasks.length) {
+        html += `<ul class="tasks">`;
+        sec.tasks.forEach(t => {
+          const body = t.href
+            ? `<a href="${esc(t.href)}">${esc(t.text)}</a>`
+            : esc(t.text);
+          html += `<li>${body}</li>`;
+        });
+        html += `</ul>`;
+      } else if (sec.tasks && sec.tasks.length === 0 && sec.title.toLowerCase().includes("leverage")) {
+        html += `<p class="intro">No high-leverage tasks computed from current data.</p>`;
+      }
+      html += `</section>`;
+    });
+    panel.innerHTML = html;
+  }
+
+  async function load() {
+    document.getElementById("loadErr").textContent = "";
+    try {
+      const r = await fetch("/status/summary");
+      data = await r.json();
+      if (!r.ok || !data.ok) throw new Error((data && data.detail) || "status failed");
+      if (!active) active = data.default_tab || "archive_summary";
+      document.getElementById("calcAt").textContent = data.calculated_at
+        ? ("Last calculated: " + data.calculated_at)
+        : "";
+      renderShell();
+      renderTabs();
+      renderPanel();
+    } catch (e) {
+      document.getElementById("loadErr").textContent = String(e.message || e);
+      document.getElementById("loadErr").className = "err";
+    }
+  }
+
+  document.getElementById("refreshBtn").onclick = load;
+  load();
+</script>
+</body>
+</html>

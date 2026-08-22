@@ -32,6 +32,12 @@ FlightSim / AI computer
 Root:
 C:\MemoryBox
 
+## Marvin Capture (MBC-001)
+
+Proof-of-concept inbound/outbound email capture loop for personal daily use.
+
+See [docs/product/MBC-001_MARVIN_CAPTURE_PRD.md](docs/product/MBC-001_MARVIN_CAPTURE_PRD.md) and [docs/product/MBC-001_MARVIN_CAPTURE_README.md](docs/product/MBC-001_MARVIN_CAPTURE_README.md).
+
 ## Git / Takeout sync
 
 Takeout zips sync FlightSim → GitHub → Toms-Desktop via **Git LFS**.

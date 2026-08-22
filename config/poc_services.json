@@ -1,0 +1,34 @@
+# Reserved PoC service ports (vanity names later).
+# Control script today: scripts/deploy_marvin_capture.ps1
+# Full poc_ctl.ps1 multi-service controller: deferred until Tom confirms.
+
+[
+  {
+    "name": "marvin-capture",
+    "port": 8790,
+    "pid_file": "logs/marvin-capture.pid",
+    "start": [".venv/Scripts/python.exe", "scripts/run_marvin_capture.py", "--poll"],
+    "status": "active"
+  },
+  {
+    "name": "hvrt",
+    "port": 8788,
+    "pid_file": "logs/hvrt.pid",
+    "start": null,
+    "status": "stub"
+  },
+  {
+    "name": "ask",
+    "port": 8787,
+    "pid_file": "logs/ask.pid",
+    "start": null,
+    "status": "reserved"
+  },
+  {
+    "name": "mbd-demonstrator",
+    "port": 8780,
+    "pid_file": "logs/mbd-demonstrator.pid",
+    "start": null,
+    "status": "reserved"
+  }
+]

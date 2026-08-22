@@ -1,0 +1,72 @@
+---
+description: When deploy target is FlightSim, always commit+push and give FS run commands
+alwaysApply: true
+---
+
+# FlightSim deploy (desktop → FS)
+
+P1 runtime is **FlightSim**. Desktop Cursor is for edit/prove; **FlightSim** is where code is pulled and run.
+
+## When this applies
+
+If the change is meant to run / be tested / accepted on FlightSim (Ask UI, prove-ask, Immich, I4+, ops), treat deploy as FlightSim even if the user is chatting from the desktop machine.
+
+## Required agent behavior
+
+1. **Commit** the relevant fix files (do not wait to be asked again).
+2. **Push** to the tracking branch on `origin` (rebase/pull first if needed; never force-push unless Tom explicitly asks).
+3. **Pass along FlightSim deploy commands** in the same reply so Tom can run them on FS.
+
+Do **not** leave FlightSim-bound work only on the desktop working tree.
+
+## Default FS commands to include (adapt path/branch)
+
+```powershell
+cd C:\memorybox
+git fetch
+git checkout cursor/marvin-capture-v01-3344
+git pull
+```
+
+### I7 video (Review / Ask video) — required env
+
+**Authoritative family-video root (FlightSim):** `\\media-server\photos\home videos`  
+Use **single-quoted** PowerShell so UNC backslashes are not eaten.
+
+**Terminal 1 — worker:**
+
+```powershell
+cd C:\memorybox
+$env:MEMORYBOX_VIDEO_MEDIA_ROOT = '\\media-server\photos\home videos'
+$env:MEMORYBOX_VIDEO_DERIVED_DIR = 'C:\memorybox_data\video_derived'
+$env:MEMORYBOX_VIDEO_PRESENCE_GAP_SEC = '60'
+$env:MEMORYBOX_VIDEO_WORKER_HOST = '127.0.0.1'
+$env:MEMORYBOX_VIDEO_WORKER_PORT = '8791'
+python -m memorybox.video_worker
+```
+
+**Terminal 2 — serve:**
+
+```powershell
+cd C:\memorybox
+$env:MEMORYBOX_VIDEO_WORKER_URL = 'http://127.0.0.1:8791'
+$env:MEMORYBOX_VIDEO_PROVIDER = 'hvrt'
+python -m memorybox serve
+```
+
+### Generic Ask restart (no video)
+
+```powershell
+cd C:\memorybox
+python -m memorybox serve
+# Optional acceptance / smoke:
+# $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+# python -m memorybox prove-ask --flightsim
+```
+
+Point Tom at `docs/ops/FLIGHTSIM_I4_ACCEPTANCE_RUNBOOK.md` when the change is I4 acceptance-related.
+
+## Exceptions
+
+- Pure docs/planning with no runtime effect: commit/push optional unless Tom asks.
+- Secrets, `config/immich.env`, local WIP unrelated to the fix: do not commit.

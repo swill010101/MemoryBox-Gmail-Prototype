@@ -7,21 +7,51 @@ exports/
 backup/
 logs/
 
-# Archive: track Takeout originals + checksums only (zips via Git LFS).
-# Ignore other archive contents if added later.
+# Local SQLite / runtime DBs anywhere in the tree
+*.sqlite
+*.sqlite3
+*.db
+!**/schema*.sql
+
+# Local Postgres data dir (dev cluster)
+.pgdata/
+
+# Archive originals — LAN/robocopy only (see docs/GIT_SYNC.md). Never push zip/mbox/media.
 archive/**
-!archive/google-takeout-original/
-!archive/google-takeout-original/**
-!archive/google-takout-original/
-!archive/google-takout-original/**
+!archive/.gitkeep
 !archive/checksums/
 !archive/checksums/**
+
+# HVRT sample media and local processing outputs (multi-GB)
+hvrt/sample/**
+!hvrt/sample/.gitkeep
+!hvrt/sample/README.md
+hvrt/gallery/**
+!hvrt/gallery/.gitkeep
+hvrt/database/
+hvrt/.venv/
+
+# Common large media (defense in depth)
+*.zip
+*.mbox
+!memorybox/providers/_fixtures/*.mbox
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.mkv
+*.wmv
+*.m4v
 
 # Credentials / secrets
 *.env
 config/immich.env
 config/secrets.json
 config/local.json
+config/marvin_capture.json
+config/gmail_credentials.json
+config/gmail_token.json
 
 # Python
 .venv/
@@ -37,6 +67,10 @@ application/**/build/
 # Editors
 .vscode/
 .idea/
+
+# Capture/STT local audio drafts
+.memorybox_capture/
+.memorybox_capture_fake/
 
 # Operating system
 Thumbs.db
