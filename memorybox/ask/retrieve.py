@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -239,9 +239,71 @@ class StoryHit:
     taken_at: str | None = None
     thumb_url: str | None = None
     source_photo_id: str | None = None
+    people: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+_STORY_TOKEN_STOP = {
+    "what",
+    "you",
+    "know",
+    "about",
+    "tell",
+    "have",
+    "from",
+    "our",
+    "the",
+    "trip",
+    "show",
+    "me",
+    "emails",
+    "photos",
+    "story",
+    "stories",
+    "storiest",
+    "grandma",
+    "grandpa",
+    "grandmother",
+    "grandfather",
+    "nana",
+    "grammy",
+    "gram",
+    "my",
+    "and",
+    "please",
+    "some",
+    "any",
+}
+
+
+def story_search_tokens(plan: QueryPlan) -> list[str]:
+    """Ask words plus planner constraints. Do not search only the person name.
+
+    'Eugene Will rabbits' must keep rabbits. Constraints alone are 'Eugene Will',
+    which will not match a Story tagged Tom/Anne that quotes Dad.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(raw: str) -> None:
+        t = (raw or "").strip()
+        if len(t) < 3:
+            return
+        key = t.lower()
+        if key in _STORY_TOKEN_STOP or key in seen:
+            return
+        seen.add(key)
+        out.append(t)
+
+    for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", getattr(plan, "original_ask", None) or ""):
+        add(t)
+    for c in getattr(plan, "retrieval_constraints", None) or ():
+        add(str(c or ""))
+        for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", str(c or "")):
+            add(t)
+    return out
 
 
 def _payload_dict(raw: Any) -> dict[str, Any]:
@@ -2623,40 +2685,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
     if not getattr(plan, "want_story", False):
         return []
     person_ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
-    token_stop = {
-        "what",
-        "you",
-        "know",
-        "about",
-        "tell",
-        "have",
-        "from",
-        "our",
-        "the",
-        "trip",
-        "show",
-        "me",
-        "emails",
-        "photos",
-        "story",
-        "stories",
-        "grandma",
-        "grandpa",
-        "grandmother",
-        "grandfather",
-        "nana",
-        "grammy",
-        "gram",
-        "my",
-        "and",
-    }
-    tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
-    if not tokens:
-        tokens = [
-            t
-            for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", plan.original_ask or "")
-            if t.lower() not in token_stop
-        ]
+    tokens = story_search_tokens(plan)
     hits: list[StoryHit] = []
     with connection() as conn:
         about_ids: set[str] = set()
@@ -2668,8 +2697,15 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 WHERE r.from_type = 'story'
                   AND r.to_type = 'person'
                   AND r.to_id = ANY(%s)
+                UNION
+                SELECT s.id
+                FROM stories s
+                JOIN story_version_people sp
+                  ON sp.version_id = s.current_saved_version_id
+                WHERE s.current_saved_version_id IS NOT NULL
+                  AND sp.person_id = ANY(%s)
                 """,
-                (person_ids,),
+                (person_ids, person_ids),
             ).fetchall()
             about_ids = {str(r["from_id"]) for r in r_about}
 
@@ -2678,18 +2714,24 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             """
             SELECT
                 s.id AS story_id,
-                s.title,
-                s.narrator_person_id,
+                COALESCE(sv.title, s.title) AS title,
+                sv.description,
+                COALESCE(sv.narrator_person_id, s.narrator_person_id) AS narrator_person_id,
                 s.current_version,
                 sv.body_text,
                 sv.version,
                 sv.note,
-                p.display_name AS narrator_name
+                p.display_name AS narrator_name,
+                (
+                    SELECT string_agg(b.text, ' ')
+                    FROM story_version_blocks b
+                    WHERE b.version_id = sv.id AND COALESCE(b.text, '') <> ''
+                ) AS block_text
             FROM stories s
-            JOIN story_versions sv
-              ON sv.story_id = s.id AND sv.version = s.current_version
-            LEFT JOIN people p ON p.id = s.narrator_person_id
+            JOIN story_versions sv ON sv.id = s.current_saved_version_id
+            LEFT JOIN people p ON p.id = COALESCE(sv.narrator_person_id, s.narrator_person_id)
             WHERE s.status = 'active'
+              AND sv.lifecycle = 'saved'
             ORDER BY s.updated_at DESC
             LIMIT %s
             """,
@@ -2709,20 +2751,52 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 WHERE r.from_type = 'story'
                   AND r.to_type = 'person'
                   AND r.from_id = ANY(%s)
+                UNION
+                SELECT s.id, p.display_name
+                FROM stories s
+                JOIN story_version_people sp ON sp.version_id = s.current_saved_version_id
+                JOIN people p ON p.id = sp.person_id
+                WHERE s.id = ANY(%s)
                 """,
-                (ids,),
+                (ids, ids),
             ).fetchall()
             for rr in rrows:
                 rel_people.setdefault(str(rr["from_id"]), []).append(
                     rr["display_name"] or ""
                 )
 
+        thumbs: dict[str, str] = {}
+        if rows:
+            from memorybox.story import memory_thumb_url
+
+            trows = conn.execute(
+                """
+                SELECT s.id AS story_id, m.thumb_url, m.source_kind, m.source_id
+                FROM stories s
+                JOIN story_version_memories m ON m.version_id = s.current_saved_version_id
+                WHERE s.id = ANY(%s)
+                ORDER BY m.position ASC
+                """,
+                (ids,),
+            ).fetchall()
+            for tr in trows:
+                sid = str(tr["story_id"])
+                if sid in thumbs:
+                    continue
+                url = memory_thumb_url(
+                    tr.get("source_kind"), tr.get("source_id"), tr.get("thumb_url")
+                )
+                if url:
+                    thumbs[sid] = url
+
         for r in rows:
             sid = str(r["story_id"])
             blob = " ".join(
                 [
                     r["title"] or "",
+                    r.get("description") or "",
                     r["body_text"] or "",
+                    r.get("block_text") or "",
                     r["narrator_name"] or "",
                     " ".join(rel_people.get(sid, [])),
                 ]
@@ -2732,14 +2806,14 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             if match_n == 0 and not linked:
                 continue
             narrator = r["narrator_name"] or "owner"
-            body = r["body_text"] or ""
-            excerpt = body[:200] + ("?" if len(body) > 200 else "")
+            body = r["body_text"] or r.get("block_text") or ""
+            excerpt = body[:200] + ("…" if len(body) > 200 else "")
             note = str(r.get("note") or "")
             photo_m = re.search(r"mb_source_photo=(\S+)", note)
             taken_m = re.search(r"mb_taken_at=(\S+)", note)
             thumb_m = re.search(r"mb_thumb=(\S+)", note)
             photo_id = photo_m.group(1) if photo_m else None
-            thumb = thumb_m.group(1) if thumb_m else None
+            thumb = thumb_m.group(1) if thumb_m else thumbs.get(sid)
             if photo_id and not thumb:
                 thumb = f"/library/media/photo/{photo_id}"
             hits.append(
@@ -2758,6 +2832,7 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                     taken_at=(taken_m.group(1) if taken_m else None),
                     thumb_url=thumb,
                     source_photo_id=photo_id,
+                    people=list(rel_people.get(sid) or []),
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)

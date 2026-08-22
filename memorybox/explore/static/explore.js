@@ -1095,6 +1095,8 @@
     if (titleEl) titleEl.textContent = heading;
     if (bodyEl) bodyEl.textContent = "Searching…";
     if (curator) curator.classList.add("is-searching");
+    const askField = document.querySelector(".mb-explore-ask-field");
+    if (askField) askField.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
       state.domain.summary = "Searching…";
@@ -1182,6 +1184,8 @@
     }
     const curator = document.getElementById("mb-explore-curator");
     if (curator) curator.classList.remove("is-searching");
+    const askField = document.querySelector(".mb-explore-ask-field");
+    if (askField) askField.classList.remove("is-searching");
     render();
   }
 
@@ -1292,10 +1296,12 @@
     const includeCalendar = galleryShowCalendar;
     if (plan.want_cross_source) {
       nextType = "all";
-    } else if (galleryShowSms || galleryShowEmail) {
-      // Text-only ask → Email/Text filter selected (stay in sync with gallery)
+    } else if (exploreHint.prefer_story_filter) {
+      nextType = "story";
+    } else if ((galleryShowSms || galleryShowEmail) && !plan.want_story) {
+      // Text-only ask → Email/Text filter. A Story ask must not hide Stories.
       nextType = "email";
-    } else if (galleryShowCalendar) {
+    } else if (galleryShowCalendar && !plan.want_story) {
       nextType = "calendar";
     } else {
       const vs = exploreHint.visual_scope || plan.visual_scope || "";
@@ -2049,6 +2055,8 @@
     const curator = document.getElementById("mb-explore-curator");
     if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
       curator.classList.remove("is-searching");
+      const askField = document.querySelector(".mb-explore-ask-field");
+      if (askField) askField.classList.remove("is-searching");
     }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
@@ -3862,9 +3870,158 @@
             "";
           if (who) qs.set("about", String(who));
         }
+        qs.set("new", "1");
         window.location.href = "/story/ui" + (qs.toString() ? "?" + qs.toString() : "");
       });
     }
+  }
+
+  function mediaSourceForStory(item) {
+    const t = String(item.type || "").toLowerCase();
+    if (t === "photo" || item.external_id) {
+      if (t === "photo" || (!item.video_external_id && item.external_id && t !== "video")) {
+        const id = String(item.external_id || "").replace(/^photo:/, "");
+        if (id && (t === "photo" || t === "")) return { kind: "photo", id };
+      }
+    }
+    if (t === "video" || item.video_external_id) {
+      const id = String(item.video_external_id || item.external_id || "").replace(/^video:/, "");
+      if (id) return { kind: "video", id };
+    }
+    if (t === "photo") {
+      const id = String(item.external_id || "").replace(/^photo:/, "");
+      if (id) return { kind: "photo", id };
+    }
+    return null;
+  }
+
+  function storyRailHref(s) {
+    if (!s || !s.id) return "/story/ui";
+    if (s.lifecycle === "draft_only") return "/story/ui?id=" + encodeURIComponent(s.id) + "&edit=1";
+    return "/story/ui?id=" + encodeURIComponent(s.id);
+  }
+
+  function renderStoryRail(item, panel) {
+    const media = mediaSourceForStory(item);
+    const typeLabel = media && media.kind === "video" ? "VIDEO" : "PHOTO";
+    const noun = (media && media.kind) || "memory";
+    if (String(item.type || "").toLowerCase() === "story") {
+      panel.innerHTML = `<h3>Story</h3>
+        <p><strong>${escapeHtml(item.story_title || item.title || "Story")}</strong></p>
+        <p><a class="mb-viewer-footbtn" href="${escapeHtml(storyRailHref({ id: item.story_id || item.domain_id, lifecycle: "saved" }))}">Open story</a></p>`;
+      return;
+    }
+    if (!media) {
+      panel.innerHTML = `<h3>STORIES USING THIS MEMORY</h3>
+        <p class="mb-rail-empty">This item cannot be linked as a supporting memory.</p>`;
+      return;
+    }
+    panel.innerHTML = `<h3>STORIES USING THIS ${typeLabel}</h3>
+      <p class="mb-rail-empty">Loading…</p>`;
+    fetch(
+      "/story/by-media?kind=" +
+        encodeURIComponent(media.kind) +
+        "&source_id=" +
+        encodeURIComponent(media.id)
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        const items = data.items || [];
+        const cards = items
+          .map((s) => {
+            const draft = s.has_working_draft && !s.ask_available;
+            const people = (s.people || [])
+              .slice(0, 3)
+              .map((p) => {
+                const name = p.display_name || "";
+                const src = p.portrait_url || "/people/" + p.id + "/portrait";
+                return `<img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" title="${escapeHtml(name)}" style="width:22px;height:22px;border-radius:99px;object-fit:cover;margin-right:2px" />`;
+              })
+              .join("");
+            return `<a class="mb-rail-story-card" href="${escapeHtml(storyRailHref(s))}" style="display:block;text-decoration:none;color:inherit;background:#141b27;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:0.55rem 0.65rem;margin:0.45rem 0">
+              <div style="display:flex;justify-content:space-between;gap:0.4rem">
+                <strong>${escapeHtml(s.title || "Untitled")}</strong>
+                <span style="font-size:0.75rem;color:${draft ? "#fb923c" : "#3dcf9a"}">${draft ? "Draft" : "Saved"}</span>
+              </div>
+              <p style="margin:0.25rem 0;color:#94a3b8;font-size:0.78rem">${escapeHtml(s.description || "")}</p>
+              <p style="margin:0;color:#94a3b8;font-size:0.72rem">${escapeHtml(s.narrator_display_name ? "Narrated by " + s.narrator_display_name : "")} · ${(s.memories || []).length} linked memories</p>
+              <div style="margin-top:0.35rem">${people}</div>
+            </a>`;
+          })
+          .join("");
+        const newQs = new URLSearchParams({ new: "1" });
+        newQs.set(media.kind === "video" ? "video" : "photo", media.id);
+        if (item.date) newQs.set("taken", String(item.date).slice(0, 32));
+        if (item.thumb_url || item.media_url) newQs.set("thumb", item.thumb_url || item.media_url);
+        if (item.title) newQs.set("title", String(item.title).slice(0, 80));
+        const peopleNames = peopleList(item);
+        if (peopleNames.length) newQs.set("people", peopleNames.slice(0, 8).join(","));
+        if (item.mb_person_id) newQs.set("person", String(item.mb_person_id));
+        panel.innerHTML = `<h3>STORIES USING THIS ${typeLabel}</h3>
+          <p class="mb-rail-empty">This ${noun} supports ${items.length} stor${items.length === 1 ? "y" : "ies"}.</p>
+          ${cards || `<p class="mb-rail-empty">No stories use this ${noun} yet.</p>`}
+          <p><button type="button" class="mb-viewer-footbtn" id="mb-rail-add-to-story">+ Add to story</button></p>
+          <p><a class="mb-viewer-footbtn" href="/story/ui?${newQs.toString()}">Create a new story</a></p>
+          <p class="mb-rail-empty">Adding this ${noun} links it as evidence. The original remains unchanged.</p>`;
+        const addBtn = document.getElementById("mb-rail-add-to-story");
+        if (addBtn) {
+          addBtn.addEventListener("click", () => openAddToStoryPicker(media, items));
+        }
+      })
+      .catch(() => {
+        panel.innerHTML = `<h3>STORIES USING THIS ${typeLabel}</h3>
+          <p class="mb-rail-empty">Could not load stories for this ${noun}.</p>`;
+      });
+  }
+
+  function openAddToStoryPicker(media, already) {
+    const used = new Set((already || []).map((s) => s.id));
+    fetch("/story?limit=100")
+      .then((r) => r.json())
+      .then((data) => {
+        const stories = (data.stories || data.items || []).filter((s) => !used.has(s.id));
+        const panel = document.getElementById("mb-rail-panel");
+        if (!panel) return;
+        const rows = stories
+          .map(
+            (s) =>
+              `<button type="button" class="mb-viewer-footbtn mb-add-existing-story" data-id="${escapeHtml(s.id)}" style="display:block;width:100%;text-align:left;margin:0.3rem 0">${escapeHtml(s.title || "Untitled")} · ${s.ask_available ? "Saved" : "Draft"}</button>`
+          )
+          .join("");
+        panel.insertAdjacentHTML(
+          "beforeend",
+          `<div id="mb-add-story-pick" style="margin-top:0.7rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.12)">
+            <p><strong>Add to an existing story</strong></p>
+            ${rows || `<p class="mb-rail-empty">No other stories yet.</p>`}
+            <button type="button" class="mb-viewer-footbtn" id="mb-add-story-cancel">Cancel</button>
+          </div>`
+        );
+        const cancel = document.getElementById("mb-add-story-cancel");
+        if (cancel) cancel.addEventListener("click", () => {
+          const box = document.getElementById("mb-add-story-pick");
+          if (box) box.remove();
+        });
+        panel.querySelectorAll(".mb-add-existing-story").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            fetch("/story/" + encodeURIComponent(btn.dataset.id) + "/working/memories", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_kind: media.kind,
+                source_id: media.id,
+                label_snapshot: media.kind === "video" ? "Video" : "Photo",
+              }),
+            })
+              .then((r) => r.json())
+              .then(() => {
+                const cur = rawItems.find((x) => x.id === state.modal.openId);
+                if (cur) renderRailPanel(cur);
+              })
+              .catch(() => window.alert("Could not add this memory to the story."));
+          });
+        });
+      })
+      .catch(() => window.alert("Could not load stories."));
   }
 
   function renderRailPanel(item) {
@@ -3901,20 +4058,7 @@
     }
 
     if (tab === "story") {
-      const storyTitle = item.story_title || item.linked_story_title;
-      const storyBody = item.story_excerpt || item.linked_story_excerpt;
-      if (storyTitle || String(item.type || "").toLowerCase() === "story") {
-        panel.innerHTML = `<h3>Story</h3>
-          <p><strong>${escapeHtml(storyTitle || item.title || "Story")}</strong></p>
-          <p class="mb-rail-empty">${escapeHtml(
-            storyBody || item.detail || item.preview || ""
-          )}</p>
-          <p><a class="mb-viewer-footbtn" href="/story/ui">Read story</a></p>`;
-        return;
-      }
-      panel.innerHTML = `<h3>Story</h3>
-        <p class="mb-rail-empty">No story yet. Would you like to add one?</p>
-        <p><a class="mb-viewer-footbtn" href="/story/ui">Add story</a></p>`;
+      renderStoryRail(item, panel);
       return;
     }
 
@@ -5241,6 +5385,21 @@
     return raw.length === 36 && (raw.match(/-/g) || []).length === 4;
   }
 
+  function photoDeepLinkItem(photoId) {
+    const id = String(photoId || "").trim();
+    const thumb = "/library/media/photo/" + encodeURIComponent(id);
+    return {
+      id: "photo:immich:" + id,
+      type: "photo",
+      title: "Photo",
+      external_id: id,
+      provider_key: "immich",
+      media_url: thumb,
+      thumb_url: thumb,
+      teachable: true,
+    };
+  }
+
   function videoDeepLinkItem(videoId, t0) {
     const vid = String(videoId || "").trim();
     const t = Number(t0) || 0;
@@ -6134,6 +6293,16 @@
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
+    const home = document.getElementById("mb-home");
+    if (home) {
+      home.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (window.mbShell && typeof window.mbShell.clearExploration === "function") {
+          window.mbShell.clearExploration();
+        }
+        window.location.href = "/explore/ui";
+      });
+    }
     const askInput = document.getElementById("mb-explore-ask");
     askInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -6318,6 +6487,7 @@
     const demo = params.get("demo");
     const q = params.get("q") || "";
     const videoId = (params.get("video") || "").trim();
+    const photoId = (params.get("photo") || "").trim();
     sessionId =
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
@@ -6352,6 +6522,17 @@
           tr.setAttribute("aria-pressed", "true");
           tr.textContent = "Transcript on";
         }
+        return;
+      }
+      if (photoId) {
+        const item = photoDeepLinkItem(photoId);
+        payload = emptyExplorePayload("");
+        payload.items = [item];
+        payload.title = "Photo";
+        payload.summary = "Opened from Stories.";
+        bootFromPayload(payload);
+        if (state && state.domain) state.domain.galleryLocked = false;
+        openModal(item.id);
         return;
       }
       let bootQ = String(q).trim();

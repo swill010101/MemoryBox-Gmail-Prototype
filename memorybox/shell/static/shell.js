@@ -132,6 +132,14 @@
     }
   }
 
+  function clearExploration() {
+    try {
+      sessionStorage.removeItem(ACTIVE_PERSON_KEY);
+      sessionStorage.removeItem(ACTIVE_ASK_KEY);
+      sessionStorage.removeItem(STACK_KEY);
+    } catch (_) {}
+  }
+
   function setActiveAsk(text) {
     const t = String(text || "").trim();
     try {
@@ -207,6 +215,9 @@
         )
       );
       writeStack(stack);
+    },
+    clearExploration() {
+      clearExploration();
     },
     peekContext() {
       const stack = readStack();

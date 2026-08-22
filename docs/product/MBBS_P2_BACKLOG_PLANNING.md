@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-21 (I10 ACCEPTED; ACR-P2-001 parked)  
+**Status:** Living parking note · **Updated:** 2026-08-22 (I10A Stories ACCEPTED; I10B screens next)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -85,6 +85,8 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I9 Spoken Moments** — [definition](MBBS-P2_INCREMENT_9_DEFINITION.md). **BUILD AUTHORIZED** 2026-08-20 (runtime on this tree; FlightSim owner ACCEPTED still pending).
 
+**P2-I10A Stories** — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md). **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”). **Not I11.** Next: **I10B Artifacts** (screens + PRD), then **I10C Journal**.
+
 **P2-I10 Cross-Source Correlation** — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) · [PRD](MBPRD-P2-I10_CROSS_SOURCE.md). **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). **I11 narrative is not I10.**
 
 ## Post–I8B park (do not reopen I8B for playback UX)
@@ -98,4 +100,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next after I10 ACCEPTED:** Stories vertical PRD (`MBPRD-P2-STORIES`, draft PR 37) awaiting owner sign-off. That slice is **not I11**. **P2-I11 Narrative & Summaries is not authorized.** Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
+**Next after I10A ACCEPTED:** **P2-I10B Artifacts** (screens in `docs/source/Screens/MBUX Artifact Screens/`, then PRD) then **I10C Journal**. **I11 is not authorized** until I10A + I10B + I10C are done. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.

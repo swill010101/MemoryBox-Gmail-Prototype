@@ -41,6 +41,19 @@ def enqueue_full_eligible_archive(
     excluded = 0
     requeued = 0
     allow_requeue = enqueue_reason in REQUEUE_REASONS
+    from memorybox.recognition.allowlist import face_scan_enabled
+
+    if not face_scan_enabled(pid):
+        return {
+            "person_id": pid,
+            "enqueue_reason": enqueue_reason,
+            "run_kind": run_kind,
+            "enqueued_or_updated": 0,
+            "excluded": 0,
+            "requeued_hint": 0,
+            "total_input": len(videos),
+            "skipped": "face_scan_off",
+        }
     with connection() as conn:
         for v in videos:
             vpk = str(v.get("video_provider_key") or "").strip()

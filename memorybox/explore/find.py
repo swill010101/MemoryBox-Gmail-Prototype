@@ -561,6 +561,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
         photo_id = str(s.get("source_photo_id") or "")
         if photo_id and not thumb:
             thumb = f"/library/media/photo/{photo_id}"
+        people = [str(p).strip() for p in (s.get("people") or []) if str(p).strip()]
         add(
             _item_base(
                 id=f"story:{sid}",
@@ -576,6 +577,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 media_url=thumb or None,
                 thumb_url=thumb or None,
                 external_id=photo_id or None,
+                people=people or None,
             )
         )
 
@@ -1250,6 +1252,10 @@ def build_explore_find(
             "gallery_show_sms": show_sms,
             "gallery_show_email": show_email,
             "gallery_show_calendar": show_calendar,
+            "prefer_story_filter": bool(
+                plan.get("want_story")
+                and re.search(r"(?i)\bstor(?:y|ies|ied|iest)\b", text or "")
+            ),
             "sms_available": sms_available,
             "sms_hidden": sms_hidden,
             "sms_match_total": sms_match_total,

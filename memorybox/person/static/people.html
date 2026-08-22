@@ -268,7 +268,7 @@
         return;
       }
       // Only auto-continue when arriving from exploration (shell adds mb_return=1).
-      // Bare /people/ui stays the picker so you can choose someone else.
+      // Family People opens the owner Person Explorer. ?pick=1 is this picker.
       if (params.get("mb_return") !== "1") return;
       let active = null;
       try {

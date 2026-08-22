@@ -8,6 +8,7 @@ from typing import Any
 from memorybox.db import connection
 from memorybox.person import list_people, resolve_immich_external_ids_for_person
 from memorybox.recognition.exemplars import list_active_exemplars
+from memorybox.recognition.allowlist import face_scan_enabled
 from memorybox.recognition.inventory import inventory_video_rows, list_owned_folder_video_rows
 from memorybox.recognition.queue import enqueue_full_eligible_archive
 
@@ -244,6 +245,10 @@ def enqueue_known_people_archive(
         pid = str(row.get("id") or "")
         name = str(row.get("display_name") or "").strip() or "(unnamed)"
         if not pid:
+            continue
+        if not face_scan_enabled(pid):
+            skipped += 1
+            people_out.append({"person_id": pid, "name": name, "skipped": "face_scan_off"})
             continue
         immich_ids: list[str] = []
         try:
