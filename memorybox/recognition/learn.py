@@ -136,6 +136,9 @@ def owner_learn_from_review(
         },
         confidence=1.0,
     )
+    from memorybox.recognition.allowlist import set_face_scan
+
+    set_face_scan(person_id, True)
 
     display_name = person_id
     try:

@@ -212,6 +212,21 @@ def process_one(
     if not item:
         return None
     pid = item["person_id"]
+    from memorybox.recognition.allowlist import EXCLUDE_REASON, face_scan_enabled
+
+    if not face_scan_enabled(pid):
+        complete_item(
+            item["id"],
+            status=STATUS_EXCLUDED,
+            reason=EXCLUDE_REASON,
+            result={"detail": "person face_scan is off"},
+        )
+        return {
+            "item_id": item["id"],
+            "status": STATUS_EXCLUDED,
+            "reason": EXCLUDE_REASON,
+            "person_id": pid,
+        }
     veid = item["video_external_id"]
     run_kind = str(item.get("enqueue_reason") or "newly_known_person")
     if run_kind in {"owner_learn", "exemplar_change"}:

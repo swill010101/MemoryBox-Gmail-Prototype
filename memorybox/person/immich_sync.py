@@ -156,7 +156,18 @@ def sync_immich_people(
 
         videos = list_eligible_videos()
         enqueue_results = []
+        from memorybox.recognition.allowlist import face_scan_enabled
+
         for pid in newly_known:
+            if not face_scan_enabled(pid):
+                enqueue_results.append(
+                    {
+                        "person_id": pid,
+                        "enqueue_reason": "newly_known_person",
+                        "skipped": "face_scan_off",
+                    }
+                )
+                continue
             enqueue_results.append(
                 enqueue_full_eligible_archive(
                     person_id=pid,
@@ -171,6 +182,15 @@ def sync_immich_people(
                 continue
             summary = queue_summary(pid)
             if summary.get("total", 0) == 0:
+                if not face_scan_enabled(pid):
+                    enqueue_results.append(
+                        {
+                            "person_id": pid,
+                            "enqueue_reason": "newly_known_person",
+                            "skipped": "face_scan_off",
+                        }
+                    )
+                    continue
                 enqueue_results.append(
                     enqueue_full_eligible_archive(
                         person_id=pid,

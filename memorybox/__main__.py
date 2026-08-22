@@ -107,6 +107,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Ignore watermarks: re-seed and queue every named Person against every video",
     )
     p_archive.add_argument("--person-limit", type=int, default=80)
+    p_rec_export = sub.add_parser(
+        "recognition-people-export",
+        help="Write one CSV row per Person in the face-recognition queue (not one row per video)",
+    )
+    p_rec_export.add_argument(
+        "--out",
+        required=True,
+        help="Destination CSV path (Excel-friendly UTF-8 with BOM)",
+    )
+    p_rec_apply = sub.add_parser(
+        "recognition-people-apply",
+        help="Keep only People listed in the edited CSV; drop others from queued face scan",
+    )
+    p_rec_apply.add_argument(
+        "--keep",
+        required=True,
+        help="Edited CSV: leave only people to search, or set keep=N on people to drop",
+    )
+    p_rec_apply.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print counts only; do not update the queue or people.face_scan",
+    )
     p_speech_archive = sub.add_parser(
         "speech-archive-pass",
         help="I9 incremental: transcribe newly added videos only (not people × files)",
@@ -780,6 +803,36 @@ def main(argv: list[str] | None = None) -> int:
             person_limit=int(args.person_limit),
             full=bool(args.full),
         )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "recognition-people-export":
+        from memorybox.recognition.allowlist import list_queue_people, write_people_csv
+
+        rows = list_queue_people()
+        dest = write_people_csv(args.out, rows)
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "path": str(dest.resolve()),
+                    "people": len(rows),
+                    "queued_people": sum(1 for r in rows if int(r.get("queued") or 0) > 0),
+                    "note": (
+                        "One row per Person. Delete rows you do not want searched "
+                        "(or set keep=N), then: python -m memorybox recognition-people-apply "
+                        f"--keep {dest}"
+                    ),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.cmd == "recognition-people-apply":
+        from memorybox.recognition.allowlist import apply_keep_csv
+
+        payload = apply_keep_csv(args.keep, dry_run=bool(args.dry_run))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
