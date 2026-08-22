@@ -67,6 +67,7 @@ from memorybox.story import (
     create_story,
     discard_working,
     get_story,
+    remove_story,
     list_stories,
     list_version_history,
     save_draft,
@@ -1638,7 +1639,7 @@ def story_get(
     working: bool = Query(default=False),
 ) -> dict[str, Any]:
     view = get_story(story_id, version=version, working=working)
-    if not view:
+    if not view or view.status != "active":
         raise HTTPException(status_code=404, detail="story not found")
     return {"ok": True, "story": view.to_dict()}
 
@@ -1736,6 +1737,14 @@ def story_save_revision(story_id: str, body: StoryDraftRequest) -> dict[str, Any
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "story": view.to_dict()}
+
+
+@app.delete("/story/{story_id}")
+def story_remove(story_id: str) -> dict[str, Any]:
+    try:
+        return remove_story(story_id)
+    except StoryServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/story/{story_id}/working/discard")

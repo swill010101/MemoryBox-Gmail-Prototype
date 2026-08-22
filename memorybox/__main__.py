@@ -218,7 +218,10 @@ def main(argv: list[str] | None = None) -> int:
     p_prove5.add_argument(
         "--flightsim",
         action="store_true",
-        help="Final P1-runtime-host acceptance (set MEMORYBOX_I5_OWNER_STORY_ID after UX Save Story)",
+        help=(
+            "Sets MEMORYBOX_P1_RUNTIME_HOST=1. After Save Story on /story/ui, "
+            "set MEMORYBOX_I5_OWNER_STORY_ID to that story UUID."
+        ),
     )
     p_prove5a = sub.add_parser("prove-journal", help="Increment 5A Journal acceptance prove")
     p_prove5a.add_argument(
@@ -586,6 +589,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "prove-story":
         from memorybox.story.acceptance import prove_increment_5
 
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = prove_increment_5(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1

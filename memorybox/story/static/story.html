@@ -407,6 +407,7 @@
               <h2 style="font-family:var(--display);margin:0.35rem 0">${esc(cont.title || "Untitled draft")}</h2>
               <p class="note">${esc(cont.description || "")}</p>
               <p class="note">Draft · ${cont.memory_count || 0} memories · Updated ${(cont.updated_at || "").slice(0, 10)}</p>
+              <button class="btn danger del-draft" type="button" data-id="${esc(cont.id)}">Delete draft</button>
             </div>
           </div>` : ""}
         <div class="filters">
@@ -428,6 +429,12 @@
       document.querySelectorAll(".card, #continue-card").forEach((el) => {
         el.onclick = () => openStory(el.dataset.id, { edit: el.dataset.draft === "1" });
       });
+      document.querySelectorAll(".del-draft").forEach((b) => {
+        b.onclick = (e) => {
+          e.stopPropagation();
+          confirmDiscard(b.dataset.id);
+        };
+      });
       document.querySelectorAll(".tabs button").forEach((b) => {
         b.onclick = async () => { state.filters.status = b.dataset.status; await refreshPanel(); };
       });
@@ -446,6 +453,7 @@
           <p>${esc(s.description || "")}</p>
           <div class="people">${(s.people||[]).slice(0,3).map(portrait).join("")}${(s.people||[]).length>3?`<span class="chip">+${s.people.length-3}</span>`:""}</div>
           <div class="foot"><span>${esc(fmtRange(s.described_start_date,s.described_end_date))} · ${s.memory_count||0} memories</span>${badge(s)}</div>
+          ${s.lifecycle==="draft_only" || s.has_working_draft ? `<p style="margin:0.5rem 0 0"><button class="btn danger del-draft" type="button" data-id="${esc(s.id)}">Delete draft</button></p>` : ""}
         </div>
       </article>`;
     }
@@ -493,6 +501,7 @@
           <div></div>
           <div class="actions">
             <button class="btn" id="btn-share" type="button">Share</button>
+            <button class="btn danger" id="btn-remove-story" type="button">Delete story</button>
             <button class="btn primary" id="btn-edit" type="button">Edit story</button>
           </div>
         </div>
@@ -546,6 +555,7 @@
       const d = document.getElementById("btn-disc");
       if (d) d.onclick = () => confirmDiscard(s.id);
       document.getElementById("btn-share").onclick = () => openShare(s);
+      document.getElementById("btn-remove-story").onclick = () => confirmRemoveStory(s.id);
       document.getElementById("btn-hist").onclick = () => openHistory(s.id);
       document.getElementById("btn-all-mem").onclick = () => {
         const box = document.getElementById("modals");
@@ -617,7 +627,7 @@
       document.getElementById("editor-foot").innerHTML = `
         <div>
           <button class="btn ghost" id="foot-cancel" type="button">Cancel</button>
-          ${revising ? `<button class="btn danger" id="foot-discard" type="button">Discard draft</button>` : ""}
+          <button class="btn danger" id="foot-discard" type="button">${revising ? "Discard draft" : "Delete draft"}</button>
         </div>
         <p class="note">${revising ? "Save revision creates version " + ((d.saved_version||1)+1) + " and makes it the version available to Ask." : "Save Story makes this version available to Ask. Sharing is separate."}</p>
         <div class="actions">
@@ -644,7 +654,7 @@
           <strong>${esc((m.source_kind||"").replace("_"," "))}</strong> · ${esc(m.label_snapshot||m.title||m.source_id||"")}
           <div class="note">${esc((m.occurred_on||"").slice(0,10))}</div>
         </div>
-        <button class="btn ghost rem-mem" type="button" data-i="${i}">Remove</button>
+        <button class="btn danger rem-mem" type="button" data-i="${i}">Delete memory</button>
       </div>`;
     }
     function bindEditorFields() {
@@ -661,11 +671,7 @@
       const add = document.getElementById("btn-add-mem");
       if (add) add.onclick = () => openPicker();
       document.querySelectorAll(".rem-mem").forEach((b) => {
-        b.onclick = () => {
-          state.draft.memories.splice(Number(b.dataset.i), 1);
-          markDirty();
-          renderEditor();
-        };
+        b.onclick = () => confirmDeleteMemory(Number(b.dataset.i));
       });
       document.getElementById("btn-add-people").onclick = () => openPeoplePicker();
     }
@@ -719,23 +725,72 @@
       document.getElementById("u-save").onclick = async () => { await persistDraft(); document.getElementById("modals").innerHTML = ""; leaveEditor(); };
     }
     async function confirmDiscard(id) {
-      if (!id) { state.dirty = false; refreshPanel(); return; }
-      const never = !state.story || !state.story.ask_available || state.draft.lifecycle === "draft_only";
+      const row = (state.stories || []).find((s) => s.id === id)
+        || (state.story && state.story.id === id ? state.story : null)
+        || (state.draft && state.draft.id === id ? state.draft : null);
+      const never = !id || !row || row.lifecycle === "draft_only" || row.ask_available === false;
       document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
-        <h2>Discard this ${never ? "draft" : "working draft"}?</h2>
-        <p class="note">${never ? "It has never been saved for Ask." : "The saved version stays available to Ask."}</p>
+        <h2>${never ? "Delete this draft?" : "Discard this working draft?"}</h2>
+        <p class="note">${never ? "It has never been saved for Ask. This cannot be undone." : "The saved version stays available to Ask."}</p>
         <p class="actions">
-          <button class="btn" id="d-no">Keep editing</button>
-          <button class="btn danger" id="d-yes">Discard draft</button>
+          <button class="btn" id="d-no">Keep</button>
+          <button class="btn danger" id="d-yes">${never ? "Delete draft" : "Discard draft"}</button>
         </p>
       </div></div>`;
       document.getElementById("d-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
       document.getElementById("d-yes").onclick = async () => {
+        if (!id) {
+          state.dirty = false;
+          document.getElementById("modals").innerHTML = "";
+          refreshPanel();
+          return;
+        }
         const data = await j("/story/" + id + "/working/discard", { method: "POST" });
         document.getElementById("modals").innerHTML = "";
         state.dirty = false;
         if (data.removed || !data.story) refreshPanel();
         else { state.story = data.story; renderDetail(); }
+      };
+    }
+    function confirmDeleteMemory(i) {
+      const m = state.draft.memories[i];
+      if (!m) return;
+      const label = m.label_snapshot || m.title || m.source_id || "this memory";
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Delete this memory?</h2>
+        <p class="note">${esc(label)} will be unlinked from this story. The original photo, video, or file is unchanged.</p>
+        <p class="actions">
+          <button class="btn" id="m-no">Keep</button>
+          <button class="btn danger" id="m-yes">Delete memory</button>
+        </p>
+      </div></div>`;
+      document.getElementById("m-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("m-yes").onclick = async () => {
+        state.draft.memories.splice(i, 1);
+        markDirty();
+        document.getElementById("modals").innerHTML = "";
+        if (state.draft.id) {
+          try { await persistDraft(); } catch (e) { renderEditor(); }
+        } else {
+          renderEditor();
+        }
+      };
+    }
+    function confirmRemoveStory(id) {
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Delete this story?</h2>
+        <p class="note">It will leave Stories and Ask. Supporting memories are not deleted.</p>
+        <p class="actions">
+          <button class="btn" id="r-no">Keep</button>
+          <button class="btn danger" id="r-yes">Delete story</button>
+        </p>
+      </div></div>`;
+      document.getElementById("r-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("r-yes").onclick = async () => {
+        await j("/story/" + encodeURIComponent(id), { method: "DELETE" });
+        document.getElementById("modals").innerHTML = "";
+        state.dirty = false;
+        refreshPanel();
       };
     }
     function openPreview() {

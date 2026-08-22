@@ -21,6 +21,7 @@ from memorybox.story import (
     discard_working,
     get_story,
     list_stories,
+    remove_story,
     save_draft,
     save_new_version,
     save_story,
@@ -410,9 +411,11 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
         detail=titled.title or "",
     )
     title_needed = False
+    untitled_ids: list[str] = []
     try:
-        save_draft(title="", body_text="has body")
+        untitled_ids.append(save_draft(title="", body_text="has body").id)
         d2 = save_draft(title="", body_text="has body")
+        untitled_ids.append(d2.id)
         save_story(d2.id, title="", body_text="has body")
     except StoryServiceError:
         title_needed = True
@@ -425,6 +428,20 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=f"saved={len(saved_list)}",
+    )
+
+    removed = remove_story(titled.id)
+    hidden = get_story(titled.id)
+    _check(
+        "i10a_remove_story_hides",
+        removed.get("removed") is True
+        and hidden is not None
+        and hidden.status == "removed"
+        and not hidden.ask_available
+        and not any(r["id"] == titled.id for r in list_stories(q=titled.title or "")),
+        checks,
+        problems,
+        detail=str(removed),
     )
 
     if flightsim:
@@ -467,6 +484,12 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
                 )
                 if real is not None:
                     meta["owner_story_id"] = real_id
+
+    for sid in [s1.id, lone.id, draft.id, titled.id, *untitled_ids]:
+        try:
+            remove_story(sid)
+        except StoryServiceError:
+            pass
 
     ok = all(c.get("ok") for c in checks.values()) and not problems
     return {

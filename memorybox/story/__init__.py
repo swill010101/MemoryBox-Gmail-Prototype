@@ -375,7 +375,7 @@ def _story_view(
             if m.get("source_kind") in {"evidence", "photo"}
         ],
         visibility=story_row.get("visibility") or "private",
-        ask_available=bool(saved_id),
+        ask_available=bool(saved_id) and story_row.get("status") == "active",
         has_working_draft=bool(work_id),
         current_saved_version_id=str(saved_id) if saved_id else None,
         working_version_id=str(work_id) if work_id else None,
@@ -901,6 +901,26 @@ def discard_working(story_id: str) -> dict[str, Any]:
             )
             return {"ok": True, "discarded": True, "removed": True, "story_id": str(sid)}
         return {"ok": True, "discarded": True, "removed": False, "story_id": str(sid)}
+
+
+def remove_story(story_id: str) -> dict[str, Any]:
+    """Soft-remove a Story. Panel and Ask hide it. History rows stay."""
+    sid = _parse_uuid(story_id, field="story_id")
+    with connection() as conn:
+        srow = conn.execute(
+            "SELECT id FROM stories WHERE id = %s AND status = 'active'", (sid,)
+        ).fetchone()
+        if not srow:
+            raise StoryServiceError("story not found")
+        conn.execute(
+            """
+            UPDATE stories
+            SET status = 'removed', working_version_id = NULL, updated_at = now()
+            WHERE id = %s
+            """,
+            (sid,),
+        )
+    return {"ok": True, "removed": True, "story_id": str(sid)}
 
 
 def set_visibility(story_id: str, visibility: str) -> StoryView:
