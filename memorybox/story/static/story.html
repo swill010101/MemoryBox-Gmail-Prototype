@@ -59,7 +59,8 @@
       border: 1px solid var(--line); background: #141b27; color: var(--ink);
       border-radius: 10px; padding: 0.4rem 0.55rem;
     }
-    .person-row img, .person-row .av { width: 32px; height: 32px; border-radius: 999px; object-fit: cover; }
+    .person-row img, .person-row .av { width: 56px; height: 56px; border-radius: 999px; object-fit: cover; }
+    .person-row .chip { font-size: 1.31rem; }
     .person-row.on { outline: 2px solid var(--blue); }
     .ask-field { display: flex; gap: 0.4rem; }
     .ask-go { width: 40px; border-radius: 999px; border: 0; background: var(--blue); color: #fff; }
@@ -98,8 +99,8 @@
     .card h3 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 0.3rem; }
     .card p { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.6rem; }
     .people { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    .chip { display: inline-flex; align-items: center; gap: 0.35rem; background: #111827; border-radius: 999px; padding: 0.12rem 0.45rem 0.12rem 0.12rem; font-size: 0.75rem; }
-    .chip img, .av { width: 22px; height: 22px; border-radius: 999px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; }
+    .chip { display: inline-flex; align-items: center; gap: 0.5rem; background: #111827; border-radius: 999px; padding: 0.2rem 0.65rem 0.2rem 0.2rem; font-size: 1.31rem; }
+    .chip img, .av { width: 39px; height: 39px; border-radius: 999px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
     .foot { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.75rem; margin-top: 0.55rem; }
     .dot { width: 7px; height: 7px; border-radius: 99px; display: inline-block; margin-right: 0.3rem; }
     .dot.saved { background: var(--green); }
@@ -454,7 +455,6 @@
               <h2 style="font-family:var(--display);margin:0.35rem 0">${esc(cont.title || "Untitled draft")}</h2>
               <p class="note">${esc(cont.description || "")}</p>
               <p class="note">Draft · ${cont.memory_count || 0} memories · Updated ${(cont.updated_at || "").slice(0, 10)}</p>
-              <button class="btn danger del-draft" type="button" data-id="${esc(cont.id)}">Delete draft</button>
             </div>
           </div>` : ""}
         <div class="filters">
@@ -476,12 +476,6 @@
       document.querySelectorAll(".card, #continue-card").forEach((el) => {
         el.onclick = () => openStory(el.dataset.id, { edit: el.dataset.draft === "1" });
       });
-      document.querySelectorAll(".del-draft").forEach((b) => {
-        b.onclick = (e) => {
-          e.stopPropagation();
-          confirmDiscard(b.dataset.id);
-        };
-      });
       document.querySelectorAll(".tabs button").forEach((b) => {
         b.onclick = async () => { state.filters.status = b.dataset.status; await refreshPanel(); };
       });
@@ -500,7 +494,6 @@
           <p>${esc(s.description || "")}</p>
           <div class="people">${(s.people||[]).slice(0,3).map(portrait).join("")}${(s.people||[]).length>3?`<span class="chip">+${s.people.length-3}</span>`:""}</div>
           <div class="foot"><span>${esc(fmtRange(s.described_start_date,s.described_end_date))} · ${s.memory_count||0} memories</span>${badge(s)}</div>
-          ${s.lifecycle==="draft_only" || s.has_working_draft ? `<p style="margin:0.5rem 0 0"><button class="btn danger del-draft" type="button" data-id="${esc(s.id)}">Delete draft</button></p>` : ""}
         </div>
       </article>`;
     }
@@ -547,7 +540,7 @@
         <div class="page-head">
           <div></div>
           <div class="actions">
-            <button class="btn" id="btn-share" type="button">Share</button>
+            <button class="btn" id="btn-save-memory" type="button">Save memory</button>
             <button class="btn danger" id="btn-remove-story" type="button">Delete story</button>
             <button class="btn primary" id="btn-edit" type="button">Edit story</button>
           </div>
@@ -601,7 +594,7 @@
       if (c) c.onclick = () => openEditor(s.id);
       const d = document.getElementById("btn-disc");
       if (d) d.onclick = () => confirmDiscard(s.id);
-      document.getElementById("btn-share").onclick = () => openShare(s);
+      document.getElementById("btn-save-memory").onclick = () => saveMemoryFile(s);
       document.getElementById("btn-remove-story").onclick = () => confirmRemoveStory(s.id);
       document.getElementById("btn-hist").onclick = () => openHistory(s.id);
       document.getElementById("btn-all-mem").onclick = () => {
@@ -855,27 +848,27 @@
       </div></div>`;
       document.getElementById("prev-close").onclick = () => { document.getElementById("modals").innerHTML = ""; };
     }
-    function openShare(s) {
-      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
-        <h2>Visibility</h2>
-        <p class="note">Sharing does not change Draft/Saved or Ask-current.</p>
-        <select id="share-vis">
-          <option value="private" ${s.visibility==="private"?"selected":""}>Private</option>
-          <option value="shared_with_family" ${s.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
-        </select>
-        <p class="actions" style="margin-top:0.8rem">
-          <button class="btn" id="sh-x">Cancel</button>
-          <button class="btn primary" id="sh-ok">Update</button>
-        </p>
-      </div></div>`;
-      document.getElementById("sh-x").onclick = () => { document.getElementById("modals").innerHTML = ""; };
-      document.getElementById("sh-ok").onclick = async () => {
-        const vis = document.getElementById("share-vis").value;
-        const data = await j("/story/" + s.id, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ visibility: vis }) });
-        state.story = data.story;
-        document.getElementById("modals").innerHTML = "";
-        renderDetail();
-      };
+    function saveMemoryFile(s) {
+      const people = (s.people || []).map((p) => p.display_name || "").filter(Boolean).join(", ");
+      const body = bodyFromBlocks(s.blocks) || (s.version && s.version.body_text) || "";
+      const lines = [
+        s.title || "Untitled story",
+        s.description || "",
+        "",
+        "Narrated by: " + (s.narrator_display_name || "—"),
+        "People: " + (people || "—"),
+        "Dates: " + (fmtRange(s.described_start_date, s.described_end_date) || "—"),
+        s.place_label ? "Place: " + s.place_label : "",
+        "",
+        body,
+      ].filter((line, i, arr) => line !== "" || (arr[i - 1] !== "" && i > 0));
+      const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      const stub = String(s.title || "story").replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-").slice(0, 48) || "story";
+      a.href = URL.createObjectURL(blob);
+      a.download = stub + ".txt";
+      a.click();
+      URL.revokeObjectURL(a.href);
     }
     async function openHistory(id) {
       const data = await j("/story/" + id + "/versions");
