@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Stories</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a-story-1" />
   <style>
     :root {
       --ink: #e8edf5;
@@ -45,21 +46,22 @@
     }
     textarea { min-height: 8rem; resize: vertical; }
     .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
-    header.top {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem; padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--line);
+    #mb-story-chrome.mb-explore { padding-bottom: 0; }
+    html[data-mb-surface="story"] .mb-explore-brand-name { color: #f3f6fb !important; }
+    html[data-mb-surface="story"] .mb-explore-tagline { color: #b7c0d0 !important; }
+    .date-stack { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+    .date-stack input[type="date"] { width: 100%; min-width: 0; }
+    .person-typeahead { position: relative; }
+    .person-typeahead input { width: 100%; }
+    .person-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 18rem; overflow: auto; margin-top: 0.45rem; }
+    .person-row {
+      display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink);
+      border-radius: 10px; padding: 0.4rem 0.55rem;
     }
-    .brand { display: flex; gap: 0.7rem; align-items: center; }
-    .mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg,#3b82f6,#1d4ed8); }
-    .brand-name { font-weight: 700; }
-    .tag { color: var(--muted); font-size: 0.78rem; }
-    nav.fam { display: flex; gap: 1.1rem; }
-    nav.fam a { color: var(--muted); text-decoration: none; font-size: 0.82rem; text-align: center; }
-    nav.fam a.active { color: #93c5fd; }
-    .ask-band { padding: 1rem 1.25rem 0.4rem; }
-    .ask-row { display: flex; gap: 0.6rem; align-items: center; max-width: 1180px; margin: 0 auto; }
-    .ask-row label { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
-    .ask-field { flex: 1; display: flex; gap: 0.4rem; }
+    .person-row img, .person-row .av { width: 32px; height: 32px; border-radius: 999px; object-fit: cover; }
+    .person-row.on { outline: 2px solid var(--blue); }
+    .ask-field { display: flex; gap: 0.4rem; }
     .ask-go { width: 40px; border-radius: 999px; border: 0; background: var(--blue); color: #fff; }
     .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; }
     h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; }
@@ -147,32 +149,28 @@
   </style>
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <div class="mark" aria-hidden="true"></div>
-      <div>
-        <div class="brand-name">MemoryBox</div>
-        <div class="tag">Life doesn’t live in folders.</div>
+  <div class="mb-explore" id="mb-story-chrome">
+    <header class="mb-explore-top">
+      <a class="mb-explore-brand" id="mb-home" href="/explore/ui" title="Clear context and open Explore">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
+        </div>
+      </a>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+    <section class="mb-explore-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="askQ" id="askLabel">What would you like to see?</label>
+        <div class="mb-explore-ask-field" id="askField">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="askQ" type="text" autocomplete="off" placeholder="Ask MemoryBox… e.g. Only photos. Only Oak Street. Show map." />
+          <button type="button" class="mb-explore-ask-go" id="askGo" title="Ask" aria-label="Ask">→</button>
+        </div>
       </div>
-    </div>
-    <nav class="fam" aria-label="Family">
-      <a href="/explore/ui">Ask</a>
-      <a href="/people/ui">People</a>
-      <a href="/story/ui" class="active">Stories</a>
-      <a href="/journal/ui">Journal</a>
-      <a href="/artifact/ui">Artifacts</a>
-      <a href="/family-night/ui">Family Night</a>
-    </nav>
-  </header>
-  <section class="ask-band">
-    <div class="ask-row">
-      <label for="askQ" id="askLabel">What would you like to see?</label>
-      <div class="ask-field">
-        <input id="askQ" placeholder="Ask about a person, memory, or family story" />
-        <button class="ask-go" id="askGo" type="button" aria-label="Ask">→</button>
-      </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
   <div id="view-panel" class="wrap"></div>
   <div id="view-detail" class="wrap hidden"></div>
@@ -353,6 +351,9 @@
           state.people = data.people || [];
         } catch (e) { state.people = []; }
       }
+      state.people.sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
+      );
     }
     async function loadOwner() {
       try {
@@ -374,11 +375,57 @@
       state.stories = data.stories || data.items || [];
     }
 
-    function personSelect(id, value) {
-      const opts = [`<option value="">All people</option>`].concat(
-        state.people.map((p) => `<option value="${esc(p.id)}" ${p.id === value ? "selected" : ""}>${esc(p.display_name)}</option>`)
+    function sortedPeople() {
+      return (state.people || []).slice().sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
       );
-      return `<select id="${id}">${opts.join("")}</select>`;
+    }
+    function personMatches(p, q) {
+      const needle = String(q || "").trim().toLowerCase();
+      if (!needle) return true;
+      return String(p.display_name || "").toLowerCase().includes(needle);
+    }
+    function personSelect(id, value) {
+      const chosen = sortedPeople().find((p) => p.id === value);
+      return `<div class="person-typeahead" id="${id}-wrap">
+        <input id="${id}" placeholder="All people — type a name" value="${esc(chosen ? chosen.display_name : "")}" autocomplete="off" />
+        <input type="hidden" id="${id}-id" value="${esc(value || "")}" />
+        <div class="person-list" id="${id}-list" hidden></div>
+      </div>`;
+    }
+    function bindPersonFilter(id, onChange) {
+      const input = document.getElementById(id);
+      const hid = document.getElementById(id + "-id");
+      const list = document.getElementById(id + "-list");
+      if (!input || !list || !hid) return;
+      const paint = (q) => {
+        const rows = sortedPeople().filter((p) => personMatches(p, q));
+        list.hidden = false;
+        list.innerHTML =
+          `<button type="button" class="person-row" data-id="">All people</button>` +
+          rows.slice(0, 60).map((p) =>
+            `<button type="button" class="person-row ${p.id === hid.value ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
+          ).join("") || `<p class="note">No matching people.</p>`;
+        list.querySelectorAll(".person-row").forEach((b) => {
+          b.onclick = () => {
+            hid.value = b.dataset.id || "";
+            const p = sortedPeople().find((x) => x.id === b.dataset.id);
+            input.value = p ? (p.display_name || "") : "";
+            list.hidden = true;
+            onChange(hid.value);
+          };
+        });
+      };
+      input.onfocus = () => paint(input.value);
+      input.oninput = () => paint(input.value);
+      input.onkeydown = (e) => {
+        if (e.key === "Escape") { list.hidden = true; }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const first = list.querySelector(".person-row[data-id]:not([data-id=''])") || list.querySelector(".person-row");
+          if (first) first.click();
+        }
+      };
     }
     function narratorSelect(value) {
       const opts = [`<option value="">(choose narrator)</option>`].concat(
@@ -439,7 +486,7 @@
         b.onclick = async () => { state.filters.status = b.dataset.status; await refreshPanel(); };
       });
       document.getElementById("vis-filter").onchange = async (e) => { state.filters.visibility = e.target.value; await refreshPanel(); };
-      document.getElementById("person-filter").onchange = async (e) => { state.filters.person_id = e.target.value; await refreshPanel(); };
+      bindPersonFilter("person-filter", async (id) => { state.filters.person_id = id; await refreshPanel(); });
       const q = document.getElementById("story-q");
       q.onkeydown = async (e) => { if (e.key === "Enter") { state.filters.q = q.value; await refreshPanel(); } };
       show("panel");
@@ -605,8 +652,10 @@
               <label>Editor</label>
               <input value="${esc(editorName)}" disabled />
               <label>Story date range</label>
-              <div style="display:flex;gap:0.4rem">
+              <div class="date-stack">
+                <label for="ed-d0">Start</label>
                 <input id="ed-d0" type="date" value="${esc(d.described_start_date)}" />
+                <label for="ed-d1">End</label>
                 <input id="ed-d1" type="date" value="${esc(d.described_end_date)}" />
               </div>
               <label>Place</label>
@@ -847,21 +896,60 @@
       });
     }
     function openPeoplePicker() {
-      const rows = state.people.map((p) => `<label class="chip" style="margin:0.2rem"><input type="checkbox" value="${esc(p.id)}" ${state.draft.person_ids.includes(p.id)?"checked":""}/> ${esc(p.display_name)}</label>`).join("");
-      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
-        <h2>People in this story</h2>
-        <div>${rows}</div>
-        <p class="actions"><button class="btn" id="p-x">Cancel</button><button class="btn primary" id="p-ok">Apply</button></p>
-      </div></div>`;
-      document.getElementById("p-x").onclick = () => { document.getElementById("modals").innerHTML = ""; };
-      document.getElementById("p-ok").onclick = () => {
-        const ids = [...document.querySelectorAll("#modals input:checked")].map((i) => i.value);
-        state.draft.person_ids = ids;
-        state.draft.people = state.people.filter((p) => ids.includes(p.id));
-        markDirty();
-        document.getElementById("modals").innerHTML = "";
-        renderEditor();
+      let pickId = "";
+      const draw = () => {
+        const q = (document.getElementById("pp-q") && document.getElementById("pp-q").value) || "";
+        const chosen = new Set(state.draft.person_ids || []);
+        const rows = sortedPeople().filter((p) => personMatches(p, q) && !chosen.has(p.id));
+        const selected = (state.draft.people || []).map((p) =>
+          `<span class="chip">${portrait(p)} <button type="button" class="btn ghost pp-drop" data-id="${esc(p.id)}" aria-label="Remove">✕</button></span>`
+        ).join("") || `<span class="note">None yet</span>`;
+        document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+          <h2>Add a person</h2>
+          <p class="note">Select one person, then Add person. Type to jump to a name.</p>
+          <div class="people" id="pp-selected">${selected}</div>
+          <input id="pp-q" placeholder="Type a name" value="${esc(q)}" autocomplete="off" />
+          <div class="person-list" id="pp-list">
+            ${rows.slice(0, 80).map((p) =>
+              `<button type="button" class="person-row ${p.id === pickId ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
+            ).join("") || `<p class="note">No matching people.</p>`}
+          </div>
+          <p class="actions">
+            <button class="btn" id="p-x">Done</button>
+            <button class="btn primary" id="p-add" ${pickId ? "" : "disabled"}>Add person</button>
+          </p>
+        </div></div>`;
+        document.getElementById("pp-q").oninput = () => { pickId = ""; draw(); };
+        document.getElementById("pp-q").focus();
+        document.querySelectorAll("#pp-list .person-row").forEach((b) => {
+          b.onclick = () => { pickId = b.dataset.id; draw(); };
+        });
+        document.querySelectorAll(".pp-drop").forEach((b) => {
+          b.onclick = () => {
+            state.draft.person_ids = (state.draft.person_ids || []).filter((id) => id !== b.dataset.id);
+            state.draft.people = (state.draft.people || []).filter((p) => p.id !== b.dataset.id);
+            markDirty();
+            pickId = "";
+            draw();
+          };
+        });
+        document.getElementById("p-x").onclick = () => {
+          document.getElementById("modals").innerHTML = "";
+          renderEditor();
+        };
+        document.getElementById("p-add").onclick = () => {
+          const p = sortedPeople().find((x) => x.id === pickId);
+          if (!p) return;
+          if (!state.draft.person_ids.includes(p.id)) {
+            state.draft.person_ids.push(p.id);
+            state.draft.people = sortedPeople().filter((x) => state.draft.person_ids.includes(x.id));
+            markDirty();
+          }
+          pickId = "";
+          draw();
+        };
       };
+      draw();
     }
 
     async function openPicker() {
@@ -881,18 +969,22 @@
       state.picker.items = data.items || [];
       state.picker.total = data.total || 0;
       state.picker.truncated = Boolean(data.truncated);
+      state.picker.matched_person_id = data.matched_person_id || "";
     }
     function drawPicker() {
       const p = state.picker;
       const n = Object.keys(p.selected).length;
       const tabs = ["all","photos","videos","communications","calendar","artifacts","journal","audio"];
+      const emptyHint = p.kind === "stories"
+        ? "A Story cannot support another Story. Write this story, then open it from Stories."
+        : (p.q ? "No matches for this search. Try a person name, or switch type." : "No memories in this filter yet.");
       document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
-        <div class="page-head"><div><h2 style="margin:0">Add supporting memories</h2><p class="note">Find evidence in MemoryBox to support this story.</p></div><button class="btn ghost" id="pk-x">Close</button></div>
-        <div class="ask-field"><input id="pk-q" value="${esc(p.q)}" placeholder="Search memories" /><button class="ask-go" id="pk-go">→</button></div>
+        <div class="page-head"><div><h2 style="margin:0">Add supporting memories</h2><p class="note">Find a photo, video, message, or other memory that supports this story. Originals stay unchanged. Stories cannot be added here.</p></div><button class="btn ghost" id="pk-x">Close</button></div>
+        <div class="ask-field"><input id="pk-q" value="${esc(p.q)}" placeholder="Search by person or words — Tom Will, Peggy, Christmas" /><button class="ask-go" id="pk-go">→</button></div>
         <div class="kind-tabs">${tabs.map((t)=>`<button type="button" data-k="${t}" class="${p.kind===t?"on":""}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
-        <p class="note">${p.total} matches${p.truncated ? " (more exist than this page)" : ""}</p>
+        <p class="note">${p.total} matches${p.truncated ? " (more exist than this page)" : ""}${p.matched_person_id ? " · matched a person" : ""}</p>
         <div class="layout">
-          <div class="pick-grid">${p.items.map(pickCard).join("") || "<p class='note'>No matches.</p>"}</div>
+          <div class="pick-grid">${p.items.map(pickCard).join("") || `<p class='note'>${emptyHint}</p>`}</div>
           <aside class="side">
             <h4>Selected · ${n}</h4>
             ${n ? Object.values(p.selected).map((m)=>`<p class="note">${esc(m.title||m.source_id)}</p>`).join("") : "<p class='note'>None yet.</p>"}
@@ -937,10 +1029,15 @@
     function pickCard(m) {
       const key = m.source_kind + ":" + m.source_id;
       const on = Boolean(state.picker.selected[key]);
+      const kind = (m.source_kind || "").replace(/_/g, " ");
+      const who = m.context || (m.people || []).map((p) => p.display_name || p.name || p).filter(Boolean).join(", ");
+      const from = m.attributes_json && (m.attributes_json.from || m.attributes_json.channel);
+      const ctx = who || from || "";
       return `<div class="pick ${on?"on":""}" data-key="${esc(key)}">
         ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" style="width:100%;height:90px;object-fit:cover;border-radius:8px" />` : ""}
-        <strong>${esc((m.source_kind||"").replace("_"," "))}</strong>
+        <strong>${esc(kind)}</strong>
         <div>${esc(m.title || "")}</div>
+        ${ctx ? `<div class="note">${esc(ctx)}</div>` : ""}
         <div class="note">${esc((m.occurred_on||"").toString().slice(0,10))}</div>
       </div>`;
     }
@@ -986,12 +1083,39 @@
       renderPanel();
     }
 
-    document.getElementById("askGo").onclick = () => {
+    const STORY_NAV = [
+      { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
+      { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+      { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+      { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+      { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+      { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
+      { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
+    ];
+    function renderStoryNav() {
+      const el = document.getElementById("mb-explore-nav");
+      if (!el) return;
+      el.innerHTML = STORY_NAV.map((n) =>
+        `<a href="${n.href}" data-nav="${n.id}"${n.id === "stories" ? ' aria-current="page"' : ""}><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
+      ).join("");
+    }
+    function goHomeExplore() {
+      if (window.mbShell && typeof window.mbShell.clearExploration === "function") {
+        window.mbShell.clearExploration();
+      }
+      window.location.href = "/explore/ui";
+    }
+    function submitStoryAsk() {
       const q = document.getElementById("askQ").value.trim();
       const extra = state.view === "detail" && state.story && state.story.title ? " " + state.story.title : "";
-      location.href = "/explore/ui?q=" + encodeURIComponent(q || extra.trim());
-    };
-    document.getElementById("askQ").onkeydown = (e) => { if (e.key === "Enter") document.getElementById("askGo").click(); };
+      const field = document.getElementById("askField");
+      if (field) field.classList.add("is-searching");
+      window.location.href = "/explore/ui?q=" + encodeURIComponent(q || extra.trim());
+    }
+    document.getElementById("askGo").onclick = submitStoryAsk;
+    document.getElementById("askQ").onkeydown = (e) => { if (e.key === "Enter") submitStoryAsk(); };
+    const home = document.getElementById("mb-home");
+    if (home) home.onclick = (e) => { e.preventDefault(); goHomeExplore(); };
     window.addEventListener("beforeunload", (e) => {
       if (state.view === "editor" && state.dirty) { e.preventDefault(); e.returnValue = ""; }
     });
@@ -1003,6 +1127,7 @@
     });
 
     (async function boot() {
+      renderStoryNav();
       await Promise.all([loadPeople(), loadOwner()]);
       const p = new URLSearchParams(location.search);
       if (p.get("new") === "1" || p.get("photo") || p.get("video")) {

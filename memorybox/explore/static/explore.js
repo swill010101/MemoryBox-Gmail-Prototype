@@ -1095,6 +1095,8 @@
     if (titleEl) titleEl.textContent = heading;
     if (bodyEl) bodyEl.textContent = "Searching…";
     if (curator) curator.classList.add("is-searching");
+    const askField = document.querySelector(".mb-explore-ask-field");
+    if (askField) askField.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
       state.domain.summary = "Searching…";
@@ -1182,6 +1184,8 @@
     }
     const curator = document.getElementById("mb-explore-curator");
     if (curator) curator.classList.remove("is-searching");
+    const askField = document.querySelector(".mb-explore-ask-field");
+    if (askField) askField.classList.remove("is-searching");
     render();
   }
 
@@ -2049,6 +2053,8 @@
     const curator = document.getElementById("mb-explore-curator");
     if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
       curator.classList.remove("is-searching");
+      const askField = document.querySelector(".mb-explore-ask-field");
+      if (askField) askField.classList.remove("is-searching");
     }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
@@ -6267,6 +6273,16 @@
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
+    const home = document.getElementById("mb-home");
+    if (home) {
+      home.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (window.mbShell && typeof window.mbShell.clearExploration === "function") {
+          window.mbShell.clearExploration();
+        }
+        window.location.href = "/explore/ui";
+      });
+    }
     const askInput = document.getElementById("mb-explore-ask");
     askInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {

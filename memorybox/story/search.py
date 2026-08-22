@@ -33,6 +33,17 @@ def evidence_search(
     for t in wanted:
         if t not in SOURCE_KINDS:
             raise StoryServiceError(f"unsupported type {t!r}")
+    resolved_person = (person_id or "").strip() or None
+    if not resolved_person and (q or "").strip():
+        try:
+            from memorybox.person import find_ask_person_by_name
+
+            view = find_ask_person_by_name((q or "").strip(), lazy_seed=False)
+            if view:
+                resolved_person = view.id
+        except Exception:
+            resolved_person = resolved_person
+
     items: list[dict[str, Any]] = []
     truncated = False
     try:
@@ -40,18 +51,20 @@ def evidence_search(
         from memorybox.context import AskContext
 
         plan = plan_ask((q or "").strip() or "show me memories", AskContext.empty())
-        if person_id:
+        if resolved_person:
             from dataclasses import replace
 
             plan = replace(
                 plan,
-                person_ids=tuple({*plan.person_ids, person_id}),
+                person_ids=tuple({*plan.person_ids, resolved_person}),
+                want_photo=True,
+                want_still=True,
             )
     except Exception:
         plan = None
 
     if "photo" in wanted:
-        photos, more = _photos(plan, q, limit=limit)
+        photos, more = _photos(plan, q, person_id=resolved_person, limit=limit)
         items.extend(photos)
         truncated = truncated or more
     if "video" in wanted:
@@ -60,7 +73,7 @@ def evidence_search(
         truncated = truncated or more
     if "email_thread" in wanted or "sms_conversation" in wanted:
         comms, more = _comms(
-            wanted, q, person_id, time_start, time_end, limit=limit
+            wanted, q, resolved_person, time_start, time_end, limit=limit
         )
         items.extend(comms)
         truncated = truncated or more
@@ -69,11 +82,11 @@ def evidence_search(
         items.extend(cals)
         truncated = truncated or more
     if "artifact" in wanted:
-        arts, more = _artifacts(q, person_id, limit=limit)
+        arts, more = _artifacts(q, resolved_person, limit=limit)
         items.extend(arts)
         truncated = truncated or more
     if "journal" in wanted:
-        journals, more = _journals(q, person_id, limit=limit)
+        journals, more = _journals(q, resolved_person, limit=limit)
         items.extend(journals)
         truncated = truncated or more
     if "audio" in wanted:
@@ -90,35 +103,67 @@ def evidence_search(
         "offset": offset,
         "limit": limit,
         "items": page,
+        "matched_person_id": resolved_person,
     }
 
 
-def _photos(plan: Any, q: str, *, limit: int) -> tuple[list[dict[str, Any]], bool]:
+def _photo_item(d: dict[str, Any]) -> dict[str, Any] | None:
+    eid = str(d.get("external_id") or d.get("id") or "")
+    if not eid:
+        return None
+    people = d.get("people") or []
+    names = []
+    for p in people:
+        if isinstance(p, dict):
+            names.append(str(p.get("display_name") or p.get("name") or "").strip())
+        else:
+            names.append(str(p).strip())
+    names = [n for n in names if n]
+    return {
+        "source_kind": "photo",
+        "source_id": eid,
+        "title": d.get("original_filename") or d.get("title") or "Photo",
+        "occurred_on": d.get("taken_at"),
+        "thumb_url": d.get("thumb_url") or f"/library/media/photo/{eid}",
+        "people": people,
+        "context": ", ".join(names) if names else "Photo",
+    }
+
+
+def _photos(
+    plan: Any, q: str, *, person_id: str | None, limit: int
+) -> tuple[list[dict[str, Any]], bool]:
     out: list[dict[str, Any]] = []
     try:
         from memorybox.ask import retrieve as R
         from memorybox.ask.deps import build_photo
 
+        photo = build_photo()
         if plan is not None:
-            hits, _status = R.search_photos(plan, build_photo(), limit=max(limit, 24))
+            hits, _status = R.search_photos(plan, photo, limit=max(limit, 24))
             for h in hits:
                 d = h.to_dict() if hasattr(h, "to_dict") else dict(h)
-                eid = str(d.get("external_id") or d.get("id") or "")
-                if not eid:
-                    continue
-                out.append(
-                    {
-                        "source_kind": "photo",
-                        "source_id": eid,
-                        "title": d.get("original_filename")
-                        or d.get("title")
-                        or "Photo",
-                        "occurred_on": d.get("taken_at"),
-                        "thumb_url": d.get("thumb_url")
-                        or f"/library/media/photo/{eid}",
-                        "people": d.get("people") or [],
-                    }
-                )
+                item = _photo_item(d)
+                if item:
+                    out.append(item)
+        if not out and not (q or "").strip() and not person_id:
+            from memorybox.providers.photo.dto import PhotoSearchQuery
+
+            assets = photo.search_assets(PhotoSearchQuery(limit=max(limit, 24)))
+            for a in assets or []:
+                d = {
+                    "external_id": getattr(a, "external_id", None),
+                    "title": getattr(a, "original_filename", None)
+                    or getattr(a, "title", None),
+                    "taken_at": getattr(a, "taken_at", None),
+                    "people": [
+                        getattr(p, "display_name", p)
+                        for p in (getattr(a, "people", None) or [])
+                    ],
+                }
+                item = _photo_item(d)
+                if item:
+                    out.append(item)
     except Exception:
         return out, False
     return out, len(out) >= limit
@@ -177,6 +222,8 @@ def _comms(
             SELECT id, evidence_kind, summary, payload_json
             FROM evidence
             WHERE evidence_kind = 'communication'
+              AND coalesce(payload_json->>'mailbox_skip', '') NOT IN ('spam', 'trash')
+              AND coalesce(payload_json->>'skip_reason', '') NOT IN ('spam', 'trash')
             ORDER BY updated_at DESC
             LIMIT %s
             """,
@@ -192,6 +239,8 @@ def _comms(
                 payload = json.loads(payload)
             except Exception:
                 payload = {}
+        if _is_spam_or_trash(payload):
+            continue
         ch = str(payload.get("channel") or payload.get("source_channel") or "").lower()
         if kinds and ch and ch not in kinds and not (
             "email" in kinds and "mail" in ch
@@ -209,11 +258,15 @@ def _comms(
                 str(payload.get("subject") or ""),
                 str(payload.get("body_text") or ""),
                 str(payload.get("from") or ""),
+                str(payload.get("from_name") or ""),
+                str(payload.get("to") or ""),
                 str(r.get("summary") or ""),
             ]
         ).lower()
         if needle and needle not in blob:
-            continue
+            tokens = [t for t in needle.split() if len(t) > 1]
+            if not tokens or not any(t in blob for t in tokens):
+                continue
         kind = (
             "email_thread"
             if (ch in {"email", "gmail", "mbox", ""} or "mail" in ch)
@@ -224,6 +277,10 @@ def _comms(
         ):
             if kind == "sms_conversation" and "sms_conversation" not in wanted:
                 continue
+        frm = payload.get("from") or payload.get("from_name") or payload.get("from_email")
+        to = payload.get("to") or payload.get("to_name")
+        channel_label = "Email" if kind == "email_thread" else "Text"
+        who = ", ".join(str(x) for x in (frm, to) if x)
         out.append(
             {
                 "source_kind": kind,
@@ -233,9 +290,10 @@ def _comms(
                 or (r.get("summary") or "Message"),
                 "occurred_on": payload.get("sent_at") or payload.get("date"),
                 "thumb_url": None,
+                "context": " · ".join(x for x in (channel_label, who) if x) or channel_label,
                 "attributes_json": {
-                    "from": payload.get("from") or payload.get("from_name"),
-                    "to": payload.get("to"),
+                    "from": frm,
+                    "to": to,
                     "channel": ch,
                 },
             }
@@ -243,6 +301,22 @@ def _comms(
         if len(out) >= limit:
             return out, True
     return out, False
+
+
+def _is_spam_or_trash(payload: dict[str, Any]) -> bool:
+    skip = str(
+        payload.get("mailbox_skip") or payload.get("skip_reason") or ""
+    ).strip().lower()
+    if skip in {"spam", "trash", "junk"}:
+        return True
+    labels = payload.get("gmail_labels") or payload.get("labels") or payload.get("label")
+    if isinstance(labels, str):
+        tokens = [t.strip().lower() for t in labels.replace(";", ",").split(",")]
+    elif isinstance(labels, list):
+        tokens = [str(t).strip().lower() for t in labels]
+    else:
+        tokens = []
+    return any(t in {"spam", "trash", "junk"} for t in tokens)
 
 
 def _calendar(
@@ -273,7 +347,10 @@ def _calendar(
                 payload = {}
         title = str(payload.get("summary") or payload.get("title") or r.get("summary") or "Event")
         loc = str(payload.get("location") or "")
-        blob = f"{title} {loc}".lower()
+        attendees = payload.get("attendees") or payload.get("participants") or ""
+        if isinstance(attendees, list):
+            attendees = " ".join(str(a) for a in attendees)
+        blob = f"{title} {loc} {attendees}".lower()
         if needle and needle not in blob:
             continue
         if pl and pl not in loc.lower() and pl not in blob:

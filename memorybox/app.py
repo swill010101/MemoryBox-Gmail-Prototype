@@ -898,6 +898,7 @@ def people_ui(
     person_id: str | None = Query(None),
     person_name: str | None = Query(None),
     admin: str | None = Query(None, description="1 = legacy profile admin form"),
+    pick: str | None = Query(None, description="1 = name picker, not Person Explorer"),
 ) -> HTMLResponse:
     """P2-I5: Person Explorer (dark) when ?person= set; admin form with ?admin=1."""
     pid = (person or person_id or "").strip()
@@ -909,6 +910,18 @@ def people_ui(
             view = find_ask_person_by_name(person_name.strip(), lazy_seed=False)
             if view:
                 pid = view.id
+        except Exception:
+            pid = ""
+    picking = str(pick or "") in {"1", "true", "yes"}
+    if (
+        not pid
+        and not picking
+        and str(admin or "") not in {"1", "true", "yes"}
+    ):
+        try:
+            from memorybox.profile.owner import get_owner_person_id
+
+            pid = (get_owner_person_id() or "").strip()
         except Exception:
             pid = ""
     if pid and str(admin or "") not in ("1", "true", "yes"):

@@ -27,7 +27,8 @@
 /* Lock tokens on Explore so shell.css :root --mb-ink (#141816) cannot
    paint dark text on dark pills (unreadable filters). */
 html[data-mb-surface="explore"],
-html[data-mb-surface="people"] {
+html[data-mb-surface="people"],
+html[data-mb-surface="story"] {
   --mb-ink: #e8edf5;
   --mb-muted: #9aa3b5;
   --mb-card: #1a2230;
@@ -116,6 +117,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
 }
 
 .mb-explore-mark {
@@ -276,7 +280,8 @@ body {
   margin-bottom: 0.75rem;
   box-shadow: var(--mb-shadow);
 }
-.mb-explore-curator.is-searching {
+.mb-explore-curator.is-searching,
+.mb-explore-ask-field.is-searching {
   animation: mb-curator-pulse 1.15s ease-in-out infinite;
 }
 @keyframes mb-curator-pulse {
