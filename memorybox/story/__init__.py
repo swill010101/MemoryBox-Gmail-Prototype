@@ -5,6 +5,7 @@ Ask joins stories.current_saved_version_id only.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -75,6 +76,87 @@ def _iso(v: Any) -> str | None:
     if hasattr(v, "isoformat"):
         return v.isoformat()
     return str(v)
+
+
+_GENERIC_MEMORY_LABELS = frozenset({"", "photo", "video", "memory", "image", "picture"})
+
+
+def memory_thumb_url(source_kind: str | None, source_id: str | None, existing: str | None = None) -> str | None:
+    if existing:
+        return str(existing)
+    kind = (source_kind or "").strip()
+    sid = (source_id or "").strip()
+    if kind == "photo" and sid:
+        return f"/library/media/photo/{sid}"
+    if kind == "video" and sid:
+        return f"/library/media/video-poster?video={sid}&t=0.000"
+    return None
+
+
+def _photo_display_meta(asset_id: str) -> dict[str, Any]:
+    """Best-effort Immich filename / date / people for a supporting photo card."""
+    aid = (asset_id or "").strip()
+    if not aid:
+        return {}
+    try:
+        from memorybox.ask.deps import build_photo
+
+        asset = build_photo().get_asset(aid)
+    except Exception:
+        return {}
+    if asset is None:
+        return {}
+    if isinstance(asset, dict):
+        name = str(asset.get("original_filename") or asset.get("originalFileName") or "").strip()
+        taken = asset.get("taken_at") or asset.get("takenAt")
+        people_raw = asset.get("people") or []
+    else:
+        name = str(getattr(asset, "original_filename", None) or "").strip()
+        taken = getattr(asset, "taken_at", None)
+        people_raw = getattr(asset, "people", None) or ()
+    people: list[dict[str, str]] = []
+    for p in people_raw:
+        if isinstance(p, dict):
+            label = str(p.get("display_name") or "").strip()
+        else:
+            label = str(getattr(p, "display_name", None) or "").strip()
+        if label:
+            people.append({"display_name": label})
+    if name:
+        name = name.replace("\\", "/").rsplit("/", 1)[-1]
+    return {
+        "title": name or None,
+        "occurred_on": _iso(taken),
+        "people": people,
+    }
+
+
+def _enrich_memories(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fill thumb + photo info so cards do not render as 'photo · Photo'."""
+    for m in memories:
+        kind = str(m.get("source_kind") or "")
+        sid = str(m.get("source_id") or "")
+        m["thumb_url"] = memory_thumb_url(kind, sid, m.get("thumb_url"))
+        label = str(m.get("label_snapshot") or m.get("title") or "").strip()
+        generic = label.lower() in _GENERIC_MEMORY_LABELS
+        attrs = m.get("attributes_json")
+        if not isinstance(attrs, dict):
+            attrs = {}
+        need_meta = kind == "photo" and sid and (generic or not m.get("occurred_on") or not attrs.get("people"))
+        meta = _photo_display_meta(sid) if need_meta else {}
+        if generic and meta.get("title"):
+            m["label_snapshot"] = meta["title"]
+        elif not label:
+            m["label_snapshot"] = "Photo" if kind == "photo" else (kind.replace("_", " ") or "Memory")
+        else:
+            m["label_snapshot"] = label
+        if not m.get("occurred_on") and meta.get("occurred_on"):
+            m["occurred_on"] = meta["occurred_on"]
+        if meta.get("people") and not attrs.get("people"):
+            attrs = dict(attrs)
+            attrs["people"] = meta["people"]
+            m["attributes_json"] = attrs
+    return memories
 
 
 def _reject_ai(actor_key: str) -> None:
@@ -335,7 +417,7 @@ def _story_view(
     narrator = _person_row(conn, (vv.narrator_person_id if vv else None) or story_row.get("narrator_person_id"))
     editor = _person_row(conn, vv.editor_person_id if vv else None)
     people = list(vv.people) if vv else []
-    memories = list(vv.memories) if vv else []
+    memories = _enrich_memories(list(vv.memories) if vv else [])
     cover = None
     for m in memories:
         if m.get("thumb_url"):
@@ -426,7 +508,7 @@ def _replace_children(
                     id, version_id, position, source_kind, source_id,
                     label_snapshot, occurred_on, thumb_url, attributes_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, '{}'::jsonb)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                 ON CONFLICT (version_id, source_kind, source_id) DO NOTHING
                 """,
                 (
@@ -436,8 +518,9 @@ def _replace_children(
                     kind,
                     sid,
                     (m.get("label_snapshot") or m.get("title") or None),
-                    m.get("occurred_on") or None,
-                    m.get("thumb_url") or None,
+                    (_iso(m.get("occurred_on")) or "")[:10] or None,
+                    memory_thumb_url(kind, sid, m.get("thumb_url")),
+                    json.dumps(m.get("attributes_json") if isinstance(m.get("attributes_json"), dict) else {}),
                 ),
             )
             pos += 1

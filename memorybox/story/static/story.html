@@ -120,9 +120,13 @@
     .side dt { color: var(--muted); font-size: 0.78rem; }
     .side dd { margin: 0 0 0.45rem; }
     .mem { display: flex; gap: 0.7rem; align-items: center; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; color: inherit; text-decoration: none; }
-    a.mem { cursor: pointer; }
-    a.mem:hover { outline: 2px solid var(--blue); }
-    .mem img { width: 110px; height: 82px; object-fit: contain; border-radius: 8px; background: #0f141c; flex: 0 0 auto; }
+    a.mem, .mem-edit { cursor: pointer; }
+    a.mem:hover, .mem-edit:hover { outline: 2px solid var(--blue); }
+    .mem img, .mem .mem-ph {
+      width: 110px; height: 82px; object-fit: contain; border-radius: 8px;
+      background: #0f141c; flex: 0 0 auto;
+    }
+    .mem .mem-ph { display: flex; align-items: center; justify-content: center; color: var(--muted); }
     .chip .rem-person { margin-left: 0.35rem; font-size: 0.7rem; padding: 0.2rem 0.45rem; }
     .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
     .editor-foot {
@@ -305,15 +309,19 @@
         description: d.description || null,
         body_text: d.body || "",
         blocks,
-        memories: (d.memories || []).map((m, i) => ({
-          client_key: m.client_key || ("m" + i),
-          source_kind: m.source_kind,
-          source_id: m.source_id,
-          label_snapshot: m.label_snapshot || m.title || null,
-          thumb_url: m.thumb_url || null,
-          occurred_on: (m.occurred_on || "").slice(0, 10) || null,
-          position: i,
-        })),
+        memories: (d.memories || []).map((m, i) => {
+          const h = hydrateMemory(m);
+          return {
+            client_key: h.client_key || ("m" + i),
+            source_kind: h.source_kind,
+            source_id: h.source_id,
+            label_snapshot: h.label_snapshot || h.title || null,
+            thumb_url: h.thumb_url || null,
+            occurred_on: (h.occurred_on || "").slice(0, 10) || null,
+            attributes_json: h.attributes_json || {},
+            position: i,
+          };
+        }),
         person_ids: d.person_ids || [],
         narrator_person_id: d.narrator_person_id || null,
         described_start_date: d.described_start_date || null,
@@ -498,7 +506,7 @@
       `;
       document.getElementById("btn-new").onclick = () => openNew();
       document.querySelectorAll(".card, #continue-card").forEach((el) => {
-        el.onclick = () => openStory(el.dataset.id, { edit: el.dataset.draft === "1" });
+        el.onclick = () => openStory(el.dataset.id, { edit: false });
       });
       document.querySelectorAll(".tabs button").forEach((b) => {
         b.onclick = async () => { state.filters.status = b.dataset.status; await refreshPanel(); };
@@ -522,16 +530,56 @@
       </article>`;
     }
 
-    function memoryCard(m) {
-      const kind = m.source_kind || "memory";
+    function hydrateMemory(m) {
+      const x = Object.assign({}, m || {});
+      const kind = x.source_kind || "memory";
+      const id = x.source_id || "";
+      if (!x.thumb_url && kind === "photo" && id) x.thumb_url = "/library/media/photo/" + id;
+      if (!x.thumb_url && kind === "video" && id) {
+        x.thumb_url = "/library/media/video-poster?video=" + encodeURIComponent(id) + "&t=0.000";
+      }
+      const label = String(x.label_snapshot || x.title || "").trim();
+      if (!label || /^(photo|video|memory|image|picture)$/i.test(label)) {
+        x.label_snapshot = x.title && !/^(photo|video|memory)$/i.test(x.title) ? x.title : (label || (kind === "photo" ? "Photo" : kind.replace(/_/g, " ")));
+      } else {
+        x.label_snapshot = label;
+      }
+      return x;
+    }
+    function memoryPeople(m) {
+      const raw = (m.people && m.people.length) ? m.people : ((m.attributes_json && m.attributes_json.people) || []);
+      return raw.map((p) => (typeof p === "string" ? p : (p.display_name || ""))).map((n) => String(n || "").trim()).filter(Boolean);
+    }
+    function memoryInfoLine(m) {
+      const bits = [];
+      const date = (m.occurred_on || "").slice(0, 10);
+      if (date) bits.push(date);
+      const names = memoryPeople(m);
+      if (names.length) bits.push(names.join(", "));
+      const ctx = m.context || (m.attributes_json && m.attributes_json.context);
+      if (ctx && !names.length) bits.push(ctx);
+      return bits.join(" · ");
+    }
+    function memoryCard(m, opts) {
+      opts = opts || {};
+      m = hydrateMemory(m);
+      const kind = (m.source_kind || "memory").replace(/_/g, " ");
       const title = m.label_snapshot || m.title || kind;
       const open = memoryHref(m);
+      const info = memoryInfoLine(m);
+      const del = opts.deleteIndex != null
+        ? `<button class="btn danger rem-mem" type="button" data-i="${opts.deleteIndex}">Delete memory</button>`
+        : "";
       const inner = `
-        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : `<div class="av" style="width:110px;height:82px;border-radius:8px">${esc(kind[0]||"M")}</div>`}
-        <div>
-          <strong>${esc(kind.replace("_"," "))}</strong> · ${esc(title)}<br/>
-          <span class="note">${esc((m.occurred_on||"").slice(0,10))}</span>
-        </div>`;
+        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : `<div class="mem-ph">${esc((kind[0] || "M").toUpperCase())}</div>`}
+        <div style="flex:1;min-width:0">
+          <strong>${esc(kind)}</strong> · ${esc(title)}<br/>
+          <span class="note">${esc(info)}</span>
+        </div>
+        ${del}`;
+      if (opts.deleteIndex != null) {
+        return `<div class="mem mem-edit" data-i="${opts.deleteIndex}" data-open="${esc(open)}">${inner}</div>`;
+      }
       return open
         ? `<a class="mem" href="${esc(open)}">${inner}</a>`
         : `<div class="mem">${inner}</div>`;
@@ -715,14 +763,7 @@
       setHash(d.id ? { id: d.id, edit: 1 } : { new: 1 });
     }
     function memEditorRow(m, i) {
-      return `<div class="mem" data-i="${i}">
-        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : ""}
-        <div style="flex:1">
-          <strong>${esc((m.source_kind||"").replace("_"," "))}</strong> · ${esc(m.label_snapshot||m.title||m.source_id||"")}
-          <div class="note">${esc((m.occurred_on||"").slice(0,10))}</div>
-        </div>
-        <button class="btn danger rem-mem" type="button" data-i="${i}">Delete memory</button>
-      </div>`;
+      return memoryCard(m, { deleteIndex: i });
     }
     function bindEditorFields() {
       const map = [
@@ -737,8 +778,19 @@
       });
       const add = document.getElementById("btn-add-mem");
       if (add) add.onclick = () => openPicker();
+      document.querySelectorAll(".mem-edit").forEach((el) => {
+        el.onclick = (e) => {
+          if (e.target.closest(".rem-mem")) return;
+          const href = el.getAttribute("data-open");
+          if (href) window.location.href = href;
+        };
+      });
       document.querySelectorAll(".rem-mem").forEach((b) => {
-        b.onclick = () => confirmDeleteMemory(Number(b.dataset.i));
+        b.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmDeleteMemory(Number(b.dataset.i));
+        };
       });
       document.getElementById("btn-add-people").onclick = () => openPeoplePicker();
       document.querySelectorAll(".rem-person").forEach((b) => {
