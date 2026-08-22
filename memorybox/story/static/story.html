@@ -108,15 +108,22 @@
     .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
     .crumb a { color: inherit; text-decoration: none; }
     .hero { display: grid; grid-template-columns: 340px 1fr; gap: 1.2rem; margin: 0.8rem 0 1.2rem; }
-    .hero img { width: 100%; height: 220px; object-fit: cover; border-radius: 14px; background: #111827; }
+    .hero .cover, .hero > div:first-child {
+      background: #111827; border-radius: 14px; min-height: 220px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .hero img { width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 14px; background: #111827; }
     .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; }
     .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.2rem; }
     .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; margin-bottom: 0.8rem; }
     .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
     .side dt { color: var(--muted); font-size: 0.78rem; }
     .side dd { margin: 0 0 0.45rem; }
-    .mem { display: flex; gap: 0.7rem; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; }
-    .mem img { width: 72px; height: 56px; object-fit: cover; border-radius: 8px; background: #0f141c; }
+    .mem { display: flex; gap: 0.7rem; align-items: center; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; color: inherit; text-decoration: none; }
+    a.mem { cursor: pointer; }
+    a.mem:hover { outline: 2px solid var(--blue); }
+    .mem img { width: 110px; height: 82px; object-fit: contain; border-radius: 8px; background: #0f141c; flex: 0 0 auto; }
+    .chip .rem-person { margin-left: 0.35rem; font-size: 0.7rem; padding: 0.2rem 0.45rem; }
     .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
     .editor-foot {
       position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center;
@@ -139,9 +146,23 @@
     .kind-tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.6rem 0; }
     .kind-tabs button { border: 0; background: #141b27; color: var(--muted); border-radius: 999px; padding: 0.3rem 0.65rem; }
     .kind-tabs button.on { background: var(--blue); color: #fff; }
-    .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+    .pick-grid { display: grid; gap: 0.6rem; overflow: auto; min-height: 12rem; max-height: min(52vh, 560px); }
+    .pick-grid[data-density="1"] { grid-template-columns: repeat(5, 1fr); }
+    .pick-grid[data-density="2"] { grid-template-columns: repeat(3, 1fr); }
+    .pick-grid[data-density="3"] { grid-template-columns: repeat(2, 1fr); }
+    .pick-grid[data-density="1"] img { height: 88px; }
+    .pick-grid[data-density="2"] img { height: 140px; }
+    .pick-grid[data-density="3"] img { height: 200px; }
     .pick { position: relative; background: #141b27; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem; cursor: pointer; }
     .pick.on { outline: 2px solid var(--blue); }
+    .pick img { width: 100%; object-fit: contain; border-radius: 8px; background: #0f141c; }
+    .pk-foot {
+      position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center;
+      gap: 0.8rem; margin-top: 0.7rem; padding: 0.7rem 0 0.1rem; background: #121826;
+      border-top: 1px solid var(--line); z-index: 2;
+    }
+    .pk-density { display: flex; align-items: center; gap: 0.35rem; }
+    .pk-density button { min-width: 2rem; }
     .note { color: var(--muted); font-size: 0.8rem; }
     .actions { display: flex; gap: 0.45rem; }
     @media (max-width: 900px) {
@@ -230,11 +251,14 @@
       if (!r.ok) throw data;
       return data;
     }
-    function portrait(p) {
+    function portraitInner(p) {
       const id = p.id || p.person_id || "";
       const name = p.display_name || "Person";
       const src = p.portrait_url || (id ? "/people/" + id + "/portrait" : "");
-      return `<span class="chip"><img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='inline-flex'" /><span class="av" style="display:none">${initial(name)}</span><span>${esc(name)}</span></span>`;
+      return `<img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='inline-flex'" /><span class="av" style="display:none">${initial(name)}</span><span>${esc(name)}</span>`;
+    }
+    function portrait(p) {
+      return `<span class="chip">${portraitInner(p)}</span>`;
     }
     function fmtRange(a, b) {
       const x = (a || "").slice(0, 4);
@@ -502,14 +526,15 @@
       const kind = m.source_kind || "memory";
       const title = m.label_snapshot || m.title || kind;
       const open = memoryHref(m);
-      return `<div class="mem">
-        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : `<div class="av" style="width:72px;height:56px;border-radius:8px">${esc(kind[0]||"M")}</div>`}
+      const inner = `
+        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : `<div class="av" style="width:110px;height:82px;border-radius:8px">${esc(kind[0]||"M")}</div>`}
         <div>
           <strong>${esc(kind.replace("_"," "))}</strong> · ${esc(title)}<br/>
-          <span class="note">${esc((m.occurred_on||"").slice(0,10))}</span><br/>
-          ${open ? `<a href="${esc(open)}">Open memory</a>` : ""}
-        </div>
-      </div>`;
+          <span class="note">${esc((m.occurred_on||"").slice(0,10))}</span>
+        </div>`;
+      return open
+        ? `<a class="mem" href="${esc(open)}">${inner}</a>`
+        : `<div class="mem">${inner}</div>`;
     }
     function memoryHref(m) {
       const k = m.source_kind, id = m.source_id;
@@ -594,7 +619,7 @@
       if (c) c.onclick = () => openEditor(s.id);
       const d = document.getElementById("btn-disc");
       if (d) d.onclick = () => confirmDiscard(s.id);
-      document.getElementById("btn-save-memory").onclick = () => saveMemoryFile(s);
+      document.getElementById("btn-save-memory").onclick = () => saveMemoryPublish();
       document.getElementById("btn-remove-story").onclick = () => confirmRemoveStory(s.id);
       document.getElementById("btn-hist").onclick = () => openHistory(s.id);
       document.getElementById("btn-all-mem").onclick = () => {
@@ -659,7 +684,7 @@
                 <option value="shared_with_family" ${d.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
               </select>
               <label>People</label>
-              <div class="people" id="ed-people">${(d.people||[]).map(portrait).join("")}</div>
+              <div class="people" id="ed-people">${(d.people||[]).map(editorPersonChip).join("") || '<span class="note">None yet</span>'}</div>
               <button class="btn" id="btn-add-people" type="button">+ Add people</button>
             </div>
           </aside>
@@ -671,11 +696,11 @@
           <button class="btn ghost" id="foot-cancel" type="button">Cancel</button>
           <button class="btn danger" id="foot-discard" type="button">${revising ? "Discard draft" : "Delete draft"}</button>
         </div>
-        <p class="note">${revising ? "Save revision creates version " + ((d.saved_version||1)+1) + " and makes it the version available to Ask." : "Save Story makes this version available to Ask. Sharing is separate."}</p>
+        <p class="note">${revising ? "Save memory creates version " + ((d.saved_version||1)+1) + " and makes it searchable in Explore." : "Save memory makes this version searchable in Explore. Save draft keeps it out of Explore."}</p>
         <div class="actions">
           ${revising ? `<button class="btn" id="foot-preview" type="button">Preview</button>` : `<button class="btn" id="foot-draft" type="button">Save draft</button>`}
           ${revising ? `<button class="btn" id="foot-draft" type="button">Save draft</button>` : ""}
-          <button class="btn primary" id="foot-save" type="button">${revising ? "Save revision" : "Save Story"}</button>
+          <button class="btn primary" id="foot-save" type="button">Save memory</button>
         </div>
       `;
       document.getElementById("back-nav").onclick = (e) => { e.preventDefault(); leaveEditor(); };
@@ -716,6 +741,39 @@
         b.onclick = () => confirmDeleteMemory(Number(b.dataset.i));
       });
       document.getElementById("btn-add-people").onclick = () => openPeoplePicker();
+      document.querySelectorAll(".rem-person").forEach((b) => {
+        b.onclick = () => removeDraftPerson(b.dataset.id);
+      });
+    }
+    function editorPersonChip(p) {
+      return `<span class="chip">${portraitInner(p)}<button type="button" class="btn ghost rem-person" data-id="${esc(p.id)}">Remove</button></span>`;
+    }
+    function removeDraftPerson(id, rerender) {
+      state.draft.person_ids = (state.draft.person_ids || []).filter((x) => x !== id);
+      state.draft.people = (state.draft.people || []).filter((p) => p.id !== id);
+      markDirty();
+      if (rerender !== false) renderEditor();
+    }
+    function addPeopleFromMemory(m) {
+      const incoming = [];
+      (m.people || []).forEach((p) => {
+        if (typeof p === "string") incoming.push({ name: p });
+        else incoming.push({ id: p.id || p.person_id || "", name: p.display_name || p.name || "" });
+      });
+      if (m.mb_person_id) incoming.push({ id: m.mb_person_id, name: m.mb_person_name || "" });
+      incoming.forEach((row) => {
+        let hit = null;
+        if (row.id) hit = sortedPeople().find((p) => p.id === row.id);
+        if (!hit && row.name) {
+          const n = row.name.trim().toLowerCase();
+          hit = sortedPeople().find((p) => String(p.display_name || "").trim().toLowerCase() === n);
+        }
+        if (!hit || !hit.id) return;
+        if (!state.draft.person_ids.includes(hit.id)) {
+          state.draft.person_ids.push(hit.id);
+        }
+      });
+      state.draft.people = sortedPeople().filter((p) => state.draft.person_ids.includes(p.id));
     }
 
     async function persistDraft() {
@@ -848,27 +906,20 @@
       </div></div>`;
       document.getElementById("prev-close").onclick = () => { document.getElementById("modals").innerHTML = ""; };
     }
-    function saveMemoryFile(s) {
-      const people = (s.people || []).map((p) => p.display_name || "").filter(Boolean).join(", ");
-      const body = bodyFromBlocks(s.blocks) || (s.version && s.version.body_text) || "";
-      const lines = [
-        s.title || "Untitled story",
-        s.description || "",
-        "",
-        "Narrated by: " + (s.narrator_display_name || "—"),
-        "People: " + (people || "—"),
-        "Dates: " + (fmtRange(s.described_start_date, s.described_end_date) || "—"),
-        s.place_label ? "Place: " + s.place_label : "",
-        "",
-        body,
-      ].filter((line, i, arr) => line !== "" || (arr[i - 1] !== "" && i > 0));
-      const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-      const a = document.createElement("a");
-      const stub = String(s.title || "story").replace(/[^\w\s-]+/g, "").trim().replace(/\s+/g, "-").slice(0, 48) || "story";
-      a.href = URL.createObjectURL(blob);
-      a.download = stub + ".txt";
-      a.click();
-      URL.revokeObjectURL(a.href);
+    async function saveMemoryPublish() {
+      if (state.view === "editor") {
+        const revising = Boolean(state.draft.id && state.draft.saved_version && state.draft.lifecycle !== "draft_only");
+        await persistSave(revising);
+        return;
+      }
+      const s = state.story;
+      if (!s) return;
+      if (s.ask_available && !s.has_working_draft && s.lifecycle !== "draft_only") {
+        return;
+      }
+      await openEditor(s.id);
+      const revising = Boolean(state.draft.id && state.draft.saved_version && state.draft.lifecycle !== "draft_only");
+      await persistSave(revising);
     }
     async function openHistory(id) {
       const data = await j("/story/" + id + "/versions");
@@ -890,64 +941,66 @@
     }
     function openPeoplePicker() {
       let pickId = "";
-      const draw = () => {
-        const q = (document.getElementById("pp-q") && document.getElementById("pp-q").value) || "";
+      const chosenHtml = () =>
+        (state.draft.people || []).map((p) =>
+          `<span class="chip">${portraitInner(p)}<button type="button" class="btn ghost pp-drop" data-id="${esc(p.id)}">Remove</button></span>`
+        ).join("") || `<span class="note">None yet</span>`;
+      const listHtml = (q) => {
         const chosen = new Set(state.draft.person_ids || []);
         const rows = sortedPeople().filter((p) => personMatches(p, q) && !chosen.has(p.id));
-        const selected = (state.draft.people || []).map((p) =>
-          `<span class="chip">${portrait(p)} <button type="button" class="btn ghost pp-drop" data-id="${esc(p.id)}" aria-label="Remove">✕</button></span>`
-        ).join("") || `<span class="note">None yet</span>`;
-        document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
-          <h2>Add a person</h2>
-          <p class="note">Select one person, then Add person. Type to jump to a name.</p>
-          <div class="people" id="pp-selected">${selected}</div>
-          <input id="pp-q" placeholder="Type a name" value="${esc(q)}" autocomplete="off" />
-          <div class="person-list" id="pp-list">
-            ${rows.slice(0, 80).map((p) =>
-              `<button type="button" class="person-row ${p.id === pickId ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
-            ).join("") || `<p class="note">No matching people.</p>`}
-          </div>
-          <p class="actions">
-            <button class="btn" id="p-x">Done</button>
-            <button class="btn primary" id="p-add" ${pickId ? "" : "disabled"}>Add person</button>
-          </p>
-        </div></div>`;
-        document.getElementById("pp-q").oninput = () => { pickId = ""; draw(); };
-        document.getElementById("pp-q").focus();
+        return rows.slice(0, 80).map((p) =>
+          `<button type="button" class="person-row ${p.id === pickId ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
+        ).join("") || `<p class="note">No matching people.</p>`;
+      };
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Add a person</h2>
+        <p class="note">Select one person, then Add person. Type to jump to a name.</p>
+        <div class="people" id="pp-selected">${chosenHtml()}</div>
+        <input id="pp-q" placeholder="Type a name" value="" autocomplete="off" />
+        <div class="person-list" id="pp-list">${listHtml("")}</div>
+        <p class="pk-foot">
+          <button class="btn" id="p-x" type="button">Done</button>
+          <button class="btn primary" id="p-add" type="button" disabled>Add person</button>
+        </p>
+      </div></div>`;
+      const paint = () => {
+        document.getElementById("pp-selected").innerHTML = chosenHtml();
+        document.getElementById("pp-list").innerHTML = listHtml(document.getElementById("pp-q").value);
+        document.getElementById("p-add").disabled = !pickId;
         document.querySelectorAll("#pp-list .person-row").forEach((b) => {
-          b.onclick = () => { pickId = b.dataset.id; draw(); };
+          b.onclick = () => { pickId = b.dataset.id; paint(); };
         });
         document.querySelectorAll(".pp-drop").forEach((b) => {
           b.onclick = () => {
-            state.draft.person_ids = (state.draft.person_ids || []).filter((id) => id !== b.dataset.id);
-            state.draft.people = (state.draft.people || []).filter((p) => p.id !== b.dataset.id);
-            markDirty();
+            removeDraftPerson(b.dataset.id, false);
             pickId = "";
-            draw();
+            paint();
           };
         });
-        document.getElementById("p-x").onclick = () => {
-          document.getElementById("modals").innerHTML = "";
-          renderEditor();
-        };
-        document.getElementById("p-add").onclick = () => {
-          const p = sortedPeople().find((x) => x.id === pickId);
-          if (!p) return;
-          if (!state.draft.person_ids.includes(p.id)) {
-            state.draft.person_ids.push(p.id);
-            state.draft.people = sortedPeople().filter((x) => state.draft.person_ids.includes(x.id));
-            markDirty();
-          }
-          pickId = "";
-          draw();
-        };
       };
-      draw();
+      document.getElementById("pp-q").oninput = () => { pickId = ""; paint(); };
+      document.getElementById("p-x").onclick = () => {
+        document.getElementById("modals").innerHTML = "";
+        renderEditor();
+      };
+      document.getElementById("p-add").onclick = () => {
+        const p = sortedPeople().find((x) => x.id === pickId);
+        if (!p) return;
+        if (!state.draft.person_ids.includes(p.id)) {
+          state.draft.person_ids.push(p.id);
+          state.draft.people = sortedPeople().filter((x) => state.draft.person_ids.includes(x.id));
+          markDirty();
+        }
+        pickId = "";
+        document.getElementById("pp-q").value = "";
+        paint();
+      };
+      paint();
+      document.getElementById("pp-q").focus();
     }
 
     async function openPicker() {
-      state.picker = { items: [], selected: {}, kind: "all", q: "", total: 0, truncated: false };
-      await searchPicker();
+      state.picker = { items: [], selected: {}, kind: "all", q: "", total: 0, truncated: false, asked: false, density: 2 };
       drawPicker();
     }
     async function searchPicker() {
@@ -956,7 +1009,7 @@
         photos: "photo", videos: "video", communications: "email_thread,sms_conversation",
         calendar: "calendar_event", artifacts: "artifact", journal: "journal", audio: "audio",
       }[kind] || kind);
-      const qs = new URLSearchParams({ q: state.picker.q || "", limit: "40" });
+      const qs = new URLSearchParams({ q: state.picker.q || "", limit: "80" });
       if (types) qs.set("types", types);
       const data = await j("/story/evidence-search?" + qs.toString());
       state.picker.items = data.items || [];
@@ -964,60 +1017,149 @@
       state.picker.truncated = Boolean(data.truncated);
       state.picker.matched_person_id = data.matched_person_id || "";
     }
-    function drawPicker() {
+    function pickerEmptyHint() {
       const p = state.picker;
-      const n = Object.keys(p.selected).length;
-      const tabs = ["all","photos","videos","communications","calendar","artifacts","journal","audio"];
-      const emptyHint = p.kind === "stories"
-        ? "A Story cannot support another Story. Write this story, then open it from Stories."
-        : (p.q ? "No matches for this search. Try a person name, or switch type." : "No memories in this filter yet.");
-      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
-        <div class="page-head"><div><h2 style="margin:0">Add supporting memories</h2><p class="note">Find a photo, video, message, or other memory that supports this story. Originals stay unchanged. Stories cannot be added here.</p></div><button class="btn ghost" id="pk-x">Close</button></div>
-        <div class="ask-field"><input id="pk-q" value="${esc(p.q)}" placeholder="Search by person or words — Tom Will, Peggy, Christmas" /><button class="ask-go" id="pk-go">→</button></div>
-        <div class="kind-tabs">${tabs.map((t)=>`<button type="button" data-k="${t}" class="${p.kind===t?"on":""}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
-        <p class="note">${p.total} matches${p.truncated ? " (more exist than this page)" : ""}${p.matched_person_id ? " · matched a person" : ""}</p>
-        <div class="layout">
-          <div class="pick-grid">${p.items.map(pickCard).join("") || `<p class='note'>${emptyHint}</p>`}</div>
-          <aside class="side">
-            <h4>Selected · ${n}</h4>
-            ${n ? Object.values(p.selected).map((m)=>`<p class="note">${esc(m.title||m.source_id)}</p>`).join("") : "<p class='note'>None yet.</p>"}
-            <p class="note">Selections are added as supporting evidence. Originals stay unchanged.</p>
-            ${n ? `<button class="btn ghost" id="pk-clear">Clear all</button>` : ""}
-          </aside>
-        </div>
-        <p class="actions" style="margin-top:0.8rem">
-          <button class="btn" id="pk-cancel">Cancel</button>
-          <button class="btn primary" id="pk-add" ${n?"":"disabled"}>Add ${n} memories</button>
-        </p>
-      </div></div>`;
-      document.getElementById("pk-x").onclick = document.getElementById("pk-cancel").onclick = () => { document.getElementById("modals").innerHTML = ""; };
-      document.getElementById("pk-go").onclick = async () => { state.picker.q = document.getElementById("pk-q").value; await searchPicker(); drawPicker(); };
-      document.getElementById("pk-q").onkeydown = (e) => { if (e.key === "Enter") document.getElementById("pk-go").click(); };
-      document.querySelectorAll(".kind-tabs button").forEach((b) => {
-        b.onclick = async () => { state.picker.kind = b.dataset.k; await searchPicker(); drawPicker(); };
-      });
-      document.querySelectorAll(".pick").forEach((el) => {
+      if (!p.asked) return "Ask for a person or words first — the gallery stays empty until you search.";
+      return p.q ? "No matches for this search. Try a person name, or switch type." : "No memories in this filter yet.";
+    }
+    function selectedCount() {
+      return Object.keys(state.picker.selected || {}).length;
+    }
+    function updatePickerFooter() {
+      const n = selectedCount();
+      const add = document.getElementById("pk-add");
+      const count = document.getElementById("pk-count");
+      const sel = document.getElementById("pk-selected");
+      if (add) {
+        add.disabled = !n;
+        add.textContent = n ? "Add " + n + " memories" : "Add memories";
+      }
+      if (count) count.textContent = n ? n + " selected" : "None selected";
+      if (sel) {
+        sel.innerHTML = n
+          ? Object.values(state.picker.selected).map((m) => `<p class="note">${esc(m.title || m.source_id)}</p>`).join("")
+          : "<p class='note'>None yet.</p>";
+      }
+    }
+    function bindPickCards() {
+      document.querySelectorAll("#pk-grid .pick").forEach((el) => {
         el.onclick = () => {
           const key = el.dataset.key;
-          const item = p.items.find((x) => (x.source_kind + ":" + x.source_id) === key);
+          const item = state.picker.items.find((x) => (x.source_kind + ":" + x.source_id) === key);
           if (!item) return;
-          if (p.selected[key]) delete p.selected[key];
-          else p.selected[key] = item;
-          drawPicker();
+          if (state.picker.selected[key]) delete state.picker.selected[key];
+          else state.picker.selected[key] = item;
+          el.classList.toggle("on", Boolean(state.picker.selected[key]));
+          updatePickerFooter();
         };
       });
+    }
+    function refreshPickerGrid() {
+      const grid = document.getElementById("pk-grid");
+      const meta = document.getElementById("pk-meta");
+      if (!grid) return;
+      const scroll = grid.scrollTop;
+      const p = state.picker;
+      grid.dataset.density = String(p.density || 2);
+      grid.innerHTML = p.items.map(pickCard).join("") || `<p class='note'>${pickerEmptyHint()}</p>`;
+      grid.scrollTop = scroll;
+      if (meta) {
+        meta.textContent = p.asked
+          ? (p.total + " matches" + (p.truncated ? " (more exist than this page)" : "") + (p.matched_person_id ? " · matched a person" : ""))
+          : "Ask to fill the gallery";
+      }
+      const densLabel = document.getElementById("pk-density-label");
+      if (densLabel) densLabel.textContent = ({ 1: "Small", 2: "Medium", 3: "Large" })[p.density] || "Medium";
+      bindPickCards();
+      updatePickerFooter();
+    }
+    async function runPickerAsk() {
+      const input = document.getElementById("pk-q");
+      state.picker.q = input ? input.value.trim() : "";
+      const field = document.getElementById("pk-field");
+      if (field) field.classList.add("is-searching");
+      try {
+        if (!state.picker.q) {
+          state.picker.items = [];
+          state.picker.asked = false;
+          state.picker.total = 0;
+        } else {
+          await searchPicker();
+          state.picker.asked = true;
+        }
+      } finally {
+        if (field) field.classList.remove("is-searching");
+      }
+      refreshPickerGrid();
+    }
+    function drawPicker() {
+      const p = state.picker;
+      const n = selectedCount();
+      const tabs = ["all","photos","videos","communications","calendar","artifacts","journal","audio"];
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <div class="page-head"><div><h2 style="margin:0">Add supporting memories</h2><p class="note">Ask first. Gallery stays empty until you search. Stories cannot be added here.</p></div><button class="btn ghost" id="pk-x">Close</button></div>
+        <div class="ask-field mb-explore-ask-field" id="pk-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="pk-q" value="${esc(p.q)}" placeholder="Ask for a person or words — Anne Will, Christmas" />
+          <button class="ask-go mb-explore-ask-go" id="pk-go" type="button">→</button>
+        </div>
+        <div class="filters">
+          <div class="kind-tabs">${tabs.map((t)=>`<button type="button" data-k="${t}" class="${p.kind===t?"on":""}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
+          <div class="pk-density">
+            <button type="button" class="btn" id="pk-density-minus">−</button>
+            <span id="pk-density-label">Medium</span>
+            <button type="button" class="btn" id="pk-density-plus">+</button>
+          </div>
+        </div>
+        <p class="note" id="pk-meta">Ask to fill the gallery</p>
+        <div class="layout">
+          <div class="pick-grid" id="pk-grid" data-density="${p.density || 2}"></div>
+          <aside class="side">
+            <h4>Selected · <span id="pk-count">${n ? n + " selected" : "None selected"}</span></h4>
+            <div id="pk-selected">${n ? Object.values(p.selected).map((m)=>`<p class="note">${esc(m.title||m.source_id)}</p>`).join("") : "<p class='note'>None yet.</p>"}</div>
+            <p class="note">Selections are added as supporting evidence. Originals stay unchanged.</p>
+          </aside>
+        </div>
+        <div class="pk-foot">
+          <div class="actions">
+            <button class="btn" id="pk-cancel" type="button">Cancel</button>
+            <button class="btn ghost" id="pk-clear" type="button">Clear all</button>
+          </div>
+          <button class="btn primary" id="pk-add" type="button" ${n?"":"disabled"}>${n ? "Add " + n + " memories" : "Add memories"}</button>
+        </div>
+      </div></div>`;
+      document.getElementById("pk-x").onclick = document.getElementById("pk-cancel").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("pk-go").onclick = () => runPickerAsk();
+      document.getElementById("pk-q").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); runPickerAsk(); } };
+      document.querySelectorAll(".kind-tabs button").forEach((b) => {
+        b.onclick = async () => {
+          state.picker.kind = b.dataset.k;
+          document.querySelectorAll(".kind-tabs button").forEach((x) => x.classList.toggle("on", x === b));
+          if (state.picker.asked) await runPickerAsk();
+        };
+      });
+      document.getElementById("pk-density-minus").onclick = () => {
+        state.picker.density = Math.max(1, (state.picker.density || 2) - 1);
+        refreshPickerGrid();
+      };
+      document.getElementById("pk-density-plus").onclick = () => {
+        state.picker.density = Math.min(3, (state.picker.density || 2) + 1);
+        refreshPickerGrid();
+      };
       const clr = document.getElementById("pk-clear");
-      if (clr) clr.onclick = () => { state.picker.selected = {}; drawPicker(); };
+      if (clr) clr.onclick = () => { state.picker.selected = {}; refreshPickerGrid(); };
       document.getElementById("pk-add").onclick = () => {
         Object.values(state.picker.selected).forEach((m) => {
           if (m.source_kind === "story") return;
           if (state.draft.memories.some((x) => x.source_kind === m.source_kind && x.source_id === m.source_id)) return;
           state.draft.memories.push({ ...m, client_key: "m" + Date.now() + Math.random() });
+          addPeopleFromMemory(m);
         });
         markDirty();
         document.getElementById("modals").innerHTML = "";
         renderEditor();
       };
+      refreshPickerGrid();
     }
     function pickCard(m) {
       const key = m.source_kind + ":" + m.source_id;
@@ -1027,7 +1169,7 @@
       const from = m.attributes_json && (m.attributes_json.from || m.attributes_json.channel);
       const ctx = who || from || "";
       return `<div class="pick ${on?"on":""}" data-key="${esc(key)}">
-        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" style="width:100%;height:90px;object-fit:cover;border-radius:8px" />` : ""}
+        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : ""}
         <strong>${esc(kind)}</strong>
         <div>${esc(m.title || "")}</div>
         ${ctx ? `<div class="note">${esc(ctx)}</div>` : ""}
@@ -1128,6 +1270,11 @@
           ? { source_kind: "photo", source_id: p.get("photo"), thumb_url: p.get("thumb") || ("/library/media/photo/" + p.get("photo")), occurred_on: (p.get("taken") || "").slice(0,10), label_snapshot: p.get("title") || "Photo" }
           : (p.get("video") ? { source_kind: "video", source_id: p.get("video"), label_snapshot: p.get("title") || "Video" } : null);
         openNew({ memory: mem, title: p.get("title") || "" });
+        if (mem) addPeopleFromMemory({
+          people: (p.get("people") || "").split(",").map((n) => n.trim()).filter(Boolean),
+          mb_person_id: p.get("person") || "",
+        });
+        renderEditor();
         return;
       }
       if (p.get("id") && UUID_RE.test(p.get("id"))) {

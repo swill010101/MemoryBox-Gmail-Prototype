@@ -33,6 +33,17 @@ def evidence_search(
     for t in wanted:
         if t not in SOURCE_KINDS:
             raise StoryServiceError(f"unsupported type {t!r}")
+    if not (q or "").strip() and not (person_id or "").strip():
+        return {
+            "ok": True,
+            "total": 0,
+            "truncated": False,
+            "offset": offset,
+            "limit": limit,
+            "items": [],
+            "matched_person_id": None,
+        }
+
     resolved_person = (person_id or "").strip() or None
     if not resolved_person and (q or "").strip():
         try:
@@ -111,14 +122,8 @@ def _photo_item(d: dict[str, Any]) -> dict[str, Any] | None:
     eid = str(d.get("external_id") or d.get("id") or "")
     if not eid:
         return None
-    people = d.get("people") or []
-    names = []
-    for p in people:
-        if isinstance(p, dict):
-            names.append(str(p.get("display_name") or p.get("name") or "").strip())
-        else:
-            names.append(str(p).strip())
-    names = [n for n in names if n]
+    people = _people_on_photo(d)
+    names = [str(p.get("display_name") or "").strip() for p in people if p.get("display_name")]
     return {
         "source_kind": "photo",
         "source_id": eid,
@@ -128,6 +133,61 @@ def _photo_item(d: dict[str, Any]) -> dict[str, Any] | None:
         "people": people,
         "context": ", ".join(names) if names else "Photo",
     }
+
+
+_PERSON_NAME_CACHE: dict[str, dict[str, str] | None] = {}
+
+
+def _people_on_photo(d: dict[str, Any]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(pid: str | None, name: str | None) -> None:
+        key = (pid or "").strip()
+        label = (name or "").strip()
+        if key and key in seen:
+            return
+        if key:
+            seen.add(key)
+            out.append({"id": key, "display_name": label, "portrait_url": f"/people/{key}/portrait"})
+        elif label and label.lower() not in {x.get("display_name", "").lower() for x in out}:
+            resolved = _resolve_person_name(label)
+            if resolved:
+                _add(resolved.get("id"), resolved.get("display_name") or label)
+            else:
+                out.append({"id": "", "display_name": label})
+
+    mid = str(d.get("mb_person_id") or "").strip()
+    if mid:
+        _add(mid, d.get("mb_person_name"))
+    for p in d.get("people") or []:
+        if isinstance(p, dict):
+            _add(str(p.get("id") or p.get("person_id") or ""), p.get("display_name") or p.get("name"))
+        else:
+            _add(None, str(p))
+    for f in d.get("faces") or []:
+        if isinstance(f, dict):
+            _add(str(f.get("person_id") or ""), f.get("display_name") or f.get("name"))
+    return out
+
+
+def _resolve_person_name(name: str) -> dict[str, str] | None:
+    key = (name or "").strip().lower()
+    if not key:
+        return None
+    if key in _PERSON_NAME_CACHE:
+        return _PERSON_NAME_CACHE[key]
+    try:
+        from memorybox.person import find_ask_person_by_name
+
+        view = find_ask_person_by_name(name.strip(), lazy_seed=False)
+        if view:
+            _PERSON_NAME_CACHE[key] = {"id": view.id, "display_name": view.display_name or name}
+            return _PERSON_NAME_CACHE[key]
+    except Exception:
+        pass
+    _PERSON_NAME_CACHE[key] = None
+    return None
 
 
 def _photos(
@@ -147,23 +207,7 @@ def _photos(
                 if item:
                     out.append(item)
         if not out and not (q or "").strip() and not person_id:
-            from memorybox.providers.photo.dto import PhotoSearchQuery
-
-            assets = photo.search_assets(PhotoSearchQuery(limit=max(limit, 24)))
-            for a in assets or []:
-                d = {
-                    "external_id": getattr(a, "external_id", None),
-                    "title": getattr(a, "original_filename", None)
-                    or getattr(a, "title", None),
-                    "taken_at": getattr(a, "taken_at", None),
-                    "people": [
-                        getattr(p, "display_name", p)
-                        for p in (getattr(a, "people", None) or [])
-                    ],
-                }
-                item = _photo_item(d)
-                if item:
-                    out.append(item)
+            return [], False
     except Exception:
         return out, False
     return out, len(out) >= limit

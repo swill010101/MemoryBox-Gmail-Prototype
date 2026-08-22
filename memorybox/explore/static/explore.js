@@ -3952,6 +3952,9 @@
         if (item.date) newQs.set("taken", String(item.date).slice(0, 32));
         if (item.thumb_url || item.media_url) newQs.set("thumb", item.thumb_url || item.media_url);
         if (item.title) newQs.set("title", String(item.title).slice(0, 80));
+        const peopleNames = peopleList(item);
+        if (peopleNames.length) newQs.set("people", peopleNames.slice(0, 8).join(","));
+        if (item.mb_person_id) newQs.set("person", String(item.mb_person_id));
         panel.innerHTML = `<h3>STORIES USING THIS ${typeLabel}</h3>
           <p class="mb-rail-empty">This ${noun} supports ${items.length} stor${items.length === 1 ? "y" : "ies"}.</p>
           ${cards || `<p class="mb-rail-empty">No stories use this ${noun} yet.</p>`}
@@ -5380,6 +5383,21 @@
     return raw.length === 36 && (raw.match(/-/g) || []).length === 4;
   }
 
+  function photoDeepLinkItem(photoId) {
+    const id = String(photoId || "").trim();
+    const thumb = "/library/media/photo/" + encodeURIComponent(id);
+    return {
+      id: "photo:immich:" + id,
+      type: "photo",
+      title: "Photo",
+      external_id: id,
+      provider_key: "immich",
+      media_url: thumb,
+      thumb_url: thumb,
+      teachable: true,
+    };
+  }
+
   function videoDeepLinkItem(videoId, t0) {
     const vid = String(videoId || "").trim();
     const t = Number(t0) || 0;
@@ -6467,6 +6485,7 @@
     const demo = params.get("demo");
     const q = params.get("q") || "";
     const videoId = (params.get("video") || "").trim();
+    const photoId = (params.get("photo") || "").trim();
     sessionId =
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
@@ -6501,6 +6520,17 @@
           tr.setAttribute("aria-pressed", "true");
           tr.textContent = "Transcript on";
         }
+        return;
+      }
+      if (photoId) {
+        const item = photoDeepLinkItem(photoId);
+        payload = emptyExplorePayload("");
+        payload.items = [item];
+        payload.title = "Photo";
+        payload.summary = "Opened from Stories.";
+        bootFromPayload(payload);
+        if (state && state.domain) state.domain.galleryLocked = false;
+        openModal(item.id);
         return;
       }
       let bootQ = String(q).trim();
