@@ -8,10 +8,10 @@ from uuid import uuid4
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.ingest import store
-from memorybox.ingest.acceptance import prove_increment_3
 from memorybox.planner import plan_ask
 from memorybox.providers.llm.fake import FakeLlmProvider
 from memorybox.providers.photo.fake import FakePhotoProvider
+from memorybox.providers.video.fake import FakeVideoProvider
 from memorybox.story import (
     StoryServiceError,
     add_working_memory,
@@ -26,6 +26,22 @@ from memorybox.story import (
     save_story,
     set_visibility,
 )
+
+
+def _one_evidence_id() -> str | None:
+    rows = store.list_indexable_evidence()
+    if rows:
+        return str(rows[0]["id"])
+    from pathlib import Path
+
+    from memorybox.ingest.comms_email import ingest_mbox
+
+    fixture = (
+        Path(__file__).resolve().parents[1] / "providers" / "_fixtures" / "i3_synthetic.mbox"
+    )
+    ingest_mbox(str(fixture), label="i10a story prove fixture")
+    rows = store.list_indexable_evidence()
+    return str(rows[0]["id"]) if rows else None
 
 
 def _check(name: str, ok: bool, checks: dict[str, Any], problems: list[str], detail: str = "") -> None:
@@ -48,13 +64,13 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
         problems.append("prove-story --flightsim requires MEMORYBOX_P1_RUNTIME_HOST=1")
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
 
-    i3 = prove_increment_3()
-    meta["i3_ok"] = bool(i3.get("ok"))
-    evidence_rows = store.list_indexable_evidence()
-    if not evidence_rows:
+    # Do not call prove_increment_3() — it clears Qdrant and re-embeds the full
+    # FlightSim archive (hours). Story prove only needs one Evidence UUID.
+    evidence_id = _one_evidence_id()
+    if not evidence_id:
         problems.append("no Evidence available for Story association")
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
-    evidence_id = str(evidence_rows[0]["id"])
+    meta["i3_ok"] = "skipped_no_qdrant_rebuild"
 
     tag = f"Harborwick-{uuid4().hex[:8]}"
     try:
@@ -168,6 +184,7 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
         store=InMemoryContextStore(),
         photo=FakePhotoProvider(),
         llm=FakeLlmProvider(),
+        video=FakeVideoProvider(),
     )
     ask = orch.ask(f"What do you know about {tag}?", session_id="i5ask")
     story_hit = any(h.get("story_id") == s1.id for h in ask.story_hits)
