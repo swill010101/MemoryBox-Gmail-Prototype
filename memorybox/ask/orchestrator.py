@@ -1412,6 +1412,8 @@ class AskOrchestrator:
 
         # First-name / person identity clarity (founder): 1→go, 0→Who is X?,
         # many→Please specify which X you would like.
+        # I10A: a matching saved Story/Journal/Artifact is still an answer.
+        # Do not hide owner recollection because the subject is not an MB Person.
         for st in (photo_status, video_status):
             mode = str((st or {}).get("identity_mode") or "")
             if mode in ("ambiguous_identity", "unknown_person"):
@@ -1430,13 +1432,15 @@ class AskOrchestrator:
                     else:
                         first = str(label).split()[0]
                         msg = f"Please specify which {first} you would like."
+                photos = []
+                videos = []
+                if stories or journals or artifacts or evidence:
+                    break
                 plan = replace(
                     plan,
                     requires_clarification=True,
                     ambiguity_message=msg,
                 )
-                photos = []
-                videos = []
                 stories = []
                 journals = []
                 artifacts = []
