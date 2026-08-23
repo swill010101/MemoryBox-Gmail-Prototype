@@ -1,6 +1,6 @@
 # P2-I10B — Artifacts
 
-**Status:** Definition **build-authorized 2026-08-23** · **implementing** · not increment-ACCEPTED until prove + owner sign-off  
+**Status:** **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”)  
 **PR base:** `cursor/p2-i10a-stories-49da` until I10A lands; rebase/retarget before merge.  
 **PRD:** [MBPRD-P2-I10B_ARTIFACTS.md](MBPRD-P2-I10B_ARTIFACTS.md)  
 **Assessment:** [MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md)  

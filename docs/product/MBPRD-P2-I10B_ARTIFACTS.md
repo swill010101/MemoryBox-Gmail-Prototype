@@ -1,6 +1,6 @@
 # MBPRD-P2-I10B — Artifacts
 
-**Status:** PRD **substantially accepted** · increment **build-authorized 2026-08-23** · **implementing** · not increment-ACCEPTED until prove + owner sign-off  
+**Status:** Increment **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”) · FlightSim prove-artifact **ok**  
 **Date:** 2026-08-23  
 **Base (this PR):** `cursor/p2-i10a-stories-49da`. Before merge, rebase or retarget onto the accepted integration branch after I10A lands.  
 **Increment definition:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md)  
@@ -532,4 +532,4 @@ Still Open:
 
 ---
 
-**This PRD is build-authorized. Implementation is in progress. Tell its story opens the shared Story editor with the Artifact prelinked; the recorder remains I10A.2. Do not mark the increment ACCEPTED until prove-artifact and owner sign-off.**
+**This increment is ACCEPTED. Next: I10A.1 Person Profile Editor. I10A.2 Unified Voice remains before Artifact mic and I10C voice. Do not reopen I10B for aesthetic polish.**

@@ -6,7 +6,7 @@
 **Depends:** I10 **ACCEPTED** 2026-08-21 · I1–I8A **ACCEPTED** · I9 on this tree · MBQL-001 **ACCEPTED**  
 **Does not start:** **I11** narrative generation · compose-from-memories · Story dictation · multi-user ACL · Story-as-evidence-for-Story · in-rail authoring
 
-**After I10A:** **I10A.1** Person Profile Editor → **I10A.2** Unified Voice Capture (Stories first) → **I10B Artifacts** → **I10C Journal**. I11 waits until that chain plus required transcription/recognition work (owner 2026-08-23). I10A dictation lock stands until I10A.2. I10B is **build-authorized** and implementing on `cursor/p2-i10b-artifacts-49da` (base this branch until I10A lands).
+**After I10A:** **I10A.1** Person Profile Editor → **I10A.2** Unified Voice Capture (Stories first) → I10B Artifacts (**ACCEPTED** 2026-08-23) → **I10C Journal**. I11 waits until that chain plus required transcription/recognition work. I10A dictation lock stands until I10A.2. **Next increment: I10A.1.**
 
 ## Intent
 

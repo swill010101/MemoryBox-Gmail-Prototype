@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-23 (I10B **build-authorized** and implementing; not increment-ACCEPTED)  
+**Status:** Living parking note · **Updated:** 2026-08-23 (I10B **ACCEPTED**; next **I10A.1** Person Profile Editor)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -89,7 +89,7 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **Sequence after I10A (owner 2026-08-23):** I10A.1 Person Profile Editor → I10A.2 Unified Voice Capture & Transcription (Stories first) → **I10B Artifacts** → I10C Journal → I11 only after those plus required transcription/recognition work.
 
-**P2-I10B Artifacts** — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). **Build-authorized 2026-08-23** · implementing · not increment-ACCEPTED. Tell its story opens the shared Story editor (`?artifact=`); the recorder is I10A.2. Sequence: I10A → I10A.1 → I10A.2 → I10B → I10C → I11. Implementation branch: `cursor/p2-i10b-artifacts-49da` (base `cursor/p2-i10a-stories-49da` until I10A lands).
+**P2-I10B Artifacts** — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”). Tell its story opens the shared Story editor (`?artifact=`); the recorder is I10A.2. Implementation: `cursor/p2-i10b-artifacts-49da`.
 
 **P2-I10 Cross-Source Correlation** — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) · [PRD](MBPRD-P2-I10_CROSS_SOURCE.md). **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). **I11 narrative is not I10.**
 
@@ -104,4 +104,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next after I10A ACCEPTED:** **I10A.1** Person Profile Editor, then **I10A.2** Unified Voice Capture, then **I10B** Artifacts (PRD ready for review). **I10C Journal** after I10B. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
+**Next:** **I10A.1** Person Profile Editor (PRD for review). Then **I10A.2** Unified Voice Capture (Stories first), then **I10C** Journal. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
