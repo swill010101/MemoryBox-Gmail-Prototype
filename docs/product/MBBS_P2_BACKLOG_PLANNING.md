@@ -91,6 +91,8 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I10B Artifacts** — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”). Tell its story opens the shared Story editor (`?artifact=`); the recorder is I10A.2. Implementation: `cursor/p2-i10b-artifacts-49da`.
 
+**P2-I10A.1 Person Profile and Editor** — [assessment](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md) · [definition](MBBS-P2_INCREMENT_10A1_DEFINITION.md) · [PRD](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md). **Next.** Planning only; not build-authorized. Explorer stays memory-focused. Edit skips the About panel. No Immich write-back.
+
 **P2-I10 Cross-Source Correlation** — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) · [PRD](MBPRD-P2-I10_CROSS_SOURCE.md). **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). **I11 narrative is not I10.**
 
 ## Post–I8B park (do not reopen I8B for playback UX)
