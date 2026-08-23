@@ -300,6 +300,8 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         "Explorer still loads GET /people/{id}/profile",
     )
     add_src = inspect.getsource(add_fact)
+    insert_at = add_src.find("INSERT INTO person_facts")
+    supersede_at = add_src.find("SET status = 'superseded'")
     _check(
         "c4_date_precision",
         "date_precision" in add_src
@@ -308,6 +310,13 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         "add_fact persists precision; format_life_date does not fake a day",
+    )
+    _check(
+        "c4b_fact_insert_before_supersede",
+        insert_at >= 0 and supersede_at > insert_at,
+        checks,
+        problems,
+        "supersede must not FK the new fact before it exists (Save 500)",
     )
     _check(
         "edit_regions",

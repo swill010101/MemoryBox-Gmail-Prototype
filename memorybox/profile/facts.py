@@ -262,45 +262,83 @@ def add_fact(
         raise ProfileServiceError("note requires value_text")
     else:
         prec = "unknown"
+    if supersede_current and kind in ("birth_date", "death_date"):
+        current = get_current_fact(str(pid), kind)
+        if (
+            current
+            and current.value_date == iso(vd)
+            and (current.date_precision or "day") == prec
+            and (note or None) == (current.note or None)
+        ):
+            return current
     fid = uuid4()
-    with connection() as conn:
-        if supersede_current and kind in ("birth_date", "death_date"):
-            for o in conn.execute(
+    try:
+        with connection() as conn:
+            # Insert first. person_facts.superseded_by_id FKs to person_facts(id),
+            # so pointing the old row at fid before the new row exists is a 500.
+            has_prec = conn.execute(
                 """
-                SELECT id FROM person_facts
-                WHERE person_id = %s AND fact_kind = %s AND status = 'confirmed'
-                """,
-                (pid, kind),
-            ).fetchall():
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'person_facts'
+                  AND column_name = 'date_precision'
+                """
+            ).fetchone()
+            if has_prec:
+                conn.execute(
+                    """
+                    INSERT INTO person_facts (
+                        id, person_id, fact_kind, value_text, value_date,
+                        status, actor_key, note, provenance_json, date_precision
+                    ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb, %s)
+                    """,
+                    (
+                        fid,
+                        pid,
+                        kind,
+                        vt,
+                        vd,
+                        actor_key,
+                        note,
+                        json.dumps(provenance or {"source": "owner"}),
+                        prec,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO person_facts (
+                        id, person_id, fact_kind, value_text, value_date,
+                        status, actor_key, note, provenance_json
+                    ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
+                    """,
+                    (
+                        fid,
+                        pid,
+                        kind,
+                        vt,
+                        vd,
+                        actor_key,
+                        note,
+                        json.dumps(provenance or {"source": "owner"}),
+                    ),
+                )
+            if supersede_current and kind in ("birth_date", "death_date"):
                 conn.execute(
                     """
                     UPDATE person_facts
                     SET status = 'superseded', superseded_by_id = %s, updated_at = now()
-                    WHERE id = %s
+                    WHERE person_id = %s AND fact_kind = %s AND status = 'confirmed'
+                      AND id <> %s
                     """,
-                    (fid, o["id"]),
+                    (fid, pid, kind, fid),
                 )
-        conn.execute(
-            """
-            INSERT INTO person_facts (
-                id, person_id, fact_kind, value_text, value_date,
-                status, actor_key, note, provenance_json, date_precision
-            ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb, %s)
-            """,
-            (
-                fid,
-                pid,
-                kind,
-                vt,
-                vd,
-                actor_key,
-                note,
-                json.dumps(provenance or {"source": "owner"}),
-                prec,
-            ),
-        )
-        row = conn.execute("SELECT * FROM person_facts WHERE id = %s", (fid,)).fetchone()
-    return _fact_view(row)
+            row = conn.execute("SELECT * FROM person_facts WHERE id = %s", (fid,)).fetchone()
+        return _fact_view(row)
+    except ProfileServiceError:
+        raise
+    except Exception as exc:
+        raise ProfileServiceError(f"could not save {kind}: {exc}") from exc
 
 
 def list_facts(person_id: str, *, include_withdrawn: bool = False) -> list[FactView]:

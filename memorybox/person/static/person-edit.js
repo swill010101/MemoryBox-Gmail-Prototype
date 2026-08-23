@@ -290,8 +290,12 @@
   }
 
   async function saveProfile() {
+    const idn = profile.identity || {};
+    const facts = profile.facts || [];
+    const curBirth = facts.find((f) => f.fact_kind === "birth_date");
+    const curDeath = facts.find((f) => f.fact_kind === "death_date");
     const name = $("mb-edit-name").value.trim();
-    if (name.length >= 2) {
+    if (name.length >= 2 && name !== String(idn.display_name || "").trim()) {
       await j("/people/" + encodeURIComponent(pid) + "/name", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -317,33 +321,51 @@
       $("mb-edit-alt").value = "";
     }
     const birth = $("mb-edit-birth").value.trim();
-    if (birth) {
+    const birthPrec = $("mb-edit-birth-prec").value;
+    const factNote = $("mb-edit-fact-note").value.trim() || null;
+    const birthChanged =
+      birth &&
+      (birth !== factDateValue(curBirth) ||
+        birthPrec !== ((curBirth && curBirth.date_precision) || "day") ||
+        factNote !== ((curBirth && curBirth.note) || null));
+    if (birthChanged) {
       await j("/people/" + encodeURIComponent(pid) + "/facts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fact_kind: "birth_date",
           value_date: birth,
-          date_precision: $("mb-edit-birth-prec").value,
-          note: $("mb-edit-fact-note").value.trim() || null,
+          date_precision: birthPrec,
+          note: factNote,
         }),
       });
     }
     const death = $("mb-edit-death").value.trim();
-    if (death) {
+    const deathPrec = $("mb-edit-death-prec").value;
+    const deathChanged =
+      death &&
+      (death !== factDateValue(curDeath) ||
+        deathPrec !== ((curDeath && curDeath.date_precision) || "day") ||
+        factNote !== ((curDeath && curDeath.note) || null));
+    if (deathChanged) {
       await j("/people/" + encodeURIComponent(pid) + "/facts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fact_kind: "death_date",
           value_date: death,
-          date_precision: $("mb-edit-death-prec").value,
-          note: $("mb-edit-fact-note").value.trim() || null,
+          date_precision: deathPrec,
+          note: factNote,
         }),
       });
     }
+    const existingNotes = facts
+      .filter((f) => f.fact_kind === "note")
+      .map((n) => n.value_text || "")
+      .filter(Boolean)
+      .join("\n");
     const note = $("mb-edit-notes").value.trim();
-    if (note) {
+    if (note && note !== existingNotes) {
       await j("/people/" + encodeURIComponent(pid) + "/facts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
