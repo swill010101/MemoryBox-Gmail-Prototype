@@ -1,6 +1,6 @@
 # MBPRD-P2-I10B — Artifacts
 
-**Status:** PRD **revised after PR 39 review** · **not accepted** · increment **not build-authorized** · keep **draft**  
+**Status:** PRD **substantially accepted** · increment **build-authorized 2026-08-23** · **implementing** · not increment-ACCEPTED until prove + owner sign-off  
 **Date:** 2026-08-23  
 **Base (this PR):** `cursor/p2-i10a-stories-49da`. Before merge, rebase or retarget onto the accepted integration branch after I10A lands.  
 **Increment definition:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md)  
@@ -532,4 +532,4 @@ Still Open:
 
 ---
 
-**This PRD is revised for product-owner review. It is not accepted and not build-authorized. Keep PR 39 draft. Tell its story remains blocked on I10A.2 acceptance.**
+**This PRD is build-authorized. Implementation is in progress. Tell its story opens the shared Story editor with the Artifact prelinked; the recorder remains I10A.2. Do not mark the increment ACCEPTED until prove-artifact and owner sign-off.**

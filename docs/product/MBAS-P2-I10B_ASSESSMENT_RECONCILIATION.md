@@ -1,7 +1,7 @@
 # P2-I10B — Assessment reconciliation
 
-**Status:** Planning only · repository assessment **accepted** 2026-08-23 · PRD **revised after PR 39 review, not accepted** · **not build-authorized**  
-**Does not implement** code, migrations, routes, or UI  
+**Status:** Assessment **accepted** 2026-08-23 · increment **build-authorized** · **implementing**  
+**Implementation** is on `cursor/p2-i10b-artifacts-49da` (not this planning-only note).  
 **Definition / PRD:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [MBPRD-P2-I10B_ARTIFACTS.md](MBPRD-P2-I10B_ARTIFACTS.md)  
 **PR 39 files:** this assessment, I10B definition, I10B PRD, plus sequence edits in `MBBS_P2_BACKLOG_PLANNING.md`, `MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md`, and `MBBS-P2_INCREMENT_10A_DEFINITION.md`. Base: `cursor/p2-i10a-stories-49da` until I10A lands; rebase/retarget before merge.
 

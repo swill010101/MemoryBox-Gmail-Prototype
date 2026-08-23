@@ -24,6 +24,50 @@ ARTIFACT_KINDS = (
     "other",
 )
 
+KIND_GROUPS = {
+    "objects": ("keepsake_object", "photograph_of_object"),
+    "documents": ("letter", "document", "clipping"),
+    "recipes": ("recipe_card",),
+    "other": ("other",),
+}
+
+DATE_PRECISIONS = ("day", "month", "year", "approximate", "unknown")
+VISIBILITIES = ("private", "shared_with_family")
+VIEW_KINDS = ("front", "back", "detail", "engraving", "document", "other")
+MEMORY_KINDS = (
+    "photo",
+    "video",
+    "email_thread",
+    "sms_conversation",
+    "calendar_event",
+    "journal",
+    "audio",
+)
+
+# I10B accepted new-upload MIME (preview vs download is a UI concern).
+ACCEPTED_REP_MIME = {
+    "image/jpeg": "image",
+    "image/jpg": "image",
+    "image/png": "image",
+    "image/webp": "image",
+    "image/gif": "image",
+    "image/heic": "image",
+    "image/heif": "image",
+    "application/pdf": "document",
+    "text/plain": "document",
+}
+ACCEPTED_REP_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+}
+
 REL_ABOUT_PERSON = "about_person"
 REL_CITES_EVIDENCE = "cites_evidence"
 REL_ABOUT_ARTIFACT = "about_artifact"  # story → artifact
@@ -104,8 +148,12 @@ class ArtifactRepresentationView:
     byte_size: int | None = None
     sort_order: int = 0
     label: str | None = None
+    view_kind: str = "other"
+    caption: str | None = None
+    status: str = "active"
     created_at: str | None = None
     download_url: str | None = None
+    presentation: str = "download"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,12 +168,24 @@ class ArtifactView:
     status: str
     current_metadata_revision: int
     unresolved_context: dict[str, Any]
+    visibility: str = "private"
+    described_start_date: str | None = None
+    described_precision: str = "unknown"
+    place_id: str | None = None
+    place_label: str | None = None
     person_ids: list[str] = field(default_factory=list)
+    people: list[dict[str, Any]] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
     story_ids: list[str] = field(default_factory=list)
+    stories: list[dict[str, Any]] = field(default_factory=list)
+    memories: list[dict[str, Any]] = field(default_factory=list)
     representations: list[ArtifactRepresentationView] = field(default_factory=list)
+    needs_representation: bool = False
+    needs_context: bool = False
+    added_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    link_memory_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -138,8 +198,16 @@ def _rep_from_row(r: dict[str, Any]) -> ArtifactRepresentationView:
     aid = str(r["artifact_id"])
     kind = str(r["representation_kind"])
     download = None
-    if kind == "mb_managed":
+    mime = (r.get("mime_type") or "").split(";")[0].strip().lower()
+    if kind == "mb_managed" and str(r.get("status") or "active") == "active":
         download = f"/artifact/{aid}/representations/{rid}/bytes"
+    preview = mime in {
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+    }
     return ArtifactRepresentationView(
         id=rid,
         artifact_id=aid,
@@ -153,8 +221,12 @@ def _rep_from_row(r: dict[str, Any]) -> ArtifactRepresentationView:
         byte_size=int(r["byte_size"]) if r.get("byte_size") is not None else None,
         sort_order=int(r.get("sort_order") or 0),
         label=r.get("label"),
+        view_kind=str(r.get("view_kind") or "other"),
+        caption=r.get("caption"),
+        status=str(r.get("status") or "active"),
         created_at=_iso(r.get("created_at")),
         download_url=download,
+        presentation="preview" if preview else "download",
     )
 
 
@@ -162,7 +234,7 @@ def _load_reps(conn, artifact_id: UUID) -> list[ArtifactRepresentationView]:
     rows = conn.execute(
         """
         SELECT * FROM artifact_representations
-        WHERE artifact_id = %s
+        WHERE artifact_id = %s AND COALESCE(status, 'active') = 'active'
         ORDER BY sort_order ASC, created_at ASC
         """,
         (artifact_id,),
@@ -195,10 +267,162 @@ def _load_links(conn, artifact_id: UUID) -> tuple[list[str], list[str], list[str
             stories.append(str(r["from_id"]))
         elif r["from_type"] == "artifact" and r["to_type"] == "story":
             stories.append(str(r["to_id"]))
+    mem_stories = conn.execute(
+        """
+        SELECT DISTINCT s.id::text AS id
+        FROM stories s
+        JOIN story_versions sv
+          ON sv.id IN (s.working_version_id, s.current_saved_version_id)
+        JOIN story_version_memories m ON m.version_id = sv.id
+        WHERE s.status = 'active'
+          AND m.source_kind = 'artifact'
+          AND m.source_id = %s
+        """,
+        (str(artifact_id),),
+    ).fetchall()
+    for r in mem_stories:
+        stories.append(str(r["id"]))
     return (
         list(dict.fromkeys(people)),
         list(dict.fromkeys(evidence)),
         list(dict.fromkeys(stories)),
+    )
+
+
+def _needs_context(
+    unresolved: dict[str, Any],
+    people: list[str],
+    place_id: str | None,
+    needs_rep: bool,
+) -> bool:
+    if needs_rep:
+        return True
+    if unresolved.get("person") and not people:
+        return True
+    if unresolved.get("place") and not place_id:
+        return True
+    if unresolved.get("event"):
+        return True
+    return False
+
+
+def _added_by_name() -> str | None:
+    try:
+        from memorybox.profile.owner import get_owner_person_id
+
+        pid = get_owner_person_id()
+        if not pid:
+            return None
+        from memorybox.person import get_person
+
+        person = get_person(pid)
+        return getattr(person, "display_name", None) if person else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _hydrate_people(conn, person_ids: list[str]) -> list[dict[str, Any]]:
+    if not person_ids:
+        return []
+    rows = conn.execute(
+        """
+        SELECT id::text AS id, display_name
+        FROM people
+        WHERE id = ANY(%s::uuid[]) AND status <> 'merged_away'
+        """,
+        (person_ids,),
+    ).fetchall()
+    by_id = {str(r["id"]): r for r in rows}
+    out = []
+    for pid in person_ids:
+        r = by_id.get(pid)
+        if not r:
+            continue
+        out.append(
+            {
+                "id": pid,
+                "display_name": r.get("display_name") or "Person",
+                "portrait_url": f"/people/{pid}/portrait",
+            }
+        )
+    return out
+
+
+def _hydrate_stories(story_ids: list[str]) -> list[dict[str, Any]]:
+    if not story_ids:
+        return []
+    out = []
+    try:
+        from memorybox.story import get_story
+    except Exception:  # noqa: BLE001
+        return [{"id": sid} for sid in story_ids]
+    for sid in story_ids:
+        try:
+            view = get_story(sid)
+        except Exception:  # noqa: BLE001
+            view = None
+        if not view:
+            continue
+        d = view.to_dict(include_body=False) if hasattr(view, "to_dict") else {}
+        out.append(
+            {
+                "id": sid,
+                "title": d.get("title") or "Story",
+                "narrator_display_name": d.get("narrator_display_name"),
+                "ask_available": d.get("ask_available"),
+                "has_working_draft": d.get("has_working_draft"),
+                "lifecycle": d.get("lifecycle"),
+            }
+        )
+    return out
+
+
+def _load_memories(conn, artifact_id: UUID) -> list[dict[str, Any]]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM artifact_memories
+            WHERE artifact_id = %s AND status = 'active'
+            ORDER BY position ASC, created_at ASC
+            """,
+            (artifact_id,),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — pre-I10B schema
+        return []
+    out = []
+    for r in rows:
+        kind = str(r["source_kind"])
+        sid = str(r["source_id"])
+        thumb = r.get("thumb_url")
+        if not thumb and kind == "photo":
+            thumb = f"/library/media/photo/{sid}"
+        out.append(
+            {
+                "id": str(r["id"]),
+                "source_kind": kind,
+                "source_id": sid,
+                "label_snapshot": r.get("label_snapshot"),
+                "occurred_on": _iso(r.get("occurred_on")),
+                "thumb_url": thumb,
+                "position": int(r.get("position") or 0),
+                "status": "active",
+            }
+        )
+    return out
+
+
+def _normalize_mime(filename: str | None, content_type: str | None) -> str:
+    raw = (content_type or "").split(";")[0].strip().lower()
+    if raw == "image/jpg":
+        raw = "image/jpeg"
+    ext = Path(filename or "").suffix.lower()
+    if raw in ACCEPTED_REP_MIME:
+        return raw
+    if ext in ACCEPTED_REP_EXT:
+        return ACCEPTED_REP_EXT[ext]
+    raise ArtifactServiceError(
+        f"unsupported representation type {content_type or ext or 'unknown'} "
+        "(I10B accepts jpeg, png, webp, gif, heic/heif, pdf, txt)"
     )
 
 
@@ -211,6 +435,20 @@ def _view(conn, row: dict[str, Any]) -> ArtifactView:
         except (TypeError, ValueError, json.JSONDecodeError):
             unresolved = {}
     people, evidence, stories = _load_links(conn, aid)
+    reps = _load_reps(conn, aid)
+    memories = _load_memories(conn, aid)
+    place_id = str(row["place_id"]) if row.get("place_id") else None
+    place_label = None
+    if place_id:
+        prow = conn.execute(
+            "SELECT display_name FROM places WHERE id = %s::uuid AND status <> 'removed'",
+            (place_id,),
+        ).fetchone()
+        place_label = (prow or {}).get("display_name") if prow else None
+    people_views = _hydrate_people(conn, people)
+    story_views = _hydrate_stories(stories)
+    needs_rep = len(reps) == 0
+    needs_ctx = _needs_context(unresolved, people, place_id, needs_rep)
     return ArtifactView(
         id=str(aid),
         kind=str(row["kind"]),
@@ -219,10 +457,21 @@ def _view(conn, row: dict[str, Any]) -> ArtifactView:
         status=str(row["status"]),
         current_metadata_revision=int(row.get("current_metadata_revision") or 1),
         unresolved_context=dict(unresolved),
+        visibility=str(row.get("visibility") or "private"),
+        described_start_date=_iso(row.get("described_start_date")),
+        described_precision=str(row.get("described_precision") or "unknown"),
+        place_id=place_id,
+        place_label=place_label,
         person_ids=people,
+        people=people_views,
         evidence_ids=evidence,
         story_ids=stories,
-        representations=_load_reps(conn, aid),
+        stories=story_views,
+        memories=memories,
+        representations=reps,
+        needs_representation=needs_rep,
+        needs_context=needs_ctx,
+        added_by=_added_by_name(),
         created_at=_iso(row.get("created_at")),
         updated_at=_iso(row.get("updated_at")),
     )
@@ -269,6 +518,10 @@ def create_artifact(
     unresolved_context: dict[str, Any] | None = None,
     person_ids: list[str] | None = None,
     actor_key: str = "owner",
+    visibility: str | None = None,
+    described_start_date: str | None = None,
+    described_precision: str | None = None,
+    place_id: str | None = None,
 ) -> ArtifactView:
     k = (kind or "").strip()
     if k not in ARTIFACT_KINDS:
@@ -280,25 +533,48 @@ def create_artifact(
         raise ArtifactServiceError("label is required")
     desc = (description or "").strip() or None
     unresolved = unresolved_context or {"person": True, "place": True, "event": True}
+    vis = (visibility or "private").strip() or "private"
+    if vis not in VISIBILITIES:
+        raise ArtifactServiceError("visibility must be private or shared_with_family")
+    prec = (described_precision or "unknown").strip() or "unknown"
+    if prec not in DATE_PRECISIONS:
+        raise ArtifactServiceError("invalid described_precision")
+    dstart = (described_start_date or "").strip() or None
+    if prec == "unknown":
+        dstart = None
+    pid_place = None
+    if place_id and str(place_id).strip():
+        pid_place = _parse_uuid(str(place_id), field="place_id")
+        unresolved = dict(unresolved)
+        unresolved["place"] = False
     aid = uuid4()
     with connection() as conn:
+        if pid_place:
+            pl = conn.execute(
+                "SELECT id FROM places WHERE id = %s AND status <> 'removed'",
+                (pid_place,),
+            ).fetchone()
+            if not pl:
+                raise ArtifactServiceError("place not found")
         conn.execute(
             """
             INSERT INTO artifacts (
                 id, kind, label, description, status, current_metadata_revision,
-                unresolved_context_json
+                unresolved_context_json, visibility, described_start_date,
+                described_precision, place_id
             )
-            VALUES (%s, %s, %s, %s, 'active', 1, %s::jsonb)
+            VALUES (%s, %s, %s, %s, 'active', 1, %s::jsonb, %s, %s, %s, %s)
             """,
-            (aid, k, lab, desc, json.dumps(unresolved)),
+            (aid, k, lab, desc, json.dumps(unresolved), vis, dstart, prec, pid_place),
         )
         conn.execute(
             """
             INSERT INTO artifact_metadata_revisions (
                 id, artifact_id, revision, kind, label, description,
-                unresolved_context_json, actor_key, note
+                unresolved_context_json, actor_key, note,
+                visibility, described_start_date, described_precision, place_id
             )
-            VALUES (%s, %s, 1, %s, %s, %s, %s::jsonb, %s, %s)
+            VALUES (%s, %s, 1, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
             """,
             (
                 uuid4(),
@@ -309,6 +585,10 @@ def create_artifact(
                 json.dumps(unresolved),
                 actor_key or "owner",
                 "create",
+                vis,
+                dstart,
+                prec,
+                pid_place,
             ),
         )
         for pid in person_ids or []:
@@ -352,8 +632,11 @@ def list_artifacts(
     *,
     limit: int = 50,
     kind: str | None = None,
+    kind_group: str | None = None,
     person_id: str | None = None,
     query: str | None = None,
+    needs_context: bool | None = None,
+    visibility: str | None = None,
 ) -> list[ArtifactView]:
     lim = max(1, min(int(limit or 50), 200))
     clauses = ["a.status = 'active'"]
@@ -363,6 +646,19 @@ def list_artifacts(
             raise ArtifactServiceError("invalid kind filter")
         clauses.append("a.kind = %s")
         params.append(kind)
+    if kind_group:
+        g = (kind_group or "").strip().lower()
+        if g not in KIND_GROUPS:
+            raise ArtifactServiceError("invalid kind_group")
+        kinds = KIND_GROUPS[g]
+        clauses.append("a.kind IN (" + ", ".join(["%s"] * len(kinds)) + ")")
+        params.extend(list(kinds))
+    if visibility:
+        vis = visibility.strip()
+        if vis not in VISIBILITIES:
+            raise ArtifactServiceError("invalid visibility")
+        clauses.append("a.visibility = %s")
+        params.append(vis)
     if person_id:
         pid = _parse_uuid(person_id, field="person_id")
         clauses.append(
@@ -381,7 +677,8 @@ def list_artifacts(
         needle = f"%{query.strip()}%"
         clauses.append("(a.label ILIKE %s OR COALESCE(a.description,'') ILIKE %s)")
         params.extend([needle, needle])
-    params.append(lim)
+    fetch_n = 200 if needs_context else lim
+    params.append(fetch_n)
     sql = f"""
         SELECT a.* FROM artifacts a
         WHERE {' AND '.join(clauses)}
@@ -390,7 +687,10 @@ def list_artifacts(
     """
     with connection() as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
-        return [_view(conn, dict(r)) for r in rows]
+        views = [_view(conn, dict(r)) for r in rows]
+    if needs_context:
+        views = [v for v in views if v.needs_context][:lim]
+    return views
 
 
 def revise_metadata(
@@ -402,6 +702,10 @@ def revise_metadata(
     unresolved_context: dict[str, Any] | None = None,
     actor_key: str = "owner",
     note: str | None = None,
+    visibility: str | None = None,
+    described_start_date: str | None = None,
+    described_precision: str | None = None,
+    place_id: str | None = None,
 ) -> ArtifactView:
     """Immutable metadata revision — does not touch representation bytes."""
     aid = _parse_uuid(artifact_id, field="artifact_id")
@@ -428,14 +732,49 @@ def revise_metadata(
         new_unresolved = (
             unresolved_context if unresolved_context is not None else dict(prev_unresolved)
         )
+        new_vis = (visibility if visibility is not None else row.get("visibility") or "private")
+        new_vis = str(new_vis).strip() or "private"
+        if new_vis not in VISIBILITIES:
+            raise ArtifactServiceError("visibility must be private or shared_with_family")
+        new_prec = (
+            described_precision
+            if described_precision is not None
+            else row.get("described_precision") or "unknown"
+        )
+        new_prec = str(new_prec).strip() or "unknown"
+        if new_prec not in DATE_PRECISIONS:
+            raise ArtifactServiceError("invalid described_precision")
+        if described_start_date is None:
+            new_date = row.get("described_start_date")
+        else:
+            new_date = described_start_date.strip() or None
+        if new_prec == "unknown":
+            new_date = None
+        if place_id is None:
+            new_place = row.get("place_id")
+        elif str(place_id).strip() == "":
+            new_place = None
+            new_unresolved = dict(new_unresolved)
+            new_unresolved["place"] = True
+        else:
+            new_place = _parse_uuid(str(place_id), field="place_id")
+            pl = conn.execute(
+                "SELECT id FROM places WHERE id = %s AND status <> 'removed'",
+                (new_place,),
+            ).fetchone()
+            if not pl:
+                raise ArtifactServiceError("place not found")
+            new_unresolved = dict(new_unresolved)
+            new_unresolved["place"] = False
         rev = int(row["current_metadata_revision"] or 1) + 1
         conn.execute(
             """
             INSERT INTO artifact_metadata_revisions (
                 id, artifact_id, revision, kind, label, description,
-                unresolved_context_json, actor_key, note
+                unresolved_context_json, actor_key, note,
+                visibility, described_start_date, described_precision, place_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
             """,
             (
                 uuid4(),
@@ -447,6 +786,10 @@ def revise_metadata(
                 json.dumps(new_unresolved),
                 actor_key or "owner",
                 note,
+                new_vis,
+                new_date,
+                new_prec,
+                new_place,
             ),
         )
         conn.execute(
@@ -455,10 +798,25 @@ def revise_metadata(
             SET kind = %s, label = %s, description = %s,
                 unresolved_context_json = %s::jsonb,
                 current_metadata_revision = %s,
+                visibility = %s,
+                described_start_date = %s,
+                described_precision = %s,
+                place_id = %s,
                 updated_at = now()
             WHERE id = %s
             """,
-            (new_kind, new_label, new_desc, json.dumps(new_unresolved), rev, aid),
+            (
+                new_kind,
+                new_label,
+                new_desc,
+                json.dumps(new_unresolved),
+                rev,
+                new_vis,
+                new_date,
+                new_prec,
+                new_place,
+                aid,
+            ),
         )
         out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
         assert out
@@ -473,10 +831,21 @@ def add_mb_managed_representation(
     content_type: str | None = None,
     label: str | None = None,
     sort_order: int | None = None,
+    view_kind: str | None = None,
+    caption: str | None = None,
 ) -> ArtifactView:
     aid = _parse_uuid(artifact_id, field="artifact_id")
     if not data:
         raise ArtifactServiceError("empty upload")
+    mime = _normalize_mime(filename, content_type)
+    vk = (view_kind or "").strip() or "other"
+    if vk not in VIEW_KINDS:
+        raise ArtifactServiceError("invalid view_kind")
+    cap = (caption or "").strip() or None
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
     digest = hashlib.sha256(data).hexdigest()
     root = artifact_media_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -501,7 +870,7 @@ def add_mb_managed_representation(
         # Idempotent: same artifact + hash → return existing
         existing = conn.execute(
             """
-            SELECT id FROM artifact_representations
+            SELECT id, status FROM artifact_representations
             WHERE artifact_id = %s AND content_hash = %s
               AND representation_kind = 'mb_managed'
             LIMIT 1
@@ -509,6 +878,22 @@ def add_mb_managed_representation(
             (aid, digest),
         ).fetchone()
         if existing:
+            if existing.get("status") == "removed":
+                conn.execute(
+                    """
+                    UPDATE artifact_representations
+                    SET status = 'active', view_kind = %s, caption = %s,
+                        label = COALESCE(%s, label)
+                    WHERE id = %s
+                    """,
+                    (vk, cap, (label or "").strip() or None, existing["id"]),
+                )
+                conn.execute(
+                    "UPDATE artifacts SET updated_at = now() WHERE id = %s", (aid,)
+                )
+                row = conn.execute(
+                    "SELECT * FROM artifacts WHERE id = %s", (aid,)
+                ).fetchone()
             return _view(conn, dict(row))
 
         # Also register media_object for domain consistency
@@ -529,7 +914,7 @@ def add_mb_managed_representation(
             )
             VALUES (%s, %s, 'document', 'memorybox_managed', %s, %s, %s)
             """,
-            (mid, sid, rel_uri, digest, content_type),
+            (mid, sid, rel_uri, digest, mime),
         )
         order = sort_order
         if order is None:
@@ -543,9 +928,9 @@ def add_mb_managed_representation(
             INSERT INTO artifact_representations (
                 id, artifact_id, representation_kind, media_object_id,
                 uri, content_hash, mime_type, original_filename, byte_size,
-                sort_order, label
+                sort_order, label, view_kind, caption, status
             )
-            VALUES (%s, %s, 'mb_managed', %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, 'mb_managed', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active')
             """,
             (
                 uuid4(),
@@ -553,11 +938,13 @@ def add_mb_managed_representation(
                 mid,
                 rel_uri,
                 digest,
-                content_type,
+                mime,
                 safe,
                 len(data),
                 order,
                 (label or "").strip() or None,
+                vk,
+                cap,
             ),
         )
         conn.execute(
@@ -719,26 +1106,30 @@ def associate_story(artifact_id: str, story_id: str) -> ArtifactView:
         row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
         if not row or row["status"] == "removed":
             raise ArtifactServiceError("artifact not found")
+        label = (row["label"] or "").strip() or "Artifact"
         st = conn.execute(
             "SELECT id, status FROM stories WHERE id = %s", (sid,)
         ).fetchone()
         if not st or st["status"] != "active":
             raise ArtifactServiceError("story not found")
-        _add_rel(
-            conn,
-            kind=REL_ABOUT_ARTIFACT,
-            from_type="story",
-            from_id=sid,
-            to_type="artifact",
-            to_id=aid,
-            label="Story about artifact",
-        )
         conn.execute(
             "UPDATE artifacts SET updated_at = now() WHERE id = %s", (aid,)
         )
-        out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
-        assert out
-        return _view(conn, dict(out))
+    from memorybox.story import StoryServiceError, add_working_memory
+
+    try:
+        add_working_memory(
+            str(sid),
+            source_kind="artifact",
+            source_id=str(aid),
+            label_snapshot=label,
+        )
+    except StoryServiceError as exc:
+        raise ArtifactServiceError(str(exc)) from exc
+    got = get_artifact(str(aid))
+    if not got:
+        raise ArtifactServiceError("artifact not found")
+    return got
 
 
 def create_story_for_artifact(
@@ -815,6 +1206,11 @@ def read_representation_bytes(
     aid = _parse_uuid(artifact_id, field="artifact_id")
     rid = _parse_uuid(representation_id, field="representation_id")
     with connection() as conn:
+        art = conn.execute(
+            "SELECT status FROM artifacts WHERE id = %s", (aid,)
+        ).fetchone()
+        if not art or art["status"] == "removed":
+            raise ArtifactServiceError("representation not found")
         row = conn.execute(
             """
             SELECT * FROM artifact_representations
@@ -823,6 +1219,8 @@ def read_representation_bytes(
             (rid, aid),
         ).fetchone()
         if not row:
+            raise ArtifactServiceError("representation not found")
+        if str(row.get("status") or "active") == "removed":
             raise ArtifactServiceError("representation not found")
         if row["representation_kind"] != "mb_managed":
             raise ArtifactServiceError("only mb_managed representations are byte-served here")
@@ -877,3 +1275,224 @@ def search_artifacts_for_ask(query: str, *, limit: int = 20) -> list[dict[str, A
             }
         )
     return out[:limit]
+
+
+def remove_artifact(artifact_id: str) -> ArtifactView:
+    aid = _parse_uuid(artifact_id, field="artifact_id")
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
+        conn.execute(
+            "UPDATE artifacts SET status = 'removed', updated_at = now() WHERE id = %s",
+            (aid,),
+        )
+    gone = get_artifact(str(aid))
+    if gone:
+        raise ArtifactServiceError("artifact still visible after remove")
+    return ArtifactView(
+        id=str(aid),
+        kind=str(row["kind"]),
+        label=str(row["label"] or ""),
+        description=row.get("description"),
+        status="removed",
+        current_metadata_revision=int(row.get("current_metadata_revision") or 1),
+        unresolved_context={},
+    )
+
+
+def unlink_person(artifact_id: str, person_id: str) -> ArtifactView:
+    aid = _parse_uuid(artifact_id, field="artifact_id")
+    pid = _parse_uuid(person_id, field="person_id")
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
+        conn.execute(
+            """
+            UPDATE relationships
+            SET status = 'superseded', updated_at = now()
+            WHERE from_type = 'artifact' AND from_id = %s
+              AND to_type = 'person' AND to_id = %s
+              AND relationship_kind = %s
+              AND status IN ('candidate', 'confirmed')
+            """,
+            (aid, pid, REL_ABOUT_PERSON),
+        )
+        out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        assert out
+        return _view(conn, dict(out))
+
+
+def remove_representation(artifact_id: str, representation_id: str) -> ArtifactView:
+    aid = _parse_uuid(artifact_id, field="artifact_id")
+    rid = _parse_uuid(representation_id, field="representation_id")
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
+        rep = conn.execute(
+            """
+            SELECT id, uri FROM artifact_representations
+            WHERE id = %s AND artifact_id = %s
+            """,
+            (rid, aid),
+        ).fetchone()
+        if not rep:
+            raise ArtifactServiceError("representation not found")
+        conn.execute(
+            """
+            UPDATE artifact_representations
+            SET status = 'removed'
+            WHERE id = %s
+            """,
+            (rid,),
+        )
+        conn.execute("UPDATE artifacts SET updated_at = now() WHERE id = %s", (aid,))
+        out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        assert out
+        return _view(conn, dict(out))
+
+
+def add_artifact_memory(
+    artifact_id: str,
+    *,
+    source_kind: str,
+    source_id: str,
+    label_snapshot: str | None = None,
+    thumb_url: str | None = None,
+    occurred_on: str | None = None,
+) -> ArtifactView:
+    aid = _parse_uuid(artifact_id, field="artifact_id")
+    kind = (source_kind or "").strip()
+    if kind not in MEMORY_KINDS:
+        raise ArtifactServiceError(f"unsupported source_kind {kind!r}")
+    sid = (source_id or "").strip()
+    if not sid:
+        raise ArtifactServiceError("source_id is required")
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
+        existing = conn.execute(
+            """
+            SELECT id, status FROM artifact_memories
+            WHERE artifact_id = %s AND source_kind = %s AND source_id = %s
+            """,
+            (aid, kind, sid),
+        ).fetchone()
+        if existing:
+            mx = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) AS m FROM artifact_memories WHERE artifact_id = %s",
+                (aid,),
+            ).fetchone()
+            conn.execute(
+                """
+                UPDATE artifact_memories
+                SET status = 'active',
+                    label_snapshot = COALESCE(%s, label_snapshot),
+                    thumb_url = COALESCE(%s, thumb_url),
+                    occurred_on = COALESCE(%s, occurred_on),
+                    position = %s
+                WHERE id = %s
+                """,
+                (
+                    (label_snapshot or "").strip() or None,
+                    thumb_url,
+                    (occurred_on or "").strip() or None,
+                    int(mx["m"] if mx else -1) + 1,
+                    existing["id"],
+                ),
+            )
+        else:
+            mx = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) AS m FROM artifact_memories WHERE artifact_id = %s",
+                (aid,),
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO artifact_memories (
+                    id, artifact_id, position, source_kind, source_id,
+                    label_snapshot, occurred_on, thumb_url, status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active')
+                """,
+                (
+                    uuid4(),
+                    aid,
+                    int(mx["m"] if mx else -1) + 1,
+                    kind,
+                    sid,
+                    (label_snapshot or "").strip() or None,
+                    (occurred_on or "").strip() or None,
+                    thumb_url,
+                ),
+            )
+        conn.execute("UPDATE artifacts SET updated_at = now() WHERE id = %s", (aid,))
+        out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        assert out
+        return _view(conn, dict(out))
+
+
+def remove_artifact_memory(artifact_id: str, memory_id: str) -> ArtifactView:
+    aid = _parse_uuid(artifact_id, field="artifact_id")
+    mid = _parse_uuid(memory_id, field="memory_id")
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        if not row or row["status"] == "removed":
+            raise ArtifactServiceError("artifact not found")
+        mem = conn.execute(
+            "SELECT id FROM artifact_memories WHERE id = %s AND artifact_id = %s",
+            (mid, aid),
+        ).fetchone()
+        if not mem:
+            raise ArtifactServiceError("memory link not found")
+        conn.execute(
+            "UPDATE artifact_memories SET status = 'removed' WHERE id = %s",
+            (mid,),
+        )
+        conn.execute("UPDATE artifacts SET updated_at = now() WHERE id = %s", (aid,))
+        out = conn.execute("SELECT * FROM artifacts WHERE id = %s", (aid,)).fetchone()
+        assert out
+        return _view(conn, dict(out))
+
+
+def artifacts_using_media(*, source_kind: str, source_id: str) -> list[ArtifactView]:
+    kind = (source_kind or "").strip()
+    sid = (source_id or "").strip()
+    if kind not in MEMORY_KINDS or not sid:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.*, m.id AS link_memory_id
+            FROM artifacts a
+            JOIN artifact_memories m ON m.artifact_id = a.id
+            WHERE a.status = 'active'
+              AND m.status = 'active'
+              AND m.source_kind = %s
+              AND m.source_id = %s
+            ORDER BY a.updated_at DESC
+            """,
+            (kind, sid),
+        ).fetchall()
+        views = []
+        for r in rows:
+            payload = dict(r)
+            mid = payload.pop("link_memory_id", None)
+            view = _view(conn, payload)
+            view.link_memory_id = str(mid) if mid else None
+            views.append(view)
+        return views
+
+
+def resolve_or_create_place(display_name: str) -> dict[str, Any]:
+    from memorybox.correlate.store import upsert_place
+
+    name = (display_name or "").strip()
+    if not name:
+        raise ArtifactServiceError("place display_name required")
+    try:
+        return upsert_place(name)
+    except Exception as exc:  # noqa: BLE001
+        raise ArtifactServiceError(str(exc)) from exc
