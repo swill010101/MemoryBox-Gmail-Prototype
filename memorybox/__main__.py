@@ -288,6 +288,15 @@ def main(argv: list[str] | None = None) -> int:
             "(set MEMORYBOX_ARTIFACT_MEDIA_ROOT; optional MEMORYBOX_I9_OWNER_ARTIFACT_ID)"
         ),
     )
+    p_prove_i10a1 = sub.add_parser(
+        "prove-person-i10a1",
+        help="P2-I10A.1 Person Explorer / About / Edit acceptance prove",
+    )
+    p_prove_i10a1.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
+    )
     p_prove9a = sub.add_parser(
         "prove-person-profile",
         help="Increment 9A Person Profile acceptance prove",
@@ -650,6 +659,13 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.artifact.acceptance import run_prove_artifact
 
         payload = run_prove_artifact(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-person-i10a1":
+        from memorybox.person.i10a1_acceptance import run_prove_person_i10a1
+
+        payload = run_prove_person_i10a1(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

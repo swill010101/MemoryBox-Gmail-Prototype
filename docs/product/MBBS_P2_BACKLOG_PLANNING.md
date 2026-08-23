@@ -87,9 +87,11 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I10A Stories** — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md). **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”). **Not I11.**
 
-**Sequence after I10A (owner 2026-08-23):** I10A.1 Person Profile Editor → I10A.2 Unified Voice Capture & Transcription (Stories first) → **I10B Artifacts** → I10C Journal → I11 only after those plus required transcription/recognition work.
+**Sequence after I10A (owner 2026-08-23, I10B already shipped):** I10A.1 Person Profile Editor → I10A.2 Unified Voice Capture & Transcription (Stories first) → I10C Journal → I11 only after those plus required transcription/recognition work. I10B **ACCEPTED** 2026-08-23.
 
 **P2-I10B Artifacts** — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”). Tell its story opens the shared Story editor (`?artifact=`); the recorder is I10A.2. Implementation: `cursor/p2-i10b-artifacts-49da`.
+
+**P2-I10A.1 Person Profile and Editor** — [PRD](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md) **ACCEPTED** (Explorer amendment) · [screen contract](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A1_ACCEPTANCE.md) · [field map](MBAS-P2-I10A1_FIELD_ACTION_MAP.md). One header above Ask; About = complete read-only; Edit = `/people/{id}/edit`. `prove-person-i10a1` is the chrome gate. No Immich write-back.
 
 **P2-I10 Cross-Source Correlation** — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) · [PRD](MBPRD-P2-I10_CROSS_SOURCE.md). **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). **I11 narrative is not I10.**
 
@@ -104,4 +106,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I10A.1** Person Profile Editor (PRD for review). Then **I10A.2** Unified Voice Capture (Stories first), then **I10C** Journal. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
+**Next:** **I10A.1** implementation against the accepted screen contract (`prove-person-i10a1`). Then **I10A.2** Unified Voice Capture (Stories first), then **I10C** Journal. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10.
