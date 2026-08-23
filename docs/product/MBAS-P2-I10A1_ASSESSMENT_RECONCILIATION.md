@@ -1,8 +1,8 @@
 # P2-I10A.1 — Assessment reconciliation
 
-**Status:** Planning only · repository assessment **2026-08-23** · increment **not build-authorized**  
+**Status:** Repository assessment **2026-08-23** · PRD **ACCEPTED** (Explorer amendment) · chrome not yet implemented  
 **Does not implement** code, migrations, routes, templates, APIs, or tests  
-**Definition / PRD:** [MBBS-P2_INCREMENT_10A1_DEFINITION.md](MBBS-P2_INCREMENT_10A1_DEFINITION.md) · [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
+**Definition / PRD / map / contract:** [MBBS-P2_INCREMENT_10A1_DEFINITION.md](MBBS-P2_INCREMENT_10A1_DEFINITION.md) · [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md) · [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md) · [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md)  
 **Base:** `cursor/p2-i10b-artifacts-49da` (I10B **ACCEPTED** 2026-08-23)
 
 This revises the first I10A.1 PRD after owner navigation lock. Screenshot text is still not proof of a backend field. Immich people are provider identities, not MemoryBox SoT.
@@ -25,7 +25,7 @@ Person Explorer stays a **concise, memory-focused** screen. Do not add the entir
 | 6 | The full profile/editor is the **authoritative** place to view and edit the complete person record. |
 | 7 | MemoryBox corrections **must not silently write back to Immich**. |
 
-The informational panel remains a concise overview. It **must not sit in the Edit path**.
+**Amended:** the informational panel is no longer a short teaser. **About** is the complete **read-only** supported record (inspect, then decide). It still **must not sit in the Edit path**. The Explorer **header** stays a summary and must not duplicate a second identity card below Ask.
 
 ---
 
@@ -101,7 +101,13 @@ Who am I (owner picker), Open a person (MB + Immich picker via `POST /people/ens
 
 ### Explorer concise info (must stay on Explorer)
 
-Portrait, display name, owner-relative kinship, life years, memory count, gallery. **Not** the full contact/place/mapping record.
+`loadProfile()` in `person-explore.js` loads `GET /people/{id}` + `GET /people/{id}/profile` (+ portrait, Learn extras). Header: portrait, `display_name`, owner-relative derived role + birth/death years. About **card** (`#mb-person-about-dl`): name, relationship, born/died, confirmed phone/email only. Family **strip**: up to eight names from assertions + derived. Gallery via Explore find.
+
+**Not** on Explorer: full aliases list, mappings, merge, owner, places SoT, complete contact editor.
+
+**Also today (defects vs lock, besides header Edit):** footer **View / Edit details** is About/Details but labeled Edit. **+ Add family** jumps to `?admin=1#relationships` instead of the I6 modal or the new editor. Header **Relationships** opens the concise family drawer, not the admin form.
+
+The I6 relationships modal (`person-relationships.js`) already teaches one side and withdraws/supersedes. Keep it on Explorer. The full editor Relationships section is the authoritative grouped view.
 
 ---
 
@@ -109,7 +115,7 @@ Portrait, display name, owner-relative kinship, life years, memory count, galler
 
 Follow I10A/I10B dark chrome (`data-mb-surface` token lock so shell paper cannot paint light cards).
 
-**Recommendation:** `/people/ui?person={id}&edit=1` (or `/people/ui?id={id}&edit=1`). Server already has the person. **No picker.** Load `GET /people/{id}/profile` (+ provider projection).
+**Frozen:** `/people/{id}/edit`. Server already has the person. **No picker.** Load `GET /people/{id}/profile` (+ provider projection). Same mapping as About and the Explorer header summary.
 
 | Region | Purpose |
 |---|---|
@@ -144,7 +150,7 @@ I5 gallery/timeline reopen · I6 new inference · I10A.2 mic · I10C · I11 · I
 
 ## Open (do not block writing the definition)
 
-1. Partial / unknown dates: keep “no row = unknown” + full `DATE` only, or add precision like I10B Artifact?  
-2. Important places: leave honest-empty, or add `person_id`↔`places.id` this increment?  
+1. **Closed:** persist and display date precision (not a fake day).  
+2. Important places: leave honest-omit, or add `person_id`↔`places.id` this increment?  
 3. Preferred name: alias only, or new column? **Recommendation:** one `display_name` + nicknames.  
-4. Route string: `edit=1` vs `/person/edit`. **Recommendation:** `edit=1` on `/people/ui`.
+4. **Closed:** `/people/{id}/edit`. Preferred portrait in scope.

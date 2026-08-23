@@ -1,9 +1,12 @@
 # MBPRD-P2-I10A.1 — Person Profile and Editor
 
-**Status:** PRD **revised after repository assessment** · **not accepted** · increment **not build-authorized**  
+**Status:** PRD **ACCEPTED** (owner) · **amended 2026-08-23** (Person Explorer header / About vs Edit) · implementation **must follow this contract**; chrome prove is red until built  
 **Date:** 2026-08-23  
 **Increment definition:** [MBBS-P2_INCREMENT_10A1_DEFINITION.md](MBBS-P2_INCREMENT_10A1_DEFINITION.md)  
-**Assessment:** [MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md)
+**Assessment:** [MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md)  
+**Field / action map:** [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md)  
+**Screen contract:** [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md)  
+**Acceptance:** [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md) · `python -m memorybox prove-person-i10a1`
 
 **Visual baseline:** `MBUX-Person-Edit-v1.png` on `fe913a4` (`cursor/marvin-capture-v01-3344`) in `docs/source/Screens/MBUX Story Screens/`. Copy to `docs/source/Screens/MBUX Person Screens/` before implementation. Pixels lose to Frozen rows.
 
@@ -19,20 +22,23 @@
 
 ## Frozen product decisions
 
-Owner 2026-08-23.
+Owner 2026-08-23, including Explorer amendment.
 
-1. Person Explorer remains **concise and memory-focused**. Do not put the entire person record on it.
-2. **About / Details** may open the **existing informational panel**.
-3. That panel is **read-only** and is **not** the editor.
-4. The action at the **bottom of the panel** opens the **full Person Profile/Editor** for the **currently selected** person.
-5. Any Explorer control **labeled Edit** **bypasses** the panel and opens the **same** full editor.
-6. **No additional person-selection step.** Person and current data are already loaded.
-7. The full profile/editor is **authoritative** for viewing and editing the complete person record.
-8. MemoryBox corrections **must not silently write changes back to Immich**.
-9. MemoryBox Person is canonical. Immich / HVRT people are **provider identities**.
-10. Taught vs Derived kinship stays I6: editor writes taught assertions only; Derived is read-only and labeled.
-11. Advanced identity tools (reject, merge, teach, repair, “I am this person”) live on the full editor in a **separated** section. They must not visually compete with ordinary profile editing.
-12. No Person working draft. Save writes. Cancel/Back without Save writes nothing.
+1. Person Explorer remains **memory-focused**. Do **not** place every profile field permanently on it. The **header is a summary**; **About** is the complete read-only record; **Edit** is the writable record.
+2. **One** enriched Person header **above** Ask. Remove the second portrait/name identity card below Ask (`#mb-explore-curator` on this surface).
+3. Header shows: preferred provider portrait; full/display name; alternate/known-as when present; birth/death **with date precision**; relationship to the MemoryBox owner when known; primary/important place when available; **labeled** memory totals by supported kind; actions **About · Edit · Relationships · Learn**.
+4. **Do not** show an unlabeled media/result date range that can be mistaken for lifespan. Distinguish person life dates, current result/media range, total memories, and counts by kind.
+5. **Do not** expose full contact information in always-visible chrome (header or footer About card). Contacts belong in About (read) and Edit (write).
+6. **About** opens a **complete read-only** view of the supported person record (identity, aliases, life facts and notes, family, confirmed contacts, important places, relevant provenance/confirmation). It is **not** the editor. This is how the family inspects the record and decides whether to correct it.
+7. **Edit** **bypasses** About and opens **`/people/{id}/edit`**, already populated for the selected person. No extra picker.
+8. The bottom action in About opens the **same** editor.
+9. About, header, and Edit **share** field mapping, SoT, date precision, provenance, and relationship interpretation (this increment — not a later polish).
+10. MemoryBox corrections **must not silently write changes back to Immich**.
+11. MemoryBox Person is canonical. Immich / HVRT people are **provider identities**.
+12. Taught vs Derived kinship stays I6: editor writes taught assertions only; Derived is read-only and labeled.
+13. Advanced identity tools (reject, merge, teach, repair, “I am this person”) live on Edit in a **separated** section. They must not visually compete with ordinary profile editing. They are **not** on About.
+14. No Person working draft. Save writes. Cancel/Back without Save writes nothing.
+15. Preferred provider portrait on the Explorer header is **in scope** (absorbs **P2-BL-I5-01**).
 
 ---
 
@@ -42,39 +48,45 @@ Owner 2026-08-23.
 
 **Success**
 
-- About/Details → read-only panel only.
-- Panel footer → full editor, same `person` id, no picker.
-- **Edit** → full editor directly.
-- Full screen shows Profile, Relationships (grouped), Identity and Sources, Advanced.
+- One header above Ask; no curator identity duplicate; life dates ≠ result range.
+- Header: portrait, name, aka, life dates with precision, owner kinship, place when known, labeled kind totals, About/Edit/Relationships/Learn.
+- About → complete read-only supported record. Footer → `/people/{id}/edit`.
+- **Edit** → `/people/{id}/edit` directly, same id, no picker.
+- Edit screen: Profile, Relationships (grouped), Identity and Sources, Advanced.
+- Header / About / Edit show the same name, facts, precision, and kinship rules.
 - Rename, facts, contacts, relationships do not call Immich update APIs.
 - FlightSim: open a person, Edit, change display name, reload Explorer header — MB name changed; Immich person name unchanged.
+- `python -m memorybox prove-person-i10a1` is green.
 
 ---
 
 ## A. Surfaces and navigation
 
-### Person Explorer — **Existing**, stay concise
+Canonical chrome: [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md).
 
-**Required** header/curator only: portrait, `display_name`, owner-relative kinship, life years, memory summary, gallery (I5).
+### Person Explorer — **Existing** gallery, **Required** header rewrite
+
+I5 Ask / gallery / filters / timeline / map stay. Identity chrome is **one** enriched header above Ask.
 
 | Control | Today | I10A.1 |
 |---|---|---|
-| **About** / **Details** / **View / Edit details** | Opens `#mb-person-drawer` | **Keep panel.** Relabel if needed so it is not “Edit”. |
-| Drawer body | Read-only from cached `/people/{id}/profile` | **Keep read-only.** Do not add the full record. |
-| Drawer footer | “Open full profile editor” → `?admin=1` | **Required:** same label or “Open full profile” → **new editor**, current person. |
-| Header **Edit** (`#mb-person-edit`) | `preventDefault` + About drawer | **Required:** navigate to full editor. **Do not** open the panel. |
+| Header | Portrait, name, kinship+years; **Edit** opens About | Enriched summary (contract S.1.1). **Edit** → `/people/{id}/edit`. |
+| `#mb-explore-curator` | Second portrait/name + result copy below Ask | **Remove / hide** on Person surface. |
+| **View / Edit details** | Opens About | **Remove.** Header **About** opens About. |
+| About card `#mb-person-about-dl` | Always-visible contacts | Teaser only — **no** emails/phones. |
+| **+ Add family** | Jumps to `?admin=1#relationships` | I6 modal or Edit Relationships — **not** admin. |
 
-### Informational panel — **Existing** read-only
+### About — **Required** complete read-only
 
-Shows a **subset**: name, aliases, birth/death, family names+roles, contacts, places **placeholder**, notes. Not authoritative. Not editable.
+Not a short teaser. Same supported fields as Edit Profile + Relationships + Identity **read** (not Advanced writes). Footer → `/people/{id}/edit`.
 
-### Full Person Profile/Editor — **Required** new surface
+### Full Person Profile/Editor — **Required**
 
-**Recommendation:** `GET /people/ui?person={id}&edit=1` (reuse `people_ui()`). I10A/I10B dark chrome, sticky Cancel / Save.
+**Frozen path:** `GET /people/{id}/edit`. I10A/I10B dark chrome, sticky Cancel / Save.
 
-Boot: use `person` from the URL (already selected). `GET /people/{id}` + `GET /people/{id}/profile` + `GET /people/{id}/portrait` + `GET /people/{id}/provider-projection`. No `picker-options` / `ensure` step on this path.
+Boot: `{id}` from the path (already selected). `GET /people/{id}` + `GET /people/{id}/profile` + `GET /people/{id}/portrait` + `GET /people/{id}/provider-projection`. No `picker-options` / `ensure` on this path.
 
-`?admin=1` is **not** the family Edit URL.
+`?admin=1` / `people.html` is **not** the family Edit URL.
 
 ---
 
@@ -122,62 +134,25 @@ Confirm before merge / reject / owner change.
 
 ## C. Field and action mapping
 
-Every displayed or editable field and every action. **Existing source** is the repository as of I10B ACCEPTED.
+The complete table (screen section, UI label, existing source, write/action, Immich write, disposition) is [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md). Summary:
 
-| Screen section | UI label | Existing source | Write / action | I10A.1 |
-|---|---|---|---|---|
-| Explorer header | Portrait | `GET /people/{id}/portrait` · Immich preferred thumb when mapped (`fetch_person_portrait_bytes`) | None (display) | Keep on Explorer |
-| Explorer header | Name | `people.display_name` via `GET /people/{id}` | None | Keep |
-| Explorer header | Subline | Derived kinship to owner + birth/death years from facts | None | Keep |
-| Explorer header | Memory summary | Explore find meta | None | Keep |
-| Explorer | **Edit** | `#mb-person-edit` → **wrongly** About drawer | Navigate to full editor | **Required** fix |
-| Explorer footer | View / Edit details | `#mb-person-about-edit` → About drawer | Open **panel** | Relabel to About/Details if it still says Edit |
-| Panel | Full name | Cached profile / `display_name` | Read-only | Keep concise |
-| Panel | Also known as | `person_aliases` | Read-only | Keep |
-| Panel | Born / Died | `person_facts` `value_date` | Read-only | Keep; “Not recorded” if absent |
-| Panel | Family | Cached family name + role | Read-only | Keep concise |
-| Panel | Confirmed contacts | `person_contact_points` | Read-only | Keep |
-| Panel | Places | **Hard-coded placeholder** — no table | None | Honest empty or same placeholder |
-| Panel | Notes | `person_facts` `note` kind | Read-only | Keep |
-| Panel footer | Open full profile / editor | Today `adminHref()` `?admin=1` | Open full editor, same id | **Required** |
-| Profile | Profile image | Same portrait endpoint | Display only this increment unless Open portrait absorb | **Required** display |
-| Profile | Full name / Display name | `people.display_name` | `POST /people/{id}/name` → `rename_person` (**MB `people` only**) | **Required** |
-| Profile | Preferred name | **No column** — same as display name | — | **Recommendation:** do not add a column; nicknames cover “also called” |
-| Profile | Nickname | `person_aliases` `nickname` | `POST /people/{id}/aliases` | **Required** |
-| Profile | Other name | `person_aliases` `alternate_name` | Same | **Required** |
-| Profile | Birth | `person_facts` `birth_date` + `value_date` | `POST /people/{id}/facts` (replaces prior birth) | **Required**. Unknown = no row |
-| Profile | Death | `person_facts` `death_date` | Same | **Required** |
-| Profile | Partial date | **Not in schema** (`DATE` + `parse_date` ISO day) | — | **Open** (see below) |
-| Profile | Fact note | `person_facts.note` and/or `fact_kind=note` `value_text` | `POST /people/{id}/facts` | **Required** (notes as today) |
-| Profile | Email | `person_contact_points` `email` | POST contacts; correct via `POST /people/contacts/{id}/supersede` | **Required** |
-| Profile | Phone | `phone` · 10-digit persist | Same | **Required** |
-| Profile | Important places | **None** | — | **Open**. Do not invent lat/long. If in, reuse I10 `places` + new link table |
-| Relationships | Parents / Siblings / Spouse or partner / Children / Other | `get_person_profile().relationships` assertions + kinship `direct` / `extended` | Add: `POST /people/relationships`. Change: `…/supersede`. Remove: `…/withdraw` | **Required** taught; Derived read-only |
-| Relationships | Inverse | `INVERSE_ROLE` in `memorybox/profile/owner.py`; projection in `relationships.py` | Service-maintained | **Required** — one user entry |
-| Relationships | Wedding / anniversary | `shared_life_events` + participants | `POST /people/life-events/marriage` | **Required** |
-| Identity | MB Person id | `people.id` | None | **Required** read |
-| Identity | Person status | `people.status` | None (except merge) | **Required** read |
-| Identity | Identity authority | `people.attributes_json.identity_authority` | Set by teach/map | **Required** read |
-| Identity | Linked Immich / provider | `provider_identities` · `GET /people/{id}/provider-projection` | None here | **Required** read |
-| Identity | Confirmation | `confirmed_at`, `confirmed_by` | Teach/map | **Required** read |
-| Identity | Provenance | `provenance_json`, `assertions` | Written by existing services | **Required** disclose; no history browser |
-| Advanced | Reject incorrect mapping | `POST /people/reject` → `reject_mapping` (detach + `identity_negatives`) | MB only | **Required** |
-| Advanced | Merge duplicates | `POST /people/merge` → `merge_people` | Survivor kept; loser `merged_away` | **Required** |
-| Advanced | Teach / confirm face | `POST /people/teach` · Learn/Review recognition | Maps provider → MB | **Required** in Advanced |
-| Advanced | Repair mapping | `POST /people/{id}/map`, `POST /people/{id}/reconcile` | MB only | **Required** |
-| Advanced | I am this person | `GET/POST /people/owner` · setting `owner_person_id` | MB runtime (+ env override) | **Required** |
-| — | Immich person name / faces | Immich API | **Forbidden silent write** | **Frozen** |
-| — | Delete Person | **No API** | — | **Out** |
-| — | Delete fact/alias | **No API** (supersede/replace only) | — | **Out** unless Open later |
-| — | Immich sync run | `POST /people/sync/immich` | Operator | **Out** of family editor |
-| — | I5 Highlights / Timeline / Map / Learn boxing | Explorer | — | **Out** |
-| — | I10A.2 recorder | — | — | **Out** |
+| Screen section | What lives there |
+|---|---|
+| Explorer header | Summary only: portrait, name, aka, life dates (precision), owner kinship, place if known, labeled kind totals. About / Edit / Relationships / Learn. **No** full contacts. |
+| About | Complete **read-only** supported record (same mapping as Edit, minus Advanced writes). Footer → `/people/{id}/edit`. |
+| Profile (Edit) | Image, full/display name, nicknames, birth/death + precision, notes, email/phone, important places. |
+| Relationships | Parents, Siblings, Spouse or partner, Children, Other family. One taught side; `INVERSE_ROLE` maintains the other. Marriage shared event. |
+| Identity and Sources | Canonical MB Person vs linked Immich/provider rows, confirmation, provenance. Immich is not SoT. |
+| Advanced | Reject mapping, merge, teach/confirm face, repair map/reconcile, “I am this person”. Confirm destructive. |
+| Out | Delete Person, Immich silent write, Immich sync UI, I5 gallery reopen, I10A.2 recorder, `people.notes` unused column, curator identity card |
+
+Reuse Existing APIs. Do not fork a second person model.
 
 ---
 
 ## D. Constraints and honesty
 
-- **Dates:** birth/death need a full calendar day or be absent. Admin `mm-dd-yyyy` still becomes `DATE`. “Unknown” is no fact. Year-only is **not Existing**.
+- **Dates:** Header, About, and Edit must honor **precision** (year / month / day / unknown). Schema today is a required `DATE` — I10A.1 **Required** to persist precision (I10B-style) so a year-only fact is not stored or shown as a fake day. Unknown remains no fact (or an explicit unknown), never a silent `YYYY-01-01`.
 - **Phone:** digits-only store; show a readable format.
 - **Owner:** if `MEMORYBOX_OWNER_PERSON_ID` is set, UI cannot override env — say so.
 - **Merged_away:** not editable; follow survivor.
@@ -187,26 +162,27 @@ Every displayed or editable field and every action. **Existing source** is the r
 
 ---
 
-## E. Build plan (after sign-off only)
+## E. Build plan (implementation next; contract and prove already updated)
 
 1. Copy Person Edit PNG into `MBUX Person Screens/`.
-2. Editor route + chrome; load current person; sticky footer.
-3. Fix Explorer **Edit** vs About/Details vs panel footer (Frozen navigation).
-4. Profile writes (name, facts, aliases, contacts).
-5. Relationships groups + marriage; inverses via Existing service.
-6. Identity read + Advanced actions with confirm.
-7. Prove: nav paths; no Immich write on rename; merge/reject stay MB-only; cancel no-write.
+2. Explorer: one enriched header; hide curator; labeled life vs result range vs kind totals; About / Edit / Relationships / Learn.
+3. `GET /people/{id}/edit` + chrome; load current person; sticky footer.
+4. About = complete read-only; footer and **Edit** → same path.
+5. Profile writes (name, facts + precision, aliases, contacts).
+6. Relationships groups + marriage; inverses via Existing service.
+7. Identity read + Advanced actions with confirm.
+8. Green `prove-person-i10a1` (+ FlightSim D2/D3).
 
 ---
 
-## F. Open questions
+## F. Open questions (remaining)
 
-1. Partial dates this increment (precision like I10B) or keep day-or-unknown?  
-2. Important places: honest empty, or I10 `places` link table now?  
-3. Preferred name as its own field?  
-4. Absorb **P2-BL-I5-01** (preferred Immich portrait) in this increment?  
-5. Confirm `edit=1` on `/people/ui` vs a dedicated path.
+1. **Closed:** Date precision is **Required** (display + persist).  
+2. Important places: honest omit until a person↔`places` link exists, or add that link table in this increment?  
+3. Preferred name as its own field? **Recommendation:** one `display_name` + nicknames.  
+4. **Closed:** Preferred provider portrait is **in scope**.  
+5. **Closed:** Family Edit path is `/people/{id}/edit`.
 
 ---
 
-**This PRD is for product-owner review. It is not accepted and not build-authorized. Do not implement until Tom says Approved to build.**
+**PRD ACCEPTED and amended. Implement against the screen contract. Do not ship Explorer chrome that still duplicates the curator card or routes Edit through About.**

@@ -1,37 +1,43 @@
 # P2-I10A.1 — Person Profile and Editor
 
-**Status:** Definition **revised after repository assessment** · **not accepted** · **not build-authorized**  
+**Status:** Definition **ACCEPTED** with PRD (Explorer amendment 2026-08-23) · chrome prove red until implemented  
 **PR base:** `cursor/p2-i10b-artifacts-49da` (I10B **ACCEPTED**).  
 **PRD:** [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
+**Screen contract:** [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md)  
 **Assessment:** [MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md)  
+**Field / action map:** [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md)  
+**Acceptance:** [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md) · `prove-person-i10a1`  
 **Visuals:** `MBUX-Person-Edit-v1.png` on `fe913a4` — copy to `docs/source/Screens/MBUX Person Screens/` before build.  
 **Depends:** I5 Explorer **ACCEPTED** · I6 kinship **ACCEPTED** · I10A **ACCEPTED** · I10B **ACCEPTED** · `memorybox/profile` + `people` / `provider_identities`  
 **Does not start:** I10A.2 voice · I10C · I11 · I8.5 Face SoT · Immich write-back · I5 gallery reopen
 
 ## Intent
 
-Person Explorer stays a **memory-focused** screen. A concise **read-only** About/Details panel may summarize the person. The **full Person Profile/Editor** is the only authoritative place to see and change the complete MemoryBox person record. MemoryBox Person is canonical. Immich people are linked provider identities. Corrections stay in MemoryBox and **do not silently write Immich**.
+Person Explorer stays **memory-focused** with **one** enriched header. **About** is the complete read-only supported record. **Edit** at `/people/{id}/edit` is the writable record. Header, About, and Edit share mapping, SoT, date precision, provenance, and kinship rules. MemoryBox Person is canonical. Immich people are linked provider identities. Corrections **do not silently write Immich**.
 
-## Build locks (from owner + PRD)
+## Build locks
 
-1. Explorer does not gain the entire person record.
-2. About/Details → existing informational panel; **read-only**; **not** the editor.
-3. Panel footer opens the full editor for the **already selected** person.
-4. Explorer **Edit** skips the panel and opens the same editor.
-5. No second person picker on that path.
-6. Full editor = Profile + Relationships + Identity and Sources + Advanced (specialist tools visually separated).
-7. Taught relationships: user enters one side; service keeps inverses. Derived stays labeled Derived.
-8. No Immich person/face write-back from rename, facts, reject, teach, merge, or owner.
-9. No Person working draft. Save writes. Cancel without Save writes nothing.
-10. Dark I10A/I10B chrome. Shell paper must not paint light cards.
+1. One header above Ask. No second portrait/name card below Ask.
+2. Header is a **summary** (no full contacts). About is complete **read-only**. Edit is **writable**.
+3. Header: preferred portrait, display name, aka when present, life dates with precision, owner kinship, place when available, labeled kind totals, About / Edit / Relationships / Learn.
+4. Life dates ≠ unlabeled result/media range. Label totals vs kind counts.
+5. **Edit** → `/people/{id}/edit` for the selected person. Bypasses About. No picker.
+6. About footer opens the same editor.
+7. Edit = Profile + Relationships + Identity and Sources + Advanced (specialist tools separated).
+8. Taught relationships: one side; service inverses. Derived labeled Derived.
+9. Date precision persisted and displayed (not a fake calendar day).
+10. No Immich person/face write-back from rename, facts, reject, teach, merge, or owner.
+11. No Person working draft. Save writes. Cancel without Save writes nothing.
+12. Dark I10A/I10B chrome. Shell paper must not paint light cards.
 
 ## Locked implementation choices
 
-- **Recommendation:** `/people/ui?person={id}&edit=1`. Reuse `GET /people/{id}/profile` and existing write routes.
+- Family Edit: `GET /people/{id}/edit`.
 - `?admin=1` is not the family Edit destination.
-- Header Edit today opens the About drawer — **defect**; fix in this increment.
-- Important places: no person-place SoT today — honest empty unless a later decision adds I10 `places` links.
-- Birth/death: `DATE` or absent (unknown). Partial dates are not in schema.
+- Header Edit today opens About — **defect**.
+- `+ Add family` today jumps to admin — **defect**.
+- Important places: omit when no SoT; do not invent GIS.
+- Preferred provider portrait is in scope.
 
 ## Does not start
 
