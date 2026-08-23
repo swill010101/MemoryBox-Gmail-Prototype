@@ -29,9 +29,9 @@ Owner 2026-08-23, including Explorer amendment.
 3. Header shows: preferred provider portrait; full/display name; alternate/known-as when present; birth/death **with date precision**; relationship to the MemoryBox owner when known; primary/important place when available; **labeled** memory totals by supported kind; actions **About · Edit · Relationships · Learn**.
 4. **Do not** show an unlabeled media/result date range that can be mistaken for lifespan. Distinguish person life dates, current result/media range, total memories, and counts by kind.
 5. **Do not** expose full contact information in always-visible chrome (header or footer About card). Contacts belong in About (read) and Edit (write).
-6. **About** opens a **complete read-only** view of the supported person record (identity, aliases, life facts and notes, family, confirmed contacts, important places, relevant provenance/confirmation). It is **not** the editor. This is how the family inspects the record and decides whether to correct it.
-7. **Edit** **bypasses** About and opens **`/people/{id}/edit`**, already populated for the selected person. No extra picker.
-8. The bottom action in About opens the **same** editor.
+6. **About** opens **`/people/{id}/edit?view=1`** — the same structured Person Profile as Edit, **read-only**, with an **Edit** button that drops `view=1`. Not a text-string drawer. This is how the family inspects the record and decides whether to correct it.
+7. **Edit** **bypasses** About and opens **`/people/{id}/edit`**, already populated for the selected person, already in edit mode. No extra picker.
+8. The **Edit** control on the About (view) screen opens the **same** editor.
 9. About, header, and Edit **share** field mapping, SoT, date precision, provenance, and relationship interpretation (this increment — not a later polish).
 10. MemoryBox corrections **must not silently write changes back to Immich**.
 11. MemoryBox Person is canonical. Immich / HVRT people are **provider identities**.

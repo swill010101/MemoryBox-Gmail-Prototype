@@ -624,11 +624,42 @@ html[data-mb-surface="people"] .mb-explore-density #mb-density-label,
   height: 42px;
   border-radius: 50%;
   background: #2a3548;
+  background-size: cover;
+  background-position: center;
   display: grid;
   place-items: center;
   font-size: 0.78rem;
   font-weight: 700;
   color: #c9d4e6;
+}
+.mb-person-fam-av.has-photo {
+  color: transparent;
+  border: 1px solid transparent;
+}
+.mb-person-about-dl {
+  margin: 0 0 0.65rem;
+  display: grid;
+  gap: 0.45rem;
+}
+.mb-person-about-dl > div {
+  display: grid;
+  grid-template-columns: 7.2rem 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.mb-person-about-dl dt {
+  margin: 0;
+  color: #9aa3b5;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.mb-person-about-dl dd {
+  margin: 0;
+  color: #e8edf5;
+  font-size: 0.9rem;
+}
+#mb-person-about-card {
+  cursor: pointer;
 }
 .mb-person-fam-label {
   font-size: 0.72rem;

@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="" />
-  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-2" />
-  <link rel="stylesheet" href="/static/person/person-explore.css?v=i10a1-2" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-3" />
+  <link rel="stylesheet" href="/static/person/person-explore.css?v=i10a1-3" />
 </head>
 <body class="mb-person-surface">
   <div class="mb-explore mb-person-explore" id="mb-explore-root">
@@ -37,7 +37,7 @@
         <p class="mb-person-sub" id="mb-person-sub" hidden></p>
       </div>
       <div class="mb-person-actions">
-        <button type="button" class="mb-person-action" id="mb-person-about">About</button>
+        <a class="mb-person-action" id="mb-person-about" href="#">About</a>
         <a class="mb-person-action" id="mb-person-edit" href="/people/ui">Edit</a>
         <a class="mb-person-action" id="mb-person-relationships" href="#mb-person-family">Relationships</a>
         <a class="mb-person-action" id="mb-person-learn-link" href="#mb-person-learn">Learn</a>
@@ -133,7 +133,21 @@
     <section class="mb-person-footer" aria-label="Person context panels">
       <div class="mb-person-panel" id="mb-person-about-card">
         <h2>About <span data-person-first>them</span></h2>
-        <p class="mb-person-about-teaser" id="mb-person-about-teaser">Open About for the full read-only record.</p>
+        <dl class="mb-person-about-dl" id="mb-person-about-dl">
+          <div>
+            <dt>Relationship</dt>
+            <dd id="mb-person-about-rel">—</dd>
+          </div>
+          <div>
+            <dt>Born</dt>
+            <dd id="mb-person-about-born">—</dd>
+          </div>
+          <div id="mb-person-about-died-row" hidden>
+            <dt>Died</dt>
+            <dd id="mb-person-about-died">—</dd>
+          </div>
+        </dl>
+        <a class="mb-person-panel-link" id="mb-person-about-open" href="#">Open profile</a>
       </div>
       <div class="mb-person-panel" id="mb-person-family">
         <h2>Family</h2>
@@ -291,9 +305,9 @@
       }
     }, 800);
   </script>
-  <script src="/static/person/person-explore.js?v=i10a1-2"></script>
-  <script src="/static/person/person-relationships.js?v=i10a1-2"></script>
+  <script src="/static/person/person-explore.js?v=i10a1-3"></script>
+  <script src="/static/person/person-relationships.js?v=i10a1-3"></script>
   <!-- Load dark overrides AFTER shell inject (shell.css is inserted before </head>) -->
-  <link rel="stylesheet" href="/static/person/person-explore.css?v=i10a1-2" />
+  <link rel="stylesheet" href="/static/person/person-explore.css?v=i10a1-3" />
 </body>
 </html>

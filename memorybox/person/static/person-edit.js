@@ -4,6 +4,7 @@
 (function () {
   const cfg = window.MB_PERSON_EDIT || {};
   const pid = String(cfg.personId || "").trim();
+  const viewMode = new URLSearchParams(window.location.search).get("view") === "1";
   let peopleIndex = [];
   let profile = {};
 
@@ -234,12 +235,58 @@
     }
   }
 
+  function applyViewMode() {
+    if (!viewMode) return;
+    document.body.classList.add("mb-edit-readonly");
+    const kicker = document.querySelector(".mb-edit-kicker");
+    if (kicker) kicker.textContent = "About";
+    const title = $("mb-edit-title");
+    document.title = "MemoryBox — About " + ((title && title.textContent) || "person");
+    const sub = document.querySelector(".mb-edit-sub");
+    if (sub) {
+      sub.textContent =
+        "Read-only MemoryBox record. Edit opens the same screen so you can change it. Immich is never updated.";
+    }
+    document
+      .querySelectorAll(".mb-edit-card input, .mb-edit-card select, .mb-edit-card textarea")
+      .forEach((el) => {
+        el.disabled = true;
+      });
+    ["mb-edit-save", "mb-edit-rel-save", "mb-edit-mar-save"].forEach((id) => {
+      const el = $(id);
+      if (el) el.hidden = true;
+    });
+    const relWrite = $("mb-edit-rel-write");
+    if (relWrite) relWrite.hidden = true;
+    const marWrite = $("mb-edit-mar-write");
+    if (marWrite) marWrite.hidden = true;
+    const adv = $("mb-edit-advanced");
+    if (adv) adv.hidden = true;
+    const enter = $("mb-edit-enter-edit");
+    if (enter) {
+      enter.hidden = false;
+      enter.href = "/people/" + encodeURIComponent(pid) + "/edit";
+    }
+    const contacts = $("mb-edit-contacts");
+    if (contacts) {
+      contacts.querySelectorAll(".contact-super").forEach((btn) => {
+        btn.hidden = true;
+      });
+    }
+    ["mb-edit-nick", "mb-edit-alt", "mb-edit-email", "mb-edit-phone"].forEach((id) => {
+      const el = $(id);
+      const lab = el && el.closest("label");
+      if (lab) lab.hidden = true;
+    });
+  }
+
   async function reload() {
     const data = await j("/people/" + encodeURIComponent(pid) + "/profile");
     profile = data.profile || data;
     paintProfile();
     paintRelationships();
     paintIdentity();
+    applyViewMode();
   }
 
   async function saveProfile() {

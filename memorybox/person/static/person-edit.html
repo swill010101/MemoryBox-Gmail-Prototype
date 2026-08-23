@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Edit person</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-1" />
-  <link rel="stylesheet" href="/static/person/person-edit.css?v=i10a1-1" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-3" />
+  <link rel="stylesheet" href="/static/person/person-edit.css?v=i10a1-3" />
 </head>
 <body class="mb-person-edit-surface">
   <div class="mb-edit-wrap">
@@ -25,7 +25,10 @@
         <h1 id="mb-edit-title">__MB_PERSON_EDIT_NAME__</h1>
         <p class="mb-edit-sub">Canonical MemoryBox Person. Changes stay in MemoryBox.</p>
       </div>
-      <a class="mb-edit-back" id="mb-edit-cancel" href="/people/ui?person=__MB_PERSON_EDIT_ID__">Cancel</a>
+      <div class="mb-edit-head-actions">
+        <a class="mb-edit-back" id="mb-edit-enter-edit" href="/people/__MB_PERSON_EDIT_ID__/edit" hidden>Edit</a>
+        <a class="mb-edit-back" id="mb-edit-cancel" href="/people/ui?person=__MB_PERSON_EDIT_ID__">Cancel</a>
+      </div>
     </div>
 
     <p class="mb-edit-status" id="mb-edit-status" hidden></p>
@@ -77,6 +80,7 @@
       <h2>Relationships</h2>
       <p class="mb-edit-muted">Teach one side. MemoryBox keeps the inverse. Derived kinship stays labeled Derived.</p>
       <div id="mb-edit-rel-groups"></div>
+      <div id="mb-edit-rel-write">
       <div class="mb-edit-row">
         <label>This person is the
           <select id="mb-edit-rel-role">
@@ -102,12 +106,15 @@
         </label>
       </div>
       <button type="button" class="mb-edit-btn" id="mb-edit-rel-save">Save relationship</button>
+      </div>
+      <div id="mb-edit-mar-write">
       <h3>Wedding / anniversary</h3>
       <div class="mb-edit-row">
         <label>Partner <input id="mb-edit-mar-q" type="text" list="mb-edit-people-list" /></label>
         <label>Date <input id="mb-edit-mar-date" type="text" placeholder="YYYY-MM-DD" /></label>
       </div>
       <button type="button" class="mb-edit-btn" id="mb-edit-mar-save">Save marriage date</button>
+      </div>
       <div id="mb-edit-marriages"></div>
       <datalist id="mb-edit-people-list"></datalist>
     </section>
@@ -163,6 +170,6 @@
   <script>
     window.MB_PERSON_EDIT = { personId: "__MB_PERSON_EDIT_ID__", displayName: "__MB_PERSON_EDIT_NAME__" };
   </script>
-  <script src="/static/person/person-edit.js?v=i10a1-1"></script>
+  <script src="/static/person/person-edit.js?v=i10a1-3"></script>
 </body>
 </html>

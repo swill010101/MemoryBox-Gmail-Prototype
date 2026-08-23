@@ -28,11 +28,11 @@ These cases must pass **before** I10A.1 is accepted. The prove harness encodes c
 
 | ID | Criterion |
 |---|---|
-| B1 | **About** opens the read-only panel (`#mb-person-drawer` / About). JS must not treat About as navigation to Edit. |
-| B2 | **Edit** `href` is `/people/{id}/edit` (or built from `cfg.personId`). Click does **not** call the About renderer. |
-| B3 | About footer links to the same `/people/{id}/edit`. |
-| B4 | About body includes identity, aliases, life facts, notes, family, contacts, places, and provenance/confirmation sections (markers in template or renderer). |
-| B5 | About is not a form (`<form>` must not wrap the drawer body for profile writes). |
+| B1 | **About** navigates to `/people/{id}/edit?view=1` (header `#mb-person-about` and footer Open profile). JS must not open the text drawer as About. |
+| B2 | **Edit** `href` is `/people/{id}/edit` without `view=1`. Click does **not** open About. |
+| B3 | About view-mode screen has an **Edit** control to `/people/{id}/edit`. |
+| B4 | About/view uses `person-edit.html` cards: identity, aliases, life facts, notes, family, contacts, places, provenance/confirmation. |
+| B5 | About view-mode is read-only (`mb-edit-readonly` / disabled fields). No Advanced writes. |
 | B6 | `GET /people/{person_id}/edit` is registered and serves the family editor (not `people.html` admin). |
 | B7 | Family Edit is **not** `?admin=1`. |
 
@@ -50,7 +50,7 @@ These cases must pass **before** I10A.1 is accepted. The prove harness encodes c
 | ID | Criterion |
 |---|---|
 | D1 | `MEMORYBOX_P1_RUNTIME_HOST=1`. |
-| D2 | Open a Person Explorer URL: one header, no curator identity card, About opens panel, Edit lands on `/people/{id}/edit` populated for that person. |
+| D2 | Open a Person Explorer URL: one header, no curator identity card, About lands on `/people/{id}/edit?view=1`, Edit lands on `/people/{id}/edit` populated for that person. Family chips show preferred portraits and kinship labels. |
 | D3 | Change display name on Edit, return to Explorer: header name updated; Immich person name unchanged. |
 
 ---

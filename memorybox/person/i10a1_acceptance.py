@@ -39,6 +39,8 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
     html = EXPLORE_HTML.read_text(encoding="utf-8") if EXPLORE_HTML.is_file() else ""
     js = EXPLORE_JS.read_text(encoding="utf-8") if EXPLORE_JS.is_file() else ""
     app = APP_PY.read_text(encoding="utf-8") if APP_PY.is_file() else ""
+    edit_html = (ROOT / "person" / "static" / "person-edit.html").read_text(encoding="utf-8")
+    edit_js = (ROOT / "person" / "static" / "person-edit.js").read_text(encoding="utf-8")
 
     _check(
         "docs_prd",
@@ -149,6 +151,37 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
     )
 
     _check(
+        "b1_about_opens_view_mode",
+        "view=1" in js
+        and "function aboutHref" in js
+        and "renderAboutDrawer" not in js[js.find("function bindAboutNow") : js.find("function bindAboutNow") + 700]
+        if "function bindAboutNow" in js
+        else False,
+        checks,
+        problems,
+        "About must go to /people/{id}/edit?view=1, not the text drawer",
+    )
+    _check(
+        "a11_family_kinship_portraits",
+        "collectFamily" in js
+        and "applyFamilyPortrait" in js
+        and "/portrait" in js
+        and "prettyRole" in js,
+        checks,
+        problems,
+        "Family strip must use kinship labels and preferred portraits",
+    )
+    _check(
+        "a12_about_card_structured",
+        'id="mb-person-about-dl"' in html
+        and 'id="mb-person-about-rel"' in html
+        and "Open About for the full read-only record" not in html
+        and "Open About for the full read-only record" not in js,
+        checks,
+        problems,
+        "Footer About card must be a structured dl, not a sentence",
+    )
+    _check(
         "b2_edit_href_people_id_edit",
         "/people/" in js
         and "/edit" in js
@@ -173,27 +206,39 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "b3_about_footer_to_edit",
-        "/people/" in js and "/edit" in js and "mb-person-drawer-admin" in html,
+        'id="mb-person-about-open"' in html
+        and "view=1" in js
+        and 'id="mb-edit-enter-edit"' in edit_html,
         checks,
         problems,
-        "About footer must target /people/{id}/edit",
+        "About card Open profile → view=1; view screen has Edit → /people/{id}/edit",
     )
-    js_l = js.lower()
-    html_l = html.lower()
     about_complete = all(
-        token in js or token in html or token.lower() in js_l or token.lower() in html_l
-        for token in (
-            "Also known as",
-            "Confirmed contacts",
-            "provenance",
+        s in edit_html
+        for s in (
+            "Profile",
+            "Relationships",
+            "Identity and Sources",
+            "mb-edit-aliases",
+            "mb-edit-contacts",
+            "data-mb-important-place",
         )
-    ) and ("Places" in js or "Important" in js or "places" in js_l)
+    )
     _check(
         "b4_about_complete_readonly",
-        about_complete and ("confirmation" in js_l),
+        about_complete
+        and "mb-edit-readonly" in edit_js
+        and 'get("view")' in edit_js,
         checks,
         problems,
-        "About must include aliases, contacts, places, provenance/confirmation",
+        "About/view uses person-edit cards and read-only view mode",
+    )
+    _check(
+        "b5_about_view_readonly",
+        "mb-edit-readonly" in edit_js and "mb-edit-advanced" in edit_js,
+        checks,
+        problems,
+        "view=1 must disable writes and hide Advanced",
     )
     _check(
         "b6_edit_route",
@@ -264,13 +309,19 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         "add_fact persists precision; format_life_date does not fake a day",
     )
-    edit_html = (ROOT / "person" / "static" / "person-edit.html").read_text(encoding="utf-8")
     _check(
         "edit_regions",
         all(s in edit_html for s in ("Profile", "Relationships", "Identity and Sources", "Advanced")),
         checks,
         problems,
         "editor has Profile / Relationships / Identity / Advanced",
+    )
+    _check(
+        "edit_keeps_relationships",
+        'id="mb-edit-relationships"' in edit_html and "mb-edit-rel-groups" in edit_html,
+        checks,
+        problems,
+        "Edit must keep the full Relationships region",
     )
 
     if flightsim:
