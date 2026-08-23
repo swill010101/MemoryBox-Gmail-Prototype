@@ -124,14 +124,18 @@ def _photo_item(d: dict[str, Any]) -> dict[str, Any] | None:
         return None
     people = _people_on_photo(d)
     names = [str(p.get("display_name") or "").strip() for p in people if p.get("display_name")]
+    raw_title = (d.get("original_filename") or d.get("title") or "").strip()
+    when = str(d.get("taken_at") or "")[:10]
+    if not raw_title or raw_title.lower() in {"photo", "image", "img"}:
+        raw_title = when or (names[0] if names else "Untitled photo")
     return {
         "source_kind": "photo",
         "source_id": eid,
-        "title": d.get("original_filename") or d.get("title") or "Photo",
+        "title": raw_title,
         "occurred_on": d.get("taken_at"),
         "thumb_url": d.get("thumb_url") or f"/library/media/photo/{eid}",
         "people": people,
-        "context": ", ".join(names) if names else "Photo",
+        "context": ", ".join(names) if names else (when or ""),
     }
 
 

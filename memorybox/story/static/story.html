@@ -1317,10 +1317,13 @@
       renderStoryNav();
       await Promise.all([loadPeople(), loadOwner()]);
       const p = new URLSearchParams(location.search);
-      if (p.get("new") === "1" || p.get("photo") || p.get("video")) {
+      if (p.get("new") === "1" || p.get("photo") || p.get("video") || p.get("artifact")) {
         const mem = p.get("photo")
           ? { source_kind: "photo", source_id: p.get("photo"), thumb_url: p.get("thumb") || ("/library/media/photo/" + p.get("photo")), occurred_on: (p.get("taken") || "").slice(0,10), label_snapshot: p.get("title") || "Photo" }
-          : (p.get("video") ? { source_kind: "video", source_id: p.get("video"), label_snapshot: p.get("title") || "Video" } : null);
+          : (p.get("video") ? { source_kind: "video", source_id: p.get("video"), label_snapshot: p.get("title") || "Video" }
+            : (p.get("artifact") && UUID_RE.test(p.get("artifact"))
+              ? { source_kind: "artifact", source_id: p.get("artifact"), label_snapshot: p.get("title") || "Artifact" }
+              : null));
         openNew({ memory: mem, title: p.get("title") || "" });
         if (mem) addPeopleFromMemory({
           people: (p.get("people") || "").split(",").map((n) => n.trim()).filter(Boolean),

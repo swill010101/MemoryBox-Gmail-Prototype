@@ -17,9 +17,12 @@ from memorybox import migrate as migrate_mod
 from memorybox.shell.inject import inject_shell, read_and_inject
 from memorybox.artifact import (
     ARTIFACT_KINDS,
+    KIND_GROUPS,
     ArtifactServiceError,
+    add_artifact_memory,
     add_evidence_ref_representation,
     add_mb_managed_representation,
+    artifacts_using_media,
     associate_person as artifact_associate_person,
     associate_person_from_provider as artifact_associate_person_from_provider,
     associate_story as artifact_associate_story,
@@ -28,7 +31,12 @@ from memorybox.artifact import (
     get_artifact,
     list_artifacts,
     read_representation_bytes,
+    remove_artifact,
+    remove_artifact_memory,
+    remove_representation,
+    resolve_or_create_place,
     revise_metadata,
+    unlink_person as artifact_unlink_person,
 )
 from memorybox.ask.deps import build_photo, build_video
 from memorybox.ask.orchestrator import AskOrchestrator
@@ -103,6 +111,7 @@ DOMAIN_V0_TABLES = (
     "artifacts",
     "artifact_metadata_revisions",
     "artifact_representations",
+    "artifact_memories",
 
     "person_aliases",
     "person_facts",
@@ -379,6 +388,11 @@ class ArtifactCreateRequest(BaseModel):
     label: str = Field(..., min_length=1)
     description: str | None = None
     person_ids: list[str] = Field(default_factory=list)
+    visibility: str | None = None
+    described_start_date: str | None = None
+    described_precision: str | None = None
+    place_id: str | None = None
+    place_label: str | None = None
 
 
 class ArtifactReviseRequest(BaseModel):
@@ -386,6 +400,23 @@ class ArtifactReviseRequest(BaseModel):
     label: str | None = None
     description: str | None = None
     note: str | None = None
+    visibility: str | None = None
+    described_start_date: str | None = None
+    described_precision: str | None = None
+    place_id: str | None = None
+    place_label: str | None = None
+
+
+class ArtifactMemoryAddRequest(BaseModel):
+    source_kind: str = Field(..., min_length=1)
+    source_id: str = Field(..., min_length=1)
+    label_snapshot: str | None = None
+    thumb_url: str | None = None
+    occurred_on: str | None = None
+
+
+class ArtifactPlaceRequest(BaseModel):
+    display_name: str = Field(..., min_length=1)
 
 
 class ArtifactEvidenceRefRequest(BaseModel):
@@ -1854,32 +1885,67 @@ def story_add_evidence(story_id: str, evidence_id: str) -> dict[str, Any]:
     return {"ok": True, "story": view.to_dict()}
 
 
+def _artifact_place_id(place_id: str | None, place_label: str | None) -> str | None:
+    if place_id and str(place_id).strip():
+        return str(place_id).strip()
+    if place_label and str(place_label).strip():
+        place = resolve_or_create_place(place_label)
+        return str(place.get("id") or "") or None
+    return None
+
+
 @app.get("/artifact")
 def artifact_list(
     limit: int = Query(50, ge=1, le=200),
     kind: str | None = Query(None),
+    kind_group: str | None = Query(None),
     person_id: str | None = Query(None),
     q: str | None = Query(None),
+    needs_context: bool = Query(False),
+    visibility: str | None = Query(None),
 ) -> dict[str, Any]:
     try:
-        rows = list_artifacts(limit=limit, kind=kind, person_id=person_id, query=q)
+        rows = list_artifacts(
+            limit=limit,
+            kind=kind,
+            kind_group=kind_group,
+            person_id=person_id,
+            query=q,
+            needs_context=needs_context or None,
+            visibility=visibility,
+        )
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "ok": True,
         "kinds": list(ARTIFACT_KINDS),
+        "kind_groups": {k: list(v) for k, v in KIND_GROUPS.items()},
         "artifacts": [a.to_dict() for a in rows],
     }
+
+
+@app.get("/artifact/by-media")
+def artifact_by_media(
+    kind: str = Query(..., min_length=1),
+    source_id: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    rows = artifacts_using_media(source_kind=kind, source_id=source_id)
+    return {"ok": True, "items": [a.to_dict() for a in rows]}
 
 
 @app.post("/artifact")
 def artifact_create(body: ArtifactCreateRequest) -> dict[str, Any]:
     try:
+        pid = _artifact_place_id(body.place_id, body.place_label)
         view = create_artifact(
             kind=body.kind,
             label=body.label,
             description=body.description,
             person_ids=body.person_ids,
+            visibility=body.visibility,
+            described_start_date=body.described_start_date,
+            described_precision=body.described_precision,
+            place_id=pid,
         )
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1897,12 +1963,17 @@ def artifact_get(artifact_id: str) -> dict[str, Any]:
 @app.post("/artifact/{artifact_id}/revise")
 def artifact_revise(artifact_id: str, body: ArtifactReviseRequest) -> dict[str, Any]:
     try:
+        pid = _artifact_place_id(body.place_id, body.place_label)
         view = revise_metadata(
             artifact_id,
             kind=body.kind,
             label=body.label,
             description=body.description,
             note=body.note,
+            visibility=body.visibility,
+            described_start_date=body.described_start_date,
+            described_precision=body.described_precision,
+            place_id=pid if (body.place_id is not None or body.place_label) else None,
         )
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1914,6 +1985,8 @@ async def artifact_add_representation(
     artifact_id: str,
     file: UploadFile = File(...),
     label: str | None = Form(None),
+    view_kind: str | None = Form(None),
+    caption: str | None = Form(None),
 ) -> dict[str, Any]:
     data = await file.read()
     try:
@@ -1923,6 +1996,8 @@ async def artifact_add_representation(
             filename=file.filename,
             content_type=file.content_type,
             label=label,
+            view_kind=view_kind,
+            caption=caption,
         )
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1983,6 +2058,67 @@ def artifact_add_person(artifact_id: str, person_id: str) -> dict[str, Any]:
     except ArtifactServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/persons/{person_id}/removed")
+def artifact_remove_person(artifact_id: str, person_id: str) -> dict[str, Any]:
+    try:
+        view = artifact_unlink_person(artifact_id, person_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/removed")
+def artifact_soft_remove(artifact_id: str) -> dict[str, Any]:
+    try:
+        view = remove_artifact(artifact_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/representations/{representation_id}/removed")
+def artifact_soft_remove_rep(artifact_id: str, representation_id: str) -> dict[str, Any]:
+    try:
+        view = remove_representation(artifact_id, representation_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/memories")
+def artifact_add_memory(artifact_id: str, body: ArtifactMemoryAddRequest) -> dict[str, Any]:
+    try:
+        view = add_artifact_memory(
+            artifact_id,
+            source_kind=body.source_kind,
+            source_id=body.source_id,
+            label_snapshot=body.label_snapshot,
+            thumb_url=body.thumb_url,
+            occurred_on=body.occurred_on,
+        )
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/{artifact_id}/memories/{memory_id}/removed")
+def artifact_remove_memory(artifact_id: str, memory_id: str) -> dict[str, Any]:
+    try:
+        view = remove_artifact_memory(artifact_id, memory_id)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "artifact": view.to_dict()}
+
+
+@app.post("/artifact/place")
+def artifact_upsert_place(body: ArtifactPlaceRequest) -> dict[str, Any]:
+    try:
+        place = resolve_or_create_place(body.display_name)
+    except ArtifactServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "place": place}
 
 
 @app.post("/artifact/{artifact_id}/stories/{story_id}")

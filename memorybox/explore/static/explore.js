@@ -4024,6 +4024,158 @@
       .catch(() => window.alert("Could not load stories."));
   }
 
+  function artifactRailHref(a) {
+    if (!a || !a.id) return "/artifact/ui";
+    return "/artifact/ui?id=" + encodeURIComponent(a.id);
+  }
+
+  function renderArtifactRail(item, panel) {
+    const media = mediaSourceForStory(item);
+    const typeLabel = media && media.kind === "video" ? "VIDEO" : "PHOTO";
+    const noun = (media && media.kind) || "memory";
+    if (String(item.type || "").toLowerCase() === "artifact") {
+      const aid = item.artifact_id || item.domain_id || item.id;
+      panel.innerHTML = `<h3>Artifact</h3>
+        <p><strong>${escapeHtml(item.artifact_title || item.title || "Artifact")}</strong></p>
+        <p><a class="mb-viewer-footbtn" href="${escapeHtml(artifactRailHref({ id: aid }))}">Open artifact</a></p>`;
+      return;
+    }
+    if (!media) {
+      panel.innerHTML = `<h3>ARTIFACTS USING THIS MEMORY</h3>
+        <p class="mb-rail-empty">This item cannot be linked as supporting evidence from here.</p>
+        <p><a class="mb-viewer-footbtn" href="/artifact/ui">Browse artifacts</a></p>`;
+      return;
+    }
+    panel.innerHTML = `<h3>ARTIFACTS USING THIS ${typeLabel}</h3>
+      <p class="mb-rail-empty">Loading…</p>`;
+    fetch(
+      "/artifact/by-media?kind=" +
+        encodeURIComponent(media.kind) +
+        "&source_id=" +
+        encodeURIComponent(media.id)
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        const items = data.items || [];
+        const cards = items
+          .map((a) => {
+            const people = (a.people || [])
+              .slice(0, 3)
+              .map((p) => {
+                const name = p.display_name || "";
+                const src = p.portrait_url || "/people/" + p.id + "/portrait";
+                return `<img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" title="${escapeHtml(name)}" style="width:22px;height:22px;border-radius:99px;object-fit:cover;margin-right:2px" />`;
+              })
+              .join("");
+            const mid = a.link_memory_id || "";
+            return `<div class="mb-rail-story-card" style="background:#141b27;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:0.55rem 0.65rem;margin:0.45rem 0">
+              <div style="display:flex;justify-content:space-between;gap:0.4rem">
+                <a href="${escapeHtml(artifactRailHref(a))}" style="color:inherit;text-decoration:none"><strong>${escapeHtml(a.label || "Untitled")}</strong></a>
+                <button type="button" class="mb-viewer-footbtn mb-rail-art-overflow" data-id="${escapeHtml(a.id)}" data-mid="${escapeHtml(mid)}" aria-label="Artifact link actions">⋮</button>
+              </div>
+              <p style="margin:0.25rem 0;color:#94a3b8;font-size:0.78rem">${escapeHtml(a.description || "")}</p>
+              <p style="margin:0;color:#94a3b8;font-size:0.72rem">${escapeHtml(a.kind || "")} · ${(a.memories || []).length} linked memories</p>
+              <div style="margin-top:0.35rem">${people}</div>
+              <p style="margin:0.4rem 0 0"><a class="mb-viewer-footbtn" href="${escapeHtml(artifactRailHref(a))}">Open</a></p>
+            </div>`;
+          })
+          .join("");
+        const newQs = new URLSearchParams({ new: "1" });
+        newQs.set(media.kind === "video" ? "video" : "photo", media.id);
+        if (item.thumb_url || item.media_url) newQs.set("thumb", item.thumb_url || item.media_url);
+        if (item.title) newQs.set("title", String(item.title).slice(0, 80));
+        panel.innerHTML = `<h3>ARTIFACTS USING THIS ${typeLabel}</h3>
+          <p class="mb-rail-empty">This ${noun} supports ${items.length} artifact${items.length === 1 ? "" : "s"} as evidence.</p>
+          ${cards || `<p class="mb-rail-empty">No artifacts use this ${noun} yet.</p>`}
+          <p><button type="button" class="mb-viewer-footbtn" id="mb-rail-add-to-artifact">+ Add to existing artifact</button></p>
+          <p><a class="mb-viewer-footbtn" href="/artifact/ui?${newQs.toString()}">Create a new artifact</a></p>
+          <p class="mb-rail-empty">This ${noun} is supporting evidence, not a representation of the object. Linking keeps the original unchanged and does not delete the artifact.</p>`;
+        const addBtn = document.getElementById("mb-rail-add-to-artifact");
+        if (addBtn) {
+          addBtn.addEventListener("click", () => openAddToArtifactPicker(media, items));
+        }
+        panel.querySelectorAll(".mb-rail-art-overflow").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            if (!btn.dataset.mid) {
+              window.alert("This link cannot be removed from here.");
+              return;
+            }
+            if (!window.confirm("Remove this link? The original media and the artifact stay. Only the supporting-evidence link is removed.")) {
+              return;
+            }
+            fetch(
+              "/artifact/" +
+                encodeURIComponent(btn.dataset.id) +
+                "/memories/" +
+                encodeURIComponent(btn.dataset.mid) +
+                "/removed",
+              { method: "POST" }
+            )
+              .then((r) => r.json())
+              .then(() => {
+                const cur = rawItems.find((x) => x.id === state.modal.openId);
+                if (cur) renderRailPanel(cur);
+              })
+              .catch(() => window.alert("Could not remove this artifact link."));
+          });
+        });
+      })
+      .catch(() => {
+        panel.innerHTML = `<h3>ARTIFACTS USING THIS ${typeLabel}</h3>
+          <p class="mb-rail-empty">Could not load artifacts for this ${noun}.</p>`;
+      });
+  }
+
+  function openAddToArtifactPicker(media, already) {
+    const used = new Set((already || []).map((a) => a.id));
+    fetch("/artifact?limit=100")
+      .then((r) => r.json())
+      .then((data) => {
+        const artifacts = (data.artifacts || data.items || []).filter((a) => !used.has(a.id));
+        const panel = document.getElementById("mb-rail-panel");
+        if (!panel) return;
+        const rows = artifacts
+          .map(
+            (a) =>
+              `<button type="button" class="mb-viewer-footbtn mb-add-existing-artifact" data-id="${escapeHtml(a.id)}" style="display:block;width:100%;text-align:left;margin:0.3rem 0">${escapeHtml(a.label || "Untitled")} · ${escapeHtml(a.kind || "")}</button>`
+          )
+          .join("");
+        panel.insertAdjacentHTML(
+          "beforeend",
+          `<div id="mb-add-artifact-pick" style="margin-top:0.7rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.12)">
+            <p><strong>Add to an existing artifact</strong></p>
+            ${rows || `<p class="mb-rail-empty">No other artifacts yet.</p>`}
+            <button type="button" class="mb-viewer-footbtn" id="mb-add-artifact-cancel">Cancel</button>
+          </div>`
+        );
+        const cancel = document.getElementById("mb-add-artifact-cancel");
+        if (cancel) cancel.addEventListener("click", () => {
+          const box = document.getElementById("mb-add-artifact-pick");
+          if (box) box.remove();
+        });
+        panel.querySelectorAll(".mb-add-existing-artifact").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            fetch("/artifact/" + encodeURIComponent(btn.dataset.id) + "/memories", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_kind: media.kind,
+                source_id: media.id,
+                label_snapshot: media.kind === "video" ? "Video" : "Photo",
+              }),
+            })
+              .then((r) => r.json())
+              .then(() => {
+                const cur = rawItems.find((x) => x.id === state.modal.openId);
+                if (cur) renderRailPanel(cur);
+              })
+              .catch(() => window.alert("Could not add this memory to the artifact."));
+          });
+        });
+      })
+      .catch(() => window.alert("Could not load artifacts."));
+  }
+
   function renderRailPanel(item) {
     const panel = document.getElementById("mb-rail-panel");
     const teach = document.getElementById("mb-modal-teach");
@@ -4063,17 +4215,7 @@
     }
 
     if (tab === "artifact") {
-      const art = item.artifact_title || item.linked_artifact_title;
-      if (art || String(item.type || "").toLowerCase() === "artifact") {
-        panel.innerHTML = `<h3>Artifact</h3>
-          <p><strong>${escapeHtml(art || item.title || "Artifact")}</strong></p>
-          <p class="mb-rail-empty">${escapeHtml(item.detail || item.preview || "")}</p>
-          <p><a class="mb-viewer-footbtn" href="/artifact/ui">View artifact</a></p>`;
-        return;
-      }
-      panel.innerHTML = `<h3>Artifact</h3>
-        <p class="mb-rail-empty">No linked artifact on this evidence.</p>
-        <p><a class="mb-viewer-footbtn" href="/artifact/ui">Browse artifacts</a></p>`;
+      renderArtifactRail(item, panel);
       return;
     }
 
