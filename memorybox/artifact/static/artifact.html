@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Artifacts</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=i10b-2" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10b-3" />
   <style>
     :root {
       --ink: #e8edf5; --muted: #9aa3b5; --blue: #3b82f6; --green: #3dcf9a;
@@ -35,12 +35,36 @@
     .tabs button { border: 0; background: #141b27; color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px; }
     .tabs button.on { background: var(--blue); color: #fff; }
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; }
+    html[data-mb-surface="artifact"] body.mb-shell .card,
+    html[data-mb-surface="artifact"] .card,
+    .card {
+      background: #1a2230 !important;
+      color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px;
+      overflow: hidden;
+      cursor: pointer;
+    }
     .card .thumb { height: 140px; background: #111827; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; text-align: center; padding: 0.4rem; }
     .card .thumb img { width: 100%; height: 100%; object-fit: cover; }
-    .card .body { padding: 0.8rem 0.9rem; }
-    .card h3 { font-family: var(--display); font-size: 1.05rem; margin: 0 0 0.3rem; }
-    .card p { color: var(--muted); font-size: 0.82rem; margin: 0 0 0.4rem; }
+    .card .body { padding: 0.8rem 0.9rem; background: #1a2230 !important; color: #e8edf5 !important; }
+    .card h3 { font-family: var(--display); font-size: 1.05rem; margin: 0 0 0.3rem; color: #e8edf5 !important; }
+    .card p { color: #9aa3b5 !important; font-size: 0.82rem; margin: 0 0 0.4rem; }
+    #pk-q, .mb-explore-ask-field input {
+      color: #e8edf5 !important;
+      caret-color: #e8edf5;
+      background: transparent !important;
+    }
+    #pk-q::placeholder, .mb-explore-ask-field input::placeholder { color: #9aa3b5 !important; }
+    #pk-field.is-searching {
+      animation: art-search-pulse 0.85s ease-in-out infinite;
+      border-color: #93c5fd !important;
+    }
+    @keyframes art-search-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(147, 197, 253, 0.12); }
+      50% { box-shadow: 0 0 0 8px rgba(147, 197, 253, 0.35); }
+    }
+    #pk-searching { color: #93c5fd; font-size: 0.85rem; min-height: 1.1rem; margin: 0.25rem 0 0; }
     .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
     .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.2rem; }
     .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; margin-bottom: 0.8rem; }
@@ -135,7 +159,11 @@
     async function j(url, opts) {
       const res = await fetch(url, opts);
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data.detail && (data.detail.message || data.detail)) || res.statusText);
+      if (!res.ok) {
+        const d = data && data.detail;
+        const msg = typeof d === "string" ? d : (d && (d.message || JSON.stringify(d))) || res.statusText;
+        throw new Error(msg);
+      }
       return data;
     }
     const NAV = [
@@ -333,8 +361,15 @@
       document.getElementById("edit").onclick = () => openEditor(a);
       document.getElementById("del").onclick = async () => {
         if (!confirm("Remove this artifact from MemoryBox? Original files are preserved.")) return;
-        await j("/artifact/" + a.id + "/removed", { method: "POST" });
-        await loadList(); renderPanel();
+        state.items = state.items.filter((x) => x.id !== a.id);
+        renderPanel();
+        try {
+          await j("/artifact/" + a.id + "/removed", { method: "POST" });
+        } catch (e) {
+          alert(e.message || "Could not remove artifact.");
+        }
+        try { await loadList(); } catch (_) {}
+        renderPanel();
       };
       document.getElementById("add-story").onclick = () => {
         location.href = "/story/ui?new=1&artifact=" + encodeURIComponent(a.id);
@@ -526,8 +561,8 @@
         <div class="modal-back"><div class="modal">
           <div class="modal-scroll">
           <h2>Add another view of this artifact</h2>
-          <p class="sub">Representations belong to the artifact. MemoryBox preserves the original file.</p>
-          <input id="rep-file" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,.txt,image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain" />
+          <p class="sub">Upload a file that <em>is</em> a view of this object (front, back, engraving, scan). Library photos stay supporting memories — they are not representations and are not chosen from the gallery here.</p>
+          <input id="rep-file" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,.txt,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,application/pdf,text/plain" />
           <label>Representation type</label>
           <select id="rep-vk">${["front","back","detail","engraving","document","other"].map((v)=>`<option value="${v}">${v}</option>`).join("")}</select>
           <label>Label (optional)</label><input id="rep-lab" placeholder="e.g. Engraving on back" />
@@ -541,15 +576,26 @@
         const file = document.getElementById("rep-file").files[0];
         if (!file) { alert("Choose a file."); return; }
         const rec = { file, name: file.name, view_kind: document.getElementById("rep-vk").value, label: document.getElementById("rep-lab").value, caption: document.getElementById("rep-cap").value };
-        document.getElementById("modals").innerHTML = "";
-        if (localOnly || !state.draft.id) { state.staged.push(rec); paintEditor(); return; }
+        if (localOnly || !state.draft.id) {
+          document.getElementById("modals").innerHTML = "";
+          state.staged.push(rec); paintEditor(); return;
+        }
+        const go = document.getElementById("rep-go");
+        go.disabled = true; go.textContent = "Saving…";
         const fd = new FormData();
         fd.append("file", rec.file, rec.name);
         fd.append("view_kind", rec.view_kind);
         if (rec.label) fd.append("label", rec.label);
         if (rec.caption) fd.append("caption", rec.caption);
-        const data = await j("/artifact/" + state.draft.id + "/representations", { method: "POST", body: fd });
-        state.artifact = data.artifact; paintEditor();
+        try {
+          const data = await j("/artifact/" + state.draft.id + "/representations", { method: "POST", body: fd });
+          state.artifact = data.artifact;
+          document.getElementById("modals").innerHTML = "";
+          paintEditor();
+        } catch (e) {
+          go.disabled = false; go.textContent = "Add representation";
+          alert(e.message || "Could not save this representation.");
+        }
       };
     }
     async function openMemModal(opts) {
@@ -570,6 +616,7 @@
           </div>
           <div class="tabs" id="pk-tabs"></div>
           <p class="sub" id="pk-meta">Ask to fill the gallery</p>
+          <p id="pk-searching" hidden>Searching…</p>
           <div id="pk-grid" class="pick-grid"></div>
           <p class="sub">These become supporting evidence. Use Add representation for files that are views of the artifact itself.</p>
           </div>
@@ -581,11 +628,22 @@
       const kinds = [["all","Memory"],["photos","Photos"],["videos","Video"],["communications","Communications"],["calendar","Calendar"],["journal","Journal"],["audio","Audio"]];
       const tabs = document.getElementById("pk-tabs");
       tabs.innerHTML = kinds.map(([k,l]) => `<button type="button" data-k="${k}" class="${k==="all"?"on":""}">${l}</button>`).join("");
+      function memCardCopy(it) {
+        const who = (it.people || []).map((p) => p.display_name || p.name || p).filter(Boolean).join(", ");
+        const title = it.title && !/^photo$/i.test(it.title) ? it.title : (it.label_snapshot && !/^photo$/i.test(it.label_snapshot) ? it.label_snapshot : "");
+        const ctx = (it.context && !/^photo$/i.test(it.context) ? it.context : who);
+        const when = (it.occurred_on || "").toString().slice(0, 10);
+        const lines = [title || ctx || when || it.source_id || "Memory"];
+        if (ctx && ctx !== lines[0]) lines.push(ctx);
+        if (when) lines.push(when);
+        return lines;
+      }
       function paintGrid() {
         document.getElementById("pk-grid").innerHTML = items.map((it) => {
           const key = it.source_kind + ":" + it.source_id;
           const thumb = memThumb(it);
-          return `<div class="pick ${selected[key]?"on":""}" data-k="${esc(key)}">${thumb ? `<img src="${esc(thumb)}" alt="" />` : `<div class="ph">${esc((it.source_kind || "memory").replace(/_/g, " "))}</div>`}<strong>${esc((it.source_kind || "").replace(/_/g, " "))}</strong><p>${esc(it.label_snapshot || it.title || it.context || it.source_id)}</p></div>`;
+          const lines = memCardCopy(it);
+          return `<div class="pick ${selected[key]?"on":""}" data-k="${esc(key)}">${thumb ? `<img src="${esc(thumb)}" alt="" />` : `<div class="ph">${esc((it.source_kind || "memory").replace(/_/g, " "))}</div>`}<strong>${esc((it.source_kind || "").replace(/_/g, " "))}</strong>${lines.map((t) => `<p>${esc(t)}</p>`).join("")}</div>`;
         }).join("") || "<p class='empty'>Ask for a person or words first — the gallery stays empty until you search.</p>";
         document.querySelectorAll(".pick").forEach((el) => {
           el.onclick = () => {
@@ -605,7 +663,9 @@
       async function search() {
         const q = (document.getElementById("pk-q").value || "").trim();
         const field = document.getElementById("pk-field");
+        const pulse = document.getElementById("pk-searching");
         if (field) field.classList.add("is-searching");
+        if (pulse) pulse.hidden = false;
         try {
           if (!q) {
             items = [];
@@ -620,6 +680,7 @@
           }
         } finally {
           if (field) field.classList.remove("is-searching");
+          if (pulse) pulse.hidden = true;
         }
         paintGrid();
       }
@@ -726,11 +787,18 @@
     };
     (async function boot() {
       renderNav();
-      await Promise.all([loadPeople(), loadOwner()]);
       const p = new URLSearchParams(location.search);
-      if (p.get("new") === "1" || p.get("photo") || p.get("video")) { openEditor(null); return; }
-      if (p.get("id") && UUID_RE.test(p.get("id"))) { await openDetail(p.get("id")); return; }
-      await loadList(); renderPanel();
+      const peopleP = Promise.all([loadPeople(), loadOwner()]);
+      if (p.get("new") === "1" || p.get("photo") || p.get("video")) {
+        await peopleP; openEditor(null); return;
+      }
+      if (p.get("id") && UUID_RE.test(p.get("id"))) {
+        await Promise.all([peopleP, openDetail(p.get("id"))]);
+        return;
+      }
+      try { await loadList(); } catch (_) { state.items = []; }
+      renderPanel();
+      await peopleP;
     })();
   </script>
 </body>

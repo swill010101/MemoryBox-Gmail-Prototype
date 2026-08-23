@@ -28,7 +28,8 @@
    paint dark text on dark pills (unreadable filters). */
 html[data-mb-surface="explore"],
 html[data-mb-surface="people"],
-html[data-mb-surface="story"] {
+html[data-mb-surface="story"],
+html[data-mb-surface="artifact"] {
   --mb-ink: #e8edf5;
   --mb-muted: #9aa3b5;
   --mb-card: #1a2230;

@@ -22,7 +22,8 @@ html { scroll-behavior: smooth; }
    white <section> panels (ask / curator / timeline) on a dark page. */
 html[data-mb-surface="explore"],
 html[data-mb-surface="people"],
-html[data-mb-surface="story"] {
+html[data-mb-surface="story"],
+html[data-mb-surface="artifact"] {
   --mb-ink: #e8edf5;
   --mb-ink-soft: #b7c0d0;
   --mb-paper: #141b27;

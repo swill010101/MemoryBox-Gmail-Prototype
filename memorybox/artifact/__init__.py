@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -307,6 +308,7 @@ def _needs_context(
     return False
 
 
+@lru_cache(maxsize=1)
 def _added_by_name() -> str | None:
     try:
         from memorybox.profile.owner import get_owner_person_id
@@ -412,15 +414,43 @@ def _load_memories(conn, artifact_id: UUID) -> list[dict[str, Any]]:
     return out
 
 
-def _normalize_mime(filename: str | None, content_type: str | None) -> str:
+def _sniff_mime(data: bytes) -> str | None:
+    if not data:
+        return None
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:4] == b"%PDF":
+        return "application/pdf"
+    brand = data[8:24].lower() if len(data) >= 24 else b""
+    if data[4:8] == b"ftyp" and any(x in brand for x in (b"heic", b"heif", b"mif1", b"msf1")):
+        return "image/heic"
+    return None
+
+
+def _normalize_mime(
+    filename: str | None, content_type: str | None, data: bytes | None = None
+) -> str:
     raw = (content_type or "").split(";")[0].strip().lower()
-    if raw == "image/jpg":
+    if raw in {"image/jpg", "image/pjpeg"}:
         raw = "image/jpeg"
+    if raw in {"image/x-heic", "image/x-heif"}:
+        raw = "image/heic"
+    if raw in {"application/octet-stream", "binary/octet-stream", "application/x-download"}:
+        raw = ""
     ext = Path(filename or "").suffix.lower()
     if raw in ACCEPTED_REP_MIME:
         return raw
     if ext in ACCEPTED_REP_EXT:
         return ACCEPTED_REP_EXT[ext]
+    sniffed = _sniff_mime(data or b"")
+    if sniffed:
+        return sniffed
     raise ArtifactServiceError(
         f"unsupported representation type {content_type or ext or 'unknown'} "
         "(I10B accepts jpeg, png, webp, gif, heic/heif, pdf, txt)"
@@ -490,6 +520,163 @@ def _view(conn, row: dict[str, Any]) -> ArtifactView:
         updated_at=_iso(row.get("updated_at")),
         cover_thumb_url=cover,
     )
+
+
+def _view_list_batch(conn, rows: list[dict[str, Any]]) -> list[ArtifactView]:
+    """Panel cards: no per-row get_story / owner lookup."""
+    if not rows:
+        return []
+    ids = [r["id"] for r in rows]
+    owner = _added_by_name()
+    preview_mimes = {
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+    }
+    covers: dict[str, str] = {}
+    rep_counts: dict[str, int] = {}
+    try:
+        reps = conn.execute(
+            """
+            SELECT artifact_id, id, mime_type
+            FROM artifact_representations
+            WHERE artifact_id = ANY(%s)
+              AND COALESCE(status, 'active') = 'active'
+            ORDER BY sort_order ASC, created_at ASC
+            """,
+            (ids,),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        reps = []
+    for r in reps:
+        aid = str(r["artifact_id"])
+        rep_counts[aid] = rep_counts.get(aid, 0) + 1
+        mime = (r.get("mime_type") or "").split(";")[0].strip().lower()
+        if aid not in covers and mime in preview_mimes:
+            covers[aid] = f"/artifact/{aid}/representations/{r['id']}/bytes"
+    people_by: dict[str, list[dict[str, Any]]] = {str(i): [] for i in ids}
+    try:
+        prow = conn.execute(
+            """
+            SELECT r.from_id::text AS artifact_id, p.id::text AS id, p.display_name
+            FROM relationships r
+            JOIN people p ON p.id = r.to_id
+            WHERE r.from_type = 'artifact'
+              AND r.from_id = ANY(%s)
+              AND r.to_type = 'person'
+              AND r.relationship_kind = %s
+              AND r.status IN ('candidate', 'confirmed')
+              AND p.status <> 'merged_away'
+            """,
+            (ids, REL_ABOUT_PERSON),
+        ).fetchall()
+        for r in prow:
+            people_by.setdefault(r["artifact_id"], []).append(
+                {
+                    "id": r["id"],
+                    "display_name": r.get("display_name") or "Person",
+                    "portrait_url": f"/people/{r['id']}/portrait",
+                }
+            )
+    except Exception:  # noqa: BLE001
+        pass
+    mem_counts: dict[str, int] = {}
+    mem_thumbs: dict[str, str] = {}
+    try:
+        mrows = conn.execute(
+            """
+            SELECT artifact_id::text AS artifact_id, source_kind, source_id, thumb_url
+            FROM artifact_memories
+            WHERE artifact_id = ANY(%s) AND status = 'active'
+            ORDER BY position ASC, created_at ASC
+            """,
+            (ids,),
+        ).fetchall()
+        for r in mrows:
+            aid = r["artifact_id"]
+            mem_counts[aid] = mem_counts.get(aid, 0) + 1
+            if aid in mem_thumbs:
+                continue
+            thumb = r.get("thumb_url")
+            if not thumb and r.get("source_kind") == "photo" and r.get("source_id"):
+                thumb = f"/library/media/photo/{r['source_id']}"
+            if thumb:
+                mem_thumbs[aid] = thumb
+    except Exception:  # noqa: BLE001
+        pass
+    story_ids_by: dict[str, list[str]] = {str(i): [] for i in ids}
+    try:
+        srows = conn.execute(
+            """
+            SELECT DISTINCT m.source_id AS artifact_id, s.id::text AS story_id
+            FROM story_version_memories m
+            JOIN story_versions sv ON sv.id = m.version_id
+            JOIN stories s ON s.id = sv.story_id
+              AND s.status = 'active'
+              AND sv.id IN (s.working_version_id, s.current_saved_version_id)
+            WHERE m.source_kind = 'artifact'
+              AND m.source_id = ANY(%s)
+            """,
+            ([str(i) for i in ids],),
+        ).fetchall()
+        for r in srows:
+            story_ids_by.setdefault(str(r["artifact_id"]), []).append(r["story_id"])
+    except Exception:  # noqa: BLE001
+        pass
+    place_ids = [r["place_id"] for r in rows if r.get("place_id")]
+    places: dict[str, str] = {}
+    if place_ids:
+        for pr in conn.execute(
+            "SELECT id::text AS id, display_name FROM places WHERE id = ANY(%s) AND status <> 'removed'",
+            (place_ids,),
+        ).fetchall():
+            places[pr["id"]] = pr.get("display_name") or ""
+    views = []
+    for row in rows:
+        aid = str(row["id"])
+        unresolved = row.get("unresolved_context_json") or {}
+        if isinstance(unresolved, str):
+            try:
+                unresolved = json.loads(unresolved)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                unresolved = {}
+        people = people_by.get(aid) or []
+        place_id = str(row["place_id"]) if row.get("place_id") else None
+        needs_rep = rep_counts.get(aid, 0) == 0
+        needs_ctx = _needs_context(unresolved, [p["id"] for p in people], place_id, needs_rep)
+        cover = covers.get(aid) or mem_thumbs.get(aid)
+        n_mem = mem_counts.get(aid, 0)
+        sids = story_ids_by.get(aid) or []
+        views.append(
+            ArtifactView(
+                id=aid,
+                kind=str(row["kind"]),
+                label=str(row["label"] or ""),
+                description=row.get("description"),
+                status=str(row["status"]),
+                current_metadata_revision=int(row.get("current_metadata_revision") or 1),
+                unresolved_context=dict(unresolved),
+                visibility=str(row.get("visibility") or "private"),
+                described_start_date=_iso(row.get("described_start_date")),
+                described_precision=str(row.get("described_precision") or "unknown"),
+                place_id=place_id,
+                place_label=places.get(place_id) if place_id else None,
+                person_ids=[p["id"] for p in people],
+                people=people,
+                story_ids=sids,
+                stories=[{"id": sid} for sid in sids],
+                memories=[{"id": str(i)} for i in range(n_mem)],
+                needs_representation=needs_rep,
+                needs_context=needs_ctx,
+                added_by=owner,
+                created_at=_iso(row.get("created_at")),
+                updated_at=_iso(row.get("updated_at")),
+                cover_thumb_url=cover,
+            )
+        )
+    return views
 
 
 def _add_rel(
@@ -702,7 +889,7 @@ def list_artifacts(
     """
     with connection() as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
-        views = [_view(conn, dict(r)) for r in rows]
+        views = _view_list_batch(conn, [dict(r) for r in rows])
     if needs_context:
         views = [v for v in views if v.needs_context][:lim]
     return views
@@ -852,7 +1039,7 @@ def add_mb_managed_representation(
     aid = _parse_uuid(artifact_id, field="artifact_id")
     if not data:
         raise ArtifactServiceError("empty upload")
-    mime = _normalize_mime(filename, content_type)
+    mime = _normalize_mime(filename, content_type, data)
     vk = (view_kind or "").strip() or "other"
     if vk not in VIEW_KINDS:
         raise ArtifactServiceError("invalid view_kind")
@@ -911,26 +1098,32 @@ def add_mb_managed_representation(
                 ).fetchone()
             return _view(conn, dict(row))
 
-        # Also register media_object for domain consistency
-        mid = uuid4()
+        # Domain source/media rows are optional. A unique-hash collision
+        # must not block the representation itself.
+        mid = None
         sid = uuid4()
         rel_uri = str(dest)
-        conn.execute(
-            """
-            INSERT INTO sources (id, source_kind, label, uri, content_hash, authoritative_original_mode)
-            VALUES (%s, 'artifact_upload', %s, %s, %s, 'memorybox_managed')
-            """,
-            (sid, f"Artifact {aid}", rel_uri, digest),
-        )
-        conn.execute(
-            """
-            INSERT INTO media_objects (
-                id, source_id, media_kind, storage_mode, uri, content_hash, mime_type
-            )
-            VALUES (%s, %s, 'document', 'memorybox_managed', %s, %s, %s)
-            """,
-            (mid, sid, rel_uri, digest, mime),
-        )
+        try:
+            with conn.transaction():
+                mid = uuid4()
+                conn.execute(
+                    """
+                    INSERT INTO sources (id, source_kind, label, uri, content_hash, authoritative_original_mode)
+                    VALUES (%s, 'artifact_upload', %s, %s, %s, 'memorybox_managed')
+                    """,
+                    (sid, f"Artifact {aid}", rel_uri, digest),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO media_objects (
+                        id, source_id, media_kind, storage_mode, uri, content_hash, mime_type
+                    )
+                    VALUES (%s, %s, 'document', 'memorybox_managed', %s, %s, %s)
+                    """,
+                    (mid, sid, rel_uri, digest, mime),
+                )
+        except Exception:  # noqa: BLE001
+            mid = None
         order = sort_order
         if order is None:
             mx = conn.execute(
