@@ -83,10 +83,33 @@
       .replace(/"/g, "&quot;");
   }
 
-  function adminHref() {
-    return (
-      "/people/ui?admin=1&person=" + encodeURIComponent(cfg.personId || "")
-    );
+  function editHref() {
+    return "/people/" + encodeURIComponent(cfg.personId || "") + "/edit";
+  }
+
+  function formatLifeDate(fact) {
+    if (!fact) return "";
+    if (fact.display_date) return String(fact.display_date);
+    const prec = String(fact.date_precision || "day").toLowerCase();
+    const raw = String(fact.value_date || "").trim();
+    if (!raw) return "";
+    const y = raw.slice(0, 4);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    if (prec === "year") return y;
+    const mi = parseInt(raw.slice(5, 7), 10);
+    const month = mi >= 1 && mi <= 12 ? months[mi - 1] : "";
+    if (prec === "month") return (month + " " + y).trim();
+    const d = parseInt(raw.slice(8, 10), 10);
+    if (month && d) return month + " " + d + ", " + y;
+    return raw.slice(0, 10);
+  }
+
+  function firstAlias(aliases) {
+    const list = aliases || [];
+    const nick = list.find((a) => a.alias_kind === "nickname" && a.alias_text);
+    if (nick) return nick.alias_text;
+    const alt = list.find((a) => a.alias_text);
+    return alt ? alt.alias_text : "";
   }
 
   function openDrawer(title, html) {
@@ -94,7 +117,7 @@
     document.getElementById("mb-person-drawer-title").textContent = title;
     document.getElementById("mb-person-drawer-body").innerHTML = html;
     const admin = document.getElementById("mb-person-drawer-admin");
-    if (admin) admin.href = adminHref();
+    if (admin) admin.href = editHref();
     drawer.hidden = false;
   }
 
@@ -102,18 +125,60 @@
     document.getElementById("mb-person-drawer").hidden = true;
   }
 
+  function groupFamily(profile) {
+    const rel = (profile && profile.relationships) || {};
+    const groups = [
+      ["parents", "Parents"],
+      ["siblings", "Siblings"],
+      ["spouse_partner", "Spouse or partner"],
+      ["children", "Children"],
+    ];
+    const direct = rel.direct || {};
+    const lines = [];
+    groups.forEach(([key, label]) => {
+      const hits = direct[key] || [];
+      hits.forEach((h) => {
+        const derived = h.derived || h.is_derived;
+        lines.push(
+          label +
+            ": " +
+            (h.display_name || h.to_display_name || "Person") +
+            " — " +
+            (h.label || h.role_kind || "") +
+            (derived ? " (Derived)" : "")
+        );
+      });
+    });
+    const ext = rel.extended || [];
+    (Array.isArray(ext) ? ext : Object.values(ext).flat()).forEach((h) => {
+      lines.push(
+        "Other family: " +
+          (h.display_name || "Person") +
+          " — " +
+          (h.label || h.role_kind || "") +
+          " (Derived)"
+      );
+    });
+    if (!lines.length && cached.family.length) {
+      return cached.family.map((f) => f.name + " — " + f.role);
+    }
+    return lines;
+  }
+
   function renderAboutDrawer() {
     const p = cached.profile || {};
+    const idn = p.identity || {};
     const facts = p.facts || [];
     const aliases = p.aliases || [];
     const birth = facts.find((f) => f.fact_kind === "birth_date");
     const death = facts.find((f) => f.fact_kind === "death_date");
     const notes = facts.filter((f) => f.fact_kind === "note");
-    const name = cfg.displayName || "Person";
+    const name = cfg.displayName || idn.display_name || "Person";
     const aliasText = aliases
       .map((a) => a.alias_text || a.value || a.alias)
       .filter(Boolean)
       .join(", ");
+    const maps = idn.provider_mappings || [];
     let html = "";
     html +=
       '<section class="mb-person-sec"><h3>Identity</h3><ul>' +
@@ -123,28 +188,33 @@
       (aliasText
         ? "<li>Also known as: " + escapeHtml(aliasText) + "</li>"
         : "<li>No alternate names recorded.</li>") +
-      "</ul></section>";
+      "<li>MemoryBox Person: " +
+      escapeHtml(idn.id || cfg.personId || "") +
+      "</li>" +
+      "<li>Status: " +
+      escapeHtml(idn.status || "—") +
+      "</li></ul></section>";
     html +=
       '<section class="mb-person-sec"><h3>Life</h3><ul>' +
       "<li>Born: " +
-      escapeHtml((birth && birth.value_date) || "Not recorded") +
+      escapeHtml(formatLifeDate(birth) || "Not recorded") +
       "</li>" +
       "<li>Died: " +
-      escapeHtml((death && death.value_date) || "Not recorded") +
+      escapeHtml(formatLifeDate(death) || "Not recorded") +
       "</li></ul></section>";
     html +=
-      '<section class="mb-person-sec"><h3>Family</h3><ul>' +
-      (cached.family.length
-        ? cached.family
-            .map(
-              (f) =>
-                "<li>" +
-                escapeHtml(f.name) +
-                " — " +
-                escapeHtml(f.role) +
-                "</li>"
-            )
+      '<section class="mb-person-sec"><h3>Notes</h3><ul>' +
+      (notes.length
+        ? notes
+            .map((n) => "<li>" + escapeHtml(n.value_text || n.note || "") + "</li>")
             .join("")
+        : "<li>No owner notes yet.</li>") +
+      "</ul></section>";
+    const fam = groupFamily(p);
+    html +=
+      '<section class="mb-person-sec"><h3>Family</h3><ul>' +
+      (fam.length
+        ? fam.map((line) => "<li>" + escapeHtml(line) + "</li>").join("")
         : "<li>No relationships recorded yet.</li>") +
       "</ul></section>";
     const contacts = p.contacts || [];
@@ -161,15 +231,26 @@
         : "<li>No confirmed phone or email yet.</li>") +
       "</ul></section>";
     html +=
-      '<section class="mb-person-sec"><h3>Places</h3><ul><li>Important Places can be linked as they are confirmed. No latitude/longitude shown here.</li></ul></section>';
+      '<section class="mb-person-sec"><h3>Places</h3><ul><li>No important place recorded yet. MemoryBox will not invent a location.</li></ul></section>';
+    const confirmed = maps.filter((m) => m.confirmed_at);
     html +=
-      '<section class="mb-person-sec"><h3>Notes</h3><ul>' +
-      (notes.length
-        ? notes
-            .map((n) => "<li>" + escapeHtml(n.value_text || n.note || "") + "</li>")
-            .join("")
-        : "<li>No owner notes yet.</li>") +
-      "</ul></section>";
+      '<section class="mb-person-sec"><h3>Provenance and confirmation</h3><ul>' +
+      "<li>Canonical MemoryBox Person · status " +
+      escapeHtml(idn.status || "—") +
+      (p.is_canonical_owner ? " · this is you" : "") +
+      "</li>" +
+      (maps.length
+        ? "<li>Linked provider identities: " +
+          escapeHtml(
+            maps
+              .map((m) => (m.provider_key || "") + " " + (m.label || m.external_id || ""))
+              .join("; ")
+          ) +
+          "</li>"
+        : "<li>No provider identities linked.</li>") +
+      "<li>Confirmed mappings: " +
+      confirmed.length +
+      "</li></ul></section>";
     openDrawer("About " + firstName(name), html);
   }
 
@@ -198,7 +279,7 @@
     }
     html +=
       '<p style="margin-top:1rem"><a class="mb-person-panel-link" href="' +
-      adminHref() +
+      editHref() +
       '#relationships">Correct / add relationships</a></p>';
     openDrawer("Family — " + firstName(name), html);
   }
@@ -390,18 +471,24 @@
     const facts = profile.facts || [];
     const birth = facts.find((f) => f.fact_kind === "birth_date");
     const death = facts.find((f) => f.fact_kind === "death_date");
-    const birthY =
-      birth && birth.value_date ? String(birth.value_date).slice(0, 4) : "";
-    const deathY =
-      death && death.value_date ? String(death.value_date).slice(0, 4) : "";
-    const life =
-      birthY && deathY
-        ? birthY + "–" + deathY
-        : birthY
-          ? "b. " + birthY
-          : deathY
-            ? "d. " + deathY
-            : "";
+    const aka = firstAlias(profile.aliases || []);
+    const akaEl = document.getElementById("mb-person-aka");
+    if (akaEl) {
+      if (aka) {
+        akaEl.hidden = false;
+        akaEl.textContent = "Also known as " + aka;
+      } else {
+        akaEl.hidden = true;
+        akaEl.textContent = "";
+      }
+    }
+    const lifeBits = [];
+    const born = formatLifeDate(birth);
+    const died = formatLifeDate(death);
+    if (born) lifeBits.push("Born " + born);
+    if (died) lifeBits.push("Died " + died);
+    const lifeEl = document.getElementById("mb-person-life-dates");
+    if (lifeEl) lifeEl.textContent = lifeBits.join(" · ");
 
     let rel = "";
     const derived =
@@ -415,39 +502,25 @@
       );
       if (hit) rel = roleLabel(hit);
     }
-    const subBits = [];
-    if (rel) subBits.push(rel.charAt(0).toUpperCase() + rel.slice(1));
-    if (life) subBits.push(life);
-    document.getElementById("mb-person-sub").textContent =
-      subBits.join(" · ") || "Canonical MemoryBox Person";
-
-    const about = document.getElementById("mb-person-about-dl");
-    about.innerHTML = "";
-    function row(k, v) {
-      if (!v) return;
-      const dt = document.createElement("dt");
-      dt.textContent = k;
-      const dd = document.createElement("dd");
-      dd.textContent = v;
-      about.appendChild(dt);
-      about.appendChild(dd);
+    const kinEl = document.getElementById("mb-person-kin");
+    if (kinEl) {
+      kinEl.textContent = rel
+        ? "Relationship to you: " + rel.charAt(0).toUpperCase() + rel.slice(1)
+        : "";
     }
-    row("Full name", name);
-    row("Relationship", rel ? rel.charAt(0).toUpperCase() + rel.slice(1) : null);
-    row("Born", birth && birth.value_date);
-    row("Died", death && death.value_date);
-    const contacts = profile.contacts || [];
-    const phones = contacts.filter((c) => String(c.contact_kind || "") === "phone");
-    const emails = contacts.filter((c) => String(c.contact_kind || "") === "email");
-    phones.forEach((c) => {
-      row("Confirmed phone", c.value_text || "");
-    });
-    emails.forEach((c) => {
-      row("Confirmed email", c.value_text || "");
-    });
-    if (!about.children.length) {
-      about.innerHTML =
-        '<p class="mb-person-empty">No profile details recorded yet.</p>';
+    const placeEl = document.getElementById("mb-person-place");
+    if (placeEl) {
+      placeEl.hidden = true;
+      placeEl.textContent = "";
+    }
+    const teaser = document.getElementById("mb-person-about-teaser");
+    if (teaser) {
+      const t = [];
+      if (rel) t.push(rel.charAt(0).toUpperCase() + rel.slice(1));
+      if (lifeBits.length) t.push(lifeBits.join(" · "));
+      teaser.textContent = t.length
+        ? t.join(" · ") + ". Open About for the full read-only record."
+        : "Open About for the full read-only record.";
     }
 
     const familyRow = document.getElementById("mb-person-family-row");
@@ -530,23 +603,20 @@
       vidLabel +
       "</li><li>0 voice examples</li>";
 
-    document.getElementById("mb-person-summary").textContent =
-      "Memories load below — Ask, Gallery, Timeline and Map stay on this Person.";
-
     const edit = document.getElementById("mb-person-edit");
     if (edit) {
-      edit.href = adminHref();
-      edit.onclick = (e) => {
-        e.preventDefault();
-        renderAboutDrawer();
-      };
+      edit.href = editHref();
     }
-    const aboutEdit = document.getElementById("mb-person-about-edit");
-    if (aboutEdit) aboutEdit.onclick = () => renderAboutDrawer();
+    const aboutBtn = document.getElementById("mb-person-about");
+    if (aboutBtn) aboutBtn.onclick = () => renderAboutDrawer();
+    const aboutCard = document.getElementById("mb-person-about-card");
+    if (aboutCard) aboutCard.onclick = () => renderAboutDrawer();
     const famAdd = document.getElementById("mb-person-family-add");
     if (famAdd) {
       famAdd.onclick = () => {
-        window.location.href = adminHref() + "#relationships";
+        if (typeof window.mbOpenRelationshipsModal === "function") {
+          window.mbOpenRelationshipsModal();
+        }
       };
     }
     const famOpen = document.getElementById("mb-person-family-open");
@@ -564,7 +634,11 @@
     if (relHeader) {
       relHeader.onclick = (e) => {
         e.preventDefault();
-        renderFamilyDrawer();
+        if (typeof window.mbOpenRelationshipsModal === "function") {
+          window.mbOpenRelationshipsModal();
+        } else {
+          renderFamilyDrawer();
+        }
       };
     }
 
@@ -608,23 +682,47 @@
     });
   });
 
-  // Keep header summary honest after gallery loads
-  const summaryEl = document.getElementById("mb-person-summary");
-  const metaObs = new MutationObserver(() => {
-    const meta = document.getElementById("mb-explore-meta");
-    if (!meta || !summaryEl) return;
-    const m = String(meta.textContent || "").match(/(\d+)\s+visible/i);
-    if (m) {
-      const n = m[1];
-      summaryEl.textContent =
-        n +
-        " memor" +
-        (n === "1" ? "y" : "ies") +
-        " in the current view across photos, video, stories, communications and artifacts.";
+  window.mbPersonSyncResults = function (info) {
+    const data = info || {};
+    const counts = data.counts || {};
+    const total = Number(data.total || 0);
+    const kindBits = [];
+    const labels = [
+      ["photo", "photos"],
+      ["video", "videos"],
+      ["story", "stories"],
+      ["email", "emails"],
+      ["text", "texts"],
+      ["artifact", "artifacts"],
+    ];
+    labels.forEach(([k, lab]) => {
+      const n = Number(counts[k] || 0);
+      if (n) kindBits.push(n + " " + lab);
+    });
+    const totEl = document.getElementById("mb-person-memory-totals");
+    if (totEl) {
+      totEl.textContent =
+        "Total memories: " +
+        total +
+        (kindBits.length ? " · " + kindBits.join(" · ") : "");
     }
-  });
-  const meta = document.getElementById("mb-explore-meta");
-  if (meta) metaObs.observe(meta, { childList: true, characterData: true, subtree: true });
+    const rangeEl = document.getElementById("mb-person-result-range");
+    const sumEl = document.getElementById("mb-person-result-summary");
+    const range = String(data.rangeLabel || "").trim();
+    const rangeText = range ? "In this view: " + range : "";
+    if (rangeEl) {
+      rangeEl.hidden = !rangeText;
+      rangeEl.textContent = rangeText;
+    }
+    if (sumEl) {
+      sumEl.hidden = !(rangeText || total);
+      sumEl.textContent = rangeText
+        ? rangeText + " · " + total + " visible"
+        : total
+          ? total + " visible in this view"
+          : "";
+    }
+  };
 
   loadProfile().catch((err) => {
     const body = document.getElementById("mb-explore-curator-body");

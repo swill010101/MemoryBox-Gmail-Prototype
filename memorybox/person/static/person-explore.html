@@ -27,10 +27,17 @@
       <div class="mb-person-portrait" id="mb-person-portrait" aria-hidden="true">?</div>
       <div class="mb-person-id">
         <h1 class="mb-person-name" id="mb-person-name">—</h1>
-        <p class="mb-person-sub" id="mb-person-sub">—</p>
-        <p class="mb-person-summary" id="mb-person-summary">—</p>
+        <p class="mb-person-aka" id="mb-person-aka" data-mb-also-known-as hidden></p>
+        <p class="mb-person-life-dates" id="mb-person-life-dates" data-mb-life-dates></p>
+        <p class="mb-person-kin" id="mb-person-kin"></p>
+        <p class="mb-person-place" id="mb-person-place" data-mb-important-place hidden></p>
+        <p class="mb-person-memory-totals" id="mb-person-memory-totals" data-mb-memory-totals>Total memories: —</p>
+        <p class="mb-person-result-range" id="mb-person-result-range" data-mb-result-range hidden></p>
+        <p class="mb-person-summary" id="mb-person-summary" hidden></p>
+        <p class="mb-person-sub" id="mb-person-sub" hidden></p>
       </div>
       <div class="mb-person-actions">
+        <button type="button" class="mb-person-action" id="mb-person-about">About</button>
         <a class="mb-person-action" id="mb-person-edit" href="#">Edit</a>
         <a class="mb-person-action" id="mb-person-relationships" href="#mb-person-family">Relationships</a>
         <a class="mb-person-action" id="mb-person-learn-link" href="#mb-person-learn">Learn</a>
@@ -54,20 +61,21 @@
       </div>
     </section>
 
-    <section class="mb-explore-curator" id="mb-explore-curator" aria-live="polite">
+    <section class="mb-explore-curator mb-person-hide-curator" id="mb-explore-curator" hidden aria-hidden="true">
       <div class="mb-explore-curator-avatar" id="mb-explore-curator-avatar" aria-hidden="true">P</div>
       <div class="mb-explore-curator-copy">
         <h1 id="mb-explore-curator-title">—</h1>
         <p id="mb-explore-curator-body">—</p>
       </div>
-      <div class="mb-explore-chips" id="mb-explore-chips"></div>
     </section>
+    <div class="mb-explore-chips mb-person-chips" id="mb-explore-chips"></div>
 
     <div class="mb-person-mode-row" role="tablist" aria-label="Memory mode">
       <button type="button" class="mb-person-mode" data-mode="highlights" id="mb-mode-highlights" aria-selected="false">Highlights</button>
       <button type="button" class="mb-person-mode is-active" data-mode="all" id="mb-mode-all" aria-selected="true">All Memories</button>
     </div>
 
+    <p class="mb-person-result-summary" id="mb-person-result-summary" hidden></p>
     <div class="mb-explore-toolbar">
       <div class="mb-explore-filters" id="mb-explore-filters" role="group" aria-label="Type filters"></div>
       <div class="mb-explore-toolbar-right">
@@ -123,10 +131,9 @@
     </section>
 
     <section class="mb-person-footer" aria-label="Person context panels">
-      <div class="mb-person-panel" id="mb-person-about">
+      <div class="mb-person-panel" id="mb-person-about-card">
         <h2>About <span data-person-first>them</span></h2>
-        <dl class="mb-person-dl" id="mb-person-about-dl"></dl>
-        <button type="button" class="mb-person-panel-link" id="mb-person-about-edit">View / Edit details</button>
+        <p class="mb-person-about-teaser" id="mb-person-about-teaser">Open About for the full read-only record.</p>
       </div>
       <div class="mb-person-panel" id="mb-person-family">
         <h2>Family</h2>
@@ -151,7 +158,7 @@
       </header>
       <div class="mb-person-drawer-body" id="mb-person-drawer-body"></div>
       <footer class="mb-person-drawer-foot">
-        <a class="mb-person-panel-link" id="mb-person-drawer-admin" href="#">Open full profile editor</a>
+        <a class="mb-person-panel-link" id="mb-person-drawer-admin" href="#">Edit</a>
       </footer>
     </div>
   </div>

@@ -143,6 +143,32 @@ html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
   color: #b7c0d0 !important;
   font-size: 0.9rem;
 }
+.mb-person-aka,
+.mb-person-life-dates,
+.mb-person-kin,
+.mb-person-place,
+.mb-person-memory-totals,
+.mb-person-result-range {
+  margin: 0.2rem 0 0;
+  color: #9aa3b5 !important;
+  font-size: 0.9rem;
+}
+.mb-person-life-dates { color: #c5cede !important; }
+.mb-person-memory-totals { color: #b7c0d0 !important; }
+.mb-person-result-summary {
+  margin: 0 0 0.55rem;
+  color: #9aa3b5;
+  font-size: 0.86rem;
+}
+.mb-person-chips { margin: 0.35rem 0 0.15rem; }
+.mb-person-action {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
 .mb-person-actions {
   display: flex;
   flex-wrap: wrap;

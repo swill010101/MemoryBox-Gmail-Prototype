@@ -3225,6 +3225,25 @@
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
     }${placeBit}${undatedBit}${refineBit}${viewBit}${totalBit}`;
+    if (PERSON_MODE && typeof window.mbPersonSyncResults === "function") {
+      let rangeLabel = "";
+      try {
+        if (hasDatedExtent()) {
+          rangeLabel = fmtRangeLabel(
+            state.timeline.rangeStart,
+            state.timeline.rangeEnd,
+            state.timeline.precision
+          );
+        }
+      } catch (_) {
+        rangeLabel = "";
+      }
+      window.mbPersonSyncResults({
+        total: items.length,
+        counts: countByType(items),
+        rangeLabel,
+      });
+    }
   }
 
   function ensureMap() {

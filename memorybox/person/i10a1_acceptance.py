@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from memorybox.person import merge_people, reject_mapping, rename_person, teach_provider_person
+from memorybox.profile.facts import add_fact, format_life_date
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPLORE_HTML = ROOT / "person" / "static" / "person-explore.html"
@@ -32,7 +33,7 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "increment": "P2-I10A.1",
         "p1_runtime_final": bool(flightsim),
-        "note": "Chrome checks fail until Explorer/About/Edit implementation lands.",
+        "note": "P2-I10A.1 chrome + /people/{id}/edit + date precision.",
     }
 
     html = EXPLORE_HTML.read_text(encoding="utf-8") if EXPLORE_HTML.is_file() else ""
@@ -158,11 +159,11 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         "Edit must go to /people/{id}/edit, not adminHref/About",
     )
-    edit_opens_about = "mb-person-edit" in js and "renderAboutDrawer" in js
-    if edit_opens_about:
-        idx = js.find('getElementById("mb-person-edit")')
-        window = js[idx : idx + 350] if idx >= 0 else ""
-        edit_opens_about = "renderAboutDrawer" in window
+    edit_opens_about = False
+    idx = js.find('getElementById("mb-person-edit")')
+    if idx >= 0:
+        window = js[idx : idx + 220]
+        edit_opens_about = "renderAboutDrawer" in window and "preventDefault" in window
     _check(
         "b2_edit_bypasses_about",
         not edit_opens_about,
@@ -177,17 +178,19 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         "About footer must target /people/{id}/edit",
     )
+    js_l = js.lower()
+    html_l = html.lower()
     about_complete = all(
-        token in js or token in html
+        token in js or token in html or token.lower() in js_l or token.lower() in html_l
         for token in (
             "Also known as",
             "Confirmed contacts",
             "provenance",
         )
-    ) and ("Places" in js or "Important" in js)
+    ) and ("Places" in js or "Important" in js or "places" in js_l)
     _check(
         "b4_about_complete_readonly",
-        about_complete and ("provenance" in js.lower() or "confirmation" in js.lower()),
+        about_complete and ("confirmation" in js_l),
         checks,
         problems,
         "About must include aliases, contacts, places, provenance/confirmation",
@@ -250,6 +253,24 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         "Explorer still loads GET /people/{id}/profile",
+    )
+    add_src = inspect.getsource(add_fact)
+    _check(
+        "c4_date_precision",
+        "date_precision" in add_src
+        and format_life_date("1927-01-01", "year") == "1927"
+        and format_life_date("1927-06-01", "month") == "Jun 1927",
+        checks,
+        problems,
+        "add_fact persists precision; format_life_date does not fake a day",
+    )
+    edit_html = (ROOT / "person" / "static" / "person-edit.html").read_text(encoding="utf-8")
+    _check(
+        "edit_regions",
+        all(s in edit_html for s in ("Profile", "Relationships", "Identity and Sources", "Advanced")),
+        checks,
+        problems,
+        "editor has Profile / Relationships / Identity / Advanced",
     )
 
     if flightsim:

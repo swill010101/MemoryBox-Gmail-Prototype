@@ -1,6 +1,6 @@
 # P2-I10A.1 — Person Profile and Editor
 
-**Status:** Definition **ACCEPTED** with PRD (Explorer amendment 2026-08-23) · chrome prove red until implemented  
+**Status:** Definition **LOCKED** with MBSC · implementation on `cursor/p2-i10a1-person-build-49da` · `prove-person-i10a1` green locally  
 **PR base:** `cursor/p2-i10b-artifacts-49da` (I10B **ACCEPTED**).  
 **PRD:** [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
 **Screen contract:** [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md)  

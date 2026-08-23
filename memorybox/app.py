@@ -136,6 +136,7 @@ PEOPLE_STATIC = Path(__file__).resolve().parent / "person" / "static" / "people.
 PERSON_EXPLORE_STATIC = (
     Path(__file__).resolve().parent / "person" / "static" / "person-explore.html"
 )
+PERSON_EDIT_STATIC = Path(__file__).resolve().parent / "person" / "static" / "person-edit.html"
 PERSON_STATIC_DIR = Path(__file__).resolve().parent / "person" / "static"
 REVIEW_STATIC = Path(__file__).resolve().parent / "review" / "static" / "review.html"
 LIBRARY_STATIC = Path(__file__).resolve().parent / "library" / "static" / "library.html"
@@ -992,6 +993,33 @@ def people_ui(
             headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
         )
     return _html_ui(PEOPLE_STATIC, surface="people", missing="People UI missing")
+
+
+@app.get("/people/{person_id}/edit")
+def people_edit_ui(person_id: str) -> HTMLResponse:
+    """P2-I10A.1 family Person Profile/Editor. Not the ?admin=1 form."""
+    pid = (person_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=404, detail="person required")
+    if not PERSON_EDIT_STATIC.is_file():
+        raise HTTPException(status_code=404, detail="Person editor UI missing")
+    html = read_and_inject(PERSON_EDIT_STATIC, surface="people")
+    safe_id = pid.replace("\\", "").replace('"', "").replace("<", "")
+    html = html.replace("__MB_PERSON_EDIT_ID__", safe_id)
+    boot_name = ""
+    try:
+        from memorybox.person import get_person
+
+        view = get_person(pid)
+        if view and getattr(view, "display_name", None):
+            boot_name = str(view.display_name).replace("\\", "\\\\").replace('"', '\\"')
+    except Exception:
+        boot_name = ""
+    html = html.replace("__MB_PERSON_EDIT_NAME__", boot_name)
+    return HTMLResponse(
+        html,
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/review/ui")
@@ -3084,6 +3112,7 @@ class ProfileFactBody(BaseModel):
     value_date: str | None = None
     value_text: str | None = None
     note: str | None = None
+    date_precision: str | None = None
 
 
 class ProfileAliasBody(BaseModel):
@@ -3131,6 +3160,7 @@ def people_add_fact(person_id: str, body: ProfileFactBody) -> dict[str, Any]:
             value_date=body.value_date,
             value_text=body.value_text,
             note=body.note,
+            date_precision=body.date_precision,
         )
     except ProfileServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
