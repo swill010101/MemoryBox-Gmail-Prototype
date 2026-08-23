@@ -186,6 +186,7 @@ class ArtifactView:
     created_at: str | None = None
     updated_at: str | None = None
     link_memory_id: str | None = None
+    cover_thumb_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -449,6 +450,19 @@ def _view(conn, row: dict[str, Any]) -> ArtifactView:
     story_views = _hydrate_stories(stories)
     needs_rep = len(reps) == 0
     needs_ctx = _needs_context(unresolved, people, place_id, needs_rep)
+    cover = None
+    for r in reps:
+        if r.presentation == "preview" and r.download_url:
+            cover = r.download_url
+            break
+    if not cover:
+        for m in memories:
+            if m.get("thumb_url"):
+                cover = m["thumb_url"]
+                break
+            if m.get("source_kind") == "photo" and m.get("source_id"):
+                cover = f"/library/media/photo/{m['source_id']}"
+                break
     return ArtifactView(
         id=str(aid),
         kind=str(row["kind"]),
@@ -474,6 +488,7 @@ def _view(conn, row: dict[str, Any]) -> ArtifactView:
         added_by=_added_by_name(),
         created_at=_iso(row.get("created_at")),
         updated_at=_iso(row.get("updated_at")),
+        cover_thumb_url=cover,
     )
 
 

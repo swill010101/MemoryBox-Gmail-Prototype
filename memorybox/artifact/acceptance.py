@@ -317,6 +317,13 @@ def run_prove_artifact(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=f"id={saved.id} reps={len(saved.representations)}",
     )
+    _check(
+        "i10b_cover_thumb",
+        bool(saved.cover_thumb_url),
+        checks,
+        problems,
+        detail=str(saved.cover_thumb_url),
+    )
 
     partial = create_artifact(kind="letter", label="I10B Partial Upload Keep")
     mime_fail = False
