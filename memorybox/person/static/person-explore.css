@@ -161,13 +161,14 @@ html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
   font-size: 0.86rem;
 }
 .mb-person-chips { margin: 0.35rem 0 0.15rem; }
-.mb-person-action {
+button.mb-person-action {
   appearance: none;
-  background: none;
-  border: 0;
+  background: transparent !important;
+  border: 0 !important;
   padding: 0;
   font: inherit;
   cursor: pointer;
+  box-shadow: none !important;
 }
 .mb-person-actions {
   display: flex;
@@ -201,11 +202,18 @@ html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
 }
 .mb-person-ask-band input::placeholder { color: #7f8aa0 !important; }
 
-.mb-person-explore .mb-explore-curator {
-  background: #141b27 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
+/* display:grid on .mb-explore-curator beats HTML hidden — force the duplicate card off */
+html[data-mb-surface="people"] #mb-explore-curator,
+html[data-mb-surface="people"] .mb-person-hide-curator,
+.mb-person-explore #mb-explore-curator {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
   box-shadow: none !important;
 }
 .mb-person-explore .mb-explore-curator-copy h1 {

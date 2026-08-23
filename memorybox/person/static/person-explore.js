@@ -87,6 +87,64 @@
     return "/people/" + encodeURIComponent(cfg.personId || "") + "/edit";
   }
 
+  function bindEditNow() {
+    const edit = document.getElementById("mb-person-edit");
+    if (!edit || !cfg.personId) return;
+    const href = editHref();
+    edit.setAttribute("href", href);
+    edit.onclick = function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.assign(href);
+    };
+  }
+  bindEditNow();
+
+  window.mbPersonSyncResults = function (info) {
+    const data = info || window.MB_PERSON_LAST_RESULTS || {};
+    const counts = data.counts || {};
+    const total = Number(data.total || 0);
+    const kindBits = [];
+    const labels = [
+      ["photo", "photos"],
+      ["video", "videos"],
+      ["story", "stories"],
+      ["email", "emails"],
+      ["text", "texts"],
+      ["artifact", "artifacts"],
+    ];
+    labels.forEach(([k, lab]) => {
+      const n = Number(counts[k] || 0);
+      if (n) kindBits.push(n + " " + lab);
+    });
+    const totEl = document.getElementById("mb-person-memory-totals");
+    if (totEl) {
+      totEl.textContent =
+        "Total memories: " +
+        (total || kindBits.length ? String(total || "") : "—") +
+        (kindBits.length ? " · " + kindBits.join(" · ") : total ? "" : "");
+      if (!total && !kindBits.length) totEl.textContent = "Total memories: —";
+      else if (!total && kindBits.length) totEl.textContent = "Total memories: " + kindBits.join(" · ");
+    }
+    const rangeEl = document.getElementById("mb-person-result-range");
+    const sumEl = document.getElementById("mb-person-result-summary");
+    const range = String(data.rangeLabel || "").trim();
+    const rangeText = range ? "In this view: " + range : "";
+    if (rangeEl) {
+      rangeEl.hidden = !rangeText;
+      rangeEl.textContent = rangeText;
+    }
+    if (sumEl) {
+      sumEl.hidden = !(rangeText || total);
+      sumEl.textContent = rangeText
+        ? rangeText + (total ? " · " + total + " visible" : "")
+        : total
+          ? total + " visible in this view"
+          : "";
+    }
+  };
+  if (window.MB_PERSON_LAST_RESULTS) window.mbPersonSyncResults(window.MB_PERSON_LAST_RESULTS);
+
   function formatLifeDate(fact) {
     if (!fact) return "";
     if (fact.display_date) return String(fact.display_date);
@@ -603,10 +661,7 @@
       vidLabel +
       "</li><li>0 voice examples</li>";
 
-    const edit = document.getElementById("mb-person-edit");
-    if (edit) {
-      edit.href = editHref();
-    }
+    bindEditNow();
     const aboutBtn = document.getElementById("mb-person-about");
     if (aboutBtn) aboutBtn.onclick = () => renderAboutDrawer();
     const aboutCard = document.getElementById("mb-person-about-card");
@@ -682,47 +737,7 @@
     });
   });
 
-  window.mbPersonSyncResults = function (info) {
-    const data = info || {};
-    const counts = data.counts || {};
-    const total = Number(data.total || 0);
-    const kindBits = [];
-    const labels = [
-      ["photo", "photos"],
-      ["video", "videos"],
-      ["story", "stories"],
-      ["email", "emails"],
-      ["text", "texts"],
-      ["artifact", "artifacts"],
-    ];
-    labels.forEach(([k, lab]) => {
-      const n = Number(counts[k] || 0);
-      if (n) kindBits.push(n + " " + lab);
-    });
-    const totEl = document.getElementById("mb-person-memory-totals");
-    if (totEl) {
-      totEl.textContent =
-        "Total memories: " +
-        total +
-        (kindBits.length ? " · " + kindBits.join(" · ") : "");
-    }
-    const rangeEl = document.getElementById("mb-person-result-range");
-    const sumEl = document.getElementById("mb-person-result-summary");
-    const range = String(data.rangeLabel || "").trim();
-    const rangeText = range ? "In this view: " + range : "";
-    if (rangeEl) {
-      rangeEl.hidden = !rangeText;
-      rangeEl.textContent = rangeText;
-    }
-    if (sumEl) {
-      sumEl.hidden = !(rangeText || total);
-      sumEl.textContent = rangeText
-        ? rangeText + " · " + total + " visible"
-        : total
-          ? total + " visible in this view"
-          : "";
-    }
-  };
+  if (window.MB_PERSON_LAST_RESULTS) window.mbPersonSyncResults(window.MB_PERSON_LAST_RESULTS);
 
   loadProfile().catch((err) => {
     const body = document.getElementById("mb-explore-curator-body");
