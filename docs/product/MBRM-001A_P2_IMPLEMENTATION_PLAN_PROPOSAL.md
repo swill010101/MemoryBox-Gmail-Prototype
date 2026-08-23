@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Near-term: **I10B Artifacts → I10C Journal**. Face-SoT later. I11 not authorized until I10A+I10B+I10C land.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Near-term: **I10A.1 → I10A.2 → I10B Artifacts → I10C Journal**. Face-SoT later. I11 not authorized until that chain plus required transcription/recognition work.  
 **Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. **I9** authorized 2026-08-20 (FlightSim ACCEPTED pending). **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. Face-SoT later. Do not reopen I4, I8, I8A, I10, or I10A for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
@@ -98,8 +98,10 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I9** | Spoken Moments (STT/Speaker) | F+A | **BUILD AUTHORIZED** 2026-08-20 |
 | **P2-I10** | Cross-Source Correlation | A | **ACCEPTED** 2026-08-21 — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) |
 | **P2-I10A** | Stories | U+F | **ACCEPTED** 2026-08-22 — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md) |
-| **P2-I10B** | Artifacts | U+F | Next — HVRT→MB Artifacts conversion. Screens: `docs/source/Screens/MBUX Artifact Screens/`. PRD then sign-off before build. |
-| **P2-I10C** | Journal | U+F | After I10B — HVRT→MB Journal conversion. I11 waits until I10A+I10B+I10C. |
+| **P2-I10A.1** | Person Profile Editor | U | After I10A — approved Person Profile conversion. Not I10B. |
+| **P2-I10A.2** | Unified Voice Capture & Transcription | U+F | After I10A.1 — shared mic/STT; integrate Stories first. Required before Artifact “Tell its story” and I10C voice. |
+| **P2-I10B** | Artifacts | U+F | [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) — **PRD ready for review**, not build-authorized. After I10A.2 for Tell its story. |
+| **P2-I10C** | Journal | U+F | After I10B — same shared voice as I10A.2. I11 waits until the I10A–I10C chain plus required recognition/transcription work. |
 | **P2-I11** | Narrative & Summaries | E+A | Family evidence only. **Not authorized** until I10A + I10B + I10C. |
 | **P2-I12** | External Historical Context | E | EVS-254–256 only |
 | **P2-I13** | Dynamic Views | U | |
@@ -197,13 +199,21 @@ P2-GRAPH-02/03. **ACCEPTED** 2026-08-21 (Tom: “i10 has been accepted”). Mixe
 
 Human Story object: draft vs saved vs Ask-current, ordered blocks, mixed supporting memories, photo/video rail. **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”). **Not I11.** [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md).
 
+### P2-I10A.1 — Person Profile Editor · U
+
+Approved Person Profile Editor conversion. After I10A. Not Artifacts.
+
+### P2-I10A.2 — Unified Voice Capture & Transcription · U+F
+
+Shared microphone + preserve-audio + transcription for Stories, then Artifacts (Tell its story), then Journal. Must not be implemented three ways. Stories integration first.
+
 ### P2-I10B — Artifacts · U+F
 
-HVRT→MB Artifacts conversion. Screens go in `docs/source/Screens/MBUX Artifact Screens/`. PRD next; not build-authorized until sign-off.
+HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Screens: `fe913a4` in `MBUX Story Screens/` (copy to `MBUX Artifact Screens/` before build). Not build-authorized until PRD sign-off. Tell its story waits on I10A.2.
 
 ### P2-I10C — Journal · U+F
 
-HVRT→MB Journal conversion. After I10B. I11 waits until I10A + I10B + I10C so face-recognition jobs can finish and narrative has more prove data.
+HVRT→MB Journal conversion. After I10B. Same I10A.2 speech. I11 waits until the I10A–I10C chain plus required recognition/transcription work.
 
 ### P2-I11 — Narrative & Summaries · E+A
 
