@@ -665,6 +665,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "prove-person-i10a1":
         from memorybox.person.i10a1_acceptance import run_prove_person_i10a1
 
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_person_i10a1(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
