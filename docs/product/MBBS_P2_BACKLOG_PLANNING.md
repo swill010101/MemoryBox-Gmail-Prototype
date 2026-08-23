@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-22 (I10A Stories ACCEPTED; I10B screens next)  
+**Status:** Living parking note · **Updated:** 2026-08-23 (I10B PRD ready for review; sequence I10A.1 → I10A.2 → I10B)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
