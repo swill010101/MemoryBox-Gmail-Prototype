@@ -1,7 +1,8 @@
 # MBPRD-P2-I10B — Artifacts
 
-**Status:** PRD **ready for owner review** · increment **not build-authorized**  
+**Status:** PRD **revised after PR 39 review** · **not accepted** · increment **not build-authorized** · keep **draft**  
 **Date:** 2026-08-23  
+**Base (this PR):** `cursor/p2-i10a-stories-49da`. Before merge, rebase or retarget onto the accepted integration branch after I10A lands.  
 **Increment definition:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md)  
 **Assessment reconciliation:** [MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md)
 
@@ -48,6 +49,7 @@ Owner lock 2026-08-23.
 4. Visibility reuses I10A: `private` | `shared_with_family`. Private remains Ask-available to the **owner**. Authorization must not expose Artifacts to unauthorized users.
 5. **No** Artifact working draft. Save Artifact creates `active` — visible in the panel and Ask (subject to visibility).
 6. Save without a representation is allowed. Show **Needs context / Needs representation**.
+6a. **New Artifact representation staging (Frozen):** files chosen on New stay **browser-local** until Save. Save creates the active Artifact first, then uploads representations against that id. Upload failure keeps the Artifact, shows Needs representation plus a recoverable error, and allows retry. Cancel before Save creates **no** Artifact row, representation row, or server-preserved file.
 7. Nested/container Artifacts are **out**. Remove “12 items inside.”
 8. Delete Artifact and remove representation: **soft-remove** records/links; **preserve** original uploaded files. GC out of scope.
 9. Canonical Story↔Artifact link is I10A `story_version_memories` `source_kind=artifact`. Do not add a second competing write path. Compat-read existing `about_artifact`.
@@ -65,7 +67,8 @@ Owner lock 2026-08-23.
 - Description helper wins over the New-Artifact placeholder that invites testimony. Helper: describe the **object**; recollections are Stories.
 - Add-memories chips: Memory (all) / Photos / Video / Communications / Calendar / Journal / **Audio**. No Artifacts chip.
 - No Draft badge on Artifacts. Saved + Available to Ask are derived from `active` + Ask eligibility.
-- Tell its story is a compact Artifact action that **opens the Story editor**, not an embedded Story form.
+- Tell its story is a compact Artifact action that **opens the shared Story editor** with the Artifact prelinked, not an embedded Story form. I10B must not implement an Artifact-specific `MediaRecorder`.
+- New Artifact may *stage* files in the browser; they are not server objects until after Save (supersedes any reading that uploads on Add before Save).
 
 ---
 
@@ -120,8 +123,8 @@ See definition. I10A.2 **implementation** is a prior increment; this PRD only **
 ## C. Required extension
 
 - I10A-style Artifact surfaces (replace POC HTML).
-- Columns: visibility, described date + precision, `place_id`, representation `status`, representation `view_kind` (or equivalent), optional caption; Artifact supporting-memory table.
-- Unlink person, soft-remove Artifact, soft-remove representation.
+- Columns: visibility, **one** optional `described_start_date` + `described_precision` (no `described_end_date`), `place_id`, representation `status`, representation `view_kind`, optional caption; Artifact supporting-memory table with unique `(artifact_id, source_kind, source_id)`.
+- Person unlink via `relationships.status='superseded'` only; soft-remove Artifact; soft-remove representation.
 - Memory add/remove; `/artifact/by-media`.
 - Story query `artifact=` (+ I10A.2 `capture=`); stop `POST /artifact/{id}/story` as UX.
 - Place picker bound to `places`.
@@ -202,14 +205,15 @@ Browser permission; formats (existing webm/opus, webm, mp4); `MEMORYBOX_CAPTURE_
 |---|---|
 | `id`, `kind`, `label`, `description`, `status`, `current_metadata_revision`, `unresolved_context_json`, `attributes_json`, `created_at`, `updated_at` | **Existing** |
 | `visibility` | **Required** `private` \| `shared_with_family` default `private` |
-| `described_start_date` | **Required** nullable DATE |
-| `described_end_date` | **Required** nullable DATE (unused except if we later add range — **not** in I10B UI) |
+| `described_start_date` | **Required** nullable DATE — the **only** Artifact date value |
 | `described_precision` | **Required** `day` \| `month` \| `year` \| `approximate` \| `unknown` |
-| `place_id` | **Required** nullable FK `places(id)` ON DELETE SET NULL |
+| `place_id` | **Required** nullable FK `places(id)` ON DELETE SET NULL — **sole** editable and display SoT for Place |
 
-**Frozen precision UI:** exact day → `day`; month → `month`; year → `year`; approximate year → `approximate` (store year on `described_start_date`, e.g. 1999-01-01, display “about 1999”). Empty → `unknown` + null dates.
+**Do not** add `described_end_date`. I10B is one optional date, not a range.
 
-**Recommendation:** also write `relationships` `about_place` (artifact→place) when `place_id` is set, for I10 graph. SoT for display is `place_id` → `places.display_name`.
+**Frozen precision UI:** exact day → `day`; month → `month`; year → `year`; approximate year → `approximate` (store that year on `described_start_date`, e.g. 1999-01-01, display “about 1999”). Empty → `unknown` + null `described_start_date`.
+
+**Place SoT (Frozen):** create/edit/display/Ask hydration read and write **`artifacts.place_id` only**. I10B runtime **must not** dual-write `relationships` `about_place`. If `about_place` is retained later for graph compatibility, it is **derived** data rebuilt from `place_id` and is never a competing value. I10B does not require that rebuild.
 
 **Do not** add `location_text`.
 
@@ -252,9 +256,23 @@ Panel chip **Needs context • N** counts those rows. Cards may show Needs conte
 
 Primary representation: **Recommendation:** lowest `sort_order` among `active`. No extra flag unless UX needs an explicit “Make primary.”
 
-I10B upload: images and PDF/documents. Serving existing `mb_managed` bytes of other MIME is allowed (low-risk). **No** I10B requirement for a representation video player.
+**I10B representation formats (Frozen).** Accept and preserve original bytes for this set only as *new* uploads. Do not imply universal document rendering.
 
-Soft-remove: set `status=removed`. **Do not** delete the file. List/detail/bytes for product UI skip `removed`. Integrity hash check **Existing**.
+| Class | MIME | Extensions | Product presentation |
+|---|---|---|---|
+| Image | `image/jpeg` | `.jpg`, `.jpeg` | **Inline preview** (`<img>` via `/bytes`) |
+| Image | `image/png` | `.png` | **Inline preview** |
+| Image | `image/webp` | `.webp` | **Inline preview** |
+| Image | `image/gif` | `.gif` | **Inline preview** |
+| Image | `image/heic`, `image/heif` | `.heic`, `.heif` | **Preserve original.** Inline preview **only** if an already-reusable decoder exists; otherwise honest fallback card + **download / open original** |
+| Document | `application/pdf` | `.pdf` | **Download / open original** only. No I10B PDF renderer. |
+| Document | `text/plain` | `.txt` | **Download / open original** (optional short text excerpt is not required) |
+
+Reject other MIME on I10B upload with an honest error (including Office `.doc`/`.docx` unless later authorized). Serving a pre-I10B `mb_managed` file of another MIME may use the same **download / open original** fallback — no new player.
+
+**No** I10B requirement for a representation video player or audio-as-representation.
+
+Soft-remove: set `status=removed`. **Do not** delete the file. List/detail omit `removed`. **`GET …/bytes` for a `removed` representation must not return product-visible bytes** (404 or equivalent). The original file remains on `MEMORYBOX_ARTIFACT_MEDIA_ROOT`. Integrity hash check **Existing**.
 
 ### Artifact supporting memories — **Required** new table
 
@@ -271,15 +289,23 @@ Soft-remove: set `status=removed`. **Do not** delete the file. List/detail/bytes
 | `status` | `active` \| `removed` |
 | `created_at` | |
 
-UNIQUE (`artifact_id`, `source_kind`, `source_id`) among active (or unique all + status). CHECK `source_kind` ≠ `artifact` and ≠ `story`.
+**Uniqueness and relink (Frozen):**
 
-Linking never updates the source. Soft-remove the link only.
+- One row per `(artifact_id, source_kind, source_id)` for the life of the Artifact.
+- Database: `UNIQUE (artifact_id, source_kind, source_id)` on `artifact_memories` (all statuses). Not a partial unique-on-active-only index.
+- Add when no row exists: `INSERT` `status='active'`.
+- Remove: `UPDATE status='removed'`. Do not `DELETE` the row. Person/media/journal/audio sources are untouched.
+- Re-add a previously removed source: **reactivate** that row (`status='active'`; refresh snapshots/position as needed). **Do not INSERT** a second row. The unique constraint makes a duplicate insert fail; the service must UPDATE instead.
+- Product lists and `/artifact/by-media` count **`status='active'` only**.
+- CHECK `source_kind` ≠ `artifact` and ≠ `story`.
+
+Linking never updates the source object. Soft-remove the link only.
 
 Communications grain: same as I10A (`email_thread` / `sms_conversation` via evidence ids).
 
 ### People
 
-**Existing** `relationships` `about_person`. **Required** unlink: set relationship `status='superseded'` (or equivalent). Do not use people links for creator.
+**Existing** `relationships` `about_person`. **Frozen unlink:** set `relationships.status='superseded'` (canonical soft-unlink on `001_domain_v0.sql` CHECK: `candidate | confirmed | rejected | superseded`). **Do not** hard-delete the relationship row. **Do not** treat DELETE as an equal option. The Person and all source media survive. `_load_links` already ignores non-`candidate`/`confirmed` rows. Do not use people links for creator.
 
 ### Stories
 
@@ -319,12 +345,18 @@ Chrome on all Artifact surfaces: MemoryBox mark, family nav (Artifacts active), 
 ### G.2 New / Edit
 
 - Name, description (object metadata only).
-- Representations list + Add / Remove (soft).
-- Supporting memories + Add / Remove (soft).
-- Sidebar: Kind, approximate date+precision, Place picker, Visibility, People, provenance.
-- New: Cancel (no row) / **Save artifact**.
-- Edit: Cancel / **Save changes** (`POST …/revise` + side writes). Copy: originals unchanged; Stories stay in the Story editor.
+- Sidebar: Kind, **one** approximate date + precision (no end date), Place picker (`place_id`), Visibility, People, provenance.
 - New may save with empty representations.
+
+**New — representation staging (Frozen):**
+
+1. Add representation on New stages files **in the browser only** (name, type, caption, local preview). No `POST /artifact`, no `POST …/representations`, no write under `MEMORYBOX_ARTIFACT_MEDIA_ROOT`.
+2. **Save artifact** `POST /artifact` creates the `active` Artifact first.
+3. The client then uploads each staged file with that `artifact_id`.
+4. If any upload fails: Artifact **remains saved**; show **Needs representation** (if zero active reps) **and** a recoverable per-file error; owner may retry those uploads without creating a second Artifact.
+5. **Cancel** before Save: no Artifact row, no representation row, no server-preserved file. Browser memory is discarded.
+
+**Edit:** Artifact already exists. Add representation uploads immediately (`POST …/representations`). Remove is soft (`status=removed`). Cancel Edit does not revise metadata and does not undo uploads already completed in that session (**Recommendation:** say so in the UI). Stories stay in the Story editor.
 
 ### G.3 Detail
 
@@ -338,10 +370,11 @@ Chrome on all Artifact surfaces: MemoryBox mark, family nav (Artifacts active), 
 
 ### G.4 Add representation modal
 
-- Drop/browse image or document.
+- Drop/browse **accepted** image or document MIME only (table in §F).
 - Type (`view_kind`), optional label, optional caption.
-- Preservation copy (**Existing** semantics).
-- Cancel / Add representation.
+- Preservation copy (**Existing** semantics) applies **after** the file is stored on Save (New) or immediate upload (Edit).
+- On New: Add representation stages locally; modal Cancel drops that staged file only.
+- On Edit: Add representation uploads to the existing Artifact.
 
 ### G.5 Add supporting memories modal
 
@@ -373,9 +406,9 @@ Chrome on all Artifact surfaces: MemoryBox mark, family nav (Artifacts active), 
 | POST | `/artifact/{id}/removed` | Soft-remove Artifact |
 | POST | `/artifact/{id}/representations` | Upload image/document (**Existing**) |
 | POST | `/artifact/{id}/representations/{rid}/removed` | Soft-remove representation |
-| GET | `…/representations/{rid}/bytes` | **Existing**; 404 if removed |
+| GET | `…/representations/{rid}/bytes` | **Existing**; **must 404 (or equivalent) if `status=removed`**; file remains on disk |
 | POST | `/artifact/{id}/persons/{pid}` | **Existing** |
-| DELETE or POST | `/artifact/{id}/persons/{pid}/removed` | Unlink |
+| POST | `/artifact/{id}/persons/{pid}/removed` | Unlink: `status='superseded'` only — **not** HTTP DELETE of the row |
 | GET/POST | `/artifact/{id}/memories` | List / add |
 | POST | `/artifact/{id}/memories/{mid}/removed` | Unlink memory |
 | GET | `/artifact/by-media` | Rail: kind + source_id |
@@ -389,12 +422,12 @@ Reject AI `actor_key` on Artifact revise if that guard exists on Story (**Recomm
 
 ## I. Workflows
 
-1. **Create** — Panel → New → Save → Detail. Immediate `active`.  
-2–3. **Representations** — modal upload; hash idempotent (**Existing**).  
+1. **Create** — Panel → New → Save → Detail. Immediate `active`. Staged files upload after Save (G.2).  
+2–3. **Representations** — after Artifact exists: modal upload; hash idempotent (**Existing**). New-before-Save is browser-local only.  
 4. **Open** — `GET` by id; 404 if removed.  
 5. **Edit metadata** — new revision; bytes untouched.  
-6. **People** — add / unlink.  
-7. **Memories** — add / soft-remove; originals unchanged.  
+6. **People** — add; unlink = `superseded`.  
+7. **Memories** — add / soft-remove (`removed`); relink = reactivate same unique row; originals unchanged.  
 8. **Link existing Story** — picker of I10A Stories; add `source_kind=artifact` to working; confirm if that creates a draft.  
 9. **New Story** — Story editor, artifact prelinked; explicit Save Story; return.  
 10. **Tell its story** — I10A.2 capture in Story editor; same save; return.  
@@ -402,15 +435,15 @@ Reject AI `actor_key` on Artifact revise if that guard exists on Story (**Recomm
 14. **Delete Artifact** — confirm; `status=removed`; hide from panel/Ask; keep files and child rows.  
 15. **Remove representation** — confirm; `status=removed`; keep file.
 
-Cancel New: no persist. Cancel Edit: no revise. Cancel Story/capture: Artifact unchanged.
+Cancel New before Save: no Artifact, no representation, no server file. Cancel Edit: no metadata revise. Cancel Story/capture: Artifact unchanged.
 
 ---
 
 ## J. Migrations and compatibility
 
-1. ALTER `artifacts` add visibility (default `private`), date columns (precision `unknown`), `place_id`.  
+1. ALTER `artifacts` add visibility (default `private`), `described_start_date`, `described_precision` default `unknown`, `place_id`. **Do not** add `described_end_date`.  
 2. ALTER `artifact_representations` add `view_kind` (backfill from `label` when it matches front/back/detail/engraving/document, else `other`), `caption`, `status='active'`.  
-3. CREATE `artifact_memories`.  
+3. CREATE `artifact_memories` with `UNIQUE (artifact_id, source_kind, source_id)` and `status`.  
 4. Backfill `about_artifact` → `story_version_memories` on current saved version (or working if draft_only). See assessment §5.  
 5. Existing Artifacts stay `active`. Unresolved flags unchanged.  
 6. Do not delete `about_artifact` rows in I10B (read-compat). **Recommendation:** stop new writes.  
@@ -422,6 +455,7 @@ Cancel New: no persist. Cancel Edit: no revise. Cancel Story/capture: Artifact u
 ## K. Ask and Explore
 
 - Retrieve `status=active` only. Owner may see `private`.  
+- **Unauthorized retrieval (Frozen):** list/get/Ask/bytes must not return another principal’s Artifacts. This increment is single-owner; do not add unauthenticated or cross-account Artifact read routes. Any future non-owner request must fail closed (401/403 / empty). `shared_with_family` does not grant access in I10B.  
 - Token match: label, description, kind (**Existing**). Date/place names **Recommendation** add if cheap.  
 - Deep link `/artifact/ui?id=`.  
 - Explore Artifact type filter **Existing**; rail **Required**.  
@@ -443,22 +477,28 @@ Do not Ask-index `removed`. Do not Ask-index representation filenames as meaning
 
 ## M. Acceptance criteria (when build-authorized)
 
-1. Create Artifact with name+kind, no file → panel card + Needs representation; Ask can match label.  
-2. Add two image/document representations; both persist; metadata edit does not rewrite bytes.  
-3. Soft-remove one representation; file still on disk; UI hides it.  
-4. Soft-remove Artifact; gone from panel/Ask; files remain.  
-5. Kind chips return only mapped kinds.  
-6. Date + Place (`places.id`) + visibility persist; no location string column.  
-7. People unlink does not delete the Person.  
-8. Add photo + journal as memories; sources unchanged; Artifact→Artifact rejected.  
-9. Link existing Story writes `source_kind=artifact`; Artifact detail lists it; `about_artifact`-only legacy Story still lists after migrate or compat read.  
-10. New Story from Artifact opens I10A editor with prelink; Save Story required for Ask.  
-11. Tell its story (after I10A.2): mic path creates a Story, not Artifact description or representation; cancel does not publish.  
-12. Photo rail: list, add, create-new as evidence, remove link; photo and Artifact survive.  
-13. Video rail: same.  
-14. No suggested-memory ranking.  
-15. POC Story/mic form absent from `/artifact/ui`.  
-16. `prove-artifact` covers create, reps, memories, soft-remove, story memory, by-media.
+1. Create Artifact with name+kind, no file → panel card + Needs representation; Ask can match label (owner).  
+2. **New Save then upload (success):** stage two allowed files on New (browser-local); Save creates one Artifact; both uploads succeed as active representations; originals preserved; no second Artifact.  
+3. **Partial upload failure:** Save succeeds; one staged upload fails; Artifact remains `active`; Needs representation if zero active reps; recoverable error; **retry** of the failed file creates the missing representation without a duplicate Artifact.  
+4. **Cancel before Save:** after staging files locally, Cancel → zero Artifact rows, zero representation rows, zero new files under `MEMORYBOX_ARTIFACT_MEDIA_ROOT` for that attempt.  
+5. Add two image/document representations on Edit; metadata edit does not rewrite bytes.  
+6. Soft-remove one representation; **file still on disk**; UI hides it; **`GET …/bytes` does not return product-visible bytes**.  
+7. Soft-remove Artifact; gone from panel/owner Ask; files remain.  
+8. Kind chips return only mapped kinds.  
+9. One optional date + precision persist; **no** `described_end_date`; Place persists as `place_id` only; visibility persists; no location string.  
+10. People unlink sets `relationships.status='superseded'`; Person row and media survive; hard-delete of the relationship is not used.  
+11. Add photo + journal as memories; sources unchanged; Artifact→Artifact rejected.  
+12. **Relink:** remove a supporting memory; re-add the same `(source_kind, source_id)` → exactly one active link (reactivation); unique constraint holds; prove this.  
+13. Link existing Story writes `source_kind=artifact`; Artifact detail lists it; `about_artifact`-only legacy Story still lists after migrate or compat read.  
+14. New Story from Artifact opens I10A editor with prelink; Save Story required for Ask.  
+15. Tell its story (after I10A.2): opens shared Story editor; mic path creates a Story, not Artifact description or representation; no Artifact `MediaRecorder`; cancel does not publish.  
+16. Photo rail: list, add, create-new as evidence, remove link; photo and Artifact survive.  
+17. Video rail: same.  
+18. **Owner visibility:** owner Ask/list/get sees `private` and `shared_with_family` when `active`. **Unauthorized:** no cross-account or unauthenticated Artifact retrieve; `shared_with_family` does not open a public API.  
+19. Document upload: accepted MIME only; PDF/txt are download/open-original; images listed as previewable preview inline; unknown MIME rejected honestly.  
+20. No suggested-memory ranking.  
+21. POC Story/mic form absent from `/artifact/ui`.  
+22. `prove-artifact` covers: create; Save-then-upload success; partial fail + retry; Cancel before Save; representation soft-remove + bytes hidden + file kept; memory remove + reactivate uniqueness; person `superseded`; owner vs unauthorized retrieve; story memory; by-media.
 
 ---
 
@@ -473,18 +513,23 @@ Do not Ask-index `removed`. Do not Ask-index representation filenames as meaning
 7. Retire POC.  
 8. Ask/Explore honesty + prove.
 
-I10B slices 1–5 **must not** add an Artifact `MediaRecorder`.
+I10B slices 1–5 **must not** add an Artifact `MediaRecorder`. Tell its story **only** opens the shared Story editor with the Artifact prelinked.
 
 ---
 
 ## O. Open (non-blocking)
 
+Resolved by this review (no longer Open): `described_end_date` (omitted); New staging/Cancel; memory unique + reactivate; person unlink = `superseded` only; `place_id` sole SoT (no runtime `about_place` dual-write); document MIME/preview vs download.
+
+Still Open:
+
 1. I10A.2 max duration / file size / whether transcription is a `jobs` row.  
 2. Explicit “Make primary” vs `sort_order`.  
 3. PATCH convenience vs multiple POSTs.  
-4. Whether `GET /correlate/place` list is needed or upsert-on-type is enough (I10 has upsert + get).  
-5. History UI for metadata revisions (out; Open only if owner wants it later).
+4. Whether a Place **list** API is needed or upsert-on-type is enough (I10 has `upsert_place` + `get_place`).  
+5. History UI for metadata revisions (out of I10B; Open only if owner wants it later).  
+6. HEIC inline preview: use a reusable decoder if one already exists at build time; otherwise fallback — do not add a new HEIC stack in I10B.
 
 ---
 
-**This PRD is for product-owner review. Do not implement until the increment is accepted and build-authorized. Tell its story remains blocked on I10A.2 acceptance.**
+**This PRD is revised for product-owner review. It is not accepted and not build-authorized. Keep PR 39 draft. Tell its story remains blocked on I10A.2 acceptance.**

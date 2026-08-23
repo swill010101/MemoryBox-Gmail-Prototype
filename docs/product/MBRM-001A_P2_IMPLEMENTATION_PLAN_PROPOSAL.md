@@ -100,7 +100,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10A** | Stories | U+F | **ACCEPTED** 2026-08-22 — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md) |
 | **P2-I10A.1** | Person Profile Editor | U | After I10A — approved Person Profile conversion. Not I10B. |
 | **P2-I10A.2** | Unified Voice Capture & Transcription | U+F | After I10A.1 — shared mic/STT; integrate Stories first. Required before Artifact “Tell its story” and I10C voice. |
-| **P2-I10B** | Artifacts | U+F | [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) — **PRD ready for review**, not build-authorized. After I10A.2 for Tell its story. |
+| **P2-I10B** | Artifacts | U+F | [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) — **PRD revised (PR 39), not accepted**, not build-authorized. After I10A.2 for Tell its story. |
 | **P2-I10C** | Journal | U+F | After I10B — same shared voice as I10A.2. I11 waits until the I10A–I10C chain plus required recognition/transcription work. |
 | **P2-I11** | Narrative & Summaries | E+A | Family evidence only. **Not authorized** until I10A + I10B + I10C. |
 | **P2-I12** | External Historical Context | E | EVS-254–256 only |
@@ -209,7 +209,7 @@ Shared microphone + preserve-audio + transcription for Stories, then Artifacts (
 
 ### P2-I10B — Artifacts · U+F
 
-HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Screens: `fe913a4` in `MBUX Story Screens/` (copy to `MBUX Artifact Screens/` before build). Not build-authorized until PRD sign-off. Tell its story waits on I10A.2.
+HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). Screens: `fe913a4` in `MBUX Story Screens/` (copy to `MBUX Artifact Screens/` before build). **PRD not accepted; not build-authorized; keep PR 39 draft.** Tell its story waits on I10A.2. No Artifact-specific MediaRecorder. Sequence remains I10A → I10A.1 → I10A.2 (Stories first) → I10B → I10C → I11. PR 39 planning set is six files (three I10B docs + backlog + this roadmap + I10A definition sequence). Rebase/retarget after I10A lands.
 
 ### P2-I10C — Journal · U+F
 

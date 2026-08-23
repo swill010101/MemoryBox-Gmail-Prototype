@@ -1,8 +1,9 @@
 # P2-I10B — Assessment reconciliation
 
-**Status:** Planning only · repository assessment **accepted** 2026-08-23 subject to owner decisions below  
+**Status:** Planning only · repository assessment **accepted** 2026-08-23 · PRD **revised after PR 39 review, not accepted** · **not build-authorized**  
 **Does not implement** code, migrations, routes, or UI  
-**Definition / PRD:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [MBPRD-P2-I10B_ARTIFACTS.md](MBPRD-P2-I10B_ARTIFACTS.md)
+**Definition / PRD:** [MBBS-P2_INCREMENT_10B_DEFINITION.md](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [MBPRD-P2-I10B_ARTIFACTS.md](MBPRD-P2-I10B_ARTIFACTS.md)  
+**PR 39 files:** this assessment, I10B definition, I10B PRD, plus sequence edits in `MBBS_P2_BACKLOG_PLANNING.md`, `MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md`, and `MBBS-P2_INCREMENT_10A_DEFINITION.md`. Base: `cursor/p2-i10a-stories-49da` until I10A lands; rebase/retarget before merge.
 
 This revises the I10B field-mapping assessment after owner lock. Screenshot text is still not proof of a backend field.
 
@@ -15,8 +16,8 @@ This revises the I10B field-mapping assessment after owner lock. Screenshot text
 | Prior finding | Decision | Revised I10B stance |
 |---|---|---|
 | Panel chips All / Heirlooms / Documents / Recipes / Keepsakes conflict with `ARTIFACT_KINDS` | Filters are **All / Objects / Documents / Recipes / Other**; map honestly; drop overlapping Heirlooms + Keepsakes | **Frozen mapping** in the PRD. No new kind enum. |
-| Approximate date Missing | Optional Artifact date with day / month / year / approximate year | **Required schema** (I10A precision subset). |
-| Place Missing; screens used free text | First-class Place only; no Artifact location string | **Required** `places` + relationship/FK. Hide free-text location. |
+| Approximate date Missing | One optional Artifact date; precision `day \| month \| year \| approximate \| unknown` | **Required** `described_start_date` + `described_precision` only. **No** `described_end_date`. |
+| Place Missing; screens used free text | First-class Place only; no Artifact location string | **Required** `artifacts.place_id` as sole SoT. No runtime `about_place` dual-write. |
 | Visibility Missing | Reuse I10A `private` \| `shared_with_family`. Private remains Ask-visible to the **owner**. Unauthorized users must not see it. | **Required column**. Multi-user ACL is still not I10B; persist intent and do not leak. |
 | Draft vs Save / Ask badges Unclear | **No working draft.** Save = `active` + panel + Ask (subject to visibility). | Badges **derived**. Do not copy Stories `working_version_id`. Keep metadata **revisions** as silent history. |
 | Zero-representation Artifact valid in code | Allowed. Show **Needs context / Needs representation**. | **Required** incomplete signal. Not a blocker. |
@@ -27,7 +28,10 @@ This revises the I10B field-mapping assessment after owner lock. Screenshot text
 | Rail ⋮ Unclear | **Remove link from this Artifact** + confirm. Does not delete media or Artifact. | **Required** rail action. |
 | Provenance “Added by Tom Will” Partial | Acting **owner/account**, not an ArtifactPerson | Resolve `MEMORYBOX_OWNER_PERSON_ID` / owner Person. Do not mint a people link. |
 | Suggested memories Missing | **Out of I10B** | Honest search + filters + explicit select only. |
-| Audio/video as representations | I10B representations = **images and documents**. Audio = supporting evidence. Video-as-representation playback not required unless already low-risk. | Upload accept image/PDF (+ existing `mb_managed` bytes). No new video player for reps. |
+| Audio/video as representations | I10B representations = listed image/document MIME. Audio = supporting evidence. | Preview vs download/open-original per PRD §F. No universal document renderer. |
+| New create vs Cancel vs upload | Stage locally; Save then upload; Cancel writes nothing; partial fail keeps Artifact | **Frozen** in PRD G.2 + prove. |
+| Memory unique / relink | One active `(artifact_id, source_kind, source_id)`; UNIQUE all rows; reactivate | **Frozen**. |
+| Person unlink | `relationships.status='superseded'` only | **Frozen**. No hard delete. |
 | Story from Artifact = retire POC form | Must support **link existing Story**, **new Story prelinked**, and **Tell its story** via shared voice | POC STT/Story form **obsolete**. I10B must not ship a private recorder. Depends on **I10A.2**. |
 | Sequence I10B immediately after I10A | I10A → **I10A.1 Person Profile** → **I10A.2 Unified Voice** (Stories first) → I10B → I10C → I11 | I10B **definition may proceed**. I10B **implementation of Tell its story waits for I10A.2**. |
 
@@ -167,7 +171,7 @@ This is **archive video** speech, not owner testimony capture. I10A.2 may **reus
 - Zero-rep rows stay valid; they **Needs representation**.
 - `mb_managed` files: never delete on soft-remove.
 - `evidence_ref` rows remain representations until an owner later reclassifies; I10B memory picker creates **new** links, not evidence_ref rows.
-- `relationships` `about_person` unchanged; add unlink (status `superseded` or delete row — prefer status so history remains).
+- `relationships` `about_person` unchanged; unlink **only** `status='superseded'`. Do not hard-delete the row. Person and media survive.
 - `actor_key='owner'`: display “Added by {owner display_name}” via owner Person; do not backfill ArtifactPerson.
 
 ### Stories
@@ -195,13 +199,14 @@ This is **archive video** speech, not owner testimony capture. I10A.2 may **reus
 - I10A chrome: panel, new, detail, edit
 - Filters All / Objects / Documents / Recipes / Other
 - Needs context / Needs representation (including zero-rep)
-- Optional date + precision
-- Place via `places` (picker / upsert), not free-text SoT
-- Visibility I10A enum; owner Ask sees private
+- One optional date + precision; no end date
+- Place via `artifacts.place_id` (picker / upsert), not free-text SoT; no runtime `about_place` write
+- Visibility I10A enum; owner Ask sees private; unauthorized retrieve fails closed
 - No draft; Save = active
-- Representations: image/document upload; type (+ label/caption as specified in PRD); list; soft-remove; originals kept
-- People add + unlink
-- Supporting memories (six kinds) + modal search (no suggestions) + remove
+- New: browser-local stage → Save → upload; Cancel writes nothing; partial fail + retry
+- Representations: accepted MIME only; type + label/caption; list; soft-remove; originals kept; no product bytes for `removed`
+- People add + unlink (`superseded` only)
+- Supporting memories (six kinds) + unique triple + reactivate + modal search (no suggestions) + remove
 - Photo/video rails: list, add to existing, create new as **supporting evidence**, overflow **Remove link**
 - Stories: link existing; new Story prelinked; **Tell its story** through I10A.2 (no Artifact recorder)
 - Soft-remove Artifact
@@ -247,7 +252,7 @@ I10B **planning/PRD: now**. I10B **build of Tell its story: after I10A.2**. Othe
 
 **None blocking** for writing the I10B definition/PRD.
 
-Non-blocking implementation recommendations (change only with a recorded reason) are in the PRD Open/Recommendation rows: exact kind-filter SQL, Place stored as `place_id` vs `about_place`, whether linking an existing Story opens a working draft until Save revision (same as I10A rail), and I10A.2 duration/size numbers.
+Non-blocking Open items remain only in the PRD §O (I10A.2 duration/size/jobs, primary vs sort_order, PATCH vs POSTs, Place list API vs upsert, revision history UI, HEIC decoder reuse). Kind-filter SQL, `place_id` SoT, unlink `superseded`, memory unique+reactivate, and New staging are **Frozen**.
 
 ---
 
