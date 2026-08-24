@@ -11,7 +11,7 @@
 | Artifact editor | `#ed-desc` textarea | Narrative | **Yes** — shared field | Object description. Testimony belongs on Stories. |
 | Artifact editor | `#ed-label` input | Short | **No** | Name |
 | Artifact editor | `#rep-cap` textarea | Short caption | **No** v1 | Representation caption |
-| Artifact **Tell its story** | (intended) Story `#ed-body` | Narrative | **Yes** via Story | I10B consumes Story dictation; no Artifact `MediaRecorder` |
+| Artifact **Tell its story** | `/story/ui?...&capture=1` | Narrative (Story body) | **Yes** via Story | `capture=1` is **ignored** until I10A.2. No Artifact `MediaRecorder`. |
 | Journal 5A | `#body` textarea | Narrative | **Yes** — shared field | Replace whole-field STT overwrite and screen-local recorder |
 | Journal 5A | `#editBody` textarea | Narrative | **Yes** — same control | Version body |
 | Journal 5A | `#title`, dates, author | Short / structured | **No** | |

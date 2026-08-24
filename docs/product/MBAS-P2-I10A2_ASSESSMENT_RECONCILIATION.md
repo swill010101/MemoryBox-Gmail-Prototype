@@ -42,7 +42,9 @@ That consolidation is the increment’s first slice, not a later cleanup.
 
 I10A Stories **froze** “do not expose dictation.” I10A.2 may add dictation **inside** the Story editor without reopening I10A.
 
-I10B **Tell its story** is **not** Artifact-description dictation. It is meant to open the **Story** editor (`?artifact=` + capture). Artifact `#ed-desc` is “describe the object”; family testimony belongs on a Story. Both can get the **same** narrative control; they remain different objects.
+I10B **Tell its story** is **not** Artifact-description dictation. Artifact UI already navigates to `/story/ui?new=1&artifact={id}&capture=1`. **Story ignores `capture=1` today** (opens the typed editor only). I10B also Frozen **“Dictating Artifact description | Forbidden.”** This owner PRD’s AT-03 (mic on Artifact `#ed-desc`) **reverses that lock** unless Tom explicitly supersedes I10B for object-description dictation only (testimony still on Stories).
+
+Both Story body and (if allowed) Artifact description can use the **same** narrative control; they remain different objects.
 
 ---
 
@@ -103,7 +105,7 @@ Cancel: each screen already discards unsaved editor state. Dictation must not wr
 1. **Audio files:** Discard after STT (this PRD), or keep preserve-then-transcribe from I10B/Journal? **Recommendation:** dictation = ephemeral; do not create Voice Memory / `audio_uri` on Save.
 2. **STT engine:** Reuse Whisper via a **non-preserving** or scratch transcribe, vs browser speech, vs both? UI must stay provider-silent.
 3. **Stories first vs all surfaces in one increment:** PRD lists Story, Journal, Artifact, Person as initial required. **Recommendation:** one increment, but **gate** on shared control + Story; remaining surfaces same increment, not three later forks.
-4. **Story description `<input>`:** treat as short (no mic) or promote to narrative later?
+7. **Artifact description mic vs I10B:** I10B forbade dictating Artifact description. This PRD wants it. Keep I10B (description typed only; mic only via Tell its story → Story body) or supersede for object-description dictation?
 5. **Selected text:** Frozen “do not silently overwrite” — insert after selection, or obvious Replace? **Recommendation:** insert at cursor; do not replace selection in v1.
 6. **I10C:** Journal family chrome remains I10C. I10A.2 only puts the shared field on the existing 5A shell (or wait for I10C to consume the control). **Recommendation:** wire Journal `#body` now so the POC mic does not remain a second implementation.
 
