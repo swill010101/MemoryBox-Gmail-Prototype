@@ -1,6 +1,6 @@
 # MBAT-P2-I10C — Journal
 
-**Increment:** P2-I10C · **LOCKED** · **BUILD AUTHORIZED** 2026-08-24  
+**Increment:** P2-I10C · **ACCEPTED** 2026-08-24 (Tom: “i10C - journal is accepted”)  
 **Prove:** `python -m memorybox prove-i10c` · keep `prove-journal` (5A)
 
 | ID | Criterion |

@@ -315,6 +315,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
     )
+    p_prove_i11n = sub.add_parser(
+        "prove-i11",
+        help="P2-I11 Narrative & Summaries (Ask output mode) acceptance prove",
+    )
+    p_prove_i11n.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
+    )
     p_prove9a = sub.add_parser(
         "prove-person-profile",
         help="Increment 9A Person Profile acceptance prove",
@@ -704,6 +713,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_i10c(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-i11":
+        from memorybox.ask.i11_acceptance import run_prove_i11
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_i11(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 

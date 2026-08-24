@@ -281,6 +281,18 @@ body {
   margin-bottom: 0.75rem;
   box-shadow: var(--mb-shadow);
 }
+.mb-explore-curator.is-tell {
+  align-items: start;
+}
+.mb-explore-curator.is-tell .mb-explore-curator-copy {
+  max-width: 42rem;
+}
+.mb-explore-curator.is-tell #mb-explore-curator-body {
+  white-space: pre-wrap;
+  color: var(--mb-ink);
+  font-size: 1rem;
+  line-height: 1.55;
+}
 .mb-explore-curator.is-searching,
 .mb-explore-ask-field.is-searching {
   animation: mb-curator-pulse 1.15s ease-in-out infinite;
@@ -332,6 +344,36 @@ body {
   font-size: 0.8rem;
   line-height: 1.35;
   opacity: 0.9;
+}
+
+.mb-explore-curator-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--mb-muted);
+}
+
+.mb-explore-curator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.mb-explore-curator-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line);
+  background: var(--mb-page);
+  color: var(--mb-ink);
+  cursor: pointer;
+}
+
+.mb-explore-curator-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .mb-explore-chips {

@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-24 (I10C Journal **BUILD AUTHORIZED**)  
+**Status:** Living parking note · **Updated:** 2026-08-24 (I10C **ACCEPTED**; I11 definition LOCKED — prep/LLM waits)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -87,7 +87,7 @@ P2-I8 Richer Email is **ACCEPTED** (2026-08-18 — Tom: FlightSim §9 all pass).
 
 **P2-I10A Stories** — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md). **ACCEPTED** 2026-08-22 (Tom: “i10A is accepted”). **Not I11.**
 
-**Sequence after I10A (owner 2026-08-23, I10B already shipped):** I10A.1 (**ACCEPTED**) → I10A.2 (**ACCEPTED** 2026-08-24) → I10C Journal → I11 only after those plus required transcription/recognition work. I10B **ACCEPTED** 2026-08-23.
+**Sequence after I10A (owner 2026-08-23, I10B already shipped):** I10A.1 (**ACCEPTED**) → I10A.2 (**ACCEPTED** 2026-08-24) → I10C Journal (**ACCEPTED** 2026-08-24) → **I11** (definition locked; prep/LLM waits for build authorization). I10B **ACCEPTED** 2026-08-23.
 
 **P2-I10B Artifacts** — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md) · [assessment](MBAS-P2-I10B_ASSESSMENT_RECONCILIATION.md). **ACCEPTED** 2026-08-23 (Tom: “i10B is accepted”). Tell its story opens the shared Story editor (`?artifact=`); the recorder is I10A.2. Implementation: `cursor/p2-i10b-artifacts-49da`.
 
@@ -108,4 +108,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I10C Journal** — definition **LOCKED** · **BUILD AUTHORIZED** 2026-08-24. [definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md). Do not reopen I10A.2. I11 waits until I10C is accepted plus required transcription/recognition work.
+**Next:** I11 waits on **build authorization**. Travel dual-unit and “when Dad was young” semantic resolver are **locked** (communication stays; derived `travel` when reliable; Person + age band + interpretation/version — not a hard-coded 10–25). [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Do not reopen Journal. Do not add Save View UI.

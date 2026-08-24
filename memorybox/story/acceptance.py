@@ -397,10 +397,24 @@ def prove_increment_10a(*, flightsim: bool = False) -> dict[str, Any]:
 
     model_rejected = False
     try:
-        save_draft(title="Nope", body_text="model text", composed_by_model=True)
+        save_story(title="Nope", body_text="model text", composed_by_model=True)
     except StoryServiceError:
         model_rejected = True
-    _check("i10a_reject_composed_by_model", model_rejected, checks, problems, "composed_by_model rejected")
+    draft_ok = False
+    draft_id = None
+    try:
+        d = save_draft(title="I11 proposed", body_text="model text", composed_by_model=True)
+        draft_ok = (not d.ask_available) and bool(d.has_working_draft or d.working_version_id)
+        draft_id = d.id
+    except StoryServiceError:
+        draft_ok = False
+    _check(
+        "i10a_reject_composed_by_model",
+        model_rejected and draft_ok,
+        checks,
+        problems,
+        "save_story rejects composed_by_model; working draft allowed",
+    )
 
     titled = create_story(title="Titled stub only", body_text="", narrator_display_name="River Owner")
     _check(

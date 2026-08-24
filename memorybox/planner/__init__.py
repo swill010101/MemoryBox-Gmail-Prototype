@@ -32,6 +32,7 @@ from memorybox.planner.temporal import (
 VisualScope = Literal["none", "broad", "still_only", "video_only"]
 MbqlAct = Literal["find", "refine", "navigate", "clarify"]
 MbqlProvenance = Literal["deterministic", "model_fill", "mixed"]
+OutputMode = Literal["show", "play", "tell"]
 
 STILL_ONLY_RE = re.compile(r"(?i)\b(photos?|stills?)\b")
 STORY_ASK_RE = re.compile(r"(?i)\bstor(?:y|ies|ied|iest)\b")
@@ -121,6 +122,25 @@ EXPLORATORY_RE = re.compile(
     r"tell\s+me\s+about|"
     r"what\s+do\s+(?:i|we)\s+have\s+(?:about|from|on)"
     r")\b"
+)
+TELL_OUTPUT_RE = re.compile(
+    r"(?i)\b(?:"
+    r"tell\s+me\s+about|"
+    r"what\s+do\s+you\s+know|"
+    r"summarize|"
+    r"what\s+happened|"
+    r"what\s+was\b[\w\s,'’-]{0,40}\blike\b|"
+    r"what\s+were\b[\w\s,'’-]{0,40}\blike\b|"
+    r"describe\b[\w\s,'’-]{0,60}\bfrom\s+what\s+we\s+have|"
+    r"write\s+a\s+narrative|"
+    r"write\s+a\s+story|"
+    r"narrate|"
+    r"narrative\s+about"
+    r")\b"
+)
+PLAY_OUTPUT_RE = re.compile(
+    r"(?i)\b(?:play|watch)\b[\w\s,'’-]{0,40}\b(?:video|clip|moment|footage|recording)\b|"
+    r"\bplay\s+(?:that|this)\b"
 )
 SAID_ABOUT_RE = re.compile(
     r"(?i)\b(?:"
@@ -622,6 +642,7 @@ class QueryPlan:
     memory_presentation: bool | None = None
     want_cross_source: bool = False
     theme_labels: tuple[str, ...] = ()
+    output_mode: OutputMode = "show"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -668,6 +689,26 @@ def _clean_entity(name: str) -> str | None:
     if n.islower() or n.isupper():
         n = n.title()
     return n
+
+
+def compile_output_mode(
+    q: str,
+    *,
+    said_about: bool = False,
+    want_spoken: bool = False,
+    want_cross_source: bool = False,
+) -> OutputMode:
+    """SHOW vs PLAY vs TELL. Sibling of MBQL act — do not overload find/refine."""
+    if said_about:
+        return "show"
+    if TELL_OUTPUT_RE.search(q or ""):
+        return "tell"
+    if PLAY_OUTPUT_RE.search(q or ""):
+        return "play"
+    # I10 everything-about sets want_spoken for retrieve; that is not PLAY.
+    if want_spoken and not want_cross_source:
+        return "play"
+    return "show"
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -1097,6 +1138,24 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_visual = True
         want_photo = True
         notes.append("exploratory_multimodal_i4")
+
+    if (
+        TELL_OUTPUT_RE.search(q)
+        and not said_about
+        and not narrowed_comms
+        and not narrowed_visual
+        and not SHOW_ME_RE.search(q)
+    ):
+        want_email = True
+        want_sms = True
+        want_cal = True
+        if visual_scope == "none":
+            visual_scope = "broad"
+            want_still = True
+            want_video = True
+            want_visual = True
+            want_photo = True
+        notes.append("tell_multimodal_i11")
 
     if want_spoken and not want_cross_source:
         visual_scope = "video_only"
@@ -1596,7 +1655,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     # so Immich hangs/empties don't leave Explore at 0 (FlightSim: Tom Will stories gone).
     want_story = False
     if not requires_clarification:
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
+        if "exploratory_multimodal_i4" in notes or "tell_multimodal_i11" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_story = True
         if any(
             n in notes
@@ -1638,7 +1697,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     elif not requires_clarification:
         if JOURNAL_ASK_RE.search(q):
             want_journal = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
+        if "exploratory_multimodal_i4" in notes or "tell_multimodal_i11" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_journal = True
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_journal = False
@@ -1654,7 +1713,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if not requires_clarification and not journal_capture_intent:
         if ARTIFACT_ASK_RE.search(q):
             want_artifact = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
+        if "exploratory_multimodal_i4" in notes or "tell_multimodal_i11" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_artifact = True
         if narrowed_comms and EMAIL_RE.search(q) and not exploratory:
             want_artifact = False
@@ -1665,12 +1724,12 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if want_artifact:
             notes.append("want_artifact_modality")
 
-    # Guided Capture Responses (I11): said-about / interview testimony / exploratory
+    # Guided Capture Responses: said-about / interview testimony / exploratory (not I11 narration)
     want_guided_capture = False
     if not requires_clarification and not journal_capture_intent:
         if said_about or GUIDED_CAPTURE_ASK_RE.search(q):
             want_guided_capture = True
-        if "exploratory_multimodal_i4" in notes or "default_comms_calendar" in notes or want_cross_source:
+        if "exploratory_multimodal_i4" in notes or "tell_multimodal_i11" in notes or "default_comms_calendar" in notes or want_cross_source:
             want_guided_capture = True
         if STILL_ONLY_RE.search(q) or VIDEO_ONLY_RE.search(q):
             want_guided_capture = False
@@ -1696,6 +1755,13 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         notes.append("want_email_modality")
     if want_cal and not requires_clarification and not journal_capture_intent:
         notes.append("want_calendar_modality")
+
+    output_mode = compile_output_mode(
+        q,
+        said_about=said_about,
+        want_spoken=want_spoken,
+        want_cross_source=want_cross_source,
+    )
 
     return QueryPlan(
         original_ask=q,
@@ -1756,4 +1822,5 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         gallery_show_calendar=True if want_cross_source else None,
         want_cross_source=want_cross_source and not journal_capture_intent,
         theme_labels=tuple(theme_labels),
+        output_mode=output_mode if not journal_capture_intent else "show",
     )

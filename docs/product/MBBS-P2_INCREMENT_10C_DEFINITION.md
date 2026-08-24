@@ -1,6 +1,6 @@
 # P2-I10C — Journal
 
-**Status:** Definition **LOCKED** 2026-08-24 · **BUILD AUTHORIZED** 2026-08-24 (Tom: “Approved to build”)  
+**Status:** **ACCEPTED** 2026-08-24 (Tom: “i10C - journal is accepted”) · Definition **LOCKED** 2026-08-24  
 **Increment ID:** **P2-I10C Journal.** I10B is Artifacts (**ACCEPTED**).  
 **Assessment / field map:** [MBAS-P2-I10C_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10C_ASSESSMENT_RECONCILIATION.md)  
 **Visuals:** [MBUX Journal Screens](../source/Screens/MBUX%20Journal%20Screens/) (`01` panel, `02` new, `03` detail) from `fe913a4`  
@@ -8,7 +8,7 @@
 **Depends:** I10A Stories **ACCEPTED** · I10A.1 **ACCEPTED** · I10A.2 speech **ACCEPTED** · I10B Artifacts **ACCEPTED** · I5A Journal store  
 **Does not start:** I11 · I10A.2 polish · guided-capture campaigns (I15) · HVRT journal ingest · family multi-user ACL · Face SoT · Mine / Family contributions filters
 
-A PRD is [MBPRD-P2-I10C_JOURNAL.md](MBPRD-P2-I10C_JOURNAL.md). **BUILD AUTHORIZED** 2026-08-24.
+A PRD is [MBPRD-P2-I10C_JOURNAL.md](MBPRD-P2-I10C_JOURNAL.md). **ACCEPTED** 2026-08-24.
 
 ---
 
@@ -137,8 +137,8 @@ Must cover: new (Entry date defaults today) → Save draft (not in Ask, not on c
 
 ## After I10C
 
-**I11** remains closed until I10A + I10A.1 + I10A.2 + I10B + I10C and required recognition/transcription work.
+**I11 Narrative & Summaries** is next (Ask output mode). Do not reopen Journal chrome.
 
 ---
 
-**LOCKED and BUILD AUTHORIZED 2026-08-24.**
+**ACCEPTED 2026-08-24.**
