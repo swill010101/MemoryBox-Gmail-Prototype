@@ -126,10 +126,14 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "a12_silence_prompt",
-        "Are you still there?" in nf and "Continue recording" in nf and "auto-stop" not in nf.lower(),
+        "Are you still there?" in nf
+        and "Continue recording" in nf
+        and "mb-nf-modal-back" in nf
+        and "still listening" in nf.lower()
+        and "auto-stop" not in nf.lower(),
         checks,
         problems,
-        "silence prompt, no auto-stop copy",
+        "silence prompt is a modal; recording is not paused; no auto-stop copy",
     )
     _check("a04_pause_resume", "Pause" in nf and "Resume" in nf and "recorder.pause" in nf, checks, problems)
     _check("a05_stop_review", 'mode = "review"' in nf and "Save" in nf, checks, problems)
@@ -142,7 +146,14 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         "Start over confirms, then records again",
     )
-    _check("a03_vu_meter", "mb-nf-vu" in nf and "Listening " in nf, checks, problems, "live level while recording")
+    _check("a03_vu_meter", "mb-nf-vu" in nf and "Level" in nf, checks, problems, "labeled live level while recording")
+    _check(
+        "mic_skips_virtual_cable",
+        "isVirtualMic" in nf and "voicemeeter" in nf,
+        checks,
+        problems,
+        "do not prefer VoiceMeeter/VB-Audio as the story mic",
+    )
     _check(
         "a16_capture_query",
         'p.get("capture")' in story and "capture=1" in artifact and "restoreCommit" in story,
