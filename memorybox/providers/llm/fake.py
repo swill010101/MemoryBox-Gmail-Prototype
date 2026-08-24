@@ -10,6 +10,13 @@ from memorybox.providers.base import ProviderHealth
 from memorybox.providers.llm.dto import ChatMessage, ChatResultDto, EmbeddingDto
 
 _DIM = 32
+_VOLUME_NOISE = re.compile(
+    r"(?i)evidence item\(s\)|\d{4}-W\d{2}:|\b\d+ email\b|\b\d+ sms\b|member_n"
+)
+_TXN_NOISE = re.compile(
+    r"(?i)\b(tracking|shipment|shipped|order confirmation|survey invitation|"
+    r"your receipt|invoice|fedex|usps)\b"
+)
 
 
 def _fake_narrative(pack_json: str) -> str:
@@ -17,82 +24,79 @@ def _fake_narrative(pack_json: str) -> str:
         pack = json.loads(pack_json)
     except Exception:
         return "The prepared pack could not be read. MemoryBox will not invent family facts."
+    pu = pack.get("period_understanding") if isinstance(pack.get("period_understanding"), dict) else {}
     label = (
-        pack.get("temporal_label")
+        pu.get("label")
+        or pack.get("temporal_label")
         or ((pack.get("scope") or {}).get("time") or {}).get("label")
         or "this period"
     )
-    outline = list(pack.get("outline") or pack.get("derived_summaries") or [])
-    episodes = list(pack.get("episodes") or pack.get("units") or [])
+    outline = [x for x in (pack.get("narrative_outline") or []) if isinstance(x, dict)]
     cov = pack.get("coverage") or {}
-    incomplete = False
-    if isinstance(cov, dict):
-        incomplete = bool(cov.get("incomplete"))
-        disc = str(cov.get("truncation_disclosure") or "").strip()
-    else:
-        disc = ""
-    if not outline and not episodes:
-        return (
-            f"There is not enough prepared family evidence to narrate {label}."
-            "\n\nFamily evidence considered: none."
-        )
-    paras: list[str] = [
-        f"Here is a short account of {label} from the prepared family evidence, "
+    incomplete = bool(isinstance(cov, dict) and cov.get("incomplete"))
+    disc = str((cov.get("truncation_disclosure") if isinstance(cov, dict) else "") or "").strip()
+
+    opening = next((x.get("text") for x in outline if x.get("role") == "opening"), None)
+    closing = next((x.get("text") for x in outline if x.get("role") == "closing"), None)
+    opening = opening or pu.get("opening") or (
+        f"During {label}, this is what stands out from family life in the archive, "
         "without pasting the original messages."
-    ]
+    )
+    closing = closing or pu.get("closing")
+
+    beats = [x for x in outline if x.get("role") == "beat"]
+    if not beats:
+        for b in pu.get("beats") or []:
+            if isinstance(b, dict):
+                beats.append({"text": b.get("about") or b.get("text"), "time": b.get("time"), "when": b.get("when")})
+    if not beats:
+        for b in pack.get("significant_beats") or pack.get("episodes") or []:
+            if not isinstance(b, dict):
+                continue
+            beats.append(
+                {
+                    "text": b.get("about") or b.get("title") or b.get("content") or b.get("subject"),
+                    "time": b.get("time") if not isinstance(b.get("time"), dict) else (b.get("time") or {}).get("value"),
+                }
+            )
+
+    paras: list[str] = [str(opening).strip()]
     if incomplete:
         paras.append(
-            "Coverage is incomplete"
-            + (f": {disc}" if disc else ".")
-            + " MemoryBox did not silently sample the rest of the period."
+            "Coverage of the archive for this period is incomplete"
+            + (f" ({disc})" if disc else "")
+            + "."
         )
-    weeks = sorted(
-        outline,
-        key=lambda s: str((s or {}).get("period") or "") if isinstance(s, dict) else "",
-    )
-    week_bits: list[str] = []
-    for s in weeks:
-        if not isinstance(s, dict):
-            continue
-        t = str(s.get("text") or s.get("period") or "").strip()
-        if t:
-            week_bits.append(t)
-    if week_bits:
-        paras.append(
-            "Across the weeks that have evidence, "
-            + " ".join(week_bits[:12])
-        )
-
-    def _ep_day(ep: dict) -> str:
-        t = ep.get("time")
-        if isinstance(t, dict):
-            return str(t.get("value") or "")
-        return str(t or "")
-
-    dated = [e for e in episodes if isinstance(e, dict)]
-    dated.sort(key=lambda e: _ep_day(e) or "9999")
-    story_bits: list[str] = []
-    for ep in dated[:16]:
-        day = _ep_day(ep)[:10] or "an undated day"
-        gist = re.split(
+    story_lines: list[str] = []
+    for b in beats:
+        t = re.sub(r"\s+", " ", str(b.get("text") or "").strip())
+        t = re.split(
             r"(?i)\nOn .+ wrote:|-----Original Message-----|Begin forwarded message:",
-            str(ep.get("content") or ep.get("subject") or ""),
+            t,
             maxsplit=1,
         )[0].strip()
-        gist = re.sub(r"\s+", " ", gist)[:180]
-        if not gist:
+        if not t or _VOLUME_NOISE.search(t):
             continue
-        n = int(ep.get("member_n") or 1)
-        if n > 1:
-            story_bits.append(f"Around {day}, {gist}")
+        if _TXN_NOISE.search(t) and not re.search(r"(?i)\b(trip|visit|dinner|family|journal)\b", t):
+            continue
+        when = str(b.get("time") or b.get("when") or "").strip()
+        if len(when) >= 10:
+            story_lines.append(f"On {when[:10]}, {t.rstrip('.')}.")
+        elif when in {"early", "mid", "late", "during"}:
+            story_lines.append(f"{when.capitalize()} in {label}, {t.rstrip('.')}.")
         else:
-            story_bits.append(f"Around {day}, {gist}")
-    if story_bits:
-        # Continuous prose, not a record dump: fold into a couple of sentences.
-        mid = max(1, len(story_bits) // 2)
-        paras.append(". ".join(story_bits[:mid]) + ".")
-        if story_bits[mid:]:
-            paras.append(". ".join(story_bits[mid:]) + ".")
+            story_lines.append(t if t.endswith(".") else f"{t}.")
+    if story_lines:
+        chunk = max(1, (len(story_lines) + 1) // 2)
+        paras.append(" ".join(story_lines[:chunk]))
+        if story_lines[chunk:]:
+            paras.append(" ".join(story_lines[chunk:]))
+    elif not pu.get("beats"):
+        paras.append(
+            f"Nothing in the prepared outline rose above ordinary correspondence for {label}."
+        )
+    if closing:
+        paras.append(str(closing).strip())
     used = pack.get("evidence_considered") or pack.get("evidence_used") or {}
     footer_bits = [f"{v} {k}" for k, v in used.items() if v]
     footer = (
@@ -100,7 +104,7 @@ def _fake_narrative(pack_json: str) -> str:
         + (" · ".join(footer_bits) if footer_bits else "none")
         + "."
     )
-    return "\n\n".join(paras) + "\n\n" + footer
+    return "\n\n".join(p for p in paras if p) + "\n\n" + footer
 
 
 def _token_vector(text: str) -> tuple[float, ...]:

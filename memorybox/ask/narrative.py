@@ -16,28 +16,32 @@ NARRATION_UNAVAILABLE = (
 )
 
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
-You are MemoryBox's narrator. Write a chronological story of the requested period as a whole, ONLY from the prepared outline JSON.
-The outline's week summaries and episode structures already represent the complete processed evidence set. They are a hierarchical reduction, not a sample of "the first N records."
+You write about the person's life during the requested period. You do not write about how much evidence MemoryBox found.
+The user JSON has period_understanding and narrative_outline. Those are the story. Evidence counts, week codes, and processing diagnostics are metadata only — never put them in the prose.
 Rules:
-- Write continuous prose (about 2–8 short paragraphs). Synthesize episodes in time order. Do not list records, dump JSON, or paste email/SMS/MIME bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
-- Do not mention debug strings, year-fair sampling, retrieve caps, n= counts, or implementation notes.
+- Begin with the story. Continuous prose (about 2–8 short paragraphs). Chronological. Natural language.
+- Narrate significant episodes and themes (opening, early/mid/late developments, close). Do not iterate weeks, evidence counts, episode JSON, candidate events, or each day.
+- Routine transactional material (shipping notices, receipts, automated surveys, ordinary order confirmations) is supporting archive traffic. Mention it only if it belongs to a meaningful episode already in the outline. Do not list it.
+- Do not paste email or SMS bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
 - A source supports only the claim listed. Presence is not photographer, purpose, emotion, companions, or significance. Do not invent motives or feelings.
 - Do not treat filename, folder, or camera owner as photographer.
-- SMS timestamp is not location. Use location_assertions.basis only.
-- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating units exist.
-- Travel units are derived; the original communication remains the authentic source.
-- Derived week summaries are coverage context, not family truth. Use them so no week with evidence is ignored.
+- SMS timestamp is not location.
+- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating beats exist.
+- Travel facts are derived; the original communication remains the authentic source.
 - Do not invent people, places, or dates.
-- End with a short "Family evidence considered" line using evidence_considered counts of everything processed, not narrator seat counts.
-- If coverage.incomplete is true, say coverage is incomplete and why from the pack. Never silently sample.
-- If the pack is empty, say you do not have enough family evidence. Do not guess.
+- After the story, one line: "Family evidence considered" using evidence_considered. That line is the only place counts belong.
+- If coverage.incomplete is true, say coverage is incomplete after the story. Never silently sample.
+- If the outline has no beats, say the period was examined and nothing standout emerged. Do not dump routine mail.
 """
 
 
 _DEBUG_LEAK = re.compile(
     r"(?is)\s*(year-fair sample[^.]*\.?|showing \d+ of \d+[^.]*\.?|"
     r"ingested (?:SMS|email|calendar)[^.]*\.?|bounded_tell_[a-z]+;[^.\n]*|"
-    r"tell pack; email_n=\d+[^.]*\.?)"
+    r"tell pack; email_n=\d+[^.]*\.?|"
+    r"\d{4}-W\d{2}:[^.]*evidence item\(s\)[^.]*\.?|"
+    r"Around \d{4}-\d{2}-\d{2}, \d+ (?:email|sms|calendar)[^.]*\.?|"
+    r"Across the weeks that have evidence,[^.]*\.?)"
 )
 
 
@@ -140,9 +144,11 @@ def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
 
 
 def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
-    """Outline for the model: complete period structure, not a raw-record dump."""
-    episodes = []
-    src = pack.get("narrator_episodes") or pack.get("episodes") or []
+    """Story outline for the model — not evidence-volume diagnostics."""
+    understanding = pack.get("period_understanding") or {}
+    outline = list(pack.get("narrative_outline") or [])
+    beats = []
+    src = pack.get("narrator_episodes") or pack.get("significant_episodes") or []
     for u in src:
         people = []
         for p in u.get("people") or []:
@@ -152,33 +158,20 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
                 n = str(p or "").strip()
             if n:
                 people.append(n)
-        episodes.append(
+        about = str(u.get("title") or u.get("content") or "").strip()
+        if not about:
+            continue
+        beats.append(
             {
                 "time": (u.get("time") or {}).get("value") if isinstance(u.get("time"), dict) else u.get("time"),
-                "week": u.get("week"),
                 "place": u.get("place"),
                 "people": people[:8],
-                "member_n": u.get("member_n"),
-                "source_kinds": u.get("source_kinds"),
-                "content": str(u.get("content") or "")[:400],
+                "about": about[:400],
             }
         )
-    derived = []
-    for s in pack.get("derived_summaries") or []:
-        if isinstance(s, dict):
-            derived.append(
-                {
-                    "period": s.get("period"),
-                    "text": s.get("text"),
-                    "unit_n": s.get("unit_n"),
-                    "episode_n": s.get("episode_n"),
-                    "not_family_truth": True,
-                }
-            )
     ask = pack.get("ask") or {}
     plan = ask.get("plan") if isinstance(ask, dict) else {}
     cov = pack.get("coverage") or {}
-    vol = pack.get("volume") or {}
     return {
         "schema_version": pack.get("schema_version"),
         "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
@@ -186,22 +179,20 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
         "temporal_label": (pack.get("scope") or {}).get("time", {}).get("label")
         if isinstance(pack.get("scope"), dict)
         else (plan.get("temporal_label") if isinstance(plan, dict) else None),
-        "outline": derived,
-        "episodes": episodes,
-        "derived_summaries": derived,
+        "period_understanding": {
+            "label": understanding.get("label"),
+            "opening": understanding.get("opening"),
+            "beats": understanding.get("beats") or [],
+            "people": understanding.get("people") or [],
+            "closing": understanding.get("closing"),
+        },
+        "narrative_outline": outline,
+        "significant_beats": beats,
         "coverage": {
-            "summary": cov.get("summary") if isinstance(cov, dict) else cov,
             "incomplete": bool(isinstance(cov, dict) and cov.get("incomplete")),
             "truncation_disclosure": cov.get("truncation_disclosure") if isinstance(cov, dict) else None,
         },
-        "volume": {
-            "eligible_n": vol.get("eligible_n"),
-            "processed_n": vol.get("processed_n"),
-            "narrator_input_n": vol.get("narrator_input_n") or vol.get("supplied_to_model_n"),
-            "episode_n": vol.get("episode_n"),
-        },
         "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
-        "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
     }
 
 

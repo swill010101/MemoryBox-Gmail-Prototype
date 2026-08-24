@@ -260,7 +260,9 @@ Track separately:
 
 For a successful bounded-period narrative, eligible and processed should normally match. Narrator input may be much smaller because it is a hierarchical representation of the whole. If processing cannot cover the set (failure or unavailable provider), disclose **incomplete coverage** — do not silently sample.
 
-Pipeline: retrieve **all** in-window eligible items (SQL pages are not consider-caps) → normalize/claim → correlate episodes/themes (including photo clusters by date/people/place) → time-order → hierarchical reduce of the **complete** structure to fit the narrator → synthesize.
+The family narrative is about **life during the period**, not about evidence volume. Week counts, item totals, and processing diagnostics belong in coverage/AI Trace — not in the story. Complete consideration ≠ complete narration: routine transactional mail (shipping notices, receipts, automated surveys, ordinary order confirmations) stays supporting evidence unless it contributes to a meaningful episode. Those categories are heuristics, not a universal ban.
+
+Pipeline: retrieve **all** in-window eligible items (SQL pages are not consider-caps) → normalize/claim → correlate episodes/themes (including photo clusters by date/people/place) → significance / period understanding → story outline → synthesize.
 
 Configured model context window is an implementation constraint on the **final** call. Intermediate summaries: derived, regenerable, I7A-traced, **not** durable family truth.
 

@@ -523,8 +523,7 @@ def _episode_from_members(members: list[dict[str, Any]]) -> dict[str, Any]:
         ).strip()[:120]
         if gist and gist not in gists:
             gists.append(gist)
-    kind_bits = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
-    content = (kind_bits + (": " + "; ".join(gists[:6]) if gists else "")).strip()
+    content = "; ".join(gists[:6]).strip()
     eid = str(members[0].get("unit_id") or "ep")
     return {
         "unit_id": _uid("episode", eid, str(len(members))),
@@ -533,6 +532,7 @@ def _episode_from_members(members: list[dict[str, Any]]) -> dict[str, Any]:
         "people": [{"name": p, "role": "participant"} for p in people[:12]],
         "place": place,
         "content": content[:800],
+        "title": (gists[0] if gists else "")[:160],
         "claims": [],
         "provenance": {"derived": True, "member_n": len(members), "not_raw_records": True},
         "rank": max(float(m.get("rank") or 0) for m in members),
@@ -615,6 +615,206 @@ def _build_episodes(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return episodes
 
 
+_TRANSACTIONAL_RE = re.compile(
+    r"(?i)\b("
+    r"tracking|shipment|shipped|out for delivery|package delivered|"
+    r"usps|fedex|dhl|"
+    r"your order|order confirmation|order #|invoice|e-?receipt|payment received|"
+    r"survey invitation|tell us how (we|you) did|feedback request|"
+    r"this is an automated|do not reply to this"
+    r")\b"
+)
+_UPS_WORD_RE = re.compile(r"(?i)(?<![a-z])ups(?![a-z])")
+
+
+def _unit_blob(unit: dict[str, Any]) -> str:
+    return " ".join(
+        str(x or "")
+        for x in (
+            unit.get("subject"),
+            unit.get("title"),
+            unit.get("content"),
+            unit.get("authored_text"),
+        )
+    )
+
+
+def _likely_transactional(unit: dict[str, Any]) -> bool:
+    """Routine mail heuristic — not a universal ban; context can still promote it."""
+    kind = str(unit.get("kind") or "")
+    if kind in {"journal", "story", "artifact", "travel", "calendar", "media_observation", "spoken_moment"}:
+        return False
+    blob = _unit_blob(unit)
+    if _TRANSACTIONAL_RE.search(blob) or _UPS_WORD_RE.search(blob):
+        return True
+    return False
+
+
+def _episode_transactional_only(episode: dict[str, Any]) -> bool:
+    members = list(episode.get("_members") or [])
+    if not members:
+        return False
+    meaningful = {
+        "journal",
+        "story",
+        "artifact",
+        "travel",
+        "calendar",
+        "media_observation",
+        "spoken_moment",
+    }
+    if any(str(m.get("kind") or "") in meaningful for m in members):
+        return False
+    if any(str(m.get("source_type") or "") == "sms" for m in members):
+        return False
+    comms = [m for m in members if str(m.get("kind") or "") == "communication"]
+    if not comms:
+        return False
+    return all(_likely_transactional(m) for m in comms)
+
+
+def _score_episode(episode: dict[str, Any]) -> float:
+    members = list(episode.get("_members") or [])
+    kinds = {str(m.get("kind") or "") for m in members}
+    score = 1.0
+    if "journal" in kinds or "story" in kinds:
+        score += 5.0
+    if "artifact" in kinds:
+        score += 3.0
+    if "travel" in kinds:
+        score += 4.0
+    if "calendar" in kinds:
+        score += 3.0
+    if "media_observation" in kinds or "spoken_moment" in kinds:
+        score += 2.0
+    if any(str(m.get("source_type") or "") == "sms" for m in members):
+        score += 1.5
+    if any(
+        str(m.get("kind") or "") == "communication" and not _likely_transactional(m)
+        for m in members
+    ):
+        score += 1.2
+    people_n = len(_people_names(episode))
+    score += min(2.0, 0.5 * people_n)
+    distinct_kinds = len({k for k in kinds if k})
+    score += min(3.0, max(0, distinct_kinds - 1) * 1.5)
+    if _episode_transactional_only(episode):
+        score *= 0.12
+    episode["significance"] = round(score, 3)
+    episode["routine_transactional"] = _episode_transactional_only(episode)
+    return score
+
+
+def _significant_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    scored = []
+    for e in episodes:
+        s = _score_episode(e)
+        scored.append((s, e))
+    keep = [e for s, e in scored if s >= 2.0 and not e.get("routine_transactional")]
+    if keep:
+        keep.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
+        return keep
+    # Nothing rose above routine: still allow non-transactional comms/life notes.
+    fallback = [e for s, e in scored if s >= 1.2 and not e.get("routine_transactional")]
+    fallback.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
+    return fallback
+
+
+def _beat_slot(day: str, days: list[str]) -> str:
+    dated = [d for d in days if len(d) >= 10]
+    if not dated or len(day) < 10:
+        return "during"
+    dated_s = sorted(dated)
+    lo, hi = dated_s[0], dated_s[-1]
+    if lo == hi:
+        return "during"
+    span = (int(hi[8:10]) - int(lo[8:10])) if lo[:7] == hi[:7] else 2
+    if day <= lo:
+        return "early"
+    if day >= hi:
+        return "late"
+    if span <= 1:
+        return "during"
+    return "mid"
+
+
+def _period_understanding(
+    plan: Any,
+    episodes: list[dict[str, Any]],
+    significant: list[dict[str, Any]],
+    *,
+    story_episodes: list[dict[str, Any]] | None = None,
+    eligible_n: int,
+    processed_n: int,
+) -> dict[str, Any]:
+    label = str(getattr(plan, "temporal_label", None) or "this period")
+    story = list(story_episodes or significant)
+    days = [_unit_day(e) for e in story]
+    people: list[str] = []
+    seen: set[str] = set()
+    for e in story:
+        for n in sorted(_people_names(e)):
+            if n not in seen:
+                seen.add(n)
+                people.append(n)
+    beats = []
+    for e in story:
+        day = _unit_day(e)
+        gist = str(e.get("title") or e.get("content") or "").strip()
+        if not gist:
+            continue
+        beats.append(
+            {
+                "when": _beat_slot(day, days),
+                "time": day or None,
+                "about": gist[:240],
+                "place": e.get("place"),
+                "people": [p.get("name") for p in (e.get("people") or []) if isinstance(p, dict)][:6],
+            }
+        )
+    routine_n = sum(1 for e in episodes if e.get("routine_transactional"))
+    if story:
+        opening = f"Life during {label}, drawn from what stands out in the archive — not from how much mail arrived."
+        closing = f"That is the shape of {label} as the meaningful episodes tell it."
+    else:
+        opening = (
+            f"The archive for {label} was examined in full. "
+            "What remains is mostly ordinary household correspondence, not a sequence of standout events."
+        )
+        closing = f"No separate family episode rose above that ordinary traffic for {label}."
+        beats = []
+    return {
+        "label": label,
+        "opening": opening,
+        "beats": beats,
+        "people": people[:12],
+        "closing": closing,
+        "routine_episodes_suppressed": routine_n,
+        "significant_episode_n": len(significant),
+        "candidate_episode_n": len(episodes),
+        "eligible_n": eligible_n,
+        "processed_n": processed_n,
+        "not_family_truth": True,
+    }
+
+
+def _narrative_outline(understanding: dict[str, Any]) -> list[dict[str, Any]]:
+    out = [{"role": "opening", "text": understanding.get("opening")}]
+    for b in understanding.get("beats") or []:
+        out.append(
+            {
+                "role": "beat",
+                "when": b.get("when"),
+                "time": b.get("time"),
+                "text": b.get("about"),
+                "place": b.get("place"),
+                "people": b.get("people") or [],
+            }
+        )
+    out.append({"role": "closing", "text": understanding.get("closing")})
+    return out
+
+
 def _week_summaries(units: list[dict[str, Any]], episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     weeks: dict[str, list[dict[str, Any]]] = {}
     for u in units:
@@ -650,12 +850,17 @@ def _week_summaries(units: list[dict[str, Any]], episodes: list[dict[str, Any]])
 
 
 def _select_narrator_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fit episode *structures* into the narrator prompt. Every week still has a summary."""
-    if len(episodes) <= NARRATOR_EPISODE_BUDGET:
-        return list(episodes)
+    """Prompt-size budget for significant episode structures only."""
+    ranked = sorted(
+        episodes,
+        key=lambda e: (-float(e.get("significance") or 0), _unit_day(e) or "9999"),
+    )
+    if len(ranked) <= NARRATOR_EPISODE_BUDGET:
+        ranked.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
+        return ranked
     by_week: dict[str, list[dict[str, Any]]] = {}
     week_order: list[str] = []
-    for e in episodes:
+    for e in ranked:
         w = str(e.get("week") or "undated")
         if w not in by_week:
             by_week[w] = []
@@ -663,6 +868,7 @@ def _select_narrator_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, 
         by_week[w].append(e)
     groups = [by_week[w] for w in week_order]
     picked = _round_robin(groups, NARRATOR_EPISODE_BUDGET)
+    picked.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
     return picked[:NARRATOR_EPISODE_BUDGET]
 
 
@@ -880,8 +1086,18 @@ def prepare_narrative_pack(
     processed_n = eligible_n
     ranked = _rank_units(units, str(getattr(plan, "original_ask", "") or ""))
     episodes = _build_episodes(ranked)
+    significant = _significant_episodes(episodes)
     derived_summaries = _week_summaries(ranked, episodes)
-    narrator_episodes = _select_narrator_episodes(episodes)
+    narrator_episodes = _select_narrator_episodes(significant)
+    understanding = _period_understanding(
+        plan,
+        episodes,
+        significant,
+        story_episodes=narrator_episodes,
+        eligible_n=eligible_n,
+        processed_n=processed_n,
+    )
+    story_outline = _narrative_outline(understanding)
     reduction = "hierarchical_episode" if len(episodes) > NARRATOR_EPISODE_BUDGET or len(ranked) > HIERARCHY_UNIT_THRESHOLD else "episode"
     if derived_summaries and reduction == "episode" and len(ranked) > 1:
         reduction = "organize"
@@ -930,7 +1146,10 @@ def prepare_narrative_pack(
         },
         "units": [_public_unit(u) for u in ranked],
         "episodes": [_public_unit(e) for e in episodes],
+        "significant_episodes": [_public_unit(e) for e in significant],
         "narrator_episodes": [_public_unit(e) for e in narrator_episodes],
+        "period_understanding": understanding,
+        "narrative_outline": story_outline,
         "derived_summaries": derived_summaries,
         "coverage": {
             "summary": coverage_summary,
@@ -949,6 +1168,7 @@ def prepare_narrative_pack(
             "supplied_to_model_n": len(narrator_episodes),
             "narrator_input_n": len(narrator_episodes),
             "episode_n": len(episodes),
+            "significant_episode_n": len(significant),
             "reduction": reduction,
         },
         "evidence_used": _evidence_used(ranked),

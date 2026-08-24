@@ -670,7 +670,6 @@ def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
             {
                 "summary_id": s.get("summary_id"),
                 "period": s.get("period"),
-                "text": s.get("text"),
                 "unit_n": s.get("unit_n") or len(s.get("unit_ids") or []),
                 "derived": True,
                 "not_family_truth": True,
@@ -683,6 +682,26 @@ def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
         "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
         "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
         "derived_summaries": derived,
+        "period_understanding": {
+            "label": (pack.get("period_understanding") or {}).get("label")
+            if isinstance(pack.get("period_understanding"), dict)
+            else None,
+            "significant_episode_n": (
+                (pack.get("period_understanding") or {}).get("significant_episode_n")
+                if isinstance(pack.get("period_understanding"), dict)
+                else None
+            ),
+            "candidate_episode_n": (
+                (pack.get("period_understanding") or {}).get("candidate_episode_n")
+                if isinstance(pack.get("period_understanding"), dict)
+                else None
+            ),
+            "routine_episodes_suppressed": (
+                (pack.get("period_understanding") or {}).get("routine_episodes_suppressed")
+                if isinstance(pack.get("period_understanding"), dict)
+                else None
+            ),
+        },
     }
 
 

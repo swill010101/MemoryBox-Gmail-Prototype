@@ -749,11 +749,11 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "fake_tell_is_prose_not_email_dump",
-        "here is a short account" in dump_text.lower()
-        and "without pasting" in dump_text.lower()
-        and "wrote:" not in dump_text.lower()
+        "wrote:" not in dump_text.lower()
         and "mcook@" not in dump_text.lower()
-        and dump_meta.get("ok") is True,
+        and "evidence item" not in dump_text.lower()
+        and dump_meta.get("ok") is True
+        and ("garden" in dump_text.lower() or "pt at noon" in dump_text.lower() or "january" in dump_text.lower()),
         checks,
         problems,
         detail=dump_text[:280],
@@ -775,7 +775,8 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and "year-fair" not in period_l
         and "ingested sms" not in period_l
         and "n=530" not in period_l
-        and "here is a short account" in period_l
+        and "evidence item" not in period_l
+        and "2025-w01:" not in period_l
         and "\n\n" in period_text,
         checks,
         problems,
@@ -955,6 +956,69 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=motive_text[:240],
+    )
+
+    txn_hits = [
+        EvidenceHit(
+            evidence_id="e-ship-1",
+            evidence_kind="communication",
+            summary="Your package is out for delivery",
+            score=1.0,
+            excerpt="FedEx tracking shipment notice. Your order is out for delivery.",
+            source="email_mbox",
+            sent_at="2025-01-06T09:00:00",
+            channel="email",
+            thread_id="t-ship-1",
+        ),
+        EvidenceHit(
+            evidence_id="e-survey-1",
+            evidence_kind="communication",
+            summary="Survey invitation",
+            score=1.0,
+            excerpt="Tell us how we did. This is an automated survey invitation.",
+            source="email_mbox",
+            sent_at="2025-01-07T09:00:00",
+            channel="email",
+            thread_id="t-survey-1",
+        ),
+        EvidenceHit(
+            evidence_id="e-life-1",
+            evidence_kind="communication",
+            summary="Sunday dinner at the harbor",
+            score=1.0,
+            excerpt="come to Sunday dinner at the harbor",
+            source="sms_export",
+            sent_at="2025-01-12T18:00:00",
+            channel="sms",
+            people=["Alex"],
+            thread_id="t-dinner-1",
+        ),
+    ]
+    txn_text, txn_pack, _ = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=txn_hits
+    )
+    txn_l = txn_text.lower()
+    sig_n = int((txn_pack.get("volume") or {}).get("significant_episode_n") or 0)
+    _check(
+        "narrative_is_life_not_evidence_volume",
+        int((txn_pack.get("evidence_considered") or {}).get("emails") or 0) == 2
+        and int((txn_pack.get("evidence_considered") or {}).get("sms") or 0) == 1
+        and sig_n >= 1
+        and "harbor" in txn_l
+        and "evidence item" not in txn_l
+        and "2025-w01:" not in txn_l
+        and "fedex" not in txn_l
+        and "survey invitation" not in txn_l
+        and "out for delivery" not in txn_l,
+        checks,
+        problems,
+        detail=str(
+            {
+                "volume": txn_pack.get("volume"),
+                "sig": [e.get("title") for e in (txn_pack.get("significant_episodes") or [])],
+                "prose": txn_text[:280],
+            }
+        ),
     )
 
     class _DownLlm:
