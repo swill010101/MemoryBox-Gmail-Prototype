@@ -1,11 +1,11 @@
 # MBAS-P2-I11 — Narration + Saved Ask / Living Views
 
-**Status:** Planning assessment **2026-08-24** · **not build-authorized**  
-**Direction:** Founder lock in this increment’s prompt (Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot)  
-**Does not start:** I11 implementation · I13 Dynamic Views UI · a Narration app · Journal screen redesign · I12 external history  
-**Depends on:** I10A Stories **ACCEPTED** · I10A.2 **ACCEPTED** · I10B **ACCEPTED** · I10C Journal **built, owner-pass pending** · MBQL-001 **ACCEPTED** · I10 pack/coverage **ACCEPTED**
+**Status:** Planning assessment **2026-08-24** · **BUILD AUTHORIZED** 2026-08-24 (Tom: “i11 next”)  
+**Direction:** Founder lock (Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot)  
+**Does not start:** I13 Dynamic Views UI · a Narration app · Journal screen redesign · I12 external history  
+**Depends on:** I10A Stories **ACCEPTED** · I10A.2 **ACCEPTED** · I10B **ACCEPTED** · I10C Journal **ACCEPTED** 2026-08-24 · MBQL-001 **ACCEPTED** · I10 pack/coverage **ACCEPTED**
 
-Journal screens are treated as **complete**. I10C work stays data/Ask/tests unless a contract defect appears.
+Journal screens are **ACCEPTED**. I10C work stays closed unless a contract defect appears.
 
 ---
 
@@ -21,7 +21,7 @@ Narration belongs in existing Explore/Ask: context chips → Ask row → curator
 
 ## Recommended implementation boundary
 
-### I11 (Narrative & Summaries) — when authorized
+### I11 (Narrative & Summaries) — authorized 2026-08-24
 
 **In**
 
@@ -63,7 +63,7 @@ There is **no output-mode slot**.
 | `Tell me about Peggy` / `What do you know about…` | `EXPLORATORY_RE` → multimodal retrieve (`exploratory_multimodal_i4`), including Story/Journal/Artifact **unless** other flags fire. Still a **hit-count curator**, not synthesis. |
 | `Summarize…` / `What happened…` / `What was X like?` | **No dedicated compile.** Falls through ordinary find + count summary. |
 | `What did X say` / `said about` | `SAID_ABOUT_RE` → **communication-focus**; **turns off** `want_story` / `want_journal` / `want_artifact`. |
-| Explicit “write a narrative” | `SMS_NARRATIVE_RE` / Explore `find.py` **refuse** generation and say I11 is not implemented. |
+| Explicit “write a narrative” | Compiles `output_mode=tell` and stitches retrieved messages (I11). |
 
 MBQL `act` is session mechanics (`find` / `refine` / `navigate` / `clarify`), not SHOW vs TELL vs PLAY. Mixing those would break refine-vs-new-find.
 
@@ -200,16 +200,16 @@ Map 1:1 to founder §17. Harness should prove at least:
 
 ---
 
-## Open questions for Tom
+## Open questions for Tom — defaults used for this build
 
-1. **I11 vs I13 Save View control:** I11 ship Copy + Save as Story only, or also a disabled/hidden Save View that writes the JSON for I13?
-2. **Living Album vs Living View / Save View** as the family label on I13.
-3. **Synthesizer:** deterministic stitching from statements/coverage for v1 vs residual LLM (I7A) for `tell` only?
-4. **Person Explorer:** same long curator, or Explore-only for I11?
-5. **I10C owner-pass:** I11 build waits for Journal ACCEPTED plus remaining transcription/recognition, per MBRM — confirm still true.
+1. **I11 vs I13 Save View control:** Copy + Save as Story only. Persistable JSON is emitted; no Save View UI.
+2. **Living Album vs Living View:** I13 naming; not I11.
+3. **Synthesizer:** deterministic stitch from statements/coverage. No every-Ask model.
+4. **Person Explorer:** no forked narration screen; Explore curator is the I11 surface.
+5. **I10C owner-pass:** **cleared** 2026-08-24 (Tom: “i10C - journal is accepted”).
 
 ---
 
 ## Explicitly out of this planning note
 
-I11 code, Journal UI changes, I13 tables, I12, Face SoT, guided-capture campaigns.
+Journal UI changes, I13 tables, I12, Face SoT, guided-capture campaigns.

@@ -713,10 +713,7 @@ def save_draft(
 ) -> StoryView:
     """Persist a working draft. Never sets Ask-current."""
     _reject_ai(actor_key)
-    if composed_by_model:
-        raise StoryServiceError(
-            "AI-generated content cannot be persisted as owner Story evidence"
-        )
+    # Working drafts may hold Ask-proposed prose (I11). Ask-current Save Story still rejects.
     body_provided = blocks is not None or body_text is not None
     body = _flatten_blocks(blocks) if blocks else (body_text or "")
     narrator_id = None
@@ -952,6 +949,10 @@ def _freeze(conn, story_id: UUID, *, actor_key: str) -> StoryView:
 
 def save_story(story_id: str | None = None, **payload: Any) -> StoryView:
     """Save Story / Save revision: persist working then freeze Ask-current."""
+    if payload.get("composed_by_model"):
+        raise StoryServiceError(
+            "AI-generated content cannot be persisted as owner Story evidence"
+        )
     view = save_draft(story_id=story_id, **payload)
     with connection() as conn:
         return _freeze(conn, UUID(view.id), actor_key=payload.get("actor_key") or "owner")

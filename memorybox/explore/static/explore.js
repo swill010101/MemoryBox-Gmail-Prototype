@@ -826,6 +826,14 @@
       !hasDatedExtent() ||
       (state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
         state.timeline.rangeEnd >= state.timeline.extentEnd - 1);
+    if (
+      state.domain.outputMode === "tell" &&
+      state.domain._askSummary &&
+      state.domain.summary !== "Searching…"
+    ) {
+      state.domain.summary = state.domain._askSummary;
+      return;
+    }
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;
       return;
@@ -1094,7 +1102,14 @@
     const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
     if (bodyEl) bodyEl.textContent = "Searching…";
-    if (curator) curator.classList.add("is-searching");
+    if (curator) {
+      curator.classList.add("is-searching");
+      curator.classList.remove("is-tell");
+    }
+    const actions = document.getElementById("mb-explore-curator-actions");
+    const note = document.getElementById("mb-explore-curator-note");
+    if (actions) actions.hidden = true;
+    if (note) note.hidden = true;
     const askField = document.querySelector(".mb-explore-ask-field");
     if (askField) askField.classList.add("is-searching");
     if (state && state.domain) {
@@ -1372,6 +1387,9 @@
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
         _askSummary: payload.summary || "",
         _askKind: payload.answer_kind || "",
+        outputMode: payload.output_mode || (payload.plan || {}).output_mode || "show",
+        citations: payload.citations || [],
+        livingView: payload.living_view || null,
         coverage: payload.coverage || null,
         chips: chips,
         typeFilter: nextType,
@@ -2030,6 +2048,13 @@
     const bodyNode = document.getElementById("mb-explore-curator-body");
     if (titleNode) titleNode.textContent = heading;
     if (bodyNode) bodyNode.textContent = state.domain.summary || "";
+    const curator = document.getElementById("mb-explore-curator");
+    const tell = state.domain.outputMode === "tell" && !PERSON_MODE;
+    if (curator) curator.classList.toggle("is-tell", Boolean(tell));
+    const actions = document.getElementById("mb-explore-curator-actions");
+    const note = document.getElementById("mb-explore-curator-note");
+    if (actions) actions.hidden = !tell;
+    if (note) note.hidden = !tell;
     if (PERSON_MODE) pushPersonResultSummary();
     const covEl = document.getElementById("mb-explore-coverage");
     if (covEl) {
@@ -2054,7 +2079,6 @@
         covEl.hidden = true;
       }
     }
-    const curator = document.getElementById("mb-explore-curator");
     if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
       curator.classList.remove("is-searching");
       const askField = document.querySelector(".mb-explore-ask-field");
@@ -6469,6 +6493,108 @@
     document.getElementById("mb-explore-ask-go").addEventListener("click", () => {
       applyAskCommand(document.getElementById("mb-explore-ask").value);
     });
+    const copyBtn = document.getElementById("mb-explore-copy");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        const text = String(state.domain._askSummary || state.domain.summary || "");
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            throw new Error("clipboard");
+          }
+          copyBtn.textContent = "Copied";
+          setTimeout(() => {
+            copyBtn.textContent = "Copy";
+          }, 1600);
+        } catch (err) {
+          copyBtn.textContent = "Copy failed";
+          setTimeout(() => {
+            copyBtn.textContent = "Copy";
+          }, 1600);
+        }
+      });
+    }
+    const saveStoryBtn = document.getElementById("mb-explore-save-story");
+    if (saveStoryBtn) {
+      saveStoryBtn.addEventListener("click", async () => {
+        const body = String(state.domain._askSummary || state.domain.summary || "").trim();
+        if (!body || body === "Searching…") return;
+        saveStoryBtn.disabled = true;
+        try {
+          const plan = (state.domain.livingView && state.domain.livingView.plan) || {};
+          const memories = [];
+          const seen = {};
+          (state.domain.citations || []).forEach((c) => {
+            let source_kind = "";
+            let source_id = "";
+            const kind = String((c && c.kind) || "");
+            if (kind === "photo") {
+              source_kind = "photo";
+              source_id = String(c.external_id || "");
+            } else if (kind === "video") {
+              source_kind = "video";
+              source_id = String(c.video_external_id || c.external_id || "");
+            } else if (kind === "journal") {
+              source_kind = "journal";
+              source_id = String(c.journal_id || "");
+            } else if (kind === "artifact") {
+              source_kind = "artifact";
+              source_id = String(c.artifact_id || "");
+            } else if (kind === "evidence") {
+              const ek = String(c.evidence_kind || c.source || "").toLowerCase();
+              source_id = String(c.evidence_id || "");
+              if (ek.indexOf("sms") >= 0 || ek === "text" || ek === "imessage") {
+                source_kind = "sms_conversation";
+              } else if (ek.indexOf("calendar") >= 0) {
+                source_kind = "calendar_event";
+              } else if (ek.indexOf("email") >= 0 || ek.indexOf("mail") >= 0) {
+                source_kind = "email_thread";
+              } else {
+                source_kind = "evidence";
+              }
+            }
+            if (!source_kind || !source_id) return;
+            const key = source_kind + ":" + source_id;
+            if (seen[key]) return;
+            seen[key] = true;
+            memories.push({
+              source_kind,
+              source_id,
+              label_snapshot: String(c.label || c.title || c.summary || "") || null,
+            });
+          });
+          const title =
+            String(state.domain.title || "").trim() ||
+            String(state.domain.askText || "From Ask").trim().slice(0, 80);
+          const resp = await fetch("/story/drafts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              title,
+              body_text: body,
+              person_ids: plan.person_ids || [],
+              place_label: (plan.place_names || [])[0] || null,
+              described_start_date: plan.time_start || null,
+              described_end_date: plan.time_end || null,
+              memories,
+              composed_by_model: true,
+            }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok || !data.story || !data.story.id) {
+            throw new Error((data && data.detail) || "draft failed");
+          }
+          window.location.href = "/story/ui?id=" + encodeURIComponent(data.story.id) + "&edit=1";
+        } catch (err) {
+          saveStoryBtn.disabled = false;
+          saveStoryBtn.textContent = "Save failed";
+          setTimeout(() => {
+            saveStoryBtn.textContent = "Save as Story";
+          }, 1800);
+        }
+      });
+    }
     const home = document.getElementById("mb-home");
     if (home) {
       home.addEventListener("click", (e) => {

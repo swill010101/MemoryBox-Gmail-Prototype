@@ -54,6 +54,7 @@ def _command_plan(text: str, spec: Any) -> QueryPlan:
         attachments_only=spec.attachments_only,
         memory_presentation=spec.memory_presentation,
         notes=("mbql_command", spec.verb),
+        output_mode="show",
     )
 
 

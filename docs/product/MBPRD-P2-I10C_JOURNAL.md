@@ -1,6 +1,6 @@
 # MBPRD-P2-I10C — Journal
 
-**Status:** PRD **LOCKED** · **BUILD AUTHORIZED** 2026-08-24 (Tom: “Approved to build”)  
+**Status:** **ACCEPTED** 2026-08-24 (Tom: “i10C - journal is accepted”) · PRD **LOCKED** · built 2026-08-24  
 **Definition:** [MBBS-P2_INCREMENT_10C_DEFINITION.md](MBBS-P2_INCREMENT_10C_DEFINITION.md)  
 **Field map:** [MBAS-P2-I10C_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10C_ASSESSMENT_RECONCILIATION.md)  
 **Acceptance:** [MBAT-P2-I10C_ACCEPTANCE.md](MBAT-P2-I10C_ACCEPTANCE.md) · `python -m memorybox prove-i10c`  
@@ -31,4 +31,4 @@ Panel / New / Detail / Edit on `/journal/ui`. Continue writing for never-saved d
 
 ---
 
-**LOCKED and BUILD AUTHORIZED 2026-08-24.**
+**ACCEPTED 2026-08-24.** Do not reopen Journal screens unless a contract defect appears. Next is I11.

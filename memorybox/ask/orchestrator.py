@@ -673,21 +673,22 @@ def _build_answer(
         in {"sms", "text", "imessage", "mms", "rcs"}
     ]
     if sms_hits and R.SMS_NARRATIVE_RE.search(ask):
-        who = ", ".join(
-            n
-            for n in (plan.person_names or ())
-            if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
-        ) or "the named person"
-        n = len(sms_hits)
-        total = getattr(sms_hits[0], "match_total", None) or n
-        scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
-        text = (
-            f"Retrieved the last {n} of {total} text messages between you and {who} "
-            f"({scope}). Writing a narrative from those messages is I11 and is not "
-            "generated here. The gallery shows the retrieved messages."
-        )
-        return "evidence_backed", text, statements, citations, None
-    if sms_hits and R.SMS_COUNT_RE.search(ask):
+        if getattr(plan, "output_mode", "show") != "tell":
+            who = ", ".join(
+                n
+                for n in (plan.person_names or ())
+                if str(n).strip() and str(n).lower() not in R._SMS_FAKE_PEOPLE
+            ) or "the named person"
+            n = len(sms_hits)
+            total = getattr(sms_hits[0], "match_total", None) or n
+            scope = getattr(sms_hits[0], "count_scope", None) or "ingested SMS/iMessage export"
+            text = (
+                f"Retrieved the last {n} of {total} text messages between you and {who} "
+                f"({scope}). Writing a narrative from those messages is I11 and is not "
+                "generated here. The gallery shows the retrieved messages."
+            )
+            return "evidence_backed", text, statements, citations, None
+    if sms_hits and R.SMS_COUNT_RE.search(ask) and getattr(plan, "output_mode", "show") != "tell":
         total = getattr(sms_hits[0], "match_total", None)
         if total is None:
             total = len(sms_hits)
@@ -699,7 +700,7 @@ def _build_answer(
         )
         text = f"{total} {label} ({scope})."
         return "evidence_backed", text, statements, citations, None
-    if sms_hits and R.SMS_LAST_N_RE.search(ask):
+    if sms_hits and R.SMS_LAST_N_RE.search(ask) and getattr(plan, "output_mode", "show") != "tell":
         who = ", ".join(
             n
             for n in (plan.person_names or ())
@@ -716,7 +717,7 @@ def _build_answer(
         parts.append(
             f"Found {len(guided_capture)} Guided Capture Response(s) "
             "(respondent testimony — citable without Story promotion; "
-            "credibility shown when set, not used for ranking in I11)."
+            "credibility shown when set, not used for ranking)."
         )
     if artifacts:
         parts.append(
@@ -854,6 +855,17 @@ def _build_answer(
         kind = "mixed"
     else:
         kind = "evidence_backed"
+    if getattr(plan, "output_mode", "show") == "tell":
+        from memorybox.ask.narrative import synthesize_tell
+
+        text = synthesize_tell(
+            plan,
+            statements,
+            citations,
+            None,
+            fallback=" ".join(parts),
+        )
+        return kind, text, statements, citations, None
     return kind, " ".join(parts), statements, citations, None
 
 
@@ -1475,7 +1487,12 @@ class AskOrchestrator:
             artifacts=artifacts,
             guided_capture=guided_capture,
         )
-        if coverage and coverage.get("summary") and answer_kind not in {"clarification", "journal_capture"}:
+        if (
+            coverage
+            and coverage.get("summary")
+            and answer_kind not in {"clarification", "journal_capture"}
+            and getattr(plan, "output_mode", "show") != "tell"
+        ):
             extra = str(coverage.get("summary") or "").strip()
             if extra and extra not in (answer_text or ""):
                 answer_text = f"{extra} {answer_text}".strip()

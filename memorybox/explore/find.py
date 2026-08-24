@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from memorybox.ask.narrative import persistable_view
+
 _SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
 _SMS_ASK_RE = re.compile(
     r"(?i)\b("
@@ -649,6 +651,19 @@ def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
     return " Immich diag: " + ", ".join(bits) + "."
 
 
+def curator_answer_text(result: dict[str, Any]) -> str | None:
+    """I11: tell uses full-pack answer_text. Show keeps count-from-visible unless clarifying."""
+    if result.get("answer_kind") == "clarification":
+        raw = result.get("answer_text")
+        return str(raw).strip() if raw else None
+    plan = result.get("plan") or {}
+    mode = str(plan.get("output_mode") or result.get("output_mode") or "show")
+    if mode == "tell":
+        raw = result.get("answer_text")
+        return str(raw).strip() if raw else None
+    return None
+
+
 def curator_from_items(
     ask_text: str,
     items: list[dict[str, Any]],
@@ -1119,9 +1134,8 @@ def build_explore_find(
     ]
     # All-ask curator counts the archive (photos + hidden texts + video).
     # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).
-    answer_for_curator = result.get("answer_text")
-    if result.get("answer_kind") != "clarification":
-        answer_for_curator = None
+    # I11 tell: use orchestrator synthesis from the retrieved pack, not visible tiles.
+    answer_for_curator = curator_answer_text(result)
     title, summary = curator_from_items(
         text,
         visible_items,
@@ -1134,13 +1148,15 @@ def build_explore_find(
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
         ).strip()
     if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
-        summary = (
-            (summary or "").rstrip()
-            + (
-                f" {sms_available} text message(s) are in the archive "
-                "(hidden in Gallery — say Add texts to show them)."
-            )
-        ).strip()
+        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
+        if plan_mode != "tell":
+            summary = (
+                (summary or "").rstrip()
+                + (
+                    f" {sms_available} text message(s) are in the archive "
+                    "(hidden in Gallery — say Add texts to show them)."
+                )
+            ).strip()
     chips = chips_from_ask_result(result)
     # Prefer plan temporal chip over item-derived year range when present
     if not any(c.get("kind") == "time" for c in chips):
@@ -1185,15 +1201,18 @@ def build_explore_find(
         r"(?i)\b(create|write|generate)\b.+\b(narrative|story)\b|\bnarrative of\b|\bnarrate\b",
         text,
     ):
-        summary = (
-            (summary or "").rstrip()
-            + " Narrative generation is I11 — not implemented in I8A. "
-            "Showing matching texts as evidence only."
-        ).strip()
+        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
+        if plan_mode != "tell":
+            summary = (
+                (summary or "").rstrip()
+                + " Narrative generation is I11 — not implemented in I8A. "
+                "Showing matching texts as evidence only."
+            ).strip()
 
     plan = result.get("plan") or {}
     coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
-    if coverage and coverage.get("summary"):
+    tell_mode = str(plan.get("output_mode") or "show") == "tell"
+    if coverage and coverage.get("summary") and not tell_mode:
         summary = (
             str(coverage.get("summary") or "").strip() + " " + (summary or "")
         ).strip()
@@ -1263,5 +1282,20 @@ def build_explore_find(
             "email_available": email_available,
             "email_match_total": email_match_total,
             "calendar_available": calendar_available,
+            "output_mode": plan.get("output_mode") or "show",
         },
+        "output_mode": plan.get("output_mode") or "show",
+        "answer_text": result.get("answer_text"),
+        "statements": result.get("statements") or [],
+        "citations": result.get("citations") or [],
+        "living_view": persistable_view(
+            original_ask=text,
+            plan=plan,
+            presentation={
+                "gallery_show_sms": show_sms,
+                "gallery_show_email": show_email,
+                "gallery_show_calendar": show_calendar,
+                "visual_scope": plan.get("visual_scope"),
+            },
+        ),
     }
