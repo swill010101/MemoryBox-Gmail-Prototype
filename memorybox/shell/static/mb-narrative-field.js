@@ -7,12 +7,19 @@
   const SILENCE_FLOOR = 0.025;
   const HEARD_FLOOR = 0.02;
 
-  function insertAtCursor(ta, text) {
+  function insertAtCursor(ta, text, preferEnd) {
     const value = ta.value || "";
-    let start = typeof ta.selectionStart === "number" ? ta.selectionStart : value.length;
-    let end = typeof ta.selectionEnd === "number" ? ta.selectionEnd : start;
-    if (start !== end) {
-      start = end;
+    let start;
+    let end;
+    if (preferEnd) {
+      start = value.length;
+      end = value.length;
+    } else {
+      start = typeof ta.selectionStart === "number" ? ta.selectionStart : value.length;
+      end = typeof ta.selectionEnd === "number" ? ta.selectionEnd : start;
+      if (start !== end) {
+        start = end;
+      }
     }
     const before = value.slice(0, start);
     const after = value.slice(start);
@@ -93,6 +100,10 @@
       textarea._mbNarrative.destroy();
     }
     const speech = opts.speech || "off";
+    let caretTouched = false;
+    textarea.addEventListener("mousedown", function () { caretTouched = true; });
+    textarea.addEventListener("keyup", function () { caretTouched = true; });
+    textarea.addEventListener("select", function () { caretTouched = true; });
     const wrap = document.createElement("div");
     wrap.className = "mb-nf";
     wrap.dataset.mbNarrativeField = "1";
@@ -510,10 +521,16 @@
       if (pending.blobUrl) native.src = pending.blobUrl;
       else if (pending.audio_id) native.src = "/capture/audio/" + encodeURIComponent(pending.audio_id);
       reviewAudio = native;
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "mb-nf-btn primary";
+      more.textContent = speech === "authored-memory" ? "Tell this story" : "Speak";
+      more.onclick = function () { startRecording({ addMore: true }); };
       box.appendChild(listenBtn);
       box.appendChild(time);
       box.appendChild(scrub);
       box.appendChild(again);
+      box.appendChild(more);
       box.appendChild(native);
       chrome.appendChild(box);
 
@@ -755,11 +772,14 @@
       return s;
     }
 
-    async function startRecording() {
+    async function startRecording(optsStart) {
       if (speech === "off") return;
+      const addMore = Boolean(optsStart && optsStart.addMore);
       if (pending.audio_uri && speech === "authored-memory") {
-        const ok = confirm("Start a new recording? The unsaved take will be discarded.");
-        if (!ok) return;
+        if (!addMore) {
+          const ok = confirm("Start a new recording? The unsaved take will be discarded.");
+          if (!ok) return;
+        }
         await discardPending(true);
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -910,7 +930,7 @@
 
       if (speech === "convenience") {
         if (text) {
-          insertAtCursor(textarea, text);
+          insertAtCursor(textarea, text, !caretTouched);
           emit();
         }
         mode = "ready";
@@ -930,7 +950,7 @@
       pending.sttText = text;
       pending.speech_user_edited = false;
       if (text) {
-        insertAtCursor(textarea, text);
+        insertAtCursor(textarea, text, !caretTouched);
         emit();
       }
       textarea.addEventListener("input", markEdited);
