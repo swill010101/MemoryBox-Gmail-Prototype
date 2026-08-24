@@ -782,7 +782,13 @@ def explore_find(
 
 
 @app.post("/explore/api/find")
-def explore_find_post(body: AskRequest) -> dict[str, Any]:
+def explore_find_post(
+    body: AskRequest,
+    present: str | None = Query(
+        None,
+        description="Presentation overlay: communications|calendar (does not rewrite Ask)",
+    ),
+) -> dict[str, Any]:
     """Same as GET /explore/api/find using AskRequest body."""
     from memorybox.explore.find import build_explore_find
 
@@ -793,6 +799,7 @@ def explore_find_post(body: AskRequest) -> dict[str, Any]:
             ask_text=body.ask,
             session_id=body.session_id,
             orchestrator=orch,
+            present=present,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc

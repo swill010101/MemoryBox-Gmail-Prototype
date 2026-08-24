@@ -1132,6 +1132,8 @@ def build_explore_find(
             )
         )
     ]
+    plan = result.get("plan") or {}
+    tell_mode = str(plan.get("output_mode") or result.get("output_mode") or "show") == "tell"
     # All-ask curator counts the archive (photos + hidden texts + video).
     # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).
     # I11 tell: use orchestrator synthesis from the retrieved pack, not visible tiles.
@@ -1142,7 +1144,7 @@ def build_explore_find(
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
-    if show_email and not show_sms and not email_available:
+    if show_email and not show_sms and not email_available and not tell_mode:
         summary = (
             (summary or "").rstrip()
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
@@ -1178,7 +1180,7 @@ def build_explore_find(
             sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
         if e.get("truncated"):
             sms_truncated = True
-    if sms_truncated and sms_match_total:
+    if sms_truncated and sms_match_total and not tell_mode:
         summary = (
             (summary or "").rstrip()
             + (
@@ -1186,7 +1188,7 @@ def build_explore_find(
                 f"{sms_match_total} matching texts (every year kept on the Timeline)."
             )
         ).strip()
-    if email_match_total > (counts.get("email") or 0):
+    if email_match_total > (counts.get("email") or 0) and not tell_mode:
         shown = counts.get("email") or 0
         summary = (
             (summary or "").rstrip()
@@ -1198,9 +1200,7 @@ def build_explore_find(
     counts["email_available"] = email_available
     counts["calendar_available"] = calendar_available
 
-    plan = result.get("plan") or {}
     coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
-    tell_mode = str(plan.get("output_mode") or "show") == "tell"
     if coverage and coverage.get("summary") and not tell_mode:
         summary = (
             str(coverage.get("summary") or "").strip() + " " + (summary or "")
@@ -1235,6 +1235,7 @@ def build_explore_find(
         "ask_text": text,
         "title": title,
         "summary": summary,
+        "narrative_text": answer_for_curator if tell_mode else None,
         "chips": chips,
         "items": items,
         "counts": counts,

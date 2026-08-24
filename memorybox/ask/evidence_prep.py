@@ -293,7 +293,15 @@ def _and_i_ask(plan: Any) -> bool:
 def _calendar_material(hit: Any, plan: Any, *, broad: bool) -> bool:
     if broad:
         return True
+    notes = tuple(str(n) for n in (getattr(plan, "notes", ()) or ()))
     d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit)
+    # Month+year Asks are not a year dump: keep calendar rows that fall in the month.
+    if any("temporal=month_year" in n for n in notes):
+        day = str(d.get("sent_at") or "")[:10]
+        windows = _plan_windows(plan)
+        if not windows or len(day) < 10:
+            return True
+        return any(a <= day <= b for a, b in windows)
     blob = f"{d.get('summary') or ''} {d.get('excerpt') or ''}".lower()
     tokens: list[str] = []
     tokens.extend(str(n).lower() for n in (getattr(plan, "person_names", ()) or ()))
@@ -406,11 +414,34 @@ def _breadth(plan: Any) -> str:
 
 
 def re_year_only(q: str) -> bool:
-    import re
-
+    if re.search(
+        r"(?i)\b(january|february|march|april|may|june|july|august|"
+        r"september|october|november|december)\b",
+        q,
+    ):
+        return False
     return bool(re.search(r"(?i)\b(19|20)\d{2}\b", q)) and not bool(
         re.search(r"(?i)\b(christmas|hawaii|trip|peggy)\b", q)
     )
+
+
+def _plan_windows(plan: Any) -> list[tuple[str, str]]:
+    windows = [tuple(w) for w in (getattr(plan, "temporal_windows", ()) or ()) if w]
+    if not windows:
+        t0 = getattr(plan, "time_start", None)
+        t1 = getattr(plan, "time_end", None)
+        if t0 and t1:
+            windows = [(str(t0), str(t1))]
+    return [(str(a)[:10], str(b)[:10]) for a, b in windows]
+
+
+def _unit_in_windows(unit: dict[str, Any], windows: list[tuple[str, str]]) -> bool:
+    if not windows:
+        return True
+    day = str((unit.get("time") or {}).get("value") or "")[:10]
+    if len(day) < 10:
+        return True
+    return any(a <= day <= b for a, b in windows)
 
 
 def prepare_narrative_pack(
@@ -517,6 +548,10 @@ def prepare_narrative_pack(
                     {"provenance": {"source": "artifact", "artifact_id": aid}},
                 )
             )
+
+    windows = _plan_windows(plan)
+    if windows:
+        units = [u for u in units if _unit_in_windows(u, windows)]
 
     eligible_n = len(units)
     ranked = _rank_units(units, str(getattr(plan, "original_ask", "") or ""))

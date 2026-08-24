@@ -32,7 +32,8 @@ YEAR_RANGE_RE = re.compile(
 )
 MONTH_YEAR_RE = re.compile(
     r"\b(january|february|march|april|may|june|july|august|september|"
-    r"october|november|december)\s+((?:19|20)\d{2})\b",
+    r"october|november|december)"
+    r"(?:\s+of)?(?:\s*,)?\s+((?:19|20)\d{2})\b",
     re.I,
 )
 SEASON_RE = re.compile(

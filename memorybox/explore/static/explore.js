@@ -819,6 +819,12 @@
     return c;
   }
 
+  function isTellAsk(text) {
+    return /\b(tell me about|what do you know|summarize|what happened|write a narrative|write a story|narrate|what was\b[\s\S]{0,40}\blike)\b/i.test(
+      String(text || "")
+    );
+  }
+
   function refreshCuratorFromVisible() {
     // Keep fixture curator copy when on demo All+full range; else summarize live set.
     const vis = visibleItems();
@@ -826,13 +832,15 @@
       !hasDatedExtent() ||
       (state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
         state.timeline.rangeEnd >= state.timeline.extentEnd - 1);
-    if (
-      state.domain.outputMode === "tell" &&
-      state.domain._askSummary &&
-      state.domain.summary !== "Searching…"
-    ) {
-      state.domain.summary = state.domain._askSummary;
-      return;
+    if (state.domain.outputMode === "tell") {
+      const waiting =
+        state.domain.summary === "Searching…" ||
+        state.domain.summary === "Writing the narrative…";
+      const kept = state.domain.narrativeText || state.domain._askSummary;
+      if (kept && !waiting) {
+        state.domain.summary = kept;
+        return;
+      }
     }
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;
@@ -1101,7 +1109,8 @@
     const bodyEl = document.getElementById("mb-explore-curator-body");
     const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
-    if (bodyEl) bodyEl.textContent = "Searching…";
+    const waiting = isTellAsk(askText) ? "Writing the narrative…" : "Searching…";
+    if (bodyEl) bodyEl.textContent = waiting;
     if (curator) {
       curator.classList.add("is-searching");
       curator.classList.remove("is-tell");
@@ -1114,7 +1123,7 @@
     if (askField) askField.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
-      state.domain.summary = "Searching…";
+      state.domain.summary = waiting;
     }
   }
 
@@ -1128,17 +1137,40 @@
     if (el) el.dataset.mbAskDirty = "";
   }
 
+  function findErrorMessage(err) {
+    if (err && err.name === "AbortError") {
+      return "Find timed out. The narrative may still be in AI-trace; try again.";
+    }
+    return "Find failed: " + err;
+  }
+
   async function liveFind(askText, extras) {
     const q = personScopedAsk(askText);
-    let url =
-      "/explore/api/find?q=" +
-      encodeURIComponent(q) +
-      (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
     const present = extras && extras.present;
-    if (present) url += "&present=" + encodeURIComponent(present);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("find " + res.status);
-    return res.json();
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer =
+      ctrl &&
+      setTimeout(() => {
+        try {
+          ctrl.abort();
+        } catch (_) {}
+      }, 180000);
+    try {
+      const params = new URLSearchParams();
+      if (present) params.set("present", present);
+      const qs = params.toString() ? "?" + params.toString() : "";
+      const res = await fetch("/explore/api/find" + qs, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ask: q, session_id: sessionId || null }),
+        cache: "no-store",
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+      if (!res.ok) throw new Error("find " + res.status);
+      return res.json();
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   function currentAskText() {
@@ -1379,15 +1411,22 @@
         }
       }
     }
+    const nextOutputMode =
+      payload.output_mode || (payload.plan || {}).output_mode || "show";
+    const tellNarrative =
+      nextOutputMode === "tell"
+        ? payload.narrative_text || payload.summary || ""
+        : "";
     state = {
       domain: {
         askText: payload.ask_text || "",
         title: payload.title || "Memories",
-        summary: payload.summary || "",
+        summary: tellNarrative || payload.summary || "",
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
-        _askSummary: payload.summary || "",
+        _askSummary: tellNarrative || payload.summary || "",
         _askKind: payload.answer_kind || "",
-        outputMode: payload.output_mode || (payload.plan || {}).output_mode || "show",
+        outputMode: nextOutputMode,
+        narrativeText: tellNarrative,
         citations: payload.citations || [],
         livingView: payload.living_view || null,
         coverage: payload.coverage || null,
@@ -1547,7 +1586,7 @@
           render();
         })
         .catch((err) => {
-          state.domain.summary = "Find failed: " + err;
+          state.domain.summary = findErrorMessage(err);
           renderCurator();
         });
       return;
@@ -1871,7 +1910,7 @@
           render();
         })
         .catch((err) => {
-          state.domain.summary = "Find failed: " + err;
+          state.domain.summary = findErrorMessage(err);
           renderCurator();
         });
       return;
@@ -2124,43 +2163,45 @@
     }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
-    chips.innerHTML = (state.domain.chips || [])
-      .map((c) => {
-        const kind = c.kind || "";
-        const label = c.label || "";
-        const isPlace = kind === "place";
-        const active =
-          isPlace && activePlace && String(label).toLowerCase() === activePlace;
-        const cls = `mb-chip${isPlace ? " mb-chip-place" : ""}${
-          active ? " is-active" : ""
-        }`;
-        if (isPlace) {
-          return `<button type="button" class="${cls}" data-kind="place" data-place="${escapeAttr(
-            label
-          )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(
-            label
-          )}</button>`;
-        }
-        const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
-        return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
-          kind
-        )}">${escapeHtml(label)}</span>`;
-      })
-      .join("");
-    chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const place = btn.getAttribute("data-place") || "";
-        if (
-          state.domain.placeFilter &&
-          String(state.domain.placeFilter).toLowerCase() === place.toLowerCase()
-        ) {
-          clearPlaceFilter();
-        } else {
-          setPlaceFilter(place);
-        }
-        render();
+    if (chips) {
+      chips.innerHTML = (state.domain.chips || [])
+        .map((c) => {
+          const kind = c.kind || "";
+          const label = c.label || "";
+          const isPlace = kind === "place";
+          const active =
+            isPlace && activePlace && String(label).toLowerCase() === activePlace;
+          const cls = `mb-chip${isPlace ? " mb-chip-place" : ""}${
+            active ? " is-active" : ""
+          }`;
+          if (isPlace) {
+            return `<button type="button" class="${cls}" data-kind="place" data-place="${escapeAttr(
+              label
+            )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(
+              label
+            )}</button>`;
+          }
+          const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
+          return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
+            kind
+          )}">${escapeHtml(label)}</span>`;
+        })
+        .join("");
+      chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const place = btn.getAttribute("data-place") || "";
+          if (
+            state.domain.placeFilter &&
+            String(state.domain.placeFilter).toLowerCase() === place.toLowerCase()
+          ) {
+            clearPlaceFilter();
+          } else {
+            setPlaceFilter(place);
+          }
+          render();
+        });
       });
-    });
+    }
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) applyCuratorPortrait();
   }
@@ -6901,8 +6942,8 @@
       }
       bootFromPayload(payload);
     } catch (err) {
-      document.getElementById("mb-explore-curator-body").textContent =
-        "Could not load exploration: " + err;
+      const body = document.getElementById("mb-explore-curator-body");
+      if (body) body.textContent = findErrorMessage(err);
     }
   }
 

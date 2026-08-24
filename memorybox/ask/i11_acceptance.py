@@ -14,6 +14,7 @@ from memorybox.ask.retrieve import EvidenceHit, PhotoHit
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.explore.find import curator_answer_text
 from memorybox.planner import compile_output_mode, plan_ask
+from memorybox.planner.temporal import parse_temporal
 from memorybox.providers.llm.fake import FakeLlmProvider
 from memorybox.providers.photo.fake import FakePhotoProvider
 
@@ -48,7 +49,10 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and 'id="mb-explore-save-story"' in explore_html
         and "Save as Story" in explore_html
         and "/story/drafts" in explore_js
-        and "composed_by_model: true" in explore_js,
+        and "composed_by_model: true" in explore_js
+        and "narrativeText" in explore_js
+        and "Writing the narrative" in explore_js
+        and 'method: "POST"' in explore_js,
         checks,
         problems,
         detail="Copy/Save as Story on Explore; no narration route",
@@ -478,6 +482,74 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         )
         for i in range(50)
     ]
+    jan_parse = parse_temporal("write a narrative about my January of 2025")
+    comma_parse = parse_temporal("January, 2025")
+    year_parse = parse_temporal("Tell me about my 2017")
+    _check(
+        "january_of_year_not_year_range",
+        jan_parse.time_start == "2025-01-01"
+        and jan_parse.time_end == "2025-01-31"
+        and "temporal=month_year" in (jan_parse.notes or ())
+        and comma_parse.time_start == "2025-01-01"
+        and comma_parse.time_end == "2025-01-31"
+        and year_parse.time_start == "2017-01-01"
+        and year_parse.time_end == "2017-12-31"
+        and "temporal=year_range" in (year_parse.notes or ()),
+        checks,
+        problems,
+        detail=str(jan_parse.to_dict()),
+    )
+    jan_plan = plan_ask("write a narrative about my January of 2025", ctx)
+    jan_pack = prepare_narrative_pack(
+        jan_plan,
+        evidence=[
+            EvidenceHit(
+                evidence_id="e-cal-jan",
+                evidence_kind="calendar_event",
+                summary="KofC Trivia Knight January",
+                score=1.0,
+                excerpt="planning",
+                source="postgres_keyword",
+                sent_at="2025-01-04T14:30:00+00:00",
+                channel="calendar",
+            ),
+            EvidenceHit(
+                evidence_id="e-cal-apr",
+                evidence_kind="calendar_event",
+                summary="Links to La Salle Golf Classic 2025",
+                score=1.0,
+                excerpt="golf",
+                source="postgres_keyword",
+                sent_at="2025-04-14T16:30:00+00:00",
+                channel="calendar",
+            ),
+        ],
+        journals=[
+            {
+                "journal_id": "j-aug",
+                "excerpt": "On this day memory from last year.",
+                "described_start_date": "2025-08-24",
+            }
+        ],
+    )
+    jan_days = sorted(
+        {
+            str((u.get("time") or {}).get("value") or "")[:10]
+            for u in (jan_pack.get("units") or [])
+        }
+    )
+    _check(
+        "january_pack_drops_out_of_window",
+        jan_plan.output_mode == "tell"
+        and jan_plan.time_start == "2025-01-01"
+        and jan_plan.time_end == "2025-01-31"
+        and jan_days == ["2025-01-04"]
+        and int((jan_pack.get("evidence_used") or {}).get("calendar_events") or 0) == 1
+        and int((jan_pack.get("evidence_used") or {}).get("journal_entries") or 0) == 0,
+        checks,
+        problems,
+        detail=str({"days": jan_days, "plan": jan_plan.time_start, "used": jan_pack.get("evidence_used")}),
+    )
     year_plan = plan_ask("Tell me about my 2017", ctx)
     year_pack = prepare_narrative_pack(year_plan, evidence=many)
     _check(
