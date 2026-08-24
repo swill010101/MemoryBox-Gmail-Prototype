@@ -99,7 +99,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10** | Cross-Source Correlation | A | **ACCEPTED** 2026-08-21 — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) |
 | **P2-I10A** | Stories | U+F | **ACCEPTED** 2026-08-22 — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md) |
 | **P2-I10A.1** | Person Profile and Editor | U | **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”) — [contract](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A1_ACCEPTANCE.md) · [PRD](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md). Do not reopen. Next is I10A.2. |
-| **P2-I10A.2** | Unified Voice Capture & Transcription | U+F | After I10A.1 — shared mic/STT; integrate Stories first. Required before Artifact “Tell its story” and I10C voice. |
+| **P2-I10A.2** | Reusable Speech Input for Text Entry | U+F | PRD **in review** (planning) — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [assessment](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md). Dictation into the same text field. Not I9. Not voice-as-evidence. **Not build-authorized.** |
 | **P2-I10B** | Artifacts | U+F | **ACCEPTED** 2026-08-23 — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Tell its story uses shared Story editor; recorder is I10A.2. |
 | **P2-I10C** | Journal | U+F | After I10B — same shared voice as I10A.2. I11 waits until the I10A–I10C chain plus required recognition/transcription work. |
 | **P2-I11** | Narrative & Summaries | E+A | Family evidence only. **Not authorized** until I10A + I10B + I10C. |
@@ -203,9 +203,9 @@ Human Story object: draft vs saved vs Ask-current, ordered blocks, mixed support
 
 Person Profile and Editor. One Explorer header; About = `/people/{id}/edit?view=1`; Edit = `/people/{id}/edit`. [contract](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A1_ACCEPTANCE.md) · [PRD](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md). **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”). Do not reopen.
 
-### P2-I10A.2 — Unified Voice Capture & Transcription · U+F
+### P2-I10A.2 — Reusable Speech Input for Text Entry · U+F
 
-Shared microphone + preserve-audio + transcription for Stories, then Artifacts (Tell its story), then Journal. Must not be implemented three ways. Stories integration first.
+Live owner dictation into substantial text (same value as typing). Shared narrative field first — Story, Journal, and Artifact do **not** share one today. [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [assessment](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md). **Not locked. Not build-authorized.** Preserve-audio / Tell its story capture sketch in I10B is a **conflict to resolve** with this PRD (dictation is not evidence by default).
 
 ### P2-I10B — Artifacts · U+F
 

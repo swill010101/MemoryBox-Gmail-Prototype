@@ -106,4 +106,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I10A.2** Unified Voice Capture (Stories first), then **I10C** Journal. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10. Do not reopen I10A.1.
+**Next:** **I10A.2** Reusable Speech Input — PRD **in review** (planning only, not build-authorized): [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [assessment](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md). Story/Journal/Artifact do **not** share a textarea today; consolidate that first. Then **I10C** Journal. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10. Do not reopen I10A.1.
