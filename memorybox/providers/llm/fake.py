@@ -17,73 +17,89 @@ def _fake_narrative(pack_json: str) -> str:
         pack = json.loads(pack_json)
     except Exception:
         return "The prepared pack could not be read. MemoryBox will not invent family facts."
-    units = list(pack.get("units") or [])
     label = (
         pack.get("temporal_label")
         or ((pack.get("scope") or {}).get("time") or {}).get("label")
         or "this period"
     )
-    if not units:
+    outline = list(pack.get("outline") or pack.get("derived_summaries") or [])
+    episodes = list(pack.get("episodes") or pack.get("units") or [])
+    cov = pack.get("coverage") or {}
+    incomplete = False
+    if isinstance(cov, dict):
+        incomplete = bool(cov.get("incomplete"))
+        disc = str(cov.get("truncation_disclosure") or "").strip()
+    else:
+        disc = ""
+    if not outline and not episodes:
         return (
             f"There is not enough prepared family evidence to narrate {label}."
-            "\n\nFamily evidence used: none."
+            "\n\nFamily evidence considered: none."
         )
-    kinds = {str(u.get("kind") or "") for u in units}
     paras: list[str] = [
         f"Here is a short account of {label} from the prepared family evidence, "
         "without pasting the original messages."
     ]
-    if kinds and kinds <= {"calendar"}:
+    if incomplete:
         paras.append(
-            "The prepared pack has calendar rows for this window. "
-            "Those are scheduled or recorded, not proof the events occurred."
+            "Coverage is incomplete"
+            + (f": {disc}" if disc else ".")
+            + " MemoryBox did not silently sample the rest of the period."
         )
-    by_day: dict[str, list[str]] = {}
-    for u in units:
-        day = str(u.get("time") or (u.get("time") or {}).get("value") or "").strip() or "an undated day"
-        if isinstance(u.get("time"), dict):
-            day = str((u.get("time") or {}).get("value") or day)
-        kind = str(u.get("kind") or "evidence")
-        subj = str(u.get("subject") or "").strip()
-        gist = str(u.get("content") or u.get("authored_text") or "").strip()
+    weeks = sorted(
+        outline,
+        key=lambda s: str((s or {}).get("period") or "") if isinstance(s, dict) else "",
+    )
+    week_bits: list[str] = []
+    for s in weeks:
+        if not isinstance(s, dict):
+            continue
+        t = str(s.get("text") or s.get("period") or "").strip()
+        if t:
+            week_bits.append(t)
+    if week_bits:
+        paras.append(
+            "Across the weeks that have evidence, "
+            + " ".join(week_bits[:12])
+        )
+
+    def _ep_day(ep: dict) -> str:
+        t = ep.get("time")
+        if isinstance(t, dict):
+            return str(t.get("value") or "")
+        return str(t or "")
+
+    dated = [e for e in episodes if isinstance(e, dict)]
+    dated.sort(key=lambda e: _ep_day(e) or "9999")
+    story_bits: list[str] = []
+    for ep in dated[:16]:
+        day = _ep_day(ep)[:10] or "an undated day"
         gist = re.split(
             r"(?i)\nOn .+ wrote:|-----Original Message-----|Begin forwarded message:",
-            gist,
+            str(ep.get("content") or ep.get("subject") or ""),
             maxsplit=1,
         )[0].strip()
-        gist = re.sub(r"\s+", " ", gist)[:160]
-        people = u.get("people") or []
-        names = []
-        for p in people:
-            if isinstance(p, dict):
-                n = str(p.get("name") or "").strip()
-            else:
-                n = str(p or "").strip()
-            if n and n not in names:
-                names.append(n)
-        who = ", ".join(names[:4])
-        if kind == "journal":
-            bit = gist or subj or "a journal entry"
-        elif kind == "calendar":
-            bit = f"a calendar row{(' for ' + subj) if subj else ''}"
-        elif kind == "travel":
-            bit = gist or str(u.get("travel_kind") or "travel")
-        elif subj:
-            bit = f"{subj}" + (f" — {gist}" if gist else "")
+        gist = re.sub(r"\s+", " ", gist)[:180]
+        if not gist:
+            continue
+        n = int(ep.get("member_n") or 1)
+        if n > 1:
+            story_bits.append(f"Around {day}, {gist}")
         else:
-            bit = gist or kind
-        if who:
-            bit = f"{who}: {bit}"
-        by_day.setdefault(day[:10] if len(day) >= 10 else day, []).append(bit)
-    for day, bits in list(by_day.items())[:10]:
-        uniq: list[str] = []
-        for b in bits:
-            if b not in uniq:
-                uniq.append(b)
-        paras.append(f"On {day}, {'; '.join(uniq[:3])}.")
-    used = pack.get("evidence_used") or {}
-    footer_bits = [f"{k} {v}" for k, v in used.items() if v]
-    footer = "Family evidence used: " + (", ".join(footer_bits) if footer_bits else "none") + "."
+            story_bits.append(f"Around {day}, {gist}")
+    if story_bits:
+        # Continuous prose, not a record dump: fold into a couple of sentences.
+        mid = max(1, len(story_bits) // 2)
+        paras.append(". ".join(story_bits[:mid]) + ".")
+        if story_bits[mid:]:
+            paras.append(". ".join(story_bits[mid:]) + ".")
+    used = pack.get("evidence_considered") or pack.get("evidence_used") or {}
+    footer_bits = [f"{v} {k}" for k, v in used.items() if v]
+    footer = (
+        "Family evidence considered: "
+        + (" · ".join(footer_bits) if footer_bits else "none")
+        + "."
+    )
     return "\n\n".join(paras) + "\n\n" + footer
 
 

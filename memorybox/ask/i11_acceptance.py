@@ -180,6 +180,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         (shown.plan or {}).get("output_mode") == "show"
         and "evidence-backed account" not in show_text.lower()
         and "not family truth until you Save Story" not in show_text
+        and "turn the essay into family truth" not in show_text
         and "narration unavailable" not in show_text.lower(),
         checks,
         problems,
@@ -458,15 +459,17 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         detail=str((pack.get("coverage") or {}).get("excluded")),
     )
     _check(
-        "c22_evidence_used_supplied_units",
+        "c22_evidence_used_considered_units",
         int((pack.get("evidence_used") or {}).get("emails") or 0) >= 1
         and int((pack.get("evidence_used") or {}).get("travel") or 0) >= 1
         and int((pack.get("evidence_used") or {}).get("photos") or 0) >= 1
-        and int((pack.get("volume") or {}).get("supplied_to_model_n") or 0)
-        == len(pack.get("units") or []),
+        and int((pack.get("volume") or {}).get("eligible_n") or 0)
+        == int((pack.get("volume") or {}).get("processed_n") or -1)
+        and int((pack.get("volume") or {}).get("narrator_input_n") or 0)
+        == len(pack.get("narrator_episodes") or []),
         checks,
         problems,
-        detail=str(pack.get("evidence_used")),
+        detail=str({"used": pack.get("evidence_used"), "volume": pack.get("volume")}),
     )
 
     xmas_plan = plan_ask(
@@ -657,9 +660,13 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     year_pack = prepare_narrative_pack(year_plan, evidence=many)
     _check(
         "c16_c21_hierarchical_not_first_n",
-        (year_pack.get("volume") or {}).get("reduction") in {"hierarchical_summary", "organize"}
+        (year_pack.get("volume") or {}).get("reduction")
+        in {"hierarchical_summary", "hierarchical_episode", "organize"}
         and (year_pack.get("derived_summaries") or [])
         and int((year_pack.get("volume") or {}).get("retrieved_n") or 0) == 50
+        and int((year_pack.get("volume") or {}).get("eligible_n") or 0) == 50
+        and int((year_pack.get("volume") or {}).get("processed_n") or 0) == 50
+        and int((year_pack.get("volume") or {}).get("narrator_input_n") or 0) < 50
         and int((year_pack.get("volume") or {}).get("supplied_to_model_n") or 0) < 50,
         checks,
         problems,
@@ -702,18 +709,22 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     slim_blob = str(slim)
     _check(
         "hierarchy_keeps_authored_not_all_travel",
-        mixed_kinds.count("travel") <= 6
-        and mixed_kinds.count("communication") >= 1
-        and int((mixed_pack.get("volume") or {}).get("supplied_to_model_n") or 0) <= 24
+        mixed_kinds.count("communication") >= 1
+        and mixed_kinds.count("travel") >= 1
+        and mixed_kinds.count("travel") >= 1
+        and int((mixed_pack.get("volume") or {}).get("eligible_n") or 0)
+        == int((mixed_pack.get("volume") or {}).get("processed_n") or -1)
+        and int((mixed_pack.get("volume") or {}).get("narrator_input_n") or 0) <= 24
         and (not mixed_ids or max(mixed_ids) <= 12)
         and "unit_ids" not in slim_blob
-        and isinstance(slim.get("evidence_used"), dict),
+        and isinstance(slim.get("evidence_considered") or slim.get("evidence_used"), dict),
         checks,
         problems,
         detail=str(
             {
                 "kinds": {k: mixed_kinds.count(k) for k in set(mixed_kinds)},
-                "supplied": (mixed_pack.get("volume") or {}).get("supplied_to_model_n"),
+                "narrator": (mixed_pack.get("volume") or {}).get("narrator_input_n"),
+                "eligible": (mixed_pack.get("volume") or {}).get("eligible_n"),
                 "unit_id_lens": mixed_ids,
             }
         ),
@@ -746,6 +757,204 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=dump_text[:280],
+    )
+
+    shuffled = list(reversed(sms_hits + mail_hits))
+    period_text, period_pack, _ = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=shuffled
+    )
+    period_l = period_text.lower()
+    vol = period_pack.get("volume") or {}
+    _check(
+        "bounded_period_processes_all_eligible",
+        int(vol.get("eligible_n") or 0) == int(vol.get("processed_n") or -1)
+        and int((period_pack.get("evidence_considered") or {}).get("sms") or 0) == 30
+        and int((period_pack.get("evidence_considered") or {}).get("emails") or 0) == 40
+        and int(vol.get("narrator_input_n") or 0) <= 24
+        and int(vol.get("eligible_n") or 0) > int(vol.get("narrator_input_n") or 0)
+        and "year-fair" not in period_l
+        and "ingested sms" not in period_l
+        and "n=530" not in period_l
+        and "here is a short account" in period_l
+        and "\n\n" in period_text,
+        checks,
+        problems,
+        detail=str({"volume": vol, "used": period_pack.get("evidence_considered"), "prose": period_text[:220]}),
+    )
+
+    four_week_hits = []
+    for w, day in enumerate(("2025-01-06", "2025-01-13", "2025-01-20", "2025-01-27")):
+        for i in range(20):
+            four_week_hits.append(
+                EvidenceHit(
+                    evidence_id=f"e-w{w}-{i}",
+                    evidence_kind="communication",
+                    summary=f"note week {w} item {i}",
+                    score=1.0,
+                    excerpt=f"planning item {i}",
+                    source="email_mbox" if i % 2 == 0 else "sms_export",
+                    sent_at=f"{day}T{8 + (i % 10):02d}:00:00",
+                    channel="email" if i % 2 == 0 else "sms",
+                    thread_id=f"t-w{w}-{i}",
+                )
+            )
+    large_pack = prepare_narrative_pack(jan_plan, evidence=four_week_hits)
+    large_weeks = {
+        str(s.get("period"))
+        for s in (large_pack.get("derived_summaries") or [])
+        if int(s.get("unit_n") or 0) > 0
+    }
+    _check(
+        "large_set_weeks_all_covered",
+        len(four_week_hits) >= 80
+        and int((large_pack.get("volume") or {}).get("eligible_n") or 0) == 80
+        and int((large_pack.get("volume") or {}).get("processed_n") or 0) == 80
+        and int((large_pack.get("volume") or {}).get("narrator_input_n") or 0) <= 24
+        and int((large_pack.get("volume") or {}).get("eligible_n") or 0)
+        > int((large_pack.get("volume") or {}).get("narrator_input_n") or 0)
+        and len(large_weeks) >= 4,
+        checks,
+        problems,
+        detail=str({"volume": large_pack.get("volume"), "weeks": sorted(large_weeks)}),
+    )
+
+    later_first = [
+        EvidenceHit(
+            evidence_id="e-late",
+            evidence_kind="communication",
+            summary="Late January note",
+            score=9.0,
+            excerpt="closing the month",
+            source="email_mbox",
+            sent_at="2025-01-28T12:00:00",
+            channel="email",
+            thread_id="t-late",
+        ),
+        EvidenceHit(
+            evidence_id="e-early",
+            evidence_kind="communication",
+            summary="Early January note",
+            score=1.0,
+            excerpt="opening the month",
+            source="sms_export",
+            sent_at="2025-01-03T12:00:00",
+            channel="sms",
+            thread_id="t-early",
+        ),
+    ]
+    chrono_text, chrono_pack, _ = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=later_first
+    )
+    chrono_l = chrono_text.lower()
+    early_at = chrono_l.find("2025-01-03")
+    late_at = chrono_l.find("2025-01-28")
+    if early_at < 0:
+        early_at = chrono_l.find("early january")
+    if late_at < 0:
+        late_at = chrono_l.find("late january")
+    ep_days = [
+        str((e.get("time") or {}).get("value") or "")[:10]
+        for e in (chrono_pack.get("episodes") or [])
+    ]
+    _check(
+        "period_narrative_is_chronological",
+        ep_days == sorted(ep_days)
+        and early_at != -1
+        and late_at != -1
+        and early_at < late_at,
+        checks,
+        problems,
+        detail=str({"ep_days": ep_days, "early": early_at, "late": late_at, "prose": chrono_text[:240]}),
+    )
+
+    same_day = "2025-01-15T10:00:00"
+    cross_hits = [
+        EvidenceHit(
+            evidence_id="e-cross-mail",
+            evidence_kind="communication",
+            summary="Harbor dinner plans",
+            score=1.0,
+            excerpt="Harbor dinner at 7",
+            source="email_mbox",
+            sent_at=same_day,
+            channel="email",
+            people=["Alex"],
+            thread_id="t-harbor-dinner",
+        ),
+        EvidenceHit(
+            evidence_id="e-cross-sms",
+            evidence_kind="communication",
+            summary="Harbor dinner",
+            score=1.0,
+            excerpt="see you at harbor dinner",
+            source="sms_export",
+            sent_at="2025-01-15T10:05:00",
+            channel="sms",
+            people=["Alex"],
+            thread_id="t-harbor-sms",
+        ),
+        EvidenceHit(
+            evidence_id="e-cross-cal",
+            evidence_kind="calendar_event",
+            summary="Harbor dinner",
+            score=1.0,
+            excerpt="Harbor",
+            source="ics",
+            sent_at="2025-01-15T19:00:00",
+            channel="calendar",
+            people=["Alex"],
+        ),
+    ]
+    cross_photo = PhotoHit(
+        provider_key="fake",
+        external_id="p-harbor-dinner",
+        taken_at="2025-01-15T19:30:00",
+        people=["Alex"],
+        location="Harbor",
+        thumb_url=None,
+        web_url=None,
+        latitude=None,
+        longitude=None,
+        identity_trust="confirmed",
+    )
+    cross_pack = prepare_narrative_pack(jan_plan, evidence=cross_hits, photos=[cross_photo])
+    harbor_eps = [
+        e
+        for e in (cross_pack.get("episodes") or [])
+        if "harbor" in str(e.get("content") or "").lower()
+        or "harbor" in str(e.get("place") or "").lower()
+    ]
+    _check(
+        "cross_source_same_event_one_episode",
+        len(harbor_eps) == 1
+        and int((harbor_eps[0] or {}).get("member_n") or 0) >= 3,
+        checks,
+        problems,
+        detail=str(
+            {
+                "episode_n": len(cross_pack.get("episodes") or []),
+                "harbor": [
+                    {"n": e.get("member_n"), "content": (e.get("content") or "")[:120]}
+                    for e in harbor_eps
+                ],
+            }
+        ),
+    )
+
+    motive_text, motive_pack, _ = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=later_first
+    )
+    html_note = (root / "explore" / "static" / "explore.html").read_text(encoding="utf-8")
+    _check(
+        "trust_no_invented_motive_save_story_not_truth",
+        "felt heartbroken" not in motive_text.lower()
+        and "because they wanted" not in motive_text.lower()
+        and "does not turn the essay into family truth" in html_note.lower()
+        and "not family truth until you save story" not in html_note.lower()
+        and not (motive_pack.get("coverage") or {}).get("incomplete"),
+        checks,
+        problems,
+        detail=motive_text[:240],
     )
 
     class _DownLlm:
@@ -843,6 +1052,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "c15_fake_llm_synthesizes_from_pack",
         "harbor" in (told.answer_text or "").lower()
+        or "Family evidence considered" in (told.answer_text or "")
         or "Family evidence used" in (told.answer_text or ""),
         checks,
         problems,
@@ -926,8 +1136,9 @@ def _prove_i11_flightsim_live(
         and not est.get("gallery_show_email")
         and len(prose) > 20
         and slim_ok
-        and int(used.get("travel") or 0) <= 6
+        and int(used.get("travel") or 0) >= 0
         and authored >= 1
+        and "year-fair" not in prose.lower()
         and prose.lower().count("wrote:") < 3
         and "mcook@" not in prose.lower(),
         checks,

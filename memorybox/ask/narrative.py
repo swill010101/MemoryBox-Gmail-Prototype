@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from memorybox.ask.evidence_prep import prepare_narrative_pack
@@ -15,19 +16,36 @@ NARRATION_UNAVAILABLE = (
 )
 
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
-You are MemoryBox's narrator. Write a short chronological story in readable prose, ONLY from the prepared evidence pack JSON.
+You are MemoryBox's narrator. Write a chronological story of the requested period as a whole, ONLY from the prepared outline JSON.
+The outline's week summaries and episode structures already represent the complete processed evidence set. They are a hierarchical reduction, not a sample of "the first N records."
 Rules:
-- 2–6 short paragraphs. Paraphrase. Do not paste email or SMS bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
-- A source supports only the claim listed on that unit. Presence is not photographer, purpose, emotion, companions, or significance.
+- Write continuous prose (about 2–8 short paragraphs). Synthesize episodes in time order. Do not list records, dump JSON, or paste email/SMS/MIME bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
+- Do not mention debug strings, year-fair sampling, retrieve caps, n= counts, or implementation notes.
+- A source supports only the claim listed. Presence is not photographer, purpose, emotion, companions, or significance. Do not invent motives or feelings.
 - Do not treat filename, folder, or camera owner as photographer.
 - SMS timestamp is not location. Use location_assertions.basis only.
 - Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating units exist.
-- Travel units are derived; the original communication remains the authentic source. Never ignore that provenance.
-- Derived summaries are not family truth. Use them only as coverage context, not as events.
-- Do not invent people, places, dates, or motives.
-- End with a short "Family evidence used" line using evidence_used counts of supplied units.
+- Travel units are derived; the original communication remains the authentic source.
+- Derived week summaries are coverage context, not family truth. Use them so no week with evidence is ignored.
+- Do not invent people, places, or dates.
+- End with a short "Family evidence considered" line using evidence_considered counts of everything processed, not narrator seat counts.
+- If coverage.incomplete is true, say coverage is incomplete and why from the pack. Never silently sample.
 - If the pack is empty, say you do not have enough family evidence. Do not guess.
 """
+
+
+_DEBUG_LEAK = re.compile(
+    r"(?is)\s*(year-fair sample[^.]*\.?|showing \d+ of \d+[^.]*\.?|"
+    r"ingested (?:SMS|email|calendar)[^.]*\.?|bounded_tell_[a-z]+;[^.\n]*|"
+    r"tell pack; email_n=\d+[^.]*\.?)"
+)
+
+
+def _strip_debug_leak(text: str) -> str:
+    cleaned = _DEBUG_LEAK.sub(" ", text or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def persistable_view(
@@ -87,7 +105,7 @@ def memories_from_citations(citations: list[dict[str, Any]] | None) -> list[dict
 
 
 def evidence_used_footer(pack: dict[str, Any] | None) -> str:
-    used = (pack or {}).get("evidence_used") or {}
+    used = (pack or {}).get("evidence_considered") or (pack or {}).get("evidence_used") or {}
     bits = []
     labels = (
         ("photos", "photos"),
@@ -107,8 +125,8 @@ def evidence_used_footer(pack: dict[str, Any] | None) -> str:
         if n:
             bits.append(f"{n} {label}")
     if not bits:
-        return "Family evidence used: none supplied for synthesis."
-    return "Family evidence used: " + ", ".join(bits) + "."
+        return "Family evidence considered: none processed for this Ask."
+    return "Family evidence considered: " + " · ".join(bits) + "."
 
 
 def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
@@ -122,9 +140,10 @@ def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
 
 
 def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
-    """Smaller JSON for the model: facts, not MIME dumps."""
-    units = []
-    for u in pack.get("units") or []:
+    """Outline for the model: complete period structure, not a raw-record dump."""
+    episodes = []
+    src = pack.get("narrator_episodes") or pack.get("episodes") or []
+    for u in src:
         people = []
         for p in u.get("people") or []:
             if isinstance(p, dict):
@@ -133,16 +152,15 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
                 n = str(p or "").strip()
             if n:
                 people.append(n)
-        units.append(
+        episodes.append(
             {
-                "kind": u.get("kind"),
-                "time": (u.get("time") or {}).get("value"),
-                "people": people[:8],
+                "time": (u.get("time") or {}).get("value") if isinstance(u.get("time"), dict) else u.get("time"),
+                "week": u.get("week"),
                 "place": u.get("place"),
-                "subject": u.get("subject") or u.get("title"),
-                "content": str(u.get("content") or u.get("authored_text") or "")[:320],
-                "travel_kind": u.get("travel_kind"),
-                "claims": u.get("claims") or [],
+                "people": people[:8],
+                "member_n": u.get("member_n"),
+                "source_kinds": u.get("source_kinds"),
+                "content": str(u.get("content") or "")[:400],
             }
         )
     derived = []
@@ -153,11 +171,14 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
                     "period": s.get("period"),
                     "text": s.get("text"),
                     "unit_n": s.get("unit_n"),
+                    "episode_n": s.get("episode_n"),
                     "not_family_truth": True,
                 }
             )
     ask = pack.get("ask") or {}
     plan = ask.get("plan") if isinstance(ask, dict) else {}
+    cov = pack.get("coverage") or {}
+    vol = pack.get("volume") or {}
     return {
         "schema_version": pack.get("schema_version"),
         "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
@@ -165,10 +186,22 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
         "temporal_label": (pack.get("scope") or {}).get("time", {}).get("label")
         if isinstance(pack.get("scope"), dict)
         else (plan.get("temporal_label") if isinstance(plan, dict) else None),
-        "units": units,
+        "outline": derived,
+        "episodes": episodes,
         "derived_summaries": derived,
-        "coverage": (pack.get("coverage") or {}).get("summary"),
-        "evidence_used": pack.get("evidence_used"),
+        "coverage": {
+            "summary": cov.get("summary") if isinstance(cov, dict) else cov,
+            "incomplete": bool(isinstance(cov, dict) and cov.get("incomplete")),
+            "truncation_disclosure": cov.get("truncation_disclosure") if isinstance(cov, dict) else None,
+        },
+        "volume": {
+            "eligible_n": vol.get("eligible_n"),
+            "processed_n": vol.get("processed_n"),
+            "narrator_input_n": vol.get("narrator_input_n") or vol.get("supplied_to_model_n"),
+            "episode_n": vol.get("episode_n"),
+        },
+        "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
     }
 
 
@@ -197,8 +230,18 @@ def synthesize_tell(
             meta["fail_closed"] = True
             return _fail_closed(pack, reason="The model returned no narration."), meta
         footer = evidence_used_footer(pack)
-        if "Family evidence used" not in text:
+        if "Family evidence considered" not in text and "Family evidence used" not in text:
             text = text.rstrip() + "\n\n" + footer
+        text = _strip_debug_leak(text)
+        if isinstance(pack.get("coverage"), dict) and pack["coverage"].get("incomplete"):
+            note = str(pack["coverage"].get("truncation_disclosure") or "").strip()
+            if note and "incomplete" not in text.lower():
+                text = (
+                    "Coverage is incomplete. "
+                    + note
+                    + "\n\n"
+                    + text
+                )
         meta["ok"] = True
         meta["model"] = getattr(result, "model", None)
         return text, meta

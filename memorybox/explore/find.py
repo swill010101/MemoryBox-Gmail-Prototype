@@ -680,7 +680,8 @@ def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
         "schema_version": pack.get("schema_version"),
         "coverage": pack.get("coverage"),
         "volume": pack.get("volume"),
-        "evidence_used": pack.get("evidence_used"),
+        "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
         "derived_summaries": derived,
     }
 

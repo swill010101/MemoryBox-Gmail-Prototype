@@ -12,7 +12,9 @@ from memorybox.ingest.store import get_evidence
 
 PACK_SCHEMA = 1
 HIERARCHY_UNIT_THRESHOLD = 40
-MODEL_UNIT_BUDGET = 24
+# Final narrator prompt size for *episode/outline structures only*.
+# Never a count of how many emails, texts, photos, or calendar rows were considered.
+NARRATOR_EPISODE_BUDGET = 24
 
 
 def _uid(*parts: str) -> str:
@@ -424,67 +426,248 @@ def _round_robin(groups: list[list[dict[str, Any]]], n: int) -> list[dict[str, A
     return out
 
 
-def _select_supplied(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cap the model pack. Do not fill every seat with email when SMS/calendar exist."""
-    if len(ranked) <= MODEL_UNIT_BUDGET:
-        return list(ranked)
-    journals = [u for u in ranked if u.get("kind") in {"journal", "story"}]
-    travel = [u for u in ranked if u.get("kind") == "travel"][:6]
-    calendars = _spread_by_day([u for u in ranked if u.get("kind") == "calendar"], 24)
-    emails = _spread_by_day(
-        _one_per_thread(
-            [
-                u
-                for u in ranked
-                if u.get("kind") == "communication" and u.get("source_type") != "sms"
-            ]
-        ),
-        40,
-    )
-    sms = _spread_by_day(
-        _one_per_thread(
-            [
-                u
-                for u in ranked
-                if u.get("kind") == "communication" and u.get("source_type") == "sms"
-            ]
-        ),
-        40,
-    )
-    other = [
-        u
-        for u in ranked
-        if u.get("kind") not in {"journal", "story", "travel", "calendar", "communication"}
-    ]
-    keep = list(journals)
-    room = max(0, MODEL_UNIT_BUDGET - len(keep))
-    supplied = keep + _round_robin([sms, emails, calendars, travel, other], room)
-    return supplied[:MODEL_UNIT_BUDGET]
+def _iso_week(day: str) -> str:
+    raw = str(day or "").strip()
+    if len(raw) < 10:
+        return "undated"
+    try:
+        from datetime import date as date_cls
+
+        d = date_cls.fromisoformat(raw[:10])
+    except ValueError:
+        return "undated"
+    y, w, _ = d.isocalendar()
+    return f"{y}-W{w:02d}"
 
 
-def _hierarchical_summaries(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[str, list[dict[str, Any]]] = {}
+def _unit_day(unit: dict[str, Any]) -> str:
+    return str((unit.get("time") or {}).get("value") or "")[:10]
+
+
+def _people_names(unit: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for p in unit.get("people") or []:
+        if isinstance(p, dict):
+            n = str(p.get("name") or "").strip().lower()
+        else:
+            n = str(p or "").strip().lower()
+        if n:
+            names.add(n)
+    for p in unit.get("participants") or []:
+        n = str(p or "").strip().lower()
+        if n:
+            names.add(n)
+    return names
+
+
+def _place_key(unit: dict[str, Any]) -> str:
+    return str(unit.get("place") or "").strip().lower()[:80]
+
+
+def _content_tokens(unit: dict[str, Any]) -> set[str]:
+    blob = (
+        f"{unit.get('subject') or ''} {unit.get('title') or ''} "
+        f"{unit.get('content') or ''} {unit.get('travel_kind') or ''}"
+    ).lower()
+    return {
+        t
+        for t in re.findall(r"[a-z]{4,}", blob)
+        if t not in _RANK_STOP
+    }
+
+
+def _episode_group_key(unit: dict[str, Any]) -> tuple[Any, ...]:
+    kind = str(unit.get("kind") or "")
+    day = _unit_day(unit) or "undated"
+    if kind == "communication":
+        tid = str(unit.get("thread_id") or "").strip()
+        if tid:
+            return ("thread", tid)
+        return ("comm_day", day, unit.get("source_type") or "email", unit.get("unit_id"))
+    if kind == "calendar":
+        title = str(unit.get("title") or unit.get("content") or "")[:80]
+        return ("cal", day, title)
+    if kind == "travel":
+        conf = str(unit.get("confirmation") or unit.get("place") or "")[:80]
+        return ("travel", day, conf or unit.get("unit_id"))
+    if kind in {"media_observation", "spoken_moment"}:
+        return ("media", day, _place_key(unit) or "unplaced")
+    if kind in {"journal", "story", "artifact", "place_event"}:
+        return (kind, unit.get("unit_id"))
+    return ("other", day, unit.get("unit_id"))
+
+
+def _episode_from_members(members: list[dict[str, Any]]) -> dict[str, Any]:
+    days = sorted(d for d in (_unit_day(m) for m in members) if d)
+    day = days[0] if days else ""
+    people: list[str] = []
+    seen_p: set[str] = set()
+    for m in members:
+        for n in sorted(_people_names(m)):
+            if n not in seen_p:
+                seen_p.add(n)
+                people.append(n)
+    places = [p for p in (_place_key(m) for m in members) if p]
+    place = places[0] if places else None
+    kinds: dict[str, int] = {}
+    gists: list[str] = []
+    for m in members:
+        k = str(m.get("kind") or "other")
+        st = str(m.get("source_type") or "")
+        label = k if k != "communication" else (st or "email")
+        kinds[label] = kinds.get(label, 0) + 1
+        gist = re.sub(
+            r"\s+",
+            " ",
+            str(m.get("subject") or m.get("title") or m.get("content") or ""),
+        ).strip()[:120]
+        if gist and gist not in gists:
+            gists.append(gist)
+    kind_bits = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+    content = (kind_bits + (": " + "; ".join(gists[:6]) if gists else "")).strip()
+    eid = str(members[0].get("unit_id") or "ep")
+    return {
+        "unit_id": _uid("episode", eid, str(len(members))),
+        "kind": "episode",
+        "time": _time(day),
+        "people": [{"name": p, "role": "participant"} for p in people[:12]],
+        "place": place,
+        "content": content[:800],
+        "claims": [],
+        "provenance": {"derived": True, "member_n": len(members), "not_raw_records": True},
+        "rank": max(float(m.get("rank") or 0) for m in members),
+        "normalization": {"episode": True},
+        "member_n": len(members),
+        "source_kinds": kinds,
+        "week": _iso_week(day),
+        "member_ids": [str(m.get("unit_id") or "") for m in members[:8]],
+        "_members": members,
+    }
+
+
+def _merge_same_day_related(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Same calendar day + overlapping people, place, or topic tokens → one episode."""
+    n = len(episodes)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    metas: list[tuple[str, set[str], set[str], set[str]]] = []
+    for ep in episodes:
+        members = list(ep.get("_members") or [])
+        people: set[str] = set()
+        places: set[str] = set()
+        tokens: set[str] = set()
+        for m in members:
+            people |= _people_names(m)
+            p = _place_key(m)
+            if p:
+                places.add(p)
+            tokens |= _content_tokens(m)
+        metas.append((_unit_day(ep), people, places, tokens))
+    for i in range(n):
+        day_i, pe_i, pl_i, tok_i = metas[i]
+        if not day_i:
+            continue
+        for j in range(i + 1, n):
+            day_j, pe_j, pl_j, tok_j = metas[j]
+            if day_i != day_j:
+                continue
+            shared_tok = tok_i & tok_j
+            if (
+                (pe_i and pe_j and (pe_i & pe_j))
+                or (pl_i and pl_j and (pl_i & pl_j))
+                or len(shared_tok) >= 2
+            ):
+                union(i, j)
+    buckets: dict[int, list[dict[str, Any]]] = {}
+    order: list[int] = []
+    for i, ep in enumerate(episodes):
+        r = find(i)
+        if r not in buckets:
+            buckets[r] = []
+            order.append(r)
+        buckets[r].extend(list(ep.get("_members") or []))
+    return [_episode_from_members(buckets[r]) for r in order]
+
+
+def _build_episodes(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    order: list[tuple[Any, ...]] = []
     for u in units:
-        key = str((u.get("time") or {}).get("value") or "undated")[:7]
-        groups.setdefault(key, []).append(u)
+        key = _episode_group_key(u)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(u)
+    episodes = [_episode_from_members(groups[k]) for k in order]
+    episodes = _merge_same_day_related(episodes)
+    episodes.sort(key=lambda e: (_unit_day(e) or "9999-99-99", e.get("unit_id") or ""))
+    return episodes
+
+
+def _week_summaries(units: list[dict[str, Any]], episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    weeks: dict[str, list[dict[str, Any]]] = {}
+    for u in units:
+        weeks.setdefault(_iso_week(_unit_day(u)), []).append(u)
+    ep_by_week: dict[str, int] = {}
+    for e in episodes:
+        w = str(e.get("week") or _iso_week(_unit_day(e)))
+        ep_by_week[w] = ep_by_week.get(w, 0) + 1
     out = []
-    for key, rows in sorted(groups.items()):
+    for key in sorted(weeks):
+        rows = weeks[key]
         kinds: dict[str, int] = {}
         for r in rows:
             k = str(r.get("kind") or "other")
-            kinds[k] = kinds.get(k, 0) + 1
+            st = str(r.get("source_type") or "")
+            label = k if k != "communication" else (st or "email")
+            kinds[label] = kinds.get(label, 0) + 1
         out.append(
             {
-                "summary_id": _uid("sum", key),
+                "summary_id": _uid("week", key),
                 "period": key,
-                "text": f"{key}: " + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())),
+                "text": (
+                    f"{key}: {len(rows)} evidence item(s) in {ep_by_week.get(key, 0)} episode(s) — "
+                    + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+                ),
                 "unit_n": len(rows),
-                "unit_ids": [r["unit_id"] for r in rows[:12]],
+                "episode_n": ep_by_week.get(key, 0),
                 "derived": True,
                 "not_family_truth": True,
             }
         )
     return out
+
+
+def _select_narrator_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fit episode *structures* into the narrator prompt. Every week still has a summary."""
+    if len(episodes) <= NARRATOR_EPISODE_BUDGET:
+        return list(episodes)
+    by_week: dict[str, list[dict[str, Any]]] = {}
+    week_order: list[str] = []
+    for e in episodes:
+        w = str(e.get("week") or "undated")
+        if w not in by_week:
+            by_week[w] = []
+            week_order.append(w)
+        by_week[w].append(e)
+    groups = [by_week[w] for w in week_order]
+    picked = _round_robin(groups, NARRATOR_EPISODE_BUDGET)
+    return picked[:NARRATOR_EPISODE_BUDGET]
+
+
+def _public_unit(unit: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in unit.items() if not str(k).startswith("_")}
 
 
 def _evidence_used(units: list[dict[str, Any]]) -> dict[str, int]:
@@ -686,41 +869,38 @@ def prepare_narrative_pack(
         units = [u for u in units if _unit_in_windows(u, windows)]
 
     eligible_n = len(units)
+    retrieve_incomplete = False
+    retrieve_note = None
+    for h in evidence:
+        d = h.to_dict() if hasattr(h, "to_dict") else dict(h)
+        if d.get("truncated"):
+            retrieve_incomplete = True
+            retrieve_note = str(d.get("count_scope") or "retrieve truncated")
+            break
+    processed_n = eligible_n
     ranked = _rank_units(units, str(getattr(plan, "original_ask", "") or ""))
-    derived_summaries: list[dict[str, Any]] = []
-    reduction = "rank"
-    truncated = False
-    truncation = None
-    supplied = ranked
-    if len(ranked) > HIERARCHY_UNIT_THRESHOLD:
-        derived_summaries = _hierarchical_summaries(ranked)
-        reduction = "hierarchical_summary"
-        supplied = _select_supplied(ranked)
-        if len(supplied) < len(ranked):
-            truncated = True
-            truncation = (
-                f"Prepared {len(ranked)} units; supplied {len(supplied)} plus "
-                f"{len(derived_summaries)} derived period summaries. Not a first-N dump."
-            )
-    elif len(ranked) > MODEL_UNIT_BUDGET:
+    episodes = _build_episodes(ranked)
+    derived_summaries = _week_summaries(ranked, episodes)
+    narrator_episodes = _select_narrator_episodes(episodes)
+    reduction = "hierarchical_episode" if len(episodes) > NARRATOR_EPISODE_BUDGET or len(ranked) > HIERARCHY_UNIT_THRESHOLD else "episode"
+    if derived_summaries and reduction == "episode" and len(ranked) > 1:
         reduction = "organize"
-        derived_summaries = _hierarchical_summaries(ranked)
-        supplied = _select_supplied(ranked)
-        truncated = len(supplied) < len(ranked)
+    incomplete = retrieve_incomplete or processed_n < eligible_n
+    truncation = None
+    if incomplete:
         truncation = (
-            f"Organized {len(ranked)} units into chronology; "
-            f"{len(supplied)} supplied to the model."
-            if truncated
-            else None
+            retrieve_note
+            or f"Processed {processed_n} of {eligible_n} eligible items. Coverage is incomplete."
         )
-
     missing: list[str] = []
     if not photos:
         missing.append("photos")
     coverage_summary = (
-        f"{len(supplied)} prepared unit(s) for this Ask"
-        + (f"; {truncation}" if truncation else "")
+        f"Considered {eligible_n} eligible item(s); processed {processed_n}; "
+        f"{len(episodes)} episode(s); {len(narrator_episodes)} narrator structures."
     )
+    if truncation:
+        coverage_summary += f" Incomplete coverage: {truncation}"
     semantic = list(getattr(plan, "semantic_constraints", ()) or ())
     for sc in semantic:
         if isinstance(sc, dict) and not sc.get("resolved"):
@@ -748,23 +928,30 @@ def prepare_narrative_pack(
             "modalities": list(getattr(plan, "modalities", ()) or ()),
             "semantic_constraints": semantic,
         },
-        "units": [{k: v for k, v in u.items() if not str(k).startswith("_")} for u in supplied],
+        "units": [_public_unit(u) for u in ranked],
+        "episodes": [_public_unit(e) for e in episodes],
+        "narrator_episodes": [_public_unit(e) for e in narrator_episodes],
         "derived_summaries": derived_summaries,
         "coverage": {
             "summary": coverage_summary,
             "missing": missing,
             "conflicts": [],
             "excluded": list(dict.fromkeys(excluded)),
-            "truncated": truncated,
+            "truncated": incomplete,
+            "incomplete": incomplete,
             "truncation_disclosure": truncation,
         },
         "volume": {
             "retrieved_n": retrieved,
             "eligible_n": eligible_n,
+            "processed_n": processed_n,
             "prepared_n": eligible_n,
-            "supplied_to_model_n": len(supplied),
+            "supplied_to_model_n": len(narrator_episodes),
+            "narrator_input_n": len(narrator_episodes),
+            "episode_n": len(episodes),
             "reduction": reduction,
         },
-        "evidence_used": _evidence_used(supplied),
+        "evidence_used": _evidence_used(ranked),
+        "evidence_considered": _evidence_used(ranked),
     }
     return pack

@@ -25,7 +25,7 @@
 | C-19 | SMS timestamp alone is not location; place from authored/shared-location/attachment EXIF with recorded basis. |
 | C-20 | Christmas 2017 Peggy/Tom discussion: authored units, no quote dupes, no unrelated year calendar dump. |
 | C-21 | “Tell me about my 2017”: broad family evidence; prepared/ranked; hierarchical summaries if needed. |
-| C-22 | Evidence-used counts = normalized Email/SMS (and other) units **supplied**, not raw hits or quoted copies. |
+| C-22 | Family-facing **evidence considered** = all processed in-scope units, not narrator seats or quoted copies. |
 | C-23 | Model unavailable: evidence/coverage remain; narration unavailable; no stitch presented as the narrative. |
 | C-24 | Dual travel: confirmation email is communication; structured flight/hotel facts are a derived travel unit with provenance to that email. |
 | C-25 | “When Dad was young”: generic Person + age_band + interpretation/version; convert via birth or other sufficient evidence; ask rather than guess. Not 10–25 hard-coded. |

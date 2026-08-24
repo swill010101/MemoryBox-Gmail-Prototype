@@ -22,9 +22,9 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 7. SMS timestamp is **not** location. Location `basis`: authored text | shared-location payload | attachment EXIF | corroborated other source.
 8. Email authored body: **derive at pack time**, conservative. Do not persist authored-body as an I11 gate. Raw Email remains SoT. Spam/Trash out before the model.
 9. Email + SMS → one communication shape. Narrow Peggy-and-I Asks: their authored units; group-thread metadata; no unrelated calendar dump.
-10. Broad “my 2017”: owner + year + all relevant family evidence; still prepare/rank. Hierarchical volume management **IN**. Not first-N as the primary solution. Intermediate summaries are derived, traced, regenerable, not family truth. Disclose truncation.
+10. Broad “my 2017”: owner + year + all relevant family evidence; still prepare/rank. Hierarchical volume management **IN**. Not first-N as the primary solution, and not a larger first-N. Intermediate summaries are derived, traced, regenerable, not family truth. Disclose incomplete coverage; do not silently sample.
 11. Calendar: structured context; scheduled ≠ occurred without corroboration.
-12. Substantial narration ends with **Family evidence used** counts of **normalized units supplied**, not raw hits or quoted copies. I12 later adds a separate external list.
+12. Substantial narration ends with **Family evidence considered** counts of **everything processed in scope**, not narrator seats or quoted copies. I12 later adds a separate external list.
 13. Gallery hide ≠ pack exclude. Curator from pack. Shared curator **component** (do not merely unhide Person card).
 14. Model unavailable: **fail closed** for prose. Evidence + coverage remain. No stitch that looks like the narrative.
 15. Copy = clipboard. Save as Story = working draft + `composed_by_model`; owner Save Story for durability.

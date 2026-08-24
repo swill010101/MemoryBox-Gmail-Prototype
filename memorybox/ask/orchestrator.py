@@ -1340,7 +1340,8 @@ class AskOrchestrator:
             # Photos first, then video. They share the Immich client for identity;
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
-                photos, photo_status = R.search_photos(plan, self.photo)
+                photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                photos, photo_status = R.search_photos(plan, self.photo, limit=photo_limit)
             spoken_videos: list[R.VideoHit] = []
             if getattr(plan, "want_spoken", False):
                 from memorybox.speech.retrieve import search_spoken_moments
@@ -1373,7 +1374,10 @@ class AskOrchestrator:
                 or getattr(plan, "want_cross_source", False)
             ):
                 appearance, appear_status = R.search_videos(
-                    plan, self.video, photo=self.photo
+                    plan,
+                    self.video,
+                    photo=self.photo,
+                    limit=0 if R._bounded_period_tell(plan) else 48,
                 )
                 if not spoken_videos:
                     video_status = appear_status
@@ -1393,11 +1397,17 @@ class AskOrchestrator:
                 videos = appearance
 
             if getattr(plan, "want_story", False):
-                stories = R.search_stories(plan)
+                stories = R.search_stories(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_journal", False):
-                journals = R.search_journals(plan)
+                journals = R.search_journals(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_artifact", False):
-                artifacts = R.search_artifacts(plan)
+                artifacts = R.search_artifacts(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
 
