@@ -12,7 +12,12 @@ from memorybox.ask.narrative import memories_from_citations, persistable_view, t
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.ask.retrieve import EvidenceHit, PhotoHit
 from memorybox.context import AskContext, InMemoryContextStore
-from memorybox.explore.find import curator_answer_text
+from memorybox.explore.find import (
+    curator_answer_text,
+    explicit_calendar_gallery,
+    explicit_email_gallery,
+    explicit_text_gallery,
+)
 from memorybox.planner import compile_output_mode, plan_ask
 from memorybox.planner.temporal import parse_temporal
 from memorybox.providers.llm.fake import FakeLlmProvider
@@ -34,6 +39,8 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         problems.append("prove-i11 --flightsim requires MEMORYBOX_P1_RUNTIME_HOST=1")
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
 
+    print("prove-i11: checks running (JSON prints when finished)", flush=True)
+
     from memorybox.migrate import migrate
 
     meta["migrations_applied"] = migrate()
@@ -52,7 +59,8 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and "composed_by_model: true" in explore_js
         and "narrativeText" in explore_js
         and "Writing the narrative" in explore_js
-        and 'method: "POST"' in explore_js,
+        and 'method: "POST"' in explore_js
+        and "tellOut !== \"tell\"" in explore_js,
         checks,
         problems,
         detail="Copy/Save as Story on Explore; no narration route",
@@ -142,6 +150,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         photo=FakePhotoProvider(),
         llm=FakeLlmProvider(),
     )
+    print("prove-i11: AskOrchestrator tell (may take a bit on a full archive)...", flush=True)
     told = orch.ask(f"Tell me about {tag} harbor")
     journal_in_tell = tag.lower() in (told.answer_text or "").lower() or any(
         tag.lower() in str((s.get("text") or "")).lower()
@@ -550,6 +559,23 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=str({"days": jan_days, "plan": jan_plan.time_start, "used": jan_pack.get("evidence_used")}),
     )
+    jan_find = {"plan": jan_plan.to_dict(), "ask": jan_plan.original_ask}
+    _check(
+        "c03_tell_hides_gallery_comms",
+        not explicit_text_gallery(jan_find, jan_plan.original_ask)
+        and not explicit_email_gallery(jan_find, jan_plan.original_ask)
+        and not explicit_calendar_gallery(jan_find, jan_plan.original_ask)
+        and "want_sms_modality" in (jan_plan.notes or ()),
+        checks,
+        problems,
+        detail=str(
+            {
+                "sms": explicit_text_gallery(jan_find, jan_plan.original_ask),
+                "email": explicit_email_gallery(jan_find, jan_plan.original_ask),
+                "cal": explicit_calendar_gallery(jan_find, jan_plan.original_ask),
+            }
+        ),
+    )
     year_plan = plan_ask("Tell me about my 2017", ctx)
     year_pack = prepare_narrative_pack(year_plan, evidence=many)
     _check(
@@ -664,5 +690,72 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         detail=(told.answer_text or "")[:240],
     )
 
+    if flightsim:
+        print(
+            "prove-i11 --flightsim: POST live /explore/api/find "
+            "(needs Ask/serve; can take a couple of minutes)...",
+            flush=True,
+        )
+        _prove_i11_flightsim_live(checks, problems, meta)
+
     ok = not problems
     return {"ok": ok, "checks": checks, "problems": problems, "meta": meta}
+
+
+def _prove_i11_flightsim_live(
+    checks: dict[str, Any], problems: list[str], meta: dict[str, Any]
+) -> None:
+    import json
+    import urllib.error
+    import urllib.request
+
+    port = os.environ.get("MEMORYBOX_PORT") or "8790"
+    base = (os.environ.get("MEMORYBOX_BASE_URL") or f"http://127.0.0.1:{port}").rstrip("/")
+    meta["base_url"] = base
+    ask = "write a narrative about my January of 2025"
+    req = urllib.request.Request(
+        base + "/explore/api/find",
+        data=json.dumps({"ask": ask, "session_id": "i11-flightsim"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            raw = resp.read().decode("utf-8")
+            body = json.loads(raw)
+            st = int(getattr(resp, "status", 200) or 200)
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "flightsim_live_january_tell",
+            False,
+            checks,
+            problems,
+            detail=f"{base}/explore/api/find failed: {exc}",
+        )
+        return
+    plan = body.get("plan") or {}
+    est = body.get("explore_state") or {}
+    prose = str(body.get("narrative_text") or body.get("summary") or "").strip()
+    mode = body.get("output_mode") or plan.get("output_mode")
+    _check(
+        "flightsim_live_january_tell",
+        st == 200
+        and mode == "tell"
+        and str(plan.get("time_start") or "")[:10] == "2025-01-01"
+        and str(plan.get("time_end") or "")[:10] == "2025-01-31"
+        and not est.get("gallery_show_sms")
+        and not est.get("gallery_show_email")
+        and len(prose) > 20,
+        checks,
+        problems,
+        detail=str(
+            {
+                "status": st,
+                "mode": mode,
+                "time": [plan.get("time_start"), plan.get("time_end")],
+                "gallery_sms": est.get("gallery_show_sms"),
+                "gallery_email": est.get("gallery_show_email"),
+                "prose": prose[:180],
+            }
+        ),
+    )

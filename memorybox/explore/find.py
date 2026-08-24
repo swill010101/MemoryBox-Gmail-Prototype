@@ -57,53 +57,59 @@ def _is_calendar_type(type_: str) -> bool:
     return str(type_ or "").lower() == "calendar"
 
 
-def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
-    """True when the ask itself requested texts (not a broad memory query)."""
-    plan = (result or {}).get("plan") or {}
-    notes = plan.get("notes") or ()
-    if "want_sms_modality" in notes:
-        return True
-    blob = " ".join(
+def _ask_blob(result: dict[str, Any] | None, ask_text: str | None, plan: dict[str, Any]) -> str:
+    return " ".join(
         [
             ask_text or "",
             str(plan.get("original_ask") or ""),
             str((result or {}).get("ask") or ""),
         ]
     )
+
+
+def _tell_pack_not_gallery_unhide(plan: dict[str, Any]) -> bool:
+    """I11 C-03 / I8A: tell retrieves comms for the pack; that is not Add texts/email/calendar."""
+    notes = plan.get("notes") or ()
+    if str(plan.get("output_mode") or "") == "tell":
+        return True
+    return "tell_multimodal_i11" in notes
+
+
+def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    """True when the ask itself requested texts (not a broad memory query)."""
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_SMS_ASK_RE.search(blob))
+    if "want_sms_modality" in notes:
+        return True
     return bool(_SMS_ASK_RE.search(blob))
 
 
 def explicit_email_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
     plan = (result or {}).get("plan") or {}
     notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_EMAIL_ASK_RE.search(blob))
     if "want_email_modality" in notes:
         return True
     if plan.get("gallery_show_email") is True:
         return True
-    blob = " ".join(
-        [
-            ask_text or "",
-            str(plan.get("original_ask") or ""),
-            str((result or {}).get("ask") or ""),
-        ]
-    )
     return bool(_EMAIL_ASK_RE.search(blob))
 
 
 def explicit_calendar_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
     plan = (result or {}).get("plan") or {}
     notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_CAL_ASK_RE.search(blob))
     if "want_calendar_modality" in notes:
         return True
     if plan.get("gallery_show_calendar") is True:
         return True
-    blob = " ".join(
-        [
-            ask_text or "",
-            str(plan.get("original_ask") or ""),
-            str((result or {}).get("ask") or ""),
-        ]
-    )
     return bool(_CAL_ASK_RE.search(blob))
 
 

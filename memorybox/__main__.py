@@ -721,8 +721,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        print("prove-i11: starting...", flush=True)
         payload = run_prove_i11(flightsim=bool(args.flightsim))
-        print(json.dumps(payload, indent=2, default=str))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-person-profile":

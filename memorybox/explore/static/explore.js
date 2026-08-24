@@ -1334,6 +1334,8 @@
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
     const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
     const galleryShowCalendar = Boolean(exploreHint.gallery_show_calendar);
+    const nextOutputMode =
+      payload.output_mode || (payload.plan || {}).output_mode || "show";
     // New find owns visibility. Do not keep includeTexts from a prior SMS ask
     // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
     // Photos pill must not leak SMS.
@@ -1341,7 +1343,10 @@
     const keepTexts = includeTexts;
     const includeEmail = galleryShowEmail;
     const includeCalendar = galleryShowCalendar;
-    if (plan.want_cross_source) {
+    if (nextOutputMode === "tell") {
+      // I11: tell uses hidden comms in prose; stay on All, not Communications.
+      nextType = "all";
+    } else if (plan.want_cross_source) {
       nextType = "all";
     } else if (exploreHint.prefer_story_filter) {
       nextType = "story";
@@ -1411,8 +1416,6 @@
         }
       }
     }
-    const nextOutputMode =
-      payload.output_mode || (payload.plan || {}).output_mode || "show";
     const tellNarrative =
       nextOutputMode === "tell"
         ? payload.narrative_text || payload.summary || ""
@@ -1902,7 +1905,15 @@
           if (gen !== findGen) return;
           applyPayloadToState(payload, { keepPresentation: true });
           ensureLockedPersonChip();
-          if (payload.explore_state && payload.explore_state.gallery_show_sms) {
+          const tellOut =
+            payload.output_mode ||
+            (payload.plan && payload.plan.output_mode) ||
+            "";
+          if (
+            tellOut !== "tell" &&
+            payload.explore_state &&
+            payload.explore_state.gallery_show_sms
+          ) {
             setTypeFilter("email");
             state.domain.includeTexts = true;
             state.domain.galleryShowSms = true;
