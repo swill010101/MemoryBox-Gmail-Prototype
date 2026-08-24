@@ -25,6 +25,13 @@ def _fake_narrative(pack_json: str) -> str:
         if len(bits) >= 10:
             break
     body = " ".join(bits) if bits else "No citable excerpts were in the prepared pack."
+    kinds = {str(u.get("kind") or "") for u in (pack.get("units") or [])}
+    if kinds == {"calendar"} or (kinds and kinds <= {"calendar"}):
+        body = (
+            "The prepared pack has calendar rows for this window. "
+            "Those are scheduled or recorded, not proof the events occurred. "
+            + body
+        )
     used = pack.get("evidence_used") or {}
     footer_bits = [f"{k} {v}" for k, v in used.items() if v]
     footer = "Family evidence used: " + (", ".join(footer_bits) if footer_bits else "none") + "."

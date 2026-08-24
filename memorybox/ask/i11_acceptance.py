@@ -10,7 +10,13 @@ from uuid import uuid4
 from memorybox.ask.evidence_prep import prepare_narrative_pack
 from memorybox.ask.narrative import memories_from_citations, persistable_view, tell_from_hits
 from memorybox.ask.orchestrator import AskOrchestrator
-from memorybox.ask.retrieve import EvidenceHit, PhotoHit
+from memorybox.ask.retrieve import (
+    EvidenceHit,
+    PhotoHit,
+    _sms_ask,
+    _tell_pack_comms,
+    filter_hits_by_constraints,
+)
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.explore.find import (
     curator_answer_text,
@@ -575,6 +581,25 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
                 "cal": explicit_calendar_gallery(jan_find, jan_plan.original_ask),
             }
         ),
+    )
+    year_hit = EvidenceHit(
+        evidence_id="e-jan-mail",
+        evidence_kind="communication",
+        summary="Lunch plans",
+        score=1.0,
+        excerpt="see you tuesday",
+        source="email_mbox",
+        sent_at="2025-01-12T12:00:00",
+        channel="email",
+    )
+    _check(
+        "january_tell_not_full_sms_export",
+        not _sms_ask(jan_plan)
+        and _tell_pack_comms(jan_plan)
+        and filter_hits_by_constraints([year_hit], ["2025"]) == [year_hit],
+        checks,
+        problems,
+        detail=f"sms_ask={_sms_ask(jan_plan)} tell_pack={_tell_pack_comms(jan_plan)}",
     )
     year_plan = plan_ask("Tell me about my 2017", ctx)
     year_pack = prepare_narrative_pack(year_plan, evidence=many)

@@ -49,6 +49,50 @@ class EvidenceHit:
 # Year-fair sampling keeps every year on the Timeline when we must truncate.
 # The old default of 5000 oldest-first silently dropped 2020–2025 on FlightSim.
 SMS_RETRIEVE_CAP = 25000
+# Tell pack retrieve (month/year window) — not the I7 full-export cap.
+TELL_COMM_RETRIEVE_CAP = 800
+
+_MONTH_KEYWORD_STOP = {
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+}
+_TELL_KEYWORD_STOP = {
+    "write",
+    "narrative",
+    "narrate",
+    "story",
+    "tell",
+    "know",
+    "summarize",
+    "summary",
+    "happened",
+    "like",
+    "year",
+    "month",
+    "about",
+}
 
 
 SMS_ASK_RE = re.compile(
@@ -329,7 +373,17 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
 def _sms_ask(plan: QueryPlan) -> bool:
     if getattr(plan, "want_cross_source", False):
         return True
-    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    ask = plan.original_ask or ""
+    # tell_multimodal notes include want_sms_modality for the pack, not an I7 SMS Ask.
+    if _tell_pack_comms(plan):
+        return bool(
+            SMS_ASK_RE.search(ask)
+            or SMS_INBOUND_RE.search(ask)
+            or SMS_HEART_ASK_RE.search(ask)
+            or SMS_LAST_N_RE.search(ask)
+            or SMS_ATTACH_ASK_RE.search(ask)
+        )
+    blob = f"{ask} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return (
         bool(SMS_ASK_RE.search(blob))
         or "want_sms_modality" in (plan.notes or ())
@@ -344,8 +398,43 @@ def _sms_ask(plan: QueryPlan) -> bool:
 def _email_ask(plan: QueryPlan) -> bool:
     if getattr(plan, "want_cross_source", False):
         return True
-    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    ask = plan.original_ask or ""
+    if _tell_pack_comms(plan):
+        return bool(EMAIL_ASK_RE.search(ask))
+    blob = f"{ask} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return bool(EMAIL_ASK_RE.search(blob))
+
+
+def _tell_pack_comms(plan: QueryPlan) -> bool:
+    if str(getattr(plan, "output_mode", "") or "") == "tell":
+        return True
+    return "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
+
+
+def _sql_json_day_windows(
+    windows: list[tuple[Any, Any]] | tuple[tuple[Any, Any], ...],
+    json_key: str,
+) -> tuple[str, list[Any]]:
+    """Inclusive YYYY-MM-DD windows on a JSON text timestamp field."""
+    if json_key not in {"sent_at", "start"}:
+        return "TRUE", []
+    if not windows:
+        return "TRUE", []
+    parts: list[str] = []
+    params: list[Any] = []
+    expr = f"left(coalesce(payload_json->>'{json_key}', ''), 10)"
+    for a, b in windows:
+        parts.append(f"({expr} BETWEEN %s AND %s)")
+        params.extend([str(a)[:10], str(b)[:10]])
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def _strip_temporal_tell_keywords(keywords: list[str], *, windows: list) -> list[str]:
+    out = list(keywords)
+    if windows:
+        out = [k for k in out if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+        out = [k for k in out if k not in _MONTH_KEYWORD_STOP and k not in _TELL_KEYWORD_STOP]
+    return out
 
 
 def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -554,9 +643,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
         if t.lower().replace("'", "") not in keyword_stop
     ]
-    # Year tokens belong to the date window, not the body-text keyword filter
-    if windows:
-        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -593,15 +680,26 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
 
     hits: list[EvidenceHit] = []
     seen_sms_sig: set[tuple[str, str, str]] = set()
+    if (
+        _tell_pack_comms(plan)
+        and not windows
+        and not person_ids
+        and not person_names
+        and last_n is None
+    ):
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
     with connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, evidence_kind, summary, payload_json
             FROM evidence
             WHERE evidence_kind = 'communication'
               AND lower(coalesce(payload_json->>'evidence_channel', ''))
                   IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-            """
+              AND {win_sql}
+            """,
+            win_params,
         ).fetchall()
     for r in rows:
         payload = _payload_dict(r["payload_json"])
@@ -964,8 +1062,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
         if t.lower().replace("'", "") not in keyword_stop
     ]
-    if windows:
-        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -998,15 +1095,25 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         ]
 
     rows_payload: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    if (
+        _tell_pack_comms(plan)
+        and not windows
+        and not person_ids
+        and not person_names
+    ):
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
     with connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, evidence_kind, summary, payload_json
             FROM evidence
             WHERE evidence_kind = 'communication'
               AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                   NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-            """
+              AND {win_sql}
+            """,
+            win_params,
         ).fetchall()
     for r in rows:
         payload = _payload_dict(r["payload_json"])
@@ -1154,13 +1261,18 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
     if not windows and plan.time_start and plan.time_end:
         windows = [(plan.time_start, plan.time_end)]
     hits: list[EvidenceHit] = []
+    if _tell_pack_comms(plan) and not windows and not person_ids and not person_names:
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "start")
     with connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, evidence_kind, summary, payload_json
             FROM evidence
             WHERE evidence_kind = 'calendar_event'
-            """
+              AND {win_sql}
+            """,
+            win_params,
         ).fetchall()
     for r in rows:
         payload = _payload_dict(r["payload_json"])
@@ -1232,6 +1344,24 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
     sms_q = _sms_ask(plan) and plan.want_communication
     email_q = _email_ask(plan) and plan.want_communication
     cal_q = bool(plan.want_calendar)
+    if _tell_pack_comms(plan) and plan.want_communication and not sms_q and not email_q:
+        cap = TELL_COMM_RETRIEVE_CAP
+        mail = search_email_messages(plan, limit=cap)
+        sms = search_sms_messages(plan, limit=cap)
+        cal = search_calendar_events(plan, limit=cap) if cal_q else []
+        combined = list(mail) + list(sms) + list(cal)
+        if combined:
+            combined[0].count_scope = (
+                f"tell pack; email_n={mail[0].match_total if mail else 0}; "
+                f"sms_n={sms[0].match_total if sms else 0}; "
+                f"cal_n={len(cal)}"
+            )
+            combined[0].match_total = (
+                (mail[0].match_total if mail else 0)
+                + (sms[0].match_total if sms else 0)
+                + len(cal)
+            )
+        return combined
     if cal_q and not sms_q and not email_q:
         return search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
     if sms_q and email_q:
@@ -1413,6 +1543,8 @@ def filter_hits_by_constraints(
     cons = [c for c in constraints if c and len(c) >= 2]
     if not cons:
         return hits
+    year_cons = {c for c in cons if re.fullmatch(r"(?:19|20)\d{2}", c)}
+    other_cons = [c for c in cons if c not in year_cons]
     kept: list[EvidenceHit] = []
     for h in hits:
         blob = " ".join(
@@ -1422,8 +1554,15 @@ def filter_hits_by_constraints(
                 " ".join(h.people or []),
                 h.thread_id or "",
                 h.channel or "",
+                h.sent_at or "",
             ]
         ).lower()
+        if year_cons:
+            sent_y = str(h.sent_at or "")[:4]
+            if sent_y in year_cons:
+                if not other_cons or any(c.lower() in blob for c in other_cons):
+                    kept.append(h)
+                    continue
         if any(c.lower() in blob for c in cons):
             kept.append(h)
     return kept
