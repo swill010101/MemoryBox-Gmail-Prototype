@@ -316,12 +316,13 @@ def create_journal(
             """
             INSERT INTO journal_entries (
                 id, title, body_text, channel, audio_uri, status,
-                author_person_id, current_version, captured_at,
+                author_person_id, current_version, current_saved_version, working_version,
+                captured_at,
                 described_start_date, described_end_date, described_precision
             )
             VALUES (
                 %s, %s, %s, %s, %s, 'active',
-                %s, 1, now(),
+                %s, 1, 1, NULL, now(),
                 %s, %s, %s
             )
             """,
@@ -340,11 +341,14 @@ def create_journal(
         conn.execute(
             """
             INSERT INTO journal_versions (
-                id, journal_id, version, body_text, audio_uri, actor_key, note
+                id, journal_id, version, body_text, audio_uri, actor_key, note,
+                lifecycle, title, described_start_date, described_end_date,
+                described_precision, frozen_at
             )
-            VALUES (%s, %s, 1, %s, %s, %s, %s)
+            VALUES (%s, %s, 1, %s, %s, %s, %s, 'saved', %s, %s, %s, %s, now())
             """,
-            (version_id, journal_id, body, audio, actor_key or "owner", note),
+            (version_id, journal_id, body, audio, actor_key or "owner", note,
+             (title or "").strip() or None, start, end, precision),
         )
         for pid in person_uuids:
             _add_relationship(
@@ -425,11 +429,25 @@ def save_new_version(
         conn.execute(
             """
             INSERT INTO journal_versions (
-                id, journal_id, version, body_text, audio_uri, actor_key, note
+                id, journal_id, version, body_text, audio_uri, actor_key, note,
+                lifecycle, title, described_start_date, described_end_date,
+                described_precision, frozen_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'saved', %s, %s, %s, %s, now())
             """,
-            (uuid4(), jid, next_v, body, audio, actor_key or "owner", note),
+            (
+                uuid4(),
+                jid,
+                next_v,
+                body,
+                audio,
+                actor_key or "owner",
+                note,
+                (title or "").strip() or None if title is not None else jrow.get("title"),
+                start,
+                end,
+                precision,
+            ),
         )
         conn.execute(
             """
@@ -438,6 +456,8 @@ def save_new_version(
                 body_text = %s,
                 audio_uri = %s,
                 current_version = %s,
+                current_saved_version = %s,
+                working_version = NULL,
                 described_start_date = %s,
                 described_end_date = %s,
                 described_precision = %s,
@@ -448,6 +468,7 @@ def save_new_version(
                 (title or "").strip() or None if title is not None else None,
                 body,
                 audio,
+                next_v,
                 next_v,
                 start,
                 end,
@@ -478,7 +499,12 @@ def get_journal(journal_id: str, *, version: int | None = None) -> JournalView |
         ).fetchone()
         if not jrow:
             return None
-        ver = int(version) if version is not None else int(jrow.get("current_version") or 1)
+        if version is not None:
+            ver = int(version)
+        elif jrow.get("current_saved_version") is not None:
+            ver = int(jrow["current_saved_version"])
+        else:
+            ver = int(jrow.get("current_version") or 1)
         vrow = conn.execute(
             "SELECT * FROM journal_versions WHERE journal_id = %s AND version = %s",
             (jid, ver),

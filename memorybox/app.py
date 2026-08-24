@@ -52,6 +52,18 @@ from memorybox.journal import (
     list_journals,
     save_new_version,
 )
+from memorybox.journal.i10c import (
+    begin_edit as journal_begin_edit,
+    calendar_dots as journal_calendar_dots,
+    get_saved as journal_get_saved,
+    get_working as journal_get_working,
+    list_family_panel as journal_list_family,
+    list_history as journal_list_history,
+    on_this_day as journal_on_this_day,
+    remove_journal,
+    save_draft as journal_save_draft,
+    save_journal as journal_save_journal,
+)
 from memorybox.library import LibraryServiceError, get_library_card, list_library_cards
 from memorybox.person import (
     PersonServiceError,
@@ -337,6 +349,22 @@ class JournalVersionRequest(BaseModel):
     described_end_date: str | None = None
     described_precision: str | None = None
     note: str | None = None
+
+
+class JournalDraftRequest(BaseModel):
+    title: str | None = None
+    body_text: str | None = None
+    audio_uri: str | None = None
+    described_start_date: str | None = None
+    described_end_date: str | None = None
+    described_precision: str | None = None
+    described_time: str | None = None
+    place_id: str | None = None
+    place_label: str | None = None
+    visibility: str | None = None
+    person_ids: list[str] = Field(default_factory=list)
+    memories: list[dict[str, Any]] = Field(default_factory=list)
+    actor_key: str = "owner"
 
 
 class TeachRequest(BaseModel):
@@ -1584,8 +1612,19 @@ def capture_audio_delete(audio_id: str) -> dict[str, Any]:
 
 
 @app.get("/journal")
-def journal_list() -> dict[str, Any]:
-    return {"ok": True, "journals": list_journals()}
+def journal_list(
+    view: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    person_id: str | None = Query(default=None),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    limit: int = Query(default=80, ge=1, le=200),
+) -> dict[str, Any]:
+    if (view or "").strip().lower() in {"family", "panel"}:
+        return journal_list_family(
+            q=q, person_id=person_id, year=year, month=month, limit=limit
+        )
+    return {"ok": True, "journals": list_journals(limit=limit)}
 
 
 @app.post("/journal")
@@ -1613,14 +1652,163 @@ def journal_create(body: JournalCreateRequest) -> dict[str, Any]:
     return {"ok": True, "journal": view.to_dict()}
 
 
+@app.post("/journal/drafts")
+def journal_new_draft(body: JournalDraftRequest) -> dict[str, Any]:
+    try:
+        view = journal_save_draft(
+            title=body.title,
+            body_text=body.body_text,
+            audio_uri=body.audio_uri,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            described_precision=body.described_precision,
+            described_time=body.described_time,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            person_ids=body.person_ids,
+            memories=body.memories,
+            actor_key=body.actor_key or "owner",
+        )
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "journal": view}
+
+
+@app.post("/journal/save")
+def journal_save_new(body: JournalDraftRequest) -> dict[str, Any]:
+    try:
+        view = journal_save_journal(
+            None,
+            title=body.title,
+            body_text=body.body_text,
+            audio_uri=body.audio_uri,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            described_precision=body.described_precision,
+            described_time=body.described_time,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            person_ids=body.person_ids,
+            memories=body.memories,
+            actor_key=body.actor_key or "owner",
+        )
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "journal": view}
+
+
+@app.get("/journal/calendar")
+def journal_calendar(
+    year: int = Query(..., ge=1, le=9999),
+    month: int = Query(..., ge=1, le=12),
+) -> dict[str, Any]:
+    return journal_calendar_dots(year=year, month=month)
+
+
+@app.get("/journal/on-this-day")
+def journal_on_this_day_route(
+    date: str | None = Query(default=None),
+) -> dict[str, Any]:
+    return journal_on_this_day(viewed=date)
+
+
 @app.get("/journal/{journal_id}")
 def journal_get(
     journal_id: str, version: int | None = Query(default=None)
 ) -> dict[str, Any]:
-    view = get_journal(journal_id, version=version)
-    if not view:
+    if version is not None:
+        view = get_journal(journal_id, version=version)
+        if not view:
+            raise HTTPException(status_code=404, detail="journal not found")
+        return {"ok": True, "journal": view.to_dict()}
+    saved = journal_get_saved(journal_id)
+    if not saved:
         raise HTTPException(status_code=404, detail="journal not found")
-    return {"ok": True, "journal": view.to_dict()}
+    return {"ok": True, "journal": saved}
+
+
+@app.get("/journal/{journal_id}/working")
+def journal_working(journal_id: str) -> dict[str, Any]:
+    view = journal_get_working(journal_id)
+    if not view:
+        raise HTTPException(status_code=404, detail="working draft not found")
+    return {"ok": True, "journal": view}
+
+
+@app.post("/journal/{journal_id}/edit")
+def journal_edit(journal_id: str) -> dict[str, Any]:
+    try:
+        view = journal_begin_edit(journal_id)
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "journal": view}
+
+
+@app.post("/journal/{journal_id}/draft")
+def journal_save_existing_draft(journal_id: str, body: JournalDraftRequest) -> dict[str, Any]:
+    try:
+        view = journal_save_draft(
+            journal_id=journal_id,
+            title=body.title,
+            body_text=body.body_text,
+            audio_uri=body.audio_uri,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            described_precision=body.described_precision,
+            described_time=body.described_time,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            person_ids=body.person_ids,
+            memories=body.memories,
+            actor_key=body.actor_key or "owner",
+        )
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "journal": view}
+
+
+@app.post("/journal/{journal_id}/save")
+def journal_save_route(journal_id: str, body: JournalDraftRequest) -> dict[str, Any]:
+    try:
+        view = journal_save_journal(
+            journal_id,
+            title=body.title,
+            body_text=body.body_text,
+            audio_uri=body.audio_uri,
+            described_start_date=body.described_start_date,
+            described_end_date=body.described_end_date,
+            described_precision=body.described_precision,
+            described_time=body.described_time,
+            place_id=body.place_id,
+            place_label=body.place_label,
+            visibility=body.visibility,
+            person_ids=body.person_ids,
+            memories=body.memories,
+            actor_key=body.actor_key or "owner",
+        )
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "journal": view}
+
+
+@app.post("/journal/{journal_id}/removed")
+def journal_removed(journal_id: str) -> dict[str, Any]:
+    try:
+        return remove_journal(journal_id)
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/journal/{journal_id}/history")
+def journal_history(journal_id: str) -> dict[str, Any]:
+    try:
+        versions = journal_list_history(journal_id)
+    except JournalServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "versions": versions}
 
 
 @app.post("/journal/{journal_id}/versions")
