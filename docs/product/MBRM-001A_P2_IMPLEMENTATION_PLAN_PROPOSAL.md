@@ -102,7 +102,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10A.2** | Reusable Speech Input | U+F | **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [contract](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A2_ACCEPTANCE.md). Shared editor. Authored-memory vs convenience. `prove-i10a2`. Do not reopen. Next is I10C. |
 | **P2-I10B** | Artifacts | U+F | **ACCEPTED** 2026-08-23 — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Tell its story uses shared Story editor; recorder is I10A.2. |
 | **P2-I10C** | Journal | U+F | **BUILD AUTHORIZED** 2026-08-24 — [I10C definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md) · [acceptance](MBAT-P2-I10C_ACCEPTANCE.md). Drafts IN; one Entry date + optional time; All entries only; HVRT ingest OUT. `prove-i10c`. |
-| **P2-I11** | Narrative & Summaries | E+A | Family evidence only. **Not authorized** until I10A + I10B + I10C. |
+| **P2-I11** | Narrative & Summaries | E+A | Planning assessment **2026-08-24** · **not authorized** — [I11 assessment](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [draft def](MBBS-P2_INCREMENT_11_DEFINITION.md). Ask output mode; no new screen. Save View/Living View persistence is **I13**. |
 | **P2-I12** | External Historical Context | E | EVS-254–256 only |
 | **P2-I13** | Dynamic Views | U | |
 | **P2-I14** | Settings & Processing Controls | U | No confidence dials |
@@ -217,7 +217,7 @@ HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md
 
 ### P2-I11 — Narrative & Summaries · E+A
 
-P2-NAR-01..03. Review before durable save.
+P2-NAR-01..03. Review before durable save. Direction assessed 2026-08-24: Narration is Explore/Ask `output_mode=tell`, not a new app. [assessment](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md). **Not build-authorized.** I13 owns Save View persistence.
 
 ### P2-I12 — External Historical Context · E
 
