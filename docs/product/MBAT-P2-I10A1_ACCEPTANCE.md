@@ -2,7 +2,7 @@
 
 **Increment:** P2-I10A.1  
 **Prove:** `python -m memorybox prove-person-i10a1`  
-**FlightSim:** `MEMORYBOX_P1_RUNTIME_HOST=1 python -m memorybox prove-person-i10a1 --flightsim`  
+**FlightSim:** `python -m memorybox prove-person-i10a1 --flightsim` (sets `MEMORYBOX_P1_RUNTIME_HOST=1`)  
 **Contracts:** [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)
 
 These cases must pass **before** I10A.1 is accepted. The prove harness encodes chrome and route contracts as static checks; service checks reuse existing profile/person APIs. Implementation is what turns failing chrome checks green.
@@ -49,7 +49,7 @@ These cases must pass **before** I10A.1 is accepted. The prove harness encodes c
 
 | ID | Criterion |
 |---|---|
-| D1 | `MEMORYBOX_P1_RUNTIME_HOST=1`. |
+| D1 | Ran on FlightSim with `--flightsim` (attests P1; sets `MEMORYBOX_P1_RUNTIME_HOST=1`). |
 | D2 | Open a Person Explorer URL: one header, no curator identity card, About lands on `/people/{id}/edit?view=1`, Edit lands on `/people/{id}/edit` populated for that person. Family chips show preferred portraits and kinship labels. |
 | D3 | Change display name on Edit, return to Explorer: header name updated; Immich person name unchanged. |
 

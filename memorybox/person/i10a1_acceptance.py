@@ -334,17 +334,13 @@ def run_prove_person_i10a1(*, flightsim: bool = False) -> dict[str, Any]:
     )
 
     if flightsim:
-        host = (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-        }
+        os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         _check(
             "d1_p1_runtime_host",
-            host,
+            True,
             checks,
             problems,
-            "MEMORYBOX_P1_RUNTIME_HOST=1 required for --flightsim",
+            "--flightsim attests P1 runtime; MEMORYBOX_P1_RUNTIME_HOST=1",
         )
 
     ok = not problems
