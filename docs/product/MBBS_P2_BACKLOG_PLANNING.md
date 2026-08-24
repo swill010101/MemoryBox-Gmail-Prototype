@@ -108,4 +108,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I10C Journal** — definition **LOCKED** · **BUILD AUTHORIZED** 2026-08-24. [definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md). Do not reopen I10A.2. I11 waits until I10C is accepted plus required transcription/recognition work.
+**Next:** Owner-pass **I10C Journal**, then I11 definition lock. I11 planning: [assessment](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) (2026-08-24). Do not reopen I10A.2. I11 waits until I10C is accepted plus required transcription/recognition work.
