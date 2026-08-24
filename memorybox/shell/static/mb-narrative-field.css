@@ -1,0 +1,66 @@
+/* P2-I10A.2 shared narrative field — family chrome, not a product fork per screen */
+.mb-nf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+.mb-nf textarea {
+  width: 100%;
+}
+.mb-nf-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.55rem;
+  align-items: center;
+}
+.mb-nf-btn {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+}
+.mb-nf-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mb-nf-btn.primary {
+  background: #1f5a45;
+  border-color: #1f5a45;
+  color: #fff;
+}
+.mb-nf-status {
+  font-size: 0.85rem;
+  opacity: 0.88;
+  margin: 0;
+}
+.mb-nf-status.warn {
+  color: #b45309;
+  font-weight: 600;
+}
+.mb-nf-prompt {
+  width: 100%;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+}
+.mb-nf-prompt p {
+  margin: 0 0 0.5rem;
+}
+.mb-nf-player {
+  width: 100%;
+  max-width: 28rem;
+}
+.mb-nf-mic {
+  max-width: 16rem;
+  font: inherit;
+}
+.mb-nf-file {
+  font-size: 0.85rem;
+}
+.mb-nf[data-mb-speech="off"] .mb-nf-chrome {
+  display: none;
+}

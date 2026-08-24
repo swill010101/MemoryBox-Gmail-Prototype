@@ -5,7 +5,7 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B Artifacts ACCEPTED** 2026-08-23. **I10A.1 Person Profile ACCEPTED** 2026-08-24). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Near-term: **I10A.2 Unified Voice → I10C Journal**. Face-SoT later. I11 not authorized until that chain plus required transcription/recognition work.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B Artifacts ACCEPTED** 2026-08-23. **I10A.1 Person Profile ACCEPTED** 2026-08-24). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Near-term: **I10A.2 speech input LOCKED + BUILD AUTHORIZED 2026-08-24 → I10C Journal**. Face-SoT later. I11 not authorized until that chain plus required transcription/recognition work.  
 **Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. **I9** authorized 2026-08-20 (FlightSim ACCEPTED pending). **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B ACCEPTED** 2026-08-23. **I10A.1 ACCEPTED** 2026-08-24. Face-SoT later. Do not reopen I4, I8, I8A, I10, I10A, I10A.1, or I10B for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
@@ -99,7 +99,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10** | Cross-Source Correlation | A | **ACCEPTED** 2026-08-21 — [definition](MBBS-P2_INCREMENT_10_DEFINITION.md) |
 | **P2-I10A** | Stories | U+F | **ACCEPTED** 2026-08-22 — [definition](MBBS-P2_INCREMENT_10A_DEFINITION.md) · [PRD](MBPRD-P2-I10A_STORIES.md) |
 | **P2-I10A.1** | Person Profile and Editor | U | **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”) — [contract](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A1_ACCEPTANCE.md) · [PRD](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md). Do not reopen. Next is I10A.2. |
-| **P2-I10A.2** | Reusable Speech Input | U+F | PRD **ready for founder lock** — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [contract](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A2_ACCEPTANCE.md). Shared editor first. Authored-memory vs convenience. **Not build-authorized.** |
+| **P2-I10A.2** | Reusable Speech Input | U+F | **LOCKED + BUILD AUTHORIZED** 2026-08-24 — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [contract](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A2_ACCEPTANCE.md). Shared editor. Authored-memory vs convenience. |
 | **P2-I10B** | Artifacts | U+F | **ACCEPTED** 2026-08-23 — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Tell its story uses shared Story editor; recorder is I10A.2. |
 | **P2-I10C** | Journal | U+F | After I10B — same shared voice as I10A.2. I11 waits until the I10A–I10C chain plus required recognition/transcription work. |
 | **P2-I11** | Narrative & Summaries | E+A | Family evidence only. **Not authorized** until I10A + I10B + I10C. |
@@ -205,7 +205,7 @@ Person Profile and Editor. One Explorer header; About = `/people/{id}/edit?view=
 
 ### P2-I10A.2 — Reusable Speech Input · U+F
 
-Shared narrative field, then speech with two semantics (authored-memory preserves audio on Save; convenience is transient). [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [assessment](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md). **Ready for founder lock. Not build-authorized.**
+Shared narrative field, then speech with two semantics (authored-memory preserves audio on Save; convenience is transient). [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [assessment](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md). **LOCKED + BUILD AUTHORIZED** 2026-08-24.
 
 ### P2-I10B — Artifacts · U+F
 

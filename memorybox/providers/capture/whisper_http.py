@@ -125,3 +125,21 @@ class WhisperHttpCaptureStt:
     ) -> TranscriptDraft:
         handle = self.preserve_audio(data, filename=filename, content_type=content_type)
         return self.transcribe(handle.audio_id)
+
+    def resolve_audio_path(self, audio_id: str) -> Path | None:
+        path = self._index.get(audio_id)
+        if path and path.is_file():
+            return path
+        matches = list(self._root.glob(f"{audio_id}.*"))
+        return matches[0] if matches else None
+
+    def discard_audio(self, audio_id: str) -> bool:
+        removed = False
+        for path in list(self._root.glob(f"{audio_id}.*")):
+            try:
+                path.unlink()
+                removed = True
+            except OSError:
+                pass
+        self._index.pop(audio_id, None)
+        return removed

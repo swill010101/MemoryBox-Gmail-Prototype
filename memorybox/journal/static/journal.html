@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox Journal</title>
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-1" />
   <style>
     :root { --bg:#eef2ef; --ink:#1a221c; --line:#b7c4ba; --accent:#1f5a45; --panel:#f7faf7; --warn:#8a3b12; }
     * { box-sizing: border-box; }
@@ -49,14 +50,13 @@
     @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
     code { font-size: 0.8rem; }
     #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
-    #recStatus { font-weight: 600; }
   </style>
 </head>
 <body>
   <main>
     <h1>MemoryBox Journal</h1>
     <p class="sub">
-      Thin capture shell (Increment 5A) — type or speak, review transcript, explicit Save.
+      Type or tell what happened, review the words, then Save.
       Distinct from Story. <a href="/ask/ui">Ask</a> · <a href="/story/ui">Story</a>
     </p>
 
@@ -66,8 +66,8 @@
       <input id="author" value="Tom" placeholder="e.g. Tom" />
       <label for="title">Title (optional)</label>
       <input id="title" placeholder="optional title" />
-      <label for="body">Body (typed or STT draft — edit before Save)</label>
-      <textarea id="body" placeholder="Type here, or speak then review…"></textarea>
+      <label for="body">Journal</label>
+      <textarea id="body" placeholder="Type here, or tell the story then review…"></textarea>
 
       <div class="row">
         <div>
@@ -89,20 +89,7 @@
         <option value="approximate">approximate</option>
       </select>
 
-      <p class="muted">Voice: Record → Stop → STT draft fills Body (not saved until you click Save Journal).</p>
-      <p id="micHint" class="warn" style="display:none"></p>
-      <label for="micDevice">Microphone (browser may ignore Windows default — pick Logitech here)</label>
-      <select id="micDevice">
-        <option value="">Loading devices…</option>
-      </select>
-      <button id="refreshMicsBtn" type="button" class="secondary">Refresh mic list</button>
-      <button id="recBtn" type="button" class="secondary">Record</button>
-      <button id="stopBtn" type="button" class="secondary" disabled>Stop</button>
-      <span id="recStatus" class="muted">Idle</span>
-      <p id="sttError" class="warn" style="display:none;white-space:pre-wrap"></p>
-      <label for="audioFile" style="margin-top:0.75rem">Or upload a spoken audio file (webm/wav/mp3) when browser mic is blocked</label>
-      <input id="audioFile" type="file" accept="audio/*,.webm,.wav,.mp3,.m4a" />
-      <p class="muted">Audio id: <code id="audioId">(none)</code> · Draft only until Save · voice Save needs audio id</p>
+      <p class="muted">Tell what happened → review → fix words if needed → listen back if you want → Save.</p>
 
       <button id="saveBtn" type="button">Save Journal</button>
       <p>Last saved Journal ID: <code id="lastId">(none yet)</code></p>
@@ -132,20 +119,14 @@
       <pre id="out" class="muted">No action yet.</pre>
     </section>
   </main>
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-1"></script>
   <script>
     const out = document.getElementById("out");
-    let lastAudioUri = null;
-    let lastAudioId = null;
-    let activeRec = null;
-    let levelTimer = null;
+    let bodyField = null;
+    let editField = null;
 
     function show(data) {
       out.textContent = JSON.stringify(data, null, 2);
-    }
-    function setRecStatus(text, isWarn) {
-      const el = document.getElementById("recStatus");
-      el.textContent = text;
-      el.className = isWarn ? "warn" : "muted";
     }
     function rememberId(id) {
       if (!id) return;
@@ -161,260 +142,11 @@
       if (!r.ok) throw data;
       return data;
     }
-    async function transcribeBlob(blob, filename) {
-      if (!blob || !blob.size) {
-        throw { detail: "Empty recording (0 bytes). Hold Record a bit longer, then Stop." };
-      }
-      setRecStatus("Transcribing (first Whisper load can take a minute)…", false);
-      const fd = new FormData();
-      fd.append("file", blob, filename || "journal-clip.webm");
-      const r = await fetch("/capture/transcribe", { method: "POST", body: fd });
-      let data;
-      try { data = await r.json(); }
-      catch { data = { detail: "non-JSON response (" + r.status + ")" }; }
-      // STT failure may still include preserved audio
-      const detail = data && data.detail;
-      const audioFromErr = detail && typeof detail === "object" ? detail.audio : null;
-      if (!r.ok) {
-        if (audioFromErr && audioFromErr.audio_id) {
-          lastAudioId = audioFromErr.audio_id;
-          lastAudioUri = audioFromErr.audio_uri || null;
-          document.getElementById("audioId").textContent = lastAudioId;
-          const msg = (detail && detail.message) ? detail.message : "STT failed";
-          setRecStatus("STT failed — fix Whisper (see error); do not Save without draft", true);
-          const errBox = document.getElementById("sttError");
-          if (errBox) {
-            errBox.style.display = "block";
-            errBox.textContent = msg;
-          }
-          show(data);
-          return data;
-        }
-        throw data;
-      }
-      const draft = data.draft || data;
-      lastAudioId = draft.audio_id || null;
-      lastAudioUri = draft.audio_uri || null;
-      document.getElementById("audioId").textContent = lastAudioId || "(none)";
-      if (draft.text) {
-        document.getElementById("body").value = draft.text;
-      }
-      const errBox = document.getElementById("sttError");
-      if (errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
-      const meta = [];
-      if (draft.duration_sec != null) meta.push(draft.duration_sec + "s");
-      if (draft.rms != null) meta.push("rms=" + draft.rms);
-      setRecStatus("Draft ready — review, then Save" + (meta.length ? " (" + meta.join(", ") + ")" : ""), false);
-      show(data);
-      return data;
+
+    if (window.MBNarrativeField) {
+      bodyField = window.MBNarrativeField.mount(document.getElementById("body"), { speech: "authored-memory" });
+      editField = window.MBNarrativeField.mount(document.getElementById("editBody"), { speech: "authored-memory" });
     }
-
-    function stopLevelMeter() {
-      if (levelTimer) {
-        clearInterval(levelTimer);
-        levelTimer = null;
-      }
-    }
-
-    function preferMicId(devices) {
-      const saved = localStorage.getItem("mb_journal_mic_id") || "";
-      if (saved && devices.some((d) => d.deviceId === saved)) return saved;
-      const logi = devices.find((d) => /logi|c615|webcam|microphone/i.test(d.label || "")
-        && !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
-      if (logi) return logi.deviceId;
-      const notVb = devices.find((d) => !/voicemeeter|vb-audio|cable|stereo mix/i.test(d.label || ""));
-      return (notVb && notVb.deviceId) || (devices[0] && devices[0].deviceId) || "";
-    }
-
-    async function refreshMicList() {
-      const sel = document.getElementById("micDevice");
-      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-        sel.innerHTML = "<option value=\"\">Mic enumeration unavailable</option>";
-        return;
-      }
-      // Need a permission grant once so labels are populated
-      try {
-        const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
-        tmp.getTracks().forEach((t) => t.stop());
-      } catch (_) {}
-      const all = await navigator.mediaDevices.enumerateDevices();
-      const inputs = all.filter((d) => d.kind === "audioinput");
-      sel.innerHTML = "";
-      if (!inputs.length) {
-        sel.innerHTML = "<option value=\"\">No audio inputs found</option>";
-        return;
-      }
-      const preferred = preferMicId(inputs);
-      inputs.forEach((d) => {
-        const opt = document.createElement("option");
-        opt.value = d.deviceId;
-        const label = d.label || ("Microphone " + d.deviceId.slice(0, 8));
-        opt.textContent = label;
-        if (d.deviceId === preferred) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      if (preferred) localStorage.setItem("mb_journal_mic_id", preferred);
-    }
-
-    // Browsers block mic on plain http://host (non-localhost). Surface that early.
-    (function micProbe() {
-      const hint = document.getElementById("micHint");
-      const secure = window.isSecureContext;
-      const hasMd = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-      if (!secure || !hasMd) {
-        hint.style.display = "block";
-        hint.textContent =
-          "Browser mic is unavailable on this URL (needs localhost or HTTPS). " +
-          "Use Record on FlightSim at http://127.0.0.1:8790/journal/ui, or upload an audio file below.";
-        setRecStatus("Mic blocked on this origin — use upload or localhost", true);
-      } else {
-        refreshMicList().catch(() => {});
-      }
-    })();
-
-    document.getElementById("refreshMicsBtn").onclick = () => {
-      refreshMicList().catch((err) => show({ detail: String(err) }));
-    };
-    document.getElementById("micDevice").onchange = (ev) => {
-      if (ev.target.value) localStorage.setItem("mb_journal_mic_id", ev.target.value);
-    };
-
-    document.getElementById("recBtn").onclick = async () => {
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error(
-            "navigator.mediaDevices unavailable (insecure non-localhost origin). Use audio upload or open http://127.0.0.1:8790/journal/ui on FlightSim."
-          );
-        }
-        const deviceId = (document.getElementById("micDevice").value || "").trim();
-        const audioConstraint = {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        };
-        if (deviceId) audioConstraint.deviceId = { exact: deviceId };
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
-        const track = stream.getAudioTracks()[0];
-        const trackLabel = (track && track.label) || "unknown mic";
-        if (/voicemeeter|vb-audio|cable|stereo mix/i.test(trackLabel)) {
-          setRecStatus(
-            "Selected \"" + trackLabel + "\" is a virtual cable (often silent). Choose \"Microphone (Logi C615…)\" in the list above.",
-            true
-          );
-        }
-
-        const chunks = [];
-        const mimeCandidates = [
-          "audio/webm;codecs=opus",
-          "audio/webm",
-          "audio/mp4",
-        ];
-        let mime = "";
-        for (const m of mimeCandidates) {
-          if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
-            mime = m;
-            break;
-          }
-        }
-        const mediaRecorder = mime
-          ? new MediaRecorder(stream, { mimeType: mime })
-          : new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size) chunks.push(e.data);
-        };
-
-        // Live level meter (proves the selected track is actually live)
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioCtx();
-        await ctx.resume();
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        source.connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        let peak = 0;
-        stopLevelMeter();
-        levelTimer = setInterval(() => {
-          analyser.getByteTimeDomainData(data);
-          let maxDev = 0;
-          for (let i = 0; i < data.length; i++) {
-            const dev = Math.abs(data[i] - 128);
-            if (dev > maxDev) maxDev = dev;
-          }
-          const pct = Math.round((maxDev / 128) * 100);
-          if (pct > peak) peak = pct;
-          setRecStatus(
-            "Recording… mic=\"" + trackLabel + "\" level=" + pct + "% (peak " + peak + "%). Speak now.",
-            pct < 2
-          );
-        }, 200);
-
-        mediaRecorder.onstop = async () => {
-          stopLevelMeter();
-          try { source.disconnect(); } catch (_) {}
-          try { await ctx.close(); } catch (_) {}
-          stream.getTracks().forEach((t) => t.stop());
-          const type = mediaRecorder.mimeType || mime || "audio/webm";
-          const blob = new Blob(chunks, { type: type });
-          if (peak < 2) {
-            setRecStatus(
-              "Mic level stayed ~0% — wrong input device (\"" + trackLabel + "\"). Pick the USB/headset mic and re-Record.",
-              true
-            );
-            show({
-              detail: "No mic signal during Record",
-              track: trackLabel,
-              peak_level_pct: peak,
-              blob_bytes: blob.size,
-            });
-            return;
-          }
-          const ext = type.indexOf("mp4") >= 0 ? "m4a" : "webm";
-          try {
-            await transcribeBlob(blob, "journal-clip." + ext);
-          } catch (err) {
-            setRecStatus("STT failed — see Result", true);
-            show(err);
-          }
-        };
-
-        activeRec = { mediaRecorder, stream, ctx };
-        mediaRecorder.start(250);
-        document.getElementById("recBtn").disabled = true;
-        document.getElementById("stopBtn").disabled = false;
-        setRecStatus("Recording… mic=\"" + trackLabel + "\" — speak now", false);
-      } catch (err) {
-        setRecStatus("Mic failed — see Result / use upload", true);
-        show({
-          detail: String(err && err.message ? err.message : err),
-          hint: "Remote http://flightsim often blocks mic. Prefer localhost on FlightSim, or upload audio file.",
-        });
-      }
-    };
-
-    document.getElementById("stopBtn").onclick = () => {
-      document.getElementById("recBtn").disabled = false;
-      document.getElementById("stopBtn").disabled = true;
-      if (!activeRec) return;
-      const rec = activeRec;
-      activeRec = null;
-      if (rec.mediaRecorder && rec.mediaRecorder.state !== "inactive") {
-        try { rec.mediaRecorder.requestData(); } catch (_) {}
-        rec.mediaRecorder.stop();
-      }
-    };
-
-    document.getElementById("audioFile").onchange = async (ev) => {
-      const file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-      try {
-        await transcribeBlob(file, file.name || "upload.webm");
-      } catch (err) {
-        setRecStatus("Upload/STT failed — see Result", true);
-        show(err);
-      }
-    };
 
     document.getElementById("saveBtn").onclick = async () => {
       try {
@@ -426,12 +158,13 @@
         const precision = document.getElementById("precision").value;
         const dStart = document.getElementById("dStart").value.trim();
         const dEnd = document.getElementById("dEnd").value.trim();
+        const commit = bodyField && bodyField.getCommit ? bodyField.getCommit() : {};
         const payload = {
           title: document.getElementById("title").value,
           body_text: bodyText,
           author_display_name: document.getElementById("author").value.trim() || "Tom",
-          channel: lastAudioUri ? "voice" : "ui",
-          audio_uri: lastAudioUri,
+          channel: commit.audio_uri ? "voice" : "ui",
+          audio_uri: commit.audio_uri || null,
           described_start_date: dStart || null,
           described_end_date: dEnd || null,
           described_precision: precision,
@@ -442,12 +175,8 @@
           body: JSON.stringify(payload),
         });
         const id = data && data.journal && data.journal.id;
-        const wasVoice = Boolean(payload.audio_uri);
         rememberId(id);
-        lastAudioUri = null;
-        lastAudioId = null;
-        document.getElementById("audioId").textContent = "(none)";
-        setRecStatus(wasVoice ? "Saved (voice)" : "Saved (typed)", false);
+        if (bodyField && bodyField.consumeCommit) bodyField.consumeCommit();
         show(data);
       } catch (err) {
         show(err);
@@ -462,11 +191,15 @@
           show({ detail: "Journal ID and new body required" });
           return;
         }
+        const commit = editField && editField.getCommit ? editField.getCommit() : {};
+        const payload = { body_text: bodyText };
+        if (commit.audio_uri) payload.audio_uri = commit.audio_uri;
         const data = await j("/journal/" + encodeURIComponent(id) + "/versions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body_text: bodyText }),
+          body: JSON.stringify(payload),
         });
+        if (editField && editField.consumeCommit) editField.consumeCommit();
         show(data);
       } catch (err) {
         show(err);

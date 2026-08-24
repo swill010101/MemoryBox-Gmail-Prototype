@@ -1,6 +1,6 @@
 # P2-I10A.2 — Reusable Speech Input
 
-**Status:** Definition **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
+**Status:** Definition **LOCKED** 2026-08-24 · **BUILD AUTHORIZED**  
 **PRD:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md)  
 **Contract:** [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
@@ -20,4 +20,4 @@ See PRD Frozen rows. Shared component **first**. All four surfaces this incremen
 
 [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) · `prove-i10a2` when built.
 
-**Not build-authorized until Tom says to build.**
+**Locked and build-authorized 2026-08-24.**

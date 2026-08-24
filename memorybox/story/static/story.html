@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Stories</title>
   <link rel="stylesheet" href="/static/explore/explore.css?v=i10a-story-1" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-1" />
   <style>
     :root {
       --ink: #e8edf5;
@@ -204,6 +205,7 @@
   <div id="modals"></div>
   <div id="editor-foot" class="editor-foot hidden"></div>
 
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-1"></script>
   <script>
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const state = {
@@ -219,6 +221,8 @@
       picker: { items: [], selected: {}, kind: "all", q: "", total: 0, truncated: false },
       modal: null,
       previewing: false,
+      bodyField: null,
+      captureArmed: true,
     };
 
     function emptyDraft() {
@@ -304,7 +308,7 @@
       (d.memories || []).forEach((m, i) => {
         if (m.insert) blocks.push({ kind: "memory_ref", memory_client_key: m.client_key || ("m" + i), position: blocks.length });
       });
-      return {
+      const payload = {
         title: d.title || null,
         description: d.description || null,
         body_text: d.body || "",
@@ -329,6 +333,15 @@
         place_label: d.place_label || null,
         visibility: d.visibility || "private",
       };
+      const commit = state.bodyField && state.bodyField.getCommit && state.bodyField.getCommit();
+      if (commit && commit.audio_uri) {
+        payload.audio_uri = commit.audio_uri;
+        payload.speech_origin = commit.speech_origin || "speech";
+        payload.speech_user_edited = Boolean(commit.speech_user_edited);
+        payload.speech_captured_at = commit.speech_captured_at || null;
+        payload.speech_audio_id = commit.audio_id || null;
+      }
+      return payload;
     }
     function loadDraftFromStory(s) {
       const d = emptyDraft();
@@ -796,6 +809,17 @@
       document.querySelectorAll(".rem-person").forEach((b) => {
         b.onclick = () => removeDraftPerson(b.dataset.id);
       });
+      if (window.MBNarrativeField) {
+        const ta = document.getElementById("ed-body");
+        const p = new URLSearchParams(location.search);
+        const auto = Boolean(state.captureArmed) && p.get("capture") === "1";
+        state.captureArmed = false;
+        state.bodyField = window.MBNarrativeField.mount(ta, {
+          speech: "authored-memory",
+          autoStart: auto,
+          onChange: () => { state.draft.body = ta.value; markDirty(); },
+        });
+      }
     }
     function editorPersonChip(p) {
       return `<span class="chip">${portraitInner(p)}<button type="button" class="btn ghost rem-person" data-id="${esc(p.id)}">Remove</button></span>`;
@@ -834,6 +858,7 @@
         ? await j("/story/" + state.draft.id + "/drafts", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) })
         : await j("/story/drafts", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
       loadDraftFromStory(data.story);
+      if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
       renderEditor();
       return data.story;
     }
@@ -850,6 +875,7 @@
         data = await j("/story/" + state.draft.id + "/revisions", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
       }
       state.dirty = false;
+      if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
       state.story = data.story;
       loadDraftFromStory(data.story);
       renderDetail();
@@ -859,6 +885,7 @@
         openUnsaved();
         return;
       }
+      if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
       if (state.draft.id && state.draft.lifecycle !== "draft_only" && state.story && state.story.ask_available) renderDetail();
       else refreshPanel();
     }
@@ -873,7 +900,12 @@
         </p>
       </div></div>`;
       document.getElementById("u-stay").onclick = () => { document.getElementById("modals").innerHTML = ""; };
-      document.getElementById("u-drop").onclick = () => { state.dirty = false; document.getElementById("modals").innerHTML = ""; leaveEditor(); };
+      document.getElementById("u-drop").onclick = () => {
+        state.dirty = false;
+        if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+        document.getElementById("modals").innerHTML = "";
+        leaveEditor();
+      };
       document.getElementById("u-save").onclick = async () => { await persistDraft(); document.getElementById("modals").innerHTML = ""; leaveEditor(); };
     }
     async function confirmDiscard(id) {
@@ -893,6 +925,7 @@
       document.getElementById("d-yes").onclick = async () => {
         if (!id) {
           state.dirty = false;
+          if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
           document.getElementById("modals").innerHTML = "";
           refreshPanel();
           return;

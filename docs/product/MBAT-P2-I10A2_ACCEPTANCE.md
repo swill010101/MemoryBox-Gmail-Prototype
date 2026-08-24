@@ -1,6 +1,6 @@
 # MBAT-P2-I10A.2 — Speech input / shared narrative field
 
-**Increment:** P2-I10A.2 · **READY FOR FOUNDER LOCK** · not build-authorized  
+**Increment:** P2-I10A.2 · **LOCKED** · **BUILD AUTHORIZED** 2026-08-24  
 **Prove (when built):** `python -m memorybox prove-i10a2` (**Recommendation** name)  
 **Contracts:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)
 

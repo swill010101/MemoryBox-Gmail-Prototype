@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Artifacts</title>
   <link rel="stylesheet" href="/static/explore/explore.css?v=i10b-3" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-1" />
   <style>
     :root {
       --ink: #e8edf5; --muted: #9aa3b5; --blue: #3b82f6; --green: #3dcf9a;
@@ -130,6 +131,7 @@
   <div id="view" class="wrap"></div>
   <div id="modals"></div>
   <div id="editor-foot" class="editor-foot hidden"></div>
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-1"></script>
   <script>
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const KINDS = [
@@ -512,6 +514,15 @@
           d.visibility = document.getElementById("ed-vis").value;
         };
       });
+      if (window.MBNarrativeField) {
+        const ta = document.getElementById("ed-desc");
+        if (ta) {
+          window.MBNarrativeField.mount(ta, {
+            speech: "convenience",
+            onChange: () => { d.description = ta.value; },
+          });
+        }
+      }
     }
     async function saveEditor() {
       const d = state.draft;

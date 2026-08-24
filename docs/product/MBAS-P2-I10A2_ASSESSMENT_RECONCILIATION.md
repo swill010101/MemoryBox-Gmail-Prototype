@@ -1,6 +1,6 @@
 # P2-I10A.2 — Assessment reconciliation (amended)
 
-**Status:** Planning **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized** · no code  
+**Status:** Planning **LOCKED** 2026-08-24 · **BUILD AUTHORIZED**  
 **PRD:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md)  
 **Contract:** [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)  
 **Acceptance:** [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md)  

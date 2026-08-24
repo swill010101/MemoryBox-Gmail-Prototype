@@ -1,6 +1,6 @@
 # P2-I10A.2 — Reusable Speech Input (shared narrative editor)
 
-**Status:** PRD **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
+**Status:** PRD **LOCKED** 2026-08-24 · **BUILD AUTHORIZED** (Tom: “Lock it, approved.... authorized to build”)  
 **Increment:** P2-I10A.2  
 **Do not reopen:** I10A.1  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
@@ -133,4 +133,4 @@ See [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) (AT-01–AT-12 pl
 
 ---
 
-**Ready for founder lock. Not build-authorized until Tom says to build.**
+**LOCKED and BUILD AUTHORIZED 2026-08-24.**

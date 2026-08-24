@@ -267,6 +267,11 @@ class StoryCreateRequest(BaseModel):
     source_photo_id: str | None = None
     taken_at: str | None = None
     thumb_url: str | None = None
+    audio_uri: str | None = None
+    speech_origin: str | None = None
+    speech_user_edited: bool | None = None
+    speech_captured_at: str | None = None
+    speech_audio_id: str | None = None
 
 
 class StoryDraftRequest(BaseModel):
@@ -284,6 +289,11 @@ class StoryDraftRequest(BaseModel):
     place_label: str | None = None
     visibility: str | None = None
     composed_by_model: bool = False
+    audio_uri: str | None = None
+    speech_origin: str | None = None
+    speech_user_edited: bool | None = None
+    speech_captured_at: str | None = None
+    speech_audio_id: str | None = None
 
 
 class StoryVisibilityRequest(BaseModel):
@@ -1461,16 +1471,21 @@ def change_context(session_id: str, body: ContextChangeRequest) -> dict[str, Any
     return {"ok": True, "context": ctx.to_dict()}
 
 
-@app.post("/capture/transcribe")
-async def capture_transcribe(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Preserve audio + STT draft. Does not create a Journal entry.
+def _retain_audio_flag(retain: str | None) -> bool:
+    raw = (retain or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off", "scratch"}
 
-    Audio is always preserved first. If STT fails, returns 422 with audio handle
-    so the owner can type a body and still Save a voice Journal.
-    """
+
+@app.post("/capture/transcribe")
+async def capture_transcribe(
+    file: UploadFile = File(...),
+    retain: str = Query(default="1"),
+) -> dict[str, Any]:
+    """STT draft. Authored-memory keeps audio until Save/Cancel; retain=0 is scratch."""
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="empty audio upload")
+    keep = _retain_audio_flag(retain)
     stt = get_capture_stt()
     filename = file.filename or "clip.webm"
     try:
@@ -1482,42 +1497,90 @@ async def capture_transcribe(file: UploadFile = File(...)) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    def _maybe_discard() -> None:
+        if keep:
+            return
+        try:
+            stt.discard_audio(handle.audio_id)
+        except Exception:
+            return
+
+    family_msg = "Couldn't turn that recording into words. You can type instead."
     try:
         draft = stt.transcribe(handle.audio_id)
     except ProviderUnavailable as exc:
+        audio = handle.to_dict() if keep else None
+        _maybe_discard()
         raise HTTPException(
             status_code=422,
             detail={
-                "message": f"STT unavailable: {exc}. Typed Journal path still works.",
-                "audio": handle.to_dict(),
+                "message": family_msg,
+                "audio": audio,
                 "persisted_as_journal": False,
             },
         ) from exc
     except ProviderError as exc:
+        audio = handle.to_dict() if keep else None
+        _maybe_discard()
         raise HTTPException(
             status_code=422,
             detail={
-                "message": str(exc),
-                "audio": handle.to_dict(),
+                "message": family_msg,
+                "audio": audio,
                 "persisted_as_journal": False,
-                "hint": "Audio preserved. Type/edit Body, then Save Journal (channel=voice).",
+                "hint": "You can type, then Save.",
             },
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        audio = handle.to_dict() if keep else None
+        _maybe_discard()
         raise HTTPException(
             status_code=422,
             detail={
-                "message": str(exc),
-                "audio": handle.to_dict(),
+                "message": family_msg,
+                "audio": audio,
                 "persisted_as_journal": False,
             },
         ) from exc
+    payload = draft.to_dict()
+    if not keep:
+        _maybe_discard()
+        payload["audio_id"] = None
+        payload["audio_uri"] = None
+        payload["audio_discarded"] = True
     return {
         "ok": True,
-        "draft": draft.to_dict(),
+        "draft": payload,
         "persisted_as_journal": False,
-        "hint": "Review/edit transcript in /journal/ui, then explicit Save.",
+        "hint": "Review the words, then Save on the page.",
     }
+
+
+@app.get("/capture/audio/{audio_id}")
+def capture_audio_get(audio_id: str) -> FileResponse:
+    stt = get_capture_stt()
+    path = stt.resolve_audio_path(audio_id)
+    if path is None or not Path(path).is_file():
+        raise HTTPException(status_code=404, detail="audio not found")
+    path = Path(path)
+    media = "audio/webm"
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        media = "audio/wav"
+    elif suffix == ".mp3":
+        media = "audio/mpeg"
+    elif suffix in {".m4a", ".mp4"}:
+        media = "audio/mp4"
+    elif suffix == ".ogg":
+        media = "audio/ogg"
+    return FileResponse(path, media_type=media)
+
+
+@app.delete("/capture/audio/{audio_id}")
+def capture_audio_delete(audio_id: str) -> dict[str, Any]:
+    stt = get_capture_stt()
+    removed = bool(stt.discard_audio(audio_id))
+    return {"ok": True, "removed": removed}
 
 
 @app.get("/journal")
@@ -1628,6 +1691,11 @@ def story_create(body: StoryCreateRequest) -> dict[str, Any]:
             described_end_date=body.described_end_date,
             story_id=body.story_id,
             composed_by_model=body.composed_by_model,
+            audio_uri=body.audio_uri,
+            speech_origin=body.speech_origin,
+            speech_user_edited=body.speech_user_edited,
+            speech_captured_at=body.speech_captured_at,
+            speech_audio_id=body.speech_audio_id,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1655,6 +1723,11 @@ def story_new_draft(body: StoryDraftRequest) -> dict[str, Any]:
             visibility=body.visibility,
             actor_key="owner",
             composed_by_model=body.composed_by_model,
+            audio_uri=body.audio_uri,
+            speech_origin=body.speech_origin,
+            speech_user_edited=body.speech_user_edited,
+            speech_captured_at=body.speech_captured_at,
+            speech_audio_id=body.speech_audio_id,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1716,6 +1789,40 @@ def story_get(
     return {"ok": True, "story": view.to_dict()}
 
 
+@app.get("/story/{story_id}/audio")
+def story_audio(
+    story_id: str,
+    version: int | None = Query(default=None),
+    working: bool = Query(default=False),
+) -> FileResponse:
+    view = get_story(story_id, version=version, working=working)
+    if not view or view.status != "active":
+        raise HTTPException(status_code=404, detail="story not found")
+    uri = None
+    if view.version:
+        uri = getattr(view.version, "audio_uri", None)
+    if not uri:
+        raise HTTPException(status_code=404, detail="no audio")
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        raise HTTPException(status_code=400, detail="audio not local file")
+    raw = unquote(parsed.path or "")
+    path = Path(raw)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="audio file missing")
+    media = "audio/webm"
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        media = "audio/wav"
+    elif suffix == ".mp3":
+        media = "audio/mpeg"
+    elif suffix in {".m4a", ".mp4"}:
+        media = "audio/mp4"
+    return FileResponse(path, media_type=media)
+
+
 @app.get("/story/{story_id}/working")
 def story_working(story_id: str) -> dict[str, Any]:
     view = get_story(story_id, working=True)
@@ -1744,6 +1851,11 @@ def story_put_working(story_id: str, body: StoryDraftRequest) -> dict[str, Any]:
             visibility=body.visibility,
             actor_key="owner",
             composed_by_model=body.composed_by_model,
+            audio_uri=body.audio_uri,
+            speech_origin=body.speech_origin,
+            speech_user_edited=body.speech_user_edited,
+            speech_captured_at=body.speech_captured_at,
+            speech_audio_id=body.speech_audio_id,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1779,6 +1891,11 @@ def story_save_draft(story_id: str, body: StoryDraftRequest) -> dict[str, Any]:
             visibility=body.visibility,
             actor_key="owner",
             composed_by_model=body.composed_by_model,
+            audio_uri=body.audio_uri,
+            speech_origin=body.speech_origin,
+            speech_user_edited=body.speech_user_edited,
+            speech_captured_at=body.speech_captured_at,
+            speech_audio_id=body.speech_audio_id,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1805,6 +1922,11 @@ def story_save_revision(story_id: str, body: StoryDraftRequest) -> dict[str, Any
             visibility=body.visibility,
             actor_key="owner",
             composed_by_model=body.composed_by_model,
+            audio_uri=body.audio_uri,
+            speech_origin=body.speech_origin,
+            speech_user_edited=body.speech_user_edited,
+            speech_captured_at=body.speech_captured_at,
+            speech_audio_id=body.speech_audio_id,
         )
     except StoryServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
