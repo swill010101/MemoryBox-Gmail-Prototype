@@ -1,6 +1,6 @@
 # MBPRD-P2-I10A.1 — Person Profile and Editor
 
-**Status:** PRD **ACCEPTED** (owner) · **amended 2026-08-23** (Person Explorer header / About vs Edit) · implementation **must follow this contract**; chrome prove is red until built  
+**Status:** Increment **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”) · `prove-person-i10a1` · do not reopen for polish  
 **Date:** 2026-08-23  
 **Increment definition:** [MBBS-P2_INCREMENT_10A1_DEFINITION.md](MBBS-P2_INCREMENT_10A1_DEFINITION.md)  
 **Assessment:** [MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md)  
@@ -185,4 +185,4 @@ Reuse Existing APIs. Do not fork a second person model.
 
 ---
 
-**PRD ACCEPTED and amended. Implement against the screen contract. Do not ship Explorer chrome that still duplicates the curator card or routes Edit through About.**
+**PRD and increment ACCEPTED 2026-08-24. Do not reopen I10A.1 for polish. Next is I10A.2 Unified Voice (Stories first) after a signed definition.**

@@ -1,11 +1,11 @@
 # MBAT-P2-I10A.1 — Person Profile / Explorer acceptance
 
-**Increment:** P2-I10A.1  
+**Increment:** P2-I10A.1 · **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”)  
 **Prove:** `python -m memorybox prove-person-i10a1`  
 **FlightSim:** `python -m memorybox prove-person-i10a1 --flightsim` (sets `MEMORYBOX_P1_RUNTIME_HOST=1`)  
 **Contracts:** [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)
 
-These cases must pass **before** I10A.1 is accepted. The prove harness encodes chrome and route contracts as static checks; service checks reuse existing profile/person APIs. Implementation is what turns failing chrome checks green.
+Regression gate after acceptance. Do not reopen I10A.1 for polish.
 
 ---
 

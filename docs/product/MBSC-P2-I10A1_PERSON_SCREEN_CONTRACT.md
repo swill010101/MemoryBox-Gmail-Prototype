@@ -1,6 +1,6 @@
 # MBSC-P2-I10A.1 — Person Explorer, About, and Editor screen contract
 
-**Status:** **LOCKED** 2026-08-23 (owner: proceed to build). Frozen with the **ACCEPTED** I10A.1 PRD (Explorer amendment). Do not reopen this contract for polish while implementing.  
+**Status:** **LOCKED** with implementation **ACCEPTED** 2026-08-24. Do not reopen I10A.1 for polish.  
 **PRD:** [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
 **Field map:** [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md)  
 **Acceptance:** [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md) · `python -m memorybox prove-person-i10a1`

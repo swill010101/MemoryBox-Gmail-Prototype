@@ -1,7 +1,7 @@
 # P2-I10A.1 — Field and action mapping
 
-**Status:** Planning only · repository traced **2026-08-23** on `cursor/p2-i10b-artifacts-49da` (I10B **ACCEPTED**)  
-**Not build-authorized.** Does not implement code.  
+**Status:** Field map for **ACCEPTED** I10A.1 (2026-08-24) · traced **2026-08-23**  
+**Historical map for the accepted increment. Does not start I10A.2.**  
 **PRD:** [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
 **Assessment:** [MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A1_ASSESSMENT_RECONCILIATION.md)
 
