@@ -607,6 +607,35 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         sent_at="2025-01-12T12:00:00",
         channel="email",
     )
+    sms_hits = [
+        EvidenceHit(
+            evidence_id=f"e-sms-{i}",
+            evidence_kind="communication",
+            summary=f"SMS {i}",
+            score=1.0,
+            excerpt="on my way",
+            source="sms_export",
+            sent_at=f"2025-01-{(i % 20) + 1:02d}T18:00:00",
+            channel="sms",
+            thread_id=f"sms-thread-{i}",
+        )
+        for i in range(30)
+    ]
+    mail_hits = [
+        EvidenceHit(
+            evidence_id=f"e-mail-{i}",
+            evidence_kind="communication",
+            summary=f"Lunch {i}",
+            score=1.0,
+            excerpt="see you tuesday",
+            source="email_mbox",
+            sent_at=f"2025-01-{(i % 20) + 1:02d}T12:00:00",
+            channel="email",
+            thread_id=f"mail-thread-{i}",
+        )
+        for i in range(40)
+    ]
+    sms_pack = prepare_narrative_pack(jan_plan, evidence=sms_hits + mail_hits)
     _check(
         "january_tell_not_full_sms_export",
         not _sms_ask(jan_plan)
@@ -615,6 +644,14 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=f"sms_ask={_sms_ask(jan_plan)} tell_pack={_tell_pack_comms(jan_plan)}",
+    )
+    _check(
+        "january_tell_pack_includes_sms",
+        int((sms_pack.get("evidence_used") or {}).get("sms") or 0) >= 1
+        and int((sms_pack.get("evidence_used") or {}).get("emails") or 0) >= 1,
+        checks,
+        problems,
+        detail=str(sms_pack.get("evidence_used")),
     )
     year_plan = plan_ask("Tell me about my 2017", ctx)
     year_pack = prepare_narrative_pack(year_plan, evidence=many)

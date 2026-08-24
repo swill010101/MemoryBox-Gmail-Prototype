@@ -644,6 +644,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         if t.lower().replace("'", "") not in keyword_stop
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
+    if _tell_pack_comms(plan) and windows:
+        # Month/year tell is a date window, not a keyword hunt for "narrative".
+        keywords = []
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -1063,6 +1066,9 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         if t.lower().replace("'", "") not in keyword_stop
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
+    if _tell_pack_comms(plan) and windows:
+        # Month/year tell is a date window, not a keyword hunt for "narrative".
+        keywords = []
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"

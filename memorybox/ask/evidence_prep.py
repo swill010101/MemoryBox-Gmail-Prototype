@@ -409,34 +409,56 @@ def _spread_by_day(units: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
     return out
 
 
+def _round_robin(groups: list[list[dict[str, Any]]], n: int) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    idx = [0] * len(groups)
+    while len(out) < n:
+        progressed = False
+        for i, g in enumerate(groups):
+            if idx[i] < len(g) and len(out) < n:
+                out.append(g[idx[i]])
+                idx[i] += 1
+                progressed = True
+        if not progressed:
+            break
+    return out
+
+
 def _select_supplied(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cap the model pack. Travel is derived — never crowd out authored units."""
+    """Cap the model pack. Do not fill every seat with email when SMS/calendar exist."""
     if len(ranked) <= MODEL_UNIT_BUDGET:
         return list(ranked)
     journals = [u for u in ranked if u.get("kind") in {"journal", "story"}]
     travel = [u for u in ranked if u.get("kind") == "travel"][:6]
-    calendars = [u for u in ranked if u.get("kind") == "calendar"]
-    comms = _one_per_thread([u for u in ranked if u.get("kind") == "communication"])
+    calendars = _spread_by_day([u for u in ranked if u.get("kind") == "calendar"], 24)
+    emails = _spread_by_day(
+        _one_per_thread(
+            [
+                u
+                for u in ranked
+                if u.get("kind") == "communication" and u.get("source_type") != "sms"
+            ]
+        ),
+        40,
+    )
+    sms = _spread_by_day(
+        _one_per_thread(
+            [
+                u
+                for u in ranked
+                if u.get("kind") == "communication" and u.get("source_type") == "sms"
+            ]
+        ),
+        40,
+    )
     other = [
         u
         for u in ranked
         if u.get("kind") not in {"journal", "story", "travel", "calendar", "communication"}
     ]
-    keep = journals + travel
+    keep = list(journals)
     room = max(0, MODEL_UNIT_BUDGET - len(keep))
-    cal_n = min(len(calendars), 6, max(0, room // 4)) if calendars else 0
-    comm_n = max(0, room - cal_n)
-    supplied = keep + _spread_by_day(comms, comm_n) + _spread_by_day(calendars, cal_n)
-    leftover_room = MODEL_UNIT_BUDGET - len(supplied)
-    if leftover_room > 0:
-        used = {id(u) for u in supplied}
-        for u in other:
-            if id(u) in used:
-                continue
-            supplied.append(u)
-            leftover_room -= 1
-            if leftover_room <= 0:
-                break
+    supplied = keep + _round_robin([sms, emails, calendars, travel, other], room)
     return supplied[:MODEL_UNIT_BUDGET]
 
 
