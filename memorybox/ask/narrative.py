@@ -1,9 +1,32 @@
-"""P2-I11 — deterministic tell stitch + persistable Ask/view JSON."""
+"""P2-I11 tell synthesis: prepared pack + provider-neutral LLM. Fail closed if down."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from memorybox.ask.evidence_prep import prepare_narrative_pack
+from memorybox.providers.base import ProviderError, ProviderUnavailable
+from memorybox.providers.llm.dto import ChatMessage
+
 LIVING_VIEW_SCHEMA = 1
+NARRATION_UNAVAILABLE = (
+    "Narration unavailable. Family evidence and coverage are still shown. "
+    "MemoryBox will not substitute a stitched essay for the narrator."
+)
+
+SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
+You are MemoryBox's narrator. Write readable prose ONLY from the prepared evidence pack JSON.
+Rules:
+- A source supports only the claim listed on that unit. Presence is not photographer, purpose, emotion, companions, or significance.
+- Do not treat filename, folder, or camera owner as photographer.
+- SMS timestamp is not location. Use location_assertions.basis only.
+- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating units exist.
+- Travel units are derived; the original communication remains the authentic source. Never ignore that provenance.
+- Derived summaries are not family truth.
+- Do not invent people, places, dates, or motives.
+- End with a short "Family evidence used" line using evidence_used counts of supplied units.
+- If the pack is empty, say you do not have enough family evidence. Do not guess.
+"""
 
 
 def persistable_view(
@@ -62,111 +85,100 @@ def memories_from_citations(citations: list[dict[str, Any]] | None) -> list[dict
     return out[:24]
 
 
-def _subject(plan: Any) -> str:
-    people = [str(n).strip() for n in (getattr(plan, "person_names", None) or ()) if str(n).strip()]
-    places = [str(n).strip() for n in (getattr(plan, "place_names", None) or ()) if str(n).strip()]
-    trips = [str(n).strip() for n in (getattr(plan, "trip_labels", None) or ()) if str(n).strip()]
-    events = [
-        str(n).strip()
-        for n in (getattr(plan, "event_labels", None) or ())
-        if str(n).strip() and not str(n).startswith("trip:")
-    ]
-    bits = people or trips or places or events
-    if bits:
-        return ", ".join(bits[:3])
-    ask = str(getattr(plan, "original_ask", "") or "").strip()
-    return ask[:80] if ask else "this ask"
+def evidence_used_footer(pack: dict[str, Any] | None) -> str:
+    used = (pack or {}).get("evidence_used") or {}
+    bits = []
+    labels = (
+        ("photos", "photos"),
+        ("video_moments", "video moments"),
+        ("spoken_moments", "spoken moments"),
+        ("emails", "emails"),
+        ("sms", "texts"),
+        ("calendar_events", "calendar events"),
+        ("journal_entries", "journal entries"),
+        ("stories", "stories"),
+        ("artifacts", "artifacts"),
+        ("travel", "travel records"),
+        ("place_event", "places/events"),
+    )
+    for key, label in labels:
+        n = int(used.get(key) or 0)
+        if n:
+            bits.append(f"{n} {label}")
+    if not bits:
+        return "Family evidence used: none supplied for synthesis."
+    return "Family evidence used: " + ", ".join(bits) + "."
 
 
-def _clip(text: str, n: int = 280) -> str:
-    t = " ".join((text or "").split())
-    if len(t) <= n:
-        return t
-    return t[: n - 1].rstrip() + "…"
+def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
+    cov = ""
+    if isinstance(pack, dict):
+        cov = str((pack.get("coverage") or {}).get("summary") or "").strip()
+    parts = [p for p in (cov, NARRATION_UNAVAILABLE, evidence_used_footer(pack)) if p]
+    if reason:
+        parts.insert(1, reason)
+    return "\n\n".join(parts)
 
 
 def synthesize_tell(
     plan: Any,
-    statements: list[dict[str, Any]] | None,
-    citations: list[dict[str, Any]] | None,
-    coverage: dict[str, Any] | None = None,
-    *,
-    fallback: str | None = None,
-) -> str:
-    """Evidence-backed prose. Not family truth. No model call."""
-    subject = _subject(plan)
-    groups: dict[str, list[str]] = {
-        "journal": [],
-        "recollection": [],
-        "communication": [],
-        "photo": [],
-        "video": [],
-        "artifact": [],
-        "other": [],
-    }
-    for s in statements or []:
-        text = _clip(str(s.get("text") or ""))
-        if not text:
-            continue
-        pk = str(s.get("provenance_kind") or "")
-        label = str(s.get("label") or "").lower()
-        if s.get("journal_ids") or label == "journal" or "journal" in pk:
-            bucket = "journal"
-        elif s.get("story_ids") or label == "recollection" or "narrator" in pk or "story" in pk:
-            bucket = "recollection"
-        elif s.get("evidence_ids") or label == "fact" and not s.get("photo_external_ids"):
-            if s.get("photo_external_ids"):
-                bucket = "photo"
-            else:
-                bucket = "communication"
-        elif s.get("photo_external_ids") or "photo" in pk:
-            bucket = "photo"
-        elif s.get("video_external_ids") or "spoken" in text.lower() or "video" in pk:
-            bucket = "video"
-        elif s.get("artifact_ids") or "artifact" in pk:
-            bucket = "artifact"
-        else:
-            bucket = "other"
-        if len(groups[bucket]) < 4:
-            groups[bucket].append(text)
-
-    paras: list[str] = [
-        f"From what MemoryBox has, here is an evidence-backed account of {subject}. "
-        "This is synthesis from retrieved sources, not family truth until you Save Story."
+    pack: dict[str, Any],
+    llm: Any,
+) -> tuple[str, dict[str, Any]]:
+    """LLM synthesis from the prepared pack. Never returns stitch-as-essay."""
+    meta: dict[str, Any] = {"ok": False, "fail_closed": False}
+    if llm is None:
+        meta["fail_closed"] = True
+        return _fail_closed(pack, reason="No language model is configured."), meta
+    payload = json.dumps(pack, default=str)
+    messages = [
+        ChatMessage(role="system", content=SYSTEM_PROMPT),
+        ChatMessage(
+            role="user",
+            content=payload,
+        ),
     ]
-    if groups["journal"]:
-        paras.append("Owner journal: " + " ".join(groups["journal"]))
-    if groups["recollection"]:
-        paras.append("Owner recollection (Story): " + " ".join(groups["recollection"]))
-    if groups["communication"]:
-        paras.append(
-            "Communications in the archive (may be hidden in Gallery until you add Email/SMS): "
-            + " ".join(groups["communication"])
-        )
-    if groups["photo"]:
-        paras.append("Photos: " + " ".join(groups["photo"]))
-    if groups["video"]:
-        paras.append("Video / spoken moments: " + " ".join(groups["video"]))
-    if groups["artifact"]:
-        paras.append("Artifacts: " + " ".join(groups["artifact"]))
-    if groups["other"]:
-        paras.append("Also cited: " + " ".join(groups["other"]))
+    try:
+        result = llm.chat(messages, json_mode=False)
+        text = str(getattr(result, "content", "") or "").strip()
+        if not text:
+            meta["fail_closed"] = True
+            return _fail_closed(pack, reason="The model returned no narration."), meta
+        footer = evidence_used_footer(pack)
+        if "Family evidence used" not in text:
+            text = text.rstrip() + "\n\n" + footer
+        meta["ok"] = True
+        meta["model"] = getattr(result, "model", None)
+        return text, meta
+    except (ProviderUnavailable, ProviderError) as exc:
+        meta["fail_closed"] = True
+        meta["error"] = str(exc)
+        return _fail_closed(pack, reason="The narrator model is unavailable."), meta
+    except Exception as exc:  # noqa: BLE001
+        meta["fail_closed"] = True
+        meta["error"] = str(exc)
+        return _fail_closed(pack, reason="The narrator model is unavailable."), meta
 
-    sourced = sum(len(v) for v in groups.values())
-    if sourced == 0:
-        if fallback and fallback.strip():
-            paras.append(fallback.strip())
-        else:
-            paras.append(
-                "No citable excerpts were available for a longer account. "
-                "MemoryBox will not invent family facts."
-            )
-    n_cite = len(citations or [])
-    cov = ""
-    if isinstance(coverage, dict) and coverage.get("summary"):
-        cov = str(coverage.get("summary") or "").strip()
-    footer = f"From {n_cite} cited source(s)."
-    if cov:
-        footer = f"{cov} {footer}"
-    paras.append(footer + " Use the gallery and coverage strip to inspect originals.")
-    return "\n\n".join(paras)
+
+def tell_from_hits(
+    plan: Any,
+    *,
+    llm: Any,
+    evidence: list[Any] | None = None,
+    photos: list[Any] | None = None,
+    videos: list[Any] | None = None,
+    stories: list[Any] | None = None,
+    journals: list[Any] | None = None,
+    artifacts: list[Any] | None = None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    pack = prepare_narrative_pack(
+        plan,
+        evidence=evidence,
+        photos=photos,
+        videos=videos,
+        stories=stories,
+        journals=journals,
+        artifacts=artifacts,
+    )
+    text, meta = synthesize_tell(plan, pack, llm)
+    return text, pack, meta

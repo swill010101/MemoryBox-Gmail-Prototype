@@ -1012,6 +1012,9 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
             continue
+        skip = str(payload.get("mailbox_skip") or payload.get("skip_reason") or "").strip().lower()
+        if skip in {"spam", "trash"}:
+            continue
         rows_payload.append((r, payload))
 
     def _keep(payload: dict[str, Any], row: dict[str, Any]) -> bool:

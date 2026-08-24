@@ -1197,17 +1197,6 @@ def build_explore_find(
         ).strip()
     counts["email_available"] = email_available
     counts["calendar_available"] = calendar_available
-    if re.search(
-        r"(?i)\b(create|write|generate)\b.+\b(narrative|story)\b|\bnarrative of\b|\bnarrate\b",
-        text,
-    ):
-        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
-        if plan_mode != "tell":
-            summary = (
-                (summary or "").rstrip()
-                + " Narrative generation is I11 — not implemented in I8A. "
-                "Showing matching texts as evidence only."
-            ).strip()
 
     plan = result.get("plan") or {}
     coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
@@ -1288,6 +1277,9 @@ def build_explore_find(
         "answer_text": result.get("answer_text"),
         "statements": result.get("statements") or [],
         "citations": result.get("citations") or [],
+        "narrative_pack": result.get("narrative_pack"),
+        "narration_unavailable": bool(result.get("narration_unavailable")),
+        "evidence_used": ((result.get("narrative_pack") or {}).get("evidence_used") if isinstance(result.get("narrative_pack"), dict) else None),
         "living_view": persistable_view(
             original_ask=text,
             plan=plan,

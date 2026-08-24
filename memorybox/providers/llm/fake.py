@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from typing import Literal
 
@@ -9,6 +10,25 @@ from memorybox.providers.base import ProviderHealth
 from memorybox.providers.llm.dto import ChatMessage, ChatResultDto, EmbeddingDto
 
 _DIM = 32
+
+
+def _fake_narrative(pack_json: str) -> str:
+    try:
+        pack = json.loads(pack_json)
+    except Exception:
+        return "The prepared pack could not be read. MemoryBox will not invent family facts."
+    bits: list[str] = []
+    for u in pack.get("units") or []:
+        text = str(u.get("content") or u.get("authored_text") or u.get("subject") or "").strip()
+        if text:
+            bits.append(text[:280])
+        if len(bits) >= 10:
+            break
+    body = " ".join(bits) if bits else "No citable excerpts were in the prepared pack."
+    used = pack.get("evidence_used") or {}
+    footer_bits = [f"{k} {v}" for k, v in used.items() if v]
+    footer = "Family evidence used: " + (", ".join(footer_bits) if footer_bits else "none") + "."
+    return body + "\n\n" + footer
 
 
 def _token_vector(text: str) -> tuple[float, ...]:
@@ -44,5 +64,11 @@ class FakeLlmProvider:
         self, messages: list[ChatMessage], *, json_mode: bool = False
     ) -> ChatResultDto:
         last = messages[-1].content if messages else ""
-        content = '{"ok":true}' if json_mode else f"echo:{last[:200]}"
+        system = next((m.content for m in messages if m.role == "system"), "")
+        if json_mode:
+            content = '{"ok":true}'
+        elif "NARRATIVE_SYNTHESIS" in (system or ""):
+            content = _fake_narrative(last)
+        else:
+            content = f"echo:{last[:200]}"
         return ChatResultDto(model="fake-chat", content=content)

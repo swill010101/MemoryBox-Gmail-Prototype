@@ -643,6 +643,7 @@ class QueryPlan:
     want_cross_source: bool = False
     theme_labels: tuple[str, ...] = ()
     output_mode: OutputMode = "show"
+    semantic_constraints: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

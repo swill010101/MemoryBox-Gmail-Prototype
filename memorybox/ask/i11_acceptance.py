@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from memorybox.ask.narrative import memories_from_citations, persistable_view, synthesize_tell
+from memorybox.ask.evidence_prep import prepare_narrative_pack
+from memorybox.ask.narrative import memories_from_citations, persistable_view, tell_from_hits
 from memorybox.ask.orchestrator import AskOrchestrator
+from memorybox.ask.retrieve import EvidenceHit, PhotoHit
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.explore.find import curator_answer_text
 from memorybox.planner import compile_output_mode, plan_ask
@@ -144,9 +146,9 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "c03_tell_uses_journal_pack",
         (told.plan or {}).get("output_mode") == "tell"
-        and "evidence-backed account" in (told.answer_text or "")
         and journal_in_tell
-        and saved.get("ask_available"),
+        and saved.get("ask_available")
+        and "evidence-backed account" not in (told.answer_text or "").lower(),
         checks,
         problems,
         detail=(told.answer_text or "")[:240],
@@ -157,7 +159,8 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         "c02_show_answer_is_result_set",
         (shown.plan or {}).get("output_mode") == "show"
         and "evidence-backed account" not in show_text.lower()
-        and "not family truth until you Save Story" not in show_text,
+        and "not family truth until you Save Story" not in show_text
+        and "narration unavailable" not in show_text.lower(),
         checks,
         problems,
         detail=show_text[:200],
@@ -177,17 +180,30 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         detail=str(curator_answer_text(hidden_sms)),
     )
 
-    stitched = synthesize_tell(
-        tell_plan,
-        [{"text": "SMS: see you in Alaska", "label": "Fact", "evidence_ids": ["e1"], "provenance_kind": "archive_evidence"}],
-        [{"kind": "evidence", "evidence_id": "e1", "source": "sms_export"}],
+    sms_plan = plan_ask("Tell me about Alaska packing", ctx)
+    sms_text, sms_pack, _sms_meta = tell_from_hits(
+        sms_plan,
+        llm=FakeLlmProvider(),
+        evidence=[
+            EvidenceHit(
+                evidence_id="e1",
+                evidence_kind="communication",
+                summary="SMS: see you in Alaska",
+                score=1.0,
+                excerpt="see you in Alaska packing list",
+                source="sms_export",
+                sent_at="2017-01-02T12:00:00",
+                channel="sms",
+            )
+        ],
     )
     _check(
-        "c03_stitch_includes_hidden_style_comms",
-        "Alaska" in stitched and "not family truth" in stitched.lower(),
+        "c03_pack_includes_hidden_style_comms",
+        "Alaska" in sms_text
+        and any(u.get("kind") == "communication" for u in (sms_pack.get("units") or [])),
         checks,
         problems,
-        detail=stitched[:180],
+        detail=sms_text[:180],
     )
 
     view = persistable_view(
@@ -245,6 +261,335 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=f"ask_available={draft.ask_available} freeze_rejected={freeze_rejected}",
+    )
+
+    from memorybox.ask.semantic import (
+        register_interpretation,
+        reset_interpretations,
+        resolve_semantic_constraints,
+    )
+    from memorybox.ask.travel import extract_travel
+    from memorybox.providers.base import ProviderUnavailable
+
+    person_html = (root / "person" / "static" / "person-explore.html").read_text(encoding="utf-8")
+    _check(
+        "c05_shared_curator_not_unhide",
+        'id="mb-explore-copy"' in person_html
+        and "Save as Story" in person_html
+        and "mb-person-hide-curator" in person_html
+        and 'id="mb-explore-curator" hidden' in person_html,
+        checks,
+        problems,
+        detail="Person Explorer uses the same curator actions, still hidden until tell",
+    )
+
+    authored_sample = (
+        "Packing list for Maui.\n\nOn Tue, Jan 1, 2017 Alice wrote:\nQuoted older thread"
+    )
+    from memorybox.ask.authored import authored_email_text, sms_location_assertions
+
+    authored, aflags = authored_email_text(authored_sample)
+    _check(
+        "c12_authored_email_pack_time",
+        "Packing list" in authored and "Quoted older" not in authored,
+        checks,
+        problems,
+        detail=authored[:120],
+    )
+
+    loc = sms_location_assertions("See you tomorrow", attachments=None)
+    _check(
+        "c19_sms_timestamp_not_location",
+        loc == [],
+        checks,
+        problems,
+        detail=str(loc),
+    )
+    loc2 = sms_location_assertions("I'm at the Maui airport")
+    _check(
+        "c19_sms_authored_place_basis",
+        loc2 and loc2[0].get("basis") == "authored_text",
+        checks,
+        problems,
+        detail=str(loc2),
+    )
+
+    delta_body = (
+        "Delta Air Lines itinerary confirmation ABC12X\n"
+        "Flight DL123 STL → OGG March 12, 2017\n"
+        "Passengers: Tom Will"
+    )
+    hotel_body = (
+        "Marriott hotel reservation confirmation HTL99A\n"
+        "Check-in March 12, 2017 check-out March 18, 2017 Maui"
+    )
+    flight = extract_travel(
+        subject="Delta itinerary confirmation",
+        body=delta_body,
+        source_unit_id="u-comm-1",
+        source_evidence_id="e-delta",
+    )
+    lodging = extract_travel(
+        subject="Marriott reservation",
+        body=hotel_body,
+        source_unit_id="u-comm-2",
+        source_evidence_id="e-hotel",
+    )
+    _check(
+        "c24_dual_travel_extract",
+        bool(flight)
+        and flight.get("travel_kind") == "flight"
+        and flight.get("origin") == "STL"
+        and flight.get("destination") == "OGG"
+        and flight.get("derived_from", {}).get("evidence_id") == "e-delta"
+        and bool(lodging)
+        and lodging.get("travel_kind") == "lodging",
+        checks,
+        problems,
+        detail=str(flight)[:240],
+    )
+
+    email_hit = EvidenceHit(
+        evidence_id="e-delta",
+        evidence_kind="communication",
+        summary="Delta itinerary confirmation",
+        score=1.0,
+        excerpt=delta_body,
+        source="email_mbox",
+        sent_at="2017-03-01T12:00:00",
+        channel="email",
+    )
+    cal_unrelated = EvidenceHit(
+        evidence_id="e-cal-dentist",
+        evidence_kind="calendar_event",
+        summary="Dentist 2017",
+        score=1.0,
+        excerpt="cleaning",
+        source="postgres_keyword",
+        sent_at="2017-06-01T09:00:00",
+        channel="calendar",
+    )
+    photo = PhotoHit(
+        provider_key="fake",
+        external_id="p-maui",
+        taken_at="2017-03-14T10:00:00",
+        people=["Tom"],
+        location="Maui",
+        thumb_url=None,
+        web_url=None,
+        latitude=20.8,
+        longitude=-156.3,
+        mb_person_id="person-tom",
+        identity_trust="confirmed",
+        original_filename="IMG_0001.JPG",
+    )
+    hawaii_plan = plan_ask("Tell me about my Hawaii trip in 2017", ctx)
+    pack = prepare_narrative_pack(
+        hawaii_plan,
+        evidence=[email_hit, cal_unrelated],
+        photos=[photo],
+    )
+    kinds = [u.get("kind") for u in pack.get("units") or []]
+    travel_u = next((u for u in pack["units"] if u.get("kind") == "travel"), None)
+    comm_u = next((u for u in pack["units"] if u.get("kind") == "communication"), None)
+    media_u = next((u for u in pack["units"] if u.get("kind") == "media_observation"), None)
+    _check(
+        "c18_c24_pack_keeps_communication_and_travel",
+        "communication" in kinds
+        and "travel" in kinds
+        and "calendar" not in kinds
+        and travel_u is not None
+        and comm_u is not None
+        and travel_u.get("derived_from", {}).get("evidence_id") == "e-delta"
+        and travel_u.get("provenance", {}).get("never_replaces_original") is True,
+        checks,
+        problems,
+        detail=str(kinds),
+    )
+    presence = (media_u or {}).get("claims") or []
+    _check(
+        "c17_presence_not_photographer",
+        any(c.get("type") == "presence" for c in presence)
+        and (media_u or {}).get("flags", {}).get("filename_is_not_photographer") is True
+        and not any(c.get("type") == "photographer" for c in presence),
+        checks,
+        problems,
+        detail=str(presence),
+    )
+    _check(
+        "c11_spam_excluded_constant",
+        "spam" in (pack.get("coverage") or {}).get("excluded", []),
+        checks,
+        problems,
+        detail=str((pack.get("coverage") or {}).get("excluded")),
+    )
+    _check(
+        "c22_evidence_used_supplied_units",
+        int((pack.get("evidence_used") or {}).get("emails") or 0) >= 1
+        and int((pack.get("evidence_used") or {}).get("travel") or 0) >= 1
+        and int((pack.get("evidence_used") or {}).get("photos") or 0) >= 1
+        and int((pack.get("volume") or {}).get("supplied_to_model_n") or 0)
+        == len(pack.get("units") or []),
+        checks,
+        problems,
+        detail=str(pack.get("evidence_used")),
+    )
+
+    xmas_plan = plan_ask(
+        "Tell me about what Peggy and I discussed around Christmas in 2017",
+        ctx,
+    )
+    xmas_pack = prepare_narrative_pack(
+        xmas_plan,
+        evidence=[
+            EvidenceHit(
+                evidence_id="e-sms-1",
+                evidence_kind="communication",
+                summary="Peggy: packing gifts",
+                score=1.0,
+                excerpt="packing gifts",
+                source="sms_export",
+                sent_at="2017-12-20T12:00:00",
+                channel="sms",
+                people=["Peggy", "Tom"],
+            ),
+            cal_unrelated,
+        ],
+    )
+    xmas_kinds = [u.get("kind") for u in xmas_pack.get("units") or []]
+    _check(
+        "c14_c20_narrow_calendar_not_year_dump",
+        "calendar" not in xmas_kinds and "communication" in xmas_kinds,
+        checks,
+        problems,
+        detail=str(xmas_kinds),
+    )
+
+    many = [
+        EvidenceHit(
+            evidence_id=f"e-{i}",
+            evidence_kind="communication",
+            summary=f"note {i} 2017 harbor",
+            score=1.0,
+            excerpt=f"day {i} harbor walk",
+            source="email_mbox",
+            sent_at=f"2017-{(i % 12) + 1:02d}-10T12:00:00",
+            channel="email",
+        )
+        for i in range(50)
+    ]
+    year_plan = plan_ask("Tell me about my 2017", ctx)
+    year_pack = prepare_narrative_pack(year_plan, evidence=many)
+    _check(
+        "c16_c21_hierarchical_not_first_n",
+        (year_pack.get("volume") or {}).get("reduction") in {"hierarchical_summary", "organize"}
+        and (year_pack.get("derived_summaries") or [])
+        and int((year_pack.get("volume") or {}).get("retrieved_n") or 0) == 50
+        and int((year_pack.get("volume") or {}).get("supplied_to_model_n") or 0) < 50,
+        checks,
+        problems,
+        detail=str(year_pack.get("volume")),
+    )
+
+    class _DownLlm:
+        provider_key = "down"
+
+        def health(self):
+            from memorybox.providers.base import ProviderHealth
+
+            return ProviderHealth(provider_key="down", ok=False, detail="down")
+
+        def chat(self, messages, *, json_mode=False):
+            raise ProviderUnavailable("model down")
+
+    down_text, down_pack, down_meta = tell_from_hits(
+        hawaii_plan,
+        llm=_DownLlm(),
+        evidence=[email_hit],
+        photos=[photo],
+    )
+    _check(
+        "c23_fail_closed_no_stitch",
+        down_meta.get("fail_closed") is True
+        and "narration unavailable" in down_text.lower()
+        and "evidence-backed account" not in down_text.lower()
+        and (down_pack.get("units") or []),
+        checks,
+        problems,
+        detail=down_text[:240],
+    )
+
+    planner_src = (root / "planner" / "__init__.py").read_text(encoding="utf-8")
+    semantic_src = (root / "ask" / "semantic.py").read_text(encoding="utf-8")
+    reset_interpretations()
+    unresolved = resolve_semantic_constraints("Tell me about when Dad was young")
+    _check(
+        "c25_no_hardcoded_young_range",
+        unresolved
+        and unresolved[0].constraint_kind == "age_band"
+        and unresolved[0].age_band is None
+        and not unresolved[0].resolved
+        and "when_he_was_young" not in planner_src
+        and "age_band=(10, 25)" not in semantic_src
+        and "age_band: [10, 25]" not in semantic_src
+        and "age_band: [10,25]" not in planner_src,
+        checks,
+        problems,
+        detail=str(unresolved[0].to_dict()),
+    )
+    register_interpretation("relative_youth", version="owner.v1", age_band=(16, 24))
+    resolved_band = resolve_semantic_constraints("when Dad was young")
+    _check(
+        "c25_generic_fields_not_phrase_column",
+        resolved_band
+        and resolved_band[0].age_band == (16, 24)
+        and resolved_band[0].interpretation_id == "relative_youth"
+        and resolved_band[0].interpretation_version == "owner.v1"
+        and "when_he_was_young" not in resolved_band[0].to_dict(),
+        checks,
+        problems,
+        detail=str(resolved_band[0].to_dict()),
+    )
+    reset_interpretations()
+    young_ask = orch.ask("Tell me about when Dad was young")
+    _check(
+        "c25_ask_rather_than_guess",
+        (young_ask.answer_kind == "clarification")
+        or (
+            "guess" in (young_ask.answer_text or "").lower()
+            or "age" in (young_ask.answer_text or "").lower()
+            or "young" in (young_ask.answer_text or "").lower()
+        ),
+        checks,
+        problems,
+        detail=(young_ask.answer_text or "")[:240],
+    )
+
+    view2 = persistable_view(
+        original_ask="Show me Dad when he was young",
+        plan={
+            "output_mode": "tell",
+            "semantic_constraints": [unresolved[0].to_dict()],
+        },
+        presentation={"gallery_show_sms": False},
+    )
+    _check(
+        "c08_semantic_constraints_on_plan",
+        view2["plan"].get("semantic_constraints")
+        and "when_he_was_young" not in str(view2)
+        and view2.get("output_mode") == "tell",
+        checks,
+        problems,
+        detail=str(view2["plan"].get("semantic_constraints")),
+    )
+
+    _check(
+        "c15_fake_llm_synthesizes_from_pack",
+        "harbor" in (told.answer_text or "").lower()
+        or "Family evidence used" in (told.answer_text or ""),
+        checks,
+        problems,
+        detail=(told.answer_text or "")[:240],
     )
 
     ok = not problems

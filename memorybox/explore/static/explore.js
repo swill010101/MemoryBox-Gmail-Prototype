@@ -1391,6 +1391,8 @@
         citations: payload.citations || [],
         livingView: payload.living_view || null,
         coverage: payload.coverage || null,
+        evidenceUsed: payload.evidence_used || null,
+        narrationUnavailable: Boolean(payload.narration_unavailable),
         chips: chips,
         typeFilter: nextType,
         includeTexts: includeTexts,
@@ -2049,17 +2051,53 @@
     if (titleNode) titleNode.textContent = heading;
     if (bodyNode) bodyNode.textContent = state.domain.summary || "";
     const curator = document.getElementById("mb-explore-curator");
-    const tell = state.domain.outputMode === "tell" && !PERSON_MODE;
+    const tell = state.domain.outputMode === "tell";
     if (curator) curator.classList.toggle("is-tell", Boolean(tell));
     const actions = document.getElementById("mb-explore-curator-actions");
     const note = document.getElementById("mb-explore-curator-note");
     if (actions) actions.hidden = !tell;
     if (note) note.hidden = !tell;
+    if (PERSON_MODE && curator) {
+      if (tell) {
+        curator.hidden = false;
+        curator.removeAttribute("aria-hidden");
+        curator.classList.remove("mb-person-hide-curator");
+      } else {
+        curator.hidden = true;
+        curator.setAttribute("aria-hidden", "true");
+        curator.classList.add("mb-person-hide-curator");
+      }
+    }
     if (PERSON_MODE) pushPersonResultSummary();
     const covEl = document.getElementById("mb-explore-coverage");
     if (covEl) {
       const cov = state.domain.coverage;
-      if (cov && (cov.summary || cov.missing)) {
+      const used = state.domain.evidenceUsed;
+      if (tell && used) {
+        const bits = [];
+        const keys = [
+          ["photos", "photos"],
+          ["video_moments", "video"],
+          ["spoken_moments", "spoken"],
+          ["emails", "emails"],
+          ["sms", "texts"],
+          ["calendar_events", "calendar"],
+          ["stories", "stories"],
+          ["journal_entries", "journal"],
+          ["artifacts", "artifacts"],
+          ["travel", "travel"],
+        ];
+        keys.forEach((pair) => {
+          const n = Number(used[pair[0]] || 0);
+          if (n > 0) bits.push(`${pair[1]} ${n}`);
+        });
+        let line = bits.length ? "Family evidence used: " + bits.join(" · ") : "Family evidence used: none";
+        if (state.domain.narrationUnavailable) {
+          line += " · narration unavailable";
+        }
+        covEl.textContent = line;
+        covEl.hidden = false;
+      } else if (cov && (cov.summary || cov.missing)) {
         const bits = [];
         const keys = ["photos", "video", "spoken", "email", "sms", "calendar", "story", "journal", "artifact"];
         keys.forEach((k) => {

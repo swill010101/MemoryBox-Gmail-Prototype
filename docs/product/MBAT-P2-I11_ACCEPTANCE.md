@@ -1,7 +1,6 @@
 # MBAT-P2-I11 — Narrative & Summaries
 
-**Increment:** P2-I11 · **LOCKED** 2026-08-24 (final evidence-prep) · C-17–C-25 apply when build-authorized  
-**Prove:** `python -m memorybox prove-i11`
+**Increment:** P2-I11 · **BUILD AUTHORIZED** 2026-08-24 · C-01–C-25 · Prove: `python -m memorybox prove-i11`
 
 | ID | Criterion |
 |---|---|

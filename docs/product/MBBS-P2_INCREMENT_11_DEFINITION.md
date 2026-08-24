@@ -1,11 +1,11 @@
 # P2-I11 — Narrative & Summaries (Ask output mode)
 
-**Status:** Definition **LOCKED** 2026-08-24 (final evidence-prep decisions) · I10C **ACCEPTED** · **not authorized to build** until Tom reviews and approves  
+**Status:** Definition **LOCKED** 2026-08-24 · I10C **ACCEPTED** · **BUILD AUTHORIZED** 2026-08-24  
 **Assessment:** [MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
 **PRD:** [MBPRD-P2-I11_NARRATION.md](MBPRD-P2-I11_NARRATION.md)  
 **Acceptance:** [MBAT-P2-I11_ACCEPTANCE.md](MBAT-P2-I11_ACCEPTANCE.md)  
 **MBPS:** P2-NAR-01..03 (not P2-NAR-04 / I12)  
-**Does not start:** I13 Save View UI · Narration app · Journal redesign · I12 · Face SoT · prep/LLM code
+**Does not start:** I13 Save View UI · Narration app · Journal redesign · I12 · Face SoT
 
 I10C is **ACCEPTED**. Do not block I11 on unrelated recognition.
 
@@ -59,4 +59,4 @@ No disabled Save View. Not Living Album.
 
 ---
 
-**LOCKED 2026-08-24.** Do not implement until explicit build authorization.
+**LOCKED 2026-08-24. BUILD AUTHORIZED 2026-08-24.**

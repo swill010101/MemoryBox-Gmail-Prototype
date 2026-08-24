@@ -1,6 +1,6 @@
 # MBPRD-P2-I11 — Narrative & Summaries (Ask output mode)
 
-**Status:** PRD **LOCKED** 2026-08-24 (final evidence-prep decisions) · I10C **ACCEPTED** · **do not implement** until explicit build authorization  
+**Status:** PRD **LOCKED** 2026-08-24 · I10C **ACCEPTED** · **BUILD AUTHORIZED** 2026-08-24  
 **Definition:** [MBBS-P2_INCREMENT_11_DEFINITION.md](MBBS-P2_INCREMENT_11_DEFINITION.md)  
 **Assessment:** [MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
 **Acceptance:** [MBAT-P2-I11_ACCEPTANCE.md](MBAT-P2-I11_ACCEPTANCE.md)  
@@ -42,4 +42,4 @@ Acceptance C-01–C-25 including dual travel units and “when Dad was young” 
 
 ---
 
-**LOCKED 2026-08-24.** Not authorized to build until Tom reviews this PRD and says approved to build.
+**LOCKED 2026-08-24. BUILD AUTHORIZED 2026-08-24.**

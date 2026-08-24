@@ -1,6 +1,6 @@
 # MBAS-P2-I11 — Narrative Evidence Preparation (final pre-build lock)
 
-**Status:** Planning **LOCKED** 2026-08-24 (final evidence-prep decisions) · **do not build** until explicit authorization  
+**Status:** Planning **LOCKED** 2026-08-24 · **BUILD AUTHORIZED** 2026-08-24  
 **Does not start:** prep/LLM implementation · persisted authored-body column · I12 web retrieval · I13 Save View UI · `/narration/ui`  
 **Depends on:** [MBAS-P2-I11](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · I10C **ACCEPTED**
 
@@ -295,9 +295,7 @@ Keep C-01–C-16. Shared curator (C-05) means **one component**, not unhide.
 
 ## 13. Remaining founder input
 
-**Build authorization** on this contract.
-
-Decided this pass: travel = communication **and** derived travel unit (never replace original). “Young” = generic semantic constraint (Person, age_band, interpretation/version); convert via birth or other sufficient evidence; ask if not enough; **no** hard-coded 10–25; **no** `when_he_was_young` field.
+None. **Build authorized** 2026-08-24.
 
 Not open: model host name; product token cap; persist authored email as I11 gate; stitch fallback; Living Album; Save View UI; I12 inside I11.
 

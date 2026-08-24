@@ -233,6 +233,8 @@ class AskResult:
     inventing: bool = False
     trace_id: str | None = None
     coverage: dict[str, Any] | None = None
+    narrative_pack: dict[str, Any] | None = None
+    narration_unavailable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -256,6 +258,8 @@ class AskResult:
             "inventing": self.inventing,
             "trace_id": self.trace_id,
             "coverage": self.coverage,
+            "narrative_pack": self.narrative_pack,
+            "narration_unavailable": self.narration_unavailable,
         }
 
 
@@ -855,17 +859,6 @@ def _build_answer(
         kind = "mixed"
     else:
         kind = "evidence_backed"
-    if getattr(plan, "output_mode", "show") == "tell":
-        from memorybox.ask.narrative import synthesize_tell
-
-        text = synthesize_tell(
-            plan,
-            statements,
-            citations,
-            None,
-            fallback=" ".join(parts),
-        )
-        return kind, text, statements, citations, None
     return kind, " ".join(parts), statements, citations, None
 
 
@@ -1094,6 +1087,9 @@ class AskOrchestrator:
 
         # Birthday / anniversary Explore windows from MB People facts when present.
         plan = _apply_person_life_event_windows(plan)
+        from memorybox.ask.semantic import apply_constraints_to_plan
+
+        plan = apply_constraints_to_plan(plan)
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
@@ -1487,6 +1483,36 @@ class AskOrchestrator:
             artifacts=artifacts,
             guided_capture=guided_capture,
         )
+        narrative_pack: dict[str, Any] | None = None
+        narration_unavailable = False
+        if (
+            getattr(plan, "output_mode", "show") == "tell"
+            and answer_kind not in {"clarification", "journal_capture"}
+        ):
+            from memorybox.ask.narrative import tell_from_hits
+
+            answer_text, narrative_pack, synth_meta = tell_from_hits(
+                plan,
+                llm=self.llm,
+                evidence=evidence,
+                photos=photos,
+                videos=videos,
+                stories=stories,
+                journals=journals,
+                artifacts=artifacts,
+            )
+            narration_unavailable = bool(synth_meta.get("fail_closed"))
+            if narrative_pack and isinstance(narrative_pack.get("coverage"), dict):
+                pack_cov = narrative_pack["coverage"]
+                if coverage:
+                    coverage = {
+                        **coverage,
+                        "summary": pack_cov.get("summary") or coverage.get("summary"),
+                        "i11_missing": pack_cov.get("missing"),
+                        "truncated": pack_cov.get("truncated"),
+                    }
+                else:
+                    coverage = pack_cov
         if (
             coverage
             and coverage.get("summary")
@@ -1604,6 +1630,8 @@ class AskOrchestrator:
             provider_status=providers,
             inventing=False,
             coverage=coverage,
+            narrative_pack=narrative_pack,
+            narration_unavailable=narration_unavailable,
         )
 
     def get_context(self, session_id: str) -> AskContext:
