@@ -66,7 +66,7 @@ def run_prove_i10c(*, flightsim: bool = False) -> dict[str, Any]:
         and "Mine" not in html
         and "Family contributions" not in html
         and "authored-memory" in html
-        and "mb-narrative-field.js?v=i10a2-6" in html
+        and "mb-narrative-field.js?v=i10a2-7" in html
         and "described_end_date" not in html,
         checks,
         problems,

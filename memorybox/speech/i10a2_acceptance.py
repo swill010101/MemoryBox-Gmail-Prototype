@@ -80,7 +80,7 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "a01_journal_authored",
-        'speech: "authored-memory"' in journal and 'id="body"' in journal and 'id="editBody"' in journal,
+        'speech: "authored-memory"' in journal and 'id="ed-body"' in journal,
         checks,
         problems,
         "Journal bodies authored-memory",
@@ -141,6 +141,15 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     _check("a04_pause_resume", "Pause" in nf and "Resume" in nf and "recorder.pause" in nf, checks, problems)
     _check("a05_stop_review", 'mode = "review"' in nf and "Save" in nf, checks, problems)
     _check("a06_play", 'textContent = "Listen"' in nf and "mb-nf-listen" in nf, checks, problems)
+    _check(
+        "tell_this_stays_on_review",
+        'startRecording({ addMore: true })' in nf
+        and "preferEnd" in nf
+        and "caretTouched" in nf,
+        checks,
+        problems,
+        "review chrome keeps Tell this; default insert is end unless caret was placed",
+    )
     sover = nf.split("async function startOver")[-1][:1200] if "async function startOver" in nf else ""
     _check(
         "a10_start_over",
