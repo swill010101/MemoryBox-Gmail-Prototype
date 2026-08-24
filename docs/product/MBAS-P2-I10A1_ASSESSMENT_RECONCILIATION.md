@@ -1,7 +1,7 @@
 # P2-I10A.1 — Assessment reconciliation
 
-**Status:** Repository assessment **2026-08-23** · PRD **ACCEPTED** (Explorer amendment) · chrome not yet implemented  
-**Does not implement** code, migrations, routes, templates, APIs, or tests  
+**Status:** Repository assessment **2026-08-23** · increment **ACCEPTED** 2026-08-24 (Tom: “i10a.1 is accepted”)  
+**Historical assessment.** Does not start I10A.2.  
 **Definition / PRD / map / contract:** [MBBS-P2_INCREMENT_10A1_DEFINITION.md](MBBS-P2_INCREMENT_10A1_DEFINITION.md) · [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md) · [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md) · [MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md](MBSC-P2-I10A1_PERSON_SCREEN_CONTRACT.md) · [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md)  
 **Base:** `cursor/p2-i10b-artifacts-49da` (I10B **ACCEPTED** 2026-08-23)
 

@@ -143,6 +143,33 @@ html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
   color: #b7c0d0 !important;
   font-size: 0.9rem;
 }
+.mb-person-aka,
+.mb-person-life-dates,
+.mb-person-kin,
+.mb-person-place,
+.mb-person-memory-totals,
+.mb-person-result-range {
+  margin: 0.2rem 0 0;
+  color: #9aa3b5 !important;
+  font-size: 0.9rem;
+}
+.mb-person-life-dates { color: #c5cede !important; }
+.mb-person-memory-totals { color: #b7c0d0 !important; }
+.mb-person-result-summary {
+  margin: 0 0 0.55rem;
+  color: #9aa3b5;
+  font-size: 0.86rem;
+}
+.mb-person-chips { margin: 0.35rem 0 0.15rem; }
+button.mb-person-action {
+  appearance: none;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: none !important;
+}
 .mb-person-actions {
   display: flex;
   flex-wrap: wrap;
@@ -175,11 +202,18 @@ html[data-mb-surface="people"] .mb-explore-curator-avatar.has-photo {
 }
 .mb-person-ask-band input::placeholder { color: #7f8aa0 !important; }
 
-.mb-person-explore .mb-explore-curator {
-  background: #141b27 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
+/* display:grid on .mb-explore-curator beats HTML hidden — force the duplicate card off */
+html[data-mb-surface="people"] #mb-explore-curator,
+html[data-mb-surface="people"] .mb-person-hide-curator,
+.mb-person-explore #mb-explore-curator {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
   box-shadow: none !important;
 }
 .mb-person-explore .mb-explore-curator-copy h1 {
@@ -590,11 +624,42 @@ html[data-mb-surface="people"] .mb-explore-density #mb-density-label,
   height: 42px;
   border-radius: 50%;
   background: #2a3548;
+  background-size: cover;
+  background-position: center;
   display: grid;
   place-items: center;
   font-size: 0.78rem;
   font-weight: 700;
   color: #c9d4e6;
+}
+.mb-person-fam-av.has-photo {
+  color: transparent;
+  border: 1px solid transparent;
+}
+.mb-person-about-dl {
+  margin: 0 0 0.65rem;
+  display: grid;
+  gap: 0.45rem;
+}
+.mb-person-about-dl > div {
+  display: grid;
+  grid-template-columns: 7.2rem 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.mb-person-about-dl dt {
+  margin: 0;
+  color: #9aa3b5;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.mb-person-about-dl dd {
+  margin: 0;
+  color: #e8edf5;
+  font-size: 0.9rem;
+}
+#mb-person-about-card {
+  cursor: pointer;
 }
 .mb-person-fam-label {
   font-size: 0.72rem;

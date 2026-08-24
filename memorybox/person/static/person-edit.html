@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Edit person</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-3" />
+  <link rel="stylesheet" href="/static/person/person-edit.css?v=i10a1-3" />
+</head>
+<body class="mb-person-edit-surface">
+  <div class="mb-edit-wrap">
+    <header class="mb-edit-top">
+      <div class="mb-explore-brand">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Person profile</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="mb-edit-head">
+      <div>
+        <p class="mb-edit-kicker">Edit person</p>
+        <h1 id="mb-edit-title">__MB_PERSON_EDIT_NAME__</h1>
+        <p class="mb-edit-sub">Canonical MemoryBox Person. Changes stay in MemoryBox.</p>
+      </div>
+      <div class="mb-edit-head-actions">
+        <a class="mb-edit-back" id="mb-edit-enter-edit" href="/people/__MB_PERSON_EDIT_ID__/edit" hidden>Edit</a>
+        <a class="mb-edit-back" id="mb-edit-cancel" href="/people/ui?person=__MB_PERSON_EDIT_ID__">Cancel</a>
+      </div>
+    </div>
+
+    <p class="mb-edit-status" id="mb-edit-status" hidden></p>
+
+    <section class="mb-edit-card" id="mb-edit-profile">
+      <h2>Profile</h2>
+      <div class="mb-edit-portrait" id="mb-edit-portrait">?</div>
+      <label>Full / display name <input id="mb-edit-name" type="text" autocomplete="name" /></label>
+      <div class="mb-edit-row">
+        <label>Nickname <input id="mb-edit-nick" type="text" placeholder="Optional" /></label>
+        <label>Other name <input id="mb-edit-alt" type="text" placeholder="Optional" /></label>
+      </div>
+      <div class="mb-edit-aliases" id="mb-edit-aliases"></div>
+      <div class="mb-edit-row">
+        <label>Born
+          <input id="mb-edit-birth" type="text" placeholder="YYYY or YYYY-MM or YYYY-MM-DD" />
+        </label>
+        <label>Birth precision
+          <select id="mb-edit-birth-prec">
+            <option value="day">Day</option>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
+          </select>
+        </label>
+      </div>
+      <div class="mb-edit-row">
+        <label>Died
+          <input id="mb-edit-death" type="text" placeholder="Leave blank if unknown" />
+        </label>
+        <label>Death precision
+          <select id="mb-edit-death-prec">
+            <option value="day">Day</option>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
+          </select>
+        </label>
+      </div>
+      <label>Note on birth/death <input id="mb-edit-fact-note" type="text" /></label>
+      <label>Notes <textarea id="mb-edit-notes" placeholder="Owner notes"></textarea></label>
+      <div class="mb-edit-row">
+        <label>Email <input id="mb-edit-email" type="email" /></label>
+        <label>Phone (10 digits) <input id="mb-edit-phone" type="text" inputmode="numeric" /></label>
+      </div>
+      <div class="mb-edit-contacts" id="mb-edit-contacts"></div>
+      <p class="mb-edit-muted" data-mb-important-place>Important places: none recorded. MemoryBox will not invent a location.</p>
+    </section>
+
+    <section class="mb-edit-card" id="mb-edit-relationships">
+      <h2>Relationships</h2>
+      <p class="mb-edit-muted">Teach one side. MemoryBox keeps the inverse. Derived kinship stays labeled Derived.</p>
+      <div id="mb-edit-rel-groups"></div>
+      <div id="mb-edit-rel-write">
+      <div class="mb-edit-row">
+        <label>This person is the
+          <select id="mb-edit-rel-role">
+            <option value="father_of">father of</option>
+            <option value="mother_of">mother of</option>
+            <option value="parent_of">parent of</option>
+            <option value="spouse_of">spouse of</option>
+            <option value="partner_of">partner of</option>
+            <option value="sibling_of">sibling of</option>
+            <option value="child_of">child of</option>
+            <option value="son_of">son of</option>
+            <option value="daughter_of">daughter of</option>
+            <option value="grandparent_of">grandparent of</option>
+            <option value="grandchild_of">grandchild of</option>
+            <option value="uncle_of">uncle of</option>
+            <option value="aunt_of">aunt of</option>
+            <option value="nephew_of">nephew of</option>
+            <option value="niece_of">niece of</option>
+          </select>
+        </label>
+        <label>Related person
+          <input id="mb-edit-rel-q" type="text" list="mb-edit-people-list" placeholder="Type a name" />
+        </label>
+      </div>
+      <button type="button" class="mb-edit-btn" id="mb-edit-rel-save">Save relationship</button>
+      </div>
+      <div id="mb-edit-mar-write">
+      <h3>Wedding / anniversary</h3>
+      <div class="mb-edit-row">
+        <label>Partner <input id="mb-edit-mar-q" type="text" list="mb-edit-people-list" /></label>
+        <label>Date <input id="mb-edit-mar-date" type="text" placeholder="YYYY-MM-DD" /></label>
+      </div>
+      <button type="button" class="mb-edit-btn" id="mb-edit-mar-save">Save marriage date</button>
+      </div>
+      <div id="mb-edit-marriages"></div>
+      <datalist id="mb-edit-people-list"></datalist>
+    </section>
+
+    <section class="mb-edit-card" id="mb-edit-identity">
+      <h2>Identity and Sources</h2>
+      <div id="mb-edit-identity-body"></div>
+    </section>
+
+    <details class="mb-edit-card mb-edit-advanced" id="mb-edit-advanced">
+      <summary>Advanced identity tools</summary>
+      <p class="mb-edit-muted">Specialist or destructive. Confirm before using. These do not write Immich person names or faces.</p>
+      <label>I am this person
+        <button type="button" class="mb-edit-btn" id="mb-edit-owner">Save as me</button>
+      </label>
+      <p class="mb-edit-muted" id="mb-edit-owner-note"></p>
+      <h3>Reject incorrect mapping</h3>
+      <div class="mb-edit-row">
+        <label>Provider identity
+          <select id="mb-edit-reject-ext"></select>
+        </label>
+        <button type="button" class="mb-edit-btn danger" id="mb-edit-reject">Reject this match</button>
+      </div>
+      <h3>Merge duplicate people</h3>
+      <div class="mb-edit-row">
+        <label>Merge this duplicate away
+          <input id="mb-edit-merge-q" type="text" list="mb-edit-people-list" />
+        </label>
+        <button type="button" class="mb-edit-btn danger" id="mb-edit-merge">Merge</button>
+      </div>
+      <h3>Teach or confirm a face</h3>
+      <div class="mb-edit-row">
+        <label>Immich person id <input id="mb-edit-teach-ext" type="text" /></label>
+        <button type="button" class="mb-edit-btn" id="mb-edit-teach">Teach / confirm</button>
+      </div>
+      <h3>Repair mapping</h3>
+      <div class="mb-edit-row">
+        <label>Map external id <input id="mb-edit-map-ext" type="text" /></label>
+        <button type="button" class="mb-edit-btn" id="mb-edit-map">Map to this person</button>
+      </div>
+      <div class="mb-edit-row">
+        <label>Reconcile new id <input id="mb-edit-recon-new" type="text" /></label>
+        <label>Previous id <input id="mb-edit-recon-old" type="text" /></label>
+        <button type="button" class="mb-edit-btn" id="mb-edit-reconcile">Reconcile</button>
+      </div>
+    </details>
+
+    <footer class="mb-edit-foot">
+      <a class="mb-edit-btn ghost" href="/people/ui?person=__MB_PERSON_EDIT_ID__">Cancel</a>
+      <button type="button" class="mb-edit-btn primary" id="mb-edit-save">Save</button>
+    </footer>
+  </div>
+  <script>
+    window.MB_PERSON_EDIT = { personId: "__MB_PERSON_EDIT_ID__", displayName: "__MB_PERSON_EDIT_NAME__" };
+  </script>
+  <script src="/static/person/person-edit.js?v=i10a1-4"></script>
+</body>
+</html>

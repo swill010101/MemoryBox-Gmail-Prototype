@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+import re
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -19,6 +20,66 @@ from memorybox.profile.owner import (
     parse_uuid,
     prov,
 )
+
+DATE_PRECISIONS = frozenset({"day", "month", "year", "unknown"})
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
+
+
+def format_life_date(value_date: Any, precision: str | None = "day") -> str:
+    """Format a stored DATE without implying more precision than recorded."""
+    raw = (iso(value_date) or "").strip()
+    if not raw:
+        return ""
+    prec = (precision or "day").strip().lower()
+    year = raw[:4]
+    if prec == "year":
+        return year
+    month_i = int(raw[5:7]) if len(raw) >= 7 and raw[5:7].isdigit() else 0
+    month = _MONTHS[month_i - 1] if 1 <= month_i <= 12 else ""
+    if prec == "month":
+        return f"{month} {year}".strip()
+    if prec == "unknown":
+        return ""
+    day_i = int(raw[8:10]) if len(raw) >= 10 and raw[8:10].isdigit() else 0
+    if month and day_i:
+        return f"{month} {day_i}, {year}"
+    return raw[:10]
+
+
+def _normalize_fact_date(
+    value_date: str | date | None, precision: str, *, field: str
+) -> date:
+    prec = (precision or "day").strip().lower()
+    if prec not in DATE_PRECISIONS or prec == "unknown":
+        raise ProfileServiceError(f"{field} date_precision must be day, month, or year")
+    raw = "" if value_date is None else str(value_date).strip()
+    if prec == "year":
+        m = re.match(r"^(\d{4})", raw)
+        if not m:
+            raise ProfileServiceError(f"{field} year precision requires YYYY")
+        return date(int(m.group(1)), 1, 1)
+    if prec == "month":
+        m = re.match(r"^(\d{4})-(\d{2})", raw)
+        if not m:
+            raise ProfileServiceError(f"{field} month precision requires YYYY-MM")
+        return date(int(m.group(1)), int(m.group(2)), 1)
+    got = parse_date(raw, field=field)
+    if got is None:
+        raise ProfileServiceError(f"{field} requires a calendar date")
+    return got
 
 
 @dataclass
@@ -51,9 +112,12 @@ class FactView:
     provenance: dict[str, Any]
     created_at: str | None
     superseded_by_id: str | None = None
+    date_precision: str = "day"
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["display_date"] = format_life_date(self.value_date, self.date_precision)
+        return d
 
 
 @dataclass
@@ -101,6 +165,7 @@ def _fact_view(row: dict[str, Any]) -> FactView:
         provenance=prov(row.get("provenance_json")),
         created_at=iso(row.get("created_at")),
         superseded_by_id=str(row["superseded_by_id"]) if row.get("superseded_by_id") else None,
+        date_precision=str(row.get("date_precision") or "day"),
     )
 
 
@@ -179,48 +244,101 @@ def add_fact(
     note: str | None = None,
     provenance: dict[str, Any] | None = None,
     supersede_current: bool = True,
+    date_precision: str | None = None,
 ) -> FactView:
     pid = ensure_person(person_id)
     kind = (fact_kind or "").strip().lower()
     if kind not in FACT_KINDS:
         raise ProfileServiceError(f"fact_kind must be one of {sorted(FACT_KINDS)}")
-    vd = parse_date(value_date, field="value_date") if kind != "note" else None
+    prec = (date_precision or ("unknown" if kind == "note" else "day")).strip().lower()
+    if prec not in DATE_PRECISIONS:
+        raise ProfileServiceError("date_precision must be day, month, year, or unknown")
+    vd = None
     vt = (value_text or "").strip() or None
     if kind in ("birth_date", "death_date"):
-        if not vd:
-            raise ProfileServiceError(f"{kind} requires value_date")
-        vt = vt or vd.isoformat()
+        vd = _normalize_fact_date(value_date, prec, field=kind)
+        vt = vt or format_life_date(vd, prec)
     elif kind == "note" and not vt:
         raise ProfileServiceError("note requires value_text")
+    else:
+        prec = "unknown"
+    if supersede_current and kind in ("birth_date", "death_date"):
+        current = get_current_fact(str(pid), kind)
+        if (
+            current
+            and current.value_date == iso(vd)
+            and (current.date_precision or "day") == prec
+            and (note or None) == (current.note or None)
+        ):
+            return current
     fid = uuid4()
-    with connection() as conn:
-        if supersede_current and kind in ("birth_date", "death_date"):
-            for o in conn.execute(
+    try:
+        with connection() as conn:
+            # Insert first. person_facts.superseded_by_id FKs to person_facts(id),
+            # so pointing the old row at fid before the new row exists is a 500.
+            has_prec = conn.execute(
                 """
-                SELECT id FROM person_facts
-                WHERE person_id = %s AND fact_kind = %s AND status = 'confirmed'
-                """,
-                (pid, kind),
-            ).fetchall():
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'person_facts'
+                  AND column_name = 'date_precision'
+                """
+            ).fetchone()
+            if has_prec:
+                conn.execute(
+                    """
+                    INSERT INTO person_facts (
+                        id, person_id, fact_kind, value_text, value_date,
+                        status, actor_key, note, provenance_json, date_precision
+                    ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb, %s)
+                    """,
+                    (
+                        fid,
+                        pid,
+                        kind,
+                        vt,
+                        vd,
+                        actor_key,
+                        note,
+                        json.dumps(provenance or {"source": "owner"}),
+                        prec,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO person_facts (
+                        id, person_id, fact_kind, value_text, value_date,
+                        status, actor_key, note, provenance_json
+                    ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
+                    """,
+                    (
+                        fid,
+                        pid,
+                        kind,
+                        vt,
+                        vd,
+                        actor_key,
+                        note,
+                        json.dumps(provenance or {"source": "owner"}),
+                    ),
+                )
+            if supersede_current and kind in ("birth_date", "death_date"):
                 conn.execute(
                     """
                     UPDATE person_facts
                     SET status = 'superseded', superseded_by_id = %s, updated_at = now()
-                    WHERE id = %s
+                    WHERE person_id = %s AND fact_kind = %s AND status = 'confirmed'
+                      AND id <> %s
                     """,
-                    (fid, o["id"]),
+                    (fid, pid, kind, fid),
                 )
-        conn.execute(
-            """
-            INSERT INTO person_facts (
-                id, person_id, fact_kind, value_text, value_date,
-                status, actor_key, note, provenance_json
-            ) VALUES (%s, %s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
-            """,
-            (fid, pid, kind, vt, vd, actor_key, note, json.dumps(provenance or {"source": "owner"})),
-        )
-        row = conn.execute("SELECT * FROM person_facts WHERE id = %s", (fid,)).fetchone()
-    return _fact_view(row)
+            row = conn.execute("SELECT * FROM person_facts WHERE id = %s", (fid,)).fetchone()
+        return _fact_view(row)
+    except ProfileServiceError:
+        raise
+    except Exception as exc:
+        raise ProfileServiceError(f"could not save {kind}: {exc}") from exc
 
 
 def list_facts(person_id: str, *, include_withdrawn: bool = False) -> list[FactView]:

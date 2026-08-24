@@ -1,6 +1,6 @@
 # MBSC-P2-I10A.1 — Person Explorer, About, and Editor screen contract
 
-**Status:** Frozen with the **ACCEPTED** I10A.1 PRD (Explorer amendment 2026-08-23)  
+**Status:** **LOCKED** with implementation **ACCEPTED** 2026-08-24. Do not reopen I10A.1 for polish.  
 **PRD:** [MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md](MBPRD-P2-I10A1_PERSON_PROFILE_EDITOR.md)  
 **Field map:** [MBAS-P2-I10A1_FIELD_ACTION_MAP.md](MBAS-P2-I10A1_FIELD_ACTION_MAP.md)  
 **Acceptance:** [MBAT-P2-I10A1_ACCEPTANCE.md](MBAT-P2-I10A1_ACCEPTANCE.md) · `python -m memorybox prove-person-i10a1`
@@ -61,8 +61,8 @@ Life dates live only in the life-date slot. Result range lives in the compact re
 
 | Control | Target |
 |---|---|
-| **About** | Complete read-only panel (S.2). Not Edit. |
-| **Edit** | `/people/{id}/edit` for the **already selected** person. **Bypasses** About. No picker. |
+| **About** | `/people/{id}/edit?view=1` — same structured Person Profile, **read-only**, with an **Edit** button. Not a text-string drawer. |
+| **Edit** | `/people/{id}/edit` for the **already selected** person. **Bypasses** view mode. No picker. |
 | **Relationships** | Existing I6 relationships modal / family drawer on Explorer (taught add stays here). Not the admin form. |
 | **Learn** | Existing Learn drawer. Teach/confirm face remains **Advanced** on Edit. |
 
@@ -74,13 +74,13 @@ Do not label About as View / Edit details. Do not open About from a control labe
 - Provider mapping table, merge, reject, owner setter (Identity / Advanced on Edit; About may **read** confirmation/provenance)
 - Second portrait + name block below Ask
 
-Footer Family strip and Learn stats may remain as I5 context. The footer About **card** may keep a one-line teaser (name / life / kinship) but **must not** repeat the header identity block or dump contacts.
+Footer Family strip and Learn stats may remain as I5 context. Family chips show the **preferred provider portrait** and the **kinship label** (Father, Spouse, Son — not the word “family”). The footer About **card** is a structured card (relationship, born, died) — not a sentence — and opens the Profile in view mode. No contacts on the card.
 
 ---
 
 ## S.2 About (complete read-only)
 
-Opens from header **About**. Read-only. Not the editor.
+Opens from header **About** as **`/people/{id}/edit?view=1`**. Same I10A/I10B structured screen as Edit (cards, not a drawer paragraph). Fields are read-only. An **Edit** button on that screen drops `view=1` and enters edit mode. Explorer **Edit** still goes straight to `/people/{id}/edit`.
 
 **Must include** the supported person record so the family can inspect and decide whether to correct:
 
@@ -102,6 +102,8 @@ About does **not** run reject, merge, teach, map, reconcile, or “I am this per
 Authoritative writable record. I10A/I10B dark chrome. Sticky Cancel / Save. No Person draft. No second person-selection step. Boot from `{id}` already on the Explorer.
 
 Regions: **Profile · Relationships · Identity and Sources · Advanced** (see PRD). `?admin=1` `people.html` is not the family Edit URL.
+
+**Keep Relationships on Edit.** Explorer **Relationships** is the I6 gallery modal (quick teach over memories). Edit **Relationships** is the full grouped record (Parents / Siblings / Spouse / Children / Other + marriage). They are different jobs — do not remove the Edit section.
 
 MemoryBox writes stay in MemoryBox. No silent Immich person or face write-back.
 

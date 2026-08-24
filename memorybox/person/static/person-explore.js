@@ -63,17 +63,209 @@
     return (String(name || "?").trim().charAt(0) || "?").toUpperCase();
   }
 
-  function roleLabel(edge) {
-    return (
-      edge.sot_role_kind ||
-      edge.role_phrase ||
-      edge.relationship_kind ||
-      edge.participant_role ||
-      "family"
-    )
-      .toString()
-      .replace(/_/g, " ");
+  const ROLE_DISPLAY = {
+    father_of: "Father",
+    mother_of: "Mother",
+    parent_of: "Parent",
+    biological_parent_of: "Parent",
+    adoptive_parent_of: "Parent",
+    step_parent_of: "Parent",
+    child_of: "Child",
+    son_of: "Son",
+    daughter_of: "Daughter",
+    sibling_of: "Sibling",
+    spouse_of: "Spouse",
+    partner_of: "Partner",
+    grandparent_of: "Grandparent",
+    grandchild_of: "Grandchild",
+    uncle_of: "Uncle",
+    aunt_of: "Aunt",
+    nephew_of: "Nephew",
+    niece_of: "Niece",
+    cousin_of: "Cousin",
+    self: "Self",
+  };
+  const INVERSE_TO_YOU = {
+    father_of: "Child",
+    mother_of: "Child",
+    parent_of: "Child",
+    biological_parent_of: "Child",
+    adoptive_parent_of: "Child",
+    step_parent_of: "Child",
+    child_of: "Parent",
+    son_of: "Parent",
+    daughter_of: "Parent",
+    sibling_of: "Sibling",
+    spouse_of: "Spouse",
+    partner_of: "Partner",
+    grandparent_of: "Grandchild",
+    grandchild_of: "Grandparent",
+    uncle_of: "Niece or nephew",
+    aunt_of: "Niece or nephew",
+    nephew_of: "Aunt or uncle",
+    niece_of: "Aunt or uncle",
+    cousin_of: "Cousin",
+  };
+
+  function prettyRole(kind, label) {
+    const lab = String(label || "").trim();
+    if (lab && lab.toLowerCase() !== "family") return lab;
+    const k = String(kind || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
+    if (ROLE_DISPLAY[k]) return ROLE_DISPLAY[k];
+    if (!k || k === "family") return "";
+    return k
+      .replace(/_of$/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   }
+
+  function roleLabel(edge) {
+    return prettyRole(
+      edge.sot_role_kind ||
+        edge.role_kind ||
+        edge.relationship_kind ||
+        edge.participant_role,
+      edge.label || edge.role_phrase
+    );
+  }
+
+  function aboutHref() {
+    return editHref() + "?view=1";
+  }
+
+  function relationshipToYou(profile, subjectId) {
+    const owner = (profile && profile.owner) || {};
+    const oid = owner.owner_person_id;
+    if (!oid) return "";
+    if (profile.is_canonical_owner || String(oid) === String(subjectId)) {
+      return "This is you";
+    }
+    const rel = (profile.relationships && profile.relationships.direct) || {};
+    const ownerIn = (key) =>
+      (rel[key] || []).find((h) => String(h.person_id) === String(oid));
+    if (ownerIn("parents")) return "Child";
+    const child = ownerIn("children");
+    if (child) {
+      const lab = prettyRole(child.role_kind, child.label).toLowerCase();
+      if (lab === "son") return "Father";
+      if (lab === "daughter") return "Mother";
+      return "Parent";
+    }
+    if (ownerIn("siblings")) return "Sibling";
+    const spouse = ownerIn("spouse_partner");
+    if (spouse) return prettyRole(spouse.role_kind, spouse.label) || "Spouse";
+    const derived = (profile.relationships && profile.relationships.derived_edges) || [];
+    const fromOwner = derived.find(
+      (e) => e.from_person_id === oid && e.to_person_id === subjectId
+    );
+    if (fromOwner) {
+      return INVERSE_TO_YOU[fromOwner.role_kind] || prettyRole(fromOwner.role_kind);
+    }
+    const toOwner = derived.find(
+      (e) => e.from_person_id === subjectId && e.to_person_id === oid
+    );
+    if (toOwner) return prettyRole(toOwner.role_kind, toOwner.label);
+    return "";
+  }
+
+  function collectFamily(profile, subjectId) {
+    const rel = (profile && profile.relationships) || {};
+    const direct = rel.direct || {};
+    const seen = new Set();
+    const family = [];
+    ["parents", "siblings", "spouse_partner", "children"].forEach((key) => {
+      (direct[key] || []).forEach((h) => {
+        const otherId = h.person_id || h.to_person_id;
+        if (!otherId || seen.has(otherId) || String(otherId) === String(subjectId)) {
+          return;
+        }
+        seen.add(otherId);
+        family.push({
+          id: otherId,
+          name: h.display_name || h.to_display_name || "Person",
+          role: prettyRole(h.role_kind, h.label),
+        });
+      });
+    });
+    const ext = rel.extended || [];
+    (Array.isArray(ext) ? ext : []).forEach((h) => {
+      const otherId = h.person_id;
+      if (!otherId || seen.has(otherId) || String(otherId) === String(subjectId)) {
+        return;
+      }
+      seen.add(otherId);
+      family.push({
+        id: otherId,
+        name: h.display_name || "Person",
+        role: prettyRole(h.role_kind, h.label),
+      });
+    });
+    if (!family.length) {
+      const assertions = rel.assertions_sot || [];
+      const derived = rel.derived_edges || [];
+      assertions.concat(derived).forEach((a) => {
+        const otherId =
+          a.from_person_id === subjectId
+            ? a.to_person_id
+            : a.to_person_id === subjectId
+              ? a.from_person_id
+              : a.from_person_id || a.to_person_id;
+        const otherName =
+          a.from_person_id === subjectId
+            ? a.to_display_name || a.to_name
+            : a.to_person_id === subjectId
+              ? a.from_display_name || a.from_name
+              : a.from_display_name || a.display_name;
+        if (!otherId || seen.has(otherId) || String(otherId) === String(subjectId)) {
+          return;
+        }
+        seen.add(otherId);
+        family.push({
+          id: otherId,
+          name: otherName || "Person",
+          role: prettyRole(a.role_kind || a.sot_role_kind, a.label),
+        });
+      });
+    }
+    return family;
+  }
+
+  function applyFamilyPortrait(el, personId) {
+    if (!el || !personId) return;
+    const url = "/people/" + encodeURIComponent(personId) + "/portrait?v=" + Date.now();
+    const img = new Image();
+    img.onload = () => {
+      el.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      el.classList.add("has-photo");
+      el.textContent = "";
+    };
+    img.src = url;
+  }
+
+  function bindAboutNow() {
+    const href = aboutHref();
+    ["mb-person-about", "mb-person-about-open"].forEach((aid) => {
+      const el = document.getElementById(aid);
+      if (!el || !cfg.personId) return;
+      el.setAttribute("href", href);
+      el.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.assign(href);
+      };
+    });
+    const card = document.getElementById("mb-person-about-card");
+    if (card && cfg.personId) {
+      card.onclick = function (e) {
+        if (e.target.closest("a,button")) return;
+        window.location.assign(href);
+      };
+    }
+  }
+  bindAboutNow();
 
   function escapeHtml(s) {
     return String(s)
@@ -83,10 +275,91 @@
       .replace(/"/g, "&quot;");
   }
 
-  function adminHref() {
-    return (
-      "/people/ui?admin=1&person=" + encodeURIComponent(cfg.personId || "")
-    );
+  function editHref() {
+    return "/people/" + encodeURIComponent(cfg.personId || "") + "/edit";
+  }
+
+  function bindEditNow() {
+    const edit = document.getElementById("mb-person-edit");
+    if (!edit || !cfg.personId) return;
+    const href = editHref();
+    edit.setAttribute("href", href);
+    edit.onclick = function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.assign(href);
+    };
+  }
+  bindEditNow();
+
+  window.mbPersonSyncResults = function (info) {
+    const data = info || window.MB_PERSON_LAST_RESULTS || {};
+    const counts = data.counts || {};
+    const total = Number(data.total || 0);
+    const kindBits = [];
+    const labels = [
+      ["photo", "photos"],
+      ["video", "videos"],
+      ["story", "stories"],
+      ["email", "emails"],
+      ["text", "texts"],
+      ["artifact", "artifacts"],
+    ];
+    labels.forEach(([k, lab]) => {
+      const n = Number(counts[k] || 0);
+      if (n) kindBits.push(n + " " + lab);
+    });
+    const totEl = document.getElementById("mb-person-memory-totals");
+    if (totEl) {
+      totEl.textContent =
+        "Total memories: " +
+        (total || kindBits.length ? String(total || "") : "—") +
+        (kindBits.length ? " · " + kindBits.join(" · ") : total ? "" : "");
+      if (!total && !kindBits.length) totEl.textContent = "Total memories: —";
+      else if (!total && kindBits.length) totEl.textContent = "Total memories: " + kindBits.join(" · ");
+    }
+    const rangeEl = document.getElementById("mb-person-result-range");
+    const sumEl = document.getElementById("mb-person-result-summary");
+    const range = String(data.rangeLabel || "").trim();
+    const rangeText = range ? "In this view: " + range : "";
+    if (rangeEl) {
+      rangeEl.hidden = !rangeText;
+      rangeEl.textContent = rangeText;
+    }
+    if (sumEl) {
+      sumEl.hidden = !(rangeText || total);
+      sumEl.textContent = rangeText
+        ? rangeText + (total ? " · " + total + " visible" : "")
+        : total
+          ? total + " visible in this view"
+          : "";
+    }
+  };
+  if (window.MB_PERSON_LAST_RESULTS) window.mbPersonSyncResults(window.MB_PERSON_LAST_RESULTS);
+
+  function formatLifeDate(fact) {
+    if (!fact) return "";
+    if (fact.display_date) return String(fact.display_date);
+    const prec = String(fact.date_precision || "day").toLowerCase();
+    const raw = String(fact.value_date || "").trim();
+    if (!raw) return "";
+    const y = raw.slice(0, 4);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    if (prec === "year") return y;
+    const mi = parseInt(raw.slice(5, 7), 10);
+    const month = mi >= 1 && mi <= 12 ? months[mi - 1] : "";
+    if (prec === "month") return (month + " " + y).trim();
+    const d = parseInt(raw.slice(8, 10), 10);
+    if (month && d) return month + " " + d + ", " + y;
+    return raw.slice(0, 10);
+  }
+
+  function firstAlias(aliases) {
+    const list = aliases || [];
+    const nick = list.find((a) => a.alias_kind === "nickname" && a.alias_text);
+    if (nick) return nick.alias_text;
+    const alt = list.find((a) => a.alias_text);
+    return alt ? alt.alias_text : "";
   }
 
   function openDrawer(title, html) {
@@ -94,7 +367,7 @@
     document.getElementById("mb-person-drawer-title").textContent = title;
     document.getElementById("mb-person-drawer-body").innerHTML = html;
     const admin = document.getElementById("mb-person-drawer-admin");
-    if (admin) admin.href = adminHref();
+    if (admin) admin.href = editHref();
     drawer.hidden = false;
   }
 
@@ -102,18 +375,60 @@
     document.getElementById("mb-person-drawer").hidden = true;
   }
 
+  function groupFamily(profile) {
+    const rel = (profile && profile.relationships) || {};
+    const groups = [
+      ["parents", "Parents"],
+      ["siblings", "Siblings"],
+      ["spouse_partner", "Spouse or partner"],
+      ["children", "Children"],
+    ];
+    const direct = rel.direct || {};
+    const lines = [];
+    groups.forEach(([key, label]) => {
+      const hits = direct[key] || [];
+      hits.forEach((h) => {
+        const derived = h.derived || h.is_derived;
+        lines.push(
+          label +
+            ": " +
+            (h.display_name || h.to_display_name || "Person") +
+            " — " +
+            (h.label || h.role_kind || "") +
+            (derived ? " (Derived)" : "")
+        );
+      });
+    });
+    const ext = rel.extended || [];
+    (Array.isArray(ext) ? ext : Object.values(ext).flat()).forEach((h) => {
+      lines.push(
+        "Other family: " +
+          (h.display_name || "Person") +
+          " — " +
+          (h.label || h.role_kind || "") +
+          " (Derived)"
+      );
+    });
+    if (!lines.length && cached.family.length) {
+      return cached.family.map((f) => f.name + " — " + f.role);
+    }
+    return lines;
+  }
+
   function renderAboutDrawer() {
     const p = cached.profile || {};
+    const idn = p.identity || {};
     const facts = p.facts || [];
     const aliases = p.aliases || [];
     const birth = facts.find((f) => f.fact_kind === "birth_date");
     const death = facts.find((f) => f.fact_kind === "death_date");
     const notes = facts.filter((f) => f.fact_kind === "note");
-    const name = cfg.displayName || "Person";
+    const name = cfg.displayName || idn.display_name || "Person";
     const aliasText = aliases
       .map((a) => a.alias_text || a.value || a.alias)
       .filter(Boolean)
       .join(", ");
+    const maps = idn.provider_mappings || [];
     let html = "";
     html +=
       '<section class="mb-person-sec"><h3>Identity</h3><ul>' +
@@ -123,28 +438,33 @@
       (aliasText
         ? "<li>Also known as: " + escapeHtml(aliasText) + "</li>"
         : "<li>No alternate names recorded.</li>") +
-      "</ul></section>";
+      "<li>MemoryBox Person: " +
+      escapeHtml(idn.id || cfg.personId || "") +
+      "</li>" +
+      "<li>Status: " +
+      escapeHtml(idn.status || "—") +
+      "</li></ul></section>";
     html +=
       '<section class="mb-person-sec"><h3>Life</h3><ul>' +
       "<li>Born: " +
-      escapeHtml((birth && birth.value_date) || "Not recorded") +
+      escapeHtml(formatLifeDate(birth) || "Not recorded") +
       "</li>" +
       "<li>Died: " +
-      escapeHtml((death && death.value_date) || "Not recorded") +
+      escapeHtml(formatLifeDate(death) || "Not recorded") +
       "</li></ul></section>";
     html +=
-      '<section class="mb-person-sec"><h3>Family</h3><ul>' +
-      (cached.family.length
-        ? cached.family
-            .map(
-              (f) =>
-                "<li>" +
-                escapeHtml(f.name) +
-                " — " +
-                escapeHtml(f.role) +
-                "</li>"
-            )
+      '<section class="mb-person-sec"><h3>Notes</h3><ul>' +
+      (notes.length
+        ? notes
+            .map((n) => "<li>" + escapeHtml(n.value_text || n.note || "") + "</li>")
             .join("")
+        : "<li>No owner notes yet.</li>") +
+      "</ul></section>";
+    const fam = groupFamily(p);
+    html +=
+      '<section class="mb-person-sec"><h3>Family</h3><ul>' +
+      (fam.length
+        ? fam.map((line) => "<li>" + escapeHtml(line) + "</li>").join("")
         : "<li>No relationships recorded yet.</li>") +
       "</ul></section>";
     const contacts = p.contacts || [];
@@ -161,15 +481,26 @@
         : "<li>No confirmed phone or email yet.</li>") +
       "</ul></section>";
     html +=
-      '<section class="mb-person-sec"><h3>Places</h3><ul><li>Important Places can be linked as they are confirmed. No latitude/longitude shown here.</li></ul></section>';
+      '<section class="mb-person-sec"><h3>Places</h3><ul><li>No important place recorded yet. MemoryBox will not invent a location.</li></ul></section>';
+    const confirmed = maps.filter((m) => m.confirmed_at);
     html +=
-      '<section class="mb-person-sec"><h3>Notes</h3><ul>' +
-      (notes.length
-        ? notes
-            .map((n) => "<li>" + escapeHtml(n.value_text || n.note || "") + "</li>")
-            .join("")
-        : "<li>No owner notes yet.</li>") +
-      "</ul></section>";
+      '<section class="mb-person-sec"><h3>Provenance and confirmation</h3><ul>' +
+      "<li>Canonical MemoryBox Person · status " +
+      escapeHtml(idn.status || "—") +
+      (p.is_canonical_owner ? " · this is you" : "") +
+      "</li>" +
+      (maps.length
+        ? "<li>Linked provider identities: " +
+          escapeHtml(
+            maps
+              .map((m) => (m.provider_key || "") + " " + (m.label || m.external_id || ""))
+              .join("; ")
+          ) +
+          "</li>"
+        : "<li>No provider identities linked.</li>") +
+      "<li>Confirmed mappings: " +
+      confirmed.length +
+      "</li></ul></section>";
     openDrawer("About " + firstName(name), html);
   }
 
@@ -198,7 +529,7 @@
     }
     html +=
       '<p style="margin-top:1rem"><a class="mb-person-panel-link" href="' +
-      adminHref() +
+      editHref() +
       '#relationships">Correct / add relationships</a></p>';
     openDrawer("Family — " + firstName(name), html);
   }
@@ -390,93 +721,51 @@
     const facts = profile.facts || [];
     const birth = facts.find((f) => f.fact_kind === "birth_date");
     const death = facts.find((f) => f.fact_kind === "death_date");
-    const birthY =
-      birth && birth.value_date ? String(birth.value_date).slice(0, 4) : "";
-    const deathY =
-      death && death.value_date ? String(death.value_date).slice(0, 4) : "";
-    const life =
-      birthY && deathY
-        ? birthY + "–" + deathY
-        : birthY
-          ? "b. " + birthY
-          : deathY
-            ? "d. " + deathY
-            : "";
+    const aka = firstAlias(profile.aliases || []);
+    const akaEl = document.getElementById("mb-person-aka");
+    if (akaEl) {
+      if (aka) {
+        akaEl.hidden = false;
+        akaEl.textContent = "Also known as " + aka;
+      } else {
+        akaEl.hidden = true;
+        akaEl.textContent = "";
+      }
+    }
+    const lifeBits = [];
+    const born = formatLifeDate(birth);
+    const died = formatLifeDate(death);
+    if (born) lifeBits.push("Born " + born);
+    if (died) lifeBits.push("Died " + died);
+    const lifeEl = document.getElementById("mb-person-life-dates");
+    if (lifeEl) lifeEl.textContent = lifeBits.join(" · ");
 
-    let rel = "";
-    const derived =
-      (profile.relationships && profile.relationships.derived_edges) || [];
-    const owner = profile.owner || {};
-    if (owner.owner_person_id && derived.length) {
-      const hit = derived.find(
-        (e) =>
-          e.from_person_id === owner.owner_person_id ||
-          e.to_person_id === owner.owner_person_id
-      );
-      if (hit) rel = roleLabel(hit);
+    const rel = relationshipToYou(profile, id);
+    const kinEl = document.getElementById("mb-person-kin");
+    if (kinEl) {
+      kinEl.textContent = rel
+        ? rel === "This is you"
+          ? rel
+          : "Relationship to you: " + rel
+        : "";
     }
-    const subBits = [];
-    if (rel) subBits.push(rel.charAt(0).toUpperCase() + rel.slice(1));
-    if (life) subBits.push(life);
-    document.getElementById("mb-person-sub").textContent =
-      subBits.join(" · ") || "Canonical MemoryBox Person";
-
-    const about = document.getElementById("mb-person-about-dl");
-    about.innerHTML = "";
-    function row(k, v) {
-      if (!v) return;
-      const dt = document.createElement("dt");
-      dt.textContent = k;
-      const dd = document.createElement("dd");
-      dd.textContent = v;
-      about.appendChild(dt);
-      about.appendChild(dd);
+    const placeEl = document.getElementById("mb-person-place");
+    if (placeEl) {
+      placeEl.hidden = true;
+      placeEl.textContent = "";
     }
-    row("Full name", name);
-    row("Relationship", rel ? rel.charAt(0).toUpperCase() + rel.slice(1) : null);
-    row("Born", birth && birth.value_date);
-    row("Died", death && death.value_date);
-    const contacts = profile.contacts || [];
-    const phones = contacts.filter((c) => String(c.contact_kind || "") === "phone");
-    const emails = contacts.filter((c) => String(c.contact_kind || "") === "email");
-    phones.forEach((c) => {
-      row("Confirmed phone", c.value_text || "");
-    });
-    emails.forEach((c) => {
-      row("Confirmed email", c.value_text || "");
-    });
-    if (!about.children.length) {
-      about.innerHTML =
-        '<p class="mb-person-empty">No profile details recorded yet.</p>';
-    }
+    const aboutRel = document.getElementById("mb-person-about-rel");
+    const aboutBorn = document.getElementById("mb-person-about-born");
+    const aboutDied = document.getElementById("mb-person-about-died");
+    const aboutDiedRow = document.getElementById("mb-person-about-died-row");
+    if (aboutRel) aboutRel.textContent = rel || "—";
+    if (aboutBorn) aboutBorn.textContent = born || "—";
+    if (aboutDied) aboutDied.textContent = died || "—";
+    if (aboutDiedRow) aboutDiedRow.hidden = !died;
 
     const familyRow = document.getElementById("mb-person-family-row");
     familyRow.innerHTML = "";
-    const assertions =
-      (profile.relationships && profile.relationships.assertions_sot) || [];
-    const seen = new Set();
-    const family = [];
-    for (const a of assertions.concat(derived)) {
-      const otherId =
-        a.from_person_id === id
-          ? a.to_person_id
-          : a.to_person_id === id
-            ? a.from_person_id
-            : a.from_person_id || a.to_person_id;
-      const otherName =
-        a.from_person_id === id
-          ? a.to_display_name || a.to_name
-          : a.to_person_id === id
-            ? a.from_display_name || a.from_name
-            : a.from_display_name || a.display_name;
-      if (!otherId || seen.has(otherId) || otherId === id) continue;
-      seen.add(otherId);
-      family.push({
-        id: otherId,
-        name: otherName || "Person",
-        role: roleLabel(a),
-      });
-    }
+    const family = collectFamily(profile, id);
     cached.family = family;
     if (!family.length) {
       familyRow.innerHTML =
@@ -492,9 +781,10 @@
           '</div><div class="mb-person-fam-label">' +
           escapeHtml(f.name.split(/\s+/)[0]) +
           '</div><div class="mb-person-fam-role">' +
-          escapeHtml(f.role) +
+          escapeHtml(f.role || "") +
           "</div>";
         familyRow.appendChild(a);
+        applyFamilyPortrait(a.querySelector(".mb-person-fam-av"), f.id);
       }
     }
 
@@ -530,23 +820,14 @@
       vidLabel +
       "</li><li>0 voice examples</li>";
 
-    document.getElementById("mb-person-summary").textContent =
-      "Memories load below — Ask, Gallery, Timeline and Map stay on this Person.";
-
-    const edit = document.getElementById("mb-person-edit");
-    if (edit) {
-      edit.href = adminHref();
-      edit.onclick = (e) => {
-        e.preventDefault();
-        renderAboutDrawer();
-      };
-    }
-    const aboutEdit = document.getElementById("mb-person-about-edit");
-    if (aboutEdit) aboutEdit.onclick = () => renderAboutDrawer();
+    bindEditNow();
+    bindAboutNow();
     const famAdd = document.getElementById("mb-person-family-add");
     if (famAdd) {
       famAdd.onclick = () => {
-        window.location.href = adminHref() + "#relationships";
+        if (typeof window.mbOpenRelationshipsModal === "function") {
+          window.mbOpenRelationshipsModal();
+        }
       };
     }
     const famOpen = document.getElementById("mb-person-family-open");
@@ -564,7 +845,11 @@
     if (relHeader) {
       relHeader.onclick = (e) => {
         e.preventDefault();
-        renderFamilyDrawer();
+        if (typeof window.mbOpenRelationshipsModal === "function") {
+          window.mbOpenRelationshipsModal();
+        } else {
+          renderFamilyDrawer();
+        }
       };
     }
 
@@ -608,23 +893,7 @@
     });
   });
 
-  // Keep header summary honest after gallery loads
-  const summaryEl = document.getElementById("mb-person-summary");
-  const metaObs = new MutationObserver(() => {
-    const meta = document.getElementById("mb-explore-meta");
-    if (!meta || !summaryEl) return;
-    const m = String(meta.textContent || "").match(/(\d+)\s+visible/i);
-    if (m) {
-      const n = m[1];
-      summaryEl.textContent =
-        n +
-        " memor" +
-        (n === "1" ? "y" : "ies") +
-        " in the current view across photos, video, stories, communications and artifacts.";
-    }
-  });
-  const meta = document.getElementById("mb-explore-meta");
-  if (meta) metaObs.observe(meta, { childList: true, characterData: true, subtree: true });
+  if (window.MB_PERSON_LAST_RESULTS) window.mbPersonSyncResults(window.MB_PERSON_LAST_RESULTS);
 
   loadProfile().catch((err) => {
     const body = document.getElementById("mb-explore-curator-body");

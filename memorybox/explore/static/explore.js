@@ -2026,9 +2026,11 @@
     else if (askRaw && String(heading).trim().toLowerCase() === askRaw.toLowerCase()) {
       heading = "Memories";
     }
-    document.getElementById("mb-explore-curator-title").textContent = heading;
-    document.getElementById("mb-explore-curator-body").textContent =
-      state.domain.summary || "";
+    const titleNode = document.getElementById("mb-explore-curator-title");
+    const bodyNode = document.getElementById("mb-explore-curator-body");
+    if (titleNode) titleNode.textContent = heading;
+    if (bodyNode) bodyNode.textContent = state.domain.summary || "";
+    if (PERSON_MODE) pushPersonResultSummary();
     const covEl = document.getElementById("mb-explore-coverage");
     if (covEl) {
       const cov = state.domain.coverage;
@@ -3225,6 +3227,38 @@
     meta.textContent = `${items.length} visible · ${densityLabel()} · filter ${
       state.domain.typeFilter
     }${placeBit}${undatedBit}${refineBit}${viewBit}${totalBit}`;
+    if (PERSON_MODE) pushPersonResultSummary(items);
+  }
+
+  function pushPersonResultSummary(itemList) {
+    if (!PERSON_MODE) return;
+    const vis = Array.isArray(itemList) ? itemList : visibleItems();
+    let rangeLabel = "";
+    try {
+      if (hasDatedExtent()) {
+        rangeLabel = fmtRangeLabel(
+          state.timeline.rangeStart,
+          state.timeline.rangeEnd,
+          state.timeline.precision
+        );
+      }
+    } catch (_) {
+      rangeLabel = "";
+    }
+    const payload = {
+      total: vis.length,
+      counts: countByType(vis),
+      rangeLabel,
+    };
+    window.MB_PERSON_LAST_RESULTS = payload;
+    if (typeof window.mbPersonSyncResults === "function") {
+      window.mbPersonSyncResults(payload);
+    }
+    const curator = document.getElementById("mb-explore-curator");
+    if (curator) {
+      curator.hidden = true;
+      curator.setAttribute("aria-hidden", "true");
+    }
   }
 
   function ensureMap() {
