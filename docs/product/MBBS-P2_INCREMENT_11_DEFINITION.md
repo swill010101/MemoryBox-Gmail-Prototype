@@ -45,7 +45,9 @@ Kinds: communication, media_observation, travel, calendar, journal, story, artif
 
 Authored email: derive at pack time; do not persist as an I11 gate. Email+SMS share communication shape. Hierarchical volume **IN**. Evidence-used footer counts **included units**.
 
-Relative Asks: general semantic constraints on `QueryPlan` (e.g. age band), not phrase-specific fields.
+Relative Asks: general semantic resolver on `QueryPlan` — Person, `age_band`, interpretation/version. Birth (or other sufficient age/date evidence) converts band → dates. If insufficient, ask. **Not** a hard-coded 10–25 rule. **Not** a phrase-specific field.
+
+Travel: original confirmation remains `communication`; derived `travel` unit only when structured facts are reliable; never replace the original.
 
 ---
 

@@ -84,7 +84,24 @@ Saved View emit (unchanged, I13 stores):
 { "schema_version", "original_ask", "output_mode", "plan", "presentation" }
 ```
 
-`plan` must carry **general resolved semantic constraints** (not phrase-specific fields). Example: original “Show me Dad when he was young” plus `{ person, age_band: [10,25], interpretation_version }` — not a `when_he_was_young` column.
+`plan` must carry **general resolved semantic constraints** (not phrase-specific fields). Use the **generalized semantic resolver** already designed — do **not** hard-code a universal phrase rule such as `young = 10–25`.
+
+Conceptually:
+
+```
+“when Dad was young”
+  → resolved age band
+  → interpretation / version metadata
+  → birth fact converts the age band into actual dates
+```
+
+Stored generically (not a `when_he_was_young` field):
+
+- Person
+- age band
+- interpretation / version
+
+If Dad’s **birth year is known**, convert the band to dates. If birth is missing, MemoryBox may use **other reliable age/date evidence** when enough exists. If not, **ask rather than guess**. The pack must say when the band is unresolved to dates.
 
 ---
 
@@ -96,7 +113,7 @@ Family evidence (I11):
 |---|---|
 | `communication` | Email + SMS/iMessage/MMS — one shape |
 | `media_observation` | Photo or video observation (not raw EXIF dump) |
-| `travel` | Itinerary / lodging / rental / reservation confirmations (often derived from communication + structured fields) |
+| `travel` | **Derived** structured itinerary/lodging/rental/reservation facts. Provenance **must** point at the original `communication` (or calendar/document). Never replaces that original. |
 | `calendar` | Scheduled/recorded events |
 | `journal` | Current saved Journal |
 | `story` | Current saved Story recollection |
@@ -116,7 +133,7 @@ Common unit fields: `unit_id`, `kind`, `time` (+ precision/confidence), `people[
 
 **Media observation** fields: asset ref, source type photo|video, capture time + precision, people **visibly identified**, place from GPS/confirmed place (how established), observable setting/activity/object, caption/annotation, event association, provenance, flags. **Do not** treat filename, folder, camera owner, or archive owner as photographer or purpose.
 
-**Travel** fields: travel_kind (flight|lodging|car|reservation|other), parties, origin/destination or property, start/end, confirmation identifiers if present, provenance to source email/calendar/document.
+**Travel** fields: `travel_kind` (flight|lodging|car|reservation|other), parties/passengers, origin/destination or property, start/end, confirmation reference if present, `derived_from` → original communication `evidence_id` / `unit_id`. Extract **only when reliable**. Keep the original airline/hotel/rental email as a **communication** unit. Never replace the original with the derived travel record.
 
 **Calendar:** title, start/end/duration, location, attendees, notes, provenance. Scheduled ≠ occurred unless corroborated.
 
@@ -193,11 +210,24 @@ Claims: presence when identity + place/time support it. Never photographer from 
 
 ## 7. Travel evidence correlation plan
 
+**Both units when extraction is reliable.**
+
+The original airline / hotel / rental / reservation **email remains a `communication` unit** — that is the authentic evidence.
+
+When structured travel facts can be extracted **reliably**, also emit a **derived `travel` unit**. Example:
+
+- Communication: Delta itinerary confirmation (raw authored/email evidence).  
+- Derived travel: `flight`, STL → OGG, 2017-03-12, passengers, confirmation reference, provenance → that Delta email.
+
+Same pattern for hotels, cars, reservations.
+
+**Never replace** the original communication with the derived travel record. The communication preserves what the source was; the travel unit gives chronology a clean structure.
+
 For trip Asks (“Tell me about my Hawaii trip in 2017”), **correlate before synthesis**:
 
-Airline/itinerary email, lodging, car, relevant reservations, calendar span, GPS/EXIF media, people in media, comms during/about the trip, Journal, Stories, Place/Event/Trip objects, artifacts/documents.
+Derived travel units + original comms, calendar span, GPS/EXIF media, people in media, comms during/about the trip, Journal, Stories, Place/Event/Trip objects, artifacts/documents.
 
-Emit `travel` units plus supporting `communication` / `calendar` / `media_observation`. Do not hand the model an unsorted pile and ask it to invent the trip.
+Do not hand the model an unsorted pile and ask it to invent the trip.
 
 Corroboration example: STL→OGG 2017-03-12 + Maui lodging 12–18 + photos 14–16 + calendar Maui 12–18 → chronology “traveled to Maui in March 2017” is allowed. One strong source can suffice; more sources increase confidence.
 
@@ -250,26 +280,26 @@ Copy / Save as Story / Saved View JSON: unchanged from prior lock.
 | ID | Case |
 |---|---|
 | C-17 | Photo + identity + EXIF/GPS: presence/photographed-there OK; no photographer/purpose/emotion/companions without evidence. |
-| C-18 | Hawaii trip: airline + hotel + calendar + GPS/photos may synthesize supported chronology. |
+| C-18 | Hawaii trip: original itinerary/lodging **communication** units remain; derived `travel` units when extraction is reliable; plus calendar + GPS/photos may synthesize supported chronology. Original is never replaced. |
 | C-19 | SMS timestamp alone ≠ location; authored/shared-location/attachment EXIF may, with `basis`. |
 | C-20 | Peggy/Tom Christmas 2017 discussion: authored units, no quote dupes, no unrelated 2017 calendar dump. |
 | C-21 | “Tell me about my 2017”: broad family evidence; staged volume, not first-N dump. |
 | C-22 | Evidence-used counts = normalized Email/SMS units included, not raw hits/quotes. |
 | C-23 | Model down: evidence visible; narration unavailable; no stitch-as-narrative. |
+| C-24 | Dual travel: confirmation email is a communication unit; structured flight/hotel facts are a derived travel unit with provenance to that email. |
+| C-25 | “When Dad was young”: generic Person + age_band + interpretation/version; dates from birth (or other sufficient age/date evidence); **ask rather than guess** if insufficient. Not a phrase-specific field. Not a hard-coded 10–25 rule. |
 
 Keep C-01–C-16. Shared curator (C-05) means **one component**, not unhide.
 
 ---
 
-## 13. Remaining founder input (small)
+## 13. Remaining founder input
 
-Most items in this amendment are decided. Left:
+**Build authorization** on this contract.
 
-1. **Build authorization** on this contract.  
-2. Travel confirmations: always a distinct `travel` unit, or `communication` plus `travel` overlay when structured fields parse? (Recommendation: both — communication stays; `travel` unit when itinerary fields are extracted.)  
-3. Age-band for “young”: derive from Person birth fact when present; if missing, clarify — confirm.
+Decided this pass: travel = communication **and** derived travel unit (never replace original). “Young” = generic semantic constraint (Person, age_band, interpretation/version); convert via birth or other sufficient evidence; ask if not enough; **no** hard-coded 10–25; **no** `when_he_was_young` field.
 
-Not open: model host name; product token cap; persist authored email as I11 gate; stitch fallback; Living Album; Save View UI; I12 inside I11; phrase-specific `when_he_was_young` field.
+Not open: model host name; product token cap; persist authored email as I11 gate; stitch fallback; Living Album; Save View UI; I12 inside I11.
 
 ---
 

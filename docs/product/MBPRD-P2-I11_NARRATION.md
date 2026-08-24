@@ -18,7 +18,7 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 3. Pack schema: `schema_version`, `ask`, `scope`, `units[]`, `derived_summaries`, `coverage`, `volume`, `evidence_used`. Unit kinds: communication, media_observation, travel, calendar, journal, story, artifact, place_event, spoken_moment. Reserved: `external_historical` (I12; never family evidence).
 4. **Claim-specific trust:** a source supports only the claim it can establish. Presence (identity + reliable place/time) ≠ photographer, purpose, motive, emotion, companions, causation, significance.
 5. Media observation: human-relevant observations. Filename / folder / camera owner / archive owner are not photographer or purpose.
-6. Trip Asks correlate travel confirmations, calendar, GPS/media, comms, Journal/Stories, places — then synthesize. Corroboration raises confidence; one strong source can suffice.
+6. Trip Asks correlate travel confirmations, calendar, GPS/media, comms, Journal/Stories, places — then synthesize. Original itinerary/hotel/rental **email stays a communication unit**. When extraction is reliable, **also** emit a derived `travel` unit (flight/lodging/car/reservation + confirmation ref) with provenance to that email. **Never replace** the original with the derived record. Corroboration raises confidence; one strong source can suffice.
 7. SMS timestamp is **not** location. Location `basis`: authored text | shared-location payload | attachment EXIF | corroborated other source.
 8. Email authored body: **derive at pack time**, conservative. Do not persist authored-body as an I11 gate. Raw Email remains SoT. Spam/Trash out before the model.
 9. Email + SMS → one communication shape. Narrow Peggy-and-I Asks: their authored units; group-thread metadata; no unrelated calendar dump.
@@ -28,7 +28,7 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 13. Gallery hide ≠ pack exclude. Curator from pack. Shared curator **component** (do not merely unhide Person card).
 14. Model unavailable: **fail closed** for prose. Evidence + coverage remain. No stitch that looks like the narrative.
 15. Copy = clipboard. Save as Story = working draft + `composed_by_model`; owner Save Story for durability.
-16. Saved View JSON: `schema_version`, `original_ask`, `output_mode`, `plan`, `presentation`. Essay is not the view. Relative language → **general semantic constraints** on the plan (not a `when_he_was_young` field).
+16. Saved View JSON: `schema_version`, `original_ask`, `output_mode`, `plan`, `presentation`. Essay is not the view. Relative language uses the **general semantic resolver**: store Person, resolved `age_band`, interpretation/version — not a `when_he_was_young` field and **not** a hard-coded `young = 10–25`. Birth fact (or other sufficient age/date evidence) converts the band to dates; if insufficient, **ask rather than guess**.
 17. I13 owns Save View UI. No disabled Save View. Names: Save View / Saved View. Not Living Album.
 18. Do not implement I12 in I11. Do not block on Face-SoT. Disclose missing coverage.
 
@@ -38,7 +38,7 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 
 ## Success (when authorized and built)
 
-Acceptance C-01–C-23 including photo/place claims, travel reconstruction, SMS location, narrow Christmas discussion, broad year, evidence-used counts, model-unavailable. No `/narration/` route.
+Acceptance C-01–C-25 including dual travel units and “when Dad was young” generic constraints. No `/narration/` route.
 
 ---
 

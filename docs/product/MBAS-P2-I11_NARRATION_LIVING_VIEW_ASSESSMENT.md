@@ -149,7 +149,7 @@ Do not auto-call `save_story`. Do not invent a second editor.
 | `explore_state` in find payload | place, windows, visual_scope, gallery_show_* | Yes |
 | Explore client `state.domain` / `timeline` / `gallery` | typeFilter, includeTexts/Email/Calendar, density, sort, viewMode, range, playhead | Yes — presentation; must travel with Save View |
 
-There is **no** `saved_views` table. Age-relative “when he was young” is **not** a planner slot today — residual MBQL fill + durable interpretation field required for Living View (prompt §9).
+There is **no** `saved_views` table. Age-relative language is **not** a phrase-specific column. I11 stores generic semantic constraints (Person, `age_band`, interpretation/version); birth or other sufficient evidence converts to dates, else ask.
 
 ### 10. Future Living View without rework
 
@@ -208,7 +208,7 @@ Map 1:1 to founder §17. Harness should prove at least:
 
 ## Open questions for Tom
 
-See [evidence prep §13](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Waiting on **build authorization**. Travel unit vs communication overlay; age-band from birth fact when “young.”
+See [evidence prep §13](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Waiting on **build authorization**. Travel dual-unit and “young” semantic resolver are locked.
 
 ---
 
