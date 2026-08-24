@@ -61,6 +61,41 @@
 .mb-nf-file {
   font-size: 0.85rem;
 }
+.mb-nf-meter {
+  width: 100%;
+  max-width: 18rem;
+}
+.mb-nf-vu {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.28);
+  overflow: hidden;
+}
+.mb-nf-vu > span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: #3dcf9a;
+  transition: width 80ms linear;
+}
+.mb-nf-vu.is-low > span {
+  background: #d97706;
+}
+.mb-nf-listen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  width: 100%;
+}
+.mb-nf-listen input[type="range"] {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+.mb-nf-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
 .mb-nf[data-mb-speech="off"] .mb-nf-chrome {
   display: none;
 }

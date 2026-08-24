@@ -1505,7 +1505,7 @@ async def capture_transcribe(
         except Exception:
             return
 
-    family_msg = "Couldn't turn that recording into words. You can type instead."
+    family_msg = "Couldn't turn that into words. You can still listen, type, and save."
     try:
         draft = stt.transcribe(handle.audio_id)
     except ProviderUnavailable as exc:

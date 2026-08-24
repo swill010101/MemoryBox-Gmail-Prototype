@@ -5,6 +5,7 @@
 (function (global) {
   const SILENCE_MS = 30000;
   const SILENCE_FLOOR = 0.025;
+  const HEARD_FLOOR = 0.02;
 
   function insertAtCursor(ta, text) {
     const value = ta.value || "";
@@ -36,12 +37,22 @@
     return "";
   }
 
+  function formatTime(sec) {
+    const n = Math.max(0, Math.round(Number(sec) || 0));
+    const m = Math.floor(n / 60);
+    const s = n % 60;
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
   function familyError(kind) {
     if (kind === "permission") {
       return "MemoryBox couldn't use the microphone. You can still type, and you can try again.";
     }
     if (kind === "stt") {
-      return "Couldn't turn that recording into words. You can type instead.";
+      return "Couldn't turn that into words. You can still listen, type, and save.";
+    }
+    if (kind === "quiet") {
+      return "MemoryBox didn't hear much. Check the microphone, then try again or type.";
     }
     if (kind === "insecure") {
       return "This page can't use the microphone here. You can still type.";
@@ -92,6 +103,7 @@
     let mode = "ready";
     let recorder = null;
     let stream = null;
+    let meterStream = null;
     let chunks = [];
     let mime = "";
     let audioCtx = null;
@@ -100,15 +112,33 @@
     let silenceStarted = 0;
     let silencePrompted = false;
     let snapshotBeforeTake = "";
-    let pending = {
-      audio_id: null,
-      audio_uri: null,
-      blobUrl: null,
-      sttText: "",
-      speech_user_edited: false,
-      speech_captured_at: null,
-    };
-    let playEl = null;
+    let recStartedAt = 0;
+    let pausedMs = 0;
+    let pauseAt = 0;
+    let peakRms = 0;
+    let trackLabel = "";
+    let pending = emptyPending();
+    let playSource = null;
+    let playCtx = null;
+    let playTimer = null;
+    let playOffset = 0;
+    let playStartedAt = 0;
+    let playing = false;
+
+    function emptyPending() {
+      return {
+        audio_id: null,
+        audio_uri: null,
+        blobUrl: null,
+        blob: null,
+        buffer: null,
+        durationSec: 0,
+        peakRms: 0,
+        sttText: "",
+        speech_user_edited: false,
+        speech_captured_at: null,
+      };
+    }
 
     function emit() {
       if (opts.onChange) opts.onChange();
@@ -126,14 +156,15 @@
         speech_origin: "speech",
         speech_user_edited: pending.speech_user_edited,
         speech_captured_at: pending.speech_captured_at,
+        durationSec: pending.durationSec,
       };
     }
 
-    function setWarn(text) {
-      const el = chrome.querySelector(".mb-nf-status");
-      if (!el) return;
-      el.textContent = text || "";
-      el.classList.toggle("warn", Boolean(text));
+    function elapsedSec() {
+      if (!recStartedAt) return 0;
+      let ms = Date.now() - recStartedAt - pausedMs;
+      if (pauseAt) ms -= Date.now() - pauseAt;
+      return Math.max(0, ms / 1000);
     }
 
     function stopMeter() {
@@ -142,6 +173,19 @@
         meterTimer = null;
       }
       silenceStarted = 0;
+    }
+
+    function stopPlayback() {
+      playing = false;
+      playOffset = 0;
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      if (playSource) {
+        try { playSource.stop(); } catch (_) {}
+        playSource = null;
+      }
     }
 
     async function releaseStream() {
@@ -153,6 +197,10 @@
       if (audioCtx) {
         try { await audioCtx.close(); } catch (_) {}
         audioCtx = null;
+      }
+      if (meterStream) {
+        meterStream.getTracks().forEach(function (t) { t.stop(); });
+        meterStream = null;
       }
       if (stream) {
         stream.getTracks().forEach(function (t) { t.stop(); });
@@ -177,15 +225,9 @@
 
     async function discardPending(deleteServer) {
       const id = pending.audio_id;
+      stopPlayback();
       revokeBlob();
-      pending = {
-        audio_id: null,
-        audio_uri: null,
-        blobUrl: null,
-        sttText: "",
-        speech_user_edited: false,
-        speech_captured_at: null,
-      };
+      pending = emptyPending();
       if (deleteServer) await deleteServerAudio(id);
       mode = "ready";
       renderChrome();
@@ -201,7 +243,10 @@
       pending.audio_uri = commit.audio_uri;
       pending.speech_user_edited = Boolean(commit.speech_user_edited);
       pending.speech_captured_at = commit.speech_captured_at || null;
-      pending.blobUrl = null;
+      pending.durationSec = Number(commit.durationSec) || 0;
+      pending.blobUrl = pending.audio_id
+        ? "/capture/audio/" + encodeURIComponent(pending.audio_id)
+        : null;
       mode = "review";
       renderChrome();
     }
@@ -231,24 +276,20 @@
         btn(speech === "authored-memory" ? "Tell this story" : "Speak", "primary", function () { startRecording(); });
         addFileFallback();
         addMicPicker();
-      } else if (mode === "recording" || mode === "silence") {
-        status.textContent = "Listening… Pause or stop when you want.";
-        btn("Pause", "", function () { pauseRecording(); });
-        btn("Stop", "primary", function () { stopRecording(); });
-      } else if (mode === "paused") {
-        status.textContent = "Paused. Resume to keep the same recording.";
-        btn("Resume", "primary", function () { resumeRecording(); });
-        btn("Stop", "", function () { stopRecording(); });
+      } else if (mode === "recording" || mode === "silence" || mode === "paused") {
+        addLiveMeter(status);
+        if (mode === "paused") {
+          btn("Resume", "primary", function () { resumeRecording(); });
+          btn("Stop", "", function () { stopRecording(); });
+        } else {
+          btn("Pause", "", function () { pauseRecording(); });
+          btn("Stop", "primary", function () { stopRecording(); });
+        }
       } else if (mode === "processing") {
         status.textContent = "Turning speech into words…";
       } else if (mode === "review") {
         status.textContent = "Review the story. Fix the words if needed. Listen back if you want. Save when ready.";
-        playEl = document.createElement("audio");
-        playEl.className = "mb-nf-player";
-        playEl.controls = true;
-        if (pending.blobUrl) playEl.src = pending.blobUrl;
-        else if (pending.audio_id) playEl.src = "/capture/audio/" + encodeURIComponent(pending.audio_id);
-        chrome.appendChild(playEl);
+        addReviewPlayer();
         btn("Start over", "", function () { startOver(); });
       }
 
@@ -267,7 +308,7 @@
           silencePrompted = false;
           silenceStarted = 0;
           mode = "recording";
-          startSilenceWatch();
+          startMeters();
           renderChrome();
         };
         const stop = document.createElement("button");
@@ -279,6 +320,156 @@
         box.appendChild(stop);
         chrome.appendChild(box);
       }
+    }
+
+    function addLiveMeter(status) {
+      const mic = trackLabel ? " · " + trackLabel : "";
+      if (mode === "paused") {
+        status.textContent = "Paused at " + formatTime(elapsedSec()) + mic + ". Resume to keep the same recording.";
+      } else {
+        status.textContent = "Listening " + formatTime(elapsedSec()) + mic;
+      }
+      const row = document.createElement("div");
+      row.className = "mb-nf-meter";
+      const vu = document.createElement("div");
+      vu.className = "mb-nf-vu";
+      vu.setAttribute("aria-label", "Microphone level");
+      const fill = document.createElement("span");
+      vu.appendChild(fill);
+      row.appendChild(vu);
+      chrome.appendChild(row);
+    }
+
+    function addReviewPlayer() {
+      const box = document.createElement("div");
+      box.className = "mb-nf-listen";
+      const listenBtn = document.createElement("button");
+      listenBtn.type = "button";
+      listenBtn.className = "mb-nf-btn primary";
+      listenBtn.textContent = "Listen";
+      const time = document.createElement("span");
+      time.className = "mb-nf-elapsed";
+      const dur = pending.durationSec || 0;
+      time.textContent = "0:00 / " + formatTime(dur);
+      const scrub = document.createElement("input");
+      scrub.type = "range";
+      scrub.min = "0";
+      scrub.max = "1000";
+      scrub.value = "0";
+      scrub.setAttribute("aria-label", "Listen position");
+      box.appendChild(listenBtn);
+      box.appendChild(time);
+      box.appendChild(scrub);
+      chrome.appendChild(box);
+
+      function duration() {
+        if (pending.buffer && pending.buffer.duration) return pending.buffer.duration;
+        return pending.durationSec || 0;
+      }
+
+      function showPos(sec) {
+        const d = duration();
+        time.textContent = formatTime(sec) + " / " + formatTime(d);
+        if (d > 0) scrub.value = String(Math.round((sec / d) * 1000));
+      }
+
+      function tick() {
+        if (!playing) return;
+        const d = duration();
+        const sec = Math.min(d, playOffset + (Date.now() - playStartedAt) / 1000);
+        showPos(sec);
+        if (sec >= d && d > 0) {
+          stopPlayback();
+          listenBtn.textContent = "Listen";
+          showPos(d);
+        }
+      }
+
+      listenBtn.onclick = async function () {
+        if (playing) {
+          const sec = playOffset + (Date.now() - playStartedAt) / 1000;
+          stopPlayback();
+          playOffset = sec;
+          listenBtn.textContent = "Listen";
+          return;
+        }
+        try {
+          await ensureBuffer();
+        } catch (_) {}
+        const d = duration();
+        if (!pending.buffer || d <= 0) {
+          fallbackNativeAudio();
+          return;
+        }
+        if (playOffset >= d) playOffset = 0;
+        const AudioCtx = global.AudioContext || global.webkitAudioContext;
+        if (!playCtx) playCtx = new AudioCtx();
+        try { await playCtx.resume(); } catch (_) {}
+        playSource = playCtx.createBufferSource();
+        playSource.buffer = pending.buffer;
+        playSource.connect(playCtx.destination);
+        playSource.onended = function () {
+          if (!playing) return;
+          stopPlayback();
+          listenBtn.textContent = "Listen";
+          showPos(duration());
+        };
+        playing = true;
+        playStartedAt = Date.now();
+        playSource.start(0, Math.max(0, playOffset));
+        listenBtn.textContent = "Pause";
+        if (playTimer) clearInterval(playTimer);
+        playTimer = setInterval(tick, 100);
+      };
+
+      scrub.oninput = function () {
+        const d = duration();
+        const sec = d * (Number(scrub.value) / 1000);
+        playOffset = sec;
+        showPos(sec);
+        if (playing) {
+          listenBtn.click();
+          listenBtn.click();
+        }
+      };
+
+      showPos(0);
+    }
+
+    function fallbackNativeAudio() {
+      const native = document.createElement("audio");
+      native.className = "mb-nf-player";
+      native.controls = true;
+      native.preload = "auto";
+      native.volume = 1;
+      native.muted = false;
+      if (pending.blobUrl) native.src = pending.blobUrl;
+      else if (pending.audio_id) native.src = "/capture/audio/" + encodeURIComponent(pending.audio_id);
+      chrome.appendChild(native);
+      native.addEventListener("loadedmetadata", function () {
+        if (isFinite(native.duration) && native.duration > 0) {
+          pending.durationSec = native.duration;
+        }
+      });
+    }
+
+    async function ensureBuffer() {
+      if (pending.buffer) return pending.buffer;
+      let data = pending.blob;
+      if (!data && pending.audio_id) {
+        const r = await fetch("/capture/audio/" + encodeURIComponent(pending.audio_id));
+        data = await r.blob();
+      }
+      if (!data) throw new Error("no audio");
+      const AudioCtx = global.AudioContext || global.webkitAudioContext;
+      const ctx = playCtx || new AudioCtx();
+      playCtx = ctx;
+      const copy = await data.arrayBuffer();
+      pending.buffer = await ctx.decodeAudioData(copy);
+      if (pending.buffer && pending.buffer.duration) {
+        pending.durationSec = pending.buffer.duration;
+      }
+      return pending.buffer;
     }
 
     function addMicPicker() {
@@ -322,7 +513,7 @@
     }
 
     function rmsFromAnalyser() {
-      if (!analyser) return 1;
+      if (!analyser) return 0;
       const data = new Uint8Array(analyser.fftSize);
       analyser.getByteTimeDomainData(data);
       let sum = 0;
@@ -333,10 +524,28 @@
       return Math.sqrt(sum / data.length);
     }
 
-    function startSilenceWatch() {
+    function paintMeter() {
+      const fill = chrome.querySelector(".mb-nf-vu span");
+      const vu = chrome.querySelector(".mb-nf-vu");
+      const status = chrome.querySelector(".mb-nf-status");
+      const rms = mode === "paused" ? 0 : rmsFromAnalyser();
+      if (rms > peakRms) peakRms = rms;
+      if (fill) {
+        fill.style.width = Math.min(100, Math.round(rms * 220)) + "%";
+      }
+      if (vu) vu.classList.toggle("is-low", rms < HEARD_FLOOR && mode === "recording");
+      if (status && (mode === "recording" || mode === "silence")) {
+        const mic = trackLabel ? " · " + trackLabel : "";
+        status.textContent = "Listening " + formatTime(elapsedSec()) + mic;
+        status.classList.toggle("warn", rms < HEARD_FLOOR);
+      }
+    }
+
+    function startMeters() {
       stopMeter();
       silenceStarted = 0;
       meterTimer = setInterval(function () {
+        paintMeter();
         if (mode !== "recording") return;
         const rms = rmsFromAnalyser();
         if (rms < SILENCE_FLOOR) {
@@ -348,7 +557,7 @@
         } else {
           silenceStarted = 0;
         }
-      }, 250);
+      }, 100);
     }
 
     async function startRecording() {
@@ -359,7 +568,7 @@
         await discardPending(true);
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setWarn(familyError("insecure"));
+        mode = "ready";
         renderChrome();
         const el = chrome.querySelector(".mb-nf-status");
         if (el) {
@@ -371,15 +580,19 @@
       snapshotBeforeTake = textarea.value;
       chunks = [];
       silencePrompted = false;
+      peakRms = 0;
+      pausedMs = 0;
+      pauseAt = 0;
+      recStartedAt = 0;
       try {
         const deviceId = (localStorage.getItem("mb_nf_mic_id") || "").trim();
         const audio = {
           channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
         };
-        if (deviceId) audio.deviceId = { exact: deviceId };
+        if (deviceId) audio.deviceId = { ideal: deviceId };
         stream = await navigator.mediaDevices.getUserMedia({ audio: audio });
       } catch (err) {
         const name = String((err && err.name) || "");
@@ -395,6 +608,8 @@
         }
         return;
       }
+      const track = stream.getAudioTracks()[0];
+      trackLabel = (track && track.label) || "";
       mime = pickMime();
       recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       recorder.ondataavailable = function (e) {
@@ -404,20 +619,27 @@
       if (AudioCtx) {
         audioCtx = new AudioCtx();
         try { await audioCtx.resume(); } catch (_) {}
-        const source = audioCtx.createMediaStreamSource(stream);
+        try {
+          meterStream = stream.clone();
+        } catch (_) {
+          meterStream = stream;
+        }
+        const source = audioCtx.createMediaStreamSource(meterStream);
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
       }
       recorder.start(250);
+      recStartedAt = Date.now();
       mode = "recording";
-      startSilenceWatch();
       renderChrome();
+      startMeters();
     }
 
     function pauseRecording() {
       if (!recorder || recorder.state !== "recording") return;
       try { recorder.pause(); } catch (_) {}
+      pauseAt = Date.now();
       stopMeter();
       mode = "paused";
       renderChrome();
@@ -426,22 +648,30 @@
     function resumeRecording() {
       if (!recorder || recorder.state !== "paused") return;
       try { recorder.resume(); } catch (_) {}
+      if (pauseAt) {
+        pausedMs += Date.now() - pauseAt;
+        pauseAt = 0;
+      }
       silencePrompted = false;
       silenceStarted = 0;
       mode = "recording";
-      startSilenceWatch();
       renderChrome();
+      startMeters();
     }
 
     function stopRecording() {
       if (!recorder) return;
       const rec = recorder;
+      const durationSec = elapsedSec();
+      const heard = peakRms;
       rec.onstop = function () {
         const type = rec.mimeType || mime || "audio/webm";
         const blob = new Blob(chunks, { type: type });
-        const ext = type.indexOf("mp4") >= 0 ? "m4a" : "webm";
         releaseStream();
-        handleBlob(blob, "clip." + ext);
+        handleBlob(blob, type.indexOf("mp4") >= 0 ? "clip.m4a" : "clip.webm", {
+          durationSec: durationSec,
+          peakRms: heard,
+        });
       };
       try { rec.requestData(); } catch (_) {}
       if (rec.state !== "inactive") {
@@ -449,7 +679,8 @@
       }
     }
 
-    async function handleBlob(blob, filename) {
+    async function handleBlob(blob, filename, meta) {
+      meta = meta || {};
       if (!blob || !blob.size) {
         mode = "ready";
         renderChrome();
@@ -464,8 +695,14 @@
       renderChrome();
       if (speech === "authored-memory") {
         revokeBlob();
+        pending.blob = blob;
         pending.blobUrl = URL.createObjectURL(blob);
+        pending.durationSec = Number(meta.durationSec) || 0;
+        pending.peakRms = Number(meta.peakRms) || 0;
         pending.speech_captured_at = new Date().toISOString();
+        try {
+          await ensureBuffer();
+        } catch (_) {}
       }
       const retain = speech === "authored-memory" ? "1" : "0";
       const fd = new FormData();
@@ -514,11 +751,14 @@
       textarea.addEventListener("input", markEdited);
       mode = "review";
       renderChrome();
-      if (!ok && !text) {
-        const el = chrome.querySelector(".mb-nf-status");
-        if (el) {
-          el.textContent = familyError("stt");
-          el.classList.add("warn");
+      const status = chrome.querySelector(".mb-nf-status");
+      if (status) {
+        if ((meta.peakRms || 0) < HEARD_FLOOR) {
+          status.textContent = familyError("quiet");
+          status.classList.add("warn");
+        } else if (!ok && !text) {
+          status.textContent = familyError("stt");
+          status.classList.add("warn");
         }
       }
     }
@@ -528,17 +768,23 @@
     }
 
     async function startOver() {
-      const meaningful = Boolean(pending.audio_uri || pending.blobUrl || (textarea.value || "").length > snapshotBeforeTake.length);
+      const meaningful = Boolean(pending.audio_uri || pending.blobUrl || pending.blob || (textarea.value || "").length > snapshotBeforeTake.length);
       if (meaningful && !confirm("Discard this recording and start over?")) return;
       textarea.removeEventListener("input", markEdited);
       textarea.value = snapshotBeforeTake;
       emit();
       await discardPending(true);
+      startRecording();
     }
 
     function teardown() {
       textarea.removeEventListener("input", markEdited);
       window.removeEventListener("pagehide", onPageHide);
+      stopPlayback();
+      if (playCtx) {
+        try { playCtx.close(); } catch (_) {}
+        playCtx = null;
+      }
       releaseStream();
       revokeBlob();
       if (wrap.parentNode) {

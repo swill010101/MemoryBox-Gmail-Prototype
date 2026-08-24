@@ -133,8 +133,16 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check("a04_pause_resume", "Pause" in nf and "Resume" in nf and "recorder.pause" in nf, checks, problems)
     _check("a05_stop_review", 'mode = "review"' in nf and "Save" in nf, checks, problems)
-    _check("a06_play", "mb-nf-player" in nf and "audio" in nf, checks, problems)
-    _check("a10_start_over", "Start over" in nf or "Start Over" in nf, checks, problems)
+    _check("a06_play", 'textContent = "Listen"' in nf and "mb-nf-listen" in nf, checks, problems)
+    sover = nf.split("async function startOver")[-1][:1200] if "async function startOver" in nf else ""
+    _check(
+        "a10_start_over",
+        "Start over" in nf and "startRecording();" in sover,
+        checks,
+        problems,
+        "Start over confirms, then records again",
+    )
+    _check("a03_vu_meter", "mb-nf-vu" in nf and "Listening " in nf, checks, problems, "live level while recording")
     _check(
         "a16_capture_query",
         'p.get("capture")' in story and "capture=1" in artifact and "restoreCommit" in story,
