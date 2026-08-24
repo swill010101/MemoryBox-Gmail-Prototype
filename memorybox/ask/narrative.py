@@ -15,14 +15,15 @@ NARRATION_UNAVAILABLE = (
 )
 
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
-You are MemoryBox's narrator. Write readable prose ONLY from the prepared evidence pack JSON.
+You are MemoryBox's narrator. Write a short chronological story in readable prose, ONLY from the prepared evidence pack JSON.
 Rules:
+- 2–6 short paragraphs. Paraphrase. Do not paste email or SMS bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
 - A source supports only the claim listed on that unit. Presence is not photographer, purpose, emotion, companions, or significance.
 - Do not treat filename, folder, or camera owner as photographer.
 - SMS timestamp is not location. Use location_assertions.basis only.
 - Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating units exist.
 - Travel units are derived; the original communication remains the authentic source. Never ignore that provenance.
-- Derived summaries are not family truth.
+- Derived summaries are not family truth. Use them only as coverage context, not as events.
 - Do not invent people, places, dates, or motives.
 - End with a short "Family evidence used" line using evidence_used counts of supplied units.
 - If the pack is empty, say you do not have enough family evidence. Do not guess.
@@ -120,6 +121,57 @@ def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
     return "\n\n".join(parts)
 
 
+def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
+    """Smaller JSON for the model: facts, not MIME dumps."""
+    units = []
+    for u in pack.get("units") or []:
+        people = []
+        for p in u.get("people") or []:
+            if isinstance(p, dict):
+                n = str(p.get("name") or "").strip()
+            else:
+                n = str(p or "").strip()
+            if n:
+                people.append(n)
+        units.append(
+            {
+                "kind": u.get("kind"),
+                "time": (u.get("time") or {}).get("value"),
+                "people": people[:8],
+                "place": u.get("place"),
+                "subject": u.get("subject") or u.get("title"),
+                "content": str(u.get("content") or u.get("authored_text") or "")[:320],
+                "travel_kind": u.get("travel_kind"),
+                "claims": u.get("claims") or [],
+            }
+        )
+    derived = []
+    for s in pack.get("derived_summaries") or []:
+        if isinstance(s, dict):
+            derived.append(
+                {
+                    "period": s.get("period"),
+                    "text": s.get("text"),
+                    "unit_n": s.get("unit_n"),
+                    "not_family_truth": True,
+                }
+            )
+    ask = pack.get("ask") or {}
+    plan = ask.get("plan") if isinstance(ask, dict) else {}
+    return {
+        "schema_version": pack.get("schema_version"),
+        "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
+        "output_mode": ask.get("output_mode") if isinstance(ask, dict) else "tell",
+        "temporal_label": (pack.get("scope") or {}).get("time", {}).get("label")
+        if isinstance(pack.get("scope"), dict)
+        else (plan.get("temporal_label") if isinstance(plan, dict) else None),
+        "units": units,
+        "derived_summaries": derived,
+        "coverage": (pack.get("coverage") or {}).get("summary"),
+        "evidence_used": pack.get("evidence_used"),
+    }
+
+
 def synthesize_tell(
     plan: Any,
     pack: dict[str, Any],
@@ -130,7 +182,7 @@ def synthesize_tell(
     if llm is None:
         meta["fail_closed"] = True
         return _fail_closed(pack, reason="No language model is configured."), meta
-    payload = json.dumps(pack, default=str)
+    payload = json.dumps(pack_for_narrator(pack), default=str)
     messages = [
         ChatMessage(role="system", content=SYSTEM_PROMPT),
         ChatMessage(

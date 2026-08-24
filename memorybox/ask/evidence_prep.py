@@ -133,7 +133,7 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         "time": _time(d.get("sent_at") or payload.get("sent_at")),
         "people": [{"name": p, "role": "participant"} for p in people[:12]],
         "place": loc[0].get("place") if loc else None,
-        "content": (content or d.get("summary") or "")[:4000],
+        "content": (content or d.get("summary") or "")[:400],
         "claims": claims,
         "provenance": {"source": source_type, "evidence_id": eid},
         "rank": float(d.get("score") or 1.0),
@@ -154,7 +154,7 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         "timestamp": d.get("sent_at"),
         "authored_text": content if meta["keep_authored"] else None,
         "subject": payload.get("subject") or d.get("summary"),
-        "attachments": d.get("attachments") or [],
+        "attachments": [],
         "location_assertions": loc,
         "flags": flags,
         "_raw_body": body,
@@ -326,9 +326,44 @@ def _calendar_material(hit: Any, plan: Any, *, broad: bool) -> bool:
     return False
 
 
+_RANK_STOP = frozenset(
+    {
+        "write",
+        "wrote",
+        "narrative",
+        "about",
+        "tell",
+        "story",
+        "summarize",
+        "what",
+        "that",
+        "this",
+        "from",
+        "with",
+        "have",
+        "been",
+        "january",
+        "february",
+        "march",
+        "april",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    }
+)
+
+
 def _rank_units(units: list[dict[str, Any]], ask: str) -> list[dict[str, Any]]:
     q = (ask or "").lower()
-    tokens = [t for t in q.split() if len(t) > 3]
+    tokens = [
+        t
+        for t in q.split()
+        if len(t) > 3 and t not in _RANK_STOP and not re.fullmatch(r"20\d{2}", t)
+    ]
 
     def score(u: dict[str, Any]) -> float:
         s = float(u.get("rank") or 0)
@@ -342,27 +377,67 @@ def _rank_units(units: list[dict[str, Any]], ask: str) -> list[dict[str, Any]]:
     return sorted(units, key=score, reverse=True)
 
 
+def _one_per_thread(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for u in units:
+        tid = str(u.get("thread_id") or u.get("unit_id") or "")
+        if tid and tid in seen:
+            continue
+        if tid:
+            seen.add(tid)
+        out.append(u)
+    return out
+
+
+def _spread_by_day(units: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
+    if n <= 0:
+        return []
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for u in units:
+        day = str((u.get("time") or {}).get("value") or "undated")[:10]
+        if day not in buckets:
+            buckets[day] = []
+            order.append(day)
+        buckets[day].append(u)
+    out: list[dict[str, Any]] = []
+    while len(out) < n and any(buckets.values()):
+        for day in order:
+            if buckets.get(day) and len(out) < n:
+                out.append(buckets[day].pop(0))
+    return out
+
+
 def _select_supplied(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Cap the model pack. Travel is derived — never crowd out authored units."""
     if len(ranked) <= MODEL_UNIT_BUDGET:
         return list(ranked)
-    keep: list[dict[str, Any]] = []
-    rest: list[dict[str, Any]] = []
-    travel_n = 0
-    for u in ranked:
-        kind = u.get("kind")
-        if kind in {"journal", "story"}:
-            keep.append(u)
-        elif kind == "travel" and travel_n < 6:
-            keep.append(u)
-            travel_n += 1
-        else:
-            rest.append(u)
-    comms = [u for u in rest if u.get("kind") in {"communication", "calendar"}]
-    other = [u for u in rest if u.get("kind") not in {"communication", "calendar"}]
-    rest = comms + other
+    journals = [u for u in ranked if u.get("kind") in {"journal", "story"}]
+    travel = [u for u in ranked if u.get("kind") == "travel"][:6]
+    calendars = [u for u in ranked if u.get("kind") == "calendar"]
+    comms = _one_per_thread([u for u in ranked if u.get("kind") == "communication"])
+    other = [
+        u
+        for u in ranked
+        if u.get("kind") not in {"journal", "story", "travel", "calendar", "communication"}
+    ]
+    keep = journals + travel
     room = max(0, MODEL_UNIT_BUDGET - len(keep))
-    return keep + rest[:room]
+    cal_n = min(len(calendars), 6, max(0, room // 4)) if calendars else 0
+    comm_n = max(0, room - cal_n)
+    supplied = keep + _spread_by_day(comms, comm_n) + _spread_by_day(calendars, cal_n)
+    leftover_room = MODEL_UNIT_BUDGET - len(supplied)
+    if leftover_room > 0:
+        used = {id(u) for u in supplied}
+        for u in other:
+            if id(u) in used:
+                continue
+            supplied.append(u)
+            leftover_room -= 1
+            if leftover_room <= 0:
+                break
+    return supplied[:MODEL_UNIT_BUDGET]
 
 
 def _hierarchical_summaries(units: list[dict[str, Any]]) -> list[dict[str, Any]]:

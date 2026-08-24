@@ -20,6 +20,22 @@ from memorybox.providers.photo.protocol import PhotoProvider
 from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
 
+def _prefer_live_llm(llm: LlmProvider) -> LlmProvider:
+    """If Ask started while Ollama was down, retry once on tell."""
+    inner = getattr(llm, "inner", llm)
+    if getattr(inner, "provider_key", "") != "fake_llm":
+        return llm
+    from memorybox.config import settings as cfg
+
+    if not (cfg.ollama_base_url or "").strip():
+        return llm
+    fresh = build_llm()
+    inner2 = getattr(fresh, "inner", fresh)
+    if getattr(inner2, "provider_key", "") != "fake_llm":
+        return fresh
+    return llm
+
+
 def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
     """Fill birthday/anniversary temporal windows from MB People when recorded.
 
@@ -1504,6 +1520,7 @@ class AskOrchestrator:
         ):
             from memorybox.ask.narrative import tell_from_hits
 
+            self.llm = _prefer_live_llm(self.llm)
             answer_text, narrative_pack, synth_meta = tell_from_hits(
                 plan,
                 llm=self.llm,

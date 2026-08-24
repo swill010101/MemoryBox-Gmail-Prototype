@@ -17,25 +17,74 @@ def _fake_narrative(pack_json: str) -> str:
         pack = json.loads(pack_json)
     except Exception:
         return "The prepared pack could not be read. MemoryBox will not invent family facts."
-    bits: list[str] = []
-    for u in pack.get("units") or []:
-        text = str(u.get("content") or u.get("authored_text") or u.get("subject") or "").strip()
-        if text:
-            bits.append(text[:280])
-        if len(bits) >= 10:
-            break
-    body = " ".join(bits) if bits else "No citable excerpts were in the prepared pack."
-    kinds = {str(u.get("kind") or "") for u in (pack.get("units") or [])}
-    if kinds == {"calendar"} or (kinds and kinds <= {"calendar"}):
-        body = (
-            "The prepared pack has calendar rows for this window. "
-            "Those are scheduled or recorded, not proof the events occurred. "
-            + body
+    units = list(pack.get("units") or [])
+    label = (
+        pack.get("temporal_label")
+        or ((pack.get("scope") or {}).get("time") or {}).get("label")
+        or "this period"
+    )
+    if not units:
+        return (
+            f"There is not enough prepared family evidence to narrate {label}."
+            "\n\nFamily evidence used: none."
         )
+    kinds = {str(u.get("kind") or "") for u in units}
+    paras: list[str] = [
+        f"Here is a short account of {label} from the prepared family evidence, "
+        "without pasting the original messages."
+    ]
+    if kinds and kinds <= {"calendar"}:
+        paras.append(
+            "The prepared pack has calendar rows for this window. "
+            "Those are scheduled or recorded, not proof the events occurred."
+        )
+    by_day: dict[str, list[str]] = {}
+    for u in units:
+        day = str(u.get("time") or (u.get("time") or {}).get("value") or "").strip() or "an undated day"
+        if isinstance(u.get("time"), dict):
+            day = str((u.get("time") or {}).get("value") or day)
+        kind = str(u.get("kind") or "evidence")
+        subj = str(u.get("subject") or "").strip()
+        gist = str(u.get("content") or u.get("authored_text") or "").strip()
+        gist = re.split(
+            r"(?i)\nOn .+ wrote:|-----Original Message-----|Begin forwarded message:",
+            gist,
+            maxsplit=1,
+        )[0].strip()
+        gist = re.sub(r"\s+", " ", gist)[:160]
+        people = u.get("people") or []
+        names = []
+        for p in people:
+            if isinstance(p, dict):
+                n = str(p.get("name") or "").strip()
+            else:
+                n = str(p or "").strip()
+            if n and n not in names:
+                names.append(n)
+        who = ", ".join(names[:4])
+        if kind == "journal":
+            bit = gist or subj or "a journal entry"
+        elif kind == "calendar":
+            bit = f"a calendar row{(' for ' + subj) if subj else ''}"
+        elif kind == "travel":
+            bit = gist or str(u.get("travel_kind") or "travel")
+        elif subj:
+            bit = f"{subj}" + (f" — {gist}" if gist else "")
+        else:
+            bit = gist or kind
+        if who:
+            bit = f"{who}: {bit}"
+        by_day.setdefault(day[:10] if len(day) >= 10 else day, []).append(bit)
+    for day, bits in list(by_day.items())[:10]:
+        uniq: list[str] = []
+        for b in bits:
+            if b not in uniq:
+                uniq.append(b)
+        paras.append(f"On {day}, {'; '.join(uniq[:3])}.")
     used = pack.get("evidence_used") or {}
     footer_bits = [f"{k} {v}" for k, v in used.items() if v]
     footer = "Family evidence used: " + (", ".join(footer_bits) if footer_bits else "none") + "."
-    return body + "\n\n" + footer
+    return "\n\n".join(paras) + "\n\n" + footer
 
 
 def _token_vector(text: str) -> tuple[float, ...]:

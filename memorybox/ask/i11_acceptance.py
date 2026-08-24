@@ -681,6 +681,35 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
             }
         ),
     )
+    quoted_hit = EvidenceHit(
+        evidence_id="e-quoted-jan",
+        evidence_kind="communication",
+        summary="Re: Garden",
+        score=1.0,
+        excerpt=(
+            "OK, PT at noon on the 28th.\n"
+            "On Wed, Jan 22, 2025 at 10:48 AM Michelle Cook "
+            "<mcook@lasalleretreat.org> wrote:\nHow about Wednesday"
+        ),
+        source="email_mbox",
+        sent_at="2025-01-22T08:33:00",
+        channel="email",
+        thread_id="t-garden",
+    )
+    dump_text, _dump_pack, dump_meta = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=[quoted_hit]
+    )
+    _check(
+        "fake_tell_is_prose_not_email_dump",
+        "here is a short account" in dump_text.lower()
+        and "without pasting" in dump_text.lower()
+        and "wrote:" not in dump_text.lower()
+        and "mcook@" not in dump_text.lower()
+        and dump_meta.get("ok") is True,
+        checks,
+        problems,
+        detail=dump_text[:280],
+    )
 
     class _DownLlm:
         provider_key = "down"
@@ -861,7 +890,9 @@ def _prove_i11_flightsim_live(
         and len(prose) > 20
         and slim_ok
         and int(used.get("travel") or 0) <= 6
-        and authored >= 1,
+        and authored >= 1
+        and prose.lower().count("wrote:") < 3
+        and "mcook@" not in prose.lower(),
         checks,
         problems,
         detail=str(

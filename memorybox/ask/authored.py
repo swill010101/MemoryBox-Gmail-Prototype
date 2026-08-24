@@ -8,6 +8,14 @@ _GT_QUOTE = re.compile(r"(?m)^>+.*$")
 _SIG = re.compile(
     r"(?m)^(--)[ \t]*$|^Sent from my iPhone.*$|^Get Outlook for.*$",
 )
+_QUOTE_CUT = re.compile(
+    r"(?is)"
+    r"(?:\n|^)\s*On .{8,400}?\bwrote:\s*"
+    r"|-----Original Message-----"
+    r"|(?:\n|^)_{8,}\s*\nFrom:"
+    r"|(?:\n|^)Begin forwarded message:"
+    r"|(?:\n|^)From:\s+.+\nSent:"
+)
 
 
 def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
@@ -18,6 +26,9 @@ def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
     if not lead and body:
         lead = body.strip()
         flags["quote_uncertain"] = True
+    cut_m = _QUOTE_CUT.search("\n" + lead)
+    if cut_m and cut_m.start() > 1:
+        lead = lead[: cut_m.start() - 1].strip()
     stripped = _GT_QUOTE.sub("", lead).strip()
     if stripped != lead.strip():
         lead = stripped
