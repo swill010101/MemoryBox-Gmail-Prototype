@@ -1,8 +1,8 @@
 # P2-I10A.2 — Reusable Speech Input (shared narrative editor)
 
-**Status:** PRD **LOCKED** 2026-08-24 · **BUILD AUTHORIZED** (Tom: “Lock it, approved.... authorized to build”)  
+**Status:** Increment **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) · PRD **LOCKED** · `prove-i10a2` · do not reopen for polish  
 **Increment:** P2-I10A.2  
-**Do not reopen:** I10A.1  
+**Do not reopen:** I10A.1 · I10A.2  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
 **Definition:** [MBBS-P2_INCREMENT_10A2_DEFINITION.md](MBBS-P2_INCREMENT_10A2_DEFINITION.md)  
 **Surface map:** [MBAS-P2-I10A2_SURFACE_MAP.md](MBAS-P2-I10A2_SURFACE_MAP.md)  
@@ -136,4 +136,4 @@ See [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) (AT-01–AT-12 pl
 
 ---
 
-**LOCKED and BUILD AUTHORIZED 2026-08-24.**
+**Increment ACCEPTED 2026-08-24 (Tom: “i10A.2 is accepted”). Do not reopen I10A.2 for polish. Next is I10C Journal after a signed definition and build authorization. I11 is not authorized until that chain plus required transcription/recognition work.**

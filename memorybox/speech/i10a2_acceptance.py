@@ -29,8 +29,8 @@ def _check(name: str, ok: bool, checks: dict[str, Any], problems: list[str], det
         problems.append(f"{name}: {detail or 'failed'}")
 
 
-def _locked(text: str) -> bool:
-    return "BUILD AUTHORIZED" in text and "LOCKED" in text
+def _accepted(text: str) -> bool:
+    return "ACCEPTED" in text and "i10A.2 is accepted" in text
 
 
 def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
@@ -55,9 +55,9 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     story_py = STORY_PY.read_text(encoding="utf-8") if STORY_PY.is_file() else ""
     prd = PRD.read_text(encoding="utf-8") if PRD.is_file() else ""
 
-    _check("docs_prd", PRD.is_file() and _locked(prd), checks, problems, "PRD locked + build-authorized")
-    _check("docs_screen", SCREEN.is_file() and "LOCKED" in SCREEN.read_text(encoding="utf-8"), checks, problems)
-    _check("docs_accept", ACCEPT.is_file(), checks, problems)
+    _check("docs_prd", PRD.is_file() and _accepted(prd), checks, problems, "PRD accepted")
+    _check("docs_screen", SCREEN.is_file() and "ACCEPTED" in SCREEN.read_text(encoding="utf-8"), checks, problems)
+    _check("docs_accept", ACCEPT.is_file() and "ACCEPTED" in ACCEPT.read_text(encoding="utf-8"), checks, problems)
 
     _check("a01_shared_module", "MBNarrativeField.mount" in nf and "authored-memory" in nf, checks, problems, str(NF_JS))
     _check("a01_css", ".mb-nf" in css, checks, problems, str(NF_CSS))

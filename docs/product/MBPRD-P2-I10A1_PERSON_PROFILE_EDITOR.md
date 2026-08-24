@@ -185,4 +185,4 @@ Reuse Existing APIs. Do not fork a second person model.
 
 ---
 
-**PRD and increment ACCEPTED 2026-08-24. Do not reopen I10A.1 for polish. Next is I10A.2 Unified Voice (Stories first) after a signed definition.**
+**PRD and increment ACCEPTED 2026-08-24. Do not reopen I10A.1 for polish. I10A.2 is **ACCEPTED** 2026-08-24. Next is I10C Journal after a signed definition.**

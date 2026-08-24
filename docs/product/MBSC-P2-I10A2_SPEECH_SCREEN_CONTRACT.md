@@ -1,6 +1,6 @@
 # MBSC-P2-I10A.2 — Shared narrative field and speech
 
-**Status:** Contract **LOCKED** 2026-08-24 · **BUILD AUTHORIZED**  
+**Status:** Contract **LOCKED** · increment **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”). Do not reopen I10A.2 for polish.  
 **PRD:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md)
 
 One component. Two speech semantics. Containing Save/Cancel unchanged.

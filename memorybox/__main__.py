@@ -299,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_prove_i10a2 = sub.add_parser(
         "prove-i10a2",
-        help="P2-I10A.2 reusable speech input / shared narrative field prove",
+        help="P2-I10A.2 speech input regression prove (increment ACCEPTED)",
     )
     p_prove_i10a2.add_argument(
         "--flightsim",

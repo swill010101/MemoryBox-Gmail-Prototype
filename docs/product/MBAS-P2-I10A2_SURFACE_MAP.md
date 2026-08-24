@@ -1,6 +1,6 @@
 # P2-I10A.2 — Narrative field and speech surface map
 
-**Status:** **LOCKED** 2026-08-24 · **BUILD AUTHORIZED**  
+**Status:** **LOCKED** · increment **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”)  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)
 
 | Screen | Control today | Shared field | Speech semantics | Notes |
