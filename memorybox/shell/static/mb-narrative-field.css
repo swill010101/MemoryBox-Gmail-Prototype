@@ -44,9 +44,37 @@
   opacity: 0.88;
   margin: 0;
 }
-.mb-nf-status.warn {
-  color: #b45309;
-  font-weight: 600;
+.mb-nf-status.is-working {
+  animation: mb-nf-pulse 1.15s ease-in-out infinite;
+}
+@keyframes mb-nf-pulse {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 1; }
+}
+.mb-nf-progress {
+  width: 100%;
+  max-width: 28rem;
+  height: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #0b1220;
+  overflow: hidden;
+}
+.mb-nf-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #3dcf9a;
+  transition: width 0.12s linear;
+}
+.mb-nf-progress.is-indeterminate .mb-nf-progress-fill {
+  width: 34%;
+  transition: none;
+  animation: mb-nf-indet 1.15s ease-in-out infinite;
+}
+@keyframes mb-nf-indet {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
 }
 .mb-nf-player {
   width: 100%;

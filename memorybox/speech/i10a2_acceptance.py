@@ -129,11 +129,14 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
         "Are you still there?" in nf
         and "Continue recording" in nf
         and "mb-nf-modal-back" in nf
-        and "still listening" in nf.lower()
+        and "pauseCapture" in nf
+        and "fromSilence" in nf
+        and "stepped away" in nf.lower()
+        and "this is not paused" not in nf.lower()
         and "auto-stop" not in nf.lower(),
         checks,
         problems,
-        "silence prompt is a modal; recording is not paused; no auto-stop copy",
+        "silence modal pauses capture; Continue resumes; no auto-stop",
     )
     _check("a04_pause_resume", "Pause" in nf and "Resume" in nf and "recorder.pause" in nf, checks, problems)
     _check("a05_stop_review", 'mode = "review"' in nf and "Save" in nf, checks, problems)
@@ -147,6 +150,13 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
         "Start over confirms, then records again",
     )
     _check("a03_vu_meter", "mb-nf-vu" in nf and "Level" in nf, checks, problems, "labeled live level while recording")
+    _check(
+        "processing_pulse",
+        "Turning speech into words" in nf and "is-working" in nf and "mb-nf-progress" in nf,
+        checks,
+        problems,
+        "processing chrome pulses; upload % when the browser reports it",
+    )
     _check(
         "mic_skips_virtual_cable",
         "isVirtualMic" in nf and "voicemeeter" in nf,

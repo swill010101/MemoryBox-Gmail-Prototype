@@ -26,8 +26,9 @@ Used on Story body and Journal body (including Tell its story → Story).
 | State | Family-facing | Must |
 |---|---|---|
 | Ready | Mic / start telling | Not recording |
-| Record | Pause · Stop | Capture running; ~30s silence → “Are you still there?” (Continue / Stop), no auto-stop |
-| Pause | Resume · Stop | Same take; silence timer off |
+| Record | Pause · Stop | Capture running; ~30s silence → **pause** + modal “Are you still there?” (Continue recording resumes / Stop). No auto-stop/discard. Walk-away must not keep recording. |
+| Pause | Resume · Stop | Same take frozen; silence timer off. Silence modal uses this state. |
+| Processing | (wait) | After Stop: pulsing “Turning speech into words…”; upload % when known |
 | Review | Play / pause / scrub · edit text · Start Over · (then Save on the page) | Stop already happened; object **not** saved |
 | Saved | Normal Story/Journal saved chrome | Audio + approved text + provenance committed |
 

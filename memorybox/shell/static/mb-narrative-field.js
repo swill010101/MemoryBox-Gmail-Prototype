@@ -150,6 +150,8 @@
     let playStartedAt = 0;
     let playing = false;
     let reviewAudio = null;
+    let processLabel = "Turning speech into words…";
+    let processPct = null;
 
     function emptyPending() {
       return {
@@ -327,7 +329,7 @@
           act("Stop", "primary", function () { stopRecording(); });
         }
       } else if (mode === "processing") {
-        status.textContent = "Turning speech into words…";
+        addWorkingChrome(status);
       } else if (mode === "review") {
         status.textContent = "Review the story. Fix the words if needed. Listen back if you want. Save when ready.";
         addReviewPlayer();
@@ -339,15 +341,32 @@
       stillModal = null;
     }
 
+    function pauseCapture(opts) {
+      opts = opts || {};
+      if (!recorder || recorder.state !== "recording") return false;
+      if (!opts.fromSilence) closeStillThereModal();
+      silencePrompted = true;
+      try { recorder.pause(); } catch (_) {}
+      pauseAt = Date.now();
+      stopMeter();
+      mode = "paused";
+      renderChrome();
+      return true;
+    }
+
+    function pauseRecording() {
+      pauseCapture({});
+    }
+
     function openStillThereModal() {
       if (stillModal) return;
-      silencePrompted = true;
+      pauseCapture({ fromSilence: true });
       stillModal = document.createElement("div");
       stillModal.className = "mb-nf-modal-back";
       stillModal.innerHTML = '<div class="mb-nf-modal" role="dialog" aria-modal="true">' +
         "<p>Are you still there?</p>" +
-        '<p class="mb-nf-modal-note">MemoryBox is still listening. This is not paused.</p>' +
-        '<p class="mb-nf-modal-elapsed">Listening ' + formatTime(elapsedSec()) + "</p>" +
+        '<p class="mb-nf-modal-note">Recording is paused so this story does not keep going if you stepped away.</p>' +
+        '<p class="mb-nf-modal-elapsed">Paused at ' + formatTime(elapsedSec()) + "</p>" +
         '<p class="mb-nf-modal-actions">' +
         '<button type="button" class="mb-nf-btn primary" data-mb-still="continue">Continue recording</button>' +
         '<button type="button" class="mb-nf-btn" data-mb-still="stop">Stop</button>' +
@@ -356,9 +375,8 @@
         const t = ev.target;
         if (!t || !t.getAttribute) return;
         if (t.getAttribute("data-mb-still") === "continue") {
-          silencePrompted = false;
-          silenceStarted = 0;
           closeStillThereModal();
+          resumeRecording();
         }
         if (t.getAttribute("data-mb-still") === "stop") {
           closeStillThereModal();
@@ -366,6 +384,78 @@
         }
       });
       document.body.appendChild(stillModal);
+    }
+
+    function addWorkingChrome(status) {
+      status.classList.add("is-working");
+      status.textContent = processPct != null
+        ? (processLabel + " " + processPct + "%")
+        : processLabel;
+      const track = document.createElement("div");
+      track.className = "mb-nf-progress" + (processPct == null ? " is-indeterminate" : "");
+      const fill = document.createElement("span");
+      fill.className = "mb-nf-progress-fill";
+      if (processPct != null) fill.style.width = processPct + "%";
+      track.appendChild(fill);
+      chrome.appendChild(track);
+    }
+
+    function setProcessProgress(label, pct) {
+      processLabel = label;
+      processPct = typeof pct === "number" ? Math.max(0, Math.min(100, Math.round(pct))) : null;
+      if (mode !== "processing") return;
+      const status = chrome.querySelector(".mb-nf-status");
+      const track = chrome.querySelector(".mb-nf-progress");
+      const fill = chrome.querySelector(".mb-nf-progress-fill");
+      if (status) {
+        status.classList.add("is-working");
+        status.textContent = processPct != null
+          ? (processLabel + " " + processPct + "%")
+          : processLabel;
+      }
+      if (track && fill) {
+        if (processPct == null) {
+          track.classList.add("is-indeterminate");
+          fill.style.width = "";
+        } else {
+          track.classList.remove("is-indeterminate");
+          fill.style.width = processPct + "%";
+        }
+      }
+    }
+
+    function postTranscribe(blob, filename, retain) {
+      return new Promise(function (resolve) {
+        const fd = new FormData();
+        fd.append("file", blob, filename || "clip.webm");
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/capture/transcribe?retain=" + retain);
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable && e.total > 0) {
+            setProcessProgress("Sending the recording…", (e.loaded / e.total) * 100);
+          }
+        };
+        xhr.upload.onload = function () {
+          setProcessProgress("Turning speech into words…", null);
+        };
+        xhr.onerror = function () {
+          resolve({ ok: false, data: {} });
+        };
+        xhr.onload = function () {
+          let data = {};
+          try {
+            data = JSON.parse(xhr.responseText || "{}");
+          } catch (_) {
+            data = {};
+          }
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            data: data,
+          });
+        };
+        setProcessProgress("Sending the recording…", 0);
+        xhr.send(fd);
+      });
     }
 
     function addLiveMeter(status) {
@@ -606,10 +696,6 @@
           status.classList.toggle("warn", rms < HEARD_FLOOR);
         }
       }
-      if (stillModal) {
-        const elapsedEl = stillModal.querySelector(".mb-nf-modal-elapsed");
-        if (elapsedEl) elapsedEl.textContent = "Still listening — " + formatTime(elapsedSec());
-      }
       if (status && mode === "paused") {
         status.classList.remove("warn");
       }
@@ -741,18 +827,8 @@
       startMeters();
     }
 
-    function pauseRecording() {
-      if (!recorder || recorder.state !== "recording") return;
-      closeStillThereModal();
-      silencePrompted = true;
-      try { recorder.pause(); } catch (_) {}
-      pauseAt = Date.now();
-      stopMeter();
-      mode = "paused";
-      renderChrome();
-    }
-
     function resumeRecording() {
+      closeStillThereModal();
       if (!recorder || recorder.state !== "paused") return;
       try { recorder.resume(); } catch (_) {}
       if (pauseAt) {
@@ -800,6 +876,8 @@
         return;
       }
       mode = "processing";
+      processLabel = "Turning speech into words…";
+      processPct = null;
       renderChrome();
       if (speech === "authored-memory") {
         revokeBlob();
@@ -808,22 +886,21 @@
         pending.durationSec = Number(meta.durationSec) || 0;
         pending.peakRms = Number(meta.peakRms) || 0;
         pending.speech_captured_at = new Date().toISOString();
-        try {
-          await ensureBuffer();
-        } catch (_) {}
       }
       const retain = speech === "authored-memory" ? "1" : "0";
-      const fd = new FormData();
-      fd.append("file", blob, filename || "clip.webm");
+      const decodeP = speech === "authored-memory"
+        ? ensureBuffer().catch(function () { return null; })
+        : Promise.resolve(null);
       let data = {};
       let ok = false;
       try {
-        const r = await fetch("/capture/transcribe?retain=" + retain, { method: "POST", body: fd });
-        data = await r.json().catch(function () { return {}; });
-        ok = r.ok;
+        const posted = await postTranscribe(blob, filename, retain);
+        data = posted.data || {};
+        ok = Boolean(posted.ok);
       } catch (_) {
         data = {};
       }
+      try { await decodeP; } catch (_) {}
       const detail = data && data.detail;
       const audioFromErr = detail && typeof detail === "object" ? detail.audio : null;
       const draft = (data && data.draft) || data || {};
