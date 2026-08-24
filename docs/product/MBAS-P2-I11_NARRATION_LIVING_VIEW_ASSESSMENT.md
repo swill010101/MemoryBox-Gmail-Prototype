@@ -1,9 +1,10 @@
 # MBAS-P2-I11 — Narration + Saved Ask / Living Views
 
-**Status:** Planning assessment **2026-08-24** · **BUILD AUTHORIZED** 2026-08-24 (Tom: “i11 next”)  
-**Direction:** Founder lock (Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot)  
-**Does not start:** I13 Dynamic Views UI · a Narration app · Journal screen redesign · I12 external history  
-**Depends on:** I10A Stories **ACCEPTED** · I10A.2 **ACCEPTED** · I10B **ACCEPTED** · I10C Journal **ACCEPTED** 2026-08-24 · MBQL-001 **ACCEPTED** · I10 pack/coverage **ACCEPTED**
+**Status:** Planning assessment **LOCKED** 2026-08-24 · founder narration-prep **LOCKED** · I10C **ACCEPTED** · **prep/LLM not build-authorized** until Tom says so  
+**Direction:** Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot; **Saved View** not Living Album  
+**Prep assessment:** [MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
+**Does not start:** I13 Dynamic Views UI · a Narration app · Journal screen redesign · I12 · tell-LLM until authorized  
+**Depends on:** I10A Stories **ACCEPTED** · I10A.2 **ACCEPTED** · I10B **ACCEPTED** · I10C Journal **ACCEPTED** 2026-08-24 · MBQL-001 **ACCEPTED** · I10 pack/coverage **ACCEPTED** · I7A
 
 Journal screens are **ACCEPTED**. I10C work stays closed unless a contract defect appears.
 
@@ -15,25 +16,26 @@ Journal screens are **ACCEPTED**. I10C work stays closed unless a contract defec
 
 Narration belongs in existing Explore/Ask: context chips → Ask row → curator → representative gallery/timeline. The curator is a short count line in a compact card today; I11 should **grow that component**, not fork a product area.
 
-**Do not pull I13 into I11.** Freeze a persistable Ask-state shape now. Ship Save View reopen, Curated Collection, and Snapshot under **P2-I13** (MBUX Living Album / P2-VIEW-01..03), unless Tom later authorizes a thin “Save View” control in I11 that writes the same record.
+**Do not pull I13 into I11.** Freeze persistable Ask-state now. Ship **Save View** reopen, Curated Collection, and Snapshot under **P2-I13**. Do **not** add a disabled Save View control. User-facing names: **Save View** / **Saved View** (live recompute). Do not use **Living Album**.
 
 ---
 
 ## Recommended implementation boundary
 
-### I11 (Narrative & Summaries) — authorized 2026-08-24
+### I11 (Narrative & Summaries) — definition locked; prep/LLM waits for build authorization
 
 **In**
 
 1. **Output mode** on the existing `QueryPlan` (do not fork a second intent object). Keep MBQL `act` as find/refine/navigate/clarify. Add a sibling slot, e.g. `output_mode: show | play | tell` (names can be `find` / `play` / `tell` if we must reuse vocabulary — do **not** overload `act`).
 2. Semantic compile: SHOW/FIND → `show`; PLAY/moment → `play`; TELL/SUMMARIZE/WHAT DO YOU KNOW/WHAT HAPPENED/WHAT WAS X LIKE/DESCRIBE FROM WHAT WE HAVE → `tell`. Natural language, not a phrase table. Deterministic first; residual model only to fill this slot when ambiguous (I7A).
-3. **`tell` retrieval uses the full supported evidence pack** (photos, video/moments, Stories, Journal, artifacts, email, SMS, calendar, documents, audio/spoken, relationships, places, events/trips). Gallery visibility must not shrink that pack.
-4. Curator renders **long-form evidence-backed prose** for `tell`, with Copy and Save as Story. Gallery/timeline stay for drill-down.
-5. Provenance in the prose (facts vs recollection vs inference vs missing) — readable, not a citation dump per sentence. Citations/`coverage` already on the Ask result remain inspectable.
-6. **Copy** = clipboard of the current narrative text. No durable object.
-7. **Save as Story** = existing `/story/ui` editor: proposed body + people/place/time + supporting memory links; `composed_by_model` stays true until owner Save Story. Never auto-persist Ask prose as Story.
-8. Keep `Show me Peggy` as a **result set** (`show`), not an essay.
-9. Document the persistable Living View JSON (original Ask + `QueryPlan.to_dict()` + Explore domain/timeline/gallery presentation). I11 may emit it; I13 stores and reopens it.
+3. **`tell` uses Narrative Evidence Preparation** then LLM synthesis. Retrieval stays the full **supported** pack for that Ask’s constraints (not gallery-visible tiles). Spam/Trash out before the model.
+4. Shared long-form curator (Explore + Person Explorer): Copy and Save as Story.
+5. Provenance in the prose (facts vs recollection vs inference vs missing) — readable, not a citation dump per sentence.
+6. **Copy** = clipboard. No durable object.
+7. **Save as Story** = working draft + `composed_by_model`; owner Save Story for Ask-current.
+8. Keep `Show me Peggy` as `show`.
+9. Emit persistable Saved View JSON. I13 stores/reopens. No Save View UI in I11.
+10. Deterministic prep; model **only** for `tell` synthesis (I7A). Not a phrase table. Not a dump of raw mailbox threads.
 
 **Out**
 
@@ -42,12 +44,13 @@ Narration belongs in existing Explore/Ask: context chips → Ask row → curator
 - I12 / P2-NAR-04 world-history weave.
 - Curated Collection membership UI.
 - Snapshot frozen ID lists as default save.
-- Sending every Ask to a model.
+- Sending every Ask to a model (only `tell`, and only the prepared pack).
 - Treating generated prose as Ask-current family fact.
+- Disabled Save View chrome.
 
 ### I13 (Dynamic Views) — later
 
-Persist named **Save View** (Living View / MBUX Living Album): rerun Ask+normalized state against the current archive. Distinct Curated and Snapshot modes (P2-VIEW-03). User-facing verbs: **Save View**, not “Save narrative.”
+Persist named **Save View** / **Saved View**: rerun Ask + normalized state against the current archive. Distinct Curated Collection and Snapshot. Not “Save narrative.” Not Living Album.
 
 ---
 
@@ -55,15 +58,15 @@ Persist named **Save View** (Living View / MBUX Living Album): rerun Ask+normali
 
 ### 1. How SHOW/FIND vs TELL/SUMMARIZE is represented today
 
-There is **no output-mode slot**.
+There is an `output_mode` field on `QueryPlan` on the current tree. The **authorized** synthesizer (prepared pack + LLM) is **not** implemented. A deterministic stitch and Explore Copy/Save as Story may exist as scaffolding only.
 
-| Family phrasing | Today |
+| Family phrasing | Compile / curator today |
 |---|---|
 | `Show me Peggy` | `SHOW_ME_RE` → broad visual `QueryPlan` (`visual_scope=broad`, photos+video). Curator is a **count of visible gallery items**. |
 | `Tell me about Peggy` / `What do you know about…` | `EXPLORATORY_RE` → multimodal retrieve (`exploratory_multimodal_i4`), including Story/Journal/Artifact **unless** other flags fire. Still a **hit-count curator**, not synthesis. |
 | `Summarize…` / `What happened…` / `What was X like?` | **No dedicated compile.** Falls through ordinary find + count summary. |
 | `What did X say` / `said about` | `SAID_ABOUT_RE` → **communication-focus**; **turns off** `want_story` / `want_journal` / `want_artifact`. |
-| Explicit “write a narrative” | Compiles `output_mode=tell` and stitches retrieved messages (I11). |
+| Explicit “write a narrative” | Compiles `tell`. Authorized synthesizer = prepared pack + LLM (not stitch). |
 
 MBQL `act` is session mechanics (`find` / `refine` / `navigate` / `clarify`), not SHOW vs TELL vs PLAY. Mixing those would break refine-vs-new-find.
 
@@ -178,7 +181,7 @@ For `Summarize our Alaska trip` with Email/SMS hidden, I11 must synthesize from 
 |---|---|---|
 | MBQL-001 | Normalize intent only; **no I11 narrative** in that increment | Compatible — I11 consumes MBQL, does not replace it |
 | MBPS P2-NAR-01..03 / CAP-P2-013 | Evidence-backed synthesis; not authoritative; owner review to persist | **Aligns** |
-| MBPS P2-VIEW-01..03 / CAP-P2-014 / MBUX §22.9 | **Living Album**; live / curated / snapshot | Same three objects. Founder user-facing names: **Save View**, Living View, Curated Collection, Snapshot. Treat **Living Album = Living View** (I13 customer name to confirm) |
+| MBPS P2-VIEW-01..03 / CAP-P2-014 / MBUX §22.9 | **Living Album** in older catalogs | Founder: **Save View** / **Saved View**, Curated Collection, Snapshot. Do not use Living Album as the family name. |
 | MBRM I11 vs I13 | I11 = P2-NAR-01..03; I13 = P2-VIEW-01..03 | **Keep split.** I11 must not absorb I13 UI |
 | I10 | Coverage pack, not narrative save | Keep; I11 writes prose **from** the pack |
 | I10A | Human Story; AI cannot be Story truth without Save | Save as Story path **aligns** |
@@ -200,16 +203,12 @@ Map 1:1 to founder §17. Harness should prove at least:
 
 ---
 
-## Open questions for Tom — defaults used for this build
+## Open questions for Tom
 
-1. **I11 vs I13 Save View control:** Copy + Save as Story only. Persistable JSON is emitted; no Save View UI.
-2. **Living Album vs Living View:** I13 naming; not I11.
-3. **Synthesizer:** deterministic stitch from statements/coverage. No every-Ask model.
-4. **Person Explorer:** no forked narration screen; Explore curator is the I11 surface.
-5. **I10C owner-pass:** **cleared** 2026-08-24 (Tom: “i10C - journal is accepted”).
+See [evidence prep §9](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). I10C wait is **cleared**. Synthesizer is **LLM on prepared pack**, not stitch. Person Explorer **must** share the long-form curator. No Save View control in I11.
 
 ---
 
 ## Explicitly out of this planning note
 
-Journal UI changes, I13 tables, I12, Face SoT, guided-capture campaigns.
+Journal UI changes, I13 tables, I12, Face SoT, guided-capture campaigns, tell-LLM until authorized.
