@@ -1,6 +1,6 @@
 # P2-I10C — Journal screens vs I5A POC (field verification)
 
-**Status:** Assessment for unsigned I10C definition · 2026-08-24  
+**Status:** Assessment **LOCKED** with I10C definition 2026-08-24 (Tom lock list)  
 **Increment ID:** **P2-I10C Journal** (I10B is Artifacts, **ACCEPTED**. Tom said “i10B journal”; product sequence names this **I10C**.)  
 **Visuals:** `fe913a4` → `docs/source/Screens/MBUX Journal Screens/`  
 **POC:** `memorybox/journal/static/journal.html` + `memorybox/journal/__init__.py` + `002_journal_i5a.sql` + `GET/POST /journal`  
@@ -36,19 +36,19 @@ Panel nav omits **Review & Learn**; New and Detail include it. **I10C chrome = I
 
 | Screen control | POC UI | Schema / service today | Verification | I10C stance |
 |---|---|---|---|---|
-| Title (optional) “Give this entry a title.” | `#title` optional | `journal_entries.title` nullable | **Match.** Save Journal may have empty title. | **Required UI.** Body still required to Save journal. |
+| Title (optional) “Give this entry a title.” | `#title` optional | `journal_entries.title` nullable | **Match.** | **Frozen.** Title optional. Body required. Untitled = first meaningful body line, never invented “Untitled Journal”. |
 | Entry textarea + “Write directly or dictate…” | `#body` + I10A.2 | `journal_versions.body_text` NOT NULL | **Match** (speech already shared). | Reuse `MBNarrativeField` authored-memory. No Journal-private recorder. |
 | Start dictation / Upload audio | I10A.2 Tell this story / file fallback | `audio_uri` on entry + version | **Match in capability, not chrome.** POC has no “Start dictation” label. | I10A.2 family wording. Preserve audio on Save journal. |
 | Supporting memories + Add memories | **Missing.** API `evidence_ids` unused in HTML | `relationships` `cites_evidence` only; no mixed photo/video/artifact/calendar/journal-audio picker | **Screen ahead of POC.** | **Required.** Mixed links like I10A (`photo` \| `video` \| `email_thread` \| `sms_conversation` \| `calendar_event` \| `artifact` \| `audio`). Journal→Journal **out**. Originals unchanged. |
 | Author “Tom Will” | `#author` free text default “Tom” | `author_person_id` NOT NULL; `ensure_person(display_name)` | **Partial.** Screen is a Person; POC mints/resolves by typed name. | **Required.** Owner Person display-only (I10A editor pattern). Do not keep a free-text author box as SoT. |
-| Entry date “August 22, 2026” | `#dStart` + `#dEnd` YYYY-MM-DD | `described_start_date`, `described_end_date`; both set or both NULL | **Conflict.** Screen = **one** date. POC = **range** and rejects start without end. | **Recommendation:** UI one **Entry date**. Persist start=end that day, `described_precision=day`. Blank date → both NULL, `unknown`. Keep range in schema for Ask/import; do not show End on New unless founder wants Stories-style range. |
-| Time (optional) “2:15 PM” | **Missing** | `captured_at` is save timestamp, not described time | **Missing in POC.** | **Recommendation:** optional described time (new column or version attributes). Do not overwrite `captured_at` (that stays save/capture clock). |
+| Entry date “August 22, 2026” | `#dStart` + `#dEnd` YYYY-MM-DD | `described_start_date`, `described_end_date`; both set or both NULL | **Conflict.** Screen = **one** date. POC = **range**. | **Frozen.** One Entry date + optional described time. No range UI. Schema start/end kept for import/future. Precision preserved; no fake day. New entry **defaults to today**, editable. `captured_at` ≠ Entry date. |
+| Time (optional) “2:15 PM” | **Missing** | `captured_at` is save timestamp, not described time | **Missing in POC.** | **Frozen.** Optional described time, separate from `captured_at`. |
 | Place (optional) | **Missing** | no `place_id` on `journal_entries` | **Missing in POC.** | **Required** like I10B: `places.id` SoT. No free-text-only Place. |
 | Visibility Private | **Missing** | no visibility column; Ask indexes all `status=active` | **Missing in POC. Risk:** every Save is Ask-visible. | **Required** `private` \| `shared_with_family` (I10A). Owner Ask sees private. Unauthorized must not. |
 | People + Add people | API `person_ids` unused in HTML | `relationships` `about_person` | **API exists, no family UI.** | **Required** Person picker (I10A/I10B). |
-| Draft / Not available to Ask | **Missing.** Save = `active` v1 immediately | `status` active\|removed only | **Conflict.** Screens = Stories draft. I5A = no working draft. | **Open — founder must lock.** Recommendation below. |
-| Save draft / Save journal | Save Journal / Save new version | `create_journal` / `save_new_version` | **Conflict** if draft exists. | Same Open as draft. |
-| Footer copy about Ask | POC tells you to Save | Ask `search_journals` current version only | Screens match I5A **once saved**. Draft must not retrieve. | Draft never in Ask. Saved current version is Ask-current. |
+| Draft / Not available to Ask | **Missing.** Save = `active` v1 immediately | `status` active\|removed only | **Conflict.** Screens = Stories draft. I5A = no working draft. | **Frozen — drafts IN.** Save draft out of Ask. Save journal creates/advances saved version; Ask-eligible subject to visibility. |
+| Save draft / Save journal | Save Journal / Save new version | `create_journal` / `save_new_version` | **Conflict** vs I5A immediate save. | **Frozen.** Edit-saved: work on draft; Ask keeps last saved until Save journal. |
+| Footer copy about Ask | POC tells you to Save | Ask `search_journals` current version only | Screens match once **saved**. | **Frozen.** Draft never in Ask. Ask = last saved version. |
 
 ---
 
@@ -56,7 +56,7 @@ Panel nav omits **Review & Learn**; New and Detail include it. **I10C chrome = I
 
 | Screen control | POC | Verification | I10C stance |
 |---|---|---|---|
-| Title heading | `title` or untitled | POC list shows title; no family detail page | **Required** detail route. Untitled: honest fallback, not a fake title. |
+| Title heading | `title` or empty | POC list shows title; no family detail page | **Frozen.** If title empty: first meaningful body line. Never invent “Untitled Journal”. |
 | Delete entry | `status='removed'` unused in UI | **Missing UI** | **Required** soft-remove. Keep bytes and versions. No GC. |
 | Edit entry | paste UUID + `#editBody` | **Not a product path** | **Required** editor on that id. |
 | Saved / Available to Ask | derived nowhere | **Missing** | **Required** badges from persist + visibility (I10A pattern). |
@@ -77,12 +77,12 @@ Panel nav omits **Review & Learn**; New and Detail include it. **I10C chrome = I
 | Journal heading + “Your memories and reflections…” | “MemoryBox Journal” + JSON | Chrome only | Family copy OK. |
 | Private by default | none | **Missing** | Matches Visibility default `private`. |
 | + New entry / Start an entry | always-on capture form | **Missing navigation** | Both go to New entry. |
-| Search journal | `GET /journal` unfiltered list | **Missing search** | **Required** title/body search of **saved** entries. |
-| All entries / Mine / Family contributions | none | **Family contributions has no multi-user product** | All + Mine this increment. **Family contributions out** (ACL later). Do not fake other authors. |
-| People filter / All time | none | **Missing** | **Required** Person + time filters on described dates. |
-| Card: thumbnail, date, Saved, ⋮, title, preview, author, pills, linked memories | list API: id, title, dates, author id, no body excerpt, no thumb, no pills | **POC list is too thin** | **Required** card: described date, title or first-line preview, author, memory count. Thumbnail = first photo memory or honest empty. Pills = people (not invented “Christmas” without a tag model). **Do not invent a tag taxonomy in I10C.** |
-| Calendar with dots | none | **Missing** | **Recommendation in I10C** — dots on described Entry dates. |
-| On this day | none (EVS-072 is Ask-shaped) | **Missing** | **Recommendation in I10C** — prior-year saved entries on that month-day. If cut, Ask still answers EVS-072. |
+| Search journal | `GET /journal` unfiltered list | **Missing search** | **Required** title/body search of **saved** entries (drafts are not the panel feed). |
+| All entries / Mine / Family contributions | none | PNG shows three tabs | **Frozen.** **All entries only.** Do not show Mine or Family contributions until multiple authors/users exist. |
+| People filter / All time | none | **Missing** | **Required** Person + time filters **within All entries**. |
+| Card: thumbnail, date, Saved, ⋮, title, preview, author, pills, linked memories | list API too thin | **POC list is too thin** | **Required** card: described Entry date, title or first meaningful body line, author, memory count. Thumbnail = first photo memory or honest empty. Pills = real Person links; optional real linked-object indicators. **No tag taxonomy** (no “Christmas”). |
+| Calendar with dots | none | **Missing** | **Frozen IN.** Dots = **saved** Entry dates. Drafts do not appear. |
+| On this day | none (EVS-072 is Ask-shaped) | **Missing** | **Frozen IN.** Saved entries from prior years matching the viewed calendar date’s month/day. Drafts do not appear. |
 | Journal principles widget | none | Decorative | Optional copy; not a data object. |
 | ⋮ on card | none | **Missing** | Open, Edit, Remove (soft). |
 
@@ -92,9 +92,9 @@ Panel nav omits **Review & Learn**; New and Detail include it. **I10C chrome = I
 
 | POC / schema | Screens | Stance |
 |---|---|---|
-| `#precision` day/month/year/range/approximate/unknown | Hidden; Entry date looks like a calendar day | **Recommendation:** default `day` when a date is set; `unknown` when blank. Month/year/approximate **in** if Edit can set precision without a fake day (I10A.1 pattern). `range` only if founder restores a date **range** UI. |
-| `channel` ui \| email \| voice \| import | Dictation implies voice | Set `voice` when `audio_uri` present, else `ui`. Email/import **out** (guided capture / HVRT ingest). |
-| `captured_at` | Last saved vs Entry date | Keep as persist/capture clock. Do not show as Entry date. |
+| `#precision` day/month/year/range/approximate/unknown | Hidden; Entry date looks like a calendar day | **Frozen.** Preserve precision. No fake day for month/year. No range UI. `range` not in I10C UI; schema may still hold start≠end for future import. |
+| `channel` ui \| email \| voice \| import | Dictation implies voice | Set `voice` when `audio_uri` present on Save journal, else `ui`. Email/import **out**. |
+| `captured_at` | Last saved vs Entry date | **Frozen.** System capture/save clock. Not Entry date. Not described time. |
 | `source_id` | none | Leave unused. |
 | Paste Journal ID / List / JSON result | none | **Replace.** Family routes, not UUID paste. |
 | `actor_key` must not be stt/ai | none | Keep: STT cannot Save. |
@@ -102,15 +102,12 @@ Panel nav omits **Review & Learn**; New and Detail include it. **I10C chrome = I
 
 ---
 
-## 7. Conflicts that need founder lock (also in the definition)
+## 7. Founder locks (closed)
 
-1. **Working draft** (screens + Stories) vs **Save = version 1** (I5A, closer to I10B Artifacts).  
-2. **One Entry date + optional time** vs **described start/end + precision including range**.  
-3. **Whether On this day + calendar are I10C** or park.  
-4. **HVRT→MB Journal bulk import** (roadmap one-liner) vs family chrome on the existing I5A store. **Recommendation:** I10C is chrome + complete object; HVRT journal ingest is **out** unless Tom locks it in.
+O1–O6 are **closed** 2026-08-24. See [MBBS-P2_INCREMENT_10C_DEFINITION.md](MBBS-P2_INCREMENT_10C_DEFINITION.md) Founder locks: drafts IN; one Entry date + optional time IN (default today on new); calendar + On this day IN (saved only); HVRT ingest OUT; title optional; no tag taxonomy; **All entries only** (no Mine / Family contributions).
 
 ---
 
 ## 8. Do not start in I10C
 
-I11 narrative · I10A.2 reopen · Artifact recorder · guided-capture email journals (EVS-131–140 / I15) · Family contributions / multi-user ACL · tag taxonomy · Journal→Journal memories · restore-from-history · file GC · Face SoT
+I11 narrative · I10A.2 reopen · Artifact recorder · guided-capture email journals (EVS-131–140 / I15) · Mine / Family contributions · multi-user ACL · tag taxonomy · Journal→Journal memories · restore-from-history · file GC · Face SoT · HVRT journal ingest
