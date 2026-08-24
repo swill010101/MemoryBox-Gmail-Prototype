@@ -80,6 +80,7 @@
       consumeCommit: function () { clearPending(false); },
       discardUnsaved: function () { return discardPending(true); },
       start: function () { return startRecording(); },
+      restoreCommit: function (commit) { restoreCommit(commit); },
       destroy: function () { teardown(); },
     };
     textarea._mbNarrative = api;
@@ -192,6 +193,17 @@
 
     function clearPending(deleteServer) {
       discardPending(deleteServer);
+    }
+
+    function restoreCommit(commit) {
+      if (speech !== "authored-memory" || !commit || !commit.audio_uri) return;
+      pending.audio_id = commit.audio_id || null;
+      pending.audio_uri = commit.audio_uri;
+      pending.speech_user_edited = Boolean(commit.speech_user_edited);
+      pending.speech_captured_at = commit.speech_captured_at || null;
+      pending.blobUrl = null;
+      mode = "review";
+      renderChrome();
     }
 
     function renderChrome() {
@@ -526,6 +538,7 @@
 
     function teardown() {
       textarea.removeEventListener("input", markEdited);
+      window.removeEventListener("pagehide", onPageHide);
       releaseStream();
       revokeBlob();
       if (wrap.parentNode) {
@@ -534,6 +547,17 @@
       }
       textarea._mbNarrative = null;
     }
+
+    function onPageHide() {
+      if (speech !== "authored-memory") return;
+      const id = pending && pending.audio_id;
+      if (!id) return;
+      try {
+        fetch("/capture/audio/" + encodeURIComponent(id), { method: "DELETE", keepalive: true });
+      } catch (_) {}
+    }
+
+    window.addEventListener("pagehide", onPageHide);
 
     textarea.addEventListener("input", function () {
       if (opts.onChange) opts.onChange();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Stories</title>
   <link rel="stylesheet" href="/static/explore/explore.css?v=i10a-story-1" />
-  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-1" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-2" />
   <style>
     :root {
       --ink: #e8edf5;
@@ -205,7 +205,7 @@
   <div id="modals"></div>
   <div id="editor-foot" class="editor-foot hidden"></div>
 
-  <script src="/static/shell/mb-narrative-field.js?v=i10a2-1"></script>
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-2"></script>
   <script>
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const state = {
@@ -223,6 +223,7 @@
       previewing: false,
       bodyField: null,
       captureArmed: true,
+      speechCommit: null,
     };
 
     function emptyDraft() {
@@ -692,7 +693,20 @@
       setHash({ id: s.id });
     }
 
+    function snapshotSpeechCommit() {
+      const ta = document.getElementById("ed-body");
+      if (ta) state.draft.body = ta.value;
+      if (state.bodyField && state.bodyField.getCommit) {
+        const c = state.bodyField.getCommit();
+        state.speechCommit = (c && c.audio_uri) ? c : state.speechCommit;
+      }
+    }
     function renderEditor() {
+      snapshotSpeechCommit();
+      if (state.bodyField && state.bodyField.destroy) {
+        state.bodyField.destroy();
+        state.bodyField = null;
+      }
       const d = state.draft;
       const revising = Boolean(d.id && d.saved_version && d.lifecycle !== "draft_only");
       const editorName = (state.owner && state.owner.display_name) || "Owner";
@@ -812,13 +826,16 @@
       if (window.MBNarrativeField) {
         const ta = document.getElementById("ed-body");
         const p = new URLSearchParams(location.search);
-        const auto = Boolean(state.captureArmed) && p.get("capture") === "1";
+        const auto = Boolean(state.captureArmed) && p.get("capture") === "1" && !state.speechCommit;
         state.captureArmed = false;
         state.bodyField = window.MBNarrativeField.mount(ta, {
           speech: "authored-memory",
           autoStart: auto,
           onChange: () => { state.draft.body = ta.value; markDirty(); },
         });
+        if (state.speechCommit && state.bodyField.restoreCommit) {
+          state.bodyField.restoreCommit(state.speechCommit);
+        }
       }
     }
     function editorPersonChip(p) {
@@ -859,6 +876,7 @@
         : await j("/story/drafts", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
       loadDraftFromStory(data.story);
       if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
+      state.speechCommit = null;
       renderEditor();
       return data.story;
     }
@@ -876,6 +894,7 @@
       }
       state.dirty = false;
       if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
+      state.speechCommit = null;
       state.story = data.story;
       loadDraftFromStory(data.story);
       renderDetail();
@@ -886,6 +905,7 @@
         return;
       }
       if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
       if (state.draft.id && state.draft.lifecycle !== "draft_only" && state.story && state.story.ask_available) renderDetail();
       else refreshPanel();
     }
@@ -903,6 +923,7 @@
       document.getElementById("u-drop").onclick = () => {
         state.dirty = false;
         if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
         document.getElementById("modals").innerHTML = "";
         leaveEditor();
       };
@@ -926,6 +947,7 @@
         if (!id) {
           state.dirty = false;
           if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
           document.getElementById("modals").innerHTML = "";
           refreshPanel();
           return;

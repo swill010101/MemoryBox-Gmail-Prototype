@@ -119,7 +119,7 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "a11_no_orphan_client",
-        "discardUnsaved" in nf and "DELETE" in nf,
+        "restoreCommit" in nf and "pagehide" in nf and "discardUnsaved" in nf,
         checks,
         problems,
         "Cancel/Start Over deletes scratch audio",
@@ -137,10 +137,10 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
     _check("a10_start_over", "Start over" in nf or "Start Over" in nf, checks, problems)
     _check(
         "a16_capture_query",
-        'p.get("capture")' in story and "capture=1" in artifact,
+        'p.get("capture")' in story and "capture=1" in artifact and "restoreCommit" in story,
         checks,
         problems,
-        "Tell its story capture=1 honored by Story",
+        "Tell its story capture=1 honored by Story; remount restores unsaved take",
     )
     _check(
         "a20_no_mic_short_fields",
@@ -199,6 +199,40 @@ def run_prove_i10a2(*, flightsim: bool = False) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         _check("a12_scratch_delete", False, checks, problems, str(exc))
+
+    try:
+        import memorybox.app as appmod
+        from fastapi.testclient import TestClient
+
+        appmod._capture_stt = FakeCaptureSttProvider()
+        client = TestClient(appmod.app)
+        kept = client.post(
+            "/capture/transcribe?retain=1",
+            files={"file": ("t.webm", b"fake-bytes-xxxx", "audio/webm")},
+        )
+        kd = kept.json().get("draft") or {}
+        kid = kd.get("audio_id")
+        g1 = client.get("/capture/audio/" + kid) if kid else None
+        dropped = client.post(
+            "/capture/transcribe?retain=0",
+            files={"file": ("t.webm", b"fake-bytes-xxxx", "audio/webm")},
+        )
+        dd = dropped.json().get("draft") or {}
+        _check(
+            "at12_http_retain",
+            kept.status_code == 200
+            and kid
+            and g1 is not None
+            and g1.status_code == 200
+            and dropped.status_code == 200
+            and dd.get("audio_discarded") is True
+            and not dd.get("audio_uri"),
+            checks,
+            problems,
+            f"keep={kept.status_code} drop={dropped.status_code} discarded={dd.get('audio_discarded')}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("at12_http_retain", False, checks, problems, str(exc))
 
     try:
         from memorybox.migrate import migrate
