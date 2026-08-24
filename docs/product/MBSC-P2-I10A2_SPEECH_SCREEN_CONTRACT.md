@@ -1,6 +1,6 @@
 # MBSC-P2-I10A.2 — Shared narrative field and speech
 
-**Status:** Contract **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
+**Status:** Contract **LOCKED** · increment **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”). Do not reopen I10A.2 for polish.  
 **PRD:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md)
 
 One component. Two speech semantics. Containing Save/Cancel unchanged.
@@ -26,8 +26,9 @@ Used on Story body and Journal body (including Tell its story → Story).
 | State | Family-facing | Must |
 |---|---|---|
 | Ready | Mic / start telling | Not recording |
-| Record | Pause · Stop | Capture running; ~30s silence → “Are you still there?” (Continue / Stop), no auto-stop |
-| Pause | Resume · Stop | Same take; silence timer off |
+| Record | Pause · Stop | Capture running; ~30s silence → **pause** + modal “Are you still there?” (Continue recording resumes / Stop). No auto-stop/discard. Walk-away must not keep recording. |
+| Pause | Resume · Stop | Same take frozen; silence timer off. Silence modal uses this state. |
+| Processing | (wait) | After Stop: pulsing “Turning speech into words…”; upload % when known |
 | Review | Play / pause / scrub · edit text · Start Over · (then Save on the page) | Stop already happened; object **not** saved |
 | Saved | Normal Story/Journal saved chrome | Audio + approved text + provenance committed |
 

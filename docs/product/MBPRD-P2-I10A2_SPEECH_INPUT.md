@@ -1,8 +1,8 @@
 # P2-I10A.2 — Reusable Speech Input (shared narrative editor)
 
-**Status:** PRD **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
+**Status:** Increment **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) · PRD **LOCKED** · `prove-i10a2` · do not reopen for polish  
 **Increment:** P2-I10A.2  
-**Do not reopen:** I10A.1  
+**Do not reopen:** I10A.1 · I10A.2  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
 **Definition:** [MBBS-P2_INCREMENT_10A2_DEFINITION.md](MBBS-P2_INCREMENT_10A2_DEFINITION.md)  
 **Surface map:** [MBAS-P2-I10A2_SURFACE_MAP.md](MBAS-P2-I10A2_SURFACE_MAP.md)  
@@ -24,6 +24,9 @@ These founder decisions **supersede** earlier I10A.2 planning (2026-08-24 first 
 
 2. **Superseded:** I10B “Dictating Artifact description | Forbidden.”  
    **Replacement:** Substantial free-text fields may support speech through the **shared** I10A.2 component. Artifact **object description** is convenience dictation (audio may be transient). **Narrated Artifact story/memory** is authored memory (audio preserved) and uses the Story editor via Tell its story — not a second Artifact `MediaRecorder`.
+
+3. **Superseded (owner pass 2026-08-24):** silence prompt kept recording so the timer could climb.  
+   **Replacement:** ~30s continuous silence **pauses** the take and shows **Are you still there?** Walk-away must not produce a hours-long recording. Continue recording **resumes**. Stop ends the take. **No auto-stop** (do not discard the take without a Stop). Pause: silence timer does not apply.
 
 Do not resurrect the older rules in later planning.
 
@@ -99,7 +102,7 @@ Starting, pausing, stopping, reviewing, or Start Over **never** implicitly Saves
 
 Natural pauses, fillers, repeats, slang stay in the **audio**. Do not aggressively auto-stop or “clean” the recording.
 
-If **actively recording** (not paused) and ~**30 seconds continuous silence**: non-destructive **Are you still there?** with **Continue Recording** and **Stop**. **No auto-stop.** Pause: timer does not apply.
+If **actively recording** (not paused) and ~**30 seconds continuous silence**: **pause** the recording and show a modal **Are you still there?** with **Continue recording** (resume) and **Stop**. Purpose: a walk-away must not keep capturing for hours. **No auto-stop** and no auto-discard. Pause (manual or silence): silence timer does not apply. After Stop, show working progress while turning speech into words (pulse; upload % when the browser can report it).
 
 ## 8. Transcript vs audio (Frozen)
 
@@ -133,4 +136,4 @@ See [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) (AT-01–AT-12 pl
 
 ---
 
-**Ready for founder lock. Not build-authorized until Tom says to build.**
+**Increment ACCEPTED 2026-08-24 (Tom: “i10A.2 is accepted”). Do not reopen I10A.2 for polish. Next is I10C Journal after a signed definition and build authorization. I11 is not authorized until that chain plus required transcription/recognition work.**

@@ -231,6 +231,11 @@ class StoryVersionView:
     blocks: list[dict[str, Any]] = field(default_factory=list)
     memories: list[dict[str, Any]] = field(default_factory=list)
     people: list[dict[str, Any]] = field(default_factory=list)
+    audio_uri: str | None = None
+    speech_origin: str | None = None
+    speech_user_edited: bool = False
+    speech_captured_at: str | None = None
+    speech_audio_id: str | None = None
 
     def to_dict(self, *, include_body: bool = True) -> dict[str, Any]:
         d = asdict(self)
@@ -402,6 +407,11 @@ def _version_view(conn, row: dict[str, Any]) -> StoryVersionView:
         blocks=blocks,
         memories=memories,
         people=people,
+        audio_uri=row.get("audio_uri"),
+        speech_origin=row.get("speech_origin"),
+        speech_user_edited=bool(row.get("speech_user_edited")),
+        speech_captured_at=_iso(row.get("speech_captured_at")),
+        speech_audio_id=row.get("speech_audio_id"),
     )
 
 
@@ -631,6 +641,11 @@ def _insert_working_version(
     described_end: str | None = None,
     place_id: str | None = None,
     place_label: str | None = None,
+    audio_uri: str | None = None,
+    speech_origin: str | None = None,
+    speech_user_edited: bool = False,
+    speech_captured_at: str | None = None,
+    speech_audio_id: str | None = None,
 ) -> UUID:
     vid = uuid4()
     conn.execute(
@@ -638,11 +653,14 @@ def _insert_working_version(
         INSERT INTO story_versions (
             id, story_id, version, lifecycle, body_text, actor_key, note,
             title, description, narrator_person_id, editor_person_id,
-            described_start_date, described_end_date, place_id, place_label
+            described_start_date, described_end_date, place_id, place_label,
+            audio_uri, speech_origin, speech_user_edited, speech_captured_at,
+            speech_audio_id
         )
         VALUES (
             %s, %s, %s, 'working', %s, 'owner', %s,
-            %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s
         )
         """,
         (
@@ -659,6 +677,11 @@ def _insert_working_version(
             described_end or None,
             place_id or None,
             (place_label or "").strip() or None,
+            (audio_uri or "").strip() or None,
+            (speech_origin or "").strip() or None,
+            bool(speech_user_edited),
+            speech_captured_at or None,
+            (speech_audio_id or "").strip() or None,
         ),
     )
     return vid
@@ -682,6 +705,11 @@ def save_draft(
     visibility: str | None = None,
     actor_key: str = "owner",
     composed_by_model: bool = False,
+    audio_uri: str | None = None,
+    speech_origin: str | None = None,
+    speech_user_edited: bool | None = None,
+    speech_captured_at: str | None = None,
+    speech_audio_id: str | None = None,
 ) -> StoryView:
     """Persist a working draft. Never sets Ask-current."""
     _reject_ai(actor_key)
@@ -730,6 +758,11 @@ def save_draft(
                     described_end=described_end_date,
                     place_id=pid_place,
                     place_label=place_label,
+                    audio_uri=audio_uri,
+                    speech_origin=speech_origin,
+                    speech_user_edited=bool(speech_user_edited),
+                    speech_captured_at=speech_captured_at,
+                    speech_audio_id=speech_audio_id,
                 )
                 conn.execute(
                     """
@@ -754,6 +787,11 @@ def save_draft(
                         described_end_date = COALESCE(%s, described_end_date),
                         place_id = COALESCE(%s, place_id),
                         place_label = COALESCE(%s, place_label),
+                        audio_uri = COALESCE(%s, audio_uri),
+                        speech_origin = COALESCE(%s, speech_origin),
+                        speech_user_edited = CASE WHEN %s THEN %s ELSE speech_user_edited END,
+                        speech_captured_at = COALESCE(%s, speech_captured_at),
+                        speech_audio_id = COALESCE(%s, speech_audio_id),
                         updated_at = now()
                     WHERE id = %s AND lifecycle = 'working'
                     """,
@@ -768,6 +806,12 @@ def save_draft(
                         described_end_date,
                         pid_place,
                         (place_label or "").strip() or None,
+                        (audio_uri or "").strip() or None,
+                        (speech_origin or "").strip() or None,
+                        speech_user_edited is not None,
+                        bool(speech_user_edited),
+                        speech_captured_at or None,
+                        (speech_audio_id or "").strip() or None,
                         work,
                     ),
                 )
@@ -812,6 +856,11 @@ def save_draft(
                 described_end=described_end_date,
                 place_id=pid_place,
                 place_label=place_label,
+                audio_uri=audio_uri,
+                speech_origin=speech_origin,
+                speech_user_edited=bool(speech_user_edited),
+                speech_captured_at=speech_captured_at,
+                speech_audio_id=speech_audio_id,
             )
             conn.execute(
                 "UPDATE stories SET working_version_id = %s WHERE id = %s",
@@ -944,6 +993,11 @@ def begin_edit(story_id: str) -> StoryView:
             described_end=src.get("described_end_date"),
             place_id=str(src["place_id"]) if src.get("place_id") else None,
             place_label=src.get("place_label"),
+            audio_uri=src.get("audio_uri"),
+            speech_origin=src.get("speech_origin"),
+            speech_user_edited=bool(src.get("speech_user_edited")),
+            speech_captured_at=src.get("speech_captured_at"),
+            speech_audio_id=src.get("speech_audio_id"),
         )
         _copy_children(conn, UUID(str(saved)), dest)
         conn.execute(
@@ -1042,6 +1096,11 @@ def create_story(
     described_end_date: str | None = None,
     story_id: str | None = None,
     composed_by_model: bool = False,
+    audio_uri: str | None = None,
+    speech_origin: str | None = None,
+    speech_user_edited: bool | None = None,
+    speech_captured_at: str | None = None,
+    speech_audio_id: str | None = None,
 ) -> StoryView:
     """Compat: explicit Save Story as version 1 (Ask-visible)."""
     _reject_ai(actor_key)
@@ -1088,6 +1147,11 @@ def create_story(
         described_start_date=described_start_date,
         described_end_date=described_end_date,
         composed_by_model=composed_by_model,
+        audio_uri=audio_uri,
+        speech_origin=speech_origin,
+        speech_user_edited=speech_user_edited,
+        speech_captured_at=speech_captured_at,
+        speech_audio_id=speech_audio_id,
     )
     return save_story(
         draft.id,
@@ -1106,6 +1170,11 @@ def create_story(
         described_start_date=described_start_date,
         described_end_date=described_end_date,
         composed_by_model=composed_by_model,
+        audio_uri=audio_uri,
+        speech_origin=speech_origin,
+        speech_user_edited=speech_user_edited,
+        speech_captured_at=speech_captured_at,
+        speech_audio_id=speech_audio_id,
     )
 
 

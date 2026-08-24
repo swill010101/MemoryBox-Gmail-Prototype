@@ -1,6 +1,6 @@
 # MBAT-P2-I10A.2 — Speech input / shared narrative field
 
-**Increment:** P2-I10A.2 · **READY FOR FOUNDER LOCK** · not build-authorized  
+**Increment:** P2-I10A.2 · **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”)  
 **Prove (when built):** `python -m memorybox prove-i10a2` (**Recommendation** name)  
 **Contracts:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)
 
@@ -42,7 +42,7 @@ I10A.1 chrome cases stay on `prove-person-i10a1`. Do not treat I9 `prove` as thi
 | A-09 | Hidden pre-edit STT text is **not** a permanent memory content version. |
 | A-10 | Start Over discards the current unsaved take (with confirm when meaningful). |
 | A-11 | Cancel before Save leaves no durable orphan recording. |
-| A-12 | ~30s continuous silence while **actively recording** shows “Are you still there?” — not auto-stop. |
+| A-12 | ~30s continuous silence while **actively recording** **pauses** capture and shows “Are you still there?” — not auto-stop, not a hours-long walk-away recording. Continue resumes; Stop ends the take. |
 | A-13 | Intentional Pause does not trigger the silence prompt. |
 | A-14 | Natural fillers/pauses remain in preserved audio (no aggressive cleanup). |
 | A-15 | Person-note convenience dictation does **not** automatically create permanent audio. |
@@ -54,6 +54,6 @@ I10A.1 chrome cases stay on `prove-person-i10a1`. Do not treat I9 `prove` as thi
 
 ---
 
-## FlightSim (when authorized)
+## FlightSim (regression)
 
-`python -m memorybox prove-i10a2 --flightsim` on P1. Exercise Story record → pause → resume → stop → review → save; Journal same; Person notes convenience (no orphan audio); Artifact description convenience; Tell its story opens Story authored-memory.
+`python -m memorybox prove-i10a2 --flightsim` on P1. Exercise Story record → pause → resume → stop → review → save; Journal same; Person notes convenience (no orphan audio); Artifact description convenience; Tell its story opens Story authored-memory. Increment is **ACCEPTED**; this prove is the regression gate.

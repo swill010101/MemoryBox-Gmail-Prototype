@@ -552,5 +552,11 @@
     status("Missing person id.", true);
     return;
   }
+  if (window.MBNarrativeField) {
+    const notes = $("mb-edit-notes");
+    if (notes) {
+      window.MBNarrativeField.mount(notes, { speech: "convenience" });
+    }
+  }
   Promise.all([loadPeople(), reload()]).catch((err) => status(err.detail || String(err), true));
 })();

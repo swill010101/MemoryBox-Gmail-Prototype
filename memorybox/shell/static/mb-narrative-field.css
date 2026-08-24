@@ -1,0 +1,179 @@
+/* P2-I10A.2 shared narrative field — family chrome, not a product fork per screen */
+.mb-nf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+.mb-nf textarea {
+  width: 100%;
+}
+.mb-nf-chrome {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+.mb-nf-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.mb-nf-btn {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+}
+.mb-nf-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mb-nf-btn.primary {
+  background: #1f5a45;
+  border-color: #1f5a45;
+  color: #fff;
+}
+.mb-nf-status {
+  font-size: 0.85rem;
+  opacity: 0.88;
+  margin: 0;
+}
+.mb-nf-status.is-working {
+  animation: mb-nf-pulse 1.15s ease-in-out infinite;
+}
+@keyframes mb-nf-pulse {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 1; }
+}
+.mb-nf-progress {
+  width: 100%;
+  max-width: 28rem;
+  height: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #0b1220;
+  overflow: hidden;
+}
+.mb-nf-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #3dcf9a;
+  transition: width 0.12s linear;
+}
+.mb-nf-progress.is-indeterminate .mb-nf-progress-fill {
+  width: 34%;
+  transition: none;
+  animation: mb-nf-indet 1.15s ease-in-out infinite;
+}
+@keyframes mb-nf-indet {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+.mb-nf-player {
+  width: 100%;
+  max-width: 28rem;
+}
+.mb-nf-file {
+  font-size: 0.85rem;
+}
+.mb-nf-vu-wrap {
+  width: 100%;
+}
+.mb-nf-vu-label {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-bottom: 0.2rem;
+}
+.mb-nf-vu {
+  height: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #0b1220;
+  overflow: hidden;
+}
+.mb-nf-vu > span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: #3dcf9a;
+  transition: width 80ms linear;
+}
+.mb-nf-vu.is-low > span {
+  background: #d97706;
+}
+.mb-nf-listen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  width: 100%;
+  position: relative;
+}
+.mb-nf-listen audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.mb-nf-listen input[type="range"] {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+.mb-nf-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+.mb-nf-mic-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  width: 100%;
+}
+.mb-nf-mic {
+  max-width: 100%;
+  width: 100%;
+  font: inherit;
+}
+.mb-nf-modal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(8, 12, 20, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.mb-nf-modal {
+  background: #1a2230;
+  color: #e8edf5;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  max-width: 26rem;
+  width: 100%;
+}
+.mb-nf-modal p {
+  margin: 0 0 0.55rem;
+}
+.mb-nf-modal-note {
+  opacity: 0.85;
+  font-size: 0.9rem;
+}
+.mb-nf-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.mb-nf[data-mb-speech="off"] .mb-nf-chrome {
+  display: none;
+}

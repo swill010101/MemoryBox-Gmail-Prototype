@@ -1,6 +1,6 @@
 # P2-I10A.2 — Reusable Speech Input
 
-**Status:** Definition **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
+**Status:** **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) · implementation `cursor/p2-i10a2-speech-build-49da` · `prove-i10a2`  
 **PRD:** [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md)  
 **Contract:** [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
@@ -14,10 +14,10 @@ One narrative editor. Speech on that editor with two semantics: **authored-memor
 
 ## Build locks
 
-See PRD Frozen rows. Shared component **first**. All four surfaces this increment. Journal POC replaced. Silence ~30s prompt, not auto-stop.
+See PRD Frozen rows. Shared component **first**. All four surfaces this increment. Journal POC replaced. Silence ~30s **pauses** and asks “Are you still there?” — not auto-stop.
 
 ## Prove
 
-[MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) · `prove-i10a2` when built.
+[MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) · `prove-i10a2` remains the regression gate.
 
-**Not build-authorized until Tom says to build.**
+**ACCEPTED 2026-08-24. Do not reopen I10A.2. Next is I10C (not started).**
