@@ -102,7 +102,7 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10A.2** | Reusable Speech Input | U+F | **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [contract](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A2_ACCEPTANCE.md). Shared editor. Authored-memory vs convenience. `prove-i10a2`. Do not reopen. |
 | **P2-I10B** | Artifacts | U+F | **ACCEPTED** 2026-08-23 — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Tell its story uses shared Story editor; recorder is I10A.2. |
 | **P2-I10C** | Journal | U+F | **ACCEPTED** 2026-08-24 (Tom: “i10C - journal is accepted”) — [I10C definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md) · [acceptance](MBAT-P2-I10C_ACCEPTANCE.md). Drafts IN; one Entry date + optional time; All entries only; HVRT ingest OUT. `prove-i10c`. Do not reopen. |
-| **P2-I11** | Narrative & Summaries | E+A | Definition **LOCKED** 2026-08-24 (narration-prep founder lock) · I10C **ACCEPTED** · **prep/LLM not authorized** until explicit build approval — [assessment](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [definition](MBBS-P2_INCREMENT_11_DEFINITION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). Ask `output_mode`; prepared pack then model for `tell`; no new screen. Save View UI is **I13**. |
+| **P2-I11** | Narrative & Summaries | E+A | Definition **LOCKED** 2026-08-24 (final evidence-prep) · **do not build** until authorization — [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). Pack then model; claim-specific trust; hierarchical volume IN; fail closed if model down. Save View UI is **I13**. |
 | **P2-I12** | External Historical Context | E | EVS-254–256 only |
 | **P2-I13** | Dynamic Views | U | |
 | **P2-I14** | Settings & Processing Controls | U | No confidence dials |
@@ -217,7 +217,7 @@ HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md
 
 ### P2-I11 — Narrative & Summaries · E+A
 
-P2-NAR-01..03. Review before durable save. Narration is Explore/Ask `output_mode=tell`, not a new app. Deterministic Narrative Evidence Preparation then LLM synthesis. [assessment](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). I10C **ACCEPTED**. **Do not implement prep/LLM until explicit build authorization.** I13 owns **Save View** UI.
+P2-NAR-01..03. Narrative Evidence Preparation (media, travel, comms, calendar, claim-specific trust) then LLM `tell`. Hierarchical volume IN. Fail closed if model down. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). **Do not implement until explicit build authorization.**
 
 ### P2-I12 — External Historical Context · E
 

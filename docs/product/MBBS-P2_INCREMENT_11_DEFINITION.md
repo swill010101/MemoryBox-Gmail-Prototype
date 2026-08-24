@@ -1,89 +1,60 @@
 # P2-I11 — Narrative & Summaries (Ask output mode)
 
-**Status:** Definition **LOCKED** 2026-08-24 (founder narration-prep decisions) · I10C **ACCEPTED** · **synthesis/prep implementation not authorized** until Tom says approved to build **this** contract  
+**Status:** Definition **LOCKED** 2026-08-24 (final evidence-prep decisions) · I10C **ACCEPTED** · **not authorized to build** until Tom reviews and approves  
 **Assessment:** [MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
 **PRD:** [MBPRD-P2-I11_NARRATION.md](MBPRD-P2-I11_NARRATION.md)  
-**Acceptance:** [MBAT-P2-I11_ACCEPTANCE.md](MBAT-P2-I11_ACCEPTANCE.md) · `python -m memorybox prove-i11` (harness tracks compile/curator contract; tell-LLM prove lands with authorization)  
+**Acceptance:** [MBAT-P2-I11_ACCEPTANCE.md](MBAT-P2-I11_ACCEPTANCE.md)  
 **MBPS:** P2-NAR-01..03 (not P2-NAR-04 / I12)  
-**MBQL:** extend `QueryPlan`; do not fork `act`  
-**Does not start:** I13 Save View UI (including disabled Save View) · Curated/Snapshot products · Narration app · Journal redesign · I12 · Face SoT
+**Does not start:** I13 Save View UI · Narration app · Journal redesign · I12 · Face SoT · prep/LLM code
 
-I10C Journal is **ACCEPTED**. Journal screens stay closed unless a contract defect appears. Do **not** block I11 on unrelated recognition work.
+I10C is **ACCEPTED**. Do not block I11 on unrelated recognition.
 
 ---
 
 ## Intent
 
-Narration is an **Ask / Explore output mode**, not a destination. Same Ask behavior in general Explore and Person Explorer. **No `/narration/ui`.**
+Ask/Explore **output mode**, not a destination. One shared Narrative/Curator component (Explore + Person Explorer). **No `/narration/ui`.**
 
-- **SHOW / FIND** → result set  
-- **PLAY** → playable media / moment (existing viewer)  
-- **TELL / SUMMARIZE / WHAT DO YOU KNOW / WHAT HAPPENED / WHAT WAS X LIKE** → evidence-backed prose in the **shared** long-form curator  
+SHOW/FIND → `show`. PLAY → `play`. TELL/SUMMARIZE/WHAT DO YOU KNOW/WHAT HAPPENED/WHAT WAS X LIKE → `tell`. Natural language, not a phrase table. Do not overload `act`.
 
-Natural language selects the semantic family. Do not implement a literal phrase table. Do not overload MBQL `act`.
+I11 prepares a **grounded, Ask-specific evidence pack**. It must not become retrieve-chunks-and-call-the-model.
 
 ---
 
-## Pipeline (locked)
+## Pipeline
 
-Deterministic: people, places, events/trips, time, communication identities, retrieve, eligibility, user filters, evidence scope, provenance, coverage/gaps/conflicts, trust, visibility.
+Retrieve/eligibility (Spam/Trash out) → Narrative Evidence Preparation (units + claims + provenance) → hierarchical derived summaries when volume requires (not family truth; I7A) → provider-neutral LLM for `tell` only.
 
-Then **Narrative Evidence Preparation** → normalized pack (smallest complete representation for **this** Ask).
-
-Then **LLM synthesis** for `tell` only. I7A traces the request/response and orchestrator/pack state. The model does not clean the archive or elect Spam/Trash.
-
-Gallery hide ≠ pack exclude. Curator for `tell` is from the pack, not `visible_items`.
+Model down: fail closed for prose; keep evidence/coverage; say narration unavailable. **No stitch fallback that looks like the essay.**
 
 ---
 
-## Evidence scope follows the Ask
+## Trust (claim-specific)
 
-Necessary and relevant to **this** question — not “everything in the date range.”
+A source supports only the claim it can establish. Presence ≠ photographer, purpose, emotion, companions, causation. Media: no filename/folder/camera-owner-as-photographer. SMS time ≠ location. Calendar scheduled ≠ occurred.
 
-| Ask | Pack |
-|---|---|
-| Peggy and I discussed at Christmas 2017 | Peggy + owner + Christmas 2017 + communications; calendar only if it involves them or the thread/place/topic |
-| Write a narrative about my 2017 | Owner + 2017, broad modalities; still rank, do not dump every row to the model |
-| Tell me about Peggy's 2017 | Peggy + 2017 across supported evidence |
-| Summarize our Alaska trip | Alaska trip evidence, including hidden comms when relevant — not unrelated same-year items |
+Travel Asks correlate independent sources (itinerary, lodging, calendar, GPS/media, comms, Journal/Stories) before synthesis. Corroboration increases confidence; one strong source can suffice.
 
-Spam/Trash: excluded from Ask/Narration **before** the model. Originals may remain in the import. No “send spam and tell the model to ignore it.”
+---
 
-Email: authored-message units; strip repeated quotes when prior messages exist independently; conservative if uncertain. SMS: same Communication Evidence shape; group-thread metadata; participant filter for Peggy/Tom-specific Asks. Calendar: contextual units; scheduled ≠ occurred without corroboration.
+## Pack (see evidence-prep assessment)
 
-Volume: retrieve → organize → dedupe → significance → compact units with provenance. Hierarchical summaries, if any, are traced and not authoritative evidence.
+`schema_version`, `ask`, `scope`, `units[]`, `derived_summaries`, `coverage`, `volume`, `evidence_used`.
+
+Kinds: communication, media_observation, travel, calendar, journal, story, artifact, place_event, spoken_moment. Reserved `external_historical` for I12.
+
+Authored email: derive at pack time; do not persist as an I11 gate. Email+SMS share communication shape. Hierarchical volume **IN**. Evidence-used footer counts **included units**.
+
+Relative Asks: general semantic constraints on `QueryPlan` (e.g. age band), not phrase-specific fields.
 
 ---
 
 ## I11 vs I13
 
-| Increment | Owns |
-|---|---|
-| **I11** | `output_mode`; Narrative Evidence Preparation; tell LLM; shared long-form curator (Explore + Person Explorer); Copy; Save as Story; emit persistable Saved View JSON |
-| **I13** | **Save View** / reopen / manage **Saved Views**; Curated Collections; Snapshot/frozen views |
-
-I11 does **not** ship Save View UI. Do not add a disabled Save View control.
-
-User-facing later: action **Save View**, object **Saved View** (live/recompute). Do not use **Living Album** as the family name. Keep Saved View ≠ Curated Collection ≠ Snapshot.
+I11: output_mode, prep, tell LLM, shared curator, Copy, Save as Story, emit Saved View JSON.  
+I13: Save View UI / Saved Views / Curated / Snapshot.  
+No disabled Save View. Not Living Album.
 
 ---
 
-## Copy / Save as Story / Saved View JSON
-
-- **Copy:** clipboard of current narrative text. No object, no Ask mutation.  
-- **Save as Story:** working draft + proposed text + people/place/time + supporting evidence; `composed_by_model`; Story editor; Ask-current only on owner Save Story.  
-- Persistable JSON: `schema_version`, `original_ask`, `output_mode`, `plan`, `presentation`. Store original wording **and** normalized plan (e.g. “Dad when he was young”). I13 persists and reopens.
-
----
-
-## Presentation
-
-Grow the existing curator: readable width, multiple paragraphs, vertical expansion, optional collapse, evidence access, Copy, Save as Story. Gallery/timeline remain for drill-down.
-
----
-
-A prior tree may contain compile/curator/Copy/Save-as-Story scaffolding and a **deterministic stitch**. That stitch is **not** the authorized synthesizer. Do not implement prep/LLM until explicit build authorization on this definition.
-
----
-
-**LOCKED 2026-08-24.** Synthesis/prep **not** build-authorized until Tom says so.
+**LOCKED 2026-08-24.** Do not implement until explicit build authorization.

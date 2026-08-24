@@ -108,4 +108,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I11** prep/LLM after explicit build authorization. [definition](MBBS-P2_INCREMENT_11_DEFINITION.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). I10C **ACCEPTED**. Do not reopen I10A.2 or Journal screens. Do not add Save View UI.
+**Next:** I11 waits on **build authorization** of the final evidence-prep PRD. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Do not reopen Journal. Do not add Save View UI.

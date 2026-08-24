@@ -1,9 +1,9 @@
 # MBAS-P2-I11 — Narration + Saved Ask / Living Views
 
-**Status:** Planning assessment **LOCKED** 2026-08-24 · founder narration-prep **LOCKED** · I10C **ACCEPTED** · **prep/LLM not build-authorized** until Tom says so  
-**Direction:** Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot; **Saved View** not Living Album  
+**Status:** Planning assessment **LOCKED** 2026-08-24 · **final evidence-prep LOCKED** · I10C **ACCEPTED** · **do not build** until explicit authorization  
+**Direction:** Narration is Ask output; Save View ≠ Save as Story ≠ Snapshot; **Saved View** not Living Album; claim-specific presence ≠ photographer/purpose  
 **Prep assessment:** [MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
-**Does not start:** I13 Dynamic Views UI · a Narration app · Journal screen redesign · I12 · tell-LLM until authorized  
+**Does not start:** I13 Save View UI · Narration app · Journal redesign · I12 · tell-LLM until authorized  
 **Depends on:** I10A Stories **ACCEPTED** · I10A.2 **ACCEPTED** · I10B **ACCEPTED** · I10C Journal **ACCEPTED** 2026-08-24 · MBQL-001 **ACCEPTED** · I10 pack/coverage **ACCEPTED** · I7A
 
 Journal screens are **ACCEPTED**. I10C work stays closed unless a contract defect appears.
@@ -26,16 +26,16 @@ Narration belongs in existing Explore/Ask: context chips → Ask row → curator
 
 **In**
 
-1. **Output mode** on the existing `QueryPlan` (do not fork a second intent object). Keep MBQL `act` as find/refine/navigate/clarify. Add a sibling slot, e.g. `output_mode: show | play | tell` (names can be `find` / `play` / `tell` if we must reuse vocabulary — do **not** overload `act`).
-2. Semantic compile: SHOW/FIND → `show`; PLAY/moment → `play`; TELL/SUMMARIZE/WHAT DO YOU KNOW/WHAT HAPPENED/WHAT WAS X LIKE/DESCRIBE FROM WHAT WE HAVE → `tell`. Natural language, not a phrase table. Deterministic first; residual model only to fill this slot when ambiguous (I7A).
-3. **`tell` uses Narrative Evidence Preparation** then LLM synthesis. Retrieval stays the full **supported** pack for that Ask’s constraints (not gallery-visible tiles). Spam/Trash out before the model.
-4. Shared long-form curator (Explore + Person Explorer): Copy and Save as Story.
+1. **Output mode** on the existing `QueryPlan` (do not fork a second intent object). Keep MBQL `act` as find/refine/navigate/clarify. Add a sibling slot, e.g. `output_mode: show | play | tell` — do **not** overload `act`.
+2. Semantic compile: SHOW/FIND → `show`; PLAY → `play`; TELL/SUMMARIZE/WHAT DO YOU KNOW/WHAT HAPPENED/WHAT WAS X LIKE → `tell`. Natural language, not a phrase table.
+3. **`tell` uses Narrative Evidence Preparation** (comms, media observation, travel, calendar, journal, story, artifact, place/event, spoken) then LLM synthesis. Hierarchical volume **IN**. Spam/Trash out before the model. Claim-specific trust.
+4. **One shared** long-form curator component (Explore + Person Explorer) — not merely unhide. Copy and Save as Story.
 5. Provenance in the prose (facts vs recollection vs inference vs missing) — readable, not a citation dump per sentence.
 6. **Copy** = clipboard. No durable object.
 7. **Save as Story** = working draft + `composed_by_model`; owner Save Story for Ask-current.
 8. Keep `Show me Peggy` as `show`.
-9. Emit persistable Saved View JSON. I13 stores/reopens. No Save View UI in I11.
-10. Deterministic prep; model **only** for `tell` synthesis (I7A). Not a phrase table. Not a dump of raw mailbox threads.
+9. Emit persistable Saved View JSON. I13 stores/reopens. No Save View UI in I11. Relative language → general semantic constraints on `plan`.
+10. Deterministic prep; model **only** for `tell` (provider-neutral, I7A). Fail closed if the model is down (no stitch-as-narrative).
 
 **Out**
 
@@ -47,6 +47,9 @@ Narration belongs in existing Explore/Ask: context chips → Ask row → curator
 - Sending every Ask to a model (only `tell`, and only the prepared pack).
 - Treating generated prose as Ask-current family fact.
 - Disabled Save View chrome.
+- Stitch fallback that looks like narration when the model is down.
+- First-N as the primary broad-volume strategy.
+- Filename / SMS-timestamp as photographer / location.
 
 ### I13 (Dynamic Views) — later
 
@@ -205,7 +208,7 @@ Map 1:1 to founder §17. Harness should prove at least:
 
 ## Open questions for Tom
 
-See [evidence prep §9](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). I10C wait is **cleared**. Synthesizer is **LLM on prepared pack**, not stitch. Person Explorer **must** share the long-form curator. No Save View control in I11.
+See [evidence prep §13](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Waiting on **build authorization**. Travel unit vs communication overlay; age-band from birth fact when “young.”
 
 ---
 

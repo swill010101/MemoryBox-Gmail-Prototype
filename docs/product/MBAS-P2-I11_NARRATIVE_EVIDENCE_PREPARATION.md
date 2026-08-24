@@ -1,38 +1,36 @@
-# MBAS-P2-I11 — Narrative Evidence Preparation (founder lock)
+# MBAS-P2-I11 — Narrative Evidence Preparation (final pre-build lock)
 
-**Status:** Planning assessment **LOCKED** 2026-08-24 (founder direction on I11 narration prep)  
-**Does not start:** LLM synthesis implementation · Email authored-body persist · I13 Save View UI · `/narration/ui`  
-**Depends on:** [MBAS-P2-I11](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · I10C Journal **ACCEPTED**  
-**Build:** I10C wait is **cleared**. **Do not implement** this preparation/synthesis layer until Tom gives explicit build authorization on **this** contract (not the earlier deterministic-stitch default).
+**Status:** Planning **LOCKED** 2026-08-24 (final evidence-prep decisions) · **do not build** until explicit authorization  
+**Does not start:** prep/LLM implementation · persisted authored-body column · I12 web retrieval · I13 Save View UI · `/narration/ui`  
+**Depends on:** [MBAS-P2-I11](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · I10C **ACCEPTED**
 
-Parent MBAS direction remains correct: Narration is Ask `output_mode`, not a new app. This note **supersedes** the earlier default “v1 = deterministic stitch, no tell-model.”
+Parent MBAS remains directionally correct. This note is the **final pack contract** before build authorization. I11 must not become “retrieve some chunks and send them to the model.”
 
 ---
 
 ## Pipeline (locked)
 
 ```
-Raw archive evidence
-  → deterministic retrieval / eligibility / filters
-  → Narrative Evidence Preparation (normalized pack)
-  → LLM synthesis (tell only; I7A-traced)
+Raw archive
+  → deterministic retrieve / eligibility / filters
+  → Narrative Evidence Preparation (question-specific pack)
+  → optional hierarchical derived summaries (I7A; not family truth)
+  → LLM synthesis for tell only (provider-neutral; I7A)
 ```
 
-The model receives the **smallest complete evidence representation** needed for that Ask. It does **not** clean the archive, elect Spam/Trash, or decide trust.
+If the model is unavailable: **fail closed** for generated prose. Show evidence + coverage + “narration unavailable.” Do **not** substitute deterministic stitch that looks like the essay.
 
 ---
 
-## 1. Proposed normalized evidence-pack structure
-
-One pack per `tell` Ask. Same schema for Explore and Person Explorer.
+## 1. Final evidence-pack schema
 
 ```json
 {
   "schema_version": 1,
   "ask": {
-    "original_ask": "…",
+    "original_ask": "",
     "output_mode": "tell",
-    "plan": { }
+    "plan": {}
   },
   "scope": {
     "breadth": "narrow | broad",
@@ -42,192 +40,239 @@ One pack per `tell` Ask. Same schema for Explore and Person Explorer.
     "places": [],
     "events_trips": [],
     "topic": null,
-    "modalities": ["communication", "calendar", "journal"]
+    "modalities": []
   },
   "units": [],
+  "derived_summaries": [],
   "coverage": {
     "summary": "",
     "missing": [],
     "conflicts": [],
-    "excluded": ["spam", "trash"]
+    "excluded": ["spam", "trash"],
+    "truncated": false,
+    "truncation_disclosure": null
   },
   "volume": {
     "retrieved_n": 0,
+    "eligible_n": 0,
     "prepared_n": 0,
-    "truncated": false,
-    "reduction": "rank | chunk | hierarchical_summary"
+    "supplied_to_model_n": 0,
+    "reduction": "rank | organize | hierarchical_summary"
+  },
+  "evidence_used": {
+    "photos": 0,
+    "video_moments": 0,
+    "calendar_events": 0,
+    "emails": 0,
+    "sms": 0,
+    "journal_entries": 0,
+    "stories": 0,
+    "artifacts": 0,
+    "travel": 0,
+    "spoken_moments": 0,
+    "place_event": 0,
+    "external_historical": 0
   }
 }
 ```
 
-### Unit (all types)
+`evidence_used` counts **normalized units supplied for synthesis**, not raw mailbox hits or quoted duplicates. `external_historical` stays **0** in I11; reserved for I12.
 
-| Field | Role |
-|---|---|
-| `unit_id` | Stable in this pack |
-| `kind` | `communication` \| `calendar` \| `photo` \| `video_moment` \| `journal` \| `story` \| `artifact` \| `spoken` \| `document` |
-| `time` | ISO timestamp or described date + precision |
-| `people` | `{ person_id, display_name, role }` — speaker / participant / attendee / depicted / author |
-| `place` | Label + id when known |
-| `content` | Human-relevant text only (authored body, caption, transcript **excerpt**, notes) |
-| `provenance` | `{ source_kind, source_id, evidence_id, original_ref }` — never drop |
-| `rank` | Deterministic relevance |
-| `normalization` | `{ confidence, flags }` e.g. `quote_uncertain`, `group_thread` |
-
-### Communication unit (Email + SMS — one shape)
-
-| Field | Role |
-|---|---|
-| `source_type` | `email` \| `sms` \| `imessage` \| `mms` |
-| `thread_id` | Conversation / RFC-ish thread |
-| `subject` | Email subject / SMS group name when useful |
-| `speaker_person_id` | Canonical author when known |
-| `participants` | Full participant set (group threads keep extras in metadata) |
-| `group_thread` | True when more than owner + named people |
-| `authored_text` | Derived; not the quoted dump |
-| `attachments` | References only |
-| `authored_by_focus` | True if speaker is in the Ask’s people (e.g. Peggy or owner) |
-
-Photos: date, people, place, caption, visual observations, provenance — not Immich internal IDs.  
-Video: timeslot + spoken excerpt for that moment — not a two-hour transcript.  
-Journal/Story: **current saved** body, author, described date, links — not obsolete versions unless the Ask is about history.  
-Calendar: title, when, place, attendees, notes, provenance. Scheduled ≠ occurred unless corroborated.
-
-Saved View persistable JSON (I11 emit, I13 store) stays:
+Saved View emit (unchanged, I13 stores):
 
 ```json
 { "schema_version", "original_ask", "output_mode", "plan", "presentation" }
 ```
 
-Do not persist the LLM essay as the Saved View. User-facing I13 names: **Save View** / **Saved View** (live recompute). Not **Living Album**. Keep Curated Collection and Snapshot distinct.
+`plan` must carry **general resolved semantic constraints** (not phrase-specific fields). Example: original “Show me Dad when he was young” plus `{ person, age_band: [10,25], interpretation_version }` — not a `when_he_was_young` column.
 
 ---
 
-## 2. Email parsing / dedup — current vs gap
+## 2. Evidence unit types (`units[].kind`)
 
-**Have**
+Family evidence (I11):
 
-- Ingest stores `body_text` / `body_html`, headers, `thread_id`, `in_reply_to` / `references`, `from_owner`, `identity_resolution.mapped`, attachments, `gmail_labels`, `mailbox_skip`.
-- Viewer helper `split_quoted_email` (`memorybox/explore/email_attach.py`) splits on `On … wrote:` and `-----Original Message-----` for the rail. I8 prove covers quoted **turns**, not authored-only persistence.
-- Ask retrieve (`search_email_messages`) matches person ids, confirmed addresses, display names, windows, keywords. Hit `excerpt` is `_excerpt(..., limit=800)` of stored body — typically the **raw** MIME text including quotes.
+| `kind` | Class |
+|---|---|
+| `communication` | Email + SMS/iMessage/MMS — one shape |
+| `media_observation` | Photo or video observation (not raw EXIF dump) |
+| `travel` | Itinerary / lodging / rental / reservation confirmations (often derived from communication + structured fields) |
+| `calendar` | Scheduled/recorded events |
+| `journal` | Current saved Journal |
+| `story` | Current saved Story recollection |
+| `artifact` | Object identity + why-it-matters |
+| `place_event` | Place / Event / Trip objects |
+| `spoken_moment` | Audio / video spoken timeslot |
 
-**Gaps (block safe model input)**
+Reserved (I12, not implemented in I11):
 
-- No persisted **authored-message** row. Quotes, signatures, confidentiality, HTML, tracking, forward headers stay in `body_text`.
-- No `>`-prefix quote strip; no signature heuristic; no duplicate-authored-sentence collapse across a thread.
-- Speaker on a quoted turn is a display string from a header regex, not canonical Person.
-- Participant filter for “Peggy and I” does not drop Rick/Sue **authored** lines while keeping group-thread metadata.
-- If quote removal is uncertain, there is no `quote_uncertain` flag — nothing conservative to send.
+| `kind` | Class |
+|---|---|
+| `external_historical` | World/context sources. **Never** family evidence. Separate “external sources used” list later. |
 
----
+Common unit fields: `unit_id`, `kind`, `time` (+ precision/confidence), `people[]` with `role`, `place`, `content` (human-relevant only), `claims[]` (see §3), `provenance`, `rank`, `normalization`.
 
-## 3. SMS representation — current vs gap
+**Communication** fields: `source_type`, `source_id` / `evidence_id`, `thread_id`, `speaker_person_id`, `participants`, `group_thread`, `timestamp`, `authored_text`, `subject`, `attachments[]`, `location_assertions[]` (see SMS rule), provenance, flags.
 
-**Have**
+**Media observation** fields: asset ref, source type photo|video, capture time + precision, people **visibly identified**, place from GPS/confirmed place (how established), observable setting/activity/object, caption/annotation, event association, provenance, flags. **Do not** treat filename, folder, camera owner, or archive owner as photographer or purpose.
 
-- Per-message Evidence: `body_text`, `sent_at`, `thread_id`, `participants`, `sender_name`, `from_owner`, `person_ids`, attachments, channel.
-- Duplicate signature skip (thread + time + normalized body).
-- “Peggy and I” style asks already restrict to owner- or Peggy-authored senders in groups (`retrieve.py`).
+**Travel** fields: travel_kind (flight|lodging|car|reservation|other), parties, origin/destination or property, start/end, confirmation identifiers if present, provenance to source email/calendar/document.
 
-**Gaps**
-
-- No shared Communication Evidence type with Email (two retrieve functions, two hit builders).
-- Speaker is `from_owner` / name / person_ids — not a single `speaker_person_id` on a normalized unit.
-- Group-thread **metadata** is not a first-class `group_thread` flag on Ask statements.
-- Bodies are already “authored” more often than email; still no pack-time participant filter unified with email.
-
----
-
-## 4. Spam / Trash eligibility — current vs gap
-
-**Have**
-
-- Gmail Takeout labels → `mailbox_skip` `spam` | `trash` (`mbox_parse.gmail_mailbox_skip`).
-- Default **ingest** skips Spam/Trash (`--include-spam-trash` to keep rows). Originals are never rewritten.
-- Story evidence search **excludes** `mailbox_skip` / labels spam|trash|junk (`story/search.py` `_is_spam_or_trash`).
-
-**Gap**
-
-- `search_email_messages` / Ask retrieve **do not** filter `mailbox_skip`. If spam/trash was ingested, it can enter Ask and would enter a tell pack.
-- No Ask-time eligibility layer that excludes before any model call.
-- No user intent path to search Spam/Trash (correctly out of I11).
+**Calendar:** title, start/end/duration, location, attendees, notes, provenance. Scheduled ≠ occurred unless corroborated.
 
 ---
 
-## 5. Calendar normalization — current vs gap
+## 3. Claim-specific confidence / provenance (trust rule)
 
-**Have**
+A source supports **only the factual claim it can establish**. Items are not globally “proof” or “not proof.”
 
-- `calendar_event` Evidence: title, start, location, organizer, attendees, description, `person_ids`, `event_uid`.
-- `search_calendar_events`: temporal windows + person id / name / confirmed email in blob. Cap then chronological slice.
+**Locked example:** Person Tom visible + reliable EXIF/GPS Maui + supported capture date may support:
 
-**Gaps**
+> Tom was photographed in Maui on or around 2017-03-14.
 
-- Narrow discussion Asks still pull any in-window event that mentions the person — not “materially related to the thread / place / topic.”
-- Broad year Asks can dump a huge attendee/title list with no significance ranking.
-- No “scheduled vs corroborated occurred” disclosure in a pack unit.
-- Same 25k retrieve cap family as SMS (`SMS_RETRIEVE_CAP`) — volume, not relevance.
+It may support physical presence there at that time **depending on identity and place/time confidence**.
 
----
+It does **not** automatically support: who took the photo; companions; vacation vs other purpose; enjoyment; first trip; why.
 
-## 6. Broad pack reduction without losing provenance
+**General rule:** Person identity + reliable place/time can support **presence**. It does not establish photographer, purpose, motive, emotion, causation, or significance.
 
-**Today:** retrieve-all-matching then `limit` / `truncated` / first-N excerpts. I10 `coverage` counts gaps. No staged “organize → dedupe → significance → compact units.”
+Each unit may list:
 
-**I11 must (when built)**
+```
+claims: [
+  { "type": "presence", "person_id", "place", "time", "confidence", "basis": ["face","exif_gps"] }
+]
+```
 
-1. Retrieve eligible evidence (spam/trash already out).  
-2. Organize by time / thread / event.  
-3. Dedupe (message ids, SMS sig, quoted copies).  
-4. Rank for **this Ask** (narrow vs broad).  
-5. Emit compact units with `provenance` always pointing at originals.  
-6. If still huge: chunk / hierarchical summary **as derived units**, I7A-traced; summaries are **not** Ask-current fact.
+Unsupported inferences are **omitted**, not guessed. Corroboration **raises** confidence; one strong source can suffice.
 
-Do not solve volume by stuffing every calendar row and every message into the model.
+SMS/iMessage: **timestamp is not location.** Location assertions must record `basis`: `authored_text` | `shared_location_payload` | `attachment_exif` | `corroborated_other_source`. No undifferentiated “message GPS.”
+
+Calendar: establishes **scheduled/recorded**. Do not overstate occurrence without corroboration.
 
 ---
 
-## 7. Do raw provider dumps reach the model today?
+## 4. Email normalization plan (Ask-time, not persist)
 
-**Tell path (current tree):** `synthesize_tell` is a **deterministic stitch** of Ask `statements[]` (short excerpts). **No LLM** on the tell pack.
+Derive authored-only text **conservatively at pack time**. Do **not** gate I11 on a new persisted authored-body column. Raw Email remains source of truth. Later cache may store derived body with parser version, source ref, provenance, confidence, rebuildability — never silent replace of raw.
 
-**Other model use:** `compile_ask` residual fill (I7A `trace_llm`) for leftover slots / clarification — Ask **text**, not mailbox dumps. Photo/video providers are not an LLM dump of email.
+Ask-time steps:
 
-**Risk if tell-LLM is wired naively:** `_email_hit.excerpt` and statement `text` can still carry quoted threads; calendar `excerpt` is description/location; journal/story excerpts are current saved. Spam ingested rows could be included.
+1. Exclude Spam/Trash/`mailbox_skip` before pack/model.  
+2. Canonical speaker + participants; `group_thread`.  
+3. Extract authored body; remove repeated quotes when prior messages exist independently; suppress obvious duplicates; strip signatures/boilerplate **when reliable**.  
+4. Keep date/time/thread subject.  
+5. Provenance to original message.  
+6. Flag `quote_uncertain` / `boilerplate_uncertain` rather than destroy possible authored text.
 
----
-
-## 8. Changes needed before I11 can safely synthesize
-
-Must land with (or immediately before) tell-LLM — not as afterthoughts:
-
-1. Ask eligibility: exclude Spam/Trash **before** pack and model (same predicate as Story search).  
-2. Narrative Evidence Preparation module: query-dependent scope (examples A/B in the founder note).  
-3. Email authored-body derivation + thread-level dedupe; conservative `quote_uncertain`; provenance to original message.  
-4. Shared Communication Evidence units for Email and SMS; participant filter + `group_thread`.  
-5. Calendar selection: narrow = people + comms-linked; broad = year-significant, not every row.  
-6. Volume staging + provenance-preserving compression.  
-7. `tell` LLM call through I7A; pack JSON in assembled context; fail closed (no invent).  
-8. Shared long-form curator on **Explore and Person Explorer** (Person currently **hides** `#mb-explore-curator`).  
-9. Keep Copy / Save as Story / persistable Saved View JSON; **no** Save View control.  
-10. Replace deterministic stitch as the **product** synthesizer (scaffold may remain only as fail-closed fallback if Tom authorizes).
-
-Do **not** block on Face-SoT or unrelated recognition. Disclose missing coverage.
+Viewer `split_quoted_email` is a starting heuristic only (On…wrote / Original Message). Need `>`-quote handling, signature detection, thread-level authored-sentence dedupe, Person mapping for speaker.
 
 ---
 
-## 9. Unresolved product decisions (founder)
+## 5. SMS normalization plan
 
-1. **Authorize this contract to build?** Definition is locked; synthesis/prep is **not** started until explicit approval.  
-2. **Tell model:** which `LlmProvider` / host (existing Ollama vs other)? Max tokens?  
-3. **Hierarchical summarization:** allowed in I11 when volume requires a second traced model pass, or I11 stays single-pass + hard cap + disclosure?  
-4. **Persist authored_text** on Evidence vs derive only in the pack?  
-5. **Age-relative Saved View** (“when he was young”): add a durable interpreted slot now, or I13?  
-6. **Person Explorer pixels:** unhide Explore curator vs reuse `#mb-person-summary` as the same component?  
-7. **Fail-closed stitch:** keep deterministic stitch if the model is unavailable, or show insufficient + disclosure only?
+Same **communication** unit as Email.
+
+Map: channel → `source_type`; `from_owner` / `person_ids` / `sender_name` → `speaker_person_id`; `participants` + thread → `group_thread`; `body_text` → `authored_text` (little quote cleanup).
+
+Location: scan body for place language and maps links; attachments for EXIF; structured shared-location if present. Each location assertion carries `basis`. Timestamp-only → no place claim.
+
+“Peggy and I discussed…”: include Peggy/owner authored units; keep other participants in metadata; do not include Rick/Sue authored text unless the Ask requires it. Existing retrieve “and I” sender filter is a starting point, not the pack.
+
+---
+
+## 6. Media observation extraction plan
+
+Build `media_observation` from photo/video hits without dumping provider IDs, raw EXIF blobs, or Immich internals into the model.
+
+Populate: capture time + precision; depicted people (confirmed vs candidate — disclose); place from GPS/confirmed place **with basis**; caption; observable setting only when already extracted or conservatively labeled unknown; timeslot + spoken **excerpt** for video moments (not whole-tape transcript).
+
+Claims: presence when identity + place/time support it. Never photographer from filename/folder/camera owner/archive owner.
+
+---
+
+## 7. Travel evidence correlation plan
+
+For trip Asks (“Tell me about my Hawaii trip in 2017”), **correlate before synthesis**:
+
+Airline/itinerary email, lodging, car, relevant reservations, calendar span, GPS/EXIF media, people in media, comms during/about the trip, Journal, Stories, Place/Event/Trip objects, artifacts/documents.
+
+Emit `travel` units plus supporting `communication` / `calendar` / `media_observation`. Do not hand the model an unsorted pile and ask it to invent the trip.
+
+Corroboration example: STL→OGG 2017-03-12 + Maui lodging 12–18 + photos 14–16 + calendar Maui 12–18 → chronology “traveled to Maui in March 2017” is allowed. One strong source can suffice; more sources increase confidence.
+
+---
+
+## 8. Calendar relevance plan
+
+Narrow: only events **materially related** to the people/topic/trip/window (attendees, place, title/notes linked to qualifying threads — not every 2017 event).
+
+Broad year: calendar may reconstruct the year; still rank/prepare; do not dump every row.
+
+Trust: scheduled/recorded ≠ occurred-as-planned.
+
+---
+
+## 9. Hierarchical volume-management plan
+
+**IN.** Do not use arbitrary first-N / hard cap as the **primary** broad-narrative solution.
+
+1. retrieve → 2. filter (eligibility, Ask constraints, spam/trash) → 3. normalize → 4. dedupe → 5. organize chronology/event/topic → 6. rank for Ask → 7. summarize chunks/groups if needed → 8. keep provenance to underlying units → 9. synthesize.
+
+Configured model context window is an **implementation** constraint (reserve pack, trust instructions, output, coverage). It is not a reason to silently omit relevant evidence. Intermediate model summaries: derived, regenerable, I7A-traced, **not** durable family truth. If still omitted: disclose truncation.
+
+Provider-neutral `LlmProvider`. Do not hard-code a host or model name in the PRD. I7A records provider, model, prepared context (per trace policy), response, latency/errors, orchestration state.
+
+---
+
+## 10. Shared Curator component plan
+
+Do **not** merely unhide Person Explorer’s `#mb-explore-curator` (divergent CSS/behavior).
+
+One shared long-form Narrative/Curator module used by Explore and Person Explorer: same semantics, rendering, Copy, Save as Story, evidence/coverage, evidence-used footer. Ask must not change because the surface is People.
+
+---
+
+## 11. Model invocation boundary
+
+Deterministic: resolve, retrieve, eligibility, prep, claims, coverage, ranking, chunking. Model: **synthesize readable prose from the prepared pack** for `output_mode=tell` only.
+
+Model must not: elect Spam/Trash, invent photographer/purpose/emotion, treat filename as meaning, treat SMS time as GPS, promote intermediate summaries to truth, or run I12 web retrieval.
+
+Unavailable model: fail closed (see pipeline). Gallery/results remain.
+
+Copy / Save as Story / Saved View JSON: unchanged from prior lock.
+
+---
+
+## 12. Acceptance additions (prove when built)
+
+| ID | Case |
+|---|---|
+| C-17 | Photo + identity + EXIF/GPS: presence/photographed-there OK; no photographer/purpose/emotion/companions without evidence. |
+| C-18 | Hawaii trip: airline + hotel + calendar + GPS/photos may synthesize supported chronology. |
+| C-19 | SMS timestamp alone ≠ location; authored/shared-location/attachment EXIF may, with `basis`. |
+| C-20 | Peggy/Tom Christmas 2017 discussion: authored units, no quote dupes, no unrelated 2017 calendar dump. |
+| C-21 | “Tell me about my 2017”: broad family evidence; staged volume, not first-N dump. |
+| C-22 | Evidence-used counts = normalized Email/SMS units included, not raw hits/quotes. |
+| C-23 | Model down: evidence visible; narration unavailable; no stitch-as-narrative. |
+
+Keep C-01–C-16. Shared curator (C-05) means **one component**, not unhide.
+
+---
+
+## 13. Remaining founder input (small)
+
+Most items in this amendment are decided. Left:
+
+1. **Build authorization** on this contract.  
+2. Travel confirmations: always a distinct `travel` unit, or `communication` plus `travel` overlay when structured fields parse? (Recommendation: both — communication stays; `travel` unit when itinerary fields are extracted.)  
+3. Age-band for “young”: derive from Person birth fact when present; if missing, clarify — confirm.
+
+Not open: model host name; product token cap; persist authored email as I11 gate; stitch fallback; Living Album; Save View UI; I12 inside I11; phrase-specific `when_he_was_young` field.
 
 ---
 
 ## Explicitly out
 
-I13 Save View UI (including disabled Save View). `/narration/ui`. Journal redesign. I12. Face SoT. Physically deleting Spam/Trash originals. Sending spam to the model with “ignore this.”
+I12 implementation. I13 UI. `/narration/ui`. Journal redesign. Face SoT. Persist-authored-body as a gate. Silent stitch fallback. First-N as primary volume strategy. Filename-as-photographer. SMS-time-as-GPS.
