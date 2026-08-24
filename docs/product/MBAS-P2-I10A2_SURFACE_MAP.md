@@ -1,24 +1,20 @@
 # P2-I10A.2 — Narrative field and speech surface map
 
-**Status:** Planning only **2026-08-24** · not build-authorized  
+**Status:** **READY FOR FOUNDER LOCK** 2026-08-24 · not build-authorized  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)
 
-| Screen | Control today | Kind | Speech in I10A.2 | Notes |
+| Screen | Control today | Shared field | Speech semantics | Notes |
 |---|---|---|---|---|
-| Story editor | `#ed-body` textarea | Narrative | **Yes** — shared field | Primary. I10A forbade dictation; I10A.2 reopens it here. |
-| Story editor | `#ed-title` input | Short | **No** | Title |
-| Story editor | `#ed-desc` input | Short | **No** | Optional one-line description, not a textarea |
-| Artifact editor | `#ed-desc` textarea | Narrative | **Yes** — shared field | Object description. Testimony belongs on Stories. |
-| Artifact editor | `#ed-label` input | Short | **No** | Name |
-| Artifact editor | `#rep-cap` textarea | Short caption | **No** v1 | Representation caption |
-| Artifact **Tell its story** | `/story/ui?...&capture=1` | Narrative (Story body) | **Yes** via Story | `capture=1` is **ignored** until I10A.2. No Artifact `MediaRecorder`. |
-| Journal 5A | `#body` textarea | Narrative | **Yes** — shared field | Replace whole-field STT overwrite and screen-local recorder |
-| Journal 5A | `#editBody` textarea | Narrative | **Yes** — same control | Version body |
-| Journal 5A | `#title`, dates, author | Short / structured | **No** | |
-| Person Edit | `#mb-edit-notes` textarea | Narrative | **Yes** — shared field | `person_facts` notes, not `people.notes` |
-| Person Edit | name, nick, email, phone, dates | Short / structured | **No** | AT-11 |
-| Person Explorer Ask | Ask input | Query | **No** | Spoken Ask is out |
-| Explore / pickers | typeahead, dates | Short | **No** | |
-| Guided Capture | various textareas | Campaign / admin | **Out** | Not I10A.2 |
+| Story editor | `#ed-body` | **Yes** | **Authored-memory** | I10A forbade dictation; I10A.2 reopens it here. Honor `?capture=1`. |
+| Story editor | `#ed-title`, `#ed-desc` inputs | No | Off | Short |
+| Artifact editor | `#ed-desc` | **Yes** | **Convenience** | Object description. I10B “forbidden” **superseded**. Audio transient. |
+| Artifact editor | `#ed-label`, dates, pickers | No | Off | |
+| Artifact `#rep-cap` | caption textarea | No | Off v1 | Short |
+| Artifact Tell its story | `/story/ui?...&capture=1` | Story body | **Authored-memory** | No Artifact `MediaRecorder`. Story must honor `capture=1`. |
+| Journal 5A | `#body`, `#editBody` | **Yes** | **Authored-memory** | Replace private Record/Stop. Not I10C done. |
+| Journal | title, dates, author | No | Off | |
+| Person Edit | `#mb-edit-notes` | **Yes** | **Convenience** | Durable text; no automatic voice memory. |
+| Person Edit | name, nick, email, phone, dates | No | Off | A-20 |
+| Ask / pickers / I9 | — | No | Off | Out |
 
-**Shared control (Required):** one narrative field used by every **Yes** row. Speech is an option on that control, not a per-page feature.
+**Required:** one narrative control + one speech module; semantics from the column above, not per-page forks.

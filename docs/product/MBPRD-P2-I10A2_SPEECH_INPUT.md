@@ -1,406 +1,136 @@
-# P2-I10A.2 — Reusable Speech Input for Text Entry
+# P2-I10A.2 — Reusable Speech Input (shared narrative editor)
 
-**Status:** PRD **DRAFT** 2026-08-24 · owner text below · Cursor assessment complete · **not locked** · **not build-authorized**  
+**Status:** PRD **READY FOR FOUNDER LOCK** 2026-08-24 · **not build-authorized**  
 **Increment:** P2-I10A.2  
+**Do not reopen:** I10A.1  
 **Assessment:** [MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md](MBAS-P2-I10A2_ASSESSMENT_RECONCILIATION.md)  
 **Definition:** [MBBS-P2_INCREMENT_10A2_DEFINITION.md](MBBS-P2_INCREMENT_10A2_DEFINITION.md)  
 **Surface map:** [MBAS-P2-I10A2_SURFACE_MAP.md](MBAS-P2-I10A2_SURFACE_MAP.md)  
-**Depends:** I10A · I10A.1 · I10B (accepted). Existing Story, Journal 5A, Artifact, Person Edit text entry.  
-**Does not start:** I10C · I11 · I9 · Immich · voice-as-evidence
+**Screen contract:** [MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md)  
+**Acceptance:** [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md)  
+**Depends:** I10A Stories **ACCEPTED** · I10A.1 **ACCEPTED** · I10B Artifacts **ACCEPTED** (one I10B row superseded below; do not reopen I10B for polish)  
+**Does not start:** I10C Journal product chrome · I11 · I9 archive STT · spoken Ask · TTS · three screen-specific mics
 
-**Repository fact (assessment):** Story, Journal, and Artifact **do not** already share a multiline editor. I10A.2 **must** consolidate that control first, then add speech once.
+**Legend:** **Frozen** · **Existing** · **Required** · **Recommendation** · **Open**
 
 ---
 
-# Owner PRD
+## Change control (Frozen)
 
-**Primary objective:** Allow users to speak naturally wherever MemoryBox expects substantial written narrative or notes.
+These founder decisions **supersede** earlier I10A.2 planning (2026-08-24 first draft) and one I10B row:
+
+1. **Superseded:** “All routine dictation audio is discarded after STT.”  
+   **Replacement:** Audio retention follows **semantic intent**. Authored spoken memory is preserved. Convenience dictation may be transient.
+
+2. **Superseded:** I10B “Dictating Artifact description | Forbidden.”  
+   **Replacement:** Substantial free-text fields may support speech through the **shared** I10A.2 component. Artifact **object description** is convenience dictation (audio may be transient). **Narrated Artifact story/memory** is authored memory (audio preserved) and uses the Story editor via Tell its story — not a second Artifact `MediaRecorder`.
+
+Do not resurrect the older rules in later planning.
+
+---
 
 ## 1. Problem
 
-MemoryBox currently requires typing for substantial authored text such as:
+Typing is the only practical capture path for substantial authored text (Stories, Journal, Artifact description, Person notes). Capture should be easier than organization. Speech must not become four separate products.
 
-* Stories
-* Journal entries
-* Artifact descriptions and stories
-* Person notes
-* Other substantial free-text narrative fields
+## 2. Product decision (Frozen)
 
-Typing is appropriate for editing, but it should not be the only practical method of capture.
+1. **Required first:** one reusable **narrative text-entry** component for substantial free-text. Story, Journal, Artifact, and Person notes **do not** share one today.
+2. Speech is a capability on that component: `speech input allowed`, with **field-level semantics** (`authored-memory` | `convenience`).
+3. I10A.2 ships the shared field **and** speech across all four current surfaces. No later screen-specific forks.
+4. Short structured fields do **not** get a microphone.
 
-MemoryBox is intended to make capture easier than organization. A user should be able to speak a memory, explanation, description, or note directly into the same place where it could be typed.
+## 3. Initial surfaces (Frozen)
 
-The implementation should not create separate speech workflows for Story, Journal, Artifact, or future text-entry surfaces.
+| Surface | Field | Speech semantics |
+|---|---|---|
+| Story create/edit | Story body | **Authored-memory** |
+| Journal create/edit | Journal body | **Authored-memory** |
+| Artifact Tell its story | Story body (existing navigation) | **Authored-memory** (Story) |
+| Artifact editor | Object description | **Convenience** |
+| Person Edit | Notes | **Convenience** (default) |
 
-## 2. Product Decision
+Story title, Story one-line description `<input>`, Artifact name, dates, emails, phones, pickers: **no mic**.
 
-Add reusable **speech-to-text input** to substantial free-text entry fields.
+## 4. Two semantic uses (Frozen)
 
-Speech and typing operate on the **same text value**.
+### Authored-memory speech
 
-The microphone is an input method, not a separate content type, editor, or workflow.
+Story, Journal, and narrated Artifact story/memory (via Story). Spoken audio **is** authentic authored memory.
 
-Initial required surfaces:
+On containing **Save**, persist:
 
-* Story create/edit
-* Journal create/edit
-* Artifact create/edit
-* Person substantial notes fields where applicable
+- original authentic audio (unaltered by later text edits);
+- user’s **final approved text** (canonical readable/searchable);
+- author/person provenance, capture timestamp, links already on the object;
+- metadata that text originated through speech and, if true, that the user edited it.
 
-The same capability should automatically be available to future MemoryBox surfaces that use the approved reusable multiline/narrative text-entry component.
+Do **not** persist a hidden pre-edit STT blob as a family-memory version. Diagnostics belong in AI trace, not the memory record.
 
-## 3. Scope Boundary
+### Convenience dictation
 
-### In scope
+Person notes (default) and simple Artifact description. Faster typing. Final **text** is durable. Audio **need not** be preserved. Do not silently create Voice Memories.
 
-Substantial free-text fields such as:
+The shared editor chooses semantics from the **field**, not a global “always discard” or “always keep” rule.
 
-* Story narrative
-* Journal body
-* Artifact description/story
-* Person notes
-* Long-form comments or explanations
-* Future narrative/memory capture fields
+## 5. Shared component (Frozen)
 
-### Not automatically in scope
+Do not implement Story-mic, Journal-mic, Artifact-mic separately.
 
-Do not add microphone controls to every text box.
+The Journal 5A `MediaRecorder → POST /capture/transcribe` whole-body replace **is not** the target. Reuse preserve/STT **capability** where it fits authored-memory; replace the private interaction.
 
-Exclude ordinary structured or short-entry fields such as:
+Conceptual API: narrative field + `speech input allowed` + `speech-semantics="authored-memory|convenience"`.
 
-* Person name
-* Nickname
-* Email address
-* Phone number
-* Dates
-* Search/typeahead Person pickers
-* Place selectors
-* Relationship selectors
-* Titles unless later UX review establishes a useful reason
+## 6. Authored-memory workflow (Frozen)
 
-The design principle is:
+**Ready → Record → Pause/Resume → Stop → Review/Edit → Save** (Save is the **containing** Story/Journal/Artifact-linked Story save).
 
-**Speech belongs where the user is composing thoughts, memories, explanations, or narrative — not beside every field that technically accepts characters.**
+While recording: **Pause** and **Stop**. Pause does not end the take; **Resume** continues it; silence timer **off** while paused.
 
-## 4. User Experience
+**Stop** enters Review. Does **not** Save.
 
-A supported text-entry area displays a quiet microphone action associated with the field.
+Review: play, pause playback, scrub as practical, read/edit transcript, type more, keep the take, or **Start Over**. UX: natural speech, not a performance.
 
-### Start
+**Start Over:** discard unsaved take + its transcript + review edits; return to Ready. Confirm if a meaningful recording exists. Do not keep abandoned takes as evidence.
 
-User selects the microphone.
+Starting, pausing, stopping, reviewing, or Start Over **never** implicitly Saves. Cancel/exit before Save leaves **no durable orphan audio**.
 
-MemoryBox begins listening.
+## 7. Silence (Frozen)
 
-The UI must clearly indicate that recording/transcription is active.
+Natural pauses, fillers, repeats, slang stay in the **audio**. Do not aggressively auto-stop or “clean” the recording.
 
-### While speaking
+If **actively recording** (not paused) and ~**30 seconds continuous silence**: non-destructive **Are you still there?** with **Continue Recording** and **Stop**. **No auto-stop.** Pause: timer does not apply.
 
-Recognized speech appears in or is staged for the same text field.
+## 8. Transcript vs audio (Frozen)
 
-The user can see what MemoryBox understood.
+Audio and approved text **may differ**. Example: spoken “sixty-seven — no, sixty-eight” edited to “1968”. Do not regenerate audio to match text.
 
-The user may stop speaking without leaving the editor.
+## 9. Existing Story / Journal (Frozen)
 
-### Stop
+Same editor. User may type, dictate additional speech (new take → Review → Save), edit text without touching existing preserved audio. Original audio stays authentic. If later takes exist, **do not flatten provenance** (prior version’s audio vs new capture).
 
-User stops speech input explicitly or through the approved end-of-input behavior.
+Do not force a separate “voice editing” app.
 
-The resulting transcript becomes editable text in the existing field.
+## 10. Insert behavior (convenience and typed editing) (Frozen)
 
-### Continue
+Convenience dictation inserts at cursor; empty field starts at beginning; do not wipe the field because the mic started; do not silently overwrite a selection in v1.
 
-The user may:
+Authored-memory review edits the transcript in the same narrative field. Whole-body replace from the Journal POC is **forbidden**.
 
-* type corrections;
-* continue typing;
-* reposition the cursor;
-* speak additional text;
-* remove dictated text;
-* resume dictation.
+## 11. Failure and permission (Frozen)
 
-Speech must not create a second parallel copy of the field.
+Typing always works. Concise family-facing errors only (no provider/HTTP/model/stack). Mic permission on first speech attempt. Denied: explain, keep typing, allow retry.
 
-## 5. Insert Behavior
+Family UX wording: **Tell the story → review it → fix the words if needed → listen back if desired → save when ready.** No STT/MediaRecorder/model jargon.
 
-Speech should respect the current editing position.
+## 12. Out of scope (Frozen)
 
-Default behavior:
+Spoken Ask · TTS · I9 historical media STT · diarization · speaker id · voice enrollment · AI rewrite of dictation · mic on every input · finishing I10C family Journal chrome · Artifact-private recorder · reopening I10A.1.
 
-* Empty field → insert from beginning.
-* Cursor at end → append.
-* Cursor within existing text → insert at cursor.
-* Selected text → do **not** silently overwrite unless replacement behavior is explicitly implemented and obvious.
+## 13. Acceptance
 
-Do not replace existing authored content merely because the microphone was activated.
-
-## 6. Transcript Review
-
-Speech recognition is not authoritative.
-
-The transcript must remain ordinary editable text before the containing object is saved.
-
-The user can correct transcription errors using normal editing.
-
-Do not require a separate transcript-management screen for routine text dictation.
-
-## 7. Save Semantics
-
-Speech input does **not** change the save model of the containing surface.
-
-Examples:
-
-### Story
-
-Dictated Story text remains unsaved until the normal Story Save action.
-
-### Journal
-
-Dictated Journal text follows the existing Journal save behavior.
-
-### Artifact
-
-Dictated Artifact description/story follows the existing Artifact save behavior.
-
-Starting or stopping speech must never implicitly save the object.
-
-## 8. Cancel Semantics
-
-Canceling the containing editor behaves exactly as it does for typed content.
-
-Dictated but unsaved text is treated as unsaved editor content.
-
-Speech input must not create hidden durable records merely because transcription occurred.
-
-## 9. Reusable Component Requirement
-
-Do not implement:
-
-* Story microphone logic
-* Journal microphone logic
-* Artifact microphone logic
-
-as three independent features.
-
-Implement speech capability through the approved shared multiline/narrative text-entry component or equivalent reusable abstraction.
-
-A supported field should be able to declare conceptually:
-
-`speech input allowed`
-
-without implementing its own speech lifecycle.
-
-This is a product-wide capability.
-
-## 10. Visual Behavior
-
-The microphone control should be:
-
-* recognizable;
-* available without dominating the editor;
-* visually consistent wherever used;
-* associated clearly with the text field it affects.
-
-While active, show unmistakable listening state.
-
-Possible states:
-
-* Idle
-* Listening
-* Processing/transcribing
-* Error/unavailable
-
-Do not expose model/provider terminology during ordinary use.
-
-## 11. Speech Availability / Failure
-
-If speech recognition is unavailable:
-
-* typed entry must continue working normally;
-* existing field content must remain untouched;
-* the user receives a concise human-readable explanation;
-* the editor must not become blocked.
-
-Example:
-
-`Speech input isn't available right now. You can keep typing.`
-
-Do not present raw provider, HTTP, model, microphone-device, or stack errors in the family-facing interface.
-
-## 12. Permission Handling
-
-If microphone permission is required, request it only when the user first attempts speech input or through an appropriate previously approved permission flow.
-
-If permission is denied:
-
-* explain briefly that microphone access is needed for speech input;
-* preserve normal typed entry;
-* allow the user to retry after permissions change.
-
-## 13. Voice Is Input, Not Evidence by Default
-
-I10A.2 provides **dictation into authored text**.
-
-It does not automatically mean the microphone recording becomes preserved audio evidence.
-
-For example:
-
-Speaking an Artifact description:
-
-> “Dad carried this pocket watch during the war.”
-
-may produce editable text in the description field.
-
-It does not automatically create a Voice Memory or audio Artifact.
-
-Preserving authentic recorded voice as evidence is a separate capture behavior and must remain governed by its appropriate capability/increment.
-
-## 14. Relationship to Spoken-Moment Capabilities
-
-Do not confuse I10A.2 with:
-
-* speech recognition inside historical videos;
-* diarization;
-* speaker identification;
-* searchable spoken moments;
-* voice enrollment;
-* playback of authentic voice evidence.
-
-Those are archive-analysis capabilities.
-
-I10A.2 is **live owner speech used as text input**.
-
-## 15. Future Compatibility
-
-The implementation must remain compatible with future:
-
-* STT provider changes;
-* local speech models;
-* cloud speech services where allowed;
-* voice commands;
-* mobile/tablet use;
-* accessibility improvements.
-
-The UI must not depend on one provider's internal terminology or payload shape.
-
-## 16. Acceptance Tests
-
-### AT-01 — Story dictation
-
-Given a Story editor,
-
-when the user starts speech input and speaks,
-
-the recognized words appear as editable Story text.
-
-The Story is not saved until normal Story Save.
-
-### AT-02 — Journal dictation
-
-Given a Journal editor,
-
-speech input inserts editable text into the Journal body using the same reusable behavior as Story.
-
-### AT-03 — Artifact dictation
-
-Given an Artifact narrative/description field,
-
-speech input inserts editable text without creating a separate Artifact or voice record.
-
-### AT-04 — Existing text preserved
-
-Given existing text in a supported field,
-
-starting speech input does not delete or replace that text.
-
-### AT-05 — Insert at cursor
-
-Given the cursor positioned within existing narrative text,
-
-new dictated text is inserted at the appropriate editing position.
-
-### AT-06 — Editing after transcription
-
-After speech is converted to text,
-
-the user can freely type, delete, correct, and continue dictating.
-
-### AT-07 — Save unchanged
-
-Speech activity does not create an implicit Save.
-
-The containing screen retains its existing Save/Cancel contract.
-
-### AT-08 — Permission denied
-
-If microphone permission is denied,
-
-typed entry remains fully operational and existing text is preserved.
-
-### AT-09 — STT unavailable
-
-If speech recognition fails or is unavailable,
-
-the user receives a concise nontechnical message and may continue typing.
-
-### AT-10 — Shared behavior
-
-Story, Journal, Artifact, and other approved narrative fields use one shared speech-input behavior rather than screen-specific implementations.
-
-### AT-11 — No microphone clutter
-
-Ordinary structured fields such as names, dates, email addresses, phone numbers, and Person pickers do not acquire microphone controls simply because they accept text.
-
-### AT-12 — No unintended audio evidence
-
-Routine dictation does not create or preserve a separate audio evidence object unless the user entered an explicitly approved voice-recording workflow.
-
-## 17. Out of Scope
-
-I10A.2 does not implement:
-
-* general voice navigation;
-* spoken Ask;
-* TTS responses;
-* speaker recognition;
-* diarization;
-* historical media transcription;
-* searchable spoken moments;
-* voice enrollment;
-* automatic audio-memory preservation;
-* AI rewriting or summarizing dictated text;
-* microphone controls on every input field.
-
-## 18. Cursor Implementation Direction
-
-Before coding:
-
-1. Identify all existing multiline/substantial text-entry components.
-2. Identify Story, Journal, Artifact, and Person-note fields using them.
-3. Determine whether they currently share one component or require consolidation.
-4. Propose the smallest reusable speech-input abstraction.
-5. Preserve existing editor Save/Cancel behavior.
-6. Do not introduce screen-specific microphone implementations.
-7. Do not expose speech-provider implementation details in normal UX.
-8. Add the acceptance cases above.
-9. Log capabilities outside this boundary rather than expanding I10A.2.
-
-**Assessment of step 3:** they do **not** share one component. Consolidation is Required (see assessment).
-
-## 19. Locked Intent (when Tom accepts)
-
-**MemoryBox users may speak wherever they would naturally compose a substantial block of text.**
-
-Speech and typing edit the same content.
-
-The feature is reusable across MemoryBox.
-
-The microphone does not belong beside every short field.
-
-Dictation does not implicitly save the object or create permanent audio evidence.
-
-Capture should feel easier, while the existing Story, Journal, Artifact, and Person editing models remain intact.
+See [MBAT-P2-I10A2_ACCEPTANCE.md](MBAT-P2-I10A2_ACCEPTANCE.md) (AT-01–AT-12 plus founder additions A-01–A-20).
 
 ---
 
-**Not locked. Planning only. Do not implement until Tom accepts this PRD and authorizes build.**
+**Ready for founder lock. Not build-authorized until Tom says to build.**

@@ -145,15 +145,17 @@ See definition. I10A.2 **implementation** is a prior increment; this PRD only **
 | Heirlooms + Keepsakes chips | Do not implement |
 | “12 items inside” | Do not implement |
 | Suggested-from-this-artifact ranking | Do not implement |
-| Dictating Artifact description | Forbidden |
+| Dictating Artifact description | **Superseded by I10A.2** (2026-08-24): convenience speech on the shared narrative field; audio may be transient. Narrated story remains Tell its story → Story editor (authored-memory). No Artifact `MediaRecorder`. |
 
 ---
 
-## E. I10A.2 dependency (Unified Voice Capture & Transcription)
+## E. I10A.2 dependency
 
-I10B **must not** implement a private Artifact recorder while waiting for I10A.2.
+I10B **must not** implement a private Artifact recorder. I10A.2 (PRD **ready for founder lock**, not build-authorized) owns the shared narrative field and speech. See [MBPRD-P2-I10A2_SPEECH_INPUT.md](MBPRD-P2-I10A2_SPEECH_INPUT.md). I10A.2 does **not** reopen I10A or I10B for polish.
 
-I10A.2 is a **new increment** after I10A.1. It does **not** reopen I10A acceptance. I10A froze “no dictation”; I10A.2 adds dictation **inside the Story editor**.
+**Authored-memory** (Story body, including Tell its story): preserve audio + approved text on Save. **Convenience** (Artifact object description): speech allowed; audio need not persist.
+
+The list below remains the I10B **consumption** sketch for Tell its story; pause/review/preserve are now specified in the I10A.2 contract.
 
 ### I10A.2 must deliver (Stories first)
 
