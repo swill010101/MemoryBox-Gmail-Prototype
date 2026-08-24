@@ -10,7 +10,7 @@ _AIRLINE = re.compile(
 )
 _HOTEL = re.compile(
     r"(?i)\b(marriott|hilton|hyatt|ihg|holiday inn|airbnb|vrbo|"
-    r"hotel|resort|lodging|check-?in|check-?out)\b"
+    r"hotels?|resorts?|lodging)\b"
 )
 _CAR = re.compile(
     r"(?i)\b(hertz|enterprise|avis|budget|national|alamo|rental car|car rental)\b"
@@ -108,6 +108,13 @@ def extract_travel(
     if signals < 2 and not (route and dates):
         return None
     if kind == "flight" and not (route or dates):
+        return None
+    if kind == "lodging" and hotel and re.fullmatch(
+        r"(?i)hotels?|resorts?|lodging", hotel.group(0) or ""
+    ):
+        if not confirm_code:
+            return None
+    if kind == "car" and not (confirm_code or re.search(r"(?i)\brental\b", blob)):
         return None
     origin = dest = property_name = None
     if route:

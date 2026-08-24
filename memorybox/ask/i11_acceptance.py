@@ -19,6 +19,7 @@ from memorybox.ask.retrieve import (
 )
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.explore.find import (
+    client_narrative_pack,
     curator_answer_text,
     explicit_calendar_gallery,
     explicit_email_gallery,
@@ -354,6 +355,18 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         source_unit_id="u-comm-2",
         source_evidence_id="e-hotel",
     )
+    checkout_only = extract_travel(
+        subject="Thanks for staying",
+        body="Checkout 2025-01-08. We hope you enjoyed your stay.",
+        source_unit_id="u-comm-co",
+        source_evidence_id="e-checkout",
+    )
+    car_date_only = extract_travel(
+        subject="Weekend note",
+        body="car 2025-01-03",
+        source_unit_id="u-comm-car",
+        source_evidence_id="e-car",
+    )
     _check(
         "c24_dual_travel_extract",
         bool(flight)
@@ -362,7 +375,9 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and flight.get("destination") == "OGG"
         and flight.get("derived_from", {}).get("evidence_id") == "e-delta"
         and bool(lodging)
-        and lodging.get("travel_kind") == "lodging",
+        and lodging.get("travel_kind") == "lodging"
+        and checkout_only is None
+        and car_date_only is None,
         checks,
         problems,
         detail=str(flight)[:240],
@@ -613,6 +628,59 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=str(year_pack.get("volume")),
     )
+    mixed_hits = [
+        EvidenceHit(
+            evidence_id=f"e-tr-{i}",
+            evidence_kind="communication",
+            summary="Marriott reservation confirmation HTL99A",
+            score=1.0,
+            excerpt=(
+                "Marriott hotel reservation confirmation HTL99A "
+                f"Check-in 2025-01-{(i % 20) + 1:02d} Maui"
+            ),
+            source="email_mbox",
+            sent_at=f"2025-01-{(i % 20) + 1:02d}T12:00:00",
+            channel="email",
+        )
+        for i in range(40)
+    ] + [
+        EvidenceHit(
+            evidence_id=f"e-lunch-{i}",
+            evidence_kind="communication",
+            summary="Lunch plans",
+            score=1.0,
+            excerpt="see you tuesday",
+            source="email_mbox",
+            sent_at=f"2025-01-{(i % 20) + 1:02d}T13:00:00",
+            channel="email",
+        )
+        for i in range(20)
+    ]
+    mixed_pack = prepare_narrative_pack(jan_plan, evidence=mixed_hits)
+    mixed_kinds = [u.get("kind") for u in mixed_pack.get("units") or []]
+    mixed_ids = [
+        len(s.get("unit_ids") or []) for s in (mixed_pack.get("derived_summaries") or [])
+    ]
+    slim = client_narrative_pack(mixed_pack) or {}
+    slim_blob = str(slim)
+    _check(
+        "hierarchy_keeps_authored_not_all_travel",
+        mixed_kinds.count("travel") <= 6
+        and mixed_kinds.count("communication") >= 1
+        and int((mixed_pack.get("volume") or {}).get("supplied_to_model_n") or 0) <= 24
+        and (not mixed_ids or max(mixed_ids) <= 12)
+        and "unit_ids" not in slim_blob
+        and isinstance(slim.get("evidence_used"), dict),
+        checks,
+        problems,
+        detail=str(
+            {
+                "kinds": {k: mixed_kinds.count(k) for k in set(mixed_kinds)},
+                "supplied": (mixed_pack.get("volume") or {}).get("supplied_to_model_n"),
+                "unit_id_lens": mixed_ids,
+            }
+        ),
+    )
 
     class _DownLlm:
         provider_key = "down"
@@ -749,6 +817,20 @@ def _prove_i11_flightsim_live(
             raw = resp.read().decode("utf-8")
             body = json.loads(raw)
             st = int(getattr(resp, "status", 200) or 200)
+    except urllib.error.HTTPError as exc:
+        err_body = ""
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace")[:800]
+        except Exception:
+            err_body = ""
+        _check(
+            "flightsim_live_january_tell",
+            False,
+            checks,
+            problems,
+            detail=f"{base}/explore/api/find failed: {exc} {err_body}",
+        )
+        return
     except Exception as exc:  # noqa: BLE001
         _check(
             "flightsim_live_january_tell",
@@ -760,8 +842,14 @@ def _prove_i11_flightsim_live(
         return
     plan = body.get("plan") or {}
     est = body.get("explore_state") or {}
+    pack = body.get("narrative_pack") or {}
+    used = pack.get("evidence_used") or {}
     prose = str(body.get("narrative_text") or body.get("summary") or "").strip()
     mode = body.get("output_mode") or plan.get("output_mode")
+    slim_ok = "unit_ids" not in json.dumps(pack)
+    authored = int(used.get("emails") or 0) + int(used.get("sms") or 0) + int(
+        used.get("calendar_events") or 0
+    )
     _check(
         "flightsim_live_january_tell",
         st == 200
@@ -770,7 +858,10 @@ def _prove_i11_flightsim_live(
         and str(plan.get("time_end") or "")[:10] == "2025-01-31"
         and not est.get("gallery_show_sms")
         and not est.get("gallery_show_email")
-        and len(prose) > 20,
+        and len(prose) > 20
+        and slim_ok
+        and int(used.get("travel") or 0) <= 6
+        and authored >= 1,
         checks,
         problems,
         detail=str(
@@ -780,6 +871,9 @@ def _prove_i11_flightsim_live(
                 "time": [plan.get("time_start"), plan.get("time_end")],
                 "gallery_sms": est.get("gallery_show_sms"),
                 "gallery_email": est.get("gallery_show_email"),
+                "items": len(body.get("items") or []),
+                "used": used,
+                "slim": slim_ok,
                 "prose": prose[:180],
             }
         ),

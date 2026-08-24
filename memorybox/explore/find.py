@@ -28,6 +28,7 @@ _CAL_ASK_RE = re.compile(
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
 _VISIBLE_SMS_GALLERY_CAP = 10000
+_TELL_GALLERY_ITEM_CAP = 200
 _VISIBLE_EMAIL_GALLERY_CAP = 800
 _VISIBLE_CALENDAR_GALLERY_CAP = 800
 _HOLIDAY_WINDOW_MARKERS = (
@@ -657,6 +658,33 @@ def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
     return " Immich diag: " + ", ".join(bits) + "."
 
 
+def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Explore only needs coverage/volume — not every prepared unit id."""
+    if not isinstance(pack, dict):
+        return pack
+    derived = []
+    for s in pack.get("derived_summaries") or []:
+        if not isinstance(s, dict):
+            continue
+        derived.append(
+            {
+                "summary_id": s.get("summary_id"),
+                "period": s.get("period"),
+                "text": s.get("text"),
+                "unit_n": s.get("unit_n") or len(s.get("unit_ids") or []),
+                "derived": True,
+                "not_family_truth": True,
+            }
+        )
+    return {
+        "schema_version": pack.get("schema_version"),
+        "coverage": pack.get("coverage"),
+        "volume": pack.get("volume"),
+        "evidence_used": pack.get("evidence_used"),
+        "derived_summaries": derived,
+    }
+
+
 def curator_answer_text(result: dict[str, Any]) -> str | None:
     """I11: tell uses full-pack answer_text. Show keeps count-from-visible unless clarifying."""
     if result.get("answer_kind") == "clarification":
@@ -1092,11 +1120,11 @@ def build_explore_find(
 
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
-    items = items_from_ask_result(result)
+    plan_early = result.get("plan") or {}
+    tell_mode = str(plan_early.get("output_mode") or result.get("output_mode") or "show") == "tell"
     show_sms = explicit_text_gallery(result, text)
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
-    plan_early = result.get("plan") or {}
     clarifying = (
         result.get("answer_kind") == "clarification"
         or plan_early.get("requires_clarification")
@@ -1117,15 +1145,26 @@ def build_explore_find(
             show_sms = False
     if present_l in {"calendar", "cal"}:
         show_calendar = True
-    items, sms_available, sms_hidden = _attach_hidden_sms(
-        items, result, ask_text=text, show_sms=show_sms
-    )
-    items, email_available, email_match_total = _attach_visible_email(
-        items, result, ask_text=text, show_email=show_email
-    )
-    items, calendar_available = _attach_calendar(
-        items, result, ask_text=text, show_calendar=show_calendar
-    )
+    result_for_items = result
+    if tell_mode and not show_sms and not show_email and not show_calendar:
+        result_for_items = dict(result)
+        result_for_items["evidence_hits"] = []
+    items = items_from_ask_result(result_for_items)
+    if tell_mode:
+        items = items[:_TELL_GALLERY_ITEM_CAP]
+    sms_available = sms_hidden = 0
+    email_available = email_match_total = 0
+    calendar_available = 0
+    if not tell_mode or show_sms or show_email or show_calendar:
+        items, sms_available, sms_hidden = _attach_hidden_sms(
+            items, result, ask_text=text, show_sms=show_sms
+        )
+        items, email_available, email_match_total = _attach_visible_email(
+            items, result, ask_text=text, show_email=show_email
+        )
+        items, calendar_available = _attach_calendar(
+            items, result, ask_text=text, show_calendar=show_calendar
+        )
     visible_items = [
         i
         for i in items
@@ -1284,7 +1323,7 @@ def build_explore_find(
         "answer_text": result.get("answer_text"),
         "statements": result.get("statements") or [],
         "citations": result.get("citations") or [],
-        "narrative_pack": result.get("narrative_pack"),
+        "narrative_pack": client_narrative_pack(result.get("narrative_pack")),
         "narration_unavailable": bool(result.get("narration_unavailable")),
         "evidence_used": ((result.get("narrative_pack") or {}).get("evidence_used") if isinstance(result.get("narrative_pack"), dict) else None),
         "living_view": persistable_view(

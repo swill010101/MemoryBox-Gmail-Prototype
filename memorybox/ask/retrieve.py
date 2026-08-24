@@ -50,7 +50,7 @@ class EvidenceHit:
 # The old default of 5000 oldest-first silently dropped 2020–2025 on FlightSim.
 SMS_RETRIEVE_CAP = 25000
 # Tell pack retrieve (month/year window) — not the I7 full-export cap.
-TELL_COMM_RETRIEVE_CAP = 800
+TELL_COMM_RETRIEVE_CAP = 250
 
 _MONTH_KEYWORD_STOP = {
     "january",

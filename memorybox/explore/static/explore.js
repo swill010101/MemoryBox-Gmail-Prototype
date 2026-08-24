@@ -836,11 +836,13 @@
       const waiting =
         state.domain.summary === "Searching…" ||
         state.domain.summary === "Writing the narrative…";
+      if (waiting) return;
       const kept = state.domain.narrativeText || state.domain._askSummary;
-      if (kept && !waiting) {
+      if (kept) {
         state.domain.summary = kept;
         return;
       }
+      return;
     }
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;

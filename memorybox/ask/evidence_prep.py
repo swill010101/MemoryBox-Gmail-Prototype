@@ -80,7 +80,18 @@ def _comm_flags(and_i: bool, speaker: str | None, people: list[str], plan: Any) 
 def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] | None:
     d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit)
     eid = str(d.get("evidence_id") or "")
-    payload = _payload_for(eid) if eid else {}
+    payload = {}
+    if eid and not (d.get("excerpt") or d.get("summary")):
+        payload = _payload_for(eid)
+    elif eid:
+        # Skip a per-row Evidence fetch unless travel-shaped; excerpt is enough for pack text.
+        subj = str(d.get("summary") or "")
+        if re.search(
+            r"(?i)\b(delta|united|spirit|marriott|hilton|hertz|itinerary|"
+            r"boarding|reservation|rental)\b",
+            subj,
+        ):
+            payload = _payload_for(eid)
     skip = _mailbox_skip(payload)
     if skip:
         return None
@@ -331,6 +342,29 @@ def _rank_units(units: list[dict[str, Any]], ask: str) -> list[dict[str, Any]]:
     return sorted(units, key=score, reverse=True)
 
 
+def _select_supplied(ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cap the model pack. Travel is derived — never crowd out authored units."""
+    if len(ranked) <= MODEL_UNIT_BUDGET:
+        return list(ranked)
+    keep: list[dict[str, Any]] = []
+    rest: list[dict[str, Any]] = []
+    travel_n = 0
+    for u in ranked:
+        kind = u.get("kind")
+        if kind in {"journal", "story"}:
+            keep.append(u)
+        elif kind == "travel" and travel_n < 6:
+            keep.append(u)
+            travel_n += 1
+        else:
+            rest.append(u)
+    comms = [u for u in rest if u.get("kind") in {"communication", "calendar"}]
+    other = [u for u in rest if u.get("kind") not in {"communication", "calendar"}]
+    rest = comms + other
+    room = max(0, MODEL_UNIT_BUDGET - len(keep))
+    return keep + rest[:room]
+
+
 def _hierarchical_summaries(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for u in units:
@@ -347,7 +381,8 @@ def _hierarchical_summaries(units: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "summary_id": _uid("sum", key),
                 "period": key,
                 "text": f"{key}: " + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())),
-                "unit_ids": [r["unit_id"] for r in rows],
+                "unit_n": len(rows),
+                "unit_ids": [r["unit_id"] for r in rows[:12]],
                 "derived": True,
                 "not_family_truth": True,
             }
@@ -563,31 +598,17 @@ def prepare_narrative_pack(
     if len(ranked) > HIERARCHY_UNIT_THRESHOLD:
         derived_summaries = _hierarchical_summaries(ranked)
         reduction = "hierarchical_summary"
-        # Keep all travel + journal + story; sample remaining by rank — not first-N of raw retrieve.
-        keep: list[dict[str, Any]] = []
-        rest: list[dict[str, Any]] = []
-        for u in ranked:
-            if u.get("kind") in {"travel", "journal", "story"}:
-                keep.append(u)
-            else:
-                rest.append(u)
-        supplied = keep + rest[: max(0, MODEL_UNIT_BUDGET - len(keep))]
+        supplied = _select_supplied(ranked)
         if len(supplied) < len(ranked):
             truncated = True
             truncation = (
                 f"Prepared {len(ranked)} units; supplied {len(supplied)} plus "
                 f"{len(derived_summaries)} derived period summaries. Not a first-N dump."
             )
-            reduction = "organize"
-            reduction = "hierarchical_summary"
     elif len(ranked) > MODEL_UNIT_BUDGET:
         reduction = "organize"
         derived_summaries = _hierarchical_summaries(ranked)
-        supplied = ranked[:MODEL_UNIT_BUDGET]
-        if any(u.get("kind") == "travel" and u not in supplied for u in ranked):
-            extra = [u for u in ranked if u.get("kind") == "travel" and u not in supplied]
-            supplied = extra + supplied
-            supplied = supplied[: MODEL_UNIT_BUDGET + len(extra)]
+        supplied = _select_supplied(ranked)
         truncated = len(supplied) < len(ranked)
         truncation = (
             f"Organized {len(ranked)} units into chronology; "
