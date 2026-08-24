@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-24 (I10C Journal definition **LOCKED**, not build-authorized)  
+**Status:** Living parking note · **Updated:** 2026-08-24 (I10C Journal **BUILD AUTHORIZED**)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -108,4 +108,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** **I10C Journal** — definition **LOCKED** 2026-08-24, **not build-authorized**. [definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [screens vs POC](MBAS-P2-I10C_ASSESSMENT_RECONCILIATION.md). Next is PRD, then explicit build authorization. I10A.2 **ACCEPTED**. Do not reopen I10A.2. **I11 is not authorized** until I10A + I10A.1 + I10A.2 + I10B + I10C and required transcription/recognition work. Face-SoT (**I8.5**) **later**. **P2-I4 ACCEPTED**; Explore visual polish is **P2-BL-I4-01**. **ACR-P2-001** is parked and is not I10. Do not reopen I10A.1.
+**Next:** **I10C Journal** — definition **LOCKED** · **BUILD AUTHORIZED** 2026-08-24. [definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md). Do not reopen I10A.2. I11 waits until I10C is accepted plus required transcription/recognition work.

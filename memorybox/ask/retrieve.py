@@ -2914,9 +2914,12 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
                 p.display_name AS author_name
             FROM journal_entries j
             JOIN journal_versions jv
-              ON jv.journal_id = j.id AND jv.version = j.current_version
+              ON jv.journal_id = j.id
+             AND jv.version = j.current_saved_version
+             AND jv.lifecycle = 'saved'
             LEFT JOIN people p ON p.id = j.author_person_id
             WHERE j.status = 'active'
+              AND j.current_saved_version IS NOT NULL
             ORDER BY j.updated_at DESC
             LIMIT %s
             """,

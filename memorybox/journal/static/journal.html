@@ -3,225 +3,728 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MemoryBox Journal</title>
+  <title>MemoryBox — Journal</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10c-1" />
   <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-6" />
   <style>
-    :root { --bg:#eef2ef; --ink:#1a221c; --line:#b7c4ba; --accent:#1f5a45; --panel:#f7faf7; --warn:#8a3b12; }
+    :root {
+      --ink: #e8edf5; --muted: #9aa3b5; --blue: #3b82f6; --green: #3dcf9a;
+      --orange: #fb923c; --line: rgba(255,255,255,0.12); --card: #1a2230; --page: #0f141c;
+      --display: "Newsreader", Georgia, serif; --ui: "Figtree", "Segoe UI", system-ui, sans-serif;
+    }
+    html[data-mb-surface="journal"] .mb-site-bar,
+    html[data-mb-surface="journal"] .mb-nav-system { display: none !important; }
+    html[data-mb-surface="journal"] body { background: var(--page) !important; color: var(--ink) !important; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
-      background: linear-gradient(165deg, #d9e6df 0%, #eef2ef 50%, #e4ebe6 100%);
-      color: var(--ink);
-      min-height: 100vh;
-    }
-    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
-    .sub { color: #4d5a52; font-size: 0.9rem; margin-bottom: 1rem; }
-    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    body { margin: 0; min-height: 100vh; font-family: var(--ui); background: #0f141c; color: #e8edf5; }
+    a { color: #93c5fd; }
+    button { font: inherit; cursor: pointer; }
     input, textarea, select {
-      width: 100%;
-      padding: 0.55rem 0.7rem;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      font: inherit;
+      font: inherit; color: var(--ink); background: #141b27; border: 1px solid var(--line);
+      border-radius: 10px; padding: 0.55rem 0.75rem; width: 100%;
     }
-    textarea { min-height: 120px; }
-    button {
-      border: 1px solid var(--accent);
-      background: var(--accent);
-      color: #fff;
-      padding: 0.55rem 0.85rem;
-      cursor: pointer;
-      margin-right: 0.4rem;
-      margin-top: 0.5rem;
+    textarea { min-height: 12rem; resize: vertical; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; }
+    .sub { color: var(--muted); margin: 0.25rem 0 0; }
+    .btn { border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line); background: #141b27; color: var(--ink); }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,0.3); background: transparent; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.8rem 0 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem; }
+    .card {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; overflow: hidden; cursor: pointer;
     }
-    button.secondary { background: transparent; color: var(--accent); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      padding: 0.85rem;
-      margin-bottom: 0.75rem;
+    .card .body { padding: 0.9rem 1rem; }
+    .card h3 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 0.3rem; }
+    .card p { color: #9aa3b5; font-size: 0.85rem; margin: 0 0 0.4rem; }
+    .continue {
+      display: grid; grid-template-columns: 1fr; gap: 0;
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+      margin-bottom: 1.1rem; cursor: pointer; padding: 1rem 1.2rem;
     }
-    .muted { color: #5c675f; font-size: 0.85rem; }
-    .warn { color: var(--warn); font-weight: 600; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
-    code { font-size: 0.8rem; }
-    #lastId { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
+    .pill { display: inline-block; font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.2rem; }
+    .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; margin-bottom: 0.8rem; }
+    .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; }
+    .mem { display: flex; gap: 0.7rem; align-items: center; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; }
+    .mem img { width: 88px; height: 66px; object-fit: cover; border-radius: 8px; background: #0f141c; }
+    .chip { display: inline-flex; align-items: center; gap: 0.4rem; background: #111827; border-radius: 999px; padding: 0.2rem 0.55rem; margin: 0.15rem; }
+    .chip img, .av { width: 32px; height: 32px; border-radius: 99px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; }
+    .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
+    .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 1.2rem; }
+    .modal { width: min(880px, 100%); max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; background: #121826; border: 1px solid var(--line); border-radius: 16px; }
+    .modal-scroll { overflow: auto; flex: 1; min-height: 0; padding: 1rem; }
+    .pk-foot { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding: 0.75rem 1rem; border-top: 1px solid var(--line); }
+    .person-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 18rem; overflow: auto; margin-top: 0.45rem; }
+    .person-row {
+      display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink);
+      border-radius: 10px; padding: 0.4rem 0.55rem;
+    }
+    .person-row.on { outline: 2px solid var(--blue); }
+    .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+    .pick { background: #141b27; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem; cursor: pointer; }
+    .pick.on { outline: 2px solid var(--blue); }
+    .pick img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; background: #0f141c; }
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.25rem; }
+    .cal div { text-align: center; padding: 0.35rem 0; border-radius: 8px; color: var(--muted); font-size: 0.8rem; cursor: pointer; }
+    .cal div.has { color: var(--ink); background: rgba(59,130,246,0.18); }
+    .cal div.on { outline: 2px solid var(--blue); color: #fff; }
+    .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
+    .hidden { display: none !important; }
+    .empty { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+    .warn { color: #fdba74; }
+    .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
+    .ask-field { display: flex; gap: 0.4rem; align-items: center; margin: 0.6rem 0; }
+    label { display: block; font-size: 0.82rem; margin: 0.55rem 0 0.25rem; color: var(--muted); }
+    @media (max-width: 900px) { .grid, .layout, .pick-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <main>
-    <h1>MemoryBox Journal</h1>
-    <p class="sub">
-      Type or tell what happened, review the words, then Save.
-      Distinct from Story. <a href="/ask/ui">Ask</a> · <a href="/story/ui">Story</a>
-    </p>
-
-    <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Capture</h2>
-      <label for="author">Author display name</label>
-      <input id="author" value="Tom" placeholder="e.g. Tom" />
-      <label for="title">Title (optional)</label>
-      <input id="title" placeholder="optional title" />
-      <label for="body">Journal</label>
-      <textarea id="body" placeholder="Type here, or tell the story then review…"></textarea>
-
-      <div class="row">
+  <div class="mb-explore" id="mb-journal-chrome">
+    <header class="mb-explore-top">
+      <a class="mb-explore-brand" href="/explore/ui">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
         <div>
-          <label for="dStart">Described start (YYYY-MM-DD)</label>
-          <input id="dStart" placeholder="leave blank if unknown" />
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
         </div>
-        <div>
-          <label for="dEnd">Described end (YYYY-MM-DD)</label>
-          <input id="dEnd" placeholder="leave blank if unknown" />
+      </a>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+    <section class="mb-explore-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="askQ">What would you like to see?</label>
+        <div class="mb-explore-ask-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="askQ" type="text" placeholder="Ask about a day you journaled" />
+          <button type="button" class="mb-explore-ask-go" id="askGo">→</button>
         </div>
       </div>
-      <label for="precision">Described precision</label>
-      <select id="precision">
-        <option value="unknown">unknown</option>
-        <option value="day">day</option>
-        <option value="month">month</option>
-        <option value="year">year</option>
-        <option value="range">range</option>
-        <option value="approximate">approximate</option>
-      </select>
-
-      <p class="muted">Tell what happened → review → fix words if needed → listen back if you want → Save.</p>
-
-      <button id="saveBtn" type="button">Save Journal</button>
-      <p>Last saved Journal ID: <code id="lastId">(none yet)</code></p>
     </section>
-
-    <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Edit / Save new version</h2>
-      <label for="editId">Journal ID</label>
-      <input id="editId" placeholder="paste journal id" />
-      <label for="editBody">New body</label>
-      <textarea id="editBody"></textarea>
-      <button id="versionBtn" type="button">Save new version</button>
-    </section>
-
-    <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">3. Retrieve</h2>
-      <label for="getId">Journal ID</label>
-      <input id="getId" placeholder="paste journal id" />
-      <label for="getVer">Version (blank = current)</label>
-      <input id="getVer" placeholder="e.g. 1" />
-      <button id="getBtn" type="button">Get</button>
-      <button class="secondary" id="listBtn" type="button">List journals</button>
-    </section>
-
-    <section>
-      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
-      <pre id="out" class="muted">No action yet.</pre>
-    </section>
-  </main>
+  </div>
+  <div id="view" class="wrap"></div>
+  <div id="modals"></div>
+  <div id="editor-foot" class="editor-foot hidden"></div>
   <script src="/static/shell/mb-narrative-field.js?v=i10a2-6"></script>
   <script>
-    const out = document.getElementById("out");
-    let bodyField = null;
-    let editField = null;
-
-    function show(data) {
-      out.textContent = JSON.stringify(data, null, 2);
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const state = {
+      view: "panel", items: [], drafts: [], people: [], owner: null, journal: null,
+      filters: { q: "", person_id: "", year: "", month: "" },
+      cal: { year: new Date().getFullYear(), month: new Date().getMonth() + 1, days: [], viewed: isoToday() },
+      otd: [], draft: emptyDraft(), bodyField: null,
+    };
+    function isoToday() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
     }
-    function rememberId(id) {
-      if (!id) return;
-      document.getElementById("lastId").textContent = id;
-      document.getElementById("editId").value = id;
-      document.getElementById("getId").value = id;
+    function emptyDraft() {
+      return {
+        id: "", title: "", body_text: "", visibility: "private",
+        described_start_date: isoToday(), described_precision: "day", described_time: "",
+        place_label: "", place_id: "", person_ids: [], memories: [], audio_uri: "",
+      };
+    }
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
     async function j(url, opts) {
-      const r = await fetch(url, opts);
-      let data;
-      try { data = await r.json(); }
-      catch { data = { detail: "non-JSON response (" + r.status + ")" }; }
-      if (!r.ok) throw data;
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data && data.detail;
+        const msg = typeof d === "string" ? d : (d && (d.message || JSON.stringify(d))) || res.statusText;
+        throw new Error(msg);
+      }
       return data;
     }
-
-    if (window.MBNarrativeField) {
-      bodyField = window.MBNarrativeField.mount(document.getElementById("body"), { speech: "authored-memory" });
-      editField = window.MBNarrativeField.mount(document.getElementById("editBody"), { speech: "authored-memory" });
+    const NAV = [
+      { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
+      { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+      { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+      { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+      { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+      { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
+      { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
+    ];
+    function renderNav() {
+      const el = document.getElementById("mb-explore-nav");
+      if (!el) return;
+      el.innerHTML = NAV.map((n) =>
+        `<a class="mb-explore-nav-link${n.id === "journal" ? " is-active" : ""}" href="${n.href}"><span>${n.ico}</span> ${n.label}</a>`
+      ).join("");
     }
-
-    document.getElementById("saveBtn").onclick = async () => {
+    async function loadPeople() {
       try {
-        const bodyText = document.getElementById("body").value.trim();
-        if (!bodyText) {
-          show({ detail: "Body is required for Save Journal." });
-          return;
-        }
-        const precision = document.getElementById("precision").value;
-        const dStart = document.getElementById("dStart").value.trim();
-        const dEnd = document.getElementById("dEnd").value.trim();
-        const commit = bodyField && bodyField.getCommit ? bodyField.getCommit() : {};
-        const payload = {
-          title: document.getElementById("title").value,
-          body_text: bodyText,
-          author_display_name: document.getElementById("author").value.trim() || "Tom",
-          channel: commit.audio_uri ? "voice" : "ui",
-          audio_uri: commit.audio_uri || null,
-          described_start_date: dStart || null,
-          described_end_date: dEnd || null,
-          described_precision: precision,
+        const data = await j("/library/person-options?limit=300");
+        state.people = data.people || [];
+      } catch (_) {
+        try { state.people = (await j("/people?limit=300")).people || []; } catch (e) { state.people = []; }
+      }
+    }
+    async function loadOwner() {
+      try { state.owner = await j("/people/owner"); } catch (_) { state.owner = null; }
+    }
+    function personName(id) {
+      const p = state.people.find((x) => x.id === id);
+      return (p && p.display_name) || "Person";
+    }
+    function initial(name) {
+      return String(name || "?").trim().charAt(0).toUpperCase() || "?";
+    }
+    function sortedPeople() {
+      return (state.people || []).slice().sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
+      );
+    }
+    function personMatches(p, q) {
+      const needle = String(q || "").trim().toLowerCase();
+      if (!needle) return true;
+      return String(p.display_name || "").toLowerCase().includes(needle);
+    }
+    function portraitInner(p) {
+      const id = p.id || p.person_id || "";
+      const name = p.display_name || "Person";
+      const src = p.portrait_url || (id ? "/people/" + id + "/portrait" : "");
+      return `<img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='inline-flex'" /><span class="av" style="display:none">${initial(name)}</span><span>${esc(name)}</span>`;
+    }
+    function memThumb(it) {
+      if (it.thumb_url) return it.thumb_url;
+      if (it.source_kind === "photo" && it.source_id) return "/library/media/photo/" + it.source_id;
+      if (it.source_kind === "video" && it.source_id) {
+        return "/library/media/video-poster?video=" + encodeURIComponent(it.source_id) + "&t=0.000";
+      }
+      return "";
+    }
+    function dateControl(d) {
+      const prec = d.described_precision || "day";
+      const raw = (d.described_start_date || "").slice(0, 10);
+      if (prec === "unknown") return `<p class="sub">No Entry date</p>`;
+      if (prec === "year" || prec === "approximate") {
+        return `<input id="ed-year" type="number" min="1800" max="2100" value="${esc((raw || isoToday()).slice(0,4))}" />`;
+      }
+      if (prec === "month") {
+        return `<input id="ed-month" type="month" value="${esc((raw || isoToday()).slice(0,7))}" />`;
+      }
+      return `<input id="ed-date" type="date" value="${esc(raw || isoToday())}" />`;
+    }
+    async function loadList() {
+      const f = state.filters;
+      const qs = new URLSearchParams({ view: "family", limit: "80" });
+      if (f.q) qs.set("q", f.q);
+      if (f.person_id) qs.set("person_id", f.person_id);
+      if (f.year) qs.set("year", f.year);
+      if (f.month) qs.set("month", f.month);
+      const data = await j("/journal?" + qs.toString());
+      state.items = data.journals || [];
+      state.drafts = data.drafts || [];
+    }
+    async function loadCal() {
+      const c = state.cal;
+      const data = await j("/journal/calendar?year=" + c.year + "&month=" + c.month);
+      state.cal.days = data.days || [];
+      const otd = await j("/journal/on-this-day?date=" + encodeURIComponent(c.viewed || isoToday()));
+      state.otd = otd.items || [];
+    }
+    function setHash(params) {
+      const u = new URL(location.href);
+      u.search = "";
+      Object.entries(params).forEach(([k, v]) => {
+        if (v == null || v === "" || v === false) u.searchParams.delete(k);
+        else u.searchParams.set(k, String(v));
+      });
+      history.replaceState({}, "", u);
+    }
+    function renderPanel() {
+      state.view = "panel";
+      document.getElementById("editor-foot").classList.add("hidden");
+      const dots = new Set((state.cal.days || []).map((d) => d.day));
+      const viewed = state.cal.viewed || isoToday();
+      const first = new Date(state.cal.year, state.cal.month - 1, 1);
+      const startDow = first.getDay();
+      const dim = new Date(state.cal.year, state.cal.month, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < startDow; i++) cells.push("<div></div>");
+      for (let d = 1; d <= dim; d++) {
+        const iso = state.cal.year + "-" + String(state.cal.month).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+        cells.push(`<div class="${dots.has(d)?"has":""} ${iso===viewed?"on":""}" data-iso="${iso}">${d}</div>`);
+      }
+      const drafts = (state.drafts || []).map((x) => `
+        <div class="continue" data-id="${esc(x.id)}">
+          <span class="pill">Continue writing</span>
+          <h3>${esc(x.display_title || firstLine(x.excerpt) || "Keep going")}</h3>
+          <p class="sub">${esc(x.excerpt || "")}</p>
+        </div>`).join("");
+      const cards = (state.items || []).map((a) => `
+        <article class="card" data-id="${esc(a.id)}">
+          <div class="body">
+            <h3>${esc(a.display_title || a.excerpt || "")}</h3>
+            <p>${esc(a.entry_date_display || "")}</p>
+            <p>${esc(a.excerpt || "")}</p>
+            <p>${esc((a.people || []).map((p) => p.display_name).join(", "))}</p>
+            <p>${a.memory_count || 0} memories${a.place_label ? " · " + esc(a.place_label) : ""}</p>
+          </div>
+        </article>`).join("");
+      const otd = (state.otd || []).map((x) => `
+        <article class="card" data-id="${esc(x.id)}">
+          <div class="body"><h3>${esc(x.display_title)}</h3><p>${esc(x.entry_date_display || "")}</p><p>${esc(x.excerpt || "")}</p></div>
+        </article>`).join("");
+      document.getElementById("view").innerHTML = `
+        <div class="page-head">
+          <div><h1>Journal</h1><p class="sub">Your own words about a day, a feeling, or a memory.</p></div>
+          <button class="btn primary" id="add-j">+ New journal</button>
+        </div>
+        <div class="filters">
+          <input id="j-q" placeholder="Search entries" value="${esc(state.filters.q)}" style="max-width:220px" />
+          <span class="badge">All entries</span>
+          <input id="j-year" placeholder="Year" value="${esc(state.filters.year)}" style="max-width:90px" />
+          <input id="j-month" placeholder="Month" value="${esc(state.filters.month)}" style="max-width:90px" />
+        </div>
+        <div class="layout">
+          <div>
+            ${drafts}
+            <div class="grid">${cards || `<p class="empty">No saved journal entries yet.</p>`}</div>
+          </div>
+          <div>
+            <div class="side">
+              <h4>${esc(monthLabel(state.cal.year, state.cal.month))}</h4>
+              <p>
+                <button class="btn" id="cal-prev">‹</button>
+                <button class="btn" id="cal-next">›</button>
+              </p>
+              <div class="cal">${cells.join("")}</div>
+              <p class="sub">Dots mark saved Entry dates.</p>
+            </div>
+            <div class="side">
+              <h4>On this day</h4>
+              ${otd || `<p class="sub">No saved entries from prior years on ${esc(viewed)}.</p>`}
+            </div>
+          </div>
+        </div>`;
+      document.getElementById("add-j").onclick = () => openEditor(null);
+      document.getElementById("j-q").onchange = async (e) => { state.filters.q = e.target.value; await loadList(); renderPanel(); };
+      document.getElementById("j-year").onchange = async (e) => { state.filters.year = e.target.value; await loadList(); renderPanel(); };
+      document.getElementById("j-month").onchange = async (e) => { state.filters.month = e.target.value; await loadList(); renderPanel(); };
+      document.getElementById("cal-prev").onclick = async () => { shiftCal(-1); await loadCal(); renderPanel(); };
+      document.getElementById("cal-next").onclick = async () => { shiftCal(1); await loadCal(); renderPanel(); };
+      document.querySelectorAll(".cal div[data-iso]").forEach((el) => {
+        el.onclick = async () => {
+          state.cal.viewed = el.getAttribute("data-iso");
+          await loadCal();
+          renderPanel();
         };
-        const data = await j("/journal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const id = data && data.journal && data.journal.id;
-        rememberId(id);
-        if (bodyField && bodyField.consumeCommit) bodyField.consumeCommit();
-        show(data);
-      } catch (err) {
-        show(err);
+      });
+      document.querySelectorAll(".card, .continue").forEach((c) => {
+        c.onclick = () => {
+          const id = c.getAttribute("data-id");
+          if (c.classList.contains("continue")) openEditor(id);
+          else openDetail(id);
+        };
+      });
+    }
+    function monthLabel(y, m) {
+      return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+    }
+    function shiftCal(delta) {
+      let m = state.cal.month + delta;
+      let y = state.cal.year;
+      if (m < 1) { m = 12; y -= 1; }
+      if (m > 12) { m = 1; y += 1; }
+      state.cal.month = m; state.cal.year = y;
+    }
+    function firstLine(s) {
+      return String(s || "").split(/\n/).map((x) => x.trim()).find(Boolean) || "";
+    }
+    function renderDetail(a) {
+      state.view = "detail";
+      state.journal = a;
+      document.getElementById("editor-foot").classList.add("hidden");
+      const people = (a.people || []).map((p) => `<span class="chip">${portraitInner(p)}</span>`).join(" ");
+      const mems = (a.memories || []).map((m) => {
+        const th = memThumb(m);
+        return `<div class="mem">${th ? `<img src="${esc(th)}" alt="" />` : ""}
+          <div><strong>${esc((m.source_kind || "").replace(/_/g," "))} · ${esc(m.label_snapshot || m.source_id)}</strong>
+          <p class="sub">${esc(m.occurred_on || "")}</p></div></div>`;
+      }).join("");
+      document.getElementById("view").innerHTML = `
+        <p class="crumb"><a href="#" id="back">Journal</a> / ${esc(a.display_title || "")}</p>
+        <div class="page-head">
+          <div>
+            <h1>${esc(a.display_title || "")}</h1>
+            <p><span class="badge">Saved</span><span class="badge">${a.ask_available ? "Available to Ask" : ""}</span></p>
+            <p class="sub">${esc(a.entry_date_display || "")}${a.place_label ? " · " + esc(a.place_label) : ""}</p>
+          </div>
+          <div>
+            <button class="btn" id="hist">History</button>
+            <button class="btn danger" id="del">Remove</button>
+            <button class="btn primary" id="edit">Edit</button>
+          </div>
+        </div>
+        <div class="layout">
+          <div>
+            <p style="white-space:pre-wrap">${esc(a.body_text || "")}</p>
+            <h3>People</h3><p>${people || "<span class='sub'>None</span>"}</p>
+            <h3>Supporting memories</h3>${mems || "<p class='sub'>None linked.</p>"}
+          </div>
+          <div>
+            <div class="side"><h4>About this entry</h4>
+              <p>Author · ${esc(a.author_display_name || "Owner")}</p>
+              <p>Entry date · ${esc(a.entry_date_display || "—")}</p>
+              <p>Place · ${esc(a.place_label || "—")}</p>
+              <p>Visibility · ${a.visibility === "shared_with_family" ? "Shared with family" : "Private"}</p>
+              <p class="sub">Captured ${esc(String(a.captured_at || "").slice(0,10))} — not the Entry date.</p>
+            </div>
+          </div>
+        </div>`;
+      document.getElementById("back").onclick = async (e) => { e.preventDefault(); await bootPanel(); };
+      document.getElementById("edit").onclick = () => openEditor(a.id);
+      document.getElementById("del").onclick = async () => {
+        if (!confirm("Remove this journal entry from MemoryBox? History is kept.")) return;
+        await j("/journal/" + a.id + "/removed", { method: "POST" });
+        await bootPanel();
+      };
+      document.getElementById("hist").onclick = async () => {
+        const data = await j("/journal/" + a.id + "/history");
+        const vers = data.versions || [];
+        document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+          <div class="modal-scroll"><h2>History</h2><p class="sub">Read-only. Restore is not available.</p>
+          ${vers.map((v) => `<div class="side"><h4>Version ${v.version}</h4><p>${esc(v.display_title)}</p>
+            <p class="sub">${esc(v.entry_date_display || "")} · ${esc(String(v.frozen_at || "").slice(0,16))}</p>
+            <p style="white-space:pre-wrap">${esc(v.body_text)}</p></div>`).join("") || "<p class='empty'>No saved versions.</p>"}
+          </div><div class="pk-foot"><button class="btn" id="hx">Close</button></div></div></div>`;
+        document.getElementById("hx").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      };
+    }
+    function readEditor() {
+      const d = state.draft;
+      const ta = document.getElementById("ed-body");
+      if (ta) d.body_text = ta.value;
+      const t = document.getElementById("ed-title");
+      if (t) d.title = t.value;
+      const prec = document.getElementById("ed-prec");
+      if (prec) d.described_precision = prec.value;
+      const tm = document.getElementById("ed-time");
+      if (tm) d.described_time = tm.value;
+      const pl = document.getElementById("ed-place");
+      if (pl) d.place_label = pl.value;
+      const vis = document.getElementById("ed-vis");
+      if (vis) d.visibility = vis.value;
+      if (d.described_precision === "unknown") d.described_start_date = "";
+      else if (d.described_precision === "year" || d.described_precision === "approximate") {
+        const y = document.getElementById("ed-year");
+        d.described_start_date = y && y.value ? (y.value + "-01-01") : "";
+      } else if (d.described_precision === "month") {
+        const m = document.getElementById("ed-month");
+        d.described_start_date = m && m.value ? (m.value + "-01") : "";
+      } else {
+        const dt = document.getElementById("ed-date");
+        if (dt) d.described_start_date = dt.value;
       }
-    };
-
-    document.getElementById("versionBtn").onclick = async () => {
+      if (state.bodyField && state.bodyField.getCommit) {
+        const c = state.bodyField.getCommit();
+        if (c && c.audio_uri) d.audio_uri = c.audio_uri;
+      }
+      return d;
+    }
+    function payloadFromDraft() {
+      const d = readEditor();
+      return {
+        title: d.title || null,
+        body_text: d.body_text || "",
+        audio_uri: d.audio_uri || null,
+        described_start_date: d.described_precision === "unknown" ? null : (d.described_start_date || null),
+        described_precision: d.described_precision || "day",
+        described_time: d.described_time || null,
+        place_label: d.place_label || null,
+        visibility: d.visibility || "private",
+        person_ids: d.person_ids || [],
+        memories: (d.memories || []).map((m, i) => ({
+          source_kind: m.source_kind, source_id: m.source_id,
+          label_snapshot: m.label_snapshot || m.title || null,
+          thumb_url: m.thumb_url || null, occurred_on: m.occurred_on || null, position: i,
+        })),
+      };
+    }
+    function paintEditor() {
+      if (state.bodyField && state.bodyField.destroy) {
+        try { state.bodyField.destroy(); } catch (_) {}
+        state.bodyField = null;
+      }
+      const d = state.draft;
+      const isNew = !d.id;
+      const people = (d.person_ids || []).map((id) => {
+        const p = state.people.find((x) => x.id === id) || { id, display_name: personName(id) };
+        return `<span class="chip">${portraitInner(p)} <button type="button" class="btn rem-p" data-id="${esc(id)}">×</button></span>`;
+      }).join(" ");
+      const mems = (d.memories || []).map((m, i) => {
+        const th = memThumb(m);
+        return `<div class="mem">${th ? `<img src="${esc(th)}" alt="" />` : ""}
+          <div><strong>${esc((m.source_kind || "").replace(/_/g," "))} · ${esc(m.label_snapshot || m.source_id)}</strong>
+          <button type="button" class="btn rem-m" data-i="${i}">Remove</button></div></div>`;
+      }).join("");
+      const revising = Boolean(d.id && d.ask_available);
+      document.getElementById("view").innerHTML = `
+        <p class="crumb"><a href="#" id="back">Journal</a> / ${isNew ? "New entry" : esc(d.display_title || "Edit")}</p>
+        <h1>${isNew ? "New journal" : "Edit journal"}</h1>
+        <p class="sub">${revising ? "The last saved version stays in Ask until you Save journal." : "Save a draft anytime. Save journal when the words are ready for Ask."}</p>
+        ${revising ? `<div class="banner">Ask keeps the last saved version until Save journal.</div>` : ""}
+        <div class="layout">
+          <div>
+            <label>Title (optional)</label>
+            <input id="ed-title" value="${esc(d.title)}" placeholder="Optional — first line of the entry is used if you leave this blank" />
+            <label for="ed-body">Entry</label>
+            <textarea id="ed-body" placeholder="Type or tell what happened, then review the words.">${esc(d.body_text)}</textarea>
+            <h3>Supporting memories</h3>
+            ${mems || `<p class="sub">Photos, video, communications, calendar, artifacts, audio. Originals stay unchanged.</p>`}
+            <p><button class="btn" id="add-mem">+ Add memories</button></p>
+          </div>
+          <div>
+            <div class="side">
+              <h4>Entry details</h4>
+              <label>How sure is the date?</label>
+              <select id="ed-prec">
+                ${[["day","Exact day"],["month","Month"],["year","Year"],["approximate","Approximate year"],["unknown","Unknown"]].map(([v,l]) =>
+                  `<option value="${v}" ${d.described_precision===v?"selected":""}>${l}</option>`).join("")}
+              </select>
+              <div id="date-slot">${dateControl(d)}</div>
+              <label>Time (optional)</label>
+              <input id="ed-time" type="time" value="${esc((d.described_time || "").slice(0,5))}" />
+              <label>Place (optional)</label>
+              <input id="ed-place" value="${esc(d.place_label)}" placeholder="A real place" />
+              <label>Visibility</label>
+              <select id="ed-vis">
+                <option value="private" ${d.visibility==="private"?"selected":""}>Private</option>
+                <option value="shared_with_family" ${d.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
+              </select>
+              <p>Author · ${esc((state.owner && state.owner.display_name) || "Owner")}</p>
+              <p>People</p>${people || "<p class='sub'>None</p>"}
+              <button class="btn" id="add-p">+ Add people</button>
+            </div>
+          </div>
+        </div>
+        <p id="ed-err" class="warn"></p>`;
+      const foot = document.getElementById("editor-foot");
+      foot.classList.remove("hidden");
+      foot.innerHTML = `<button class="btn" id="cancel">Cancel</button>
+        <button class="btn" id="save-draft">Save draft</button>
+        <button class="btn primary" id="save-j">Save journal</button>`;
+      if (window.MBNarrativeField) {
+        state.bodyField = window.MBNarrativeField.mount(document.getElementById("ed-body"), { speech: "authored-memory" });
+      }
+      document.getElementById("back").onclick = async (e) => { e.preventDefault(); await bootPanel(); };
+      document.getElementById("cancel").onclick = async () => { await bootPanel(); };
+      document.getElementById("ed-prec").onchange = () => {
+        readEditor();
+        paintEditor();
+      };
+      document.getElementById("add-p").onclick = () => openPeople();
+      document.getElementById("add-mem").onclick = () => openMemModal();
+      document.querySelectorAll(".rem-p").forEach((b) => {
+        b.onclick = () => {
+          state.draft.person_ids = state.draft.person_ids.filter((id) => id !== b.getAttribute("data-id"));
+          paintEditor();
+        };
+      });
+      document.querySelectorAll(".rem-m").forEach((b) => {
+        b.onclick = () => {
+          const i = Number(b.getAttribute("data-i"));
+          state.draft.memories.splice(i, 1);
+          paintEditor();
+        };
+      });
+      document.getElementById("save-draft").onclick = () => saveNow(false);
+      document.getElementById("save-j").onclick = () => saveNow(true);
+    }
+    async function saveNow(publish) {
+      const err = document.getElementById("ed-err");
+      if (err) err.textContent = "";
+      const body = payloadFromDraft();
       try {
-        const id = document.getElementById("editId").value.trim();
-        const bodyText = document.getElementById("editBody").value.trim();
-        if (!id || !bodyText) {
-          show({ detail: "Journal ID and new body required" });
-          return;
+        let data;
+        const headers = { "Content-Type": "application/json" };
+        if (publish) {
+          if (state.draft.id) {
+            data = await j("/journal/" + state.draft.id + "/save", { method: "POST", headers, body: JSON.stringify(body) });
+          } else {
+            data = await j("/journal/save", { method: "POST", headers, body: JSON.stringify(body) });
+          }
+          await openDetail(data.journal.id);
+        } else {
+          if (state.draft.id) {
+            data = await j("/journal/" + state.draft.id + "/draft", { method: "POST", headers, body: JSON.stringify(body) });
+          } else {
+            data = await j("/journal/drafts", { method: "POST", headers, body: JSON.stringify(body) });
+          }
+          fillDraft(data.journal);
+          setHash({ id: data.journal.id, edit: "1" });
         }
-        const commit = editField && editField.getCommit ? editField.getCommit() : {};
-        const payload = { body_text: bodyText };
-        if (commit.audio_uri) payload.audio_uri = commit.audio_uri;
-        const data = await j("/journal/" + encodeURIComponent(id) + "/versions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (editField && editField.consumeCommit) editField.consumeCommit();
-        show(data);
-      } catch (err) {
-        show(err);
+      } catch (e) {
+        if (err) err.textContent = e.message || String(e);
       }
-    };
-
-    document.getElementById("getBtn").onclick = async () => {
+    }
+    function fillDraft(a) {
+      state.draft = {
+        id: a.id, title: a.title || "", body_text: a.body_text || "",
+        display_title: a.display_title, visibility: a.visibility || "private",
+        described_start_date: (a.described_start_date || "").slice(0, 10),
+        described_precision: a.described_precision || "day",
+        described_time: a.described_time || "",
+        place_label: a.place_label || "", place_id: a.place_id || "",
+        person_ids: a.person_ids || [], memories: a.memories || [],
+        audio_uri: a.audio_uri || "", ask_available: a.ask_available,
+      };
+    }
+    async function openEditor(id) {
+      state.view = "editor";
+      if (!id) {
+        state.draft = emptyDraft();
+        setHash({ new: "1" });
+        paintEditor();
+        return;
+      }
       try {
-        const id = document.getElementById("getId").value.trim();
-        const ver = document.getElementById("getVer").value.trim();
-        let url = "/journal/" + encodeURIComponent(id);
-        if (ver) url += "?version=" + encodeURIComponent(ver);
-        show(await j(url));
-      } catch (err) {
-        show(err);
+        const data = await j("/journal/" + id + "/edit", { method: "POST" });
+        fillDraft(data.journal);
+      } catch (_) {
+        const w = await j("/journal/" + id + "/working").catch(() => null);
+        if (w && w.journal) fillDraft(w.journal);
       }
+      setHash({ id, edit: "1" });
+      paintEditor();
+    }
+    async function openDetail(id) {
+      const data = await j("/journal/" + id);
+      setHash({ id });
+      renderDetail(data.journal);
+    }
+    function openPeople() {
+      let pickId = "";
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <div class="modal-scroll"><h2>Add people</h2>
+          <input id="pp-q" placeholder="Type a name" />
+          <div class="person-list" id="pp-list"></div>
+        </div>
+        <div class="pk-foot"><button class="btn" id="px">Done</button><button class="btn primary" id="p-add" disabled>Add person</button></div>
+      </div></div>`;
+      const paint = () => {
+        const q = document.getElementById("pp-q").value;
+        document.getElementById("pp-list").innerHTML = sortedPeople().filter((p) => personMatches(p, q)).slice(0, 60).map((p) =>
+          `<button type="button" class="person-row ${p.id===pickId?"on":""}" data-id="${esc(p.id)}">${portraitInner(p)}</button>`
+        ).join("") || `<p class="sub">No matching people.</p>`;
+        document.getElementById("p-add").disabled = !pickId;
+        document.querySelectorAll("#pp-list .person-row").forEach((b) => {
+          b.onclick = () => { pickId = b.dataset.id; paint(); };
+        });
+      };
+      document.getElementById("pp-q").oninput = () => { pickId = ""; paint(); };
+      document.getElementById("px").onclick = () => { document.getElementById("modals").innerHTML = ""; paintEditor(); };
+      document.getElementById("p-add").onclick = () => {
+        if (pickId && !state.draft.person_ids.includes(pickId)) state.draft.person_ids.push(pickId);
+        pickId = ""; paint();
+      };
+      paint();
+    }
+    function openMemModal() {
+      let kind = "all";
+      const selected = {};
+      let items = [];
+      document.getElementById("modals").innerHTML = `
+        <div class="modal-back"><div class="modal">
+          <div class="modal-scroll">
+          <h2>Link memories</h2>
+          <p class="sub">Search existing memories. Originals stay unchanged. Journal entries are not attachable here.</p>
+          <div class="ask-field mb-explore-ask-field" id="pk-field">
+            <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+            <input id="pk-q" placeholder="Search people, places, dates, or memories." />
+            <button type="button" class="mb-explore-ask-go" id="pk-go">→</button>
+          </div>
+          <div class="filters" id="pk-tabs"></div>
+          <p class="sub" id="pk-meta">Ask to fill the gallery</p>
+          <div id="pk-grid" class="pick-grid"></div>
+          </div>
+          <div class="pk-foot">
+            <button class="btn" id="pk-x">Cancel</button>
+            <button class="btn primary" id="pk-add" disabled>Add memories</button>
+          </div>
+        </div></div>`;
+      const kinds = [["all","Memory"],["photos","Photos"],["videos","Video"],["communications","Communications"],["calendar","Calendar"],["artifacts","Artifacts"],["audio","Audio"]];
+      const tabs = document.getElementById("pk-tabs");
+      tabs.innerHTML = kinds.map(([k,l]) => `<button type="button" class="btn" data-k="${k}">${l}</button>`).join("");
+      function paintGrid() {
+        document.getElementById("pk-grid").innerHTML = items.map((it) => {
+          const key = it.source_kind + ":" + it.source_id;
+          const thumb = memThumb(it);
+          return `<div class="pick ${selected[key]?"on":""}" data-k="${esc(key)}">${thumb ? `<img src="${esc(thumb)}" alt="" />` : ""}<strong>${esc((it.source_kind || "").replace(/_/g, " "))}</strong><p>${esc(it.title || it.label_snapshot || it.source_id)}</p></div>`;
+        }).join("") || "<p class='empty'>Search first — the gallery stays empty until you ask.</p>";
+        document.querySelectorAll(".pick").forEach((el) => {
+          el.onclick = () => {
+            const k = el.getAttribute("data-k");
+            const it = items.find((x) => (x.source_kind + ":" + x.source_id) === k);
+            if (!it) return;
+            if (selected[k]) delete selected[k]; else selected[k] = it;
+            el.classList.toggle("on", Boolean(selected[k]));
+            const n = Object.keys(selected).length;
+            const add = document.getElementById("pk-add");
+            add.disabled = !n;
+            add.textContent = n ? "Add " + n + " memories" : "Add memories";
+          };
+        });
+      }
+      async function search() {
+        const q = (document.getElementById("pk-q").value || "").trim();
+        if (!q) { items = []; paintGrid(); return; }
+        const map = { photos:"photo", videos:"video", communications:"email_thread,sms_conversation", calendar:"calendar_event", artifacts:"artifact", audio:"audio" };
+        const qs = new URLSearchParams({ q, limit: "80" });
+        if (kind !== "all") qs.set("types", map[kind] || kind);
+        const data = await j("/story/evidence-search?" + qs.toString());
+        items = (data.items || []).filter((x) => x.source_kind !== "journal");
+        document.getElementById("pk-meta").textContent = items.length + " matches";
+        paintGrid();
+      }
+      tabs.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => { kind = b.getAttribute("data-k"); search(); };
+      });
+      document.getElementById("pk-go").onclick = search;
+      document.getElementById("pk-q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+      document.getElementById("pk-x").onclick = () => { document.getElementById("modals").innerHTML = ""; paintEditor(); };
+      document.getElementById("pk-add").onclick = () => {
+        Object.values(selected).forEach((it) => {
+          const key = it.source_kind + ":" + it.source_id;
+          if (state.draft.memories.some((m) => (m.source_kind + ":" + m.source_id) === key)) return;
+          state.draft.memories.push(it);
+        });
+        document.getElementById("modals").innerHTML = "";
+        paintEditor();
+      };
+      paintGrid();
+    }
+    async function bootPanel() {
+      setHash({});
+      try { await Promise.all([loadList(), loadCal()]); } catch (_) { state.items = []; }
+      renderPanel();
+    }
+    document.getElementById("askGo").onclick = () => {
+      location.href = "/explore/ui?q=" + encodeURIComponent(document.getElementById("askQ").value.trim());
     };
-
-    document.getElementById("listBtn").onclick = async () => {
-      try { show(await j("/journal")); }
-      catch (err) { show(err); }
-    };
+    (async function boot() {
+      renderNav();
+      const p = new URLSearchParams(location.search);
+      await Promise.all([loadPeople(), loadOwner()]);
+      if (p.get("new") === "1") { openEditor(null); return; }
+      if (p.get("id") && UUID_RE.test(p.get("id"))) {
+        if (p.get("edit") === "1") { await openEditor(p.get("id")); return; }
+        await openDetail(p.get("id"));
+        return;
+      }
+      await bootPanel();
+    })();
   </script>
 </body>
 </html>
