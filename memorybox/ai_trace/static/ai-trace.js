@@ -55,6 +55,8 @@
   }
 
   function renderList() {
+    const aside = rowsEl.closest("aside");
+    const keepList = aside ? aside.scrollTop : 0;
     rowsEl.innerHTML = traces
       .map((t) => {
         const active = t.trace_id === selectedId ? "active" : "";
@@ -91,6 +93,7 @@
         );
       })
       .join("");
+    if (aside) aside.scrollTop = keepList;
   }
 
   let copyStore = {};
@@ -135,7 +138,8 @@
       return;
     }
     const keepScroll = detailEl.scrollTop;
-    const pinned = detailPinned;
+    const maxBefore = Math.max(0, detailEl.scrollHeight - detailEl.clientHeight);
+    const wasAtBottom = keepScroll >= maxBefore - 8;
     lastDetailKey = detailKey;
     const modelSpans = spans.filter((s) => s.operation === "chat" || s.operation === "embed");
     const firstModel = modelSpans[0] || {};
@@ -250,8 +254,11 @@
       };
     });
     renderList();
-    if (pinned) {
-      detailEl.scrollTop = keepScroll;
+    const maxAfter = Math.max(0, detailEl.scrollHeight - detailEl.clientHeight);
+    if (wasAtBottom && liveEl.checked && !detailPinned) {
+      detailEl.scrollTop = maxAfter;
+    } else {
+      detailEl.scrollTop = Math.min(keepScroll, maxAfter);
     }
   }
 
@@ -307,7 +314,7 @@
 
   detailEl.addEventListener("scroll", function () {
     const max = Math.max(0, detailEl.scrollHeight - detailEl.clientHeight);
-    detailPinned = max > 24 && detailEl.scrollTop < max - 48;
+    detailPinned = max > 8 && detailEl.scrollTop < max - 8;
   });
 
   document.getElementById("btnRefresh").onclick = function () {

@@ -694,6 +694,25 @@ def _clean_entity(name: str) -> str | None:
     return n
 
 
+_PLACE_DETERMINERS = frozenset({"my", "our", "the", "a", "an", "your"})
+
+
+def _place_trip_label(name: str) -> str | None:
+    """Keep the geographic slot, not 'My Alaska' from 'my alaska trip'."""
+    ent = _clean_entity(name)
+    if not ent:
+        return None
+    parts = [p for p in re.split(r"\s+", ent) if p]
+    while parts and parts[0].lower() in _PLACE_DETERMINERS:
+        parts.pop(0)
+    if not parts:
+        return ent
+    rest = " ".join(parts)
+    if rest.islower() or rest.isupper() or rest[:1].islower():
+        rest = rest.title()
+    return rest
+
+
 def compile_output_mode(
     q: str,
     *,
@@ -847,12 +866,12 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
     q = text or ""
 
     for m in PLACE_TRIP_RE.finditer(q):
-        ent = _clean_entity(m.group(1))
+        ent = _place_trip_label(m.group(1))
         if ent:
             trips.append(ent)
             places.append(ent)
     for m in TRIP_TO_RE.finditer(q):
-        ent = _clean_entity(m.group(1))
+        ent = _place_trip_label(m.group(1))
         if ent:
             trips.append(ent)
             places.append(ent)

@@ -1574,6 +1574,7 @@
     } else if (placeFilter) {
       syncTimelineToEligibleDatedExtent();
     }
+    clearSearchingChrome();
   }
 
   const ASK_HIST_KEY = "mb_shell_recent_asks";
@@ -1994,10 +1995,12 @@
             state.domain.includeTexts = true;
             state.domain.galleryShowSms = true;
           }
+          clearSearchingChrome();
           render();
         })
         .catch((err) => {
-          state.domain.summary = findErrorMessage(err);
+          if (state && state.domain) state.domain.summary = findErrorMessage(err);
+          clearSearchingChrome();
           renderCurator();
         });
       return;
@@ -2172,6 +2175,7 @@
     else if (askRaw && String(heading).trim().toLowerCase() === askRaw.toLowerCase()) {
       heading = "Memories";
     }
+    const curator = document.getElementById("mb-explore-curator");
     const titleNode = document.getElementById("mb-explore-curator-title");
     const bodyNode = document.getElementById("mb-explore-curator-body");
     if (titleNode) titleNode.textContent = heading;
@@ -2183,7 +2187,6 @@
         bodyNode.textContent = state.domain.summary || "";
       }
     }
-    const curator = document.getElementById("mb-explore-curator");
     const tell = state.domain.outputMode === "tell";
     if (curator) curator.classList.toggle("is-tell", Boolean(tell));
     const actions = document.getElementById("mb-explore-curator-actions");

@@ -238,6 +238,18 @@ def canonical_place(place: str) -> str:
     return collapsed
 
 
+def geo_tokens_for_label(label: str) -> list[str]:
+    """State names mentioned in a place/trip label (not 2-letter codes)."""
+    low = _norm(label)
+    if not low:
+        return []
+    out: list[str] = []
+    for name in _STATE_ALIASES:
+        if re.search(rf"\b{re.escape(name)}\b", low):
+            out.append(name)
+    return out
+
+
 def place_needles(place: str) -> tuple[str, ...]:
     """Longer tokens first. Short USPS codes are matched on word boundaries."""
     key = canonical_place(place)

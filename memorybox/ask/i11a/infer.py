@@ -70,7 +70,7 @@ def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         size += piece
     if cur:
         chunks.append(cur)
-    return chunks or [[]]
+    return chunks
 
 
 def _trace_span(**kwargs: Any) -> None:
@@ -216,6 +216,37 @@ def run_inference(
         "retries": _retries(),
         "merge_depth": 0,
     }
+    if not units:
+        result = {
+            "ok": False,
+            "fail_closed": True,
+            "reason": "no evidence units",
+            "document": None,
+            "rejected": [],
+            "person_context": slim_person_context_for_model(person_context),
+            "request_context": req,
+            "accounting": accounting,
+            "partial": False,
+        }
+        _trace_span(
+            stage="i11a_validate",
+            component="i11a",
+            operation="fail_closed",
+            status="error",
+            error_class="PARSE_SCHEMA",
+            assembled_context={
+                "ok": False,
+                "reason": result["reason"],
+                "partial": False,
+                "document": None,
+                "rejected": [],
+                "accounting": accounting,
+                "fail_closed": True,
+                "person_context": slim_person_context_for_model(person_context),
+                "request_context": req,
+            },
+        )
+        return result
     leaf_docs: list[dict[str, Any]] = []
     failed_chunks = 0
     raw_leaves: list[str] = []

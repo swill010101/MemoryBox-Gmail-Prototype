@@ -544,6 +544,16 @@ def _place_trip_keywords(plan: QueryPlan) -> list[str]:
                 continue
             seen.add(tok)
             out.append(tok)
+        try:
+            from memorybox.ask.place_match import geo_tokens_for_label
+
+            for tok in geo_tokens_for_label(low):
+                if tok in seen:
+                    continue
+                seen.add(tok)
+                out.append(tok)
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 

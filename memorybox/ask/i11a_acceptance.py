@@ -57,7 +57,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a2" in html,
+        and "?v=i11a3" in html,
         checks,
         problems,
         detail="AI Trace Light I11A copy/export controls",
@@ -80,7 +80,10 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "/explore/api/ask-progress" in explore_js
         and "askStatusGen" in explore_js
         and "clearSearchingChrome" in explore_js
-        and 't === "Done"' not in explore_js,
+        and 't === "Done"' not in explore_js
+        and "overflow-anchor: none" in (root / "ai_trace" / "static" / "ai-trace.css").read_text(
+            encoding="utf-8"
+        ),
         checks,
         problems,
         detail="one-line scrolling Ask status in curator",
@@ -335,7 +338,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "alaska_trip_in_year_not_year_keyword",
-        any("alaska" in str(t).lower() for t in (ak_year.trip_labels or ()))
+        any(str(t).lower() == "alaska" for t in (ak_year.trip_labels or ()))
         and "2026" not in tuple(ak_year.retrieval_constraints or ())
         and ak_year.time_start == "2026-01-01"
         and ak_year.time_end == "2026-12-31",
