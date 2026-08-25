@@ -146,6 +146,8 @@
     const resSpan = spans.find((s) => s.operation === "retrieval_resolution") || {};
     const consSpan = spans.find((s) => s.operation === "consideration") || {};
     const infSpans = spans.filter((s) => s.component === "i11a");
+    const preSpan = spans.find((s) => s.operation === "preaggregation") || {};
+    const reduceSpan = infSpans.find((s) => s.operation === "reduce_correlate") || {};
     const infLeaf = infSpans.find((s) => s.operation === "leaf") || {};
     const infVal = infSpans.find((s) => s.operation === "validate") || {};
     const chatSpans = modelSpans.filter((s) => s.operation === "chat");
@@ -214,12 +216,14 @@
       "<div class=\"panes\">" +
       pane("Assembled MemoryBox context", "mb", t.assembled_context || firstModel.assembled_context, "copy-assembled") +
       pane("Retrieval resolution", "mb", resSpan.assembled_context || resSpan.parsed, "copy-retrieval-resolution") +
+      pane("Pre-aggregation counts", "mb", preSpan.assembled_context || preSpan.parsed || (consSpan.assembled_context || {}).preaggregation, "copy-preaggregation") +
       pane("Evidence sets / consideration", "mb", consSpan.assembled_context || consSpan.parsed, "copy-consideration") +
       pane("PersonContext / requestor / focal", "mb", (infVal.assembled_context || {}).request_context || infVal.assembled_context, "copy-person-context") +
       pane("Copy Provider Payload", "prov", copyPayload, "copy-provider-payload") +
       pane("Copy Raw Model Response", "", infLeaf.raw_response || firstModel.raw_response, "copy-raw-response") +
       pane("Copy Parsed Inference", "", infLeaf.parsed || infVal.parsed, "copy-parsed-inference") +
       pane("Copy Validated Semantic Pack", "mb", (infVal.disposition || {}).validated_semantic_pack || infVal.parsed, "copy-validated-pack") +
+      pane("Reduce / Person understanding", "mb", reduceSpan.parsed || (infVal.parsed || {}).person_understanding, "copy-person-pack") +
       pane("Validation / rejected", "", infVal.validation, "copy-validation") +
       pane("Narrator payload / response", "", { payload: narratorSpan.provider_payload, raw: narratorSpan.raw_response }, "copy-narrator") +
       pane("MemoryBox result", "mb", t.final_disposition, "copy-result") +

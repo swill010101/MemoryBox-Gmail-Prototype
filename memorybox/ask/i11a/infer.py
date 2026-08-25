@@ -10,6 +10,7 @@ from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
 from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
 from memorybox.ask.i11a.support import rank_episodes_for_narrator
+from memorybox.ask.i11a.windows import _day
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -17,8 +18,8 @@ from memorybox.providers.llm.dto import ChatMessage
 INFERENCE_SYSTEM = """EVIDENCE_INFERENCE
 You are MemoryBox's structured inference engine. Return JSON only. Do not write family prose.
 Interpret the evidence for the current Ask using Person context as interpretation aid, not as proof of period events.
-This leaf sees only one batch. Emit grounded observations, not a competing final trip narrative.
-A later reduce/correlation stage merges all leaf observations into one trip episode.
+This leaf sees one batch of pre-aggregated units (threads, media clusters, patterns, calendar, travel), not raw archive dumps.
+Emit grounded observations. A later Ask-kind-specific reduce/correlation stage organizes them (Person understanding, trip episode, or period). Do not assume the Ask is a trip.
 Rules:
 - Ground every material claim in supporting_evidence_ids copied exactly from unit evidence_id or unit_id fields. Never invent IDs.
 - Do not invent people, places, dates, motives, emotions, photographer identity, trip purpose, or that a calendar event occurred.
@@ -39,11 +40,50 @@ Rules:
 Episode people.role: participant|mentioned|unknown.
 """
 
-MERGE_SYSTEM = """INFERENCE_MERGE
-Correlate leaf observation JSON objects into one schema_version 2 document for the Ask.
+MERGE_SYSTEM_TRIP = """INFERENCE_MERGE
+Correlate leaf observation JSON objects into one schema_version 2 document for a trip Ask.
 Leaves are observations, not competing final trip truth. Produce one normalized trip episode when they describe the same travel cluster.
 Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
 """
+
+MERGE_SYSTEM_PERSON = """INFERENCE_MERGE
+Correlate leaf observation JSON objects into one schema_version 2 Person understanding.
+Do not collapse the subject into a single “life” or trip episode. Keep multiple episodes, themes, communication patterns, observed places, trips, and unresolved questions.
+Preserve original evidence IDs. Do not invent claims or family relationship labels. JSON only. No coverage or counts.
+"""
+
+MERGE_SYSTEM_DEFAULT = """INFERENCE_MERGE
+Correlate leaf observation JSON objects into one schema_version 2 document for the Ask.
+Leaves are observations. Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
+"""
+
+# Back-compat for tests that read MERGE_SYSTEM from this module.
+MERGE_SYSTEM = MERGE_SYSTEM_TRIP
+
+
+def _inference_system(kind: str) -> str:
+    extra = ""
+    if kind == "person":
+        extra = (
+            "Ask kind is person. Communications, calendar, travel, stories, journals, "
+            "artifacts, and media all contribute. Do not let media volume dominate. "
+            "GPS/photo presence is not residence. Affection in messages supports expressed "
+            "affection, not a personality diagnosis. Relationship labels only from PersonContext."
+        )
+    elif kind == "trip":
+        extra = (
+            "Ask kind is trip. Correlate calendar/travel/media into trip observations. "
+            "GPS city is presence at capture time, not a month-long stay."
+        )
+    return INFERENCE_SYSTEM + ("\n- " + extra if extra else "")
+
+
+def _merge_system(kind: str) -> str:
+    if kind == "person":
+        return MERGE_SYSTEM_PERSON
+    if kind == "trip":
+        return MERGE_SYSTEM_TRIP
+    return MERGE_SYSTEM_DEFAULT
 
 _DEFAULT_BATCH_CHARS = 12_000
 _DEFAULT_RETRIES = 1
@@ -64,12 +104,25 @@ def _retries() -> int:
 
 
 def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Split by character budget only. Every unit is assigned to a chunk."""
+    """Split by character budget. Interleave kinds so media cannot starve communications."""
     budget = _batch_chars()
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for u in units:
+        k = str(u.get("kind") or "other")
+        if k not in buckets:
+            buckets[k] = []
+            order.append(k)
+        buckets[k].append(u)
+    mixed: list[dict[str, Any]] = []
+    while any(buckets[k] for k in order):
+        for k in order:
+            if buckets[k]:
+                mixed.append(buckets[k].pop(0))
     chunks: list[list[dict[str, Any]]] = []
     cur: list[dict[str, Any]] = []
     size = 0
-    for u in units:
+    for u in mixed:
         piece = len(json.dumps(u, default=str))
         if cur and size + piece > budget:
             chunks.append(cur)
@@ -228,11 +281,15 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "evidence_id": unit.get("evidence_id"),
         "kind": unit.get("kind"),
         "source_type": unit.get("source_type"),
-        "time": str(unit.get("time") or "")[:10],
+        "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:120],
+        "content": str(unit.get("content") or "")[:240],
         "asset_ref": unit.get("asset_ref"),
+        "extra_ids": (unit.get("extra_ids") or unit.get("source_evidence_ids") or [])[:40],
+        "occurrence_count": unit.get("occurrence_count"),
+        "pattern_type": unit.get("pattern_type"),
+        "thread_id": unit.get("thread_id"),
     }
     if unit.get("media"):
         row["media"] = unit.get("media")
@@ -253,9 +310,27 @@ def run_inference(
     person_context = build_person_context(plan)
     req = resolve_request_context(plan)
     kind = ask_kind_for_plan(plan)
+    from memorybox.ask.i11a.preaggregate import preaggregate_pack
+
     units = units_from_pack(pack)
-    model_units = compact_units_for_model(units)
+    focal_id = None
+    focals = req.get("focal_subject_person_ids") or []
+    if focals:
+        focal_id = str(focals[0])
+    agg = preaggregate_pack(pack, person_id=focal_id)
+    pack["preaggregation"] = agg.get("trace") or {}
+    pack["inference_units"] = agg.get("units") or []
+    model_units = compact_units_for_model(agg.get("units") or units)
+    pack["preaggregation"]["inference_units_after_compact"] = len(model_units)
     chunks = _chunk_units(model_units)
+    _trace_span(
+        stage="i11a_inference",
+        component="i11a",
+        operation="preaggregation",
+        status="ok",
+        assembled_context=pack.get("preaggregation"),
+        parsed=pack.get("preaggregation"),
+    )
     chunk_map: dict[str, int] = {}
     for i, ch in enumerate(chunks):
         for u in ch:
@@ -270,7 +345,16 @@ def run_inference(
     keep_ids = {
         str(u.get("evidence_id") or u.get("unit_id") or "")
         for u in model_units
-        if str(u.get("kind") or "") in {"calendar", "travel", "video_asset"}
+        if str(u.get("kind") or "") in {
+            "calendar",
+            "calendar_series",
+            "travel",
+            "video_asset",
+            "comm_pattern",
+            "communication_thread",
+            "sms_segment",
+            "correlated_event",
+        }
     }
     keep_ids = {x for x in keep_ids if x}
     accounting = {
@@ -284,6 +368,8 @@ def run_inference(
         "units_generated": len(units),
         "units_passed_to_inference": len(model_units),
         "dropped_before_inference": max(0, len(units) - len(model_units)),
+        "leaf_calls": 0,
+        "preaggregation": pack.get("preaggregation"),
     }
     if not units:
         result = {
@@ -321,6 +407,7 @@ def run_inference(
     raw_leaves: list[str] = []
     for idx, chunk in enumerate(chunks):
         accounting["attempted_units"] += len(chunk)
+        accounting["leaf_calls"] += 1
         payload = _leaf_payload(
             plan=plan,
             person_context=person_context,
@@ -329,7 +416,7 @@ def run_inference(
             modality_state=modality_state,
         )
         try:
-            raw = _call_with_retry(llm, INFERENCE_SYSTEM, payload)
+            raw = _call_with_retry(llm, _inference_system(kind), payload)
             raw_leaves.append(raw)
             parsed = parse_inference_json(raw)
             if not parsed:
@@ -342,7 +429,7 @@ def run_inference(
                 operation="leaf",
                 status="ok",
                 assembled_context={"chunk": idx, "unit_n": len(chunk)},
-                provider_payload={"system": INFERENCE_SYSTEM, "user": payload},
+                provider_payload={"system": _inference_system(kind), "user": payload},
                 raw_response={"content": raw},
                 parsed=parsed,
             )
@@ -399,14 +486,14 @@ def run_inference(
                 "leaf_results": leaf_docs,
             }
             try:
-                merged_raw = _call_with_retry(llm, MERGE_SYSTEM, merge_payload)
+                merged_raw = _call_with_retry(llm, _merge_system(kind), merge_payload)
                 parsed_merge = parse_inference_json(merged_raw) or parsed_merge
                 _trace_span(
                     stage="i11a_inference",
                     component="i11a",
                     operation="merge",
                     status="ok",
-                    provider_payload={"system": MERGE_SYSTEM, "user": merge_payload},
+                    provider_payload={"system": _merge_system(kind), "user": merge_payload},
                     raw_response={"content": merged_raw},
                     parsed=parsed_merge,
                 )
@@ -442,7 +529,7 @@ def run_inference(
             )
     from memorybox.ask.i11a.reduce import reduce_leaf_observations
 
-    parsed_merge = reduce_leaf_observations(parsed_merge, pack=pack)
+    parsed_merge = reduce_leaf_observations(parsed_merge, pack=pack, ask_kind=kind)
     _trace_span(
         stage="i11a_inference",
         component="i11a",
@@ -554,6 +641,7 @@ def outline_from_inference(document: dict[str, Any], plan: Any) -> dict[str, Any
         "windows": [{"start": str(a)[:10], "end": str(b)[:10]} for a, b in windows_raw],
         "episodes": episodes,
         **pack_level_windows(episodes),
+        "person_understanding": document.get("person_understanding"),
     }
 
 
