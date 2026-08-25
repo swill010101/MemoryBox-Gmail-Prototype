@@ -47,8 +47,52 @@ class EvidenceHit:
 
 # Hard ceiling so a 90k-row export cannot dump the whole archive into Explore.
 # Year-fair sampling keeps every year on the Timeline when we must truncate.
-# The old default of 5000 oldest-first silently dropped 2020–2025 on FlightSim.
+# I7 gallery/export retrieve may year-fair-slice. Bounded tell must not.
 SMS_RETRIEVE_CAP = 25000
+# SQL page size only — not a semantic evidence limit.
+TELL_DB_PAGE = 500
+
+_MONTH_KEYWORD_STOP = {
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+}
+_TELL_KEYWORD_STOP = {
+    "write",
+    "narrative",
+    "narrate",
+    "story",
+    "tell",
+    "know",
+    "summarize",
+    "summary",
+    "happened",
+    "like",
+    "year",
+    "month",
+    "about",
+}
 
 
 SMS_ASK_RE = re.compile(
@@ -329,7 +373,17 @@ def _excerpt(payload: dict[str, Any], kind: str, limit: int = 280) -> str:
 def _sms_ask(plan: QueryPlan) -> bool:
     if getattr(plan, "want_cross_source", False):
         return True
-    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    ask = plan.original_ask or ""
+    # tell_multimodal notes include want_sms_modality for the pack, not an I7 SMS Ask.
+    if _tell_pack_comms(plan):
+        return bool(
+            SMS_ASK_RE.search(ask)
+            or SMS_INBOUND_RE.search(ask)
+            or SMS_HEART_ASK_RE.search(ask)
+            or SMS_LAST_N_RE.search(ask)
+            or SMS_ATTACH_ASK_RE.search(ask)
+        )
+    blob = f"{ask} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return (
         bool(SMS_ASK_RE.search(blob))
         or "want_sms_modality" in (plan.notes or ())
@@ -344,8 +398,117 @@ def _sms_ask(plan: QueryPlan) -> bool:
 def _email_ask(plan: QueryPlan) -> bool:
     if getattr(plan, "want_cross_source", False):
         return True
-    blob = f"{plan.original_ask or ''} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
+    ask = plan.original_ask or ""
+    if _tell_pack_comms(plan):
+        return bool(EMAIL_ASK_RE.search(ask))
+    blob = f"{ask} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
     return bool(EMAIL_ASK_RE.search(blob))
+
+
+def _tell_pack_comms(plan: QueryPlan) -> bool:
+    if str(getattr(plan, "output_mode", "") or "") == "tell":
+        return True
+    return "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
+
+
+def _bounded_period_tell(plan: QueryPlan) -> bool:
+    """Dated tell (month, year, trip window): every in-scope row may contribute."""
+    if not _tell_pack_comms(plan):
+        return False
+    if getattr(plan, "temporal_windows", ()) or ():
+        return True
+    return bool(getattr(plan, "time_start", None) and getattr(plan, "time_end", None))
+
+
+def visual_library_person_ids(plan: QueryPlan) -> tuple[list[str], str | None]:
+    """Person ids for photo/video library search.
+
+    Named subjects on the Ask (Peggy, …) stay the library. When the Ask has no
+    person slot — typical of “my January” — use the requestor Person (today the
+    single owner; later the signed-in user). Do not write that id onto the plan,
+    or inherit/subject-change will treat a period tell as “about the owner.”
+    """
+    asked_ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+    asked_names = [
+        str(n).strip()
+        for n in (getattr(plan, "person_names", ()) or ())
+        if str(n).strip()
+    ]
+    if asked_ids or asked_names:
+        return asked_ids, None
+    try:
+        from memorybox.profile.owner import get_requestor_person_id
+
+        rid = get_requestor_person_id()
+    except Exception:  # noqa: BLE001
+        rid = None
+    if rid:
+        return [str(rid)], str(rid)
+    return [], None
+
+
+def _apply_result_limit(items: list[Any], limit: int | None) -> list[Any]:
+    """Slice only when a caller asked for a page. 0/None is not 'return nothing'."""
+    if limit is None or int(limit) <= 0:
+        return list(items)
+    return list(items)[: int(limit)]
+
+
+def _provider_fetch_n(limit: int | None) -> int:
+    """SQL/provider page size under processing capacity — not a consider-cap."""
+    if limit is None or int(limit) <= 0:
+        return 500_000
+    return max(1, int(limit))
+
+
+def _iter_evidence_rows(where_sql: str, params: list[Any]):
+    """Page through Evidence. Page size is not a consider-cap."""
+    offset = 0
+    with connection() as conn:
+        while True:
+            rows = conn.execute(
+                f"""
+                SELECT id, evidence_kind, summary, payload_json
+                FROM evidence
+                WHERE {where_sql}
+                ORDER BY id
+                LIMIT %s OFFSET %s
+                """,
+                list(params) + [TELL_DB_PAGE, offset],
+            ).fetchall()
+            if not rows:
+                break
+            for r in rows:
+                yield r
+            if len(rows) < TELL_DB_PAGE:
+                break
+            offset += TELL_DB_PAGE
+
+
+def _sql_json_day_windows(
+    windows: list[tuple[Any, Any]] | tuple[tuple[Any, Any], ...],
+    json_key: str,
+) -> tuple[str, list[Any]]:
+    """Inclusive YYYY-MM-DD windows on a JSON text timestamp field."""
+    if json_key not in {"sent_at", "start"}:
+        return "TRUE", []
+    if not windows:
+        return "TRUE", []
+    parts: list[str] = []
+    params: list[Any] = []
+    expr = f"left(coalesce(payload_json->>'{json_key}', ''), 10)"
+    for a, b in windows:
+        parts.append(f"({expr} BETWEEN %s AND %s)")
+        params.extend([str(a)[:10], str(b)[:10]])
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def _strip_temporal_tell_keywords(keywords: list[str], *, windows: list) -> list[str]:
+    out = list(keywords)
+    if windows:
+        out = [k for k in out if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+        out = [k for k in out if k not in _MONTH_KEYWORD_STOP and k not in _TELL_KEYWORD_STOP]
+    return out
 
 
 def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -554,9 +717,10 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
         if t.lower().replace("'", "") not in keyword_stop
     ]
-    # Year tokens belong to the date window, not the body-text keyword filter
-    if windows:
-        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
+    if _tell_pack_comms(plan) and windows:
+        # Month/year tell is a date window, not a keyword hunt for "narrative".
+        keywords = []
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -593,17 +757,22 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
 
     hits: list[EvidenceHit] = []
     seen_sms_sig: set[tuple[str, str, str]] = set()
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, evidence_kind, summary, payload_json
-            FROM evidence
-            WHERE evidence_kind = 'communication'
-              AND lower(coalesce(payload_json->>'evidence_channel', ''))
-                  IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-            """
-        ).fetchall()
-    for r in rows:
+    if (
+        _tell_pack_comms(plan)
+        and not windows
+        and not person_ids
+        and not person_names
+        and last_n is None
+    ):
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
+    where_sql = (
+        "evidence_kind = 'communication' "
+        "AND lower(coalesce(payload_json->>'evidence_channel', '')) "
+        "IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
+        f"AND {win_sql}"
+    )
+    for r in _iter_evidence_rows(where_sql, list(win_params)):
         payload = _payload_dict(r["payload_json"])
         ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
         if ch not in _SMS_CHANNELS:
@@ -691,6 +860,14 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             seen_sms_sig.add(sig)
         hits.append(_sms_hit(r, payload, score=1.0))
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    if _bounded_period_tell(plan):
+        total = len(hits)
+        for h in hits:
+            h.match_total = total
+            h.truncated = False
+        if hits:
+            hits[0].count_scope = f"bounded_tell_sms; processed={total}; eligible={total}"
+        return hits
     scope_bits = [
         "ingested SMS/iMessage/MMS export",
         f"n={len(hits)}",
@@ -964,8 +1141,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         for t in re.findall(r"[A-Za-z0-9']{3,}", ask)
         if t.lower().replace("'", "") not in keyword_stop
     ]
-    if windows:
-        keywords = [k for k in keywords if not re.fullmatch(r"(?:19|20)\d{2}", k)]
+    keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
+    if _tell_pack_comms(plan) and windows:
+        # Month/year tell is a date window, not a keyword hunt for "narrative".
+        keywords = []
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -998,19 +1177,26 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         ]
 
     rows_payload: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, evidence_kind, summary, payload_json
-            FROM evidence
-            WHERE evidence_kind = 'communication'
-              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
-                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-            """
-        ).fetchall()
-    for r in rows:
+    if (
+        _tell_pack_comms(plan)
+        and not windows
+        and not person_ids
+        and not person_names
+    ):
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
+    where_sql = (
+        "evidence_kind = 'communication' "
+        "AND lower(coalesce(payload_json->>'evidence_channel', 'email')) "
+        "NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
+        f"AND {win_sql}"
+    )
+    for r in _iter_evidence_rows(where_sql, list(win_params)):
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
+            continue
+        skip = str(payload.get("mailbox_skip") or payload.get("skip_reason") or "").strip().lower()
+        if skip in {"spam", "trash"}:
             continue
         rows_payload.append((r, payload))
 
@@ -1088,6 +1274,14 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             matched.extend(extra)
     hits = matched
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
+    if _bounded_period_tell(plan):
+        total = len(hits)
+        for h in hits:
+            h.match_total = total
+            h.truncated = False
+        if hits:
+            hits[0].count_scope = f"bounded_tell_email; processed={total}; eligible={total}"
+        return hits
     scope_bits = [
         "ingested email export",
         f"n={len(hits)}",
@@ -1151,15 +1345,11 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
     if not windows and plan.time_start and plan.time_end:
         windows = [(plan.time_start, plan.time_end)]
     hits: list[EvidenceHit] = []
-    with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, evidence_kind, summary, payload_json
-            FROM evidence
-            WHERE evidence_kind = 'calendar_event'
-            """
-        ).fetchall()
-    for r in rows:
+    if _tell_pack_comms(plan) and not windows and not person_ids and not person_names:
+        return []
+    win_sql, win_params = _sql_json_day_windows(windows, "start")
+    where_sql = f"evidence_kind = 'calendar_event' AND {win_sql}"
+    for r in _iter_evidence_rows(where_sql, list(win_params)):
         payload = _payload_dict(r["payload_json"])
         start = str(payload.get("start") or "")
         day = start[:10]
@@ -1211,6 +1401,13 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
         )
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     total = len(hits)
+    if _bounded_period_tell(plan):
+        for h in hits:
+            h.match_total = total
+            h.truncated = False
+        if hits:
+            hits[0].count_scope = f"bounded_tell_calendar; processed={total}; eligible={total}"
+        return hits
     cap_n = max(1, int(limit))
     sliced = hits[:cap_n] if hits else []
     truncated = total > len(sliced)
@@ -1229,6 +1426,23 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
     sms_q = _sms_ask(plan) and plan.want_communication
     email_q = _email_ask(plan) and plan.want_communication
     cal_q = bool(plan.want_calendar)
+    if _tell_pack_comms(plan) and plan.want_communication and not sms_q and not email_q:
+        mail = search_email_messages(plan)
+        sms = search_sms_messages(plan)
+        cal = search_calendar_events(plan) if cal_q else []
+        combined = list(mail) + list(sms) + list(cal)
+        if combined:
+            combined[0].count_scope = (
+                f"tell pack; email_n={mail[0].match_total if mail else 0}; "
+                f"sms_n={sms[0].match_total if sms else 0}; "
+                f"cal_n={len(cal)}"
+            )
+            combined[0].match_total = (
+                (mail[0].match_total if mail else 0)
+                + (sms[0].match_total if sms else 0)
+                + len(cal)
+            )
+        return combined
     if cal_q and not sms_q and not email_q:
         return search_calendar_events(plan, limit=max(int(limit), SMS_RETRIEVE_CAP))
     if sms_q and email_q:
@@ -1410,6 +1624,8 @@ def filter_hits_by_constraints(
     cons = [c for c in constraints if c and len(c) >= 2]
     if not cons:
         return hits
+    year_cons = {c for c in cons if re.fullmatch(r"(?:19|20)\d{2}", c)}
+    other_cons = [c for c in cons if c not in year_cons]
     kept: list[EvidenceHit] = []
     for h in hits:
         blob = " ".join(
@@ -1419,8 +1635,15 @@ def filter_hits_by_constraints(
                 " ".join(h.people or []),
                 h.thread_id or "",
                 h.channel or "",
+                h.sent_at or "",
             ]
         ).lower()
+        if year_cons:
+            sent_y = str(h.sent_at or "")[:4]
+            if sent_y in year_cons:
+                if not other_cons or any(c.lower() in blob for c in other_cons):
+                    kept.append(h)
+                    continue
         if any(c.lower() in blob for c in cons):
             kept.append(h)
     return kept
@@ -1653,15 +1876,28 @@ def search_photos(
         if callable(snap):
             status["immich_diag"] = snap()
         filtered = _filter_photo_hits(hits)
-        return filtered[:limit], status
+        if _bounded_period_tell(plan) or int(limit) <= 0:
+            status["photo_truncated"] = False
+            status["eligible_n"] = len(filtered)
+            status["processed_n"] = len(filtered)
+            return filtered, status
+        sliced = filtered[: max(1, int(limit))]
+        status["photo_truncated"] = len(filtered) > len(sliced)
+        status["eligible_n"] = len(filtered)
+        status["processed_n"] = len(sliced)
+        return sliced, status
 
     if not plan.want_still and not plan.want_photo:
         status["ok"] = True
         status["detail"] = "not_requested"
         return [], status
     try:
+        library_person_ids, requestor_id = visual_library_person_ids(plan)
+        if requestor_id:
+            status["requestor_library"] = True
+            status["requestor_person_id"] = requestor_id
         named_person = bool(
-            getattr(plan, "person_names", ()) or getattr(plan, "person_ids", ())
+            getattr(plan, "person_names", ()) or library_person_ids
         )
         if named_person:
             status["health_skipped"] = "named_person_ask"
@@ -1698,7 +1934,7 @@ def search_photos(
             return any(asked_name_matches_person(a, display) for a in asked_names)
 
         resolved_by_id: set[str] = set()
-        for pid in getattr(plan, "person_ids", ()) or ():
+        for pid in library_person_ids:
             person = _get_person_by_id(pid)
             if not person:
                 continue
@@ -1873,7 +2109,7 @@ def search_photos(
                 assets = photo.search_assets(
                     PhotoSearchQuery(
                         person_external_ids=tuple(ids),
-                        limit=limit,
+                        limit=_provider_fetch_n(limit),
                         time_windows=tuple(
                             getattr(plan, "temporal_windows", ()) or ()
                         ),
@@ -1896,7 +2132,12 @@ def search_photos(
                 return []
             seen: set[str] = set()
             out: list[PhotoAssetDto] = []
-            cap = min(max(1, int(limit)), 400)
+            if _bounded_period_tell(plan) or int(limit) <= 0:
+                # Face listing is already fetched in full; do not treat 400 as
+                # "MemoryBox considered only 400 photos."
+                cap = 10**9
+            else:
+                cap = min(max(1, int(limit)), 400)
             for pid in ids:
                 try:
                     faces = list_fn(person_external_id=pid, limit=cap)
@@ -2235,6 +2476,7 @@ def search_photos(
                     f"unmapped_resolvable={unmapped_resolvable_names or []} "
                     f"mapped_names={mapped_names}"
                     + (f" source={src}" if src else "")
+                    + (f" requestor={requestor_id}" if requestor_id else "")
                 )
             if mapped_names or unmapped_resolvable_names:
                 status["disclosure"] = (
@@ -2242,16 +2484,6 @@ def search_photos(
                     + " Photo library did not return stills for this person; "
                     "video moments stay visible."
                 ).strip()
-            return _finish(hits)
-            status["detail"] = (
-                f"no_immich_person_ids names={name_queries} "
-                f"unmapped_resolvable={unmapped_resolvable_names or []}"
-            )
-            if unmapped_resolvable_names:
-                status["disclosure"] = (
-                    "Resolvable MB Person(s) exist without Immich mapping; "
-                    "no Immich person id resolved for name search."
-                )
             return _finish(hits)
 
         # Person asks must stay on personIds only — never bare Immich text search
@@ -2365,7 +2597,10 @@ def _dedupe_video_hits(
         if _hit_score(h) > _hit_score(prev):
             buckets[key] = h
     collapsed = [buckets[k] for k in order]
-    return _merge_overlapping_video_hits(collapsed)[:limit]
+    merged = _merge_overlapping_video_hits(collapsed)
+    if limit is None or int(limit) <= 0:
+        return merged
+    return merged[: int(limit)]
 
 
 def search_videos(
@@ -2395,6 +2630,9 @@ def search_videos(
         status["ok"] = True
         status["detail"] = "not_requested"
         return [], status
+    if _bounded_period_tell(plan):
+        limit = 0
+    fetch_n = _provider_fetch_n(limit)
     try:
         health = video.health()
         if not health.ok:
@@ -2430,8 +2668,12 @@ def search_videos(
 
             return any(_nm(a, display) for a in asked_video_names)
 
+        library_person_ids, requestor_id = visual_library_person_ids(plan)
+        if requestor_id:
+            status["requestor_library"] = True
+            status["requestor_person_id"] = requestor_id
         seen_pids: set[str] = set()
-        for pid in getattr(plan, "person_ids", ()) or ():
+        for pid in library_person_ids:
             person = _get_person_by_id(pid)
             if not person:
                 continue
@@ -2508,7 +2750,7 @@ def search_videos(
                 status["identity_mode"] = "confirmed_mapping"
             q = VideoSearchQuery(
                 person_external_ids=tuple(dict.fromkeys(mapped_ext)),
-                limit=limit,
+                limit=fetch_n,
             )
             segs = video.search_segments(q)
             by_face = {m["external_id"]: m for m in mapped_meta}
@@ -2575,7 +2817,7 @@ def search_videos(
                     for h in hits
                 }
                 for pid in person_ids:
-                    for mom in list_appearance_moments(pid, limit=limit):
+                    for mom in list_appearance_moments(pid, limit=fetch_n):
                         if str(mom.get("status") or "accepted") == "withdrawn":
                             continue
                         vid = str(mom["video_external_id"])
@@ -2636,7 +2878,7 @@ def search_videos(
             "candidate_unmapped_person" if unmapped else "candidate_provider_name"
         )
         text = " ".join(plan.person_names) if plan.person_names else plan.original_ask
-        segs = video.search_segments(VideoSearchQuery(text=text, limit=limit))
+        segs = video.search_segments(VideoSearchQuery(text=text, limit=fetch_n))
         for s in segs:
             hits.append(
                 VideoHit(
@@ -2661,7 +2903,7 @@ def search_videos(
                 "Resolvable MB Person(s) exist without video provider mapping; "
                 "results are unconfirmed candidates only."
             )
-        return [_origin_on_video_hit(h) for h in hits[:limit]], status
+        return _apply_result_limit([_origin_on_video_hit(h) for h in hits], limit), status
     except ProviderUnavailable as exc:
         status["unavailable"] = True
         status["detail"] = str(exc)
@@ -2709,7 +2951,11 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             ).fetchall()
             about_ids = {str(r["from_id"]) for r in r_about}
 
-        fetch_n = max(limit * 8, 80 if person_ids else 0)
+        fetch_n = (
+            _provider_fetch_n(0)
+            if (_bounded_period_tell(plan) or int(limit) <= 0)
+            else max(limit * 8, 80 if person_ids else 0)
+        )
         rows = conn.execute(
             """
             SELECT
@@ -2836,6 +3082,8 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)
+    if _bounded_period_tell(plan) or int(limit) <= 0:
+        return hits
     return hits[: max(limit, 24 if person_ids else limit)]
 
 
@@ -2893,8 +3141,13 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
     loose = not tokens
     # Listing asks ("show my journals") must not truncate owner entries under
     # synthetic prove noise ? pull a wider recent window when unconstrained.
-    fetch_n = max(limit * 8, 80) if loose else limit * 8
-    result_n = max(limit, 50) if loose else limit
+    unbounded = _bounded_period_tell(plan) or int(limit) <= 0
+    if unbounded:
+        fetch_n = _provider_fetch_n(0)
+        result_n = 0
+    else:
+        fetch_n = max(limit * 8, 80) if loose else limit * 8
+        result_n = max(limit, 50) if loose else limit
 
     hits: list[JournalHit] = []
     with connection() as conn:
@@ -2998,6 +3251,8 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
                 )
             )
     hits.sort(key=lambda h: h.score, reverse=True)
+    if result_n <= 0:
+        return hits
     return hits[:result_n]
 
 def search_artifacts(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
@@ -3013,7 +3268,8 @@ def search_artifacts(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]
     bits.extend(getattr(plan, "place_names", ()) or ())
     if bits:
         q = " ".join([q] + [str(b) for b in bits if b])
-    return search_artifacts_for_ask(q, limit=limit)
+    art_limit = _provider_fetch_n(0) if (_bounded_period_tell(plan) or int(limit) <= 0) else limit
+    return search_artifacts_for_ask(q, limit=art_limit)
 
 
 def search_guided_capture(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
@@ -3025,5 +3281,5 @@ def search_guided_capture(plan: QueryPlan, *, limit: int = 12) -> list[dict[str,
     return search_responses_for_ask(
         query=plan.original_ask or "",
         person_names=tuple(plan.person_names or ()),
-        limit=limit,
+        limit=_provider_fetch_n(0) if (_bounded_period_tell(plan) or int(limit) <= 0) else limit,
     )

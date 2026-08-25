@@ -108,4 +108,4 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 
 ## Next increment
 
-**Next:** I11 waits on **build authorization**. Travel dual-unit and “when Dad was young” semantic resolver are **locked** (communication stays; derived `travel` when reliable; Person + age band + interpretation/version — not a hard-coded 10–25). [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Do not reopen Journal. Do not add Save View UI.
+**Next:** I11 **BUILD AUTHORIZED** 2026-08-24. Dual travel units and generic age-band resolver are locked. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Do not reopen Journal. Do not add Save View UI.

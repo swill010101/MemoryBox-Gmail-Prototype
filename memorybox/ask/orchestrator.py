@@ -20,6 +20,18 @@ from memorybox.providers.photo.protocol import PhotoProvider
 from memorybox.providers.video.protocol import VideoIntelligenceProvider
 
 
+def _prefer_live_llm(llm: LlmProvider) -> LlmProvider:
+    """If Ask started while Ollama was down, retry local Ollama on tell."""
+    inner = getattr(llm, "inner", llm)
+    if getattr(inner, "provider_key", "") != "fake_llm":
+        return llm
+    fresh = build_llm()
+    inner2 = getattr(fresh, "inner", fresh)
+    if getattr(inner2, "provider_key", "") != "fake_llm":
+        return fresh
+    return llm
+
+
 def _apply_person_life_event_windows(plan: QueryPlan) -> QueryPlan:
     """Fill birthday/anniversary temporal windows from MB People when recorded.
 
@@ -233,6 +245,8 @@ class AskResult:
     inventing: bool = False
     trace_id: str | None = None
     coverage: dict[str, Any] | None = None
+    narrative_pack: dict[str, Any] | None = None
+    narration_unavailable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -256,6 +270,8 @@ class AskResult:
             "inventing": self.inventing,
             "trace_id": self.trace_id,
             "coverage": self.coverage,
+            "narrative_pack": self.narrative_pack,
+            "narration_unavailable": self.narration_unavailable,
         }
 
 
@@ -855,17 +871,6 @@ def _build_answer(
         kind = "mixed"
     else:
         kind = "evidence_backed"
-    if getattr(plan, "output_mode", "show") == "tell":
-        from memorybox.ask.narrative import synthesize_tell
-
-        text = synthesize_tell(
-            plan,
-            statements,
-            citations,
-            None,
-            fallback=" ".join(parts),
-        )
-        return kind, text, statements, citations, None
     return kind, " ".join(parts), statements, citations, None
 
 
@@ -885,11 +890,11 @@ class AskOrchestrator:
         self.llm = trace_llm(llm if llm is not None else build_llm())
         self.video = video if video is not None else build_video()
 
-    def ask(self, text: str, *, session_id: str | None = None) -> AskResult:
+    def ask(self, text: str, *, session_id: str | None = None, narrate: bool = True) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
 
         with tracing_ask(text, session_id) as tr:
-            result = self._ask_impl(text, session_id=session_id)
+            result = self._ask_impl(text, session_id=session_id, narrate=narrate)
             plan = result.plan if isinstance(result.plan, dict) else {}
             tr.note_planner(plan)
             tr.complete(
@@ -905,7 +910,9 @@ class AskOrchestrator:
             result.trace_id = tr.trace_id
             return result
 
-    def _ask_impl(self, text: str, *, session_id: str | None = None) -> AskResult:
+    def _ask_impl(
+        self, text: str, *, session_id: str | None = None, narrate: bool = True
+    ) -> AskResult:
         ctx = self.store.get_or_create(session_id)
         try:
             plan = compile_ask(text, ctx, llm=self.llm)
@@ -1094,6 +1101,9 @@ class AskOrchestrator:
 
         # Birthday / anniversary Explore windows from MB People facts when present.
         plan = _apply_person_life_event_windows(plan)
+        from memorybox.ask.semantic import apply_constraints_to_plan
+
+        plan = apply_constraints_to_plan(plan)
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
@@ -1295,14 +1305,27 @@ class AskOrchestrator:
         if not plan.requires_clarification and not plan.journal_capture_intent:
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
-                if (R._sms_ask(plan) or R._email_ask(plan)) and plan.want_communication:
+                tell_pack = (
+                    str((plan.output_mode if hasattr(plan, "output_mode") else "") or "")
+                    == "tell"
+                    or "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
+                )
+                if (
+                    ((R._sms_ask(plan) or R._email_ask(plan)) and plan.want_communication)
+                    or tell_pack
+                ):
                     evidence = pg_hits
                     qdrant_status = {
                         "ok": True,
                         "detail": (
-                            "skipped_for_email_ask"
-                            if R._email_ask(plan) and not R._sms_ask(plan)
-                            else "skipped_for_sms_ask"
+                            "skipped_for_tell_pack"
+                            if tell_pack
+                            and not (R._sms_ask(plan) or R._email_ask(plan))
+                            else (
+                                "skipped_for_email_ask"
+                                if R._email_ask(plan) and not R._sms_ask(plan)
+                                else "skipped_for_sms_ask"
+                            )
                         ),
                     }
                 else:
@@ -1315,7 +1338,8 @@ class AskOrchestrator:
             # Photos first, then video. They share the Immich client for identity;
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
-                photos, photo_status = R.search_photos(plan, self.photo)
+                photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                photos, photo_status = R.search_photos(plan, self.photo, limit=photo_limit)
             spoken_videos: list[R.VideoHit] = []
             if getattr(plan, "want_spoken", False):
                 from memorybox.speech.retrieve import search_spoken_moments
@@ -1348,7 +1372,10 @@ class AskOrchestrator:
                 or getattr(plan, "want_cross_source", False)
             ):
                 appearance, appear_status = R.search_videos(
-                    plan, self.video, photo=self.photo
+                    plan,
+                    self.video,
+                    photo=self.photo,
+                    limit=0 if R._bounded_period_tell(plan) else 48,
                 )
                 if not spoken_videos:
                     video_status = appear_status
@@ -1368,11 +1395,17 @@ class AskOrchestrator:
                 videos = appearance
 
             if getattr(plan, "want_story", False):
-                stories = R.search_stories(plan)
+                stories = R.search_stories(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_journal", False):
-                journals = R.search_journals(plan)
+                journals = R.search_journals(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_artifact", False):
-                artifacts = R.search_artifacts(plan)
+                artifacts = R.search_artifacts(
+                    plan, limit=0 if R._bounded_period_tell(plan) else 12
+                )
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
 
@@ -1487,6 +1520,51 @@ class AskOrchestrator:
             artifacts=artifacts,
             guided_capture=guided_capture,
         )
+        narrative_pack: dict[str, Any] | None = None
+        narration_unavailable = False
+        if (
+            getattr(plan, "output_mode", "show") == "tell"
+            and answer_kind not in {"clarification", "journal_capture"}
+        ):
+            from memorybox.ask.evidence_prep import prepare_narrative_pack
+            from memorybox.ask.narrative import tell_from_hits
+
+            if narrate:
+                self.llm = _prefer_live_llm(self.llm)
+                answer_text, narrative_pack, synth_meta = tell_from_hits(
+                    plan,
+                    llm=self.llm,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                )
+                narration_unavailable = bool(synth_meta.get("fail_closed"))
+            else:
+                narrative_pack = prepare_narrative_pack(
+                    plan,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                )
+                answer_text = "Episode analysis only; narration was not requested."
+                narration_unavailable = False
+            if narrative_pack and isinstance(narrative_pack.get("coverage"), dict):
+                pack_cov = narrative_pack["coverage"]
+                if coverage:
+                    coverage = {
+                        **coverage,
+                        "summary": pack_cov.get("summary") or coverage.get("summary"),
+                        "i11_missing": pack_cov.get("missing"),
+                        "truncated": pack_cov.get("truncated"),
+                    }
+                else:
+                    coverage = pack_cov
         if (
             coverage
             and coverage.get("summary")
@@ -1604,6 +1682,8 @@ class AskOrchestrator:
             provider_status=providers,
             inventing=False,
             coverage=coverage,
+            narrative_pack=narrative_pack,
+            narration_unavailable=narration_unavailable,
         )
 
     def get_context(self, session_id: str) -> AskContext:

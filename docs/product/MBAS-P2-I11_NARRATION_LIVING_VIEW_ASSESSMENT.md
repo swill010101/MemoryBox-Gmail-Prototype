@@ -208,7 +208,7 @@ Map 1:1 to founder §17. Harness should prove at least:
 
 ## Open questions for Tom
 
-See [evidence prep §13](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Waiting on **build authorization**. Travel dual-unit and “young” semantic resolver are locked.
+See [evidence prep §13](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). **BUILD AUTHORIZED** 2026-08-24.
 
 ---
 

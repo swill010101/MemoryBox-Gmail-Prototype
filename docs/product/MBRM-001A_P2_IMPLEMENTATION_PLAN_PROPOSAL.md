@@ -217,7 +217,7 @@ HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md
 
 ### P2-I11 — Narrative & Summaries · E+A
 
-P2-NAR-01..03. Narrative Evidence Preparation (media, travel, comms, calendar, claim-specific trust) then LLM `tell`. Travel = original `communication` **and** derived `travel` when extraction is reliable (never replace). Relative language = generalized semantic resolver (Person, age band, interpretation/version; ask if evidence is insufficient). Hierarchical volume IN. Fail closed if model down. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). **Do not implement until explicit build authorization.**
+P2-NAR-01..03. Narrative Evidence Preparation then LLM `tell`. **BUILD AUTHORIZED** 2026-08-24. Travel = original `communication` **and** derived `travel` when extraction is reliable (never replace). Relative language = generalized semantic resolver. Hierarchical volume IN. Fail closed if model down. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md).
 
 ### P2-I12 — External Historical Context · E
 

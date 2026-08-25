@@ -118,6 +118,7 @@ EVERYTHING_ABOUT_RE = re.compile(
 )
 EXPLORATORY_RE = re.compile(
     r"(?i)\b(?:"
+    r"tell\s+me\s+what\s+(?:you|i|we)\s+know\s+about|"
     r"what\s+do\s+(?:you|i|we)\s+know\s+about|"
     r"tell\s+me\s+about|"
     r"what\s+do\s+(?:i|we)\s+have\s+(?:about|from|on)"
@@ -155,7 +156,8 @@ SAYING_PHRASE_RE = re.compile(
 TALKING_ABOUT_RE = re.compile(r"(?i)\btalking\s+about\s+(.+)$")
 TALKING_RE = re.compile(r"(?i)\b(?:show\s+me\s+)?(?:everything\s+)?[\w'’.-]+\s+talking\b|\btalking\b")
 ABOUT_SUBJECT_RE = re.compile(
-    r"(?i)\b(?:(?:what\s+do\s+(?:you|i|we)\s+know\s+about)|(?:tell\s+me\s+about)|"
+    r"(?i)\b(?:(?:tell\s+me\s+what\s+(?:you|i|we)\s+know\s+about)|"
+    r"(?:what\s+do\s+(?:you|i|we)\s+know\s+about)|(?:tell\s+me\s+about)|"
     r"(?:what\s+do\s+(?:i|we)\s+have\s+(?:about|on))|\babout)\s+"
     r"(?:(?:our|my|the|a|an)\s+)?"
     r"(?!pictures?\b|photos?\b|images?\b|videos?\b|emails?\b|mail\b|stills?\b)"
@@ -643,6 +645,7 @@ class QueryPlan:
     want_cross_source: bool = False
     theme_labels: tuple[str, ...] = ()
     output_mode: OutputMode = "show"
+    semantic_constraints: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1284,9 +1287,9 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if ctx_events and not u_events:
             subject_changed = True
             notes.append("supersede_clear_prior_events_for_new_trip")
-    if u_people and ctx.person_names:
+    if u_people:
         uttered = {p.lower() for p in u_people}
-        prior = {p.lower() for p in ctx.person_names}
+        prior = {p.lower() for p in (ctx.person_names or ())}
         if uttered and prior and uttered.isdisjoint(prior):
             # "Show me Alex Reed" after a Sue/year/text session must not
             # keep that person's time/place (FlightSim: 1 leftover video).
@@ -1295,6 +1298,17 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             ):
                 subject_changed = True
                 notes.append("supersede_person_subject_change")
+        elif (
+            uttered
+            and not prior
+            and not is_followup
+            and (ctx.time_start or ctx.time_end)
+        ):
+            # "Tell me what you know about Peggy" after a dated tell (no person)
+            # must not keep that month/year window. Bare follow-ups that add a
+            # person to a place ("Just the ones with Jordan") stay is_followup.
+            subject_changed = True
+            notes.append("supersede_person_subject_change")
 
     # Explicit clear / remove / reset refinements (mutate shared state; do not re-inherit cleared slots).
     clear_date = bool(re.search(r"(?i)^\s*clear\s+(?:date|time|dates|timeline)\b", q))
@@ -1388,9 +1402,13 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
             trips = list(ctx_trips)
         if not events and not show_me:
             events = list(ctx_events)
-        if t0 is None and not show_me:
+        inherit_time = not show_me
+        if u_people and not ctx.person_names and not is_followup:
+            inherit_time = False
+            notes.append("no_inherit_time_for_new_person_ask")
+        if t0 is None and inherit_time:
             t0 = ctx.time_start
-        if t1 is None and not show_me:
+        if t1 is None and inherit_time:
             t1 = ctx.time_end
     # show me + partial name: upgrade to the longer related form only.
     # Do not keep "Alex" as a second person next to "Alex Reed" — that

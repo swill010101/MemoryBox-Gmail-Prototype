@@ -749,6 +749,32 @@ def _prove_harness() -> dict[str, Any]:
             f"people={peggy_fresh.person_names} places={peggy_fresh.place_names} "
             f"t={peggy_fresh.time_start} notes={peggy_fresh.notes}",
         )
+        jan_only = AskContext(
+            session_id="prove-peggy-after-jan",
+            time_start="2026-01-01",
+            time_end="2026-01-31",
+        )
+        know_peggy = plan_ask("Tell me what you know about Peggy", jan_only)
+        know_peggy_c = plan_ask("what do you know about Peggy", jan_only)
+        _check(
+            "i4_know_about_person_does_not_inherit_month",
+            any(n.lower() == "peggy" for n in (know_peggy.person_names or ()))
+            and know_peggy.time_start is None
+            and know_peggy.time_end is None
+            and not know_peggy.temporal_windows
+            and know_peggy.subject_changed
+            and know_peggy.output_mode == "show"
+            and "inherited_missing_slots_only" not in (know_peggy.notes or ())
+            and any(n.lower() == "peggy" for n in (know_peggy_c.person_names or ()))
+            and know_peggy_c.time_start is None
+            and know_peggy_c.subject_changed,
+            checks,
+            problems,
+            f"tell-what people={know_peggy.person_names} t={know_peggy.time_start} "
+            f"win={know_peggy.temporal_windows} notes={know_peggy.notes} "
+            f"changed={know_peggy.subject_changed} mode={know_peggy.output_mode} "
+            f"what-do people={know_peggy_c.person_names} t={know_peggy_c.time_start}",
+        )
         peggy_in = _plan("Show me Peggy in 2021")
         _check(
             "i4_compose_show_me_peggy_year",

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="" />
-  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a1-person-3" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i11-2" />
   <link rel="stylesheet" href="/static/person/person-explore.css?v=i10a1-3" />
 </head>
 <body class="mb-person-surface">
@@ -66,6 +66,14 @@
       <div class="mb-explore-curator-copy">
         <h1 id="mb-explore-curator-title">—</h1>
         <p id="mb-explore-curator-body">—</p>
+        <p class="mb-explore-coverage" id="mb-explore-coverage" hidden></p>
+        <p class="mb-explore-curator-note" id="mb-explore-curator-note" hidden>
+          Proposed synthesis from the archive. Saving as a Story stores this draft; it does not turn the essay into family truth.
+        </p>
+        <div class="mb-explore-curator-actions" id="mb-explore-curator-actions" hidden>
+          <button type="button" class="mb-explore-curator-btn" id="mb-explore-copy">Copy</button>
+          <button type="button" class="mb-explore-curator-btn" id="mb-explore-save-story">Save as Story</button>
+        </div>
       </div>
     </section>
     <div class="mb-explore-chips mb-person-chips" id="mb-explore-chips"></div>
@@ -294,7 +302,7 @@
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
-  <script src="/static/explore/explore.js?v=i10a1-person-2"></script>
+  <script src="/static/explore/explore.js?v=i11-5"></script>
   <script>
     setTimeout(function () {
       if (window.mbExploreApplyAsk) return;

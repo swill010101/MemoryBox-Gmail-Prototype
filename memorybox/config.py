@@ -22,6 +22,24 @@ def _truthy(name: str) -> bool:
     return (_env(name, "0") or "0").lower() in ("1", "true", "yes", "on")
 
 
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+
+
+def _resolve_ollama_base_url(configured: str | None) -> str | None:
+    """Honor MEMORYBOX_OLLAMA_BASE_URL; otherwise use local Ollama if it answers."""
+    explicit = (configured or "").strip() or None
+    if explicit:
+        return explicit
+    try:
+        from memorybox.providers.llm._ollama_http import ollama_reachable
+
+        if ollama_reachable(DEFAULT_OLLAMA_BASE_URL):
+            return DEFAULT_OLLAMA_BASE_URL
+    except Exception:
+        return None
+    return None
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -67,7 +85,7 @@ class Settings:
             qdrant_url=qdrant_url,
             qdrant_collection=_env("MEMORYBOX_QDRANT_COLLECTION", "memorybox_evidence")
             or "memorybox_evidence",
-            ollama_base_url=_env("MEMORYBOX_OLLAMA_BASE_URL"),
+            ollama_base_url=_resolve_ollama_base_url(_env("MEMORYBOX_OLLAMA_BASE_URL")),
             ollama_embed_model=_env("MEMORYBOX_OLLAMA_EMBED_MODEL", "nomic-embed-text")
             or "nomic-embed-text",
             ollama_chat_model=_env("MEMORYBOX_OLLAMA_CHAT_MODEL", "llama3.2") or "llama3.2",

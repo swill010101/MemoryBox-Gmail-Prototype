@@ -819,6 +819,12 @@
     return c;
   }
 
+  function isTellAsk(text) {
+    return /\b(tell me about|what do you know|summarize|what happened|write a narrative|write a story|narrate|what was\b[\s\S]{0,40}\blike)\b/i.test(
+      String(text || "")
+    );
+  }
+
   function refreshCuratorFromVisible() {
     // Keep fixture curator copy when on demo All+full range; else summarize live set.
     const vis = visibleItems();
@@ -826,14 +832,20 @@
       !hasDatedExtent() ||
       (state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
         state.timeline.rangeEnd >= state.timeline.extentEnd - 1);
-    if (
-      state.domain.outputMode === "tell" &&
-      state.domain._askSummary &&
-      state.domain.summary !== "Searching…"
-    ) {
-      state.domain.summary = state.domain._askSummary;
+    if (state.domain.outputMode === "tell") {
+      const waiting =
+        state.domain.summary === "Searching…" ||
+        state.domain.summary === "Writing the narrative…";
+      if (waiting) return;
+      const kept = state.domain.narrativeText || state.domain._askSummary;
+      if (kept) {
+        state.domain.summary = kept;
+        return;
+      }
       return;
     }
+    // Show / mixed: never restore a leftover tell essay.
+    state.domain.narrativeText = "";
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;
       return;
@@ -1101,7 +1113,8 @@
     const bodyEl = document.getElementById("mb-explore-curator-body");
     const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
-    if (bodyEl) bodyEl.textContent = "Searching…";
+    const waiting = isTellAsk(askText) ? "Writing the narrative…" : "Searching…";
+    if (bodyEl) bodyEl.textContent = waiting;
     if (curator) {
       curator.classList.add("is-searching");
       curator.classList.remove("is-tell");
@@ -1114,7 +1127,12 @@
     if (askField) askField.classList.add("is-searching");
     if (state && state.domain) {
       state.domain.title = heading;
-      state.domain.summary = "Searching…";
+      state.domain.summary = waiting;
+      // New Ask owns Memories. Do not keep the previous tell essay on screen
+      // while this find runs (FlightSim: Peggy show after January tell).
+      state.domain.narrativeText = "";
+      state.domain._askSummary = waiting;
+      state.domain.outputMode = isTellAsk(askText) ? "tell" : "show";
     }
   }
 
@@ -1128,17 +1146,40 @@
     if (el) el.dataset.mbAskDirty = "";
   }
 
+  function findErrorMessage(err) {
+    if (err && err.name === "AbortError") {
+      return "Find timed out. The narrative may still be in AI-trace; try again.";
+    }
+    return "Find failed: " + err;
+  }
+
   async function liveFind(askText, extras) {
     const q = personScopedAsk(askText);
-    let url =
-      "/explore/api/find?q=" +
-      encodeURIComponent(q) +
-      (sessionId ? "&session_id=" + encodeURIComponent(sessionId) : "");
     const present = extras && extras.present;
-    if (present) url += "&present=" + encodeURIComponent(present);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("find " + res.status);
-    return res.json();
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer =
+      ctrl &&
+      setTimeout(() => {
+        try {
+          ctrl.abort();
+        } catch (_) {}
+      }, 180000);
+    try {
+      const params = new URLSearchParams();
+      if (present) params.set("present", present);
+      const qs = params.toString() ? "?" + params.toString() : "";
+      const res = await fetch("/explore/api/find" + qs, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ask: q, session_id: sessionId || null }),
+        cache: "no-store",
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+      if (!res.ok) throw new Error("find " + res.status);
+      return res.json();
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   function currentAskText() {
@@ -1302,6 +1343,8 @@
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
     const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
     const galleryShowCalendar = Boolean(exploreHint.gallery_show_calendar);
+    const nextOutputMode =
+      payload.output_mode || (payload.plan || {}).output_mode || "show";
     // New find owns visibility. Do not keep includeTexts from a prior SMS ask
     // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
     // Photos pill must not leak SMS.
@@ -1309,7 +1352,10 @@
     const keepTexts = includeTexts;
     const includeEmail = galleryShowEmail;
     const includeCalendar = galleryShowCalendar;
-    if (plan.want_cross_source) {
+    if (nextOutputMode === "tell") {
+      // I11: tell uses hidden comms in prose; stay on All, not Communications.
+      nextType = "all";
+    } else if (plan.want_cross_source) {
       nextType = "all";
     } else if (exploreHint.prefer_story_filter) {
       nextType = "story";
@@ -1379,18 +1425,29 @@
         }
       }
     }
+    const tellNarrative =
+      nextOutputMode === "tell"
+        ? payload.narrative_text || payload.summary || ""
+        : "";
+    const nextSummary =
+      nextOutputMode === "tell"
+        ? tellNarrative || payload.summary || ""
+        : payload.summary || "";
     state = {
       domain: {
         askText: payload.ask_text || "",
         title: payload.title || "Memories",
-        summary: payload.summary || "",
+        summary: nextSummary,
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
-        _askSummary: payload.summary || "",
+        _askSummary: nextSummary,
         _askKind: payload.answer_kind || "",
-        outputMode: payload.output_mode || (payload.plan || {}).output_mode || "show",
+        outputMode: nextOutputMode === "tell" ? "tell" : "show",
+        narrativeText: tellNarrative,
         citations: payload.citations || [],
         livingView: payload.living_view || null,
         coverage: payload.coverage || null,
+        evidenceUsed: payload.evidence_used || null,
+        narrationUnavailable: Boolean(payload.narration_unavailable),
         chips: chips,
         typeFilter: nextType,
         includeTexts: includeTexts,
@@ -1545,7 +1602,7 @@
           render();
         })
         .catch((err) => {
-          state.domain.summary = "Find failed: " + err;
+          state.domain.summary = findErrorMessage(err);
           renderCurator();
         });
       return;
@@ -1861,7 +1918,15 @@
           if (gen !== findGen) return;
           applyPayloadToState(payload, { keepPresentation: true });
           ensureLockedPersonChip();
-          if (payload.explore_state && payload.explore_state.gallery_show_sms) {
+          const tellOut =
+            payload.output_mode ||
+            (payload.plan && payload.plan.output_mode) ||
+            "";
+          if (
+            tellOut !== "tell" &&
+            payload.explore_state &&
+            payload.explore_state.gallery_show_sms
+          ) {
             setTypeFilter("email");
             state.domain.includeTexts = true;
             state.domain.galleryShowSms = true;
@@ -1869,7 +1934,7 @@
           render();
         })
         .catch((err) => {
-          state.domain.summary = "Find failed: " + err;
+          state.domain.summary = findErrorMessage(err);
           renderCurator();
         });
       return;
@@ -2049,17 +2114,53 @@
     if (titleNode) titleNode.textContent = heading;
     if (bodyNode) bodyNode.textContent = state.domain.summary || "";
     const curator = document.getElementById("mb-explore-curator");
-    const tell = state.domain.outputMode === "tell" && !PERSON_MODE;
+    const tell = state.domain.outputMode === "tell";
     if (curator) curator.classList.toggle("is-tell", Boolean(tell));
     const actions = document.getElementById("mb-explore-curator-actions");
     const note = document.getElementById("mb-explore-curator-note");
     if (actions) actions.hidden = !tell;
     if (note) note.hidden = !tell;
+    if (PERSON_MODE && curator) {
+      if (tell) {
+        curator.hidden = false;
+        curator.removeAttribute("aria-hidden");
+        curator.classList.remove("mb-person-hide-curator");
+      } else {
+        curator.hidden = true;
+        curator.setAttribute("aria-hidden", "true");
+        curator.classList.add("mb-person-hide-curator");
+      }
+    }
     if (PERSON_MODE) pushPersonResultSummary();
     const covEl = document.getElementById("mb-explore-coverage");
     if (covEl) {
       const cov = state.domain.coverage;
-      if (cov && (cov.summary || cov.missing)) {
+      const used = state.domain.evidenceUsed;
+      if (tell && used) {
+        const bits = [];
+        const keys = [
+          ["photos", "photos"],
+          ["video_moments", "video"],
+          ["spoken_moments", "spoken"],
+          ["emails", "emails"],
+          ["sms", "texts"],
+          ["calendar_events", "calendar"],
+          ["stories", "stories"],
+          ["journal_entries", "journal"],
+          ["artifacts", "artifacts"],
+          ["travel", "travel"],
+        ];
+        keys.forEach((pair) => {
+          const n = Number(used[pair[0]] || 0);
+          if (n > 0) bits.push(`${pair[1]} ${n}`);
+        });
+        let line = bits.length ? "Family evidence used: " + bits.join(" · ") : "Family evidence used: none";
+        if (state.domain.narrationUnavailable) {
+          line += " · narration unavailable";
+        }
+        covEl.textContent = line;
+        covEl.hidden = false;
+      } else if (cov && (cov.summary || cov.missing)) {
         const bits = [];
         const keys = ["photos", "video", "spoken", "email", "sms", "calendar", "story", "journal", "artifact"];
         keys.forEach((k) => {
@@ -2086,43 +2187,45 @@
     }
     const chips = document.getElementById("mb-explore-chips");
     const activePlace = (state.domain.placeFilter || "").toLowerCase();
-    chips.innerHTML = (state.domain.chips || [])
-      .map((c) => {
-        const kind = c.kind || "";
-        const label = c.label || "";
-        const isPlace = kind === "place";
-        const active =
-          isPlace && activePlace && String(label).toLowerCase() === activePlace;
-        const cls = `mb-chip${isPlace ? " mb-chip-place" : ""}${
-          active ? " is-active" : ""
-        }`;
-        if (isPlace) {
-          return `<button type="button" class="${cls}" data-kind="place" data-place="${escapeAttr(
-            label
-          )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(
-            label
-          )}</button>`;
-        }
-        const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
-        return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
-          kind
-        )}">${escapeHtml(label)}</span>`;
-      })
-      .join("");
-    chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const place = btn.getAttribute("data-place") || "";
-        if (
-          state.domain.placeFilter &&
-          String(state.domain.placeFilter).toLowerCase() === place.toLowerCase()
-        ) {
-          clearPlaceFilter();
-        } else {
-          setPlaceFilter(place);
-        }
-        render();
+    if (chips) {
+      chips.innerHTML = (state.domain.chips || [])
+        .map((c) => {
+          const kind = c.kind || "";
+          const label = c.label || "";
+          const isPlace = kind === "place";
+          const active =
+            isPlace && activePlace && String(label).toLowerCase() === activePlace;
+          const cls = `mb-chip${isPlace ? " mb-chip-place" : ""}${
+            active ? " is-active" : ""
+          }`;
+          if (isPlace) {
+            return `<button type="button" class="${cls}" data-kind="place" data-place="${escapeAttr(
+              label
+            )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(
+              label
+            )}</button>`;
+          }
+          const locked = Boolean(c.locked) || (PERSON_MODE && kind === "person");
+          return `<span class="${cls}${locked ? " is-locked" : ""}" data-kind="${escapeAttr(
+            kind
+          )}">${escapeHtml(label)}</span>`;
+        })
+        .join("");
+      chips.querySelectorAll(".mb-chip-place").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const place = btn.getAttribute("data-place") || "";
+          if (
+            state.domain.placeFilter &&
+            String(state.domain.placeFilter).toLowerCase() === place.toLowerCase()
+          ) {
+            clearPlaceFilter();
+          } else {
+            setPlaceFilter(place);
+          }
+          render();
+        });
       });
-    });
+    }
     const av = document.getElementById("mb-explore-curator-avatar");
     if (av) applyCuratorPortrait();
   }
@@ -6863,8 +6966,8 @@
       }
       bootFromPayload(payload);
     } catch (err) {
-      document.getElementById("mb-explore-curator-body").textContent =
-        "Could not load exploration: " + err;
+      const body = document.getElementById("mb-explore-curator-body");
+      if (body) body.textContent = findErrorMessage(err);
     }
   }
 

@@ -324,6 +324,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
     )
+    p_dump_i11 = sub.add_parser(
+        "dump-i11-episodes",
+        help="I11 period episode analysis only — no narration",
+    )
+    p_dump_i11.add_argument(
+        "--ask",
+        default="write a narrative about my January of 2025",
+        help="Ask text (default: January 2025 narrative ask)",
+    )
     p_prove9a = sub.add_parser(
         "prove-person-profile",
         help="Increment 9A Person Profile acceptance prove",
@@ -716,13 +725,29 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
+    if args.cmd == "dump-i11-episodes":
+        from memorybox.app import get_orchestrator
+        from memorybox.ask.episode_semantics import public_episode_dump
+
+        orch = get_orchestrator()
+        result = orch.ask(args.ask, session_id="i11-episode-dump", narrate=False)
+        pack = result.narrative_pack if hasattr(result, "narrative_pack") else None
+        if not pack and isinstance(result, object) and hasattr(result, "to_dict"):
+            pack = (result.to_dict() or {}).get("narrative_pack")
+        payload = public_episode_dump(pack or {})
+        payload["ask"] = args.ask
+        payload["volume"] = (pack or {}).get("volume")
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0
+
     if args.cmd == "prove-i11":
         from memorybox.ask.i11_acceptance import run_prove_i11
 
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        print("prove-i11: starting...", flush=True)
         payload = run_prove_i11(flightsim=bool(args.flightsim))
-        print(json.dumps(payload, indent=2, default=str))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-person-profile":

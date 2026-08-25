@@ -28,6 +28,7 @@ _CAL_ASK_RE = re.compile(
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
 _VISIBLE_SMS_GALLERY_CAP = 10000
+_TELL_GALLERY_ITEM_CAP = 200
 _VISIBLE_EMAIL_GALLERY_CAP = 800
 _VISIBLE_CALENDAR_GALLERY_CAP = 800
 _HOLIDAY_WINDOW_MARKERS = (
@@ -57,53 +58,59 @@ def _is_calendar_type(type_: str) -> bool:
     return str(type_ or "").lower() == "calendar"
 
 
-def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
-    """True when the ask itself requested texts (not a broad memory query)."""
-    plan = (result or {}).get("plan") or {}
-    notes = plan.get("notes") or ()
-    if "want_sms_modality" in notes:
-        return True
-    blob = " ".join(
+def _ask_blob(result: dict[str, Any] | None, ask_text: str | None, plan: dict[str, Any]) -> str:
+    return " ".join(
         [
             ask_text or "",
             str(plan.get("original_ask") or ""),
             str((result or {}).get("ask") or ""),
         ]
     )
+
+
+def _tell_pack_not_gallery_unhide(plan: dict[str, Any]) -> bool:
+    """I11 C-03 / I8A: tell retrieves comms for the pack; that is not Add texts/email/calendar."""
+    notes = plan.get("notes") or ()
+    if str(plan.get("output_mode") or "") == "tell":
+        return True
+    return "tell_multimodal_i11" in notes
+
+
+def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    """True when the ask itself requested texts (not a broad memory query)."""
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_SMS_ASK_RE.search(blob))
+    if "want_sms_modality" in notes:
+        return True
     return bool(_SMS_ASK_RE.search(blob))
 
 
 def explicit_email_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
     plan = (result or {}).get("plan") or {}
     notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_EMAIL_ASK_RE.search(blob))
     if "want_email_modality" in notes:
         return True
     if plan.get("gallery_show_email") is True:
         return True
-    blob = " ".join(
-        [
-            ask_text or "",
-            str(plan.get("original_ask") or ""),
-            str((result or {}).get("ask") or ""),
-        ]
-    )
     return bool(_EMAIL_ASK_RE.search(blob))
 
 
 def explicit_calendar_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
     plan = (result or {}).get("plan") or {}
     notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_CAL_ASK_RE.search(blob))
     if "want_calendar_modality" in notes:
         return True
     if plan.get("gallery_show_calendar") is True:
         return True
-    blob = " ".join(
-        [
-            ask_text or "",
-            str(plan.get("original_ask") or ""),
-            str((result or {}).get("ask") or ""),
-        ]
-    )
     return bool(_CAL_ASK_RE.search(blob))
 
 
@@ -651,6 +658,43 @@ def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
     return " Immich diag: " + ", ".join(bits) + "."
 
 
+def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Explore coverage/volume plus a slim life-period outline — not week dumps."""
+    if not isinstance(pack, dict):
+        return pack
+    outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
+    slim_eps = []
+    for ep in outline.get("episodes") or []:
+        if not isinstance(ep, dict):
+            continue
+        slim_eps.append(
+            {
+                "theme_or_episode": ep.get("theme_or_episode"),
+                "claims": list(ep.get("claims") or [])[:3],
+                "date_span": ep.get("date_span"),
+                "people": list(ep.get("people") or [])[:8],
+                "significance": ep.get("significance"),
+            }
+        )
+    return {
+        "schema_version": pack.get("schema_version"),
+        "coverage": pack.get("coverage"),
+        "volume": pack.get("volume"),
+        "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "background": pack.get("background") or {},
+        "life_period_outline": {
+            "period": outline.get("period"),
+            "episodes": slim_eps,
+        },
+        "period_understanding": {
+            "label": (pack.get("period_understanding") or {}).get("label")
+            if isinstance(pack.get("period_understanding"), dict)
+            else None,
+        },
+    }
+
+
 def curator_answer_text(result: dict[str, Any]) -> str | None:
     """I11: tell uses full-pack answer_text. Show keeps count-from-visible unless clarifying."""
     if result.get("answer_kind") == "clarification":
@@ -658,6 +702,7 @@ def curator_answer_text(result: dict[str, Any]) -> str | None:
         return str(raw).strip() if raw else None
     plan = result.get("plan") or {}
     mode = str(plan.get("output_mode") or result.get("output_mode") or "show")
+    # Show / mixed / play: never reuse tell synthesis as Memories copy.
     if mode == "tell":
         raw = result.get("answer_text")
         return str(raw).strip() if raw else None
@@ -1086,11 +1131,11 @@ def build_explore_find(
 
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
-    items = items_from_ask_result(result)
+    plan_early = result.get("plan") or {}
+    tell_mode = str(plan_early.get("output_mode") or result.get("output_mode") or "show") == "tell"
     show_sms = explicit_text_gallery(result, text)
     show_email = explicit_email_gallery(result, text)
     show_calendar = explicit_calendar_gallery(result, text)
-    plan_early = result.get("plan") or {}
     clarifying = (
         result.get("answer_kind") == "clarification"
         or plan_early.get("requires_clarification")
@@ -1111,15 +1156,26 @@ def build_explore_find(
             show_sms = False
     if present_l in {"calendar", "cal"}:
         show_calendar = True
-    items, sms_available, sms_hidden = _attach_hidden_sms(
-        items, result, ask_text=text, show_sms=show_sms
-    )
-    items, email_available, email_match_total = _attach_visible_email(
-        items, result, ask_text=text, show_email=show_email
-    )
-    items, calendar_available = _attach_calendar(
-        items, result, ask_text=text, show_calendar=show_calendar
-    )
+    result_for_items = result
+    if tell_mode and not show_sms and not show_email and not show_calendar:
+        result_for_items = dict(result)
+        result_for_items["evidence_hits"] = []
+    items = items_from_ask_result(result_for_items)
+    if tell_mode:
+        items = items[:_TELL_GALLERY_ITEM_CAP]
+    sms_available = sms_hidden = 0
+    email_available = email_match_total = 0
+    calendar_available = 0
+    if not tell_mode or show_sms or show_email or show_calendar:
+        items, sms_available, sms_hidden = _attach_hidden_sms(
+            items, result, ask_text=text, show_sms=show_sms
+        )
+        items, email_available, email_match_total = _attach_visible_email(
+            items, result, ask_text=text, show_email=show_email
+        )
+        items, calendar_available = _attach_calendar(
+            items, result, ask_text=text, show_calendar=show_calendar
+        )
     visible_items = [
         i
         for i in items
@@ -1132,6 +1188,8 @@ def build_explore_find(
             )
         )
     ]
+    plan = result.get("plan") or {}
+    tell_mode = str(plan.get("output_mode") or result.get("output_mode") or "show") == "tell"
     # All-ask curator counts the archive (photos + hidden texts + video).
     # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).
     # I11 tell: use orchestrator synthesis from the retrieved pack, not visible tiles.
@@ -1142,7 +1200,10 @@ def build_explore_find(
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
-    if show_email and not show_sms and not email_available:
+    if not tell_mode:
+        # A new show/mixed Ask replaces curator; do not keep prior tell prose.
+        answer_for_curator = None
+    if show_email and not show_sms and not email_available and not tell_mode:
         summary = (
             (summary or "").rstrip()
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
@@ -1178,7 +1239,7 @@ def build_explore_find(
             sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
         if e.get("truncated"):
             sms_truncated = True
-    if sms_truncated and sms_match_total:
+    if sms_truncated and sms_match_total and not tell_mode:
         summary = (
             (summary or "").rstrip()
             + (
@@ -1186,7 +1247,7 @@ def build_explore_find(
                 f"{sms_match_total} matching texts (every year kept on the Timeline)."
             )
         ).strip()
-    if email_match_total > (counts.get("email") or 0):
+    if email_match_total > (counts.get("email") or 0) and not tell_mode:
         shown = counts.get("email") or 0
         summary = (
             (summary or "").rstrip()
@@ -1197,21 +1258,8 @@ def build_explore_find(
         ).strip()
     counts["email_available"] = email_available
     counts["calendar_available"] = calendar_available
-    if re.search(
-        r"(?i)\b(create|write|generate)\b.+\b(narrative|story)\b|\bnarrative of\b|\bnarrate\b",
-        text,
-    ):
-        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
-        if plan_mode != "tell":
-            summary = (
-                (summary or "").rstrip()
-                + " Narrative generation is I11 — not implemented in I8A. "
-                "Showing matching texts as evidence only."
-            ).strip()
 
-    plan = result.get("plan") or {}
     coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
-    tell_mode = str(plan.get("output_mode") or "show") == "tell"
     if coverage and coverage.get("summary") and not tell_mode:
         summary = (
             str(coverage.get("summary") or "").strip() + " " + (summary or "")
@@ -1246,6 +1294,7 @@ def build_explore_find(
         "ask_text": text,
         "title": title,
         "summary": summary,
+        "narrative_text": answer_for_curator if tell_mode else None,
         "chips": chips,
         "items": items,
         "counts": counts,
@@ -1288,6 +1337,9 @@ def build_explore_find(
         "answer_text": result.get("answer_text"),
         "statements": result.get("statements") or [],
         "citations": result.get("citations") or [],
+        "narrative_pack": client_narrative_pack(result.get("narrative_pack")),
+        "narration_unavailable": bool(result.get("narration_unavailable")),
+        "evidence_used": ((result.get("narrative_pack") or {}).get("evidence_used") if isinstance(result.get("narrative_pack"), dict) else None),
         "living_view": persistable_view(
             original_ask=text,
             plan=plan,

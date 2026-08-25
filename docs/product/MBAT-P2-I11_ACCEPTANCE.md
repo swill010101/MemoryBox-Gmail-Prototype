@@ -1,7 +1,8 @@
 # MBAT-P2-I11 — Narrative & Summaries
 
-**Increment:** P2-I11 · **LOCKED** 2026-08-24 (final evidence-prep) · C-17–C-25 apply when build-authorized  
-**Prove:** `python -m memorybox prove-i11`
+**Increment:** P2-I11 · **BUILD AUTHORIZED** 2026-08-24 · C-01–C-26 · Prove: `python -m memorybox prove-i11`
+
+The narrator never renders system truth fields; Python, the UI, and AI Trace do.
 
 | ID | Criterion |
 |---|---|
@@ -26,7 +27,8 @@
 | C-19 | SMS timestamp alone is not location; place from authored/shared-location/attachment EXIF with recorded basis. |
 | C-20 | Christmas 2017 Peggy/Tom discussion: authored units, no quote dupes, no unrelated year calendar dump. |
 | C-21 | “Tell me about my 2017”: broad family evidence; prepared/ranked; hierarchical summaries if needed. |
-| C-22 | Evidence-used counts = normalized Email/SMS (and other) units **supplied**, not raw hits or quoted copies. |
+| C-22 | Family-facing **evidence considered** = all processed in-scope units, not narrator seats or quoted copies. Narrator input = semantic life-period outline, not week/count buckets. Python appends the footer. |
 | C-23 | Model unavailable: evidence/coverage remain; narration unavailable; no stitch presented as the narrative. |
 | C-24 | Dual travel: confirmation email is communication; structured flight/hotel facts are a derived travel unit with provenance to that email. |
 | C-25 | “When Dad was young”: generic Person + age_band + interpretation/version; convert via birth or other sufficient evidence; ask rather than guess. Not 10–25 hard-coded. |
+| C-26 | Narrator never renders system truth (coverage incompleteness, evidence-considered counts, missing-modality, volume, eligible/processed, model name). Python/UI/AI Trace do. Payload must not instruct the model to write those lines. Incomplete coverage, when true, is a Python/UI line after the story. |

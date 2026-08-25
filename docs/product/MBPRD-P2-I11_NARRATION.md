@@ -1,6 +1,6 @@
 # MBPRD-P2-I11 — Narrative & Summaries (Ask output mode)
 
-**Status:** PRD **LOCKED** 2026-08-24 (final evidence-prep decisions) · I10C **ACCEPTED** · **do not implement** until explicit build authorization  
+**Status:** PRD **LOCKED** 2026-08-24 · I10C **ACCEPTED** · **BUILD AUTHORIZED** 2026-08-24  
 **Definition:** [MBBS-P2_INCREMENT_11_DEFINITION.md](MBBS-P2_INCREMENT_11_DEFINITION.md)  
 **Assessment:** [MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md](MBAS-P2-I11_NARRATION_LIVING_VIEW_ASSESSMENT.md) · [evidence prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md)  
 **Acceptance:** [MBAT-P2-I11_ACCEPTANCE.md](MBAT-P2-I11_ACCEPTANCE.md)  
@@ -22,15 +22,16 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 7. SMS timestamp is **not** location. Location `basis`: authored text | shared-location payload | attachment EXIF | corroborated other source.
 8. Email authored body: **derive at pack time**, conservative. Do not persist authored-body as an I11 gate. Raw Email remains SoT. Spam/Trash out before the model.
 9. Email + SMS → one communication shape. Narrow Peggy-and-I Asks: their authored units; group-thread metadata; no unrelated calendar dump.
-10. Broad “my 2017”: owner + year + all relevant family evidence; still prepare/rank. Hierarchical volume management **IN**. Not first-N as the primary solution. Intermediate summaries are derived, traced, regenerable, not family truth. Disclose truncation.
+10. Broad “my 2017”: owner + year + all relevant family evidence; still prepare/rank. Hierarchical volume management **IN**. Not first-N as the primary solution, and not a larger first-N. Intermediate summaries are derived, traced, regenerable, not family truth. Disclose incomplete coverage; do not silently sample.
 11. Calendar: structured context; scheduled ≠ occurred without corroboration.
-12. Substantial narration ends with **Family evidence used** counts of **normalized units supplied**, not raw hits or quoted copies. I12 later adds a separate external list.
+12. Substantial narration ends with **Family evidence considered** counts of **everything processed in scope**, not narrator seats or quoted copies. **Python** appends that footer. I12 later adds a separate external list.
 13. Gallery hide ≠ pack exclude. Curator from pack. Shared curator **component** (do not merely unhide Person card).
 14. Model unavailable: **fail closed** for prose. Evidence + coverage remain. No stitch that looks like the narrative.
 15. Copy = clipboard. Save as Story = working draft + `composed_by_model`; owner Save Story for durability.
 16. Saved View JSON: `schema_version`, `original_ask`, `output_mode`, `plan`, `presentation`. Essay is not the view. Relative language uses the **general semantic resolver**: store Person, resolved `age_band`, interpretation/version — not a `when_he_was_young` field and **not** a hard-coded `young = 10–25`. Birth fact (or other sufficient age/date evidence) converts the band to dates; if insufficient, **ask rather than guess**.
 17. I13 owns Save View UI. No disabled Save View. Names: Save View / Saved View. Not Living Album.
-18. Do not implement I12 in I11. Do not block on Face-SoT. Disclose missing coverage.
+18. Do not implement I12 in I11. Do not block on Face-SoT. Disclose missing coverage in Python/UI, not via the narrator.
+19. **The narrator never renders system truth fields** (coverage incompleteness, family-evidence-considered counts, missing-photos / missing-modality, volume, eligible/processed, model name, AI Trace diagnostics). Python, the UI, and AI Trace do. Do not send the model a cue to write those lines.
 
 **Supersedes:** deterministic stitch as synthesizer; first-N as primary volume strategy; stitch fallback when the model is down; persist-authored-email as I11 gate.
 
@@ -38,8 +39,8 @@ Narration is Ask **output**, not a new app. One shared long-form curator for Exp
 
 ## Success (when authorized and built)
 
-Acceptance C-01–C-25 including dual travel units and “when Dad was young” generic constraints. No `/narration/` route.
+Acceptance C-01–C-26 including dual travel units, “when Dad was young” generic constraints, and the system-truth lock. No `/narration/` route.
 
 ---
 
-**LOCKED 2026-08-24.** Not authorized to build until Tom reviews this PRD and says approved to build.
+**LOCKED 2026-08-24. BUILD AUTHORIZED 2026-08-24.**

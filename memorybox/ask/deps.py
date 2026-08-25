@@ -34,15 +34,20 @@ def _presence_gap_sec() -> float:
 
 def build_llm(cfg: Settings | None = None) -> LlmProvider:
     from memorybox.ai_trace.wrapper import trace_llm
+    from memorybox.config import DEFAULT_OLLAMA_BASE_URL
+    from memorybox.providers.llm._ollama_http import ollama_reachable
 
     cfg = cfg or settings
-    if not cfg.ollama_base_url:
+    base = (cfg.ollama_base_url or "").strip()
+    if not base and ollama_reachable(DEFAULT_OLLAMA_BASE_URL):
+        base = DEFAULT_OLLAMA_BASE_URL
+    if not base:
         return trace_llm(FakeLlmProvider())
     try:
         from memorybox.providers.llm.ollama import OllamaLlmProvider
 
         p = OllamaLlmProvider(
-            base_url=cfg.ollama_base_url,
+            base_url=base,
             chat_model=cfg.ollama_chat_model,
             embed_model=cfg.ollama_embed_model,
         )
