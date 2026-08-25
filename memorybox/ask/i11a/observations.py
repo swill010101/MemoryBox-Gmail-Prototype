@@ -1,0 +1,375 @@
+"""Ask-independent grounded semantic observations.
+
+The extractor answers: what does this evidence actually establish?
+It does not create trips, Person portraits, period narratives, or holiday stories.
+"""
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+from memorybox.ask.i11a.comm_patterns import _DINNER, _GIFT, _HEART, _INVITE, _LOVE, _TRAVEL
+from memorybox.ask.i11a.observation_cache import (
+    load_observation,
+    save_observation,
+    source_hash,
+)
+from memorybox.ask.i11a.windows import _day
+
+OBS_METHOD = "grounded_semantic_observation"
+OBS_VERSION = "i11a_obs_v2"
+
+OBSERVATION_KINDS = (
+    "person_at_place_time",
+    "calendar_records_event",
+    "communication_states",
+    "travel_document_records",
+    "repeated_communication_pattern",
+    "people_interacting",
+    "activity_named",
+    "place_referenced",
+    "relationship_stated",
+    "media_observation",
+)
+
+
+def _ids(unit: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    for key in (
+        unit.get("evidence_id"),
+        unit.get("asset_ref"),
+        unit.get("unit_id"),
+        unit.get("source_id"),
+    ):
+        s = str(key or "").strip()
+        if s and s not in out:
+            out.append(s)
+    for extra in list(unit.get("extra_ids") or []) + list(unit.get("source_evidence_ids") or []):
+        s = str(extra or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _people(unit: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for p in unit.get("people") or []:
+        if isinstance(p, dict):
+            row = {
+                "name": p.get("name"),
+                "person_id": p.get("person_id"),
+                "role": p.get("role") or "participant",
+            }
+            k = str(row.get("person_id") or row.get("name") or "")
+        else:
+            n = str(p).strip()
+            if not n:
+                continue
+            row = {"name": n, "person_id": None, "role": "participant"}
+            k = n
+        if k and k not in seen:
+            seen.add(k)
+            out.append(row)
+    return out
+
+
+def _people_names(unit: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for p in _people(unit):
+        n = str(p.get("name") or "").strip()
+        if n and n not in names:
+            names.append(n)
+    return names
+
+
+def _excerpt(unit: dict[str, Any], n: int = 180) -> str:
+    return " ".join(
+        str(x or "").strip()
+        for x in (
+            unit.get("content"),
+            unit.get("authored_text"),
+            unit.get("subject"),
+            unit.get("title"),
+        )
+        if str(x or "").strip()
+    )[:n]
+
+
+def _obs_id(kind: str, ids: list[str], text: str) -> str:
+    digest = hashlib.sha256(
+        f"{kind}|{source_hash(ids)}|{text[:80]}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f"obs-{digest}"
+
+
+def _base(
+    *,
+    kind: str,
+    text: str,
+    unit: dict[str, Any],
+    claim_type: str,
+    ids: list[str] | None = None,
+    uncertainty: list[str] | None = None,
+) -> dict[str, Any]:
+    ids = list(ids or _ids(unit))
+    day = _day(unit.get("time") or unit.get("captured_at") or unit.get("timestamp"))
+    span = unit.get("date_span") if isinstance(unit.get("date_span"), dict) else {}
+    start = _day(span.get("start")) or day
+    end = _day(span.get("end")) or day
+    place = str(unit.get("place") or unit.get("city") or "").strip()
+    places = [place] if place else []
+    return {
+        "observation_id": _obs_id(kind, ids, text),
+        "kind": kind,
+        "text": text[:500],
+        "claim_type": claim_type,
+        "people": _people(unit),
+        "places": places[:8],
+        "time": day,
+        "date_span": {"start": start, "end": end},
+        "source_type": unit.get("source_type") or unit.get("kind"),
+        "unit_kind": unit.get("kind"),
+        "supporting_evidence_ids": ids,
+        "representative_evidence_ids": ids[:8],
+        "excerpts": [x for x in [_excerpt(unit, 160)] if x],
+        "uncertainty": list(uncertainty or []),
+        "occurrence_count": unit.get("occurrence_count"),
+        "pattern_type": unit.get("pattern_type"),
+        "latitude": unit.get("latitude"),
+        "longitude": unit.get("longitude"),
+        "asset_ref": unit.get("asset_ref"),
+        "media": unit.get("media") if isinstance(unit.get("media"), dict) else None,
+    }
+
+
+def _comm_meaning(unit: dict[str, Any]) -> str:
+    excerpt = _excerpt(unit)
+    names = _people_names(unit)
+    who = " and ".join(names[:4]) if names else "Someone"
+    if _LOVE.search(excerpt):
+        if len(names) >= 2:
+            return f"{names[0]} and {names[1]} exchanged affectionate messages: {excerpt[:160]}"
+        return f"{who} expressed affection in a message: {excerpt[:160]}"
+    if _HEART.search(excerpt) and not _LOVE.search(excerpt):
+        return f"{who} used heart emoji in communication: {excerpt[:160]}"
+    if _GIFT.search(excerpt):
+        return f"{who} offered or sent a meal, gift, or support: {excerpt[:160]}"
+    if _DINNER.search(excerpt):
+        return f"{who} planned or discussed a meal together: {excerpt[:160]}"
+    if _INVITE.search(excerpt):
+        return f"{who} invited getting together: {excerpt[:160]}"
+    if _TRAVEL.search(excerpt):
+        return f"{who} discussed travel plans or itinerary: {excerpt[:160]}"
+    if excerpt:
+        return f"{who} stated or planned: {excerpt[:220]}"
+    return f"{who} communicated."
+
+
+def observation_from_unit(unit: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(unit, dict):
+        return None
+    kind = str(unit.get("kind") or "")
+    ids = _ids(unit)
+    if not ids:
+        return None
+    excerpt = _excerpt(unit)
+    names = _people_names(unit)
+    who = " and ".join(names[:4]) if names else None
+    place = str(unit.get("place") or unit.get("city") or "").strip()
+    day = _day(unit.get("time") or unit.get("captured_at"))
+
+    if kind in {"calendar", "calendar_series"}:
+        title = str(unit.get("title") or excerpt or "calendar item").strip()[:200]
+        n = unit.get("occurrence_count")
+        extra = f" ({n} scheduled dates)" if n and int(n) > 1 else ""
+        text = f"Calendar records {title}{extra}" + (f" on {day}" if day else "")
+        return _base(
+            kind="calendar_records_event",
+            text=text,
+            unit=unit,
+            claim_type="recorded",
+            ids=ids,
+            uncertainty=["calendar_listing_is_not_proof_of_occurrence"],
+        )
+    if kind == "travel":
+        text = "Travel document records itinerary or reservation"
+        if excerpt:
+            text = f"Travel document records itinerary/reservation: {excerpt[:220]}"
+        return _base(
+            kind="travel_document_records",
+            text=text,
+            unit=unit,
+            claim_type="derived",
+            ids=ids,
+            uncertainty=["itinerary_is_not_completed_travel"],
+        )
+    if kind == "comm_pattern":
+        text = excerpt or str(unit.get("content") or "repeated communication pattern")
+        return _base(
+            kind="repeated_communication_pattern",
+            text=text,
+            unit=unit,
+            claim_type="observed",
+            ids=ids,
+        )
+    if kind in {"communication", "communication_thread", "sms_segment"}:
+        return _base(
+            kind="communication_states",
+            text=_comm_meaning(unit),
+            unit=unit,
+            claim_type="observed",
+            ids=ids,
+        )
+    if kind in {"media_observation", "video_asset", "video_moment", "spoken_moment", "media_cluster"}:
+        loc = place or "an unspecified place"
+        subject = who or "A person"
+        when = f" on {day}" if day else ""
+        media_kind = "Video asset" if kind == "video_asset" else "Photograph"
+        if kind == "media_cluster":
+            media_kind = excerpt or "Media observations"
+            text = f"{subject} observed at {loc}{when}. {media_kind}"
+        elif kind == "spoken_moment":
+            text = f"Spoken moment{when}" + (f" at {loc}" if place else "")
+            if excerpt:
+                text = f"{text}: {excerpt[:160]}"
+        else:
+            text = f"{subject} observed at {loc}{when}"
+        unc = ["gps_or_labeled_place_is_presence_not_residence"] if place else []
+        obs_kind = "person_at_place_time" if (who or place) else "media_observation"
+        return _base(
+            kind=obs_kind,
+            text=text,
+            unit=unit,
+            claim_type="observed",
+            ids=ids,
+            uncertainty=unc,
+        )
+    if kind == "place_observation":
+        loc = place or "a place"
+        text = excerpt or (
+            f"Place referenced: observed at {loc}"
+            + (f" on {day}" if day else "")
+        )
+        return _base(
+            kind="place_referenced",
+            text=text,
+            unit=unit,
+            claim_type="observed",
+            ids=ids,
+            uncertainty=["gps_or_labeled_place_is_presence_not_residence"],
+        )
+    if kind == "correlated_event":
+        return _base(
+            kind="people_interacting",
+            text=excerpt or "People interacting around a named activity.",
+            unit=unit,
+            claim_type="derived",
+            ids=ids,
+        )
+    if kind in {"journal", "story"}:
+        text = f"Recollection: {excerpt[:240]}" if excerpt else "A recollection was recorded."
+        return _base(
+            kind="activity_named",
+            text=text,
+            unit=unit,
+            claim_type="recollection",
+            ids=ids,
+        )
+    if kind == "artifact":
+        return _base(
+            kind="activity_named",
+            text=excerpt or "An artifact was recorded.",
+            unit=unit,
+            claim_type="observed",
+            ids=ids,
+        )
+    if excerpt or ids:
+        return _base(
+            kind="activity_named",
+            text=excerpt or str(kind or "evidence"),
+            unit=unit,
+            claim_type="inferred",
+            ids=ids,
+        )
+    return None
+
+
+def _maybe_cached(unit: dict[str, Any], *, person_id: str | None) -> dict[str, Any] | None:
+    ids = _ids(unit)
+    if not ids:
+        return None
+    hit = load_observation(
+        person_id=person_id,
+        method=OBS_METHOD,
+        evidence_ids=ids,
+        method_version=OBS_VERSION,
+    )
+    if isinstance(hit, dict) and hit.get("text") and hit.get("supporting_evidence_ids"):
+        return hit
+    return None
+
+
+def extract_observations(
+    units: list[dict[str, Any]] | None,
+    *,
+    person_id: str | None = None,
+    persist: bool = True,
+) -> list[dict[str, Any]]:
+    """Ask-blind extraction. Do not pass Ask kind, trip labels, or portrait instructions."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for unit in units or []:
+        cached = _maybe_cached(unit, person_id=person_id)
+        obs = cached or observation_from_unit(unit)
+        if not obs:
+            continue
+        oid = str(obs.get("observation_id") or "")
+        if oid and oid in seen:
+            continue
+        if oid:
+            seen.add(oid)
+        if persist and not (obs.get("_cache") or {}).get("hit"):
+            save_observation(
+                person_id=person_id,
+                method=OBS_METHOD,
+                evidence_ids=list(obs.get("supporting_evidence_ids") or []),
+                payload=dict(obs),
+                method_version=OBS_VERSION,
+                uncertainty=";".join(obs.get("uncertainty") or []) or None,
+            )
+        out.append(obs)
+    return out
+
+
+def merge_model_observations(
+    base: list[dict[str, Any]],
+    extra: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Union model-enriched observations onto deterministic ones without dropping IDs."""
+    by_hash: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for obs in list(base) + list(extra or []):
+        if not isinstance(obs, dict):
+            continue
+        ids = [str(x) for x in (obs.get("supporting_evidence_ids") or []) if str(x).strip()]
+        if not ids:
+            continue
+        key = source_hash(ids) + "|" + str(obs.get("kind") or "")
+        prev = by_hash.get(key)
+        text = str(obs.get("text") or "").strip()
+        if not text:
+            continue
+        if prev is None:
+            by_hash[key] = dict(obs)
+            order.append(key)
+            continue
+        prev_ids = [str(x) for x in (prev.get("supporting_evidence_ids") or [])]
+        for i in ids:
+            if i not in prev_ids:
+                prev_ids.append(i)
+        prev["supporting_evidence_ids"] = prev_ids
+        if len(text) > len(str(prev.get("text") or "")):
+            prev["text"] = text[:500]
+        by_hash[key] = prev
+    return [by_hash[k] for k in order]

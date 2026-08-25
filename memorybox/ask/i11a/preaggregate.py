@@ -11,6 +11,8 @@ from memorybox.ask.i11a.comm_patterns import communication_pattern_units
 from memorybox.ask.i11a.observation_cache import load_observation, save_observation, source_hash
 from memorybox.ask.i11a.windows import _day
 
+_BURST_HOURS = 6
+
 METHOD = "media_place_observation"
 _GENERIC_PLACES = frozenset(
     {"unplaced", "unspecified", "unknown", "none", "n/a", "unspecified roadside"}
@@ -219,7 +221,6 @@ def _place_history_units(
             "content": (
                 f"Observed at {label} on {len(days)} date(s)"
                 + (f" ({days[0]}–{days[-1]})" if days else "")
-                + ". Presence at capture time is not residence."
             )[:400],
             "extra_ids": eids,
             "source_evidence_ids": eids,
@@ -405,7 +406,7 @@ def _calendar_units(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "content": (
                     f"Recurring calendar item “{title}” ({len(group)} scheduled dates"
                     + (f", {days[0]}–{days[-1]}" if days else "")
-                    + "). Calendar listing is not proof of occurrence."
+                    + ")"
                 )[:400],
                 "extra_ids": eids,
                 "source_evidence_ids": eids,

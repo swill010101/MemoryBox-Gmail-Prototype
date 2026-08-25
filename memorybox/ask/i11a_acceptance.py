@@ -60,8 +60,11 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a7" in html
+        and "?v=i11a8" in html
         and "copy-preaggregation" in js
+        and "copy-semantic-observations" in js
+        and "copy-semantic-ir" in js
+        and "copy-ask-relative" in js
         and "retrieval_resolution" in js
         and "copy-retrieval-resolution" in js
         and "copy-consideration" in js
@@ -247,12 +250,11 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     fake = FakeLlmProvider()
     raw = fake.chat(
         [
-            ChatMessage(role="system", content="EVIDENCE_INFERENCE"),
+            ChatMessage(role="system", content="OBSERVATION_EXTRACT"),
             ChatMessage(
                 role="user",
                 content=json.dumps(
                     {
-                        "ask_kind": "period",
                         "units": [
                             {
                                 "unit_id": "u1",
@@ -260,7 +262,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                                 "kind": "communication",
                                 "time": "2025-01-12",
                                 "content": "harbor dinner",
-                                "people": [],
+                                "people": [{"name": "Tom"}],
                             }
                         ],
                     }
@@ -273,9 +275,9 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "a05_fake_inference_schema",
         parsed
-        and parsed.get("schema_version") == 2
+        and (parsed.get("observations") or [])
         and "coverage" not in parsed
-        and (parsed.get("episodes") or []),
+        and "harbor" in json.dumps(parsed, default=str).lower(),
         checks,
         problems,
         detail=str(parsed)[:300],
@@ -542,8 +544,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "inference_prompt_untouched_by_alaska_trace",
-        "EVIDENCE_INFERENCE" in infer_py
-        and "Do not invent people, places, dates" in infer_py,
+        "OBSERVATION_EXTRACT" in infer_py
+        and "ASK_RELATIVE_REASONING" in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8")
+        and "Do not invent people, places, dates" in infer_py
+        and "MERGE_SYSTEM_PERSON" not in infer_py
+        and "select_for_ask" not in infer_py
+        and "select_for_ask" not in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8"),
         checks,
         problems,
         detail="I11A system prompt must stay fail-closed; this increment is upstream",
@@ -1203,7 +1209,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     from memorybox.ask.retrieve import video_assets_from_photo_hits
     from memorybox.ask.i11a.claim_support import claim_support_ok
-    from memorybox.ask.i11a.reduce import reduce_leaf_observations
+    from memorybox.ask.i11a.observations import extract_observations
+    from memorybox.ask.i11a.reason import fallback_view
     from memorybox.providers.photo._immich_http import ImmichHttpClient
 
     lv_disc = _resolve_trip2(
@@ -1328,51 +1335,63 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=str({"generic": generic_why, "cal": cal_why, "gps": gps_why}),
     )
-    reduced = reduce_leaf_observations(
+    vegas_units = [
         {
-            "schema_version": 2,
-            "ask_semantics": {"kind": "period", "constraints": {}},
-            "episodes": [
-                {
-                    "label": "Flight to Las Vegas",
-                    "date_span": {"start": "2026-01-29", "end": "2026-01-29"},
-                    "claims": [{"text": "calendar showed Flight to Las Vegas"}],
-                },
-                {
-                    "label": "Eagles at Sphere",
-                    "date_span": {"start": "2026-01-30", "end": "2026-01-30"},
-                    "places": ["Las Vegas"],
-                    "claims": [{"text": "Eagles Live at Sphere"}],
-                },
-            ],
+            "kind": "calendar",
+            "evidence_id": "e-las-flight",
+            "unit_id": "u-flight",
+            "time": "2026-01-29",
+            "content": "Flight to Las Vegas",
+            "title": "Flight to Las Vegas",
+            "place": "Las Vegas",
         },
-        pack={
-            "units": [
-                {
-                    "kind": "media_observation",
-                    "evidence_id": "ph-paradise-nv",
-                    "asset_ref": "ph-paradise-nv",
-                    "time": "2026-01-30T16:00:00",
-                    "place": "Paradise, Nevada",
-                    "latitude": 36.12,
-                    "longitude": -115.17,
-                }
-            ]
+        {
+            "kind": "calendar",
+            "evidence_id": "e-eagles-sphere",
+            "unit_id": "u-sphere",
+            "time": "2026-01-30",
+            "content": "Eagles Live at Sphere",
+            "title": "Eagles Live at Sphere",
+            "place": "Las Vegas",
         },
+        {
+            "kind": "media_observation",
+            "evidence_id": "ph-paradise-nv",
+            "asset_ref": "ph-paradise-nv",
+            "time": "2026-01-30T16:00:00",
+            "place": "Paradise, Nevada",
+            "latitude": 36.12,
+            "longitude": -115.17,
+            "people": [{"name": "Tom"}],
+        },
+    ]
+    vegas_obs = extract_observations(vegas_units, persist=False)
+    vegas_kinds = {str(o.get("kind") or "") for o in vegas_obs}
+    vegas_view = fallback_view(
+        vegas_obs, ask="Summarize our Las Vegas trip", ask_kind_hint="trip"
     )
+    vegas_blob = json.dumps(vegas_view, default=str).lower()
+    vegas_eids = set()
+    for ep in vegas_view.get("episodes") or []:
+        vegas_eids.update(str(x) for x in (ep.get("supporting_evidence_ids") or []))
+        for cl in ep.get("claims") or []:
+            if isinstance(cl, dict):
+                vegas_eids.update(str(x) for x in (cl.get("supporting_evidence_ids") or []))
     _check(
         "leaf_reduce_one_vegas_trip",
-        len(reduced.get("episodes") or []) == 1
-        and (reduced["episodes"][0].get("label") == "Las Vegas trip")
-        and reduced["episodes"][0].get("correlated_from_leaves") is True
-        and (reduced.get("ask_semantics") or {}).get("kind") == "trip"
-        and (reduced["episodes"][0].get("observed_window") or {}).get("start")
-        and "ph-paradise-nv"
-        in ((reduced["episodes"][0].get("observed_window") or {}).get("evidence_ids") or [])
-        and "ph-paradise-nv" in (reduced["episodes"][0].get("candidate_visual_ids") or []),
+        "calendar_records_event" in vegas_kinds
+        and "person_at_place_time" in vegas_kinds
+        and "trip" not in vegas_kinds
+        and "e-las-flight" in vegas_eids
+        and "e-eagles-sphere" in vegas_eids
+        and "ph-paradise-nv" in vegas_eids
+        and "flight to las vegas" in vegas_blob
+        and "sphere" in vegas_blob
+        and "paradise" in vegas_blob
+        and "reduce_leaf_observations(" not in infer_py,
         checks,
         problems,
-        detail=str(reduced.get("episodes")),
+        detail=str({"kinds": sorted(vegas_kinds), "eids": sorted(vegas_eids), "eps": vegas_view.get("episodes")}),
     )
     _check(
         "immich_timeline_not_windowed_before_cache",
@@ -1421,11 +1440,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "person_reduce_is_not_one_trip_episode",
-        "Ask-kind-specific" in (root / "ask" / "i11a" / "reduce.py").read_text(encoding="utf-8")
-        and "MERGE_SYSTEM_PERSON" in (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
-        and "Do not collapse the subject into a single" in (root / "ask" / "i11a" / "infer.py").read_text(
-            encoding="utf-8"
-        ),
+        "DEPRECATED" in (root / "ask" / "i11a" / "reduce.py").read_text(encoding="utf-8")
+        and "MERGE_SYSTEM_PERSON" not in infer_py
+        and "ASK_RELATIVE_REASONING" in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8")
+        and "ask_kind" not in __import__("inspect").signature(
+            extract_observations
+        ).parameters,
         checks,
         problems,
         detail="Person merge/reduce must not be trip-only",
@@ -1539,6 +1559,65 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=(synth or "")[:400],
+    )
+
+    import inspect
+    from memorybox.ask.i11a.observations import extract_observations as _xo
+    from memorybox.ask.i11a.ir import ir_from_observations as _ir
+
+    jan_units = [
+        {"kind": "calendar", "evidence_id": "e-pt", "time": "2026-01-06", "content": "Physical therapy", "title": "Physical therapy"},
+        {"kind": "communication", "evidence_id": "e-jan-mail", "time": "2026-01-12", "content": "harbor dinner next week", "people": [{"name": "Tom"}]},
+    ]
+    ak_units = [
+        {"kind": "travel", "evidence_id": "e-ak-itin", "time": "2026-05-10", "content": "Princess Alaska cruise itinerary", "place": "Alaska"},
+        {"kind": "media_observation", "evidence_id": "ph-van", "time": "2026-05-08", "place": "Vancouver", "content": "photo", "people": [{"name": "Tom"}]},
+    ]
+    xmas_units = [
+        {"kind": "calendar", "evidence_id": "e-xmas", "time": "2019-12-25", "content": "Christmas dinner", "title": "Christmas dinner"},
+        {"kind": "communication", "evidence_id": "e-xmas-sms", "time": "2019-12-25", "content": "Merry Christmas love you", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+    ]
+    rel_units = [
+        {"kind": "communication", "evidence_id": "e-rel-1", "time": "2024-03-01", "content": "love you", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        {"kind": "communication", "evidence_id": "e-rel-2", "time": "2024-03-02", "content": "Want to come over for dinner tomorrow?", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        {"kind": "calendar", "evidence_id": "e-rel-cal", "time": "2024-03-02", "content": "Dinner with Peggy", "title": "Dinner with Peggy"},
+    ]
+    fixtures = {
+        "january_period": jan_units,
+        "las_vegas_trip": vegas_units,
+        "alaska_trip": ak_units,
+        "peggy_person": [
+            {"kind": "media_observation", "evidence_id": "ph-peg-x", "time": "2024-06-01", "place": "Manchester", "people": [{"name": "Peggy"}], "latitude": 53.48, "longitude": -2.24},
+            {"kind": "communication", "evidence_id": "e-peg-love", "time": "2024-06-02", "content": "love you Peggy", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        ],
+        "peggy_tom_together": rel_units,
+        "christmas_event": xmas_units,
+    }
+    engine_ok = "ask_kind" not in inspect.signature(_xo).parameters
+    ir_blobs = {}
+    for name, rows in fixtures.items():
+        obs = _xo(rows, persist=False)
+        ir = _ir(obs)
+        blob = json.dumps({"obs": obs, "ir": ir}, default=str).lower()
+        ir_blobs[name] = blob
+        engine_ok = engine_ok and bool(obs) and bool(ir.get("nodes"))
+    _check(
+        "common_observation_engine_multiple_asks",
+        engine_ok
+        and "physical therapy" in ir_blobs["january_period"]
+        and "flight to las vegas" in ir_blobs["las_vegas_trip"]
+        and "sphere" in ir_blobs["las_vegas_trip"]
+        and "alaska" in ir_blobs["alaska_trip"]
+        and "vancouver" in ir_blobs["alaska_trip"]
+        and "peggy" in ir_blobs["peggy_person"]
+        and "love" in ir_blobs["peggy_tom_together"]
+        and "dinner" in ir_blobs["peggy_tom_together"]
+        and "christmas" in ir_blobs["christmas_event"]
+        and "email from peggy" not in ir_blobs["peggy_person"]
+        and all("trip_span" not in json.dumps(_xo(rows, persist=False), default=str) for rows in fixtures.values()),
+        checks,
+        problems,
+        detail={k: v[:180] for k, v in ir_blobs.items()},
     )
 
     meta["synthetic"] = str(uuid4())[:8]

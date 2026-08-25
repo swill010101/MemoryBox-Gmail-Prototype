@@ -101,6 +101,9 @@ def finish_consideration(
         "evidence_sets": sets,
         "accounting": acc,
         "preaggregation": pack.get("preaggregation"),
+        "semantic_observations": pack.get("semantic_observations"),
+        "semantic_ir": pack.get("semantic_ir"),
+        "ask_relative_view": pack.get("ask_relative_view"),
         "leaf_calls": acc.get("leaf_calls"),
         "rejected": pack.get("inference", {}).get("rejected") if isinstance(pack.get("inference"), dict) else None,
     }
