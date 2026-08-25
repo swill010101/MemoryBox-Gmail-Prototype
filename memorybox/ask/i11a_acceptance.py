@@ -51,6 +51,21 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="provider-neutral inference role",
     )
+    from memorybox.ask.i11a_regression import REGRESSION_ASKS
+
+    _check(
+        "a_regression_harness_four_asks",
+        REGRESSION_ASKS
+        == (
+            "write a narrative about my January 2025",
+            "write a narrative about my trip to las vegas in January 2026",
+            "write a narrative about my alaska trip in 2026",
+            "tell me what you know about Peggy",
+        ),
+        checks,
+        problems,
+        detail="i11a-regression canonical asks (live Asks are not part of prove-i11a)",
+    )
     _check(
         "a09_trace_light_copy_export",
         "copy-provider-payload" in js
