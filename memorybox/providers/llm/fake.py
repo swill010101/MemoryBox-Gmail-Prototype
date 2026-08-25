@@ -25,21 +25,12 @@ def _fake_narrative(pack_json: str) -> str:
     except Exception:
         return "The prepared pack could not be read. MemoryBox will not invent family facts."
     label = pack.get("period") or pack.get("temporal_label") or "this period"
-    unc = pack.get("uncertainty") if isinstance(pack.get("uncertainty"), dict) else {}
-    incomplete = bool(unc.get("incomplete_coverage"))
-    disc = str(unc.get("note") or "").strip()
     episodes = [x for x in (pack.get("episodes") or []) if isinstance(x, dict)]
 
     paras: list[str] = [
         f"During {label}, this is what stands out from family life in the archive, "
         "without pasting the original messages."
     ]
-    if incomplete:
-        paras.append(
-            "Coverage of the archive for this period is incomplete"
-            + (f" ({disc})" if disc else "")
-            + "."
-        )
     story_lines: list[str] = []
     for ep in episodes:
         claims = [str(c).strip() for c in (ep.get("claims") or []) if str(c).strip()]

@@ -266,7 +266,9 @@ For a successful bounded-period narrative, eligible and processed should normall
 
 The family narrative is about **life during the period**, not about evidence volume. Week counts, item totals, and processing diagnostics belong in **AI Trace / Evidence Layer** — not in narrator input unless a specific analytical claim needs them. Complete consideration ≠ complete narration: routine transactional mail (shipping notices, receipts, automated surveys, ordinary order confirmations) stays supporting evidence unless it contributes to a meaningful episode. Those categories are heuristics, not a universal ban.
 
-The final model receives: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries for each episode; limited exemplars only where useful for human detail; uncertainty/provenance. It does **not** receive archive-count or implementation diagnostics.
+The final model receives: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries for each episode; limited exemplars only where useful for human detail; story-claim uncertainty/provenance (calendar scheduled ≠ occurred; travel may be derived). It does **not** receive archive-count or implementation diagnostics.
+
+**System truth lock:** The narrator never renders system truth fields (coverage incompleteness, family-evidence-considered counts, missing-photos / missing-modality, volume, eligible/processed, model name, AI Trace diagnostics). Python, the UI, and AI Trace do. Incomplete coverage is disclosed after synthesis by Python/UI, not by asking the model to write it. `incomplete_coverage` is not a cue for the model.
 
 Pipeline: retrieve **all** in-window eligible items (SQL pages are not consider-caps) → normalize/claim → correlate episodes/themes (including photo clusters by date/people/place) → **significance / correlation** → **semantic life-period outline** → synthesize.
 
@@ -286,7 +288,9 @@ One shared long-form Narrative/Curator module used by Explore and Person Explore
 
 Deterministic: resolve, retrieve, eligibility, prep, claims, coverage, ranking, chunking. Model: **synthesize readable prose from the prepared pack** for `output_mode=tell` only.
 
-Model must not: elect Spam/Trash, invent photographer/purpose/emotion, treat filename as meaning, treat SMS time as GPS, promote intermediate summaries to truth, or run I12 web retrieval.
+The narrator never renders system truth; Python, the UI, and AI Trace do.
+
+Model must not: elect Spam/Trash, invent photographer/purpose/emotion, treat filename as meaning, treat SMS time as GPS, promote intermediate summaries to truth, render coverage/counts/volume/missing-modality/eligible-processed/model-name, or run I12 web retrieval.
 
 Unavailable model: fail closed (see pipeline). Gallery/results remain.
 
@@ -303,12 +307,13 @@ Copy / Save as Story / Saved View JSON: unchanged from prior lock.
 | C-19 | SMS timestamp alone ≠ location; authored/shared-location/attachment EXIF may, with `basis`. |
 | C-20 | Peggy/Tom Christmas 2017 discussion: authored units, no quote dupes, no unrelated 2017 calendar dump. |
 | C-21 | “Tell me about my 2017”: broad family evidence; staged volume, not first-N dump. |
-| C-22 | Family-facing evidence-considered counts = all processed in-scope units, not narrator seats or quoted copies. Narrator input is a smaller **semantic life-period outline** (episode/theme, claims, evidence IDs, date span, people, significance) — not week-count buckets. Volume diagnostics stay in AI Trace. |
+| C-22 | Family-facing evidence-considered counts = all processed in-scope units, not narrator seats or quoted copies. Narrator input is a smaller **semantic life-period outline** (episode/theme, claims, evidence IDs, date span, people, significance) — not week-count buckets. Volume diagnostics stay in AI Trace. Python appends the evidence-considered footer; the model is not asked to write it. |
 | C-23 | Model down: evidence visible; narration unavailable; no stitch-as-narrative. |
 | C-24 | Dual travel: confirmation email is a communication unit; structured flight/hotel facts are a derived travel unit with provenance to that email. |
 | C-25 | “When Dad was young”: generic Person + age_band + interpretation/version; dates from birth (or other sufficient age/date evidence); **ask rather than guess** if insufficient. Not a phrase-specific field. Not a hard-coded 10–25 rule. |
+| C-26 | Narrator never renders system truth (coverage incompleteness, evidence-considered counts, missing-modality, volume, eligible/processed, model name). Python/UI/AI Trace render those. Narrator payload must not instruct the model to write them. |
 
-Keep C-01–C-16. Shared curator (C-05) means **one component**, not unhide.
+Keep C-01–C-16. Shared curator (C-05) means **one component**, not unhide. C-26 is the system-truth lock.
 
 ---
 

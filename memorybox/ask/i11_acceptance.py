@@ -11,6 +11,8 @@ from uuid import uuid4
 from memorybox.ask.episode_semantics import public_episode_dump
 from memorybox.ask.evidence_prep import prepare_narrative_pack
 from memorybox.ask.narrative import (
+    SYSTEM_PROMPT,
+    coverage_incomplete_line,
     memories_from_citations,
     pack_for_narrator,
     persistable_view,
@@ -34,6 +36,7 @@ from memorybox.explore.find import (
 )
 from memorybox.planner import compile_output_mode, plan_ask
 from memorybox.planner.temporal import parse_temporal
+from memorybox.providers.llm.dto import ChatMessage
 from memorybox.providers.llm.fake import FakeLlmProvider
 from memorybox.providers.photo.fake import FakePhotoProvider
 
@@ -1052,6 +1055,78 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str({"keys": sorted(nar.keys()), "episodes": nar_eps[:3], "blob": nar_blob[:400]}),
+    )
+    prompt_l = SYSTEM_PROMPT.lower()
+    _check(
+        "c26_narrator_payload_does_not_instruct_system_truth",
+        "incomplete_coverage" not in prompt_l
+        and "say coverage is incomplete" not in prompt_l
+        and "family evidence considered" not in prompt_l
+        and "eligible items" not in prompt_l
+        and "incomplete_coverage" not in nar
+        and "incomplete_coverage" not in nar_blob
+        and "evidence_considered" not in nar
+        and "truncation_disclosure" not in nar_blob
+        and "coverage is incomplete" not in nar_blob.lower()
+        and "family evidence considered" not in nar_blob.lower()
+        and "eligible_n" not in nar_blob
+        and isinstance(nar.get("uncertainty"), dict)
+        and "incomplete_coverage" not in (nar.get("uncertainty") or {}),
+        checks,
+        problems,
+        detail=str({"prompt_snip": SYSTEM_PROMPT[:220], "unc": nar.get("uncertainty"), "keys": sorted(nar.keys())}),
+    )
+
+    trunc_hits = [
+        EvidenceHit(
+            evidence_id="e-trunc-1",
+            evidence_kind="communication",
+            summary="Sunday dinner at the harbor",
+            score=1.0,
+            excerpt="come to Sunday dinner at the harbor",
+            source="sms_export",
+            sent_at="2025-01-12T18:00:00",
+            channel="sms",
+            people=["Alex"],
+            thread_id="t-dinner-trunc",
+            truncated=True,
+            count_scope="retrieve truncated",
+        ),
+    ]
+    inc_text, inc_pack, _ = tell_from_hits(
+        jan_plan, llm=FakeLlmProvider(), evidence=trunc_hits
+    )
+    inc_nar = pack_for_narrator(inc_pack)
+    inc_nar_blob = json.dumps(inc_nar, default=str)
+    fake_only = FakeLlmProvider().chat(
+        [
+            ChatMessage(role="system", content=SYSTEM_PROMPT),
+            ChatMessage(role="user", content=inc_nar_blob),
+        ]
+    )
+    fake_body = str(getattr(fake_only, "content", "") or "")
+    py_cov = coverage_incomplete_line(inc_pack)
+    _check(
+        "c26_python_renders_coverage_and_evidence_footer",
+        bool((inc_pack.get("coverage") or {}).get("incomplete"))
+        and bool(py_cov)
+        and "coverage is incomplete" in py_cov.lower()
+        and "coverage is incomplete" in inc_text.lower()
+        and "family evidence considered" in inc_text.lower()
+        and "incomplete_coverage" not in inc_nar
+        and "incomplete_coverage" not in inc_nar_blob
+        and "coverage is incomplete" not in fake_body.lower()
+        and "family evidence considered" not in fake_body.lower(),
+        checks,
+        problems,
+        detail=str(
+            {
+                "py_cov": py_cov,
+                "prose_tail": inc_text[-280:],
+                "fake": fake_body[:280],
+                "unc": inc_nar.get("uncertainty"),
+            }
+        ),
     )
 
     mixed_life = [

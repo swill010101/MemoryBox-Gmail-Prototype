@@ -18,14 +18,17 @@ NARRATION_UNAVAILABLE = (
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
 You write a family story of life during the requested period.
 The user JSON is a semantic life-period outline produced before narration. It is not an archive dump.
-You receive: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries; limited exemplars only where useful for human detail; uncertainty/provenance.
+You receive: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries; limited exemplars only where useful for human detail; story-claim uncertainty (calendar scheduled is not occurred; travel may be derived).
 You do not receive, and must not invent, archive-count summaries, week-count summaries, raw date buckets, or implementation diagnostics.
+
+The narrator never renders system truth fields. Python, the UI, and AI Trace render retrieve/process completeness, evidence-considered counts, volume, missing-modality notices, eligible/processed totals, model name, and diagnostics.
 
 Rules:
 - Understand that the pipeline already considered the whole period. Narrate only the episodes and themes in this outline — the ones that meaningfully characterize the period. Do not mention every week. Do not iterate dates that have no characterizing episode.
 - Continuous prose (about 2–8 short paragraphs). Chronological. Natural language. Begin with the story.
 - Each episode lists grounded claims, supporting evidence IDs, a date span, people, and why it is significant. Write from the claims. Use an exemplar only when a human detail helps; do not paste bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
 - Do not write about how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
+- Do not write retrieve/process completeness, evidence-considered counts, archive or week counts, missing-modality notices, eligible/processed totals, model name, or AI Trace diagnostics.
 - Routine transactional material is not in this outline unless it belongs to a characterizing episode. Do not list shipping notices, receipts, surveys, or ordinary order confirmations.
 - A source supports only the listed claim. Presence is not photographer, purpose, emotion, companions, or extra significance. Do not invent motives or feelings.
 - Do not treat filename, folder, or camera owner as photographer.
@@ -33,7 +36,6 @@ Rules:
 - Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating claims exist.
 - Travel facts may be derived; do not treat derivation as the original source.
 - Do not invent people, places, or dates.
-- If uncertainty.incomplete_coverage is true, say coverage is incomplete after the story. Never silently sample.
 - If episodes is empty, say the period was examined and nothing standout emerged. Do not dump ordinary correspondence.
 """
 
@@ -44,7 +46,14 @@ _DEBUG_LEAK = re.compile(
     r"tell pack; email_n=\d+[^.]*\.?|"
     r"\d{4}-W\d{2}:[^.]*evidence item\(s\)[^.]*\.?|"
     r"Around \d{4}-\d{2}-\d{2}, \d+ (?:email|sms|calendar)[^.]*\.?|"
-    r"Across the weeks that have evidence,[^.]*\.?)"
+    r"Across the weeks that have evidence,[^.]*\.?|"
+    r"coverage is incomplete[^.]*\.?|"
+    r"coverage of the archive[^.]*\.?|"
+    r"family evidence considered:[^\n]*|"
+    r"family evidence used:[^\n]*|"
+    r"processed \d+ of \d+ eligible[^.]*\.?|"
+    r"considered \d+ eligible item[^.]*\.?|"
+    r"no photos found[^.]*\.?)"
 )
 
 
@@ -136,6 +145,42 @@ def evidence_used_footer(pack: dict[str, Any] | None) -> str:
     return "Family evidence considered: " + " · ".join(bits) + "."
 
 
+def coverage_incomplete_line(pack: dict[str, Any] | None) -> str:
+    """Family-facing retrieve/process completeness — Python/UI only, never the model."""
+    if not isinstance(pack, dict):
+        return ""
+    cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
+    if not cov.get("incomplete"):
+        return ""
+    note = str(cov.get("truncation_disclosure") or "").strip()
+    if note:
+        if note.lower().startswith("coverage is incomplete"):
+            return note
+        return "Coverage is incomplete. " + note
+    return "Coverage is incomplete."
+
+
+def _story_uncertainty(episodes: list[Any]) -> dict[str, Any]:
+    flags: dict[str, Any] = {
+        "provenance": (
+            "Claims are grounded in the evidence IDs on each episode. "
+            "Do not invent facts. Calendar scheduled is not proof the event occurred. "
+            "Travel facts may be derived from communication."
+        ),
+    }
+    for ep in episodes:
+        if not isinstance(ep, dict):
+            continue
+        u = ep.get("uncertainty")
+        if not isinstance(u, dict):
+            continue
+        if u.get("calendar_scheduled_not_occurred"):
+            flags["calendar_scheduled_not_occurred"] = True
+        if u.get("travel_derived_from_communication"):
+            flags["travel_derived_from_communication"] = True
+    return flags
+
+
 def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
     cov = ""
     if isinstance(pack, dict):
@@ -152,12 +197,7 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
     ask = pack.get("ask") or {}
     scope = pack.get("scope") if isinstance(pack.get("scope"), dict) else {}
     time_scope = scope.get("time") if isinstance(scope.get("time"), dict) else {}
-    cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
-    outline_cov = outline.get("coverage") if isinstance(outline.get("coverage"), dict) else {}
-    incomplete = bool(cov.get("incomplete") or outline_cov.get("incomplete"))
-    note = None
-    if incomplete:
-        note = outline_cov.get("note") or cov.get("truncation_disclosure")
+    episodes = list(outline.get("episodes") or [])
     return {
         "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
         "background": pack.get("background") or {
@@ -171,15 +211,8 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
             for w in (time_scope.get("windows") or [])
             if isinstance(w, (list, tuple)) and len(w) >= 2
         ],
-        "episodes": list(outline.get("episodes") or []),
-        "uncertainty": {
-            "incomplete_coverage": incomplete,
-            "note": note,
-            "provenance": (
-                "Claims are grounded in the evidence IDs on each episode. "
-                "Do not invent facts. Do not write archive counts or week summaries."
-            ),
-        },
+        "episodes": episodes,
+        "uncertainty": _story_uncertainty(episodes),
     }
 
 
@@ -228,19 +261,13 @@ def synthesize_tell(
         if not text:
             meta["fail_closed"] = True
             return _fail_closed(pack, reason="The model returned no narration."), meta
+        text = _strip_debug_leak(text)
+        cov_line = coverage_incomplete_line(pack)
+        if cov_line:
+            text = text.rstrip() + "\n\n" + cov_line
         footer = evidence_used_footer(pack)
         if "Family evidence considered" not in text and "Family evidence used" not in text:
             text = text.rstrip() + "\n\n" + footer
-        text = _strip_debug_leak(text)
-        if isinstance(pack.get("coverage"), dict) and pack["coverage"].get("incomplete"):
-            note = str(pack["coverage"].get("truncation_disclosure") or "").strip()
-            if note and "incomplete" not in text.lower():
-                text = (
-                    "Coverage is incomplete. "
-                    + note
-                    + "\n\n"
-                    + text
-                )
         meta["ok"] = True
         meta["model"] = getattr(result, "model", None)
         return text, meta
