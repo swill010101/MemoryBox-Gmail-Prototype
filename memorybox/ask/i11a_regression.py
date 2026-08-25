@@ -178,6 +178,9 @@ def _accounting_from_trace(trace: dict[str, Any] | None) -> dict[str, Any]:
                 "units_model_extract": assembled.get("extract_units"),
             }
     return {}
+
+
+def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
