@@ -6,7 +6,9 @@
 
 ```
 Ask → MBQL/scope → requestor + focal PersonContext
-  → retrieve/prep (all eligible units)
+  → retrieve (person/time; place/trip as hint)
+  → retrieval-resolution / trip-window discovery
+  → prep (eligible units for the resolved trip)
   → deterministic batching
   → inference pass(es) + optional merge
   → schema/provenance/relationship validation

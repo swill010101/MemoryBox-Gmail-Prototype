@@ -18,7 +18,7 @@ from memorybox.ask.narrative import (
     pack_for_narrator,
     tell_from_hits,
 )
-from memorybox.ask.retrieve import EvidenceHit, filter_hits_by_constraints
+from memorybox.ask.retrieve import EvidenceHit, PhotoHit, filter_hits_by_constraints
 from memorybox.context import AskContext
 from memorybox.planner import plan_ask
 from memorybox.providers.base import ProviderHealth, ProviderUnavailable
@@ -57,7 +57,9 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a3" in html,
+        and "?v=i11a4" in html
+        and "retrieval_resolution" in js
+        and "copy-retrieval-resolution" in js,
         checks,
         problems,
         detail="AI Trace Light I11A copy/export controls",
@@ -75,6 +77,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Collecting email" in orch_py
         and "Collecting SMS" in orch_py
         and "Collecting calendar" in orch_py
+        and "Resolving trip evidence" in orch_py
         and "Assimilating collections" in orch_py
         and "is-status-ticker" in explore_js
         and "/explore/api/ask-progress" in explore_js
@@ -347,8 +350,46 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         detail=str(
             {
                 "trips": ak_year.trip_labels,
+                "places": ak_year.place_names,
                 "constraints": ak_year.retrieval_constraints,
                 "notes": ak_year.notes,
+            }
+        ),
+    )
+    cons_l = {str(c).lower() for c in (ak_year.retrieval_constraints or ())}
+    _check(
+        "alaska_possessive_not_place_label",
+        all(str(p).lower() == "alaska" for p in (ak_year.place_names or ()) or ["alaska"])
+        and all(str(t).lower() == "alaska" for t in (ak_year.trip_labels or ()))
+        and "my alaska" not in cons_l
+        and "alaska" not in cons_l
+        and "trip_window_unresolved" in (ak_year.notes or ())
+        and "possessive=requestor" in (ak_year.notes or ())
+        and not (ak_year.person_names or ()),
+        checks,
+        problems,
+        detail=str({"places": ak_year.place_names, "people": ak_year.person_names, "cons": ak_year.retrieval_constraints}),
+    )
+    our_ak = plan_ask("write a narrative about our Alaska trip in 2026", AskContext(session_id="i11a-our-ak"))
+    dad_ak = plan_ask("write a narrative about Dad's Alaska trip in 2026", AskContext(session_id="i11a-dad-ak"))
+    peg_fl = plan_ask("write a narrative about Peggy's Florida trip in 2026", AskContext(session_id="i11a-peg-fl"))
+    _check(
+        "trip_possessive_generalizes",
+        all(str(t).lower() == "alaska" for t in (our_ak.trip_labels or ()))
+        and "possessive=requestor" in (our_ak.notes or ())
+        and all(str(t).lower() == "alaska" for t in (dad_ak.trip_labels or ()))
+        and any(str(n).startswith("possessive=kinship:") for n in (dad_ak.notes or ()))
+        and not any("dad" in str(p).lower() for p in (dad_ak.place_names or ()))
+        and any(str(t).lower() == "florida" for t in (peg_fl.trip_labels or ()))
+        and any(str(n).lower() == "peggy" for n in (peg_fl.person_names or ()))
+        and not any("peggy" in str(p).lower() for p in (peg_fl.place_names or ())),
+        checks,
+        problems,
+        detail=str(
+            {
+                "our": (our_ak.trip_labels, our_ak.notes),
+                "dad": (dad_ak.place_names, dad_ak.notes),
+                "peggy": (peg_fl.person_names, peg_fl.place_names, peg_fl.trip_labels),
             }
         ),
     )
@@ -371,6 +412,133 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         source="email_mbox",
         sent_at="2026-05-02T10:00:00",
         channel="email",
+    )
+    from memorybox.ask.trip_discovery import resolve_trip
+    from memorybox.ask.i11a.person_context import (
+        _dedupe_relationship_rows,
+        _period_as_of,
+        slim_person_context_for_model,
+    )
+
+    empty_lib = [
+        PhotoHit(
+            provider_key="immich",
+            external_id=f"ph-{i}",
+            taken_at="2026-03-01T12:00:00",
+            people=["Tom Will"],
+            location="Home",
+            thumb_url=None,
+            web_url=None,
+        )
+        for i in range(25)
+    ]
+    miss = resolve_trip(
+        ak_year,
+        evidence=[year_only],
+        photos=empty_lib,
+        photo_status={
+            "provider_key": "immich",
+            "before_temporal_filter": 25,
+            "after_temporal_filter": 25,
+            "constraint_mode": "deferred_trip_discovery",
+            "requestor_person_id": "p-tom",
+        },
+    )
+    photo_mod = miss.modalities[0].to_dict() if miss.modalities else {}
+    _check(
+        "trip_discovery_does_not_dump_year",
+        (not miss.resolved)
+        and miss.photos == []
+        and miss.evidence == []
+        and photo_mod.get("initial_candidate_count") == 25
+        and photo_mod.get("post_filter_count") == 0
+        and "Alaska" in str(photo_mod.get("skipped_reason") or photo_mod.get("semantic_constraint")),
+        checks,
+        problems,
+        detail=str({"mod": photo_mod, "windows": miss.windows}),
+    )
+    ak_photo = PhotoHit(
+        provider_key="immich",
+        external_id="ph-ak",
+        taken_at="2026-05-06T12:00:00",
+        people=["Tom Will"],
+        location="Anchorage, Alaska",
+        thumb_url=None,
+        web_url=None,
+        state="Alaska",
+        latitude=61.2,
+        longitude=-149.9,
+    )
+    found = resolve_trip(
+        ak_year,
+        evidence=[year_only, ak_mail],
+        photos=empty_lib + [ak_photo],
+        photo_status={
+            "provider_key": "immich",
+            "after_temporal_filter": 26,
+            "constraint_mode": "deferred_trip_discovery",
+        },
+    )
+    _check(
+        "trip_discovery_resolves_window_then_keeps_place_hits",
+        found.resolved
+        and found.plan.time_start == "2026-05-02"
+        and "trip_window_resolved" in (found.plan.notes or ())
+        and [h.evidence_id for h in found.evidence] == ["e-ak-26"]
+        and [p.external_id for p in found.photos] == ["ph-ak"],
+        checks,
+        problems,
+        detail=str(
+            {
+                "start": found.plan.time_start,
+                "end": found.plan.time_end,
+                "ev": [h.evidence_id for h in found.evidence],
+                "ph": [p.external_id for p in found.photos],
+            }
+        ),
+    )
+    year_as_of = _period_as_of(ak_year)
+    resolved_as_of = _period_as_of(found.plan)
+    dup_rels = _dedupe_relationship_rows(
+        [
+            {"from_person_id": "a", "to_person_id": "b", "role_kind": "mother_of", "authority": "confirmed"},
+            {"from_person_id": "a", "to_person_id": "b", "role_kind": "mother_of", "authority": "confirmed"},
+            {"from_person_id": "a", "to_person_id": "b", "role_kind": "mother_of", "authority": "inferred"},
+        ]
+    )
+    slim = slim_person_context_for_model(
+        {
+            "requestor": {
+                "person_id": "p",
+                "display_name": "Tom",
+                "age_at_period": None,
+                "known_relationships": dup_rels
+                + dup_rels,
+                "allowed_relationship_labels": ["mother"],
+            },
+            "focal_subjects": [],
+            "allowed_relationship_labels": ["mother"],
+            "as_of": None,
+        }
+    )
+    _check(
+        "person_context_dedupe_and_period_age",
+        year_as_of is None
+        and resolved_as_of is not None
+        and str(resolved_as_of) == "2026-05-02"
+        and len(dup_rels) == 2
+        and len((slim.get("requestor") or {}).get("known_relationships") or []) == 2,
+        checks,
+        problems,
+        detail=str({"year_as_of": year_as_of, "resolved": resolved_as_of, "dup": len(dup_rels), "slim": slim}),
+    )
+    _check(
+        "inference_prompt_untouched_by_alaska_trace",
+        "EVIDENCE_INFERENCE" in infer_py
+        and "Do not invent people, places, dates" in infer_py,
+        checks,
+        problems,
+        detail="I11A system prompt must stay fail-closed; this increment is upstream",
     )
     kept_trip = filter_hits_by_constraints([year_only, ak_mail], ["Alaska", "2026"])
     _check(

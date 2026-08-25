@@ -15,4 +15,6 @@
 | A-09 | AI Trace Light copy/export of payload, raw, parsed, validated pack, full JSON. |
 | A-10 | Gallery eligibility remains retrieve; inference only ranks representative candidates. |
 | A-11 | T6 uses existing evidence drill-down; no new Explore chrome. |
-| A-12 | No hard-coded llama3.2 in I11A architecture. |
+| A-13 | Named-trip TELL compiles possessives as subject context; place/trip is a hint; trip window is unresolved until evidence discovery. |
+| A-14 | AI Trace retrieval-resolution span shows per-modality candidate vs post-filter counts before inference. |
+| A-15 | PersonContext relationship edges are unique; age-at-period uses the resolved trip/episode dates, not year-end. |

@@ -194,9 +194,8 @@ def ask_kind_for_plan(plan: Any) -> str:
     notes = " ".join(getattr(plan, "notes", ()) or ())
     if "exploratory_about_subject" in notes:
         return "person"
-    if getattr(plan, "trip_labels", ()) or "alaska" in str(getattr(plan, "original_ask", "")).lower():
-        if getattr(plan, "trip_labels", ()):
-            return "trip"
+    if getattr(plan, "trip_labels", ()) or "ask_kind=trip" in notes:
+        return "trip"
     q = str(getattr(plan, "original_ask", "") or "").lower()
     if "text message" in q or "texts" in q or "sms" in q:
         return "communications"

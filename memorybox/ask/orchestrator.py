@@ -1431,6 +1431,38 @@ class AskOrchestrator:
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
 
+            tell_now = (
+                str(getattr(plan, "output_mode", "") or "") == "tell"
+                or "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
+            )
+            if tell_now:
+                from memorybox.ask.trip_discovery import (
+                    emit_retrieval_resolution_span,
+                    resolve_trip,
+                )
+
+                if R.trip_discovery_pending(plan) or getattr(plan, "trip_labels", ()):
+                    _stage("Resolving trip evidence")
+                discovered = resolve_trip(
+                    plan,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                    photo_status=photo_status,
+                    video_status=video_status,
+                )
+                plan = discovered.plan
+                evidence = discovered.evidence
+                photos = discovered.photos
+                videos = discovered.videos
+                stories = discovered.stories
+                journals = discovered.journals
+                artifacts = discovered.artifacts
+                emit_retrieval_resolution_span(discovered)
+
         coverage: dict[str, Any] | None = None
         if getattr(plan, "want_cross_source", False) and not plan.requires_clarification:
             try:

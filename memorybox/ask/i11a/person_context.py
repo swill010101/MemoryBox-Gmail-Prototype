@@ -53,11 +53,52 @@ def _age_on(birth: date, at: date) -> int | None:
     return years
 
 
-def _window_end(plan: Any) -> date | None:
+def _window_span(plan: Any) -> tuple[date | None, date | None]:
     windows = list(getattr(plan, "temporal_windows", ()) or ())
     if windows:
-        return _parse_day(windows[-1][1] if len(windows[-1]) > 1 else windows[-1][0])
-    return _parse_day(getattr(plan, "time_end", None) or getattr(plan, "time_start", None))
+        start = _parse_day(windows[0][0] if windows[0] else None)
+        end_raw = windows[0][1] if len(windows[0]) > 1 else windows[0][0]
+        return start, _parse_day(end_raw)
+    return (
+        _parse_day(getattr(plan, "time_start", None)),
+        _parse_day(getattr(plan, "time_end", None)),
+    )
+
+
+def _period_as_of(plan: Any) -> date | None:
+    """Age against the resolved episode/trip period, not year-end filler dates."""
+    notes = " ".join(getattr(plan, "notes", ()) or ())
+    start, end = _window_span(plan)
+    if "trip_window_resolved" in notes and start:
+        return start
+    if start and end:
+        span = (end - start).days
+        if span <= 90:
+            return start
+        # Unresolved calendar year (or similar): omit age rather than Dec 31.
+        if span >= 300:
+            return None
+        return start
+    return start
+
+
+def _dedupe_relationship_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str]] = set()
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        key = (
+            str(row.get("from_person_id") or ""),
+            str(row.get("to_person_id") or ""),
+            str(row.get("role_kind") or "").lower(),
+            str(row.get("authority") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
 
 
 def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
@@ -130,6 +171,8 @@ def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
                         allowed.add(tok)
     except Exception:  # noqa: BLE001
         pass
+    known = _dedupe_relationship_rows(known)
+    inferred = _dedupe_relationship_rows(inferred)
     return {
         "person_id": person_id,
         "display_name": view.display_name,
@@ -146,7 +189,7 @@ def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
 
 def build_person_context(plan: Any) -> dict[str, Any]:
     req = resolve_request_context(plan)
-    at = _window_end(plan) or date.today()
+    at = _period_as_of(plan)
     requestor_card = (
         _person_card(req["requestor_person_id"], at=at) if req.get("requestor_person_id") else None
     )
@@ -164,7 +207,7 @@ def build_person_context(plan: Any) -> dict[str, Any]:
         "focal_subjects": focals,
         "request_context": req,
         "allowed_relationship_labels": sorted(allowed),
-        "as_of": at.isoformat(),
+        "as_of": at.isoformat() if at else None,
     }
 
 
@@ -175,7 +218,7 @@ def slim_person_context_for_model(ctx: dict[str, Any] | None) -> dict[str, Any]:
         if not card:
             return None
         known = []
-        for row in (card.get("known_relationships") or [])[:24]:
+        for row in _dedupe_relationship_rows(card.get("known_relationships") or [])[:24]:
             known.append(
                 {
                     "from_person_id": row.get("from_person_id"),

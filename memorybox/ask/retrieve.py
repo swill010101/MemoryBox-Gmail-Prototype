@@ -411,6 +411,18 @@ def _tell_pack_comms(plan: QueryPlan) -> bool:
     return "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
 
 
+def trip_discovery_pending(plan: QueryPlan) -> bool:
+    """Named trip TELL: person/time retrieve first; place is a hint until clustered."""
+    notes = getattr(plan, "notes", ()) or ()
+    return "trip_window_unresolved" in notes and "trip_window_resolved" not in notes
+
+
+def _exclusive_place_trip_keywords(plan: QueryPlan) -> list[str]:
+    if trip_discovery_pending(plan):
+        return []
+    return _place_trip_keywords(plan)
+
+
 def _bounded_period_tell(plan: QueryPlan) -> bool:
     """Dated tell (month, year, trip window): every in-scope row may contribute."""
     if not _tell_pack_comms(plan):
@@ -765,9 +777,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Dated tell is a window, not a hunt for "narrative" — but a named trip
-        # must still constrain the pack (alaska trip in 2026 ≠ every 2026 text).
-        keywords = _place_trip_keywords(plan)
+        # Dated tell is a window, not a hunt for "narrative" — exclusive place
+        # keywords wait until trip discovery has a resolved window.
+        keywords = _exclusive_place_trip_keywords(plan)
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -1190,9 +1202,9 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Dated tell is a window, not a hunt for "narrative" — but a named trip
-        # must still constrain the pack (alaska trip in 2026 ≠ every 2026 text).
-        keywords = _place_trip_keywords(plan)
+        # Dated tell is a window, not a hunt for "narrative" — exclusive place
+        # keywords wait until trip discovery has a resolved window.
+        keywords = _exclusive_place_trip_keywords(plan)
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -1429,7 +1441,7 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
             elif person_names and not _sms_name_match(blob, person_names, allow_first_token=False):
                 if not (person_ids and (have & person_ids)):
                     continue
-        place_trip = _place_trip_keywords(plan)
+        place_trip = _exclusive_place_trip_keywords(plan)
         if _tell_pack_comms(plan) and place_trip:
             if not any(k in blob for k in place_trip):
                 continue
@@ -1903,14 +1915,23 @@ def search_photos(
             status["before_temporal_filter"] = len(hits)
             status["after_temporal_filter"] = len(timed)
         out = timed
+        if places and trip_discovery_pending(plan):
+            status["place_filter"] = list(plan.place_names)
+            status["constraint_mode"] = "deferred_trip_discovery"
+            status["before_place_filter"] = len(timed)
+            status["after_place_filter"] = len(timed)
+            status["semantic_constraint"] = places[0]
+            return out
         if places:
             before = len(timed)
             out = filter_photo_hits_to_places(timed, places)
             spec = place_match_spec(tuple(places))
             status["place_filter"] = list(plan.place_names)
             status["place_match"] = spec
+            status["constraint_mode"] = "exclusive_place_filter"
             status["before_place_filter"] = before
             status["after_place_filter"] = len(out)
+            status["semantic_constraint"] = places[0]
             dropped = before - len(out)
             if dropped > 0:
                 label = places[0]
@@ -2166,7 +2187,8 @@ def search_photos(
                         time_windows=tuple(
                             getattr(plan, "temporal_windows", ()) or ()
                         ),
-                        need_location=bool(getattr(plan, "place_names", ()) or ()),
+                        need_location=bool(getattr(plan, "place_names", ()) or ())
+                        and not trip_discovery_pending(plan),
                     )
                 )
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
@@ -3165,7 +3187,7 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
     if not getattr(plan, "want_journal", False):
         return []
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
-    place_trip = _place_trip_keywords(plan)
+    place_trip = _exclusive_place_trip_keywords(plan)
     if place_trip:
         tokens = [t for t in tokens if not re.fullmatch(r"(?:19|20)\d{2}", str(t))]
         have = {str(t).lower() for t in tokens}

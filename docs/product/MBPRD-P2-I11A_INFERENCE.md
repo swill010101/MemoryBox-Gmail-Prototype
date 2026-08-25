@@ -9,4 +9,6 @@ Amends the I11 broad-synthesis pipeline: after deterministic retrieve/prep, a pr
 
 Source: founder MBPRD v0.3 (2026-08-25).
 
-See [MBAS](MBAS-P2-I11A_INFERENCE.md) · [MBAT](MBAT-P2-I11A_ACCEPTANCE.md).
+## Named trip discovery (Alaska diagnostic)
+
+Do not exclusive-filter retrieve to a compiled trip label. Parse `my/our/X's Alaska trip in 2026` as ask kind=trip, possessive = requestor or named/kinship subject, place hint = Alaska, time = year 2026, trip window unresolved. Broad retrieve, score place/travel/EXIF/GPS/comms/calendar/knowledge, cluster windows, resolve or clarify, then I11A. Do not change the inference system prompt from empty-units traces; fail-closed on ungrounded claims stays.

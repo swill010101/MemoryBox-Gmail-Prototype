@@ -143,6 +143,7 @@
     lastDetailKey = detailKey;
     const modelSpans = spans.filter((s) => s.operation === "chat" || s.operation === "embed");
     const firstModel = modelSpans[0] || {};
+    const resSpan = spans.find((s) => s.operation === "retrieval_resolution") || {};
     const infSpans = spans.filter((s) => s.component === "i11a");
     const infLeaf = infSpans.find((s) => s.operation === "leaf") || {};
     const infVal = infSpans.find((s) => s.operation === "validate") || {};
@@ -211,6 +212,7 @@
       "<p class=\"hint\">I11A Light: copy each pane in full (not the on-screen truncation). Developer-only; not family evidence.</p>" +
       "<div class=\"panes\">" +
       pane("Assembled MemoryBox context", "mb", t.assembled_context || firstModel.assembled_context, "copy-assembled") +
+      pane("Retrieval resolution", "mb", resSpan.assembled_context || resSpan.parsed, "copy-retrieval-resolution") +
       pane("PersonContext / requestor / focal", "mb", (infVal.assembled_context || {}).request_context || infVal.assembled_context, "copy-person-context") +
       pane("Copy Provider Payload", "prov", copyPayload, "copy-provider-payload") +
       pane("Copy Raw Model Response", "", infLeaf.raw_response || firstModel.raw_response, "copy-raw-response") +
