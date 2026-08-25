@@ -217,6 +217,34 @@ _STATE_CITIES: dict[str, tuple[str, ...]] = {
         "rochester",
         "syracuse",
     ),
+    "alaska": (
+        "anchorage",
+        "juneau",
+        "ketchikan",
+        "skagway",
+        "sitka",
+        "seward",
+        "whittier",
+        "fairbanks",
+        "kodiak",
+        "homer",
+        "valdez",
+        "glacier bay",
+        "icy strait",
+        "icy strait point",
+        "college fjord",
+        "haines",
+        "petersburg",
+        "wrangell",
+    ),
+    "nevada": (
+        "las vegas",
+        "paradise",
+        "henderson",
+        "north las vegas",
+        "summerlin",
+        "boulder city",
+    ),
 }
 
 
@@ -236,6 +264,51 @@ def canonical_place(place: str) -> str:
         if collapsed.replace(" ", "") == name.replace(" ", ""):
             return name
     return collapsed
+
+
+_TRIP_HINT_ALIASES: dict[str, tuple[str, ...]] = {
+    "alaska": (
+        "princess",
+        "princess cruises",
+        "alaska airlines",
+        "inside passage",
+        "glacier bay",
+        "juneau",
+        "ketchikan",
+        "skagway",
+        "sitka",
+        "seward",
+        "whittier",
+        "anchorage",
+        "fairbanks",
+        "icy strait",
+        "college fjord",
+        "vancouver",
+        "yvr",
+        "lax",
+        "anc",
+        "jnu",
+        "shore excursion",
+        "cruise itinerary",
+    ),
+}
+
+
+def trip_hint_tokens(label: str) -> list[str]:
+    """Extra needles for named-trip discovery (not exclusive GPS filters)."""
+    low = _norm(label)
+    if not low:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for key, aliases in _TRIP_HINT_ALIASES.items():
+        if key in low or low == key:
+            for a in (key,) + aliases:
+                t = _norm(a)
+                if t and t not in seen:
+                    seen.add(t)
+                    out.append(t)
+    return out
 
 
 def geo_tokens_for_label(label: str) -> list[str]:

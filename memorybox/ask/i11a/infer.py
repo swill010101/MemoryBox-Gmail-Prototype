@@ -25,6 +25,8 @@ Rules:
 - Relationship labels may only reuse labels supplied in PersonContext. Unknown contacts stay unknown. Warmth or frequency is not family.
 - candidate_visual_ids may only be asset/evidence ids from supplied media units.
 - Media units may include captured_at, reliable EXIF/GPS, observed people, and location provenance. Infer candidate episodes from those fields; do not infer photographer, purpose, emotion, or companions beyond the evidence.
+- A GPS or reverse-geocode city is presence at capture time, not residence or a month-long stay. Correlate nearby calendar/travel/media (for example Paradise, NV with Las Vegas) instead of inventing an independent period episode.
+- Video assets (file + capture time + optional GPS) are evidence even without a face-appearance moment. Video moments (a span on a video) are a separate concept.
 - Return unresolved items rather than guessing.
 - Do not include coverage, counts, provider status, eligible/processed totals, or incomplete flags in the JSON.
 - Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
@@ -58,13 +60,14 @@ def _retries() -> int:
 
 
 def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split by character budget only. Every unit is assigned to a chunk."""
     budget = _batch_chars()
     chunks: list[list[dict[str, Any]]] = []
     cur: list[dict[str, Any]] = []
     size = 0
     for u in units:
         piece = len(json.dumps(u, default=str))
-        if cur and (size + piece > budget or len(cur) >= 12):
+        if cur and size + piece > budget:
             chunks.append(cur)
             cur = []
             size = 0
@@ -122,7 +125,11 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
     raise last or ProviderError("inference failed")
 
 
-def _deterministic_merge(leaf_docs: list[dict[str, Any]]) -> dict[str, Any]:
+def _deterministic_merge(
+    leaf_docs: list[dict[str, Any]],
+    *,
+    keep_ids: set[str] | None = None,
+) -> dict[str, Any]:
     episodes: list[dict[str, Any]] = []
     themes: list[Any] = []
     unresolved: list[Any] = []
@@ -144,11 +151,43 @@ def _deterministic_merge(leaf_docs: list[dict[str, Any]]) -> dict[str, Any]:
         return str(ds.get("start") or "") + "|" + str(ep.get("label") or "")
 
     episodes.sort(key=_ep_key)
+
+    def _ep_keep_priority(ep: dict[str, Any]) -> int:
+        blob = " ".join(
+            str(x or "")
+            for x in (
+                ep.get("label"),
+                ep.get("content"),
+                " ".join(str(p) for p in (ep.get("places") or [])),
+            )
+        ).lower()
+        kinds = " ".join(str(x) for x in (ep.get("source_kinds") or []))
+        if any(tok in blob for tok in ("calendar", "flight", "sphere", "eagles", "cruise", "itinerary")):
+            return 0
+        if "calendar" in kinds or "travel" in kinds:
+            return 0
+        return 1
+
+    ranked = sorted(episodes, key=lambda e: (_ep_keep_priority(e), _ep_key(e)))
+    keep_ids = keep_ids or set()
+
+    def _cites_keep(ep: dict[str, Any]) -> bool:
+        ids: list[str] = []
+        for raw in ep.get("supporting_evidence_ids") or []:
+            ids.append(str(raw))
+        for cl in ep.get("claims") or []:
+            if isinstance(cl, dict):
+                ids.extend(str(x) for x in (cl.get("supporting_evidence_ids") or []))
+        return any(i in keep_ids for i in ids)
+
+    pinned = [e for e in ranked if _cites_keep(e)]
+    rest = [e for e in ranked if e not in pinned]
+    room = max(0, 80 - len(pinned))
     return {
         "schema_version": 2,
         "ask_semantics": {"kind": kind, "constraints": {}},
         "focal_subjects": focals[:12],
-        "episodes": episodes[:80],
+        "episodes": (pinned + rest[:room])[: max(80, len(pinned))],
         "themes": themes[:24],
         "unresolved": unresolved[:24],
     }
@@ -213,6 +252,23 @@ def run_inference(
     units = units_from_pack(pack)
     model_units = compact_units_for_model(units)
     chunks = _chunk_units(model_units)
+    chunk_map: dict[str, int] = {}
+    for i, ch in enumerate(chunks):
+        for u in ch:
+            for key in (u.get("unit_id"), u.get("evidence_id"), u.get("asset_ref")):
+                s = str(key or "").strip()
+                if s:
+                    chunk_map[s] = i
+            for extra in u.get("extra_ids") or []:
+                s = str(extra or "").strip()
+                if s:
+                    chunk_map[s] = i
+    keep_ids = {
+        str(u.get("evidence_id") or u.get("unit_id") or "")
+        for u in model_units
+        if str(u.get("kind") or "") in {"calendar", "travel", "video_asset"}
+    }
+    keep_ids = {x for x in keep_ids if x}
     accounting = {
         "eligible_units": len(units),
         "chunk_n": len(chunks),
@@ -221,6 +277,9 @@ def run_inference(
         "failed_units": 0,
         "retries": _retries(),
         "merge_depth": 0,
+        "units_generated": len(units),
+        "units_passed_to_inference": len(model_units),
+        "dropped_before_inference": max(0, len(units) - len(model_units)),
     }
     if not units:
         result = {
@@ -369,7 +428,7 @@ def run_inference(
                 )
                 return result
         else:
-            parsed_merge = _deterministic_merge(leaf_docs)
+            parsed_merge = _deterministic_merge(leaf_docs, keep_ids=keep_ids)
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
@@ -401,6 +460,7 @@ def run_inference(
         "accounting": accounting,
         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
         "raw_leaf_n": len(raw_leaves),
+        "chunk_map": chunk_map,
     }
     if fail_closed and not leaf_docs:
         result["reason"] = "inference unavailable or unparsable"
@@ -528,6 +588,14 @@ def apply_inference_to_pack(
         for ep in inf["document"].get("episodes") or []:
             vis.extend(ep.get("candidate_visual_ids") or [])
         pack["candidate_visual_ids"] = list(dict.fromkeys(vis))
+    from memorybox.ask.i11a.consideration import finish_consideration
+
+    finish_consideration(
+        pack,
+        chunk_map=inf.get("chunk_map") or {},
+        document=inf.get("document"),
+        accounting=inf.get("accounting"),
+    )
     return pack
 
 

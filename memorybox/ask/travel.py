@@ -15,6 +15,20 @@ _HOTEL = re.compile(
 _CAR = re.compile(
     r"(?i)\b(hertz|enterprise|avis|budget|national|alamo|rental car|car rental)\b"
 )
+_CRUISE = re.compile(
+    r"(?i)\b(princess cruises?|holland america|royal caribbean|norwegian cruise|"
+    r"celebrity cruises?|carnival cruise|inside passage|"
+    r"cruise (?:itinerary|reservation|ticket|line)|"
+    r"shore excursion|excursions?)\b"
+)
+_TRAVEL_PLACES = re.compile(
+    r"(?i)\b("
+    r"maui|hawaii|ogg|hnl|"
+    r"alaska|anchorage|juneau|ketchikan|skagway|sitka|seward|whittier|"
+    r"glacier bay|icy strait|college fjord|inside passage|"
+    r"vancouver|yvr|lax|anc|jnu|las vegas"
+    r")\b"
+)
 _ROUTE = re.compile(
     r"\b([A-Z]{3})\s*(?:→|->|–|—|-| to )\s*([A-Z]{3})\b"
 )
@@ -72,7 +86,9 @@ def extract_travel(
     airline = _AIRLINE.search(blob)
     hotel = _HOTEL.search(blob)
     car = _CAR.search(blob)
+    cruise = _CRUISE.search(blob)
     route = _ROUTE.search(blob)
+    place_hit = _TRAVEL_PLACES.search(blob)
     dates = _dates(blob)
     confirm_code = None
     for confirm in _CONFIRM.finditer(blob):
@@ -86,7 +102,9 @@ def extract_travel(
             confirm_code = raw
             break
     kind = None
-    if airline or route:
+    if cruise:
+        kind = "cruise"
+    elif airline or route:
         kind = "flight"
     elif car and not hotel:
         kind = "car"
@@ -98,16 +116,18 @@ def extract_travel(
         return None
     signals = sum(
         [
-            bool(airline or hotel or car),
-            bool(route) or bool(re.search(r"(?i)\b(maui|hawaii|ogg|hnl)\b", blob)),
+            bool(airline or hotel or car or cruise),
+            bool(route) or bool(place_hit),
             bool(dates),
-            bool(confirm_code),
+            bool(confirm_code) or bool(re.search(r"(?i)\bitinerary\b", blob)),
         ]
     )
     # Require enough structure that we are not inventing an itinerary from a chatty email.
-    if signals < 2 and not (route and dates):
+    if signals < 2 and not (route and dates) and not (cruise and (dates or place_hit or confirm_code)):
         return None
     if kind == "flight" and not (route or dates):
+        return None
+    if kind == "cruise" and not (dates or place_hit or confirm_code or airline):
         return None
     if kind == "lodging" and hotel and re.fullmatch(
         r"(?i)hotels?|resorts?|lodging", hotel.group(0) or ""
@@ -121,6 +141,13 @@ def extract_travel(
         origin, dest = route.group(1), route.group(2)
     if kind == "lodging":
         property_name = (hotel.group(0) if hotel else None)
+    if kind == "cruise" and not dest:
+        dest = place_hit.group(0) if place_hit else (cruise.group(0) if cruise else None)
+    carrier = None
+    if airline:
+        carrier = airline.group(0)
+    elif cruise:
+        carrier = cruise.group(0)
     return {
         "travel_kind": kind,
         "origin": origin,
@@ -129,7 +156,7 @@ def extract_travel(
         "start": dates[0] if dates else None,
         "end": dates[1] if len(dates) > 1 else (dates[0] if dates else None),
         "confirmation": confirm_code,
-        "carrier": airline.group(0) if airline else None,
+        "carrier": carrier,
         "derived_from": {
             "unit_id": source_unit_id,
             "evidence_id": source_evidence_id,

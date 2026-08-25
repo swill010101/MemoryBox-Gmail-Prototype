@@ -65,6 +65,8 @@ _STOP = frozenset(
 _KIND_SOURCE = {
     "media_observation": "photo",
     "spoken_moment": "video",
+    "video_asset": "video",
+    "video_moment": "video",
     "calendar": "calendar",
     "calendar_event": "calendar",
     "travel": "travel",
@@ -136,6 +138,30 @@ def _places_of(obj: dict[str, Any]) -> list[str]:
             seen.add(key)
             out.append(s)
     return out
+
+
+def _las_vegas_blob(obj: dict[str, Any]) -> bool:
+    blob = " ".join(
+        str(x or "")
+        for x in (
+            obj.get("place"),
+            obj.get("label"),
+            obj.get("title"),
+            obj.get("content"),
+            " ".join(_places_of(obj)),
+        )
+    ).lower()
+    if any(tok in blob for tok in ("las vegas", "vegas", "sphere", "paradise", "henderson")):
+        return True
+    lat, lon = obj.get("latitude"), obj.get("longitude")
+    media = obj.get("media") if isinstance(obj.get("media"), dict) else {}
+    gps = media.get("exif_gps") if isinstance(media.get("exif_gps"), dict) else {}
+    try:
+        lat_f = float(lat if lat is not None else (gps or {}).get("latitude"))
+        lon_f = float(lon if lon is not None else (gps or {}).get("longitude"))
+    except (TypeError, ValueError):
+        return False
+    return 35.85 <= lat_f <= 36.45 and -115.45 <= lon_f <= -114.85
 
 
 def _has_exif_gps(unit: dict[str, Any]) -> bool:
@@ -256,7 +282,9 @@ def _corroborating_units(
         if start and not _in_span(day, start, end, slop_days=2):
             continue
         utoks = _tokens(_unit_blob(u), u.get("place"))
-        if seeds & utoks:
+        if seeds & utoks or (
+            _las_vegas_blob(episode) and _las_vegas_blob(u)
+        ):
             extra.append(u)
     return extra
 
@@ -284,7 +312,7 @@ def episode_support_profile(
         if day and (
             u.get("capture_time")
             or u.get("captured_at")
-            or str(u.get("kind") or "") in {"media_observation", "spoken_moment"}
+            or str(u.get("kind") or "") in {"media_observation", "spoken_moment", "video_asset", "video_moment"}
         ):
             reliable_time = True
         if st == "photo" and day:

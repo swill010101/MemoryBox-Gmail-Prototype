@@ -226,6 +226,8 @@ class PhotoHit:
     exif: dict[str, str] | None = None
     # Immich-named faces on the asset (+ optional boxes)
     faces: list[dict[str, Any]] | None = None
+    media_type: str = "image"
+    duration_sec: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -249,6 +251,13 @@ class VideoHit:
     original_filename: str | None = None
     thumb_url: str | None = None
     spoken_text: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    place: str | None = None
+    city: str | None = None
+    state: str | None = None
+    duration_sec: float | None = None
+    media_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -557,9 +566,14 @@ def _place_trip_keywords(plan: QueryPlan) -> list[str]:
             seen.add(tok)
             out.append(tok)
         try:
-            from memorybox.ask.place_match import geo_tokens_for_label
+            from memorybox.ask.place_match import geo_tokens_for_label, trip_hint_tokens
 
             for tok in geo_tokens_for_label(low):
+                if tok in seen:
+                    continue
+                seen.add(tok)
+                out.append(tok)
+            for tok in trip_hint_tokens(low):
                 if tok in seen:
                     continue
                 seen.add(tok)
@@ -1949,7 +1963,19 @@ def search_photos(
         snap = getattr(client, "diag_snapshot", None)
         if callable(snap):
             status["immich_diag"] = snap()
+        status["media_provider_candidates"] = int(
+            status.get("media_provider_candidates") or len(hits)
+        )
+        status["person_filtered_media_count"] = len(hits)
         filtered = _filter_photo_hits(hits)
+        if "after_temporal_filter" in status:
+            status["time_filtered_media_count"] = int(status["after_temporal_filter"])
+        else:
+            status["time_filtered_media_count"] = len(filtered)
+        if "after_place_filter" in status:
+            status["location_filtered_count"] = int(status["after_place_filter"])
+        else:
+            status["location_filtered_count"] = None
         if _bounded_period_tell(plan) or int(limit) <= 0:
             status["photo_truncated"] = False
             status["eligible_n"] = len(filtered)
@@ -2333,6 +2359,21 @@ def search_photos(
             albums = tuple(getattr(a, "albums", ()) or ())
             if albums and "albums" not in exif_d:
                 exif_d["albums"] = ", ".join(str(x) for x in albums if x)
+            media_type = "image"
+            if str(exif_d.get("media") or "").lower() == "video":
+                media_type = "video"
+            fn = str(getattr(a, "original_filename", None) or "").lower()
+            if fn.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")):
+                media_type = "video"
+            dur = None
+            for k in ("Duration", "duration", "duration_sec"):
+                raw_d = exif_d.get(k)
+                if raw_d not in (None, ""):
+                    try:
+                        dur = float(str(raw_d).split()[0])
+                    except (TypeError, ValueError):
+                        dur = None
+                    break
             return PhotoHit(
                 provider_key=a.provider_key,
                 external_id=a.external_id,
@@ -2357,6 +2398,8 @@ def search_photos(
                 original_filename=getattr(a, "original_filename", None),
                 exif=exif_d or None,
                 faces=_faces_for_hit(a),
+                media_type=media_type,
+                duration_sec=dur,
             )
 
         if mapped_ext and asked_names:

@@ -6,6 +6,7 @@ clusters candidate trip windows, then keeps eligible rows for the resolved trip.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
@@ -49,7 +50,16 @@ def _text_matches_place(blob: str, tokens: list[str]) -> bool:
     if not tokens:
         return False
     low = blob.lower()
-    return any(tok.lower() in low for tok in tokens if tok)
+    for tok in tokens:
+        t = (tok or "").lower().strip()
+        if not t:
+            continue
+        if len(t) <= 3:
+            if re.search(rf"\b{re.escape(t)}\b", low):
+                return True
+        elif t in low:
+            return True
+    return False
 
 
 def _cluster_days(days: list[str], *, gap: int = _GAP_DAYS) -> list[tuple[str, str, int]]:
@@ -111,6 +121,7 @@ class TripDiscoveryResult:
     resolved: bool = False
     ambiguous: bool = False
     clarification: str | None = None
+    comm_pipeline: list[dict[str, Any]] = field(default_factory=list)
 
     def span_payload(self) -> dict[str, Any]:
         return {
@@ -123,6 +134,7 @@ class TripDiscoveryResult:
             "modalities": [m.to_dict() for m in self.modalities],
             "trip_labels": list(getattr(self.plan, "trip_labels", ()) or ()),
             "place_names": list(getattr(self.plan, "place_names", ()) or ()),
+            "comm_pipeline": self.comm_pipeline[:80],
         }
 
 
@@ -131,7 +143,7 @@ def emit_retrieval_resolution_span(result: TripDiscoveryResult) -> None:
         from memorybox.ai_trace import context as ai_ctx
         from memorybox.ai_trace import store
 
-        tid = ai_ctx.get_trace_id()
+        tid = ai_ctx.current_trace_id()
         if not tid:
             return
         store.insert_span(
@@ -147,6 +159,12 @@ def emit_retrieval_resolution_span(result: TripDiscoveryResult) -> None:
                 "resolved": result.resolved,
                 "eligible_photos": len(result.photos),
                 "eligible_evidence": len(result.evidence),
+                "comm_selected": sum(
+                    1 for r in result.comm_pipeline if r.get("selected")
+                ),
+                "comm_skipped": sum(
+                    1 for r in result.comm_pipeline if not r.get("selected")
+                ),
             },
         )
     except Exception:  # noqa: BLE001
@@ -286,10 +304,59 @@ def resolve_trip(
         filter_photo_hits_to_places(photos, plan.place_names) if tokens else list(photos)
     )
     matched_ev = []
+    comm_pipeline: list[dict[str, Any]] = []
     for h in evidence:
         blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
-        if not tokens or _text_matches_place(blob, tokens):
+        channel = str(h.channel or h.evidence_kind or "").lower()
+        place_ok = (not tokens) or _text_matches_place(blob, tokens)
+        travel_ok = False
+        if not place_ok and str(channel) in {"email", "communication", ""}:
+            try:
+                from memorybox.ask.travel import extract_travel
+
+                travel_ok = bool(
+                    extract_travel(
+                        subject=str(h.summary or ""),
+                        body=str(h.excerpt or ""),
+                        source_unit_id=str(h.evidence_id or ""),
+                        source_evidence_id=str(h.evidence_id or ""),
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                travel_ok = False
+        selected = place_ok or travel_ok
+        skip = None
+        if tokens and not selected:
+            skip = "no_place_hint_or_travel_match"
+        comm_pipeline.append(
+            {
+                "evidence_id": h.evidence_id,
+                "title": h.summary,
+                "channel": channel,
+                "day": _day(h.sent_at),
+                "retrieved": True,
+                "selected": selected,
+                "skip_reason": skip,
+                "place_hint_match": place_ok,
+                "travel_extracted": travel_ok,
+            }
+        )
+        if selected:
             matched_ev.append(h)
+            if not travel_ok:
+                try:
+                    from memorybox.ask.travel import extract_travel as _et2
+
+                    extra = _et2(
+                        subject=str(h.summary or ""),
+                        body=str(h.excerpt or ""),
+                        source_unit_id=str(h.evidence_id or ""),
+                        source_evidence_id=str(h.evidence_id or ""),
+                    )
+                    if extra:
+                        comm_pipeline[-1]["travel_extracted"] = True
+                except Exception:  # noqa: BLE001
+                    pass
 
     matched_stories = [
         h
@@ -318,6 +385,22 @@ def resolve_trip(
         d = _day(h.sent_at)
         if d:
             days.append(d)
+        try:
+            from memorybox.ask.travel import extract_travel as _et_days
+
+            facts = _et_days(
+                subject=str(h.summary or ""),
+                body=str(h.excerpt or ""),
+                source_unit_id=str(h.evidence_id or ""),
+                source_evidence_id=str(h.evidence_id or ""),
+            )
+            if facts:
+                for key in ("start", "end"):
+                    dd = _day(facts.get(key))
+                    if dd:
+                        days.append(dd)
+        except Exception:  # noqa: BLE001
+            pass
     for h in matched_stories:
         d = _day(h.taken_at)
         if d:
@@ -382,6 +465,7 @@ def resolve_trip(
         artifacts=artifacts,
         modalities=modalities,
         windows=windows,
+        comm_pipeline=comm_pipeline,
     )
 
     if not pending:
@@ -447,7 +531,7 @@ def resolve_trip(
             return False
         return date_in_windows(d, win)
 
-    result.photos = [h for h in matched_photos if not h.taken_at or _in_win(h.taken_at)]
+    result.photos = [h for h in photos if not h.taken_at or _in_win(h.taken_at)]
     result.evidence = [h for h in matched_ev if not h.sent_at or _in_win(h.sent_at)]
     result.videos = [h for h in videos if not h.taken_at or _in_win(h.taken_at)]
     result.stories = [h for h in matched_stories if not h.taken_at or _in_win(h.taken_at)]
@@ -459,6 +543,12 @@ def resolve_trip(
         or _in_win(h.captured_at)
     ]
     result.artifacts = matched_arts
+    kept_ids = {str(h.evidence_id) for h in result.evidence}
+    for row in result.comm_pipeline:
+        eid = str(row.get("evidence_id") or "")
+        if row.get("selected") and eid not in kept_ids:
+            row["selected"] = False
+            row["skip_reason"] = row.get("skip_reason") or "outside_resolved_trip_window"
     if result.modalities:
         m0 = result.modalities[0]
         result.modalities[0] = replace(

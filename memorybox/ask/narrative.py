@@ -378,6 +378,8 @@ def tell_from_hits(
     journals: list[Any] | None = None,
     artifacts: list[Any] | None = None,
     modality_state: dict[str, Any] | None = None,
+    photo_status: dict[str, Any] | None = None,
+    video_status: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     pack = prepare_narrative_pack(
         plan,
@@ -387,6 +389,8 @@ def tell_from_hits(
         stories=stories,
         journals=journals,
         artifacts=artifacts,
+        photo_status=photo_status,
+        video_status=video_status,
     )
     from memorybox.ask.i11a import needs_semantic_inference
     from memorybox.ask.i11a.infer import apply_inference_to_pack

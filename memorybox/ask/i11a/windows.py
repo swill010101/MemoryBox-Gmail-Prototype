@@ -15,6 +15,8 @@ _OBSERVED_KINDS = frozenset(
         "media_observation",
         "photo",
         "video",
+        "video_asset",
+        "video_moment",
         "spoken_moment",
         "journal",
         "story",

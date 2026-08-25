@@ -65,7 +65,12 @@ def units_from_pack(pack: dict[str, Any]) -> list[dict[str, Any]]:
         }
         kind = str(u.get("kind") or "")
         st = str(row.get("source_type") or "")
-        if kind in {"media_observation", "spoken_moment"} or st in {"photo", "video"}:
+        if kind in {
+            "media_observation",
+            "spoken_moment",
+            "video_asset",
+            "video_moment",
+        } or st in {"photo", "video"}:
             lat, lon = u.get("latitude"), u.get("longitude")
             gps = None
             if lat is not None and lon is not None:
@@ -86,6 +91,9 @@ def units_from_pack(pack: dict[str, Any]) -> list[dict[str, Any]]:
                 "location_confidence": loc_conf,
                 "location_provenance": u.get("location_provenance")
                 or u.get("place_basis"),
+                "media_type": u.get("media_type")
+                or ("video" if kind in {"video_asset", "video_moment"} or st == "video" else "image"),
+                "duration_sec": u.get("duration_sec"),
             }
             row["captured_at"] = row["media"]["captured_at"]
             row["latitude"] = lat
@@ -95,6 +103,7 @@ def units_from_pack(pack: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _max_model_units() -> int:
+    """Cluster threshold for repetitive communications only — never a global drop-cap."""
     raw = (os.environ.get("MEMORYBOX_I11A_MAX_MODEL_UNITS") or "").strip()
     if raw.isdigit() and int(raw) >= 8:
         return int(raw)
@@ -135,8 +144,26 @@ def _merge_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return first
 
 
+def _priority_rank(unit: dict[str, Any]) -> int:
+    kind = str(unit.get("kind") or "")
+    if kind in {"calendar", "travel"}:
+        return 0
+    if kind in {"video_asset", "journal", "story", "artifact"}:
+        return 1
+    if kind in {"media_observation", "video_moment", "spoken_moment"}:
+        return 2
+    if kind == "communication":
+        return 3
+    return 4
+
+
 def compact_units_for_model(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Slim + cluster for the model. Pack/accounting still keep every eligible unit."""
+    """Normalize for the engine. Never drop calendar/travel/media as an arbitrary top-N.
+
+    Clustering applies only to repetitive communications when volume is extreme.
+    Calendar, travel, and media units always pass through. Chunking (char budget)
+    is how large sets reach the model — not a silent slice.
+    """
     seen: set[tuple[Any, ...]] = set()
     slim: list[dict[str, Any]] = []
     for u in units:
@@ -152,31 +179,26 @@ def compact_units_for_model(units: list[dict[str, Any]]) -> list[dict[str, Any]]
                 continue
             seen.add(key)
         slim.append(u)
+    comms = [u for u in slim if str(u.get("kind") or "") == "communication"]
+    rest = [u for u in slim if str(u.get("kind") or "") != "communication"]
     cap = _max_model_units()
-    for grain in ("day", "week"):
-        if len(slim) <= cap:
-            break
-        buckets: dict[str, list[dict[str, Any]]] = {}
-        passthrough: list[dict[str, Any]] = []
-        for u in slim:
-            kind = str(u.get("kind") or "")
-            if kind in {"communication", "calendar"}:
+    if len(comms) > max(40, cap * 4):
+        for grain in ("day", "week"):
+            if len(comms) <= max(40, cap * 4):
+                break
+            buckets: dict[str, list[dict[str, Any]]] = {}
+            for u in comms:
                 buckets.setdefault(_cluster_key(u, grain=grain), []).append(u)
-            else:
-                passthrough.append(u)
-        clustered = passthrough[:]
-        for rows in buckets.values():
-            if len(rows) == 1:
-                clustered.append(rows[0])
-            else:
-                clustered.append(_merge_cluster(rows))
-        slim = clustered
-    if len(slim) > cap:
-        keep = [u for u in slim if str(u.get("kind") or "") not in {"communication", "calendar"}]
-        overflow = [u for u in slim if str(u.get("kind") or "") in {"communication", "calendar"}]
-        room = max(4, cap - len(keep))
-        slim = keep + overflow[:room]
-    return slim[:cap]
+            clustered: list[dict[str, Any]] = []
+            for rows in buckets.values():
+                if len(rows) == 1:
+                    clustered.append(rows[0])
+                else:
+                    clustered.append(_merge_cluster(rows))
+            comms = clustered
+    out = rest + comms
+    out.sort(key=_priority_rank)
+    return out
 
 
 def in_scope_ids(pack: dict[str, Any]) -> set[str]:

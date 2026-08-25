@@ -59,9 +59,10 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a4" in html
+        and "?v=i11a5" in html
         and "retrieval_resolution" in js
-        and "copy-retrieval-resolution" in js,
+        and "copy-retrieval-resolution" in js
+        and "copy-consideration" in js,
         checks,
         problems,
         detail="AI Trace Light I11A copy/export controls",
@@ -894,6 +895,232 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str(gmeta.get("sentence_evidence")),
+    )
+
+    from memorybox.ask.i11a.units import compact_units_for_model
+    from memorybox.ask.travel import extract_travel
+    from memorybox.ask.place_match import trip_hint_tokens
+
+    flood_photos = [
+        PhotoHit(
+            provider_key="immich",
+            external_id=f"ph-flood-{i}",
+            taken_at=f"2026-01-{(i % 28) + 1:02d}T12:00:00",
+            people=["Tom Will"],
+            location="Manchester",
+            thumb_url=None,
+            web_url=None,
+        )
+        for i in range(20)
+    ]
+    jan_cal_plan = plan_ask(
+        "Write a narrative about my January of 2026",
+        AskContext(session_id="i11a-cal-pipe"),
+    )
+    cal_flight = EvidenceHit(
+        evidence_id="e-las-flight",
+        evidence_kind="calendar_event",
+        summary="Flight to Las Vegas",
+        score=1.0,
+        excerpt="Flight to Las Vegas",
+        source="ics",
+        sent_at="2026-01-29T08:00:00",
+        channel="calendar",
+    )
+    cal_sphere = EvidenceHit(
+        evidence_id="e-eagles-sphere",
+        evidence_kind="calendar_event",
+        summary="Eagles Live at Sphere",
+        score=1.0,
+        excerpt="Eagles Live at Sphere",
+        source="ics",
+        sent_at="2026-01-30T19:00:00",
+        channel="calendar",
+    )
+    paradise_photo = PhotoHit(
+        provider_key="immich",
+        external_id="ph-paradise-nv",
+        taken_at="2026-01-30T16:00:00",
+        people=["Tom Will"],
+        location="Paradise, Nevada",
+        thumb_url=None,
+        web_url=None,
+        city="Paradise",
+        state="Nevada",
+        latitude=36.12,
+        longitude=-115.17,
+        mb_person_id="p-tom",
+        mb_person_name="Tom Will",
+    )
+    jan_vid = PhotoHit(
+        provider_key="immich",
+        external_id="vid-vegas-clip",
+        taken_at="2026-01-31T11:00:00",
+        people=["Tom Will"],
+        location="Las Vegas",
+        thumb_url=None,
+        web_url=None,
+        media_type="video",
+        original_filename="clip.mp4",
+        duration_sec=42.0,
+        latitude=36.11,
+        longitude=-115.17,
+    )
+    jan_pack = prepare_narrative_pack(
+        jan_cal_plan,
+        evidence=[cal_flight, cal_sphere],
+        photos=flood_photos + [paradise_photo, jan_vid],
+        photo_status={
+            "media_provider_candidates": 40,
+            "person_filtered_media_count": 30,
+            "time_filtered_media_count": 22,
+            "location_filtered_count": None,
+        },
+    )
+    inf_units = units_from_pack(jan_pack)
+    compact = compact_units_for_model(inf_units)
+    cal_titles = " ".join(
+        str(u.get("title") or u.get("content") or "") for u in jan_pack.get("units") or []
+    ).lower()
+    pipe = {str(r.get("evidence_id")): r for r in (jan_pack.get("calendar_pipeline") or [])}
+    sets = jan_pack.get("evidence_sets") or {}
+    kinds = {str(u.get("kind")) for u in jan_pack.get("units") or []}
+    obs_days = []
+    for ep in jan_pack.get("episodes") or []:
+        blob = str(ep.get("title") or ep.get("content") or "").lower()
+        if "sphere" in blob or "vegas" in blob or "eagles" in blob:
+            ow = ep.get("observed_window") or {}
+            obs_days.append((ow.get("start"), ow.get("end")))
+    princess = extract_travel(
+        subject="Your Princess Cruises itinerary",
+        body="Princess Cruises confirmation P9K3M2 itinerary Vancouver to Whittier May 12, 2026 shore excursion",
+        source_unit_id="u-pr",
+        source_evidence_id="e-princess",
+    )
+    ak_air = extract_travel(
+        subject="Alaska Airlines itinerary",
+        body="Alaska Airlines confirmation X1Y2Z3 LAX to ANC May 10, 2026",
+        source_unit_id="u-as",
+        source_evidence_id="e-as",
+    )
+    princess_hit = EvidenceHit(
+        evidence_id="e-princess-mail",
+        evidence_kind="communication",
+        summary="Your Princess Cruises itinerary",
+        score=1.0,
+        excerpt="Princess Cruises confirmation P9K3M2 itinerary Vancouver May 12, 2026",
+        source="email_mbox",
+        sent_at="2026-05-01T10:00:00",
+        channel="email",
+    )
+    from memorybox.ask.trip_discovery import resolve_trip as _resolve_trip2
+
+    ak_plan = plan_ask(
+        "Tell me about my Alaska trip in 2026",
+        AskContext(session_id="i11a-ak-pipe"),
+    )
+    ak_disc = _resolve_trip2(
+        ak_plan,
+        evidence=[princess_hit],
+        photos=[
+            PhotoHit(
+                provider_key="immich",
+                external_id="ph-yvr",
+                taken_at="2026-05-12T12:00:00",
+                people=["Tom Will"],
+                location="Vancouver",
+                thumb_url=None,
+                web_url=None,
+                city="Vancouver",
+            )
+        ],
+        photo_status={
+            "provider_key": "immich",
+            "after_temporal_filter": 1,
+            "constraint_mode": "deferred_trip_discovery",
+        },
+    )
+    _check(
+        "i11a_no_topn_drop_calendar",
+        any("las vegas" in cal_titles and "eagles" in cal_titles for _ in (True,))
+        and any(str(u.get("kind")) == "calendar" for u in compact)
+        and len([u for u in compact if str(u.get("kind")) == "calendar"]) >= 2
+        and len(compact) >= len(
+            [u for u in inf_units if str(u.get("kind")) in {"calendar", "travel"}]
+        ),
+        checks,
+        problems,
+        detail=str(
+            {
+                "compact_n": len(compact),
+                "inf_n": len(inf_units),
+                "cal_in_compact": [
+                    u.get("content") for u in compact if u.get("kind") == "calendar"
+                ],
+                "titles": cal_titles[:240],
+            }
+        ),
+    )
+    _check(
+        "jan_calendar_pipeline_sphere_and_flight",
+        bool(pipe.get("e-las-flight", {}).get("converted_to_inference_unit"))
+        and bool(pipe.get("e-eagles-sphere", {}).get("converted_to_inference_unit"))
+        and pipe.get("e-las-flight", {}).get("retrieved") is True
+        and pipe.get("e-eagles-sphere", {}).get("eligible") is True,
+        checks,
+        problems,
+        detail=str(pipe),
+    )
+    _check(
+        "three_evidence_sets_are_distinct",
+        set(sets) >= {"retrieved", "inference", "presentation"}
+        and (sets.get("retrieved") or {}).get("photos") == 22
+        and (sets.get("inference") or {}).get("units_generated") == len(jan_pack.get("units") or [])
+        and (jan_pack.get("media_consideration") or {}).get("media_provider_candidates") == 40
+        and (jan_pack.get("media_consideration") or {}).get("time_filtered_media_count") == 22
+        and (jan_pack.get("media_consideration") or {}).get("person_filtered_media_count") == 30
+        and (jan_pack.get("media_consideration") or {}).get("location_filtered_count") is None,
+        checks,
+        problems,
+        detail=str({"sets": sets, "media": jan_pack.get("media_consideration")}),
+    )
+    _check(
+        "video_asset_without_face_moment",
+        "video_asset" in kinds
+        and any(
+            str(u.get("asset_ref")) == "vid-vegas-clip" and u.get("kind") == "video_asset"
+            for u in (jan_pack.get("units") or [])
+        ),
+        checks,
+        problems,
+        detail=str(sorted(kinds)),
+    )
+    _check(
+        "princess_and_alaska_air_travel_units",
+        bool(princess and princess.get("travel_kind") == "cruise")
+        and bool(ak_air and ak_air.get("travel_kind") == "flight")
+        and "princess" in trip_hint_tokens("alaska"),
+        checks,
+        problems,
+        detail=str({"princess": princess, "ak_air": ak_air, "hints": trip_hint_tokens("alaska")[:8]}),
+    )
+    _check(
+        "alaska_princess_email_selected_and_vancouver_photo_in_window",
+        any(
+            r.get("evidence_id") == "e-princess-mail" and r.get("selected")
+            for r in ak_disc.comm_pipeline
+        )
+        and any(p.external_id == "ph-yvr" for p in ak_disc.photos),
+        checks,
+        problems,
+        detail=str(
+            {
+                "resolved": ak_disc.resolved,
+                "comm": ak_disc.comm_pipeline,
+                "photos": [p.external_id for p in ak_disc.photos],
+                "windows": ak_disc.windows,
+            }
+        ),
     )
 
     meta["synthetic"] = str(uuid4())[:8]

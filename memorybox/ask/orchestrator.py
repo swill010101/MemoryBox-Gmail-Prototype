@@ -1620,6 +1620,8 @@ class AskOrchestrator:
                     journals=journals,
                     artifacts=artifacts,
                     modality_state=_overlay_modality(),
+                    photo_status=photo_status,
+                    video_status=video_status,
                 )
                 narration_unavailable = bool(synth_meta.get("fail_closed"))
             else:
@@ -1631,6 +1633,8 @@ class AskOrchestrator:
                     stories=stories,
                     journals=journals,
                     artifacts=artifacts,
+                    photo_status=photo_status,
+                    video_status=video_status,
                 )
                 narrative_pack["modality_state"] = _overlay_modality()
                 answer_text = "Episode analysis only; narration was not requested."
@@ -1668,6 +1672,8 @@ class AskOrchestrator:
                 stories=stories,
                 journals=journals,
                 artifacts=artifacts,
+                photo_status=photo_status,
+                video_status=video_status,
             )
             narrative_pack["modality_state"] = _overlay_modality()
             narrative_pack = apply_inference_to_pack(
