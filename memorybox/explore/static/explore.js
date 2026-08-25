@@ -844,6 +844,8 @@
       }
       return;
     }
+    // Show / mixed: never restore a leftover tell essay.
+    state.domain.narrativeText = "";
     if (state.domain.typeFilter === "all" && atFull && state.domain._fixtureSummary) {
       state.domain.summary = state.domain._fixtureSummary;
       return;
@@ -1126,6 +1128,11 @@
     if (state && state.domain) {
       state.domain.title = heading;
       state.domain.summary = waiting;
+      // New Ask owns Memories. Do not keep the previous tell essay on screen
+      // while this find runs (FlightSim: Peggy show after January tell).
+      state.domain.narrativeText = "";
+      state.domain._askSummary = waiting;
+      state.domain.outputMode = isTellAsk(askText) ? "tell" : "show";
     }
   }
 
@@ -1422,15 +1429,19 @@
       nextOutputMode === "tell"
         ? payload.narrative_text || payload.summary || ""
         : "";
+    const nextSummary =
+      nextOutputMode === "tell"
+        ? tellNarrative || payload.summary || ""
+        : payload.summary || "";
     state = {
       domain: {
         askText: payload.ask_text || "",
         title: payload.title || "Memories",
-        summary: tellNarrative || payload.summary || "",
+        summary: nextSummary,
         _fixtureSummary: payload.demo ? payload.summary || "" : "",
-        _askSummary: tellNarrative || payload.summary || "",
+        _askSummary: nextSummary,
         _askKind: payload.answer_kind || "",
-        outputMode: nextOutputMode,
+        outputMode: nextOutputMode === "tell" ? "tell" : "show",
         narrativeText: tellNarrative,
         citations: payload.citations || [],
         livingView: payload.living_view || null,

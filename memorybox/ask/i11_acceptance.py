@@ -109,6 +109,61 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=f"show={show_plan.output_mode} have={have_plan.output_mode} said={said_plan.output_mode}",
     )
+    jan_ctx = AskContext(
+        session_id="i11-peggy-after-jan",
+        time_start="2026-01-01",
+        time_end="2026-01-31",
+    )
+    peggy_after_jan = plan_ask("Tell me what you know about Peggy", jan_ctx)
+    know_after_jan = plan_ask("what do you know about Peggy", jan_ctx)
+    jan_tell = plan_ask("write a narrative about my January of 2026", AskContext(session_id="i11-jan"))
+    _check(
+        "c02b_peggy_know_does_not_inherit_january",
+        any(n.lower() == "peggy" for n in (peggy_after_jan.person_names or ()))
+        and peggy_after_jan.output_mode == "show"
+        and peggy_after_jan.subject_changed
+        and peggy_after_jan.time_start is None
+        and peggy_after_jan.time_end is None
+        and not peggy_after_jan.temporal_windows
+        and "inherited_missing_slots_only" not in (peggy_after_jan.notes or ())
+        and any(n.lower() == "peggy" for n in (know_after_jan.person_names or ()))
+        and know_after_jan.time_start is None
+        and know_after_jan.subject_changed
+        and jan_tell.output_mode == "tell"
+        and jan_tell.time_start == "2026-01-01"
+        and jan_tell.time_end == "2026-01-31",
+        checks,
+        problems,
+        detail=(
+            f"peggy={peggy_after_jan.person_names} t={peggy_after_jan.time_start} "
+            f"win={peggy_after_jan.temporal_windows} notes={peggy_after_jan.notes} "
+            f"jan_tell={jan_tell.time_start}..{jan_tell.time_end}"
+        ),
+    )
+    mixed_show = curator_answer_text(
+        {
+            "answer_kind": "mixed",
+            "answer_text": "January 2026 essay that must not stay on screen.",
+            "plan": {"output_mode": "show"},
+        }
+    )
+    _check(
+        "c02c_mixed_show_drops_tell_essay",
+        mixed_show is None,
+        checks,
+        problems,
+        detail=repr(mixed_show),
+    )
+    _check(
+        "c02d_explore_clears_tell_on_new_show_ask",
+        "Do not keep the previous tell essay" in explore_js
+        and "never restore a leftover tell essay" in explore_js
+        and 'outputMode = isTellAsk(askText) ? "tell" : "show"' in explore_js
+        and 'outputMode: nextOutputMode === "tell" ? "tell" : "show"' in explore_js,
+        checks,
+        problems,
+        detail="showSearching and applyPayloadToState replace curator on a new show Ask",
+    )
     _check(
         "c09_said_about_not_tell",
         said_plan.output_mode == "show"

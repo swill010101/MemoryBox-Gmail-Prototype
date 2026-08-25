@@ -702,6 +702,7 @@ def curator_answer_text(result: dict[str, Any]) -> str | None:
         return str(raw).strip() if raw else None
     plan = result.get("plan") or {}
     mode = str(plan.get("output_mode") or result.get("output_mode") or "show")
+    # Show / mixed / play: never reuse tell synthesis as Memories copy.
     if mode == "tell":
         raw = result.get("answer_text")
         return str(raw).strip() if raw else None
@@ -1199,6 +1200,9 @@ def build_explore_find(
         answer_for_curator,
         provider_status=result.get("provider_status") or {},
     )
+    if not tell_mode:
+        # A new show/mixed Ask replaces curator; do not keep prior tell prose.
+        answer_for_curator = None
     if show_email and not show_sms and not email_available and not tell_mode:
         summary = (
             (summary or "").rstrip()
