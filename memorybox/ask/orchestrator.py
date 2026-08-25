@@ -1701,6 +1701,7 @@ class AskOrchestrator:
         )
         narrative_pack: dict[str, Any] | None = None
         narration_unavailable = False
+        person_synth = False
         from memorybox.ask.i11a import needs_semantic_inference
         from memorybox.ask.i11a.infer import apply_inference_to_pack, rank_photos_by_candidates
         from memorybox.ask.narrative import default_modality_state
@@ -1810,11 +1811,19 @@ class AskOrchestrator:
             photos = rank_photos_by_candidates(
                 photos, list(narrative_pack.get("candidate_visual_ids") or [])
             )
+            from memorybox.ask.narrative import synthesize_tell
+
+            synth_text, synth_meta = synthesize_tell(plan, narrative_pack, self.llm)
+            if synth_text:
+                answer_text = synth_text
+                person_synth = True
+            narration_unavailable = bool(synth_meta.get("fail_closed"))
         if (
             coverage
             and coverage.get("summary")
             and answer_kind not in {"clarification", "journal_capture"}
             and getattr(plan, "output_mode", "show") != "tell"
+            and not person_synth
         ):
             extra = str(coverage.get("summary") or "").strip()
             if extra and extra not in (answer_text or ""):

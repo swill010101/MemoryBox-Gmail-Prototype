@@ -4,6 +4,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+_RESIDENCE = re.compile(
+    r"(?i)\b(lives?|lived|live\s+in|living\s+in|resident(?:s)?\s+of|resides?|"
+    r"home\s+is|hometown|moved\s+to)\b"
+)
 _OCCURRENCE = re.compile(
     r"(?i)\b(flew|flew\s+to|went\s+to|visited|attended|saw\s+the|was\s+in|"
     r"spent|stayed|occurred|happened|did\s+go)\b"
@@ -62,14 +66,23 @@ def _vegas_gps(unit: dict[str, Any]) -> bool:
 def unit_modes(unit: dict[str, Any]) -> set[str]:
     """What this unit is allowed to ground: scheduled, derived, observed."""
     kind = str(unit.get("kind") or "")
-    if kind == "calendar":
+    if kind == "calendar" or kind == "calendar_series":
         return {"scheduled"}
     if kind == "travel":
         return {"derived"}
-    if kind in {"media_observation", "video_asset", "video_moment", "spoken_moment"}:
+    if kind in {
+        "media_observation",
+        "video_asset",
+        "video_moment",
+        "spoken_moment",
+        "media_cluster",
+        "place_observation",
+    }:
         return {"observed"}
-    if kind == "communication":
-        return {"derived", "scheduled"}
+    if kind in {"communication", "communication_thread", "sms_segment", "comm_pattern"}:
+        return {"derived", "scheduled", "observed"}
+    if kind == "correlated_event":
+        return {"inferred", "derived", "observed", "scheduled"}
     return {"inferred"}
 
 
@@ -91,6 +104,15 @@ def claim_support_ok(text: str, unit: dict[str, Any]) -> tuple[bool, str]:
     blob = _blob(unit)
     occurrence = bool(_OCCURRENCE.search(text or ""))
     scheduled_claim = bool(_SCHEDULED.search(text or ""))
+    if _RESIDENCE.search(text or "") and kind in {
+        "media_observation",
+        "video_asset",
+        "video_moment",
+        "media_cluster",
+        "place_observation",
+        "spoken_moment",
+    }:
+        return False, "gps_presence_is_not_residence"
 
     if claim_places and not (claim_places & uplaces) and not _vegas_gps(unit):
         if "flight" in blob and "las vegas" in claim_places:
@@ -104,7 +126,7 @@ def claim_support_ok(text: str, unit: dict[str, Any]) -> tuple[bool, str]:
         return False, "occurrence_needs_observed_or_derived"
     if scheduled_claim and kind == "calendar":
         return True, "calendar_scheduled"
-    if kind in {"media_observation", "video_asset"} and (
+    if kind in {"media_observation", "video_asset", "media_cluster", "place_observation"} and (
         _vegas_gps(unit) or ("paradise" in uplaces) or ("las vegas" in uplaces)
     ):
         if occurrence and re.search(r"(?i)\bflew\b", text or ""):

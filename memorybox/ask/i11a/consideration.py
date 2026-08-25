@@ -100,6 +100,9 @@ def finish_consideration(
         "media": pack.get("media_consideration") or {},
         "evidence_sets": sets,
         "accounting": acc,
+        "preaggregation": pack.get("preaggregation"),
+        "leaf_calls": acc.get("leaf_calls"),
+        "rejected": pack.get("inference", {}).get("rejected") if isinstance(pack.get("inference"), dict) else None,
     }
     try:
         from memorybox.ai_trace import context as ai_ctx

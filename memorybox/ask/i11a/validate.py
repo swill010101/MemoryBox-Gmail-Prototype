@@ -419,6 +419,7 @@ def validate_inference(
         "episodes": episodes_out,
         "themes": themes,
         "unresolved": unresolved,
+        "person_understanding": doc.get("person_understanding"),
         **pack_level_windows(episodes_out),
     }
     ok = bool(episodes_out or unresolved or themes)

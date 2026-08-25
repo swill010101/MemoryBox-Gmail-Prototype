@@ -170,13 +170,182 @@ def _merge_trip_group(
     }
 
 
+def _pattern_eps(pack: dict[str, Any] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    idx = _index_pack_units(pack)
+    seen: set[str] = set()
+    for unit in idx.values():
+        if str(unit.get("kind") or "") != "comm_pattern":
+            continue
+        uid = str(unit.get("unit_id") or unit.get("evidence_id") or "")
+        if uid in seen:
+            continue
+        seen.add(uid)
+        eids = list(unit.get("source_evidence_ids") or unit.get("extra_ids") or [])
+        span = unit.get("date_span") if isinstance(unit.get("date_span"), dict) else {}
+        out.append(
+            {
+                "label": str(unit.get("content") or "communication pattern")[:160],
+                "date_span": {
+                    "start": span.get("start") or _day(unit.get("time")),
+                    "end": span.get("end") or span.get("start") or _day(unit.get("time")),
+                },
+                "people": unit.get("people") or [],
+                "places": [unit["place"]] if unit.get("place") else [],
+                "claims": [
+                    {
+                        "text": str(unit.get("content") or "")[:500],
+                        "supporting_evidence_ids": eids[:24] or [uid],
+                        "claim_type": "observed",
+                        "uncertainty": ["pattern_count_is_trace_not_psychology"],
+                    }
+                ],
+                "why_relevant_to_ask": "grounded communication pattern",
+                "supporting_evidence_ids": eids[:40],
+                "candidate_visual_ids": [],
+                "theme": "communication_pattern",
+                "pattern_type": unit.get("pattern_type"),
+            }
+        )
+    return out
+
+
+def reduce_person_understanding(
+    document: dict[str, Any],
+    pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Person understanding: many structured observations, not one life episode."""
+    episodes = [e for e in (document.get("episodes") or []) if isinstance(e, dict)]
+    vegas = [e for e in episodes if _vegas_ep(e)]
+    rest = [e for e in episodes if e not in vegas]
+    out: list[dict[str, Any]] = []
+    if vegas:
+        trip = _merge_trip_group(vegas, label="Las Vegas trip", pack=pack)
+        trip["theme"] = "trip"
+        trip["why_relevant_to_ask"] = "correlated travel observations"
+        out.append(trip)
+    patterns = _pattern_eps(pack)
+    used_labels = {str(p.get("label") or "") for p in patterns}
+    out.extend(patterns)
+    for ep in rest:
+        if str(ep.get("label") or "") in used_labels:
+            continue
+        out.append(ep)
+    idx = _index_pack_units(pack)
+    places: list[dict[str, Any]] = []
+    seen_pl: set[str] = set()
+    for unit in idx.values():
+        if str(unit.get("kind") or "") not in {"place_observation", "media_cluster"}:
+            continue
+        place = str(unit.get("place") or "").strip()
+        if not place or place.lower() in seen_pl:
+            continue
+        seen_pl.add(place.lower())
+        eids = list(unit.get("source_evidence_ids") or unit.get("extra_ids") or [])
+        places.append(
+            {
+                "place": place,
+                "evidence_ids": eids[:40],
+                "note": "presence at capture time, not residence",
+            }
+        )
+        if not any(place.lower() in _ep_blob(e) for e in out):
+            out.append(
+                {
+                    "label": f"Observed at {place}",
+                    "date_span": {
+                        "start": _day(unit.get("time")),
+                        "end": _day(unit.get("time")),
+                    },
+                    "people": unit.get("people") or [],
+                    "places": [place],
+                    "claims": [
+                        {
+                            "text": str(unit.get("content") or f"Photographs place people at {place}")[:500],
+                            "supporting_evidence_ids": eids[:24] or [str(unit.get("evidence_id") or "")],
+                            "claim_type": "observed",
+                            "uncertainty": ["presence_not_residence"],
+                        }
+                    ],
+                    "why_relevant_to_ask": "media-supported place observation",
+                    "supporting_evidence_ids": eids[:40],
+                    "candidate_visual_ids": eids[:24],
+                    "theme": "observed_place",
+                }
+            )
+    for unit in idx.values():
+        if str(unit.get("kind") or "") != "correlated_event":
+            continue
+        eids = list(unit.get("source_evidence_ids") or unit.get("extra_ids") or [])
+        out.append(
+            {
+                "label": str(unit.get("content") or "correlated event")[:160],
+                "date_span": {"start": _day(unit.get("time")), "end": _day(unit.get("time"))},
+                "people": unit.get("people") or [],
+                "places": [unit["place"]] if unit.get("place") else [],
+                "claims": [
+                    {
+                        "text": str(unit.get("content") or "")[:500],
+                        "supporting_evidence_ids": eids[:24],
+                        "claim_type": "inferred",
+                        "uncertainty": ["cross_source_candidate"],
+                    }
+                ],
+                "why_relevant_to_ask": "calendar/communication/media correlation",
+                "supporting_evidence_ids": eids[:40],
+                "candidate_visual_ids": [
+                    i for i in eids if str(i).startswith("ph-") or "photo" in str(i)
+                ][:12],
+                "theme": "recurring_activity",
+            }
+        )
+    pc = (pack or {}).get("person_context") if isinstance(pack, dict) else None
+    confirmed = []
+    inferred = []
+    if isinstance(pc, dict):
+        req = pc.get("requestor") if isinstance(pc.get("requestor"), dict) else {}
+        for rel in req.get("known_relationships") or []:
+            if isinstance(rel, dict):
+                confirmed.append(rel)
+        for sub in pc.get("focal_subjects") or []:
+            if isinstance(sub, dict):
+                for rel in sub.get("known_relationships") or []:
+                    if isinstance(rel, dict):
+                        confirmed.append(rel)
+    understanding = {
+        "biographical_facts": [],
+        "relationships": {"confirmed": confirmed[:24], "inferred": inferred},
+        "recurring_interactions": [e for e in out if e.get("theme") == "communication_pattern"],
+        "life_episodes": [e for e in out if e.get("theme") not in {"communication_pattern", "observed_place"}],
+        "recurring_activities": [e for e in out if e.get("theme") == "recurring_activity"],
+        "trips": [e for e in out if e.get("theme") == "trip"],
+        "observed_places": places,
+        "communication_patterns": [e for e in out if e.get("theme") == "communication_pattern"],
+        "themes": list(
+            dict.fromkeys(str(e.get("theme") or e.get("label") or "") for e in out if e.get("theme"))
+        ),
+        "unresolved": list(document.get("unresolved") or [])[:24],
+    }
+    reduced = dict(document)
+    reduced["episodes"] = out
+    reduced["ask_semantics"] = dict(document.get("ask_semantics") or {})
+    reduced["ask_semantics"]["kind"] = "person"
+    reduced["person_understanding"] = understanding
+    return reduced
+
+
 def reduce_leaf_observations(
     document: dict[str, Any] | None,
     pack: dict[str, Any] | None = None,
+    *,
+    ask_kind: str | None = None,
 ) -> dict[str, Any]:
-    """One normalized trip episode when leaves describe the same Vegas (or similar) cluster."""
+    """Ask-kind-specific correlation. Person asks must not collapse into one trip."""
     if not isinstance(document, dict):
         return {"schema_version": 2, "episodes": []}
+    kind = ask_kind or str((document.get("ask_semantics") or {}).get("kind") or "")
+    if kind == "person":
+        return reduce_person_understanding(document, pack)
     episodes = [e for e in (document.get("episodes") or []) if isinstance(e, dict)]
     vegas = [e for e in episodes if _vegas_ep(e)]
     rest = [e for e in episodes if e not in vegas]

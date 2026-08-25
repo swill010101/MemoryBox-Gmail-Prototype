@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-_SCHEDULED_KINDS = frozenset({"calendar", "calendar_event"})
 _OBSERVED_KINDS = frozenset(
     {
         "media_observation",
@@ -20,9 +19,13 @@ _OBSERVED_KINDS = frozenset(
         "spoken_moment",
         "journal",
         "story",
+        "media_cluster",
+        "place_observation",
+        "comm_pattern",
     }
 )
-_DERIVED_KINDS = frozenset({"travel"})
+_DERIVED_KINDS = frozenset({"travel", "communication_thread", "sms_segment", "correlated_event"})
+_SCHEDULED_KINDS = frozenset({"calendar", "calendar_event", "calendar_series"})
 
 _CLAIM_BUCKET = {
     "recorded": "scheduled",
@@ -38,6 +41,8 @@ def empty_window() -> dict[str, Any]:
 
 
 def _day(raw: Any) -> str | None:
+    if isinstance(raw, dict):
+        raw = raw.get("value") or raw.get("start") or raw.get("end")
     s = str(raw or "").strip()
     if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         return s[:10]
@@ -109,7 +114,7 @@ def _index_pack_units(pack: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     idx: dict[str, dict[str, Any]] = {}
     if not isinstance(pack, dict):
         return idx
-    for u in pack.get("units") or []:
+    for u in list(pack.get("units") or []) + list(pack.get("inference_units") or []):
         if not isinstance(u, dict):
             continue
         keys = [
@@ -123,6 +128,8 @@ def _index_pack_units(pack: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
             if isinstance(u.get("provenance"), dict)
             else None,
         ]
+        for extra in list(u.get("extra_ids") or []) + list(u.get("source_evidence_ids") or []):
+            keys.append(extra)
         for key in keys:
             s = str(key or "").strip()
             if s and s not in idx:

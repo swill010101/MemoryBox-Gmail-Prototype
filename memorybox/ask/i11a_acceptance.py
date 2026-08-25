@@ -60,7 +60,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a6" in html
+        and "?v=i11a7" in html
+        and "copy-preaggregation" in js
         and "retrieval_resolution" in js
         and "copy-retrieval-resolution" in js
         and "copy-consideration" in js
@@ -1395,6 +1396,149 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="absence of proof is not proof of non-occurrence",
+    )
+
+    from memorybox.ask.i11a.claim_support import claim_support_ok
+    from memorybox.ask.i11a.preaggregate import preaggregate_pack
+    from memorybox.ask.narrative import synthesize_tell
+
+    live_ok, live_why = claim_support_ok(
+        "Peggy lives in Manchester",
+        {
+            "kind": "media_observation",
+            "content": "photo",
+            "place": "Manchester",
+            "latitude": 53.48,
+            "longitude": -2.24,
+        },
+    )
+    _check(
+        "gps_presence_is_not_residence",
+        live_ok is False and live_why == "gps_presence_is_not_residence",
+        checks,
+        problems,
+        detail=str({"ok": live_ok, "why": live_why}),
+    )
+    _check(
+        "person_reduce_is_not_one_trip_episode",
+        "Ask-kind-specific" in (root / "ask" / "i11a" / "reduce.py").read_text(encoding="utf-8")
+        and "MERGE_SYSTEM_PERSON" in (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
+        and "Do not collapse the subject into a single" in (root / "ask" / "i11a" / "infer.py").read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+        detail="Person merge/reduce must not be trip-only",
+    )
+
+    class _CountLlm(FakeLlmProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            return super().chat(messages, json_mode=json_mode)
+
+    peggy_photos = [
+        PhotoHit(
+            provider_key="immich",
+            external_id=f"ph-peg-{i}",
+            taken_at=f"2024-{(i % 11) + 1:02d}-{(i % 27) + 1:02d}T12:00:00",
+            people=["Peggy"],
+            location="Manchester",
+            place="Manchester",
+            city="Manchester",
+            thumb_url=None,
+            web_url=None,
+            latitude=53.48,
+            longitude=-2.24,
+        )
+        for i in range(48)
+    ]
+    peggy_ev = [
+        EvidenceHit(
+            evidence_id=f"e-love-{i}",
+            evidence_kind="communication",
+            summary="love you" if i % 2 == 0 else "dinner tomorrow?",
+            score=1.0,
+            excerpt="love you Peggy <3" if i % 2 == 0 else "Want to come over for dinner tomorrow?",
+            source="sms_export",
+            sent_at=f"2024-03-{(i % 20) + 1:02d}T18:00:00",
+            channel="sms",
+            people=["Peggy", "Tom"],
+            thread_id="t-peggy-sms",
+        )
+        for i in range(8)
+    ]
+    peggy_ev.append(
+        EvidenceHit(
+            evidence_id="e-peg-dinner-cal",
+            evidence_kind="calendar_event",
+            summary="Dinner with Peggy",
+            score=1.0,
+            excerpt="Dinner with Peggy",
+            source="ics",
+            sent_at="2024-03-02T18:00:00",
+            channel="calendar",
+            people=["Peggy"],
+        )
+    )
+    llm_c = _CountLlm()
+    _peg_text, peg_pack, _ = tell_from_hits(
+        peggy_plan,
+        llm=llm_c,
+        evidence=peggy_ev,
+        photos=peggy_photos,
+    )
+    # Person show-path still uses apply_inference
+    llm_c2 = _CountLlm()
+    p2 = prepare_narrative_pack(peggy_plan, evidence=peggy_ev, photos=peggy_photos)
+    p2 = apply_inference_to_pack(peggy_plan, p2, llm_c2)
+    synth, synth_meta = synthesize_tell(peggy_plan, p2, llm_c2)
+    pre = p2.get("preaggregation") or {}
+    acc = (p2.get("inference") or {}).get("accounting") or {}
+    und = (p2.get("validated_inference") or {}).get("person_understanding") or {}
+    blob_eps = json.dumps(p2.get("validated_inference") or {}, default=str).lower()
+    _check(
+        "person_ask_preaggregates_media_and_threads",
+        int(pre.get("photos_raw") or 0) == 48
+        and int(pre.get("media_clusters") or 0) < 48
+        and int(pre.get("sms_raw") or 0) == 8
+        and int(pre.get("inference_units") or 0) < 48 + 8
+        and int(acc.get("leaf_calls") or 99) <= 4
+        and int(acc.get("units_passed_to_inference") or 0) < 48,
+        checks,
+        problems,
+        detail=str({"pre": pre, "acc": {k: acc.get(k) for k in ("leaf_calls", "chunk_n", "units_passed_to_inference", "eligible_units")}}),
+    )
+    _check(
+        "person_understanding_not_one_life_episode",
+        (p2.get("validated_inference") or {}).get("ask_semantics", {}).get("kind") == "person"
+        and isinstance(und, dict)
+        and len(p2.get("validated_inference", {}).get("episodes") or []) >= 2
+        and "communication_pattern" in json.dumps(und, default=str),
+        checks,
+        problems,
+        detail=str({"n": len((p2.get("validated_inference") or {}).get("episodes") or []), "keys": list(und)}),
+    )
+    _check(
+        "person_comms_and_calendar_have_equal_opportunity",
+        ("love you" in blob_eps or "affection" in blob_eps or "heart" in blob_eps)
+        and ("dinner" in blob_eps)
+        and ("manchester" in blob_eps),
+        checks,
+        problems,
+        detail=blob_eps[:500],
+    )
+    _check(
+        "person_show_uses_synthesized_answer",
+        "evidence behind this story" in (synth or "").lower()
+        and "found 48 photo" not in (synth or "").lower()
+        and "ph-peg-" not in (synth or "")
+        and not synth_meta.get("fail_closed"),
+        checks,
+        problems,
+        detail=(synth or "")[:400],
     )
 
     meta["synthetic"] = str(uuid4())[:8]

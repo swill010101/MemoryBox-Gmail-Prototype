@@ -60,8 +60,13 @@ def units_from_pack(pack: dict[str, Any]) -> list[dict[str, Any]]:
             "time": str(time_raw or "")[:32],
             "people": people[:8],
             "place": u.get("place"),
-            "content": str(u.get("content") or u.get("title") or "")[:180],
+            "content": str(u.get("content") or u.get("title") or "")[:400],
             "asset_ref": u.get("asset_ref"),
+            "extra_ids": list(u.get("extra_ids") or u.get("source_evidence_ids") or [])[:80],
+            "thread_id": u.get("thread_id"),
+            "pattern_type": u.get("pattern_type"),
+            "occurrence_count": u.get("occurrence_count"),
+            "source_evidence_ids": list(u.get("source_evidence_ids") or [])[:80],
         }
         kind = str(u.get("kind") or "")
         st = str(row.get("source_type") or "")
@@ -146,11 +151,11 @@ def _merge_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _priority_rank(unit: dict[str, Any]) -> int:
     kind = str(unit.get("kind") or "")
-    if kind in {"calendar", "travel"}:
+    if kind in {"calendar", "travel", "comm_pattern", "communication_thread", "sms_segment", "correlated_event", "calendar_series"}:
         return 0
-    if kind in {"video_asset", "journal", "story", "artifact"}:
+    if kind in {"video_asset", "journal", "story", "artifact", "place_observation"}:
         return 1
-    if kind in {"media_observation", "video_moment", "spoken_moment"}:
+    if kind in {"media_observation", "video_moment", "spoken_moment", "media_cluster"}:
         return 2
     if kind == "communication":
         return 3
@@ -203,14 +208,14 @@ def compact_units_for_model(units: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 def in_scope_ids(pack: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
-    for u in list(pack.get("units") or []) + units_from_pack(pack):
+    for u in list(pack.get("units") or []) + list(pack.get("inference_units") or []) + units_from_pack(pack):
         if not isinstance(u, dict):
             continue
         for key in ("evidence_id", "unit_id", "asset_ref"):
             v = str(u.get(key) or "").strip()
             if v:
                 ids.add(v)
-        for extra in u.get("extra_ids") or []:
+        for extra in list(u.get("extra_ids") or []) + list(u.get("source_evidence_ids") or []):
             v = str(extra or "").strip()
             if v:
                 ids.add(v)
@@ -230,12 +235,23 @@ def in_scope_ids(pack: dict[str, Any]) -> set[str]:
 
 def in_scope_visual_ids(pack: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
-    for u in units_from_pack(pack):
+    for u in list(pack.get("units") or []) + list(pack.get("inference_units") or []):
         kind = str(u.get("kind") or "")
         st = str(u.get("source_type") or "")
-        if kind in {"media_observation", "spoken_moment", "video_asset", "video_moment"} or st in {"photo", "video"}:
+        if kind in {
+            "media_observation",
+            "spoken_moment",
+            "video_asset",
+            "video_moment",
+            "media_cluster",
+            "place_observation",
+        } or st in {"photo", "video", "media"}:
             for key in ("asset_ref", "evidence_id", "unit_id"):
                 v = str(u.get(key) or "").strip()
+                if v:
+                    ids.add(v)
+            for extra in list(u.get("extra_ids") or []) + list(u.get("source_evidence_ids") or []):
+                v = str(extra or "").strip()
                 if v:
                     ids.add(v)
             prov = u.get("provenance") if isinstance(u.get("provenance"), dict) else {}
