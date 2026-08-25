@@ -12,6 +12,7 @@ from memorybox.ask.i11a.observations import (
     extract_observations,
     merge_model_observations,
     observation_from_unit,
+    requires_model_interpretation,
 )
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
 from memorybox.ask.i11a.reason import (
@@ -310,8 +311,13 @@ def run_inference(
     agg = preaggregate_pack(pack, person_id=focal_id)
     pack["preaggregation"] = agg.get("trace") or {}
     pack["inference_units"] = agg.get("units") or []
-    model_units = compact_units_for_model(agg.get("units") or units)
-    pack["preaggregation"]["inference_units_after_compact"] = len(model_units)
+    agg_units = list(agg.get("units") or units)
+    a_units = [u for u in agg_units if not requires_model_interpretation(u)]
+    b_units = [u for u in agg_units if requires_model_interpretation(u)]
+    model_units = compact_units_for_model(b_units)
+    pack["preaggregation"]["inference_units_after_compact"] = len(agg_units)
+    pack["preaggregation"]["deterministic_units"] = len(a_units)
+    pack["preaggregation"]["extract_units"] = len(model_units)
     chunks = _chunk_units(model_units)
     _trace_span(
         stage="i11a_inference",
@@ -342,9 +348,14 @@ def run_inference(
         "merge_depth": 0,
         "units_generated": len(units),
         "units_passed_to_inference": len(model_units),
-        "dropped_before_inference": max(0, len(units) - len(model_units)),
+        "units_deterministic": len(a_units),
+        "units_model_extract": len(model_units),
+        "dropped_before_inference": max(0, len(units) - len(agg_units)),
+        "extract_calls": 0,
         "leaf_calls": 0,
         "ask_relative_calls": 0,
+        "observations_a": 0,
+        "observations_b": 0,
         "preaggregation": pack.get("preaggregation"),
         "engine": "observations_ir_ask_relative",
     }
@@ -356,12 +367,14 @@ def run_inference(
             accounting=accounting,
         )
 
-    deterministic = extract_observations(agg.get("units") or units, person_id=focal_id)
+    deterministic = extract_observations(a_units, person_id=focal_id)
+    accounting["observations_a"] = len(deterministic)
     model_obs: list[dict[str, Any]] = []
     failed_chunks = 0
     for idx, chunk in enumerate(chunks):
         accounting["attempted_units"] += len(chunk)
         accounting["leaf_calls"] += 1
+        accounting["extract_calls"] += 1
         payload = _obs_payload(chunk)
         try:
             raw = _call_with_retry(llm, OBSERVATION_EXTRACT, payload)
@@ -406,6 +419,7 @@ def run_inference(
                 error={"message": str(exc)},
             )
 
+    accounting["observations_b"] = len(model_obs)
     merged = merge_model_observations(deterministic, model_obs)
     if not merged:
         merged = [observation_from_unit(u) for u in (agg.get("units") or units)]

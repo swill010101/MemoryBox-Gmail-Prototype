@@ -66,6 +66,96 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="i11a-regression canonical asks (live Asks are not part of prove-i11a)",
     )
+    from memorybox.ask.i11a.observations import requires_model_interpretation
+
+    _check(
+        "extract_llm_only_for_freeform_b_units",
+        (not requires_model_interpretation({"kind": "calendar"}))
+        and (not requires_model_interpretation({"kind": "calendar_series"}))
+        and (not requires_model_interpretation({"kind": "travel"}))
+        and (not requires_model_interpretation({"kind": "comm_pattern"}))
+        and (not requires_model_interpretation({"kind": "correlated_event"}))
+        and (not requires_model_interpretation({"kind": "place_observation"}))
+        and (not requires_model_interpretation({"kind": "media_cluster"}))
+        and (not requires_model_interpretation({"kind": "media_observation"}))
+        and (not requires_model_interpretation({"kind": "video_asset"}))
+        and requires_model_interpretation({"kind": "communication_thread"})
+        and requires_model_interpretation({"kind": "sms_segment"})
+        and requires_model_interpretation({"kind": "spoken_moment"})
+        and requires_model_interpretation({"kind": "communication", "source_type": "email"})
+        and requires_model_interpretation(
+            {"kind": "journal", "content": "A long free-form recollection about the week we spent driving."}
+        )
+        and not requires_model_interpretation({"kind": "journal", "title": "Note", "content": "Note"}),
+        checks,
+        problems,
+        detail="A units bypass OBSERVATION_EXTRACT; B is free-form only",
+    )
+    from memorybox.ask.i11a.infer import run_inference
+    from memorybox.providers.llm.fake import FakeLlmProvider
+
+    inf_a = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-cal"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-cal-a",
+                    "kind": "calendar",
+                    "source_type": "calendar",
+                    "time": "2026-01-30",
+                    "title": "Eagles Live at Sphere",
+                    "content": "Eagles Live at Sphere",
+                    "people": [{"name": "Tom"}],
+                    "place": "Las Vegas",
+                    "provenance": {"evidence_id": "e-cal-a"},
+                }
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_a = inf_a.get("accounting") or {}
+    _check(
+        "calendar_units_skip_observation_extract",
+        acc_a.get("extract_calls") == 0
+        and int(acc_a.get("observations_a") or 0) >= 1
+        and int(acc_a.get("ask_relative_calls") or 0) == 1,
+        checks,
+        problems,
+        detail={k: acc_a.get(k) for k in ("extract_calls", "observations_a", "observations_b", "leaf_calls", "ask_relative_calls")},
+    )
+    inf_b = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-em"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-em-a",
+                    "kind": "communication",
+                    "source_type": "email",
+                    "time": "2026-01-29",
+                    "content": "Your Las Vegas hotel reservation is confirmed for Jan 29.",
+                    "people": [{"name": "Tom"}],
+                    "place": "Las Vegas",
+                    "provenance": {"evidence_id": "e-em-a"},
+                }
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_b = inf_b.get("accounting") or {}
+    _check(
+        "email_units_still_use_observation_extract",
+        int(acc_b.get("extract_calls") or 0) >= 1
+        and int(acc_b.get("units_model_extract") or 0) >= 1,
+        checks,
+        problems,
+        detail={k: acc_b.get(k) for k in ("extract_calls", "observations_a", "observations_b", "units_model_extract")},
+    )
     _check(
         "a09_trace_light_copy_export",
         "copy-provider-payload" in js

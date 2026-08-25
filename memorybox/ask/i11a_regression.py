@@ -122,7 +122,62 @@ def _error_from_trace(trace: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
+def _provider_call_stats(trace: dict[str, Any] | None) -> dict[str, Any]:
+    spans = (trace or {}).get("spans") if isinstance(trace, dict) else None
+    if not isinstance(spans, list):
+        return {
+            "chat": 0,
+            "embed": 0,
+            "by_operation": {},
+            "timeouts": 0,
+            "errors": 0,
+        }
+    by_op: dict[str, int] = {}
+    by_stage: dict[str, int] = {}
+    chat = embed = timeouts = errors = 0
+    for span in spans:
+        if not isinstance(span, dict):
+            continue
+        op = str(span.get("operation") or "")
+        stage = str(span.get("stage") or "")
+        if op in {"chat", "embed"}:
+            by_op[op] = by_op.get(op, 0) + 1
+            key = stage or op
+            by_stage[key] = by_stage.get(key, 0) + 1
+            if op == "chat":
+                chat += 1
+            else:
+                embed += 1
+        if str(span.get("error_class") or "") == "PROVIDER_TIMEOUT":
+            timeouts += 1
+        if str(span.get("status") or "") == "error" and op in {"chat", "embed"}:
+            errors += 1
+    return {
+        "chat": chat,
+        "embed": embed,
+        "by_operation": by_op,
+        "by_stage": by_stage,
+        "timeouts": timeouts,
+        "errors": errors,
+    }
+
+
+def _accounting_from_trace(trace: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(trace, dict):
+        return {}
+    for span in trace.get("spans") or []:
+        if not isinstance(span, dict):
+            continue
+        assembled = span.get("assembled_context") if isinstance(span.get("assembled_context"), dict) else {}
+        acc = assembled.get("accounting") if isinstance(assembled.get("accounting"), dict) else None
+        if acc:
+            return acc
+        if span.get("operation") == "preaggregation" and assembled:
+            return {
+                "units_deterministic": assembled.get("deterministic_units"),
+                "units_model_extract": assembled.get("extract_units"),
+            }
+    return {}
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
@@ -198,6 +253,8 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
         if result is not None
         else None,
         "evidence_considered": _evidence_considered(result),
+        "provider_calls": _provider_call_stats(trace if isinstance(trace, dict) else None),
+        "inference_accounting": _accounting_from_trace(trace if isinstance(trace, dict) else None),
         "harness_error": harness_error,
         "trace": _jsonable(trace) if trace is not None else None,
     }
@@ -220,12 +277,25 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
         or t.get("harness_error")
         or str(t.get("status") or "") in {"error", "failed"}
     )
+    stage_totals: dict[str, int] = {}
+    for t in tests:
+        for k, v in ((t.get("provider_calls") or {}).get("by_stage") or {}).items():
+            try:
+                stage_totals[str(k)] = stage_totals.get(str(k), 0) + int(v or 0)
+            except (TypeError, ValueError):
+                continue
     summary = {
         "tests_run": len(tests),
         "tests_completed": completed,
         "tests_with_errors": with_errors,
         "total_model_calls": sum(int(t.get("model_call_count") or 0) for t in tests),
         "total_duration_ms": sum(int(t.get("duration_ms") or 0) for t in tests),
+        "total_timeouts": sum(int((t.get("provider_calls") or {}).get("timeouts") or 0) for t in tests),
+        "calls_by_stage": {
+            "chat": sum(int((t.get("provider_calls") or {}).get("chat") or 0) for t in tests),
+            "embed": sum(int((t.get("provider_calls") or {}).get("embed") or 0) for t in tests),
+            "by_stage": stage_totals,
+        },
         "per_test": [
             {
                 "ask": t.get("ask"),
@@ -233,6 +303,11 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
                 "error_class": t.get("error_class"),
                 "model_calls": t.get("model_call_count"),
                 "duration_ms": t.get("duration_ms"),
+                "timeouts": (t.get("provider_calls") or {}).get("timeouts"),
+                "provider_calls": t.get("provider_calls") or {},
+                "observations_a": (t.get("inference_accounting") or {}).get("observations_a"),
+                "observations_b": (t.get("inference_accounting") or {}).get("observations_b"),
+                "extract_calls": (t.get("inference_accounting") or {}).get("extract_calls"),
                 "evidence_considered": t.get("evidence_considered") or {},
             }
             for t in tests

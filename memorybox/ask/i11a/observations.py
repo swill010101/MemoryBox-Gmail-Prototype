@@ -295,6 +295,60 @@ def observation_from_unit(unit: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+# B: free-form text that is not already a typed Observation. A is everything else
+# (calendar, travel, GPS/media, patterns, correlations, structured metadata).
+_MODEL_INTERPRETATION_KINDS = frozenset(
+    {
+        "communication",
+        "communication_thread",
+        "sms_segment",
+        "spoken_moment",
+    }
+)
+_MODEL_INTERPRETATION_SOURCES = frozenset(
+    {"email", "sms", "imessage", "text", "mms"}
+)
+_FREEFORM_METADATA_KINDS = frozenset({"journal", "story", "artifact"})
+
+
+def requires_model_interpretation(unit: dict[str, Any] | None) -> bool:
+    """True only for units that still need OBSERVATION_EXTRACT.
+
+    Mechanical gate: kind/source/presence of a body. Not Ask-relative importance.
+    """
+    if not isinstance(unit, dict):
+        return False
+    kind = str(unit.get("kind") or "")
+    if kind in _MODEL_INTERPRETATION_KINDS:
+        return True
+    source = str(unit.get("source_type") or "").lower()
+    if source in _MODEL_INTERPRETATION_SOURCES and kind not in {
+        "calendar",
+        "calendar_series",
+        "travel",
+        "comm_pattern",
+        "correlated_event",
+        "media_observation",
+        "media_cluster",
+        "place_observation",
+        "video_asset",
+        "video_moment",
+    }:
+        return True
+    if kind in _FREEFORM_METADATA_KINDS:
+        body = " ".join(
+            str(x or "").strip()
+            for x in (unit.get("authored_text"), unit.get("content"), unit.get("excerpt"))
+            if str(x or "").strip()
+        )
+        title = str(unit.get("title") or "").strip()
+        rest = body
+        if title and rest.startswith(title):
+            rest = rest[len(title) :].strip()
+        return len(rest) >= 32
+    return False
+
+
 def _maybe_cached(unit: dict[str, Any], *, person_id: str | None) -> dict[str, Any] | None:
     ids = _ids(unit)
     if not ids:
