@@ -1,6 +1,7 @@
 """P2-I11 Narrative & Summaries — Ask output_mode tell on existing curator."""
 from __future__ import annotations
 
+import json
 import os
 from datetime import date
 from pathlib import Path
@@ -8,7 +9,12 @@ from typing import Any
 from uuid import uuid4
 
 from memorybox.ask.evidence_prep import prepare_narrative_pack
-from memorybox.ask.narrative import memories_from_citations, persistable_view, tell_from_hits
+from memorybox.ask.narrative import (
+    memories_from_citations,
+    pack_for_narrator,
+    persistable_view,
+    tell_from_hits,
+)
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.ask.retrieve import (
     EvidenceHit,
@@ -1019,6 +1025,32 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
                 "prose": txn_text[:280],
             }
         ),
+    )
+    nar = pack_for_narrator(txn_pack)
+    nar_blob = json.dumps(nar, default=str)
+    nar_eps = [e for e in (nar.get("episodes") or []) if isinstance(e, dict)]
+    _check(
+        "narrator_input_is_semantic_life_outline",
+        "evidence_considered" not in nar
+        and "derived_summaries" not in nar
+        and "volume" not in nar
+        and "2025-W" not in nar_blob
+        and "evidence item" not in nar_blob.lower()
+        and isinstance(nar.get("background"), dict)
+        and isinstance(nar.get("uncertainty"), dict)
+        and bool(nar_eps)
+        and all(
+            e.get("claims")
+            and e.get("evidence_ids")
+            and isinstance(e.get("date_span"), dict)
+            and e.get("significance")
+            for e in nar_eps
+        )
+        and "harbor" in nar_blob.lower()
+        and "fedex" not in nar_blob.lower(),
+        checks,
+        problems,
+        detail=str({"keys": sorted(nar.keys()), "episodes": nar_eps[:3], "blob": nar_blob[:400]}),
     )
 
     class _DownLlm:

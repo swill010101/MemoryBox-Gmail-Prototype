@@ -24,43 +24,16 @@ def _fake_narrative(pack_json: str) -> str:
         pack = json.loads(pack_json)
     except Exception:
         return "The prepared pack could not be read. MemoryBox will not invent family facts."
-    pu = pack.get("period_understanding") if isinstance(pack.get("period_understanding"), dict) else {}
-    label = (
-        pu.get("label")
-        or pack.get("temporal_label")
-        or ((pack.get("scope") or {}).get("time") or {}).get("label")
-        or "this period"
-    )
-    outline = [x for x in (pack.get("narrative_outline") or []) if isinstance(x, dict)]
-    cov = pack.get("coverage") or {}
-    incomplete = bool(isinstance(cov, dict) and cov.get("incomplete"))
-    disc = str((cov.get("truncation_disclosure") if isinstance(cov, dict) else "") or "").strip()
+    label = pack.get("period") or pack.get("temporal_label") or "this period"
+    unc = pack.get("uncertainty") if isinstance(pack.get("uncertainty"), dict) else {}
+    incomplete = bool(unc.get("incomplete_coverage"))
+    disc = str(unc.get("note") or "").strip()
+    episodes = [x for x in (pack.get("episodes") or []) if isinstance(x, dict)]
 
-    opening = next((x.get("text") for x in outline if x.get("role") == "opening"), None)
-    closing = next((x.get("text") for x in outline if x.get("role") == "closing"), None)
-    opening = opening or pu.get("opening") or (
+    paras: list[str] = [
         f"During {label}, this is what stands out from family life in the archive, "
         "without pasting the original messages."
-    )
-    closing = closing or pu.get("closing")
-
-    beats = [x for x in outline if x.get("role") == "beat"]
-    if not beats:
-        for b in pu.get("beats") or []:
-            if isinstance(b, dict):
-                beats.append({"text": b.get("about") or b.get("text"), "time": b.get("time"), "when": b.get("when")})
-    if not beats:
-        for b in pack.get("significant_beats") or pack.get("episodes") or []:
-            if not isinstance(b, dict):
-                continue
-            beats.append(
-                {
-                    "text": b.get("about") or b.get("title") or b.get("content") or b.get("subject"),
-                    "time": b.get("time") if not isinstance(b.get("time"), dict) else (b.get("time") or {}).get("value"),
-                }
-            )
-
-    paras: list[str] = [str(opening).strip()]
+    ]
     if incomplete:
         paras.append(
             "Coverage of the archive for this period is incomplete"
@@ -68,8 +41,11 @@ def _fake_narrative(pack_json: str) -> str:
             + "."
         )
     story_lines: list[str] = []
-    for b in beats:
-        t = re.sub(r"\s+", " ", str(b.get("text") or "").strip())
+    for ep in episodes:
+        claims = [str(c).strip() for c in (ep.get("claims") or []) if str(c).strip()]
+        theme = str(ep.get("theme_or_episode") or "").strip()
+        text = claims[0] if claims else theme
+        t = re.sub(r"\s+", " ", text).strip()
         t = re.split(
             r"(?i)\nOn .+ wrote:|-----Original Message-----|Begin forwarded message:",
             t,
@@ -79,11 +55,13 @@ def _fake_narrative(pack_json: str) -> str:
             continue
         if _TXN_NOISE.search(t) and not re.search(r"(?i)\b(trip|visit|dinner|family|journal)\b", t):
             continue
-        when = str(b.get("time") or b.get("when") or "").strip()
+        span = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
+        when = str((span or {}).get("start") or "").strip()
+        people = [str(p) for p in (ep.get("people") or []) if str(p).strip()]
+        if people:
+            t = f"{t} — {', '.join(people[:3])}"
         if len(when) >= 10:
             story_lines.append(f"On {when[:10]}, {t.rstrip('.')}.")
-        elif when in {"early", "mid", "late", "during"}:
-            story_lines.append(f"{when.capitalize()} in {label}, {t.rstrip('.')}.")
         else:
             story_lines.append(t if t.endswith(".") else f"{t}.")
     if story_lines:
@@ -91,20 +69,12 @@ def _fake_narrative(pack_json: str) -> str:
         paras.append(" ".join(story_lines[:chunk]))
         if story_lines[chunk:]:
             paras.append(" ".join(story_lines[chunk:]))
-    elif not pu.get("beats"):
+    else:
         paras.append(
             f"Nothing in the prepared outline rose above ordinary correspondence for {label}."
         )
-    if closing:
-        paras.append(str(closing).strip())
-    used = pack.get("evidence_considered") or pack.get("evidence_used") or {}
-    footer_bits = [f"{v} {k}" for k, v in used.items() if v]
-    footer = (
-        "Family evidence considered: "
-        + (" · ".join(footer_bits) if footer_bits else "none")
-        + "."
-    )
-    return "\n\n".join(p for p in paras if p) + "\n\n" + footer
+    paras.append(f"That is the shape of {label} as the meaningful episodes tell it.")
+    return "\n\n".join(p for p in paras if p)
 
 
 def _token_vector(text: str) -> tuple[float, ...]:

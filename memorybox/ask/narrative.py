@@ -16,22 +16,25 @@ NARRATION_UNAVAILABLE = (
 )
 
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
-You write about the person's life during the requested period. You do not write about how much evidence MemoryBox found.
-The user JSON has period_understanding and narrative_outline. Those are the story. Evidence counts, week codes, and processing diagnostics are metadata only — never put them in the prose.
+You write a family story of life during the requested period.
+The user JSON is a semantic life-period outline produced before narration. It is not an archive dump.
+You receive: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries; limited exemplars only where useful for human detail; uncertainty/provenance.
+You do not receive, and must not invent, archive-count summaries, week-count summaries, raw date buckets, or implementation diagnostics.
+
 Rules:
-- Begin with the story. Continuous prose (about 2–8 short paragraphs). Chronological. Natural language.
-- Narrate significant episodes and themes (opening, early/mid/late developments, close). Do not iterate weeks, evidence counts, episode JSON, candidate events, or each day.
-- Routine transactional material (shipping notices, receipts, automated surveys, ordinary order confirmations) is supporting archive traffic. Mention it only if it belongs to a meaningful episode already in the outline. Do not list it.
-- Do not paste email or SMS bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
-- A source supports only the claim listed. Presence is not photographer, purpose, emotion, companions, or significance. Do not invent motives or feelings.
+- Understand that the pipeline already considered the whole period. Narrate only the episodes and themes in this outline — the ones that meaningfully characterize the period. Do not mention every week. Do not iterate dates that have no characterizing episode.
+- Continuous prose (about 2–8 short paragraphs). Chronological. Natural language. Begin with the story.
+- Each episode lists grounded claims, supporting evidence IDs, a date span, people, and why it is significant. Write from the claims. Use an exemplar only when a human detail helps; do not paste bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
+- Do not write about how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
+- Routine transactional material is not in this outline unless it belongs to a characterizing episode. Do not list shipping notices, receipts, surveys, or ordinary order confirmations.
+- A source supports only the listed claim. Presence is not photographer, purpose, emotion, companions, or extra significance. Do not invent motives or feelings.
 - Do not treat filename, folder, or camera owner as photographer.
 - SMS timestamp is not location.
-- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating beats exist.
-- Travel facts are derived; the original communication remains the authentic source.
+- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating claims exist.
+- Travel facts may be derived; do not treat derivation as the original source.
 - Do not invent people, places, or dates.
-- After the story, one line: "Family evidence considered" using evidence_considered. That line is the only place counts belong.
-- If coverage.incomplete is true, say coverage is incomplete after the story. Never silently sample.
-- If the outline has no beats, say the period was examined and nothing standout emerged. Do not dump routine mail.
+- If uncertainty.incomplete_coverage is true, say coverage is incomplete after the story. Never silently sample.
+- If episodes is empty, say the period was examined and nothing standout emerged. Do not dump ordinary correspondence.
 """
 
 
@@ -144,55 +147,39 @@ def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
 
 
 def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
-    """Story outline for the model — not evidence-volume diagnostics."""
-    understanding = pack.get("period_understanding") or {}
-    outline = list(pack.get("narrative_outline") or [])
-    beats = []
-    src = pack.get("narrator_episodes") or pack.get("significant_episodes") or []
-    for u in src:
-        people = []
-        for p in u.get("people") or []:
-            if isinstance(p, dict):
-                n = str(p.get("name") or "").strip()
-            else:
-                n = str(p or "").strip()
-            if n:
-                people.append(n)
-        about = str(u.get("title") or u.get("content") or "").strip()
-        if not about:
-            continue
-        beats.append(
-            {
-                "time": (u.get("time") or {}).get("value") if isinstance(u.get("time"), dict) else u.get("time"),
-                "place": u.get("place"),
-                "people": people[:8],
-                "about": about[:400],
-            }
-        )
+    """Semantic life-period outline for the model — never week/count diagnostics."""
+    outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
     ask = pack.get("ask") or {}
-    plan = ask.get("plan") if isinstance(ask, dict) else {}
-    cov = pack.get("coverage") or {}
+    scope = pack.get("scope") if isinstance(pack.get("scope"), dict) else {}
+    time_scope = scope.get("time") if isinstance(scope.get("time"), dict) else {}
+    cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
+    outline_cov = outline.get("coverage") if isinstance(outline.get("coverage"), dict) else {}
+    incomplete = bool(cov.get("incomplete") or outline_cov.get("incomplete"))
+    note = None
+    if incomplete:
+        note = outline_cov.get("note") or cov.get("truncation_disclosure")
     return {
-        "schema_version": pack.get("schema_version"),
         "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
-        "output_mode": ask.get("output_mode") if isinstance(ask, dict) else "tell",
-        "temporal_label": (pack.get("scope") or {}).get("time", {}).get("label")
-        if isinstance(pack.get("scope"), dict)
-        else (plan.get("temporal_label") if isinstance(plan, dict) else None),
-        "period_understanding": {
-            "label": understanding.get("label"),
-            "opening": understanding.get("opening"),
-            "beats": understanding.get("beats") or [],
-            "people": understanding.get("people") or [],
-            "closing": understanding.get("closing"),
+        "background": pack.get("background") or {
+            "people": scope.get("people") or [],
+            "places": scope.get("places") or [],
+            "trips": scope.get("events_trips") or [],
         },
-        "narrative_outline": outline,
-        "significant_beats": beats,
-        "coverage": {
-            "incomplete": bool(isinstance(cov, dict) and cov.get("incomplete")),
-            "truncation_disclosure": cov.get("truncation_disclosure") if isinstance(cov, dict) else None,
+        "period": outline.get("period") or time_scope.get("label") or "this period",
+        "windows": outline.get("windows") or [
+            {"start": w[0], "end": w[1]}
+            for w in (time_scope.get("windows") or [])
+            if isinstance(w, (list, tuple)) and len(w) >= 2
+        ],
+        "episodes": list(outline.get("episodes") or []),
+        "uncertainty": {
+            "incomplete_coverage": incomplete,
+            "note": note,
+            "provenance": (
+                "Claims are grounded in the evidence IDs on each episode. "
+                "Do not invent facts. Do not write archive counts or week summaries."
+            ),
         },
-        "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
     }
 
 
@@ -206,7 +193,8 @@ def synthesize_tell(
     if llm is None:
         meta["fail_closed"] = True
         return _fail_closed(pack, reason="No language model is configured."), meta
-    payload = json.dumps(pack_for_narrator(pack), default=str)
+    narrator = pack_for_narrator(pack)
+    payload = json.dumps(narrator, default=str)
     messages = [
         ChatMessage(role="system", content=SYSTEM_PROMPT),
         ChatMessage(
@@ -214,8 +202,28 @@ def synthesize_tell(
             content=payload,
         ),
     ]
+    from memorybox.ai_trace.context import reset_assembled_context, set_assembled_context
+
+    vol = pack.get("volume") if isinstance(pack.get("volume"), dict) else {}
+    assembled_tok = set_assembled_context(
+        {
+            "layer": "evidence",
+            "eligible_n": vol.get("eligible_n"),
+            "processed_n": vol.get("processed_n"),
+            "narrator_input_n": vol.get("narrator_input_n"),
+            "episode_n": vol.get("episode_n"),
+            "significant_episode_n": vol.get("significant_episode_n"),
+            "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
+            "derived_summaries": pack.get("derived_summaries"),
+            "coverage": pack.get("coverage"),
+            "narrator_keys": sorted(narrator.keys()),
+        }
+    )
     try:
-        result = llm.chat(messages, json_mode=False)
+        try:
+            result = llm.chat(messages, json_mode=False)
+        finally:
+            reset_assembled_context(assembled_tok)
         text = str(getattr(result, "content", "") or "").strip()
         if not text:
             meta["fail_closed"] = True

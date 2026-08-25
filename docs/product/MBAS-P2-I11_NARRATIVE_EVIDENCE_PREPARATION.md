@@ -256,13 +256,17 @@ Track separately:
 
 - **eligible** = everything in scope after spam/trash and Ask filters  
 - **processed** = everything successfully examined  
-- **narrator input** = reduced episode/week structures in the final generation call  
+- **narrator input** = a semantic life-period outline produced **before** narration  
 
-For a successful bounded-period narrative, eligible and processed should normally match. Narrator input may be much smaller because it is a hierarchical representation of the whole. If processing cannot cover the set (failure or unavailable provider), disclose **incomplete coverage** — do not silently sample.
+The outline shape is: meaningful episode/theme → grounded claims → supporting evidence IDs → date span → people → significance (limited exemplars only where useful). It is **not** `week → count → mixed records`. Do not send evidence-volume summaries, week-count summaries, or raw date buckets as the period outline.
 
-The family narrative is about **life during the period**, not about evidence volume. Week counts, item totals, and processing diagnostics belong in coverage/AI Trace — not in the story. Complete consideration ≠ complete narration: routine transactional mail (shipping notices, receipts, automated surveys, ordinary order confirmations) stays supporting evidence unless it contributes to a meaningful episode. Those categories are heuristics, not a universal ban.
+For a successful bounded-period narrative, eligible and processed should normally match. Narrator input may be much smaller because a separate significance/correlation stage decides what the evidence **says about the period**. Do **not** require the narrator to mention every week. Do require the analysis pipeline to consider the entire period. If processing cannot cover the set (failure or unavailable provider), disclose **incomplete coverage** — do not silently sample.
 
-Pipeline: retrieve **all** in-window eligible items (SQL pages are not consider-caps) → normalize/claim → correlate episodes/themes (including photo clusters by date/people/place) → significance / period understanding → story outline → synthesize.
+The family narrative is about **life during the period**, not about evidence volume. Week counts, item totals, and processing diagnostics belong in **AI Trace / Evidence Layer** — not in narrator input unless a specific analytical claim needs them. Complete consideration ≠ complete narration: routine transactional mail (shipping notices, receipts, automated surveys, ordinary order confirmations) stays supporting evidence unless it contributes to a meaningful episode. Those categories are heuristics, not a universal ban.
+
+The final model receives: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries for each episode; limited exemplars only where useful for human detail; uncertainty/provenance. It does **not** receive archive-count or implementation diagnostics.
+
+Pipeline: retrieve **all** in-window eligible items (SQL pages are not consider-caps) → normalize/claim → correlate episodes/themes (including photo clusters by date/people/place) → **significance / correlation** → **semantic life-period outline** → synthesize.
 
 Configured model context window is an implementation constraint on the **final** call. Intermediate summaries: derived, regenerable, I7A-traced, **not** durable family truth.
 
@@ -297,7 +301,7 @@ Copy / Save as Story / Saved View JSON: unchanged from prior lock.
 | C-19 | SMS timestamp alone ≠ location; authored/shared-location/attachment EXIF may, with `basis`. |
 | C-20 | Peggy/Tom Christmas 2017 discussion: authored units, no quote dupes, no unrelated 2017 calendar dump. |
 | C-21 | “Tell me about my 2017”: broad family evidence; staged volume, not first-N dump. |
-| C-22 | Family-facing evidence-considered counts = all processed in-scope units, not narrator seats or quoted copies. Narrator input may be a smaller hierarchical outline. |
+| C-22 | Family-facing evidence-considered counts = all processed in-scope units, not narrator seats or quoted copies. Narrator input is a smaller **semantic life-period outline** (episode/theme, claims, evidence IDs, date span, people, significance) — not week-count buckets. Volume diagnostics stay in AI Trace. |
 | C-23 | Model down: evidence visible; narration unavailable; no stitch-as-narrative. |
 | C-24 | Dual travel: confirmation email is a communication unit; structured flight/hotel facts are a derived travel unit with provenance to that email. |
 | C-25 | “When Dad was young”: generic Person + age_band + interpretation/version; dates from birth (or other sufficient age/date evidence); **ask rather than guess** if insufficient. Not a phrase-specific field. Not a hard-coded 10–25 rule. |

@@ -659,20 +659,21 @@ def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
 
 
 def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Explore only needs coverage/volume — not every prepared unit id."""
+    """Explore coverage/volume plus a slim life-period outline — not week dumps."""
     if not isinstance(pack, dict):
         return pack
-    derived = []
-    for s in pack.get("derived_summaries") or []:
-        if not isinstance(s, dict):
+    outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
+    slim_eps = []
+    for ep in outline.get("episodes") or []:
+        if not isinstance(ep, dict):
             continue
-        derived.append(
+        slim_eps.append(
             {
-                "summary_id": s.get("summary_id"),
-                "period": s.get("period"),
-                "unit_n": s.get("unit_n") or len(s.get("unit_ids") or []),
-                "derived": True,
-                "not_family_truth": True,
+                "theme_or_episode": ep.get("theme_or_episode"),
+                "claims": list(ep.get("claims") or [])[:3],
+                "date_span": ep.get("date_span"),
+                "people": list(ep.get("people") or [])[:8],
+                "significance": ep.get("significance"),
             }
         )
     return {
@@ -681,26 +682,15 @@ def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
         "volume": pack.get("volume"),
         "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
         "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
-        "derived_summaries": derived,
+        "background": pack.get("background") or {},
+        "life_period_outline": {
+            "period": outline.get("period"),
+            "episodes": slim_eps,
+        },
         "period_understanding": {
             "label": (pack.get("period_understanding") or {}).get("label")
             if isinstance(pack.get("period_understanding"), dict)
             else None,
-            "significant_episode_n": (
-                (pack.get("period_understanding") or {}).get("significant_episode_n")
-                if isinstance(pack.get("period_understanding"), dict)
-                else None
-            ),
-            "candidate_episode_n": (
-                (pack.get("period_understanding") or {}).get("candidate_episode_n")
-                if isinstance(pack.get("period_understanding"), dict)
-                else None
-            ),
-            "routine_episodes_suppressed": (
-                (pack.get("period_understanding") or {}).get("routine_episodes_suppressed")
-                if isinstance(pack.get("period_understanding"), dict)
-                else None
-            ),
         },
     }
 
