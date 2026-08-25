@@ -14,6 +14,7 @@ from memorybox.ask.narrative import (
     SYSTEM_PROMPT,
     coverage_incomplete_line,
     memories_from_citations,
+    missing_modality_lines,
     pack_for_narrator,
     persistable_view,
     tell_from_hits,
@@ -25,6 +26,8 @@ from memorybox.ask.retrieve import (
     _sms_ask,
     _tell_pack_comms,
     filter_hits_by_constraints,
+    search_photos,
+    visual_library_person_ids,
 )
 from memorybox.context import AskContext, InMemoryContextStore
 from memorybox.explore.find import (
@@ -163,6 +166,126 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="showSearching and applyPayloadToState replace curator on a new show Ask",
+    )
+    _jan_lib, jan_requestor = visual_library_person_ids(jan_tell)
+    peggy_lib, peggy_requestor = visual_library_person_ids(peggy_after_jan)
+    _check(
+        "c02e_period_tell_does_not_name_owner_as_subject",
+        not (jan_tell.person_names or ())
+        and not (jan_tell.person_ids or ())
+        and any(n.lower() == "peggy" for n in (peggy_after_jan.person_names or ()))
+        and peggy_requestor is None
+        and not (peggy_lib),
+        checks,
+        problems,
+        detail=(
+            f"jan_names={jan_tell.person_names} jan_ids={jan_tell.person_ids} "
+            f"jan_req={jan_requestor} peggy_names={peggy_after_jan.person_names} "
+            f"peggy_req={peggy_requestor}"
+        ),
+    )
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef
+
+    req_pid = str(uuid4())
+    immich_ext = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    jan_asset = PhotoAssetDto(
+        provider_key="fake_photo",
+        external_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        original_filename="january_trip.jpg",
+        taken_at=datetime(2026, 1, 14, 16, 0, tzinfo=timezone.utc),
+        people=(
+            PhotoPersonRef(
+                provider_key="fake_photo",
+                external_id=immich_ext,
+                display_name="Requestor",
+            ),
+        ),
+    )
+    req_photo = FakePhotoProvider(extra_assets=[jan_asset])
+    req_person = SimpleNamespace(
+        id=req_pid,
+        display_name="Requestor",
+        identity_authority="confirmed",
+        provider_mappings=(
+            {
+                "provider_key": "fake_photo",
+                "external_id": immich_ext,
+                "identity_authority": "confirmed",
+            },
+        ),
+    )
+    with (
+        patch(
+            "memorybox.profile.owner.get_requestor_person_id",
+            return_value=req_pid,
+        ),
+        patch("memorybox.person.get_person", return_value=req_person),
+        patch(
+            "memorybox.person.list_provider_external_ids_for_person",
+            return_value=[immich_ext],
+        ),
+        patch(
+            "memorybox.person.resolve_immich_external_ids_for_person",
+            return_value=[],
+        ),
+    ):
+        photo_hits, photo_status = search_photos(jan_tell, req_photo, limit=0)
+        peggy_photo_hits, peggy_photo_status = search_photos(
+            peggy_after_jan, req_photo, limit=0
+        )
+    _check(
+        "c02e_period_tell_searches_requestor_photo_library",
+        bool(photo_hits)
+        and photo_status.get("requestor_library") is True
+        and photo_status.get("requestor_person_id") == req_pid
+        and any(
+            (h.taken_at or "").startswith("2026-01")
+            for h in photo_hits
+        )
+        and not (jan_tell.person_names or ())
+        and peggy_photo_status.get("requestor_library") is not True,
+        checks,
+        problems,
+        detail=str(
+            {
+                "n": len(photo_hits),
+                "status": {
+                    k: photo_status.get(k)
+                    for k in (
+                        "requestor_library",
+                        "requestor_person_id",
+                        "detail",
+                        "after_temporal_filter",
+                    )
+                },
+                "peggy_req": peggy_photo_status.get("requestor_library"),
+                "peggy_n": len(peggy_photo_hits),
+            }
+        ),
+    )
+    _check(
+        "c02e_empty_requestor_photos_are_python_truth",
+        "No photos were found for this period."
+        == missing_modality_lines(
+            {
+                "coverage": {"missing": ["photos"]},
+                "scope": {"requestor_library": True},
+            }
+        )
+        and missing_modality_lines(
+            {
+                "coverage": {"missing": ["photos"]},
+                "scope": {"requestor_library": False, "people": ["Peggy"]},
+            }
+        )
+        == "",
+        checks,
+        problems,
+        detail="period tell with a searched empty photo library; named subject Ask is unchanged",
     )
     _check(
         "c09_said_about_not_tell",
@@ -1126,10 +1249,19 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and "family evidence considered" not in nar_blob.lower()
         and "eligible_n" not in nar_blob
         and isinstance(nar.get("uncertainty"), dict)
-        and "incomplete_coverage" not in (nar.get("uncertainty") or {}),
+        and         "incomplete_coverage" not in (nar.get("uncertainty") or {}),
         checks,
         problems,
         detail=str({"prompt_snip": SYSTEM_PROMPT[:220], "unc": nar.get("uncertainty"), "keys": sorted(nar.keys())}),
+    )
+    _check(
+        "c26_missing_photos_line_is_python_not_narrator",
+        "no photos were found" not in nar_blob.lower()
+        and "requestor_library" not in nar_blob
+        and "missing_modality" not in SYSTEM_PROMPT.lower(),
+        checks,
+        problems,
+        detail=str({"keys": sorted(nar.keys())}),
     )
 
     trunc_hits = [

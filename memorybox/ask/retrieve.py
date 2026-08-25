@@ -420,6 +420,33 @@ def _bounded_period_tell(plan: QueryPlan) -> bool:
     return bool(getattr(plan, "time_start", None) and getattr(plan, "time_end", None))
 
 
+def visual_library_person_ids(plan: QueryPlan) -> tuple[list[str], str | None]:
+    """Person ids for photo/video library search.
+
+    Named subjects on the Ask (Peggy, …) stay the library. When the Ask has no
+    person slot — typical of “my January” — use the requestor Person (today the
+    single owner; later the signed-in user). Do not write that id onto the plan,
+    or inherit/subject-change will treat a period tell as “about the owner.”
+    """
+    asked_ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+    asked_names = [
+        str(n).strip()
+        for n in (getattr(plan, "person_names", ()) or ())
+        if str(n).strip()
+    ]
+    if asked_ids or asked_names:
+        return asked_ids, None
+    try:
+        from memorybox.profile.owner import get_requestor_person_id
+
+        rid = get_requestor_person_id()
+    except Exception:  # noqa: BLE001
+        rid = None
+    if rid:
+        return [str(rid)], str(rid)
+    return [], None
+
+
 def _apply_result_limit(items: list[Any], limit: int | None) -> list[Any]:
     """Slice only when a caller asked for a page. 0/None is not 'return nothing'."""
     if limit is None or int(limit) <= 0:
@@ -1865,8 +1892,12 @@ def search_photos(
         status["detail"] = "not_requested"
         return [], status
     try:
+        library_person_ids, requestor_id = visual_library_person_ids(plan)
+        if requestor_id:
+            status["requestor_library"] = True
+            status["requestor_person_id"] = requestor_id
         named_person = bool(
-            getattr(plan, "person_names", ()) or getattr(plan, "person_ids", ())
+            getattr(plan, "person_names", ()) or library_person_ids
         )
         if named_person:
             status["health_skipped"] = "named_person_ask"
@@ -1903,7 +1934,7 @@ def search_photos(
             return any(asked_name_matches_person(a, display) for a in asked_names)
 
         resolved_by_id: set[str] = set()
-        for pid in getattr(plan, "person_ids", ()) or ():
+        for pid in library_person_ids:
             person = _get_person_by_id(pid)
             if not person:
                 continue
@@ -2445,6 +2476,7 @@ def search_photos(
                     f"unmapped_resolvable={unmapped_resolvable_names or []} "
                     f"mapped_names={mapped_names}"
                     + (f" source={src}" if src else "")
+                    + (f" requestor={requestor_id}" if requestor_id else "")
                 )
             if mapped_names or unmapped_resolvable_names:
                 status["disclosure"] = (
@@ -2452,16 +2484,6 @@ def search_photos(
                     + " Photo library did not return stills for this person; "
                     "video moments stay visible."
                 ).strip()
-            return _finish(hits)
-            status["detail"] = (
-                f"no_immich_person_ids names={name_queries} "
-                f"unmapped_resolvable={unmapped_resolvable_names or []}"
-            )
-            if unmapped_resolvable_names:
-                status["disclosure"] = (
-                    "Resolvable MB Person(s) exist without Immich mapping; "
-                    "no Immich person id resolved for name search."
-                )
             return _finish(hits)
 
         # Person asks must stay on personIds only — never bare Immich text search
@@ -2646,8 +2668,12 @@ def search_videos(
 
             return any(_nm(a, display) for a in asked_video_names)
 
+        library_person_ids, requestor_id = visual_library_person_ids(plan)
+        if requestor_id:
+            status["requestor_library"] = True
+            status["requestor_person_id"] = requestor_id
         seen_pids: set[str] = set()
-        for pid in getattr(plan, "person_ids", ()) or ():
+        for pid in library_person_ids:
             person = _get_person_by_id(pid)
             if not person:
                 continue

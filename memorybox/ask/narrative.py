@@ -160,6 +160,20 @@ def coverage_incomplete_line(pack: dict[str, Any] | None) -> str:
     return "Coverage is incomplete."
 
 
+def missing_modality_lines(pack: dict[str, Any] | None) -> str:
+    """Family-facing missing-modality notice — Python/UI only, never the model."""
+    if not isinstance(pack, dict):
+        return ""
+    cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
+    scope = pack.get("scope") if isinstance(pack.get("scope"), dict) else {}
+    missing = cov.get("missing") or []
+    # Requestor-library period tells searched the owner's photos; zero hits
+    # must not look like "photos were never searched."
+    if "photos" in missing and scope.get("requestor_library"):
+        return "No photos were found for this period."
+    return ""
+
+
 def _story_uncertainty(episodes: list[Any]) -> dict[str, Any]:
     flags: dict[str, Any] = {
         "provenance": (
@@ -265,6 +279,9 @@ def synthesize_tell(
         cov_line = coverage_incomplete_line(pack)
         if cov_line:
             text = text.rstrip() + "\n\n" + cov_line
+        miss_line = missing_modality_lines(pack)
+        if miss_line:
+            text = text.rstrip() + "\n\n" + miss_line
         footer = evidence_used_footer(pack)
         if "Family evidence considered" not in text and "Family evidence used" not in text:
             text = text.rstrip() + "\n\n" + footer

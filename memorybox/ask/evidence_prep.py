@@ -1376,7 +1376,9 @@ def prepare_narrative_pack(
     if derived_summaries and reduction == "episode" and len(ranked) > 1:
         reduction = "organize"
     missing: list[str] = []
-    if not photos:
+    if not photos and (
+        getattr(plan, "want_photo", False) or getattr(plan, "want_still", False)
+    ):
         missing.append("photos")
     coverage_summary = (
         f"Considered {eligible_n} eligible item(s); processed {processed_n}; "
@@ -1390,6 +1392,18 @@ def prepare_narrative_pack(
             missing.append("resolved_age_band_dates")
             coverage_summary += " Relative age band is unresolved to dates."
 
+    owner_id = None
+    requestor_id = None
+    try:
+        from memorybox.profile.owner import get_owner_person_id, get_requestor_person_id
+
+        owner_id = get_owner_person_id()
+        requestor_id = get_requestor_person_id()
+    except Exception:  # noqa: BLE001
+        pass
+    asked_people = list(getattr(plan, "person_names", ()) or ())
+    asked_ids = list(getattr(plan, "person_ids", ()) or ())
+    requestor_library = bool(requestor_id) and not asked_people and not asked_ids
     pack = {
         "schema_version": PACK_SCHEMA,
         "ask": {
@@ -1399,8 +1413,10 @@ def prepare_narrative_pack(
         },
         "scope": {
             "breadth": "broad" if broad else "narrow",
-            "owner_person_id": None,
-            "people": list(getattr(plan, "person_names", ()) or ()),
+            "owner_person_id": owner_id,
+            "requestor_person_id": requestor_id,
+            "requestor_library": requestor_library,
+            "people": asked_people,
             "time": {
                 "windows": [list(w) for w in (getattr(plan, "temporal_windows", ()) or ())],
                 "label": getattr(plan, "temporal_label", None),

@@ -204,6 +204,25 @@ def name_map(conn, ids: list[UUID]) -> dict[str, str | None]:
     return {str(r["id"]): r.get("display_name") for r in rows}
 
 
+def get_requestor_person_id() -> str | None:
+    """Person whose library Ask uses when the Ask names no subject.
+
+    MemoryBox is single-user until multi-user lands: requestor is the owner
+    Person (People → “I am this person”; bootstrap may also set current).
+    When a session/current Person exists, prefer that so multi-user can swap
+    in the signed-in user without rewriting retrieve. Never infer by name.
+    """
+    try:
+        from memorybox.profile.bootstrap import get_current_person_id
+
+        current = get_current_person_id()
+        if current:
+            return current
+    except Exception:  # noqa: BLE001 — table may not exist yet / DB down
+        pass
+    return get_owner_person_id()
+
+
 def get_owner_person_id() -> str | None:
     """Canonical P1 owner Person id.
 
