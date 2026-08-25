@@ -20,7 +20,7 @@ _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_TIMELINE_MONTH_BUDGET = 18
 _PERSON_TIMELINE_MONTH_WALK = 720
-_PERSON_LIB_CACHE_VER = "v9"
+_PERSON_LIB_CACHE_VER = "v10"
 
 
 class ImmichAuthError(RuntimeError):
@@ -261,6 +261,10 @@ class ImmichHttpClient:
             "person_stills_in_window_n": getattr(self, "_person_stills_in_window_n", None),
             "person_videos_in_window_n": getattr(self, "_person_videos_in_window_n", None),
             "year_fair_applied": getattr(self, "_year_fair_applied", None),
+            "immich_person_asset_count": getattr(self, "_immich_person_asset_count", None),
+            "query_time_windows": [
+                list(w) for w in (getattr(self, "_timeline_windows", ()) or ())
+            ],
             "total_ms": int(sum(int(r.get("ms") or 0) for r in rows)),
             "last": rows[-8:],
         }
@@ -467,11 +471,16 @@ class ImmichHttpClient:
         self._reset_call_log()
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
+        reported = self._reported_person_asset_count(person_ids)
+        self._immich_person_asset_count = reported
         cache_key = (
             f"{_PERSON_LIB_CACHE_VER}:"
             + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
         )
         cached = self._read_person_lib_cache(cache_key, allow_stale=True)
+        if cached and reported and len(cached) < max(40, int(reported * 0.4)):
+            cached = None
+            self._last_person_source = "cache_skipped_truncated"
         if cached:
             self._last_person_source = "cache"
             rows: list[dict[str, Any]] = [
@@ -542,6 +551,31 @@ class ImmichHttpClient:
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
+    def _reported_person_asset_count(self, person_ids: list[str]) -> int | None:
+        """Immich person record totals — compare with what this walk actually kept."""
+        total = 0
+        saw = False
+        for pid in person_ids:
+            rec = self.get_person(str(pid or "").strip()) or {}
+            for key in ("assetCount", "assetsCount", "assets"):
+                raw = rec.get(key)
+                if isinstance(raw, bool):
+                    continue
+                if isinstance(raw, (int, float)) and int(raw) > 0:
+                    total += int(raw)
+                    saw = True
+                    break
+                if isinstance(raw, dict):
+                    n = raw.get("total") or raw.get("count")
+                    if n not in (None, ""):
+                        try:
+                            total += int(n)
+                            saw = True
+                            break
+                        except (TypeError, ValueError):
+                            pass
+        return total if saw else None
+
     def _assets_from_person_faces(
         self, person_ids: list[str], target: int
     ) -> list[dict[str, Any]]:
@@ -570,8 +604,6 @@ class ImmichHttpClient:
                     "id": aid,
                     "people": [{"id": pid, "name": face.get("personName") or ""}],
                 }
-                if len(by_id) >= target:
-                    return list(by_id.values())
         return list(by_id.values())
 
     def _assets_from_person_timeline(
@@ -585,10 +617,9 @@ class ImmichHttpClient:
                 continue
             if self._circuit():
                 break
-            raw_buckets = self._filter_years_to_windows(
-                self._list_person_time_buckets(pid),
-                getattr(self, "_timeline_windows", ()) or (),
-            )
+            # Walk the full person timeline. Ask windows filter assets after
+            # cache — never cache a January walk as the unwindowed library.
+            raw_buckets = self._list_person_time_buckets(pid)
             by_year = self._group_buckets_by_year(raw_buckets)
             years = sorted(by_year.keys(), reverse=True)
             month_mode = any(len(v) > 1 for v in by_year.values()) or any(
@@ -925,6 +956,9 @@ class ImmichHttpClient:
         vids = len(windowed) - stills
         self._person_stills_in_window_n = stills
         self._person_videos_in_window_n = vids
+        reported = getattr(self, "_immich_person_asset_count", None)
+        if reported and len(full) < max(40, int(reported * 0.4)):
+            self._person_lib_incomplete = True
         if not self.year_fair_should_apply(windows, len(windowed), target):
             self._year_fair_applied = False
             return windowed

@@ -34,11 +34,13 @@ Rules:
 - Do not introduce geographic details (for example “Bering Sea”) unless a supporting evidence ID / listed place or claim establishes that location.
 - Do not describe weather, emotional reactions, motives, atmosphere, excitement, concern, disappointment, beauty, or other experiential details unless those words appear in the grounded claims.
 - Distinguish planned/scheduled from observed/actual. A calendar range is not proof of travel across that entire range.
-- Prefer observed_window when photos, GPS, or other observations corroborate an actual span. Keep scheduled_window as planning evidence if useful. derived_window is inferred (for example travel extracted from mail) — not narrative fact of presence.
+- Prefer the corroborated actual span when photos, GPS, or other observations support it. Keep planned calendar ranges as planning if useful. Travel extracted from mail is not narrative fact of presence.
 - When evidence type affects certainty, use phrasing such as “the calendar showed…,” “travel records indicate…,” “photos place…,” or “messages suggest…”.
 - Do not convert plausible inference into narrative fact.
 - Do not write how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
 - Do not write retrieve/process completeness, evidence-considered counts, archive or week counts, missing-modality notices, eligible/processed totals, model name, or AI Trace diagnostics.
+- Do not write evidence IDs, internal episode names as labels, or the words scheduled_window, observed_window, or derived_window in the family story.
+- Do not add a closing corroboration or provenance paragraph. Python appends a short Evidence behind this story section after your prose.
 - Do not list shipping notices, receipts, surveys, or ordinary order confirmations unless they are a listed characterizing claim.
 - Presence is not photographer, purpose, emotion, companions, or extra significance.
 - Do not write “much-needed break,” “grateful,” “profound impact,” “beautiful scenery,” “important milestone,” or other significance language unless those words appear in the grounded claims.
@@ -183,6 +185,102 @@ def evidence_used_footer(pack: dict[str, Any] | None) -> str:
     if not bits:
         return "Family evidence considered: none processed for this Ask."
     return "Family evidence considered: " + " · ".join(bits) + "."
+
+
+def _window_day(raw: Any) -> str:
+    s = str(raw or "")[:10]
+    return s if len(s) >= 10 and s[4] == "-" else ""
+
+
+def evidence_behind_this_story(pack: dict[str, Any] | None) -> str:
+    """Family-facing corroboration after the story — no IDs or window field names."""
+    if not isinstance(pack, dict):
+        return ""
+    outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
+    ow = outline.get("observed_window") if isinstance(outline.get("observed_window"), dict) else {}
+    sw = outline.get("scheduled_window") if isinstance(outline.get("scheduled_window"), dict) else {}
+    o0, o1 = _window_day(ow.get("start")), _window_day(ow.get("end") or ow.get("start"))
+    s0, s1 = _window_day(sw.get("start")), _window_day(sw.get("end") or sw.get("start"))
+    photo_days: list[str] = []
+    cal_days: list[str] = []
+    travel_n = 0
+    for ep in outline.get("episodes") or []:
+        if not isinstance(ep, dict):
+            continue
+        od = _window_day((ep.get("observed_window") or {}).get("start"))
+        oe = _window_day((ep.get("observed_window") or {}).get("end") or od)
+        sd = _window_day((ep.get("scheduled_window") or {}).get("start"))
+        se = _window_day((ep.get("scheduled_window") or {}).get("end") or sd)
+        if od and not o0:
+            o0, o1 = od, oe or od
+        elif od:
+            o0, o1 = min(o0, od), max(o1 or o0, oe or od)
+        if sd and not s0:
+            s0, s1 = sd, se or sd
+        elif sd:
+            s0, s1 = min(s0, sd), max(s1 or s0, se or sd)
+    for u in pack.get("units") or []:
+        if not isinstance(u, dict):
+            continue
+        kind = str(u.get("kind") or "")
+        day = _window_day(u.get("time") or u.get("captured_at") or u.get("capture_time"))
+        if kind in {"media_observation", "video_asset", "video_moment", "spoken_moment"}:
+            if day:
+                photo_days.append(day)
+        elif kind == "calendar":
+            if day:
+                cal_days.append(day)
+        elif kind == "travel":
+            travel_n += 1
+    if photo_days and not o0:
+        o0, o1 = min(photo_days), max(photo_days)
+    if cal_days and not s0:
+        s0, s1 = min(cal_days), max(cal_days)
+    claims: list[str] = []
+    for ep in outline.get("episodes") or []:
+        if not isinstance(ep, dict):
+            continue
+        for c in ep.get("claims") or []:
+            if isinstance(c, str) and c.strip():
+                claims.append(c.strip())
+            elif isinstance(c, dict) and c.get("text"):
+                claims.append(str(c.get("text")).strip())
+    blob = " ".join(claims).lower()
+    used = pack.get("evidence_considered") or pack.get("evidence_used") or {}
+    photo_n = int((used.get("photos") or 0) if isinstance(used, dict) else 0) + len(photo_days)
+    cal_n = int((used.get("calendar_events") or 0) if isinstance(used, dict) else 0) + len(cal_days)
+    lines: list[str] = []
+    if o0:
+        if o0 == o1:
+            lines.append(f"Photographs place people there on {o0}.")
+        else:
+            lines.append(f"Photographs place people there from {o0} through {o1}.")
+    elif photo_n:
+        lines.append("Photographs from this period were considered alongside the written record.")
+    if s0:
+        if "eagles" in blob or "sphere" in blob:
+            lines.append("The calendar listed planned events in that span, including the Sphere show when present.")
+        elif "flight" in blob or "las vegas" in blob:
+            lines.append("The calendar listed planned travel in that span.")
+        else:
+            lines.append("The calendar listed planned items in that span.")
+    elif cal_n:
+        lines.append("Calendar items from this period were considered.")
+    if travel_n and not any("travel" in ln.lower() for ln in lines):
+        lines.append("Travel records from mail or itineraries were considered.")
+    if not lines:
+        retrieved = (pack.get("evidence_sets") or {}).get("retrieved") or {}
+        if int(retrieved.get("photos") or 0) or int(retrieved.get("videos") or 0):
+            lines.append("Photographs from this period were considered alongside the written record.")
+        if any(
+            str(e.get("evidence_kind") or e.get("channel") or "").lower() in {"calendar", "calendar_event"}
+            for e in (pack.get("calendar_pipeline") or [])
+            if isinstance(e, dict)
+        ):
+            lines.append("Calendar items from this period were considered.")
+    if not lines:
+        return ""
+    return "Evidence behind this story\n" + " ".join(lines)
 
 
 def coverage_incomplete_line(pack: dict[str, Any] | None) -> str:
@@ -347,6 +445,9 @@ def synthesize_tell(
                 reason="Narration added unsupported detail and was rejected.",
             ), meta
         text = grounded
+        behind = evidence_behind_this_story(pack)
+        if behind and "Evidence behind this story" not in text:
+            text = text.rstrip() + "\n\n" + behind
         cov_line = coverage_incomplete_line(pack)
         if cov_line:
             text = text.rstrip() + "\n\n" + cov_line

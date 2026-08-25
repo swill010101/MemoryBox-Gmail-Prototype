@@ -25,6 +25,7 @@ from memorybox.planner import QueryPlan
 from memorybox.planner.temporal import date_in_windows
 
 _GAP_DAYS = 14
+_HIGH_GAP_DAYS = 7
 _TRIP_PAD_DAYS = 3
 _WEAK_PLACE_TOKENS = frozenset({"las", "the", "and", "our", "for"})
 _VEGAS_CONTEXT = (
@@ -115,7 +116,7 @@ def _pad_span(start: str, end: str, *, days: int = _TRIP_PAD_DAYS) -> tuple[str,
 def _windows_cover(inner: tuple[str, str], outer: tuple[tuple[str, str], ...]) -> bool:
     """True when every day of inner falls in the discovery Ask windows."""
     if not outer:
-        return True
+        return False
     cur = date.fromisoformat(inner[0])
     last = date.fromisoformat(inner[1])
     while cur <= last:
@@ -123,6 +124,45 @@ def _windows_cover(inner: tuple[str, str], outer: tuple[tuple[str, str], ...]) -
             return False
         cur += timedelta(days=1)
     return True
+
+
+def _comm_anchor(match_reason: str | None, channel: str) -> tuple[str, str] | None:
+    """Strength and source class for trip-window anchors. Weak mail is not an anchor."""
+    ch = str(channel or "").lower()
+    reason = str(match_reason or "")
+    if ch == "calendar" and reason:
+        return "high", "calendar"
+    if reason.startswith("travel"):
+        return "high", "travel"
+    if reason in {
+        "phrase:las vegas",
+        "vegas_event_or_locality_alias",
+        "vegas_with_travel_or_event_context",
+    }:
+        return "medium", "communication"
+    if reason.startswith("token:") or reason.startswith("short_token:"):
+        return "medium", "communication"
+    return None
+
+
+def _cross_source_ok(sources: set[str]) -> bool:
+    if "calendar" in sources and "media" in sources:
+        return True
+    if "travel" in sources and "media" in sources:
+        return True
+    if "calendar" in sources and "travel" in sources:
+        return True
+    if "media" in sources and "communication" in sources:
+        return True
+    if "calendar" in sources and "communication" in sources:
+        return True
+    return False
+
+
+def _span_equals_discovery(start: str, end: str, disc: tuple[tuple[str, str], ...]) -> bool:
+    if len(disc) != 1:
+        return False
+    return str(disc[0][0])[:10] == start and str(disc[0][1])[:10] == end
 
 
 def _cluster_days(days: list[str], *, gap: int = _GAP_DAYS) -> list[tuple[str, str, int]]:
@@ -208,6 +248,7 @@ class TripDiscoveryResult:
             "needs_refetch": self.needs_refetch,
             "discovery_windows": [list(w) for w in self.discovery_windows],
             "resolved_trip_window": list(self.resolved_window) if self.resolved_window else None,
+            "needs_refetch": self.needs_refetch,
             "candidate_windows": [
                 {"start": a, "end": b, "day_count": n} for a, b, n in self.windows
             ],
@@ -226,6 +267,10 @@ def emit_retrieval_resolution_span(result: TripDiscoveryResult) -> None:
         tid = ai_ctx.current_trace_id()
         if not tid:
             return
+        payload = result.span_payload()
+        extra = getattr(result, "span_extra", None)
+        if isinstance(extra, dict):
+            payload.update(extra)
         store.insert_span(
             trace_id=tid,
             stage="retrieval_resolution",
@@ -233,7 +278,7 @@ def emit_retrieval_resolution_span(result: TripDiscoveryResult) -> None:
             operation="retrieval_resolution",
             status="ok" if not result.ambiguous else "error",
             error_class="ORCHESTRATION" if result.ambiguous else None,
-            assembled_context=result.span_payload(),
+            assembled_context=payload,
             parsed={"modalities": [m.to_dict() for m in result.modalities]},
             disposition={
                 "resolved": result.resolved,
@@ -407,13 +452,20 @@ def resolve_trip(
 
     matched_photos = []
     for h in photos:
-        if not tokens:
-            matched_photos.append(h)
-            continue
-        if filter_photo_hits_to_places([h], plan.place_names):
-            matched_photos.append(h)
-            continue
-        if _vegas_gps(h.latitude, h.longitude):
+        loc_blob = _blob(
+            h.location,
+            h.place,
+            h.city,
+            h.state,
+            h.country,
+            h.original_filename,
+        )
+        if (
+            not tokens
+            or filter_photo_hits_to_places([h], plan.place_names)
+            or _vegas_gps(h.latitude, h.longitude)
+            or _place_match_reason(loc_blob, tokens)
+        ):
             matched_photos.append(h)
     matched_ev = []
     comm_pipeline: list[dict[str, Any]] = []
@@ -471,6 +523,10 @@ def resolve_trip(
         )
         if selected:
             matched_ev.append(h)
+            anc = _comm_anchor(match_reason, channel)
+            if anc:
+                comm_pipeline[-1]["anchor_strength"] = anc[0]
+                comm_pipeline[-1]["anchor_source"] = anc[1]
 
     matched_stories = [
         h
@@ -497,6 +553,29 @@ def resolve_trip(
             or _vegas_gps(h.latitude, h.longitude)
         ):
             matched_videos.append(h)
+
+    high_by_day: dict[str, set[str]] = {}
+    medium_by_day: dict[str, set[str]] = {}
+
+    def _mark(day: str | None, source: str, strength: str) -> None:
+        if not day:
+            return
+        bucket = high_by_day if strength == "high" else medium_by_day
+        bucket.setdefault(day, set()).add(source)
+
+    for h in matched_photos:
+        _mark(_day(h.taken_at), "media", "high")
+    for h in matched_videos:
+        _mark(_day(h.taken_at), "media", "high")
+    for row in comm_pipeline:
+        if not row.get("selected"):
+            continue
+        strength = str(row.get("anchor_strength") or "")
+        src = str(row.get("anchor_source") or "")
+        if strength == "high":
+            _mark(row.get("day"), src or "calendar", "high")
+        elif strength == "medium":
+            _mark(row.get("day"), src or "communication", "medium")
 
     days: list[str] = []
     for h in matched_photos:
@@ -537,6 +616,7 @@ def resolve_trip(
             days.append(d)
 
     windows = _cluster_days(days)
+    high_windows = _cluster_days(list(high_by_day), gap=_HIGH_GAP_DAYS)
     modalities = [
         _photo_modality(plan, photos, photo_status, matched=matched_photos, tokens=tokens),
         _comm_modality(
@@ -602,10 +682,40 @@ def resolve_trip(
     if not pending:
         return result
 
-    ranked = sorted(windows, key=lambda w: w[2], reverse=True)
+    def _sources_near(start: str, end: str) -> set[str]:
+        lo = date.fromisoformat(start) - timedelta(days=_GAP_DAYS)
+        hi = date.fromisoformat(end) + timedelta(days=_GAP_DAYS)
+        found: set[str] = set()
+        for bucket in (high_by_day, medium_by_day):
+            for day, srcs in bucket.items():
+                dd = date.fromisoformat(str(day)[:10])
+                if lo <= dd <= hi:
+                    found |= srcs
+        return found
+
+    def _bounds_with_nearby(start: str, end: str) -> tuple[str, str]:
+        lo = date.fromisoformat(start) - timedelta(days=_GAP_DAYS)
+        hi = date.fromisoformat(end) + timedelta(days=_GAP_DAYS)
+        days_keep = [start, end]
+        for day in medium_by_day:
+            dd = date.fromisoformat(str(day)[:10])
+            if lo <= dd <= hi:
+                days_keep.append(day)
+        for day in high_by_day:
+            dd = date.fromisoformat(str(day)[:10])
+            if lo <= dd <= hi:
+                days_keep.append(day)
+        return min(days_keep), max(days_keep)
+
+    converged = []
+    for a, b, n in high_windows:
+        srcs = _sources_near(a, b)
+        if _cross_source_ok(srcs):
+            converged.append((a, b, n, srcs))
+    ranked = sorted(converged, key=lambda w: w[2], reverse=True)
     if len(ranked) >= 2 and ranked[0][2] > 0 and ranked[1][2] >= max(2, ranked[0][2] // 2):
         label = (list(plan.place_names or ()) or ["that place"])[0]
-        spans = "; ".join(f"{a}–{b}" for a, b, _n in ranked[:4])
+        spans = "; ".join(f"{a}–{b}" for a, b, _n, _s in ranked[:4])
         result.ambiguous = True
         result.clarification = (
             f"More than one {label} trip window in this period ({spans}). "
@@ -626,30 +736,37 @@ def resolve_trip(
         return result
 
     if not ranked:
-        # No place-matching evidence: do not dump the whole year into I11A.
-        result.photos = []
-        result.evidence = []
-        result.videos = []
-        result.stories = []
-        result.journals = []
-        result.artifacts = []
+        # Anchors exist but do not yet converge across sources — do not invent a month-long trip.
+        result.photos = list(matched_photos)
+        result.evidence = list(matched_ev)
+        result.videos = list(matched_videos)
+        result.stories = list(matched_stories)
+        result.journals = list(matched_journals)
+        result.artifacts = list(matched_arts)
         result.plan = replace(
             plan,
             notes=tuple(
                 [n for n in plan.notes if n != "trip_window_unresolved"]
-                + ["trip_window_unresolved", "trip_discovery_no_place_match"]
+                + [
+                    "trip_window_unresolved",
+                    "trip_discovery_no_cross_source"
+                    if (high_windows or matched_ev or matched_photos)
+                    else "trip_discovery_no_place_match",
+                ]
             ),
         )
         return result
 
-    start, end, _n = ranked[0]
+    start, end, _n, srcs = ranked[0]
+    start, end = _bounds_with_nearby(start, end)
     start, end = _pad_span(start, end)
     win = ((start, end),)
-    needs_refetch = not _windows_cover((start, end), disc)
+    needs_refetch = not _span_equals_discovery(start, end, disc)
     notes = [n for n in plan.notes if n != "trip_window_unresolved"]
     notes.append("trip_window_resolved")
     notes.append(f"discovery_window={disc[0][0]}/{disc[0][1]}" if disc else "discovery_window=")
     notes.append(f"resolved_trip_window={start}/{end}")
+    notes.append("convergence=" + ",".join(sorted(srcs)))
     if needs_refetch:
         notes.append("trip_window_extends_discovery")
     result.plan = replace(
@@ -670,56 +787,54 @@ def resolve_trip(
             return False
         return date_in_windows(d, win)
 
-    # Stage 2: membership in the resolved trip span (no independent "Las Vegas" required).
+    # Media in the resolved span is eligible. Communications are trip-relevant
+    # only with an independent match — not mere window membership.
     result.photos = [h for h in photos if not h.taken_at or _in_win(h.taken_at)]
-    result.evidence = [h for h in evidence if not h.sent_at or _in_win(h.sent_at)]
     result.videos = [h for h in videos if not h.taken_at or _in_win(h.taken_at)]
-    result.stories = [h for h in stories if not h.taken_at or _in_win(h.taken_at)]
+    result.stories = [h for h in matched_stories if not h.taken_at or _in_win(h.taken_at)]
     result.journals = [
         h
-        for h in journals
+        for h in matched_journals
         if _in_win(h.described_start_date)
         or _in_win(h.described_end_date)
         or _in_win(h.captured_at)
     ]
-    result.artifacts = artifacts
+    result.artifacts = matched_arts
+    inference_ev: list[EvidenceHit] = []
+    matched_ids = {str(h.evidence_id) for h in matched_ev}
+    for h in evidence:
+        d = _day(h.sent_at)
+        in_span = bool(d and date_in_windows(d, win)) or (not h.sent_at)
+        channel = str(h.channel or h.evidence_kind or "").lower()
+        if channel in {"calendar", "calendar_event"} and in_span:
+            inference_ev.append(h)
+            continue
+        if str(h.evidence_id) in matched_ids and (in_span or not d):
+            inference_ev.append(h)
+    result.evidence = inference_ev
     kept_ids = {str(h.evidence_id) for h in result.evidence}
     for row in result.comm_pipeline:
         eid = str(row.get("evidence_id") or "")
         day = row.get("day")
         in_span = bool(day and date_in_windows(str(day), win))
-        if eid in kept_ids:
-            row["selected"] = True
-            if not row.get("match_reason"):
-                row["match_reason"] = "resolved_window_membership"
-                row["skip_reason"] = None
-            elif in_span and row.get("skip_reason") == "no_place_hint_or_travel_match":
-                row["match_reason"] = "resolved_window_membership"
-                row["skip_reason"] = None
-        elif row.get("selected") and eid not in kept_ids:
+        row["in_resolved_window"] = in_span
+        row["eligible_for_consideration"] = in_span
+        if row.get("selected") and eid not in kept_ids and not in_span:
             row["selected"] = False
             row["skip_reason"] = row.get("skip_reason") or "outside_resolved_trip_window"
-    # Rows not in pipeline (shouldn't happen) already filtered.
-    for h in result.evidence:
-        if not any(str(r.get("evidence_id")) == str(h.evidence_id) for r in result.comm_pipeline):
-            result.comm_pipeline.append(
-                {
-                    "evidence_id": h.evidence_id,
-                    "title": h.summary,
-                    "channel": str(h.channel or ""),
-                    "day": _day(h.sent_at),
-                    "retrieved": True,
-                    "selected": True,
-                    "match_reason": "resolved_window_membership",
-                    "skip_reason": None,
-                }
-            )
+        if in_span and not row.get("match_reason"):
+            row["skip_reason"] = row.get("skip_reason") or "window_membership_not_trip_relevance"
+        if channel := str(row.get("channel") or ""):
+            if channel == "calendar" and in_span and eid in kept_ids and not row.get("match_reason"):
+                row["selected"] = True
+                row["match_reason"] = "calendar_in_resolved_window"
+                row["skip_reason"] = None
     if result.modalities:
         m0 = result.modalities[0]
         result.modalities[0] = replace(
             m0,
             post_filter_count=len(result.photos),
-            constraint_applied="anchor_then_resolved_window",
+            constraint_applied="cross_source_anchors_then_resolved_window",
         )
     return result
 
@@ -749,8 +864,37 @@ def apply_plan_windows(
     stories = list(stories or [])
     journals = list(journals or [])
     artifacts = list(artifacts or [])
+    tokens = _place_tokens(plan)
+    kept_ev: list[EvidenceHit] = []
+    for h in evidence:
+        d = _day(h.sent_at)
+        in_span = (not d) or _in_win(h.sent_at)
+        if not in_span:
+            continue
+        channel = str(h.channel or h.evidence_kind or "").lower()
+        if channel in {"calendar", "calendar_event"}:
+            kept_ev.append(h)
+            continue
+        blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
+        if (not tokens) or _place_match_reason(blob, tokens):
+            kept_ev.append(h)
+            continue
+        try:
+            from memorybox.ask.travel import extract_travel
+
+            facts = extract_travel(
+                subject=str(h.summary or ""),
+                body=str(h.excerpt or ""),
+                source_unit_id=str(h.evidence_id or ""),
+                source_evidence_id=str(h.evidence_id or ""),
+            )
+            dest = str((facts or {}).get("destination") or "")
+            if facts and _place_match_reason(dest + " " + blob, tokens):
+                kept_ev.append(h)
+        except Exception:  # noqa: BLE001
+            pass
     return {
-        "evidence": [h for h in evidence if not h.sent_at or _in_win(h.sent_at)],
+        "evidence": kept_ev,
         "photos": [h for h in photos if not h.taken_at or _in_win(h.taken_at)],
         "videos": [h for h in videos if not h.taken_at or _in_win(h.taken_at)],
         "stories": [h for h in stories if not h.taken_at or _in_win(h.taken_at)],

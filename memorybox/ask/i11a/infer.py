@@ -442,7 +442,7 @@ def run_inference(
             )
     from memorybox.ask.i11a.reduce import reduce_leaf_observations
 
-    parsed_merge = reduce_leaf_observations(parsed_merge)
+    parsed_merge = reduce_leaf_observations(parsed_merge, pack=pack)
     _trace_span(
         stage="i11a_inference",
         component="i11a",

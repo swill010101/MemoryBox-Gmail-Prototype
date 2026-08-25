@@ -299,6 +299,7 @@ def _media_unit(photo: Any) -> dict[str, Any]:
         },
         "rank": float(d.get("score") or 1.0),
         "normalization": {"source_type": source_type},
+        "evidence_id": pid or None,
         "asset_ref": pid,
         "source_type": source_type,
         "media_type": "video" if is_vid else "image",

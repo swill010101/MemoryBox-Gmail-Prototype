@@ -15,7 +15,13 @@ from memorybox.ask.i11a.units import (
     in_scope_ids,
     in_scope_visual_ids,
 )
-from memorybox.ask.i11a.windows import attach_windows, pack_level_windows, windows_from_episode, _index_pack_units
+from memorybox.ask.i11a.windows import (
+    attach_windows,
+    pack_level_windows,
+    union_windows,
+    windows_from_episode,
+    _index_pack_units,
+)
 
 _REL_EMIT = re.compile(
     r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
@@ -376,6 +382,11 @@ def validate_inference(
             ),
             fallback_span=date_span,
         )
+        for key in ("observed_window", "scheduled_window", "derived_window"):
+            prev = ep.get(key) if isinstance(ep.get(key), dict) else {}
+            cur = row.get(key) if isinstance(row.get(key), dict) else {}
+            if prev.get("start") and not (cur or {}).get("start"):
+                row[key] = union_windows([cur, prev])
         attach_support_profile(row, pack=pack)
         episodes_out.append(row)
     episodes_out.sort(

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from memorybox.ask.i11a.support import _las_vegas_blob
-from memorybox.ask.i11a.windows import _day
+from memorybox.ask.i11a.windows import _day, _index_pack_units, union_windows
 
 
 def _ep_blob(ep: dict[str, Any]) -> str:
@@ -26,7 +26,9 @@ def _ep_blob(ep: dict[str, Any]) -> str:
 
 def _ep_day(ep: dict[str, Any]) -> str | None:
     ds = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
-    return _day(ds.get("start") or ds.get("end"))
+    return _day(ds.get("start") or ds.get("end")) or _day(
+        (ep.get("observed_window") or {}).get("start")
+    )
 
 
 def _vegas_ep(ep: dict[str, Any]) -> bool:
@@ -39,7 +41,37 @@ def _vegas_ep(ep: dict[str, Any]) -> bool:
     )
 
 
-def _merge_trip_group(rows: list[dict[str, Any]], *, label: str) -> dict[str, Any]:
+def _vegas_unit(unit: dict[str, Any]) -> bool:
+    blob = " ".join(
+        str(x or "")
+        for x in (
+            unit.get("content"),
+            unit.get("title"),
+            unit.get("place"),
+            unit.get("city"),
+            unit.get("state"),
+        )
+    ).lower()
+    if any(tok in blob for tok in ("las vegas", "vegas", "paradise", "sphere")):
+        return True
+    lat = unit.get("latitude")
+    lon = unit.get("longitude")
+    media = unit.get("media") if isinstance(unit.get("media"), dict) else {}
+    gps = media.get("exif_gps") if isinstance(media.get("exif_gps"), dict) else {}
+    try:
+        lat_f = float(lat if lat is not None else (gps or {}).get("latitude"))
+        lon_f = float(lon if lon is not None else (gps or {}).get("longitude"))
+    except (TypeError, ValueError):
+        return False
+    return 35.85 <= lat_f <= 36.45 and -115.45 <= lon_f <= -114.85
+
+
+def _merge_trip_group(
+    rows: list[dict[str, Any]],
+    *,
+    label: str,
+    pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     days = sorted(d for d in (_ep_day(e) for e in rows) if d)
     claims: list[dict[str, Any]] = []
     eids: list[str] = []
@@ -50,7 +82,13 @@ def _merge_trip_group(rows: list[dict[str, Any]], *, label: str) -> dict[str, An
     seen_e: set[str] = set()
     seen_v: set[str] = set()
     seen_p: set[str] = set()
+    observed_parts: list[dict[str, Any]] = []
+    scheduled_parts: list[dict[str, Any]] = []
+    derived_parts: list[dict[str, Any]] = []
     for ep in rows:
+        observed_parts.append(ep.get("observed_window") or {})
+        scheduled_parts.append(ep.get("scheduled_window") or {})
+        derived_parts.append(ep.get("derived_window") or {})
         for c in ep.get("claims") or []:
             if not isinstance(c, dict):
                 continue
@@ -59,7 +97,9 @@ def _merge_trip_group(rows: list[dict[str, Any]], *, label: str) -> dict[str, An
                 continue
             seen_c.add(key)
             claims.append(c)
-        for i in ep.get("supporting_evidence_ids") or []:
+        for i in list(ep.get("supporting_evidence_ids") or []) + list(
+            ep.get("candidate_visual_ids") or []
+        ):
             s = str(i)
             if s and s not in seen_e:
                 seen_e.add(s)
@@ -81,8 +121,39 @@ def _merge_trip_group(rows: list[dict[str, Any]], *, label: str) -> dict[str, An
             s = str(pl or "").strip()
             if s and s not in places:
                 places.append(s)
-    start = days[0] if days else None
-    end = days[-1] if days else None
+    idx = _index_pack_units(pack)
+    for unit in idx.values():
+        kind = str(unit.get("kind") or "")
+        if kind not in {"media_observation", "video_asset", "video_moment", "spoken_moment"}:
+            continue
+        if not _vegas_unit(unit):
+            continue
+        eid = str(unit.get("evidence_id") or unit.get("asset_ref") or unit.get("unit_id") or "")
+        if eid and eid not in seen_e:
+            seen_e.add(eid)
+            eids.append(eid)
+        if eid and eid not in seen_v:
+            seen_v.add(eid)
+            vis.append(eid)
+        day = _day(unit.get("time") or unit.get("captured_at"))
+        if day:
+            days.append(day)
+            observed_parts.append({"start": day, "end": day, "evidence_ids": [eid] if eid else []})
+        if kind == "media_observation" and eid:
+            text = str(unit.get("place") or unit.get("content") or "photograph")
+            key = f"media:{eid}"
+            if key not in seen_c:
+                seen_c.add(key)
+                claims.append(
+                    {
+                        "text": f"Photograph at {text}"[:500],
+                        "supporting_evidence_ids": [eid],
+                        "claim_type": "observed",
+                        "uncertainty": [],
+                    }
+                )
+    start = min(days) if days else None
+    end = max(days) if days else None
     return {
         "label": label,
         "date_span": {"start": start, "end": end},
@@ -93,10 +164,16 @@ def _merge_trip_group(rows: list[dict[str, Any]], *, label: str) -> dict[str, An
         "supporting_evidence_ids": eids[:40],
         "candidate_visual_ids": vis[:24],
         "correlated_from_leaves": True,
+        "observed_window": union_windows(observed_parts),
+        "scheduled_window": union_windows(scheduled_parts),
+        "derived_window": union_windows(derived_parts),
     }
 
 
-def reduce_leaf_observations(document: dict[str, Any] | None) -> dict[str, Any]:
+def reduce_leaf_observations(
+    document: dict[str, Any] | None,
+    pack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """One normalized trip episode when leaves describe the same Vegas (or similar) cluster."""
     if not isinstance(document, dict):
         return {"schema_version": 2, "episodes": []}
@@ -105,7 +182,7 @@ def reduce_leaf_observations(document: dict[str, Any] | None) -> dict[str, Any]:
     rest = [e for e in episodes if e not in vegas]
     out: list[dict[str, Any]] = []
     if len(vegas) >= 1:
-        out.append(_merge_trip_group(vegas, label="Las Vegas trip"))
+        out.append(_merge_trip_group(vegas, label="Las Vegas trip", pack=pack))
     out.extend(rest)
     reduced = dict(document)
     reduced["episodes"] = out

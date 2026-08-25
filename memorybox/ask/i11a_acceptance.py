@@ -631,7 +631,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "observed/actual" in prompt_l
         and "do not convert plausible inference" in prompt_l
         and "much-needed break" in prompt_l
-        and "do not turn place presence into meaning" in prompt_l,
+        and "do not turn place presence into meaning" in prompt_l
+        and "evidence behind this story" in prompt_l,
         checks,
         problems,
         detail=SYSTEM_PROMPT[:280],
@@ -882,6 +883,15 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                 "nar_has_score": "support_score" in nar_sp_blob,
             }
         ),
+    )
+    _check(
+        "evidence_commentary_after_story",
+        "evidence behind this story" in _sp_text.lower()
+        and "family evidence considered" in _sp_text.lower()
+        and _sp_text.lower().rfind("evidence behind this story") > 10,
+        checks,
+        problems,
+        detail=_sp_text[-400:],
     )
     mapped = (sp_pack.get("narrative_validation") or {}).get("sentence_evidence")
     # Mapping is recorded on enforce meta; synthesize stores rejected only. Probe gate directly.
@@ -1150,6 +1160,26 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         sent_at="2026-01-12T12:00:00",
         channel="email",
     )
+    early_vegas_mail = EvidenceHit(
+        evidence_id="e-jan3-newsletter",
+        evidence_kind="communication",
+        summary="Las Vegas deals",
+        score=1.0,
+        excerpt="January Las Vegas buffet specials this week",
+        source="email_mbox",
+        sent_at="2026-01-03T12:00:00",
+        channel="email",
+    )
+    feb_res = EvidenceHit(
+        evidence_id="e-feb-reservation",
+        evidence_kind="communication",
+        summary="Your Las Vegas reservation",
+        score=1.0,
+        excerpt="Las Vegas reservation confirmation for February 1",
+        source="email_mbox",
+        sent_at="2026-02-01T10:00:00",
+        channel="email",
+    )
     hotel_in_window = EvidenceHit(
         evidence_id="e-hotel-folio",
         evidence_kind="communication",
@@ -1177,7 +1207,15 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
 
     lv_disc = _resolve_trip2(
         lv_jan,
-        evidence=[unrelated, cal_flight, cal_sphere, hotel_in_window, return_flight],
+        evidence=[
+            unrelated,
+            early_vegas_mail,
+            cal_flight,
+            cal_sphere,
+            hotel_in_window,
+            feb_res,
+            return_flight,
+        ],
         photos=[paradise_photo, jan_vid],
         videos=video_assets_from_photo_hits([jan_vid]),
         photo_status={
@@ -1218,15 +1256,21 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "e-eagles-sphere" in selected
         and selected["e-las-flight"].get("match_reason")
         and "e-unrelated-class" not in selected
+        and "e-hotel-folio" not in selected
         and skipped_unrelated.get("skip_reason") == "no_place_hint_or_travel_match"
         and any(p.external_id == "ph-paradise-nv" for p in lv_disc.photos)
         and any(v.external_id == "vid-vegas-clip" for v in lv_disc.videos)
         and lv_disc.needs_refetch
+        and str((lv_disc.resolved_window or ("", ""))[0]) >= "2026-01-20"
         and (lv_disc.resolved_window or ("", ""))[1] >= "2026-02-02"
         and any(h.evidence_id == "e-return-sea" for h in lv_disc.evidence)
-        and any(h.evidence_id == "e-hotel-folio" for h in lv_disc.evidence)
+        and any(h.evidence_id == "e-feb-reservation" for h in lv_disc.evidence)
+        and not any(h.evidence_id == "e-hotel-folio" for h in lv_disc.evidence)
+        and not any(h.evidence_id == "e-jan3-newsletter" for h in lv_disc.evidence)
         and any(
-            r.get("evidence_id") == "e-hotel-folio" and r.get("selected")
+            r.get("evidence_id") == "e-hotel-folio"
+            and r.get("eligible_for_consideration")
+            and not r.get("selected")
             for r in lv_disc.comm_pipeline
         ),
         checks,
@@ -1300,17 +1344,45 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                     "claims": [{"text": "Eagles Live at Sphere"}],
                 },
             ],
-        }
+        },
+        pack={
+            "units": [
+                {
+                    "kind": "media_observation",
+                    "evidence_id": "ph-paradise-nv",
+                    "asset_ref": "ph-paradise-nv",
+                    "time": "2026-01-30T16:00:00",
+                    "place": "Paradise, Nevada",
+                    "latitude": 36.12,
+                    "longitude": -115.17,
+                }
+            ]
+        },
     )
     _check(
         "leaf_reduce_one_vegas_trip",
         len(reduced.get("episodes") or []) == 1
         and (reduced["episodes"][0].get("label") == "Las Vegas trip")
         and reduced["episodes"][0].get("correlated_from_leaves") is True
-        and (reduced.get("ask_semantics") or {}).get("kind") == "trip",
+        and (reduced.get("ask_semantics") or {}).get("kind") == "trip"
+        and (reduced["episodes"][0].get("observed_window") or {}).get("start")
+        and "ph-paradise-nv"
+        in ((reduced["episodes"][0].get("observed_window") or {}).get("evidence_ids") or [])
+        and "ph-paradise-nv" in (reduced["episodes"][0].get("candidate_visual_ids") or []),
         checks,
         problems,
         detail=str(reduced.get("episodes")),
+    )
+    _check(
+        "immich_timeline_not_windowed_before_cache",
+        "Walk the full person timeline" in (root / "providers" / "photo" / "_immich_http.py").read_text(
+            encoding="utf-8"
+        )
+        and "_PERSON_LIB_CACHE_VER = \"v10\""
+        in (root / "providers" / "photo" / "_immich_http.py").read_text(encoding="utf-8"),
+        checks,
+        problems,
+        detail="unwindowed Immich cache must not be a January walk",
     )
     _check(
         "calendar_uncertainty_is_not_nonoccurrence",

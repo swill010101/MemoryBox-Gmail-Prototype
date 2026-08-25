@@ -1491,12 +1491,23 @@ class AskOrchestrator:
                             evidence = R.filter_hits_by_constraints(
                                 evidence, plan.retrieval_constraints
                             )
+                    if getattr(plan, "want_story", False):
+                        stories = R.search_stories(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
+                    if getattr(plan, "want_journal", False):
+                        journals = R.search_journals(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
+                    if getattr(plan, "want_artifact", False):
+                        artifacts = R.search_artifacts(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
                     extra_va = R.video_assets_from_photo_hits(photos)
-                    if extra_va:
-                        seen_va = {v.external_id for v in videos}
-                        videos = list(videos) + [
-                            v for v in extra_va if v.external_id not in seen_va
-                        ]
+                    seen_va = {v.external_id for v in videos}
+                    videos = list(videos) + [
+                        v for v in extra_va if v.external_id not in seen_va
+                    ]
                     filtered = apply_plan_windows(
                         plan,
                         evidence=evidence,
@@ -1518,7 +1529,63 @@ class AskOrchestrator:
                     discovered.stories = stories
                     discovered.journals = journals
                     discovered.artifacts = artifacts
-                    discovered.needs_refetch = False
+                    discovered.plan = plan
+                    payload = discovered.span_payload()
+                    payload["refetch_completed"] = True
+                    payload["photo_status_after_refetch"] = {
+                        k: photo_status.get(k)
+                        for k in (
+                            "temporal_windows",
+                            "person_library_unwindowed_n",
+                            "person_assets_in_window_n",
+                            "person_stills_in_window_n",
+                            "person_videos_in_window_n",
+                            "immich_person_asset_count",
+                            "year_fair_applied",
+                            "query_time_windows",
+                        )
+                        if k in photo_status or True
+                    }
+                    immich = photo_status.get("immich_diag") if isinstance(photo_status, dict) else None
+                    if isinstance(immich, dict):
+                        payload["photo_status_after_refetch"]["immich_diag"] = {
+                            k: immich.get(k)
+                            for k in (
+                                "person_library_unwindowed_n",
+                                "person_assets_in_window_n",
+                                "person_stills_in_window_n",
+                                "person_videos_in_window_n",
+                                "immich_person_asset_count",
+                                "query_time_windows",
+                                "year_fair_applied",
+                                "incomplete",
+                                "source",
+                            )
+                        }
+                    discovered.span_extra = {
+                        "refetch_completed": True,
+                        "needs_refetch": True,
+                        "photo_status_after_refetch": {
+                            "temporal_windows": photo_status.get("temporal_windows"),
+                            "person_library_unwindowed_n": photo_status.get(
+                                "person_library_unwindowed_n"
+                            ),
+                            "person_assets_in_window_n": photo_status.get(
+                                "person_assets_in_window_n"
+                            ),
+                            "person_stills_in_window_n": photo_status.get(
+                                "person_stills_in_window_n"
+                            ),
+                            "person_videos_in_window_n": photo_status.get(
+                                "person_videos_in_window_n"
+                            ),
+                            "immich_person_asset_count": photo_status.get(
+                                "immich_person_asset_count"
+                            ),
+                            "year_fair_applied": photo_status.get("year_fair_applied"),
+                            "immich_diag": photo_status.get("immich_diag"),
+                        },
+                    }
                 emit_retrieval_resolution_span(discovered)
 
         coverage: dict[str, Any] | None = None

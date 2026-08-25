@@ -2013,6 +2013,8 @@ def search_photos(
                 "person_stills_in_window_n",
                 "person_videos_in_window_n",
                 "year_fair_applied",
+                "immich_person_asset_count",
+                "query_time_windows",
             ):
                 if key in diag and status.get(key) is None:
                     status[key] = diag.get(key)
