@@ -25,8 +25,10 @@ Rules:
 - candidate_visual_ids may only be asset/evidence ids from supplied media units.
 - Return unresolved items rather than guessing.
 - Do not include coverage, counts, provider status, eligible/processed totals, or incomplete flags in the JSON.
-Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
-Episode claim_type: observed|recorded|recollection|derived|inferred.
+- Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
+- ask_semantics.kind must be period|trip|person|event|communications|other.
+- Each episode needs label, date_span, people[].role, claims[].text, claims[].supporting_evidence_ids copied from unit evidence_id or unit_id, claim_type observed|recorded|recollection|derived|inferred.
+- unresolved is short strings only. Do not copy whole units into unresolved.
 Episode people.role: participant|mentioned|unknown.
 """
 
@@ -60,7 +62,7 @@ def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     size = 0
     for u in units:
         piece = len(json.dumps(u, default=str))
-        if cur and (size + piece > budget or len(cur) >= 18):
+        if cur and (size + piece > budget or len(cur) >= 12):
             chunks.append(cur)
             cur = []
             size = 0
@@ -167,12 +169,27 @@ def _leaf_payload(
         "original_ask": getattr(plan, "original_ask", ""),
         "ask_kind": kind,
         "person_context": slim_person_context_for_model(person_context),
-        "units": chunk,
+        "units": [_unit_for_model(u) for u in chunk],
         "modality_state": modality_state or {},
         "note": (
             "modality_state is operational. Do not restate counts or coverage in JSON."
         ),
     }
+
+
+def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
+    row = {
+        "unit_id": unit.get("unit_id"),
+        "evidence_id": unit.get("evidence_id"),
+        "kind": unit.get("kind"),
+        "source_type": unit.get("source_type"),
+        "time": str(unit.get("time") or "")[:10],
+        "people": unit.get("people") or [],
+        "place": unit.get("place"),
+        "content": str(unit.get("content") or "")[:120],
+        "asset_ref": unit.get("asset_ref"),
+    }
+    return row
 
 
 def run_inference(
@@ -249,7 +266,7 @@ def run_inference(
             "reason": "inference unavailable or unparsable",
             "document": None,
             "rejected": [],
-            "person_context": person_context,
+            "person_context": slim_person_context_for_model(person_context),
             "request_context": req,
             "accounting": accounting,
             "partial": False,
@@ -260,7 +277,17 @@ def run_inference(
             operation="fail_closed",
             status="error",
             error_class="PARSE_SCHEMA",
-            assembled_context=result,
+            assembled_context={
+                "ok": False,
+                "reason": result["reason"],
+                "partial": False,
+                "document": None,
+                "rejected": [],
+                "accounting": accounting,
+                "fail_closed": True,
+                "person_context": slim_person_context_for_model(person_context),
+                "request_context": req,
+            },
         )
         return result
     parsed_merge = leaf_docs[0]
@@ -320,8 +347,9 @@ def run_inference(
     fail_closed = not validated.get("ok")
     if incomplete and accounting["successful_units"] == 0:
         fail_closed = True
-    if incomplete and accounting["successful_units"] < max(1, accounting["eligible_units"] // 2):
-        # Remaining batches do not cover the requested scope well enough.
+    if incomplete and accounting["attempted_units"] and (
+        accounting["successful_units"] < max(1, accounting["attempted_units"] // 2)
+    ):
         fail_closed = True
         incomplete = False
     result = {
@@ -350,6 +378,7 @@ def run_inference(
             "request_context": req,
             "accounting": accounting,
             "partial": result["partial"],
+            "person_context": slim_person_context_for_model(person_context),
         },
         disposition={"validated_semantic_pack": validated.get("document") if result["ok"] else None},
     )

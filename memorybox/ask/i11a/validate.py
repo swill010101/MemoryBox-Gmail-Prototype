@@ -91,6 +91,95 @@ def _strip_operational(doc: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _coerce_ask_semantics(ask_sem: dict[str, Any]) -> dict[str, Any]:
+    kind = str(ask_sem.get("kind") or "")
+    if kind not in ASK_KINDS:
+        kind = "other"
+        for candidate in ("trip", "period", "person", "event", "communications"):
+            if ask_sem.get(candidate) is True:
+                kind = candidate
+                break
+    constraints = ask_sem.get("constraints")
+    if not isinstance(constraints, dict):
+        constraints = {}
+    return {"kind": kind, "constraints": constraints}
+
+
+def _claim_type_for(raw: Any, *, kind: str = "") -> str:
+    ctype = str(raw or "").strip().lower()
+    if ctype in CLAIM_TYPES:
+        return ctype
+    if kind == "travel":
+        return "derived"
+    if kind == "calendar":
+        return "recorded"
+    if kind in {"journal", "story"}:
+        return "recollection"
+    return "observed"
+
+
+def _ids_from_mapping(obj: dict[str, Any], scope: set[str]) -> list[str]:
+    ids: list[str] = []
+    for key in (
+        "supporting_evidence_ids",
+        "evidence_ids",
+        "ids",
+        "evidence_id",
+        "unit_id",
+        "asset_ref",
+    ):
+        for token in _collect_ids(obj.get(key), scope):
+            if token not in ids:
+                ids.append(token)
+    for extra in obj.get("extra_ids") or []:
+        for token in _collect_ids(extra, scope):
+            if token not in ids:
+                ids.append(token)
+    return ids
+
+
+def _looks_like_unit(obj: Any) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    if not (obj.get("evidence_id") or obj.get("unit_id")):
+        return False
+    return bool(obj.get("kind") or obj.get("content") or obj.get("time"))
+
+
+def _episode_from_unit(unit: dict[str, Any], scope: set[str]) -> dict[str, Any] | None:
+    ids = _ids_from_mapping(unit, scope)
+    text = str(unit.get("content") or unit.get("label") or unit.get("kind") or "").strip()
+    if not ids or not text:
+        return None
+    kind = str(unit.get("kind") or "")
+    day = str(unit.get("time") or "")[:10]
+    date_span = {"start": day, "end": day} if day else {}
+    place = str(unit.get("place") or "").strip()
+    people = []
+    for p in unit.get("people") or []:
+        if isinstance(p, dict):
+            people.append(p)
+        elif str(p).strip():
+            people.append({"name": str(p).strip()})
+    return {
+        "label": text[:160],
+        "date_span": date_span,
+        "people": people,
+        "places": [place] if place else [],
+        "claims": [
+            {
+                "text": text[:500],
+                "supporting_evidence_ids": ids[:24],
+                "claim_type": _claim_type_for(unit.get("claim_type") or unit.get("episode_type"), kind=kind),
+                "uncertainty": [],
+            }
+        ],
+        "why_relevant_to_ask": "",
+        "supporting_evidence_ids": ids[:40],
+        "candidate_visual_ids": [],
+    }
+
+
 def validate_inference(
     doc: dict[str, Any] | None,
     *,
@@ -111,25 +200,55 @@ def validate_inference(
     visuals = in_scope_visual_ids(pack)
     allowed = allowed_relationship_labels(person_context)
     ask_sem = doc.get("ask_semantics") if isinstance(doc.get("ask_semantics"), dict) else {}
-    kind = str(ask_sem.get("kind") or "other")
-    if kind not in ASK_KINDS:
-        ask_sem = {**ask_sem, "kind": "other"}
-        doc["ask_semantics"] = ask_sem
+    doc["ask_semantics"] = _coerce_ask_semantics(ask_sem)
     focals = []
+    seen_focal: set[str] = set()
     for row in doc.get("focal_subjects") or []:
+        pid = ""
         if isinstance(row, dict) and row.get("person_id"):
-            focals.append({"person_id": str(row.get("person_id"))})
+            pid = str(row.get("person_id"))
         elif isinstance(row, str) and row.strip():
-            focals.append({"person_id": row.strip()})
+            pid = row.strip()
+        if pid and pid not in seen_focal:
+            seen_focal.add(pid)
+            focals.append({"person_id": pid})
     doc["focal_subjects"] = focals
+    raw_episodes = list(doc.get("episodes") or [])
+    leftover_unresolved: list[Any] = []
+    for u in doc.get("unresolved") or []:
+        if _looks_like_unit(u):
+            raw_episodes.append(u)
+        else:
+            leftover_unresolved.append(u)
     episodes_out: list[dict[str, Any]] = []
-    for ep in doc.get("episodes") or []:
+    for ep in raw_episodes:
         if not isinstance(ep, dict):
             rejected.append({"reason": "episode_not_object"})
             continue
-        ep_ids = _collect_ids(ep.get("supporting_evidence_ids"), scope)
+        if _looks_like_unit(ep) and not ep.get("claims") and not ep.get("label"):
+            promoted = _episode_from_unit(ep, scope)
+            if promoted:
+                ep = promoted
+            else:
+                rejected.append({"reason": "episode_no_grounded_claims"})
+                continue
+        ep_ids = _ids_from_mapping(ep, scope)
+        claims_src = list(ep.get("claims") or [])
+        if not claims_src:
+            text = str(ep.get("content") or ep.get("label") or "").strip()
+            if text and ep_ids:
+                claims_src = [
+                    {
+                        "text": text,
+                        "supporting_evidence_ids": ep_ids,
+                        "claim_type": _claim_type_for(
+                            ep.get("claim_type") or ep.get("episode_type"),
+                            kind=str(ep.get("kind") or ""),
+                        ),
+                    }
+                ]
         claims_out = []
-        for cl in ep.get("claims") or []:
+        for cl in claims_src:
             if isinstance(cl, str) and cl.strip():
                 cl = {"text": cl.strip(), "supporting_evidence_ids": [], "claim_type": "inferred"}
             if not isinstance(cl, dict):
@@ -183,7 +302,7 @@ def validate_inference(
                     }
                 )
                 extra_rel = ""
-            role = str(p.get("role") or "participant")
+            role = str(p.get("role") or p.get("role_kind") or "participant")
             if role not in PEOPLE_ROLES:
                 role = "participant"
             people_out.append(
@@ -199,7 +318,15 @@ def validate_inference(
             for i in c.get("supporting_evidence_ids") or []:
                 if i not in eids:
                     eids.append(i)
-        label = str(ep.get("label") or "Untitled")[:160]
+        label = str(ep.get("label") or ep.get("content") or "Untitled")[:160]
+        date_span = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
+        if not date_span:
+            day = str(ep.get("time") or "")[:10]
+            if day:
+                date_span = {"start": day, "end": day}
+        places = [str(x) for x in (ep.get("places") or []) if str(x).strip()][:12]
+        if ep.get("place") and str(ep.get("place")).strip() not in places:
+            places.append(str(ep.get("place")).strip())
         if not claims_out and eids:
             claims_out.append(
                 {
@@ -215,9 +342,9 @@ def validate_inference(
         episodes_out.append(
             {
                 "label": label,
-                "date_span": ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {},
+                "date_span": date_span,
                 "people": people_out[:24],
-                "places": [str(x) for x in (ep.get("places") or []) if str(x).strip()][:12],
+                "places": places[:12],
                 "claims": claims_out,
                 "why_relevant_to_ask": str(ep.get("why_relevant_to_ask") or "")[:400],
                 "supporting_evidence_ids": eids[:40],
@@ -236,11 +363,11 @@ def validate_inference(
             ]
             themes.append({"label": str(th.get("label"))[:160], "supporting_evidence_ids": ids[:24]})
     unresolved = []
-    for u in doc.get("unresolved") or []:
+    for u in leftover_unresolved:
         if isinstance(u, str) and u.strip():
             unresolved.append(u.strip()[:300])
-        elif isinstance(u, dict) and u.get("text"):
-            unresolved.append(str(u.get("text"))[:300])
+        elif isinstance(u, dict) and (u.get("text") or u.get("content")):
+            unresolved.append(str(u.get("text") or u.get("content"))[:300])
     document = {
         "schema_version": SCHEMA_VERSION,
         "ask_semantics": doc.get("ask_semantics") or {"kind": "other", "constraints": {}},

@@ -18,7 +18,7 @@ from memorybox.ask.narrative import (
     pack_for_narrator,
     tell_from_hits,
 )
-from memorybox.ask.retrieve import EvidenceHit
+from memorybox.ask.retrieve import EvidenceHit, filter_hits_by_constraints
 from memorybox.context import AskContext
 from memorybox.planner import plan_ask
 from memorybox.providers.base import ProviderHealth, ProviderUnavailable
@@ -77,7 +77,10 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Collecting calendar" in orch_py
         and "Assimilating collections" in orch_py
         and "is-status-ticker" in explore_js
-        and "/explore/api/ask-progress" in explore_js,
+        and "/explore/api/ask-progress" in explore_js
+        and "askStatusGen" in explore_js
+        and "clearSearchingChrome" in explore_js
+        and 't === "Done"' not in explore_js,
         checks,
         problems,
         detail="one-line scrolling Ask status in curator",
@@ -326,5 +329,116 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="scorer frozen as diagnostic",
     )
+    ak_year = plan_ask(
+        "write a narrative about my alaska trip in 2026",
+        AskContext(session_id="i11a-ak-year"),
+    )
+    _check(
+        "alaska_trip_in_year_not_year_keyword",
+        any("alaska" in str(t).lower() for t in (ak_year.trip_labels or ()))
+        and "2026" not in tuple(ak_year.retrieval_constraints or ())
+        and ak_year.time_start == "2026-01-01"
+        and ak_year.time_end == "2026-12-31",
+        checks,
+        problems,
+        detail=str(
+            {
+                "trips": ak_year.trip_labels,
+                "constraints": ak_year.retrieval_constraints,
+                "notes": ak_year.notes,
+            }
+        ),
+    )
+    year_only = EvidenceHit(
+        evidence_id="e-lunch-26",
+        evidence_kind="communication",
+        summary="Lunch plans",
+        score=1.0,
+        excerpt="see you tuesday 2026",
+        source="email_mbox",
+        sent_at="2026-01-12T12:00:00",
+        channel="email",
+    )
+    ak_mail = EvidenceHit(
+        evidence_id="e-ak-26",
+        evidence_kind="communication",
+        summary="Alaska itinerary",
+        score=1.0,
+        excerpt="Flight to Anchorage for the Alaska trip",
+        source="email_mbox",
+        sent_at="2026-05-02T10:00:00",
+        channel="email",
+    )
+    kept_trip = filter_hits_by_constraints([year_only, ak_mail], ["Alaska", "2026"])
+    _check(
+        "alaska_year_constraint_requires_place",
+        [h.evidence_id for h in kept_trip] == ["e-ak-26"],
+        checks,
+        problems,
+        detail=str([h.evidence_id for h in kept_trip]),
+    )
+    llama_dump = {
+        "schema_version": 1,
+        "ask_semantics": {"trip": True, "narrative": True},
+        "focal_subjects": [
+            {"person_id": "p-tom", "display_name": "Tom Will"},
+            {"person_id": "p-tom"},
+        ],
+        "episodes": [
+            {
+                "episode_type": "derived",
+                "people": [{"person_id": "p-tom", "role_kind": "participant"}],
+                "content": "Tom Will's 2026 Alaska trip",
+            }
+        ],
+        "themes": [],
+        "unresolved": [
+            {
+                "kind": "travel",
+                "time": "2026-05-06",
+                "place": None,
+                "people": [],
+                "content": "flight 2026-05-06",
+                "unit_id": "u-ak-flight",
+                "evidence_id": "u-ak-flight",
+                "source_type": None,
+            }
+        ],
+    }
+    salvage_pack = {
+        "units": [
+            {
+                "unit_id": "u-ak-flight",
+                "kind": "travel",
+                "content": "flight 2026-05-06",
+                "provenance": {"evidence_id": "u-ak-flight"},
+            }
+        ]
+    }
+    salvaged = validate_inference(
+        llama_dump, pack=salvage_pack, person_context={"allowed_relationship_labels": []}
+    )
+    salvaged_eps = (salvaged.get("document") or {}).get("episodes") or []
+    salvaged_sem = (salvaged.get("document") or {}).get("ask_semantics") or {}
+    _check(
+        "salvage_llama_unit_unresolved",
+        salvaged.get("ok") is True
+        and salvaged_sem.get("kind") == "trip"
+        and len((salvaged.get("document") or {}).get("focal_subjects") or []) == 1
+        and any(
+            "u-ak-flight" in (c.get("supporting_evidence_ids") or [])
+            for ep in salvaged_eps
+            for c in (ep.get("claims") or [])
+        )
+        and not any(
+            "alaska trip" in str(ep.get("label") or "").lower()
+            and not (ep.get("supporting_evidence_ids") or [])
+            for ep in salvaged_eps
+        ),
+        checks,
+        problems,
+        detail=str(salvaged.get("document"))[:500],
+    )
+
     meta["synthetic"] = str(uuid4())[:8]
     return {"ok": not problems, "checks": checks, "problems": problems, "meta": meta}

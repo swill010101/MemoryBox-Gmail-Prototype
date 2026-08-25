@@ -1637,7 +1637,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     constraints.extend(trips)
     constraints.extend(events)
     constraints.extend(theme_labels)
-    if t0:
+    if t0 and not trips and not places:
         constraints.append(t0[:4] if len(t0) >= 4 else t0)
     constraints = _dedupe(constraints)
 

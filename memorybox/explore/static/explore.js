@@ -1102,13 +1102,13 @@
 
   let askStatusTimer = null;
   let lastAskStatusLine = "";
+  let askStatusGen = 0;
 
   function isAskWaitingSummary(s) {
     const t = String(s || "");
     return (
       t === "Searching…" ||
       t === "Writing the narrative…" ||
-      t === "Done" ||
       t.indexOf("Collecting ") === 0 ||
       t.indexOf("Assimilating") === 0 ||
       t.indexOf("Refining") === 0
@@ -1131,7 +1131,15 @@
     bodyEl.replaceChildren(span);
   }
 
+  function clearSearchingChrome() {
+    const curator = document.getElementById("mb-explore-curator");
+    if (curator) curator.classList.remove("is-searching");
+    const askField = document.querySelector(".mb-explore-ask-field");
+    if (askField) askField.classList.remove("is-searching");
+  }
+
   function stopAskStatusPoll() {
+    askStatusGen += 1;
     if (askStatusTimer) {
       clearInterval(askStatusTimer);
       askStatusTimer = null;
@@ -1140,6 +1148,7 @@
 
   function startAskStatusPoll() {
     stopAskStatusPoll();
+    const gen = askStatusGen;
     askStatusTimer = setInterval(function () {
       const sid = encodeURIComponent(sessionId || "");
       fetch("/explore/api/ask-progress?session_id=" + sid, { cache: "no-store" })
@@ -1147,6 +1156,7 @@
           return r.json();
         })
         .then(function (data) {
+          if (gen !== askStatusGen) return;
           if (data && data.line) setCuratorStatusLine(data.line);
         })
         .catch(function () {});
@@ -1231,6 +1241,7 @@
     } finally {
       if (timer) clearTimeout(timer);
       stopAskStatusPoll();
+      clearSearchingChrome();
     }
   }
 

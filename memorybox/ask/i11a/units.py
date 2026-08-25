@@ -65,7 +65,7 @@ def _max_model_units() -> int:
     raw = (os.environ.get("MEMORYBOX_I11A_MAX_MODEL_UNITS") or "").strip()
     if raw.isdigit() and int(raw) >= 8:
         return int(raw)
-    return 28
+    return 12
 
 
 def _cluster_key(unit: dict[str, Any], *, grain: str) -> str:
@@ -94,11 +94,11 @@ def _merge_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
             eids.append(eid)
         text = str(u.get("content") or "").strip()
         if text:
-            snippets.append(text[:90])
+            snippets.append(text[:72])
     first["extra_ids"] = eids
     first["content"] = (
-        f"{len(rows)} items. " + " · ".join(snippets[:5])
-    )[:180]
+        f"{len(rows)} items. " + " · ".join(snippets[:4])
+    )[:120]
     return first
 
 

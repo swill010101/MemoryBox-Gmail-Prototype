@@ -511,6 +511,42 @@ def _strip_temporal_tell_keywords(keywords: list[str], *, windows: list) -> list
     return out
 
 
+def _place_trip_keywords(plan: QueryPlan) -> list[str]:
+    """Place/trip tokens that must survive a dated tell (not a year dump)."""
+    names: list[str] = []
+    for n in list(getattr(plan, "trip_labels", ()) or ()) + list(
+        getattr(plan, "place_names", ()) or ()
+    ):
+        if n:
+            names.append(str(n))
+    stop = {
+        "the",
+        "and",
+        "our",
+        "trip",
+        "my",
+        "a",
+        "an",
+        "to",
+        "in",
+    }
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        low = name.lower().strip()
+        if not low or low in stop:
+            continue
+        if low not in seen:
+            seen.add(low)
+            out.append(low)
+        for tok in re.findall(r"[a-z0-9']{3,}", low):
+            if tok in stop or tok in seen:
+                continue
+            seen.add(tok)
+            out.append(tok)
+    return out
+
+
 def _sms_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     atts = [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
     if atts:
@@ -719,8 +755,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Month/year tell is a date window, not a keyword hunt for "narrative".
-        keywords = []
+        # Dated tell is a window, not a hunt for "narrative" — but a named trip
+        # must still constrain the pack (alaska trip in 2026 ≠ every 2026 text).
+        keywords = _place_trip_keywords(plan)
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -1143,8 +1180,9 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Month/year tell is a date window, not a keyword hunt for "narrative".
-        keywords = []
+        # Dated tell is a window, not a hunt for "narrative" — but a named trip
+        # must still constrain the pack (alaska trip in 2026 ≠ every 2026 text).
+        keywords = _place_trip_keywords(plan)
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -1381,6 +1419,10 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
             elif person_names and not _sms_name_match(blob, person_names, allow_first_token=False):
                 if not (person_ids and (have & person_ids)):
                     continue
+        place_trip = _place_trip_keywords(plan)
+        if _tell_pack_comms(plan) and place_trip:
+            if not any(k in blob for k in place_trip):
+                continue
         people = [str(a) for a in (payload.get("attendees") or []) if str(a).strip()]
         org = str(payload.get("organizer") or "").strip()
         if org and org not in people:
@@ -1638,13 +1680,14 @@ def filter_hits_by_constraints(
                 h.sent_at or "",
             ]
         ).lower()
+        year_ok = True
         if year_cons:
             sent_y = str(h.sent_at or "")[:4]
-            if sent_y in year_cons:
-                if not other_cons or any(c.lower() in blob for c in other_cons):
-                    kept.append(h)
-                    continue
-        if any(c.lower() in blob for c in cons):
+            year_ok = sent_y in year_cons
+        other_ok = True
+        if other_cons:
+            other_ok = any(c.lower() in blob for c in other_cons)
+        if year_ok and other_ok:
             kept.append(h)
     return kept
 
@@ -3112,6 +3155,14 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
     if not getattr(plan, "want_journal", False):
         return []
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
+    place_trip = _place_trip_keywords(plan)
+    if place_trip:
+        tokens = [t for t in tokens if not re.fullmatch(r"(?:19|20)\d{2}", str(t))]
+        have = {str(t).lower() for t in tokens}
+        for k in place_trip:
+            if k not in have:
+                tokens.append(k)
+                have.add(k)
     if not tokens:
         tokens = [
             t
