@@ -120,8 +120,30 @@ def memories_from_citations(citations: list[dict[str, Any]] | None) -> list[dict
     return out[:24]
 
 
+def default_modality_state(plan: Any, pack: dict[str, Any] | None = None) -> dict[str, str]:
+    """queried vs not_requested for footer zeros. Caller may overlay failed/skipped."""
+    used = (pack or {}).get("evidence_used") or {}
+    want_photo = bool(getattr(plan, "want_photo", False) or getattr(plan, "want_still", False))
+    want_video = bool(getattr(plan, "want_video", False))
+    want_spoken = bool(getattr(plan, "want_spoken", False))
+    return {
+        "photos": "queried" if want_photo else "not_requested",
+        "video_moments": "queried" if want_video else "not_requested",
+        "spoken_moments": "queried" if want_spoken else "not_requested",
+        "emails": "queried" if getattr(plan, "want_communication", False) or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "sms": "queried" if getattr(plan, "want_communication", False) or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "calendar_events": "queried" if getattr(plan, "want_calendar", False) or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "journal_entries": "queried" if getattr(plan, "want_journal", False) or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "stories": "queried" if getattr(plan, "want_story", False) or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "artifacts": "queried" if getattr(plan, "want_artifact", False) else "not_requested",
+        "travel": "queried" if used.get("travel") or getattr(plan, "output_mode", "") == "tell" else "not_requested",
+        "place_event": "not_requested",
+    }
+
+
 def evidence_used_footer(pack: dict[str, Any] | None) -> str:
     used = (pack or {}).get("evidence_considered") or (pack or {}).get("evidence_used") or {}
+    state = (pack or {}).get("modality_state") if isinstance((pack or {}).get("modality_state"), dict) else {}
     bits = []
     labels = (
         ("photos", "photos"),
@@ -137,8 +159,16 @@ def evidence_used_footer(pack: dict[str, Any] | None) -> str:
         ("place_event", "places/events"),
     )
     for key, label in labels:
+        st = str(state.get(key) or "")
+        if st in {"unavailable", "failed"}:
+            bits.append(f"{label} unavailable")
+            continue
+        if st in {"skipped", "not_requested"}:
+            continue
         n = int(used.get(key) or 0)
-        if n:
+        if n or st == "queried":
+            bits.append(f"{n} {label}")
+        elif n:
             bits.append(f"{n} {label}")
     if not bits:
         return "Family evidence considered: none processed for this Ask."
@@ -241,6 +271,7 @@ def synthesize_tell(
         meta["fail_closed"] = True
         return _fail_closed(pack, reason="No language model is configured."), meta
     narrator = pack_for_narrator(pack)
+    narrator.pop("coverage", None)
     payload = json.dumps(narrator, default=str)
     messages = [
         ChatMessage(role="system", content=SYSTEM_PROMPT),
@@ -308,6 +339,7 @@ def tell_from_hits(
     stories: list[Any] | None = None,
     journals: list[Any] | None = None,
     artifacts: list[Any] | None = None,
+    modality_state: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     pack = prepare_narrative_pack(
         plan,
@@ -318,5 +350,18 @@ def tell_from_hits(
         journals=journals,
         artifacts=artifacts,
     )
+    from memorybox.ask.i11a import needs_semantic_inference
+    from memorybox.ask.i11a.infer import apply_inference_to_pack
+
+    pack["modality_state"] = {
+        **default_modality_state(plan, pack),
+        **(modality_state or {}),
+    }
+    if needs_semantic_inference(plan):
+        pack = apply_inference_to_pack(plan, pack, llm, modality_state=pack.get("modality_state"))
+        if pack.get("inference", {}).get("fail_closed"):
+            meta = {"ok": False, "fail_closed": True, "i11a": True}
+            reason = str(pack.get("inference", {}).get("reason") or "Semantic inference is unavailable.")
+            return _fail_closed(pack, reason=reason), pack, meta
     text, meta = synthesize_tell(plan, pack, llm)
     return text, pack, meta

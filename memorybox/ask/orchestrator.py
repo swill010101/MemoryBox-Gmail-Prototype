@@ -1522,6 +1522,28 @@ class AskOrchestrator:
         )
         narrative_pack: dict[str, Any] | None = None
         narration_unavailable = False
+        from memorybox.ask.i11a import needs_semantic_inference
+        from memorybox.ask.i11a.infer import apply_inference_to_pack, rank_photos_by_candidates
+        from memorybox.ask.narrative import default_modality_state
+
+        def _overlay_modality() -> dict[str, str]:
+            state = default_modality_state(plan)
+            if photo_status.get("unavailable"):
+                state["photos"] = "failed"
+            elif not (plan.want_still or plan.want_photo):
+                state["photos"] = "not_requested"
+            elif photo_status.get("detail") == "not_requested":
+                state["photos"] = "not_requested"
+            else:
+                state["photos"] = "queried"
+            if video_status.get("unavailable"):
+                state["video_moments"] = "failed"
+            elif not plan.want_video:
+                state["video_moments"] = "not_requested"
+            else:
+                state["video_moments"] = "queried"
+            return state
+
         if (
             getattr(plan, "output_mode", "show") == "tell"
             and answer_kind not in {"clarification", "journal_capture"}
@@ -1540,6 +1562,7 @@ class AskOrchestrator:
                     stories=stories,
                     journals=journals,
                     artifacts=artifacts,
+                    modality_state=_overlay_modality(),
                 )
                 narration_unavailable = bool(synth_meta.get("fail_closed"))
             else:
@@ -1552,8 +1575,13 @@ class AskOrchestrator:
                     journals=journals,
                     artifacts=artifacts,
                 )
+                narrative_pack["modality_state"] = _overlay_modality()
                 answer_text = "Episode analysis only; narration was not requested."
                 narration_unavailable = False
+            if narrative_pack:
+                photos = rank_photos_by_candidates(
+                    photos, list(narrative_pack.get("candidate_visual_ids") or [])
+                )
             if narrative_pack and isinstance(narrative_pack.get("coverage"), dict):
                 pack_cov = narrative_pack["coverage"]
                 if coverage:
@@ -1565,6 +1593,32 @@ class AskOrchestrator:
                     }
                 else:
                     coverage = pack_cov
+        elif (
+            needs_semantic_inference(plan)
+            and answer_kind not in {"clarification", "journal_capture"}
+        ):
+            from memorybox.ask.evidence_prep import prepare_narrative_pack
+
+            self.llm = _prefer_live_llm(self.llm)
+            narrative_pack = prepare_narrative_pack(
+                plan,
+                evidence=evidence,
+                photos=photos,
+                videos=videos,
+                stories=stories,
+                journals=journals,
+                artifacts=artifacts,
+            )
+            narrative_pack["modality_state"] = _overlay_modality()
+            narrative_pack = apply_inference_to_pack(
+                plan,
+                narrative_pack,
+                self.llm,
+                modality_state=narrative_pack.get("modality_state"),
+            )
+            photos = rank_photos_by_candidates(
+                photos, list(narrative_pack.get("candidate_visual_ids") or [])
+            )
         if (
             coverage
             and coverage.get("summary")

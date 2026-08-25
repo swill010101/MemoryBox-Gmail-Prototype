@@ -91,13 +91,19 @@
       .join("");
   }
 
-  function pane(title, klass, body) {
+  let copyStore = {};
+
+  function pane(title, klass, body, copyId) {
+    const id = copyId || ("pane-" + title.replace(/\s+/g, "-").toLowerCase());
+    copyStore[id] = pretty(body);
     return (
       "<section class=\"pane " +
       klass +
-      "\"><h3>" +
+      "\"><div class=\"pane-head\"><h3>" +
       esc(title) +
-      "</h3><pre>" +
+      "</h3><button type=\"button\" class=\"copy-pane\" data-copy=\"" +
+      esc(id) +
+      "\">Copy</button></div><pre>" +
       esc(pretty(body)) +
       "</pre></section>"
     );
@@ -108,6 +114,16 @@
     const spans = t.spans || [];
     const modelSpans = spans.filter((s) => s.operation === "chat" || s.operation === "embed");
     const firstModel = modelSpans[0] || {};
+    const infSpans = spans.filter((s) => s.component === "i11a");
+    const infLeaf = infSpans.find((s) => s.operation === "leaf") || {};
+    const infVal = infSpans.find((s) => s.operation === "validate") || {};
+    const chatSpans = modelSpans.filter((s) => s.operation === "chat");
+    const narratorSpan =
+      chatSpans.find((s) => {
+        const msgs = ((s.provider_payload || {}).messages || []);
+        return msgs.some((m) => String((m && m.content) || "").indexOf("NARRATIVE_SYNTHESIS") >= 0);
+      }) || {};
+    copyStore = {};
     selectedId = t.trace_id;
     const timeline = spans
       .map((s) => {
@@ -153,22 +169,28 @@
       "</div>" +
       "<div class=\"actions\">" +
       "<button type=\"button\" id=\"copyId\">Copy Trace ID</button>" +
-      "<button type=\"button\" id=\"copyJson\">Export JSON</button>" +
+      "<button type=\"button\" id=\"copyJson\">Copy Full Trace JSON</button>" +
+      "<button type=\"button\" id=\"exportJsonFile\">Export JSON</button>" +
       "</div>" +
-      "<p class=\"hint\">Assembled MemoryBox context is what the planner/orchestrator built. Provider payload is exactly what was sent.</p>" +
+      "<p class=\"hint\">I11A Light: copy each pane in full (not the on-screen truncation). Developer-only; not family evidence.</p>" +
       "<div class=\"panes\">" +
-      pane("Assembled MemoryBox context", "mb", t.assembled_context || firstModel.assembled_context) +
-      pane("Exact provider payload sent", "prov", firstModel.provider_payload) +
-      pane("Raw model / provider return", "", firstModel.raw_response) +
-      pane("Parsed / validated", "", firstModel.parsed || spans.find((s) => s.stage === "parse_validate")) +
-      pane("MemoryBox result", "mb", t.final_disposition) +
-      pane("Error", t.error_class ? "err" : "", t.error) +
+      pane("Assembled MemoryBox context", "mb", t.assembled_context || firstModel.assembled_context, "copy-assembled") +
+      pane("PersonContext / requestor / focal", "mb", (infVal.assembled_context || {}).request_context || infVal.assembled_context, "copy-person-context") +
+      pane("Copy Provider Payload", "prov", infLeaf.provider_payload || firstModel.provider_payload, "copy-provider-payload") +
+      pane("Copy Raw Model Response", "", infLeaf.raw_response || firstModel.raw_response, "copy-raw-response") +
+      pane("Copy Parsed Inference", "", infLeaf.parsed || infVal.parsed, "copy-parsed-inference") +
+      pane("Copy Validated Semantic Pack", "mb", (infVal.disposition || {}).validated_semantic_pack || infVal.parsed, "copy-validated-pack") +
+      pane("Validation / rejected", "", infVal.validation, "copy-validation") +
+      pane("Narrator payload / response", "", { payload: narratorSpan.provider_payload, raw: narratorSpan.raw_response }, "copy-narrator") +
+      pane("MemoryBox result", "mb", t.final_disposition, "copy-result") +
+      pane("Error", t.error_class ? "err" : "", t.error, "copy-error") +
       "</div>" +
       "<h3>Stage timeline</h3><ul class=\"timeline\">" +
       timeline +
       "</ul>";
     const copyId = document.getElementById("copyId");
     const copyJson = document.getElementById("copyJson");
+    const exportBtn = document.getElementById("exportJsonFile");
     if (copyId) {
       copyId.onclick = function () {
         navigator.clipboard.writeText(t.trace_id || "");
@@ -179,6 +201,22 @@
         navigator.clipboard.writeText(JSON.stringify(t, null, 2));
       };
     }
+    if (exportBtn) {
+      exportBtn.onclick = function () {
+        const blob = new Blob([JSON.stringify(t, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "ai-trace-" + (t.trace_id || "export") + ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+    }
+    detailEl.querySelectorAll(".copy-pane").forEach(function (btn) {
+      btn.onclick = function () {
+        const key = btn.getAttribute("data-copy");
+        navigator.clipboard.writeText(copyStore[key] || "");
+      };
+    });
     renderList();
   }
 

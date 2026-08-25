@@ -23,7 +23,9 @@ I11 prepares a **grounded, Ask-specific evidence pack**. It must not become retr
 
 ## Pipeline
 
-Retrieve/eligibility (Spam/Trash out) → Narrative Evidence Preparation (units + claims + provenance) → hierarchical derived summaries when volume requires (not family truth; I7A) → provider-neutral LLM for `tell` only.
+Retrieve/eligibility (Spam/Trash out) → Narrative Evidence Preparation → **I11A inference + validation** (broad synthesis) → hierarchical derived summaries when volume requires (not family truth; I7A) → provider-neutral LLM for `tell` only.
+
+I11A: [MBPRD-P2-I11A_INFERENCE.md](MBPRD-P2-I11A_INFERENCE.md). Heuristic episode scoring is diagnostic only.
 
 Model down: fail closed for prose; keep evidence/coverage; say narration unavailable. **No stitch fallback that looks like the essay.**
 

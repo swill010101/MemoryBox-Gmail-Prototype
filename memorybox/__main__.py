@@ -324,6 +324,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
     )
+    p_prove_i11a = sub.add_parser(
+        "prove-i11a",
+        help="P2-I11A generalized evidence inference engine acceptance prove",
+    )
+    p_prove_i11a.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
+    )
     p_dump_i11 = sub.add_parser(
         "dump-i11-episodes",
         help="I11 period episode analysis only — no narration",
@@ -747,6 +756,16 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         print("prove-i11: starting...", flush=True)
         payload = run_prove_i11(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-i11a":
+        from memorybox.ask.i11a_acceptance import run_prove_i11a
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        print("prove-i11a: starting...", flush=True)
+        payload = run_prove_i11a(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
