@@ -414,6 +414,7 @@ def grounding_index(pack: dict[str, Any]) -> dict[str, Any]:
         if d0 and d1 and not (ep.get("observed_window") or ep.get("scheduled_window") or ep.get("derived_window")):
             if (
                 "recorded" in types
+                or unc.get("occurrence_not_established_by_calendar_alone")
                 or unc.get("calendar_scheduled_not_occurred")
             ):
                 recorded_spans.append((d0, d1))

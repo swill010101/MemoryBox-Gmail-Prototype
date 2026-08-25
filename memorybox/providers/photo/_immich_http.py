@@ -256,6 +256,11 @@ class ImmichHttpClient:
             "circuit": self._circuit(),
             "source": getattr(self, "_last_person_source", None),
             "incomplete": bool(getattr(self, "_person_lib_incomplete", False)),
+            "person_library_unwindowed_n": getattr(self, "_person_library_unwindowed_n", None),
+            "person_assets_in_window_n": getattr(self, "_person_assets_in_window_n", None),
+            "person_stills_in_window_n": getattr(self, "_person_stills_in_window_n", None),
+            "person_videos_in_window_n": getattr(self, "_person_videos_in_window_n", None),
+            "year_fair_applied": getattr(self, "_year_fair_applied", None),
             "total_ms": int(sum(int(r.get("ms") or 0) for r in rows)),
             "last": rows[-8:],
         }
@@ -485,7 +490,7 @@ class ImmichHttpClient:
             windowed = self._filter_assets_to_windows(
                 rows, getattr(self, "_timeline_windows", ()) or ()
             )
-            return self._year_fair_assets(windowed, target)
+            return self._finalize_person_library(rows, windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -515,7 +520,7 @@ class ImmichHttpClient:
             windowed = self._filter_assets_to_windows(
                 full, getattr(self, "_timeline_windows", ()) or ()
             )
-            return self._year_fair_assets(windowed, target)
+            return self._finalize_person_library(full, windowed, target)
         if self._circuit():
             self._last_person_source = "timeout"
             return []
@@ -533,7 +538,7 @@ class ImmichHttpClient:
             windowed = self._filter_assets_to_windows(
                 full, getattr(self, "_timeline_windows", ()) or ()
             )
-            return self._year_fair_assets(windowed, target)
+            return self._finalize_person_library(full, windowed, target)
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
@@ -885,6 +890,47 @@ class ImmichHttpClient:
                 setattr(self, attr, tmpl)
                 return self._coerce_asset_dates_to_bucket_year(items, tb)
         return []
+
+    @staticmethod
+    def _row_is_video(raw: Any) -> bool:
+        if not isinstance(raw, dict):
+            return False
+        if raw.get("isVideo") is True:
+            return True
+        return str(raw.get("type") or "").lower() == "video"
+
+    @staticmethod
+    def year_fair_should_apply(time_windows: Any, n: int, target: int) -> bool:
+        """Year-fair subsample is for uncapped libraries, not dated Ask windows.
+
+        A January Ask showing initial_candidate_count=9 was membership after the
+        window filter (and sometimes a year-fair subsample of that month), not a
+        Person-library cap of 9. Cache stays unwindowed; windowed Asks return
+        every in-window asset.
+        """
+        if time_windows:
+            return False
+        return int(n) > int(target)
+
+    def _finalize_person_library(
+        self,
+        full: list[dict[str, Any]],
+        windowed: list[dict[str, Any]],
+        target: int,
+    ) -> list[dict[str, Any]]:
+        windows = getattr(self, "_timeline_windows", ()) or ()
+        self._person_library_unwindowed_n = len(full)
+        self._person_assets_in_window_n = len(windowed)
+        stills = sum(1 for it in windowed if not self._row_is_video(it))
+        vids = len(windowed) - stills
+        self._person_stills_in_window_n = stills
+        self._person_videos_in_window_n = vids
+        if not self.year_fair_should_apply(windows, len(windowed), target):
+            self._year_fair_applied = False
+            return windowed
+        out = self._year_fair_assets(windowed, target)
+        self._year_fair_applied = len(out) < len(windowed)
+        return out
 
     @staticmethod
     def _year_fair_assets(

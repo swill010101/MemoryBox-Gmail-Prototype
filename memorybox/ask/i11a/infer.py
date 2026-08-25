@@ -17,6 +17,8 @@ from memorybox.providers.llm.dto import ChatMessage
 INFERENCE_SYSTEM = """EVIDENCE_INFERENCE
 You are MemoryBox's structured inference engine. Return JSON only. Do not write family prose.
 Interpret the evidence for the current Ask using Person context as interpretation aid, not as proof of period events.
+This leaf sees only one batch. Emit grounded observations, not a competing final trip narrative.
+A later reduce/correlation stage merges all leaf observations into one trip episode.
 Rules:
 - Ground every material claim in supporting_evidence_ids copied exactly from unit evidence_id or unit_id fields. Never invent IDs.
 - Do not invent people, places, dates, motives, emotions, photographer identity, trip purpose, or that a calendar event occurred.
@@ -27,6 +29,7 @@ Rules:
 - Media units may include captured_at, reliable EXIF/GPS, observed people, and location provenance. Infer candidate episodes from those fields; do not infer photographer, purpose, emotion, or companions beyond the evidence.
 - A GPS or reverse-geocode city is presence at capture time, not residence or a month-long stay. Correlate nearby calendar/travel/media (for example Paradise, NV with Las Vegas) instead of inventing an independent period episode.
 - Video assets (file + capture time + optional GPS) are evidence even without a face-appearance moment. Video moments (a span on a video) are a separate concept.
+- A calendar 'Flight to Las Vegas' supports scheduled travel, not that the flight occurred. A generic flight without a destination cannot support 'flew to Las Vegas'. A Person+GPS photo supports physical presence at capture time.
 - Return unresolved items rather than guessing.
 - Do not include coverage, counts, provider status, eligible/processed totals, or incomplete flags in the JSON.
 - Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
@@ -37,7 +40,8 @@ Episode people.role: participant|mentioned|unknown.
 """
 
 MERGE_SYSTEM = """INFERENCE_MERGE
-Merge leaf inference JSON objects into one schema_version 2 document for the Ask.
+Correlate leaf observation JSON objects into one schema_version 2 document for the Ask.
+Leaves are observations, not competing final trip truth. Produce one normalized trip episode when they describe the same travel cluster.
 Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
 """
 
@@ -436,6 +440,16 @@ def run_inference(
                 status="ok",
                 parsed=parsed_merge,
             )
+    from memorybox.ask.i11a.reduce import reduce_leaf_observations
+
+    parsed_merge = reduce_leaf_observations(parsed_merge)
+    _trace_span(
+        stage="i11a_inference",
+        component="i11a",
+        operation="reduce_correlate",
+        status="ok",
+        parsed=parsed_merge,
+    )
     validated = validate_inference(
         parsed_merge, pack=pack, person_context=person_context
     )
@@ -503,7 +517,7 @@ def outline_from_inference(document: dict[str, Any], plan: Any) -> dict[str, Any
             if not isinstance(c, dict):
                 continue
             if c.get("claim_type") == "recorded":
-                uncertainty["calendar_scheduled_not_occurred"] = True
+                uncertainty["occurrence_not_established_by_calendar_alone"] = True
             if c.get("claim_type") == "derived":
                 uncertainty["travel_derived_from_communication"] = True
         row = {

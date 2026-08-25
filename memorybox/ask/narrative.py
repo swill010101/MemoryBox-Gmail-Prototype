@@ -231,8 +231,10 @@ def _story_uncertainty(episodes: list[Any]) -> dict[str, Any]:
         u = ep.get("uncertainty")
         if not isinstance(u, dict):
             continue
-        if u.get("calendar_scheduled_not_occurred"):
-            flags["calendar_scheduled_not_occurred"] = True
+        if u.get("occurrence_not_established_by_calendar_alone") or u.get(
+            "calendar_scheduled_not_occurred"
+        ):
+            flags["occurrence_not_established_by_calendar_alone"] = True
         if u.get("travel_derived_from_communication"):
             flags["travel_derived_from_communication"] = True
     return flags

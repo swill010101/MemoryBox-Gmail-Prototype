@@ -233,7 +233,7 @@ def in_scope_visual_ids(pack: dict[str, Any]) -> set[str]:
     for u in units_from_pack(pack):
         kind = str(u.get("kind") or "")
         st = str(u.get("source_type") or "")
-        if kind in {"media_observation", "spoken_moment"} or st in {"photo", "video"}:
+        if kind in {"media_observation", "spoken_moment", "video_asset", "video_moment"} or st in {"photo", "video"}:
             for key in ("asset_ref", "evidence_id", "unit_id"):
                 v = str(u.get(key) or "").strip()
                 if v:

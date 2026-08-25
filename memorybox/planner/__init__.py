@@ -546,6 +546,23 @@ KNOWN_EVENT_WORDS = (
     "Graduation",
 )
 
+_MONTH_NAME_STOP = frozenset(
+    {
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    }
+)
+
 _ENTITY_STOP = frozenset(
     {
         "the",
@@ -721,10 +738,10 @@ class QueryPlan:
 
 def _clean_entity(name: str) -> str | None:
     n = (name or "").strip()
-    if not n or n.lower() in _ENTITY_STOP:
+    if not n or n.lower() in _ENTITY_STOP or n.lower() in _MONTH_NAME_STOP:
         return None
     tokens = [t for t in re.split(r"\s+", n.lower()) if t]
-    if tokens and all(t in _ENTITY_STOP for t in tokens):
+    if tokens and all(t in _ENTITY_STOP or t in _MONTH_NAME_STOP for t in tokens):
         return None
     if len(n) < 2:
         return None
@@ -955,6 +972,9 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
         ent = _clean_entity(m.group(1))
         # "at Christmas" is an event, not a place
         if ent and ent.lower() in {e.lower() for e in KNOWN_EVENT_WORDS}:
+            continue
+        # "in January" is a time constraint, not Place January
+        if ent and ent.lower() in _MONTH_NAME_STOP:
             continue
         if ent:
             places.append(ent)

@@ -15,7 +15,7 @@ from memorybox.ask.i11a.units import (
     in_scope_ids,
     in_scope_visual_ids,
 )
-from memorybox.ask.i11a.windows import attach_windows, pack_level_windows, windows_from_episode
+from memorybox.ask.i11a.windows import attach_windows, pack_level_windows, windows_from_episode, _index_pack_units
 
 _REL_EMIT = re.compile(
     r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
@@ -277,6 +277,21 @@ def validate_inference(
             if not text:
                 rejected.append({"reason": "empty_claim"})
                 continue
+            from memorybox.ask.i11a.claim_support import filter_claim_ids
+
+            kept_ids, support_rej = filter_claim_ids(text, ids, _index_pack_units(pack))
+            for row in support_rej:
+                rejected.append(
+                    {
+                        "reason": "evidence_cannot_support_claim",
+                        "text": text[:160],
+                        **row,
+                    }
+                )
+            if not kept_ids:
+                rejected.append({"reason": "claim_unsupportable", "text": text[:160]})
+                continue
+            ids = kept_ids
             unc = cl.get("uncertainty") if isinstance(cl.get("uncertainty"), list) else []
             claims_out.append(
                 {

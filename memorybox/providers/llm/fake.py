@@ -76,7 +76,7 @@ def _fake_inference(user_json: str) -> str:
                     }
                 )
                 eids.append(eid)
-            if kind in {"media_observation", "spoken_moment"}:
+            if kind in {"media_observation", "spoken_moment", "video_asset", "video_moment"}:
                 vid = str(u.get("asset_ref") or eid).strip()
                 if vid:
                     vis.append(vid)
@@ -164,7 +164,9 @@ def _fake_narrative(pack_json: str) -> str:
             t = f"{t} — {', '.join(people[:3])}"
         unc = ep.get("uncertainty") if isinstance(ep.get("uncertainty"), dict) else {}
         kinds = {str(k).lower() for k in (ep.get("source_kinds") or {})}
-        if unc.get("calendar_scheduled_not_occurred") or "calendar" in kinds:
+        if unc.get("occurrence_not_established_by_calendar_alone") or unc.get(
+            "calendar_scheduled_not_occurred"
+        ) or "calendar" in kinds:
             if len(when) >= 10:
                 story_lines.append(f"The calendar showed {when[:10]}: {t.rstrip('.')}.")
             else:

@@ -1416,6 +1416,22 @@ class AskOrchestrator:
             else:
                 videos = appearance
 
+            immich_video_assets = R.video_assets_from_photo_hits(photos)
+            if immich_video_assets:
+                seen_va = {v.external_id for v in videos}
+                videos = list(videos) + [
+                    v for v in immich_video_assets if v.external_id not in seen_va
+                ]
+                video_status = {
+                    **(video_status or {}),
+                    "ok": bool((video_status or {}).get("ok", True)),
+                    "immich_video_assets": len(immich_video_assets),
+                    "detail": (
+                        str((video_status or {}).get("detail") or "")
+                        + f" immich_video_assets={len(immich_video_assets)}"
+                    ).strip(),
+                }
+
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(
                     plan, limit=0 if R._bounded_period_tell(plan) else 12
@@ -1437,6 +1453,7 @@ class AskOrchestrator:
             )
             if tell_now:
                 from memorybox.ask.trip_discovery import (
+                    apply_plan_windows,
                     emit_retrieval_resolution_span,
                     resolve_trip,
                 )
@@ -1461,6 +1478,47 @@ class AskOrchestrator:
                 stories = discovered.stories
                 journals = discovered.journals
                 artifacts = discovered.artifacts
+                if discovered.needs_refetch and discovered.resolved and not discovered.ambiguous:
+                    _stage("Retrieving full trip span")
+                    if plan.want_still or plan.want_photo:
+                        photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                        photos, photo_status = R.search_photos(
+                            plan, self.photo, limit=photo_limit
+                        )
+                    if plan.want_communication or plan.want_calendar:
+                        evidence = R.search_evidence_pg(plan)
+                        if plan.retrieval_constraints:
+                            evidence = R.filter_hits_by_constraints(
+                                evidence, plan.retrieval_constraints
+                            )
+                    extra_va = R.video_assets_from_photo_hits(photos)
+                    if extra_va:
+                        seen_va = {v.external_id for v in videos}
+                        videos = list(videos) + [
+                            v for v in extra_va if v.external_id not in seen_va
+                        ]
+                    filtered = apply_plan_windows(
+                        plan,
+                        evidence=evidence,
+                        photos=photos,
+                        videos=videos,
+                        stories=stories,
+                        journals=journals,
+                        artifacts=artifacts,
+                    )
+                    evidence = filtered["evidence"]
+                    photos = filtered["photos"]
+                    videos = filtered["videos"]
+                    stories = filtered["stories"]
+                    journals = filtered["journals"]
+                    artifacts = filtered["artifacts"]
+                    discovered.evidence = evidence
+                    discovered.photos = photos
+                    discovered.videos = videos
+                    discovered.stories = stories
+                    discovered.journals = journals
+                    discovered.artifacts = artifacts
+                    discovered.needs_refetch = False
                 emit_retrieval_resolution_span(discovered)
 
         coverage: dict[str, Any] | None = None

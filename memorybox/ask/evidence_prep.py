@@ -1201,7 +1201,7 @@ def _life_period_outline(
         kinds = set(ep.get("source_kinds") or {})
         uncertainty: dict[str, Any] = {}
         if "calendar" in kinds:
-            uncertainty["calendar_scheduled_not_occurred"] = True
+            uncertainty["occurrence_not_established_by_calendar_alone"] = True
         if "travel" in kinds:
             uncertainty["travel_derived_from_communication"] = True
         people = [
@@ -1466,7 +1466,7 @@ def prepare_narrative_pack(
                         "provenance": {
                             "source": "calendar",
                             "evidence_id": d.get("evidence_id"),
-                            "scheduled_not_occurred": True,
+                            "occurrence_not_established_by_calendar_alone": True,
                         },
                         "title": d.get("summary"),
                         "source_type": "calendar",
@@ -1720,9 +1720,19 @@ def prepare_narrative_pack(
             "representative_gallery_assets_selected": None,
             "retrieved_photo_hits": len(photos),
             "retrieved_video_hits": len(videos),
+            "person_library_unwindowed_n": (photo_status or {}).get(
+                "person_library_unwindowed_n"
+            ),
+            "person_assets_in_window_n": (photo_status or {}).get(
+                "person_assets_in_window_n"
+            ),
+            "year_fair_applied": (photo_status or {}).get("year_fair_applied"),
+            "gallery_display_count": len(photos),
             "note": (
-                "These counts are separate. Gallery display is not an inference cap. "
-                "No code path slices consideration to 9."
+                "Person-library unwindowed count, in-window Person assets, and Gallery "
+                "display count are separate. year_fair is not applied when the Ask has "
+                "time windows — a January stills count of 9 is membership, not a cap of 9. "
+                "candidate_visual_ids rank Gallery; empty IDs never suppress eligible media."
             ),
         },
         "evidence_sets": {

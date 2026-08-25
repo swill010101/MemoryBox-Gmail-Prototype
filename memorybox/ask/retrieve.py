@@ -263,6 +263,48 @@ class VideoHit:
         return asdict(self)
 
 
+def photo_hit_is_video(hit: PhotoHit | dict[str, Any]) -> bool:
+    d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit or {})
+    if str(d.get("media_type") or "").lower() == "video":
+        return True
+    fn = str(d.get("original_filename") or "").lower()
+    return fn.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"))
+
+
+def video_assets_from_photo_hits(photos: list[PhotoHit]) -> list[VideoHit]:
+    """Immich VIDEO files as evidence even when HVRT returns zero moments."""
+    out: list[VideoHit] = []
+    for h in photos or []:
+        if not photo_hit_is_video(h):
+            continue
+        out.append(
+            VideoHit(
+                provider_key=h.provider_key,
+                external_id=h.external_id,
+                video_external_id=h.external_id,
+                start_sec=0.0,
+                end_sec=float(h.duration_sec or 0.0),
+                label=h.original_filename or h.location or "Immich video",
+                play_url=h.web_url,
+                identity_trust=h.identity_trust,
+                mb_person_id=h.mb_person_id,
+                mb_person_name=h.mb_person_name,
+                attribution="video_asset",
+                taken_at=h.taken_at,
+                original_filename=h.original_filename,
+                thumb_url=h.thumb_url,
+                latitude=h.latitude,
+                longitude=h.longitude,
+                place=h.place or h.location,
+                city=h.city,
+                state=h.state,
+                duration_sec=h.duration_sec,
+                media_type="video",
+            )
+        )
+    return out
+
+
 def _origin_on_video_hit(h: VideoHit) -> VideoHit:
     try:
         from memorybox.recognition.origin import origin_card_fields
@@ -560,7 +602,8 @@ def _place_trip_keywords(plan: QueryPlan) -> list[str]:
         if low not in seen:
             seen.add(low)
             out.append(low)
-        for tok in re.findall(r"[a-z0-9']{3,}", low):
+        for tok in re.findall(r"[a-z0-9']{4,}", low):
+            # Drop 3-letter splits ("las" from Las Vegas) — they false-hit unrelated mail.
             if tok in stop or tok in seen:
                 continue
             seen.add(tok)
@@ -1963,6 +2006,17 @@ def search_photos(
         snap = getattr(client, "diag_snapshot", None)
         if callable(snap):
             status["immich_diag"] = snap()
+            diag = status["immich_diag"] if isinstance(status.get("immich_diag"), dict) else {}
+            for key in (
+                "person_library_unwindowed_n",
+                "person_assets_in_window_n",
+                "person_stills_in_window_n",
+                "person_videos_in_window_n",
+                "year_fair_applied",
+            ):
+                if key in diag and status.get(key) is None:
+                    status[key] = diag.get(key)
+        status["gallery_display_is_presentation_only"] = True
         status["media_provider_candidates"] = int(
             status.get("media_provider_candidates") or len(hits)
         )

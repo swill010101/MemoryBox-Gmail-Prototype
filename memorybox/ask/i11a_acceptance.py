@@ -42,6 +42,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")
+    trip_py = (root / "ask" / "trip_discovery.py").read_text(encoding="utf-8")
 
     _check(
         "a12_no_hardcoded_llama",
@@ -59,10 +60,11 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a5" in html
+        and "?v=i11a6" in html
         and "retrieval_resolution" in js
         and "copy-retrieval-resolution" in js
-        and "copy-consideration" in js,
+        and "copy-consideration" in js
+        and "resolved_trip_window" in trip_py,
         checks,
         problems,
         detail="AI Trace Light I11A copy/export controls",
@@ -485,7 +487,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "trip_discovery_resolves_window_then_keeps_place_hits",
         found.resolved
-        and found.plan.time_start == "2026-05-02"
+        and found.plan.time_start <= "2026-05-02"
+        and found.plan.time_end >= "2026-05-06"
         and "trip_window_resolved" in (found.plan.notes or ())
         and [h.evidence_id for h in found.evidence] == ["e-ak-26"]
         and [p.external_id for p in found.photos] == ["ph-ak"],
@@ -528,7 +531,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "person_context_dedupe_and_period_age",
         year_as_of is None
         and resolved_as_of is not None
-        and str(resolved_as_of) == "2026-05-02"
+        and str(resolved_as_of) == str(found.plan.time_start)[:10]
+        and str(resolved_as_of) != "2026-01-01"
         and len(dup_rels) == 2
         and len((slim.get("requestor") or {}).get("known_relationships") or []) == 2,
         checks,
@@ -674,7 +678,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                         "end": "2026-05-06",
                         "evidence_ids": ["ph-ak"],
                     },
-                    "uncertainty": {"calendar_scheduled_not_occurred": True},
+                    "uncertainty": {"occurrence_not_established_by_calendar_alone": True},
                 }
             ],
             "scheduled_window": {
@@ -1121,6 +1125,204 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                 "windows": ak_disc.windows,
             }
         ),
+    )
+
+    lv_jan = plan_ask(
+        "write a narrative about my Las Vegas trip in January 2026",
+        AskContext(session_id="i11a-lv-jan-place"),
+    )
+    _check(
+        "january_is_not_a_place_name",
+        any("las vegas" in str(p).lower() for p in (lv_jan.place_names or ()))
+        and not any(str(p).lower() == "january" for p in (lv_jan.place_names or ()))
+        and "trip_window_unresolved" in (lv_jan.notes or ()),
+        checks,
+        problems,
+        detail=str({"places": lv_jan.place_names, "trips": lv_jan.trip_labels, "notes": lv_jan.notes}),
+    )
+    unrelated = EvidenceHit(
+        evidence_id="e-unrelated-class",
+        evidence_kind="communication",
+        summary="Class reunion lunch",
+        score=1.0,
+        excerpt="last week the class from 1998 met for tacos in town",
+        source="email_mbox",
+        sent_at="2026-01-12T12:00:00",
+        channel="email",
+    )
+    hotel_in_window = EvidenceHit(
+        evidence_id="e-hotel-folio",
+        evidence_kind="communication",
+        summary="Your folio",
+        score=1.0,
+        excerpt="Thank you for staying with us. Folio attached.",
+        source="email_mbox",
+        sent_at="2026-01-30T09:00:00",
+        channel="email",
+    )
+    return_flight = EvidenceHit(
+        evidence_id="e-return-sea",
+        evidence_kind="calendar_event",
+        summary="Flight home",
+        score=1.0,
+        excerpt="Return to Seattle",
+        source="ics",
+        sent_at="2026-02-02T11:00:00",
+        channel="calendar",
+    )
+    from memorybox.ask.retrieve import video_assets_from_photo_hits
+    from memorybox.ask.i11a.claim_support import claim_support_ok
+    from memorybox.ask.i11a.reduce import reduce_leaf_observations
+    from memorybox.providers.photo._immich_http import ImmichHttpClient
+
+    lv_disc = _resolve_trip2(
+        lv_jan,
+        evidence=[unrelated, cal_flight, cal_sphere, hotel_in_window, return_flight],
+        photos=[paradise_photo, jan_vid],
+        videos=video_assets_from_photo_hits([jan_vid]),
+        photo_status={
+            "provider_key": "immich",
+            "person_library_unwindowed_n": 400,
+            "person_assets_in_window_n": 9,
+            "person_stills_in_window_n": 8,
+            "person_videos_in_window_n": 1,
+            "year_fair_applied": False,
+            "after_temporal_filter": 9,
+            "constraint_mode": "deferred_trip_discovery",
+        },
+    )
+    photo_mod = lv_disc.modalities[0].to_dict() if lv_disc.modalities else {}
+    selected = {str(r.get("evidence_id")): r for r in lv_disc.comm_pipeline if r.get("selected")}
+    skipped_unrelated = next(
+        (r for r in lv_disc.comm_pipeline if r.get("evidence_id") == "e-unrelated-class"),
+        {},
+    )
+    _check(
+        "immich_window_count_is_not_a_nine_cap",
+        photo_mod.get("person_library_unwindowed_n") == 400
+        and photo_mod.get("person_assets_in_window_n") == 9
+        and photo_mod.get("year_fair_applied") is False
+        and photo_mod.get("initial_candidate_count") == 9
+        and ImmichHttpClient.year_fair_should_apply(
+            (("2026-01-01", "2026-01-31"),), 400, 5000
+        )
+        is False,
+        checks,
+        problems,
+        detail=str(photo_mod),
+    )
+    _check(
+        "vegas_canaries_and_match_reasons",
+        lv_disc.resolved
+        and "e-las-flight" in selected
+        and "e-eagles-sphere" in selected
+        and selected["e-las-flight"].get("match_reason")
+        and "e-unrelated-class" not in selected
+        and skipped_unrelated.get("skip_reason") == "no_place_hint_or_travel_match"
+        and any(p.external_id == "ph-paradise-nv" for p in lv_disc.photos)
+        and any(v.external_id == "vid-vegas-clip" for v in lv_disc.videos)
+        and lv_disc.needs_refetch
+        and (lv_disc.resolved_window or ("", ""))[1] >= "2026-02-02"
+        and any(h.evidence_id == "e-return-sea" for h in lv_disc.evidence)
+        and any(h.evidence_id == "e-hotel-folio" for h in lv_disc.evidence)
+        and any(
+            r.get("evidence_id") == "e-hotel-folio" and r.get("selected")
+            for r in lv_disc.comm_pipeline
+        ),
+        checks,
+        problems,
+        detail=str(
+            {
+                "resolved": lv_disc.resolved,
+                "win": lv_disc.resolved_window,
+                "refetch": lv_disc.needs_refetch,
+                "comm": lv_disc.comm_pipeline,
+                "ev": [h.evidence_id for h in lv_disc.evidence],
+                "ph": [p.external_id for p in lv_disc.photos],
+            }
+        ),
+    )
+    _check(
+        "immich_video_without_hvrt_moment",
+        bool(video_assets_from_photo_hits([jan_vid]))
+        and video_assets_from_photo_hits([jan_vid])[0].attribution == "video_asset",
+        checks,
+        problems,
+        detail="HVRT moments are not required for Immich VIDEO assets",
+    )
+    generic_ok, generic_why = claim_support_ok(
+        "Tom flew to Las Vegas",
+        {
+            "kind": "communication",
+            "content": "Flight 2026-01-20 confirmation",
+            "title": "Your flight",
+        },
+    )
+    cal_ok, cal_why = claim_support_ok(
+        "Tom flew to Las Vegas",
+        {"kind": "calendar", "content": "Flight to Las Vegas", "title": "Flight to Las Vegas"},
+    )
+    gps_ok, gps_why = claim_support_ok(
+        "Tom was in Paradise, NV",
+        {
+            "kind": "media_observation",
+            "content": "photo",
+            "latitude": 36.12,
+            "longitude": -115.17,
+            "place": "Paradise",
+        },
+    )
+    _check(
+        "claim_support_id_exists_is_not_enough",
+        generic_ok is False
+        and generic_why == "generic_flight_does_not_locate"
+        and cal_ok is False
+        and cal_why == "calendar_supports_scheduled_not_occurrence"
+        and gps_ok is True,
+        checks,
+        problems,
+        detail=str({"generic": generic_why, "cal": cal_why, "gps": gps_why}),
+    )
+    reduced = reduce_leaf_observations(
+        {
+            "schema_version": 2,
+            "ask_semantics": {"kind": "period", "constraints": {}},
+            "episodes": [
+                {
+                    "label": "Flight to Las Vegas",
+                    "date_span": {"start": "2026-01-29", "end": "2026-01-29"},
+                    "claims": [{"text": "calendar showed Flight to Las Vegas"}],
+                },
+                {
+                    "label": "Eagles at Sphere",
+                    "date_span": {"start": "2026-01-30", "end": "2026-01-30"},
+                    "places": ["Las Vegas"],
+                    "claims": [{"text": "Eagles Live at Sphere"}],
+                },
+            ],
+        }
+    )
+    _check(
+        "leaf_reduce_one_vegas_trip",
+        len(reduced.get("episodes") or []) == 1
+        and (reduced["episodes"][0].get("label") == "Las Vegas trip")
+        and reduced["episodes"][0].get("correlated_from_leaves") is True
+        and (reduced.get("ask_semantics") or {}).get("kind") == "trip",
+        checks,
+        problems,
+        detail=str(reduced.get("episodes")),
+    )
+    _check(
+        "calendar_uncertainty_is_not_nonoccurrence",
+        "occurrence_not_established_by_calendar_alone" in (root / "ask" / "evidence_prep.py").read_text(
+            encoding="utf-8"
+        )
+        and "calendar_scheduled_not_occurred" not in (root / "ask" / "i11a" / "infer.py").read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+        detail="absence of proof is not proof of non-occurrence",
     )
 
     meta["synthetic"] = str(uuid4())[:8]

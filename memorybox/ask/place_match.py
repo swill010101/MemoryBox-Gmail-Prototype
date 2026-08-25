@@ -266,7 +266,52 @@ def canonical_place(place: str) -> str:
     return collapsed
 
 
+_CITY_ALIASES: dict[str, tuple[str, ...]] = {
+    "las vegas": (
+        "vegas",
+        "paradise",
+        "henderson",
+        "harry reid",
+        "sphere",
+        "eagles",
+        "nevada",
+    ),
+    "vegas": (
+        "las vegas",
+        "paradise",
+        "henderson",
+        "harry reid",
+        "sphere",
+        "eagles",
+        "nevada",
+    ),
+    "paradise": ("las vegas", "vegas", "nevada"),
+}
+
+_CITY_BBOX: dict[str, tuple[float, float, float, float]] = {
+    # Presence at capture time in the Las Vegas valley (incl. Paradise, NV)
+    "las vegas": (35.85, 36.45, -115.45, -114.85),
+    "vegas": (35.85, 36.45, -115.45, -114.85),
+    "paradise": (35.95, 36.20, -115.30, -115.05),
+}
+
 _TRIP_HINT_ALIASES: dict[str, tuple[str, ...]] = {
+    "las vegas": (
+        "sphere",
+        "eagles",
+        "paradise",
+        "harry reid",
+        "nevada",
+        "henderson",
+    ),
+    "vegas": (
+        "las vegas",
+        "sphere",
+        "eagles",
+        "paradise",
+        "harry reid",
+        "nevada",
+    ),
     "alaska": (
         "princess",
         "princess cruises",
@@ -344,13 +389,15 @@ def place_needles(place: str) -> tuple[str, ...]:
         add(a)
     for city in _STATE_CITIES.get(key, ()):
         add(city)
+    for a in _CITY_ALIASES.get(key, ()):
+        add(a)
     out.sort(key=lambda s: (-len(s), s))
     return tuple(out)
 
 
 def place_bbox(place: str) -> tuple[float, float, float, float] | None:
     key = canonical_place(place)
-    return _STATE_BBOX.get(key)
+    return _CITY_BBOX.get(key) or _STATE_BBOX.get(key)
 
 
 def place_match_spec(place_names: tuple[str, ...] | list[str] | None) -> dict[str, Any] | None:
