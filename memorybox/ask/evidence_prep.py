@@ -20,6 +20,12 @@ from memorybox.ask.episode_semantics import (
     score_reason,
 )
 from memorybox.ask.travel import extract_travel
+from memorybox.ask.i11a.support import attach_support_profile, rank_episodes_for_narrator
+from memorybox.ask.i11a.windows import (
+    attach_windows,
+    pack_level_windows,
+    windows_from_members,
+)
 from memorybox.ingest.store import get_evidence
 
 PACK_SCHEMA = 1
@@ -177,6 +183,73 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
     }
 
 
+def _photo_is_video(d: dict[str, Any]) -> bool:
+    if str(d.get("media_type") or "").lower() == "video":
+        return True
+    exif = d.get("exif") if isinstance(d.get("exif"), dict) else {}
+    if str(exif.get("media") or "").lower() == "video":
+        return True
+    fn = str(d.get("original_filename") or "").lower()
+    return fn.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"))
+
+
+def _calendar_place(summary: str) -> str | None:
+    blob = (summary or "").lower()
+    if "las vegas" in blob or re.search(r"\bvegas\b", blob):
+        return "Las Vegas"
+    if "sphere" in blob or "eagles" in blob:
+        return "Las Vegas"
+    if "paradise" in blob:
+        return "Paradise"
+    if "alaska" in blob:
+        return "Alaska"
+    if "vancouver" in blob:
+        return "Vancouver"
+    return None
+
+
+def _las_vegas_area(obj: dict[str, Any]) -> bool:
+    blob = " ".join(
+        str(x or "")
+        for x in (
+            obj.get("place"),
+            obj.get("city"),
+            obj.get("state"),
+            obj.get("title"),
+            obj.get("content"),
+            obj.get("subject"),
+        )
+    ).lower()
+    lat = obj.get("latitude")
+    lon = obj.get("longitude")
+    try:
+        lat_f = float(lat) if lat is not None else None
+        lon_f = float(lon) if lon is not None else None
+    except (TypeError, ValueError):
+        lat_f = lon_f = None
+    if lat_f is not None and lon_f is not None:
+        if 35.85 <= lat_f <= 36.45 and -115.45 <= lon_f <= -114.85:
+            return True
+    if any(tok in blob for tok in ("las vegas", "vegas", "sphere", "henderson")):
+        return True
+    if "paradise" in blob and (
+        "nv" in blob or "nevada" in blob or (lat_f is not None and lon_f is not None)
+    ):
+        return True
+    return False
+
+
+def _days_apart(a: str | None, b: str | None) -> int | None:
+    if not a or not b or len(a) < 10 or len(b) < 10:
+        return None
+    try:
+        from datetime import date
+
+        return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
+    except ValueError:
+        return None
+
+
 def _media_unit(photo: Any) -> dict[str, Any]:
     d = photo.to_dict() if hasattr(photo, "to_dict") else dict(photo)
     pid = str(d.get("external_id") or "")
@@ -200,25 +273,45 @@ def _media_unit(photo: Any) -> dict[str, Any]:
                 "basis": (["face"] if (mb_id or people) else []) + basis,
             }
         )
+    people_rows = [{"name": p, "role": "depicted"} for p in people[:12]]
+    if mb_id:
+        if people_rows:
+            people_rows[0]["person_id"] = mb_id
+        else:
+            nm = str(d.get("mb_person_name") or "").strip()
+            people_rows.append({"name": nm or None, "person_id": mb_id, "role": "depicted"})
+    loc_conf = "high" if basis else ("medium" if place else "low")
+    is_vid = _photo_is_video(d)
+    kind = "video_asset" if is_vid else "media_observation"
+    source_type = "video" if is_vid else "photo"
     return {
         "unit_id": _uid("media", pid),
-        "kind": "media_observation",
+        "kind": kind,
         "time": _time(d.get("taken_at")),
-        "people": [{"name": p, "role": "depicted"} for p in people[:12]],
+        "people": people_rows,
         "place": place,
         "content": d.get("caption") or d.get("description") or "",
         "claims": claims,
         "provenance": {
-            "source": "photo",
+            "source": source_type,
             "external_id": pid,
             "filename_not_photographer": True,
         },
         "rank": float(d.get("score") or 1.0),
-        "normalization": {"source_type": "photo"},
+        "normalization": {"source_type": source_type},
+        "evidence_id": pid or None,
         "asset_ref": pid,
-        "source_type": "photo",
+        "source_type": source_type,
+        "media_type": "video" if is_vid else "image",
+        "duration_sec": d.get("duration_sec"),
         "capture_time": d.get("taken_at"),
+        "captured_at": d.get("taken_at"),
+        "latitude": lat,
+        "longitude": lon,
+        "provider": d.get("provider_key"),
         "place_basis": basis[0] if basis else ("labeled_place" if place else None),
+        "location_confidence": loc_conf,
+        "location_provenance": basis[0] if basis else ("labeled_place" if place else None),
         "original_filename": d.get("original_filename"),
         "flags": {
             "filename_is_not_photographer": True,
@@ -230,26 +323,50 @@ def _media_unit(photo: Any) -> dict[str, Any]:
 
 def _video_unit(video: Any) -> dict[str, Any]:
     d = video.to_dict() if hasattr(video, "to_dict") else dict(video)
-    vid = str(d.get("external_id") or "")
+    vid = str(d.get("external_id") or d.get("video_external_id") or "")
     spoken = d.get("spoken_text")
-    kind = "spoken_moment" if spoken or d.get("attribution") == "spoken_moment" else "media_observation"
+    attrib = str(d.get("attribution") or "")
+    lat, lon = d.get("latitude"), d.get("longitude")
+    place = d.get("place") or d.get("city") or d.get("location")
+    if spoken or attrib == "spoken_moment":
+        kind = "spoken_moment"
+    elif attrib == "video_asset" or (
+        not attrib
+        and (d.get("start_sec") in (None, 0) and d.get("end_sec") in (None, 0))
+        and not d.get("face_external_id")
+    ):
+        kind = "video_asset"
+    else:
+        kind = "video_moment"
+    people_rows = []
+    if d.get("mb_person_name") or d.get("mb_person_id"):
+        people_rows.append(
+            {
+                "name": d.get("mb_person_name"),
+                "person_id": d.get("mb_person_id"),
+                "role": "depicted",
+            }
+        )
     return {
-        "unit_id": _uid("video", vid, str(d.get("start_sec") or "")),
+        "unit_id": _uid("video", vid, kind, str(d.get("start_sec") or "")),
         "kind": kind,
         "time": _time(d.get("taken_at")),
-        "people": (
-            [{"name": d.get("mb_person_name"), "role": "depicted"}]
-            if d.get("mb_person_name")
-            else []
-        ),
-        "place": None,
+        "people": people_rows,
+        "place": place,
         "content": spoken or d.get("label") or "",
         "claims": [],
-        "provenance": {"source": "video", "external_id": vid},
+        "provenance": {"source": "video", "external_id": vid, "evidence_concept": kind},
         "rank": 1.0,
         "normalization": {"source_type": "video"},
-        "asset_ref": vid,
+        "asset_ref": d.get("video_external_id") or vid,
         "source_type": "video",
+        "media_type": "video",
+        "duration_sec": d.get("duration_sec"),
+        "capture_time": d.get("taken_at"),
+        "captured_at": d.get("taken_at"),
+        "latitude": lat,
+        "longitude": lon,
+        "provider": d.get("provider_key"),
         "timeslot": {"start_sec": d.get("start_sec"), "end_sec": d.get("end_sec")},
         "flags": {"filename_is_not_photographer": True},
     }
@@ -322,10 +439,28 @@ def _calendar_material(hit: Any, plan: Any, *, broad: bool) -> bool:
         return True
     notes = tuple(str(n) for n in (getattr(plan, "notes", ()) or ()))
     d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit)
-    # Month+year Asks are not a year dump: keep calendar rows that fall in the month.
-    if any("temporal=month_year" in n for n in notes):
-        day = str(d.get("sent_at") or "")[:10]
-        windows = _plan_windows(plan)
+    windows = _plan_windows(plan)
+    day = str(d.get("sent_at") or "")[:10]
+    tell = str(getattr(plan, "output_mode", "") or "") == "tell"
+    q = str(getattr(plan, "original_ask", "") or "").lower()
+    month_named = bool(
+        re.search(
+            r"(?i)\b(january|february|march|april|may|june|july|august|"
+            r"september|october|november|december)\b",
+            q,
+        )
+    )
+    named_trip = bool(getattr(plan, "trip_labels", ()) or getattr(plan, "place_names", ()))
+    period_tell = (
+        tell
+        and not named_trip
+        and (
+            any("temporal=month_year" in n for n in notes)
+            or month_named
+            or bool(windows)
+        )
+    )
+    if period_tell:
         if not windows or len(day) < 10:
             return True
         return any(a <= day <= b for a, b in windows)
@@ -626,11 +761,25 @@ def _merge_same_day_related(episodes: list[dict[str, Any]]) -> list[dict[str, An
         for j in range(i + 1, n):
             day_j, pe_j, pl_j, tok_j = metas[j]
             if day_i != day_j:
-                continue
+                apart = _days_apart(day_i, day_j)
+                vegas_pair = False
+                if apart is not None and apart <= 2:
+                    mi = list(episodes[i].get("_members") or [])
+                    mj = list(episodes[j].get("_members") or [])
+                    vegas_pair = any(_las_vegas_area(m) for m in mi) and any(
+                        _las_vegas_area(m) for m in mj
+                    )
+                if not vegas_pair:
+                    continue
             shared_tok = tok_i & tok_j
             fam_i = str(episodes[i].get("primary_family") or episodes[i].get("_primary_family") or "")
             fam_j = str(episodes[j].get("primary_family") or episodes[j].get("_primary_family") or "")
             if not families_compatible(fam_i or "other", fam_j or "other"):
+                continue
+            mi = list(episodes[i].get("_members") or [])
+            mj = list(episodes[j].get("_members") or [])
+            if any(_las_vegas_area(m) for m in mi) and any(_las_vegas_area(m) for m in mj):
+                union(i, j)
                 continue
             if (
                 (pe_i and pe_j and (pe_i & pe_j))
@@ -756,7 +905,7 @@ def _unit_blob(unit: dict[str, Any]) -> str:
 def _likely_transactional(unit: dict[str, Any]) -> bool:
     """Routine mail heuristic — not a universal ban; context can still promote it."""
     kind = str(unit.get("kind") or "")
-    if kind in {"journal", "story", "artifact", "travel", "calendar", "media_observation", "spoken_moment"}:
+    if kind in {"journal", "story", "artifact", "travel", "calendar", "media_observation", "spoken_moment", "video_asset", "video_moment"}:
         return False
     blob = _unit_blob(unit)
     if _TRANSACTIONAL_RE.search(blob) or _UPS_WORD_RE.search(blob):
@@ -775,6 +924,8 @@ def _episode_transactional_only(episode: dict[str, Any]) -> bool:
         "travel",
         "calendar",
         "media_observation",
+        "video_asset",
+        "video_moment",
         "spoken_moment",
     }
     if any(str(m.get("kind") or "") in meaningful for m in members):
@@ -1044,11 +1195,14 @@ def _life_period_outline(
     truncation: str | None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    all_members: list[dict[str, Any]] = []
+    for ep in episodes:
+        all_members.extend(list(ep.get("_members") or []))
     for ep in episodes:
         kinds = set(ep.get("source_kinds") or {})
         uncertainty: dict[str, Any] = {}
         if "calendar" in kinds:
-            uncertainty["calendar_scheduled_not_occurred"] = True
+            uncertainty["occurrence_not_established_by_calendar_alone"] = True
         if "travel" in kinds:
             uncertainty["travel_derived_from_communication"] = True
         people = [
@@ -1070,6 +1224,12 @@ def _life_period_outline(
                 "not_family_truth": True,
             },
         }
+        attach_windows(
+            row,
+            windows_from_members(ep.get("_members") or [ep]),
+            fallback_span=row["date_span"],
+        )
+        attach_support_profile(row, pack={"units": all_members or list(ep.get("_members") or [ep])})
         if uncertainty:
             row["uncertainty"] = uncertainty
         rows.append(row)
@@ -1078,6 +1238,7 @@ def _life_period_outline(
         "period": str(getattr(plan, "temporal_label", None) or "this period"),
         "windows": windows,
         "episodes": rows,
+        **pack_level_windows(rows),
         "coverage": {
             "incomplete": bool(incomplete),
             "note": truncation if incomplete else None,
@@ -1121,16 +1282,22 @@ def _week_summaries(units: list[dict[str, Any]], episodes: list[dict[str, Any]])
 
 def _select_narrator_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prompt-size budget for significant themes only — not a week-fair sample."""
-    ranked = sorted(
+    units: list[dict[str, Any]] = []
+    for e in episodes:
+        units.extend(list(e.get("_members") or []))
+    pack = {"units": units}
+    for e in episodes:
+        attach_support_profile(e, pack=pack)
+    by_support = sorted(
         episodes,
         key=lambda e: (
+            -float(e.get("support_score") or 0),
             -float(e.get("significance_score") or e.get("significance") or 0),
             _unit_day(e) or "9999",
         ),
     )
-    picked = ranked[:NARRATOR_EPISODE_BUDGET]
-    picked.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
-    return picked
+    picked = by_support[:NARRATOR_EPISODE_BUDGET]
+    return rank_episodes_for_narrator(picked, budget=None)
 
 
 def _public_unit(unit: dict[str, Any]) -> dict[str, Any]:
@@ -1149,6 +1316,7 @@ def _evidence_used(units: list[dict[str, Any]]) -> dict[str, int]:
         "artifacts": 0,
         "travel": 0,
         "spoken_moments": 0,
+        "video_assets": 0,
         "place_event": 0,
         "external_historical": 0,
     }
@@ -1175,6 +1343,10 @@ def _evidence_used(units: list[dict[str, Any]]) -> dict[str, int]:
             counts["artifacts"] += 1
         elif k == "travel":
             counts["travel"] += 1
+        elif k == "video_asset":
+            counts["video_assets"] = counts.get("video_assets", 0) + 1
+        elif k == "video_moment":
+            counts["video_moments"] += 1
         elif k == "place_event":
             counts["place_event"] += 1
     return counts
@@ -1236,6 +1408,8 @@ def prepare_narrative_pack(
     journals: list[Any] | None = None,
     artifacts: list[Any] | None = None,
     retrieved_n: int | None = None,
+    photo_status: dict[str, Any] | None = None,
+    video_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evidence = list(evidence or [])
     photos = list(photos or [])
@@ -1250,46 +1424,93 @@ def prepare_narrative_pack(
     )
     units: list[dict[str, Any]] = []
     excluded = ["spam", "trash"]
+    calendar_pipeline: list[dict[str, Any]] = []
+    comm_pipeline: list[dict[str, Any]] = []
     for h in evidence:
         d = h.to_dict() if hasattr(h, "to_dict") else dict(h)
         channel = str(d.get("channel") or "").lower()
         if channel == "calendar" or d.get("evidence_kind") == "calendar_event":
-            if not _calendar_material(h, plan, broad=broad):
+            title = str(d.get("summary") or d.get("excerpt") or "")
+            eligible = _calendar_material(h, plan, broad=broad)
+            row = {
+                "evidence_id": d.get("evidence_id"),
+                "title": title,
+                "day": str(d.get("sent_at") or "")[:10],
+                "retrieved": True,
+                "eligible": eligible,
+                "converted_to_inference_unit": False,
+                "unit_id": None,
+                "skip_reason": None if eligible else "calendar_not_material_for_ask",
+                "sent_in_chunk": None,
+                "represented_in_merged_semantic_pack": None,
+            }
+            if not eligible:
+                calendar_pipeline.append(row)
                 continue
-            units.append(
-                _simple_unit(
+            cal_place = _calendar_place(title)
+            unit = _simple_unit(
                     "calendar",
                     str(d.get("evidence_id") or ""),
-                    str(d.get("summary") or d.get("excerpt") or ""),
+                    title,
                     d.get("sent_at"),
                     {
-                        "place": None,
+                        "place": cal_place,
                         "claims": [
                             {
                                 "type": "scheduled",
                                 "time": d.get("sent_at"),
                                 "confidence": "medium",
                                 "basis": ["calendar_row"],
+                                "place": cal_place,
                             }
                         ],
                         "provenance": {
                             "source": "calendar",
                             "evidence_id": d.get("evidence_id"),
-                            "scheduled_not_occurred": True,
+                            "occurrence_not_established_by_calendar_alone": True,
                         },
                         "title": d.get("summary"),
+                        "source_type": "calendar",
                     },
                 )
-            )
+            units.append(unit)
+            row["converted_to_inference_unit"] = True
+            row["unit_id"] = unit.get("unit_id")
+            calendar_pipeline.append(row)
             continue
         u = _communication_unit(h, plan, and_i=and_i)
         if not u:
             excluded.append("mailbox_skip")
+            comm_pipeline.append(
+                {
+                    "evidence_id": d.get("evidence_id"),
+                    "title": d.get("summary"),
+                    "retrieved": True,
+                    "eligible": False,
+                    "skip_reason": "mailbox_skip",
+                    "converted_to_inference_unit": False,
+                    "travel_extracted": False,
+                }
+            )
             continue
         units.append(u)
         derived = _travel_from_comm(u)
         if derived:
             units.append(derived)
+        comm_pipeline.append(
+            {
+                "evidence_id": d.get("evidence_id"),
+                "title": d.get("summary") or u.get("subject"),
+                "channel": channel or u.get("source_type"),
+                "day": str((u.get("time") or {}).get("value") or "")[:10],
+                "retrieved": True,
+                "eligible": True,
+                "converted_to_inference_unit": True,
+                "unit_id": u.get("unit_id"),
+                "travel_extracted": bool(derived),
+                "travel_unit_id": (derived or {}).get("unit_id"),
+            }
+        )
     for p in photos:
         units.append(_media_unit(p))
     for v in videos:
@@ -1332,7 +1553,19 @@ def prepare_narrative_pack(
 
     windows = _plan_windows(plan)
     if windows:
-        units = [u for u in units if _unit_in_windows(u, windows)]
+        kept: list[dict[str, Any]] = []
+        kept_ids: set[str] = set()
+        for u in units:
+            if _unit_in_windows(u, windows):
+                kept.append(u)
+                kept_ids.add(str(u.get("unit_id") or ""))
+                kept_ids.add(str(u.get("evidence_id") or ""))
+        units = kept
+        for row in calendar_pipeline:
+            uid = str(row.get("unit_id") or "")
+            if row.get("converted_to_inference_unit") and uid and uid not in kept_ids:
+                row["converted_to_inference_unit"] = False
+                row["skip_reason"] = "outside_temporal_window"
 
     eligible_n = len(units)
     retrieve_incomplete = False
@@ -1463,5 +1696,66 @@ def prepare_narrative_pack(
         },
         "evidence_used": _evidence_used(ranked),
         "evidence_considered": _evidence_used(ranked),
+        "calendar_pipeline": calendar_pipeline,
+        "comm_pipeline": comm_pipeline,
+        "media_consideration": {
+            "media_provider_candidates": (photo_status or {}).get(
+                "media_provider_candidates"
+            ),
+            "time_filtered_media_count": (photo_status or {}).get(
+                "time_filtered_media_count"
+            ),
+            "person_filtered_media_count": (photo_status or {}).get(
+                "person_filtered_media_count"
+            ),
+            "location_filtered_count": (photo_status or {}).get(
+                "location_filtered_count"
+            ),
+            "evidence_units_generated": sum(
+                1
+                for u in ranked
+                if str(u.get("kind") or "")
+                in {"media_observation", "video_asset", "video_moment", "spoken_moment"}
+            ),
+            "units_passed_to_inference": None,
+            "representative_gallery_assets_selected": None,
+            "retrieved_photo_hits": len(photos),
+            "retrieved_video_hits": len(videos),
+            "person_library_unwindowed_n": (photo_status or {}).get(
+                "person_library_unwindowed_n"
+            ),
+            "person_assets_in_window_n": (photo_status or {}).get(
+                "person_assets_in_window_n"
+            ),
+            "year_fair_applied": (photo_status or {}).get("year_fair_applied"),
+            "gallery_display_count": len(photos),
+            "note": (
+                "Person-library unwindowed count, in-window Person assets, and Gallery "
+                "display count are separate. year_fair is not applied when the Ask has "
+                "time windows — a January stills count of 9 is membership, not a cap of 9. "
+                "candidate_visual_ids rank Gallery; empty IDs never suppress eligible media."
+            ),
+        },
+        "evidence_sets": {
+            "retrieved": {
+                "evidence_hits": len(evidence),
+                "photos": len(photos),
+                "videos": len(videos),
+                "stories": len(stories),
+                "journals": len(journals),
+                "artifacts": len(artifacts),
+                "total": retrieved,
+            },
+            "inference": {
+                "units_generated": eligible_n,
+                "units_passed_to_inference": None,
+                "by_kind": _evidence_used(ranked),
+                "note": "Not an arbitrary top-N. Chunking may batch; it must not drop calendar/travel/media.",
+            },
+            "presentation": {
+                "representative_gallery_assets_selected": None,
+                "note": "Representative Gallery assets only. Never used as the inference consideration cap.",
+            },
+        },
     }
     return pack

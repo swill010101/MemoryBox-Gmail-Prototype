@@ -226,6 +226,8 @@ class PhotoHit:
     exif: dict[str, str] | None = None
     # Immich-named faces on the asset (+ optional boxes)
     faces: list[dict[str, Any]] | None = None
+    media_type: str = "image"
+    duration_sec: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -249,9 +251,58 @@ class VideoHit:
     original_filename: str | None = None
     thumb_url: str | None = None
     spoken_text: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    place: str | None = None
+    city: str | None = None
+    state: str | None = None
+    duration_sec: float | None = None
+    media_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def photo_hit_is_video(hit: PhotoHit | dict[str, Any]) -> bool:
+    d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit or {})
+    if str(d.get("media_type") or "").lower() == "video":
+        return True
+    fn = str(d.get("original_filename") or "").lower()
+    return fn.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"))
+
+
+def video_assets_from_photo_hits(photos: list[PhotoHit]) -> list[VideoHit]:
+    """Immich VIDEO files as evidence even when HVRT returns zero moments."""
+    out: list[VideoHit] = []
+    for h in photos or []:
+        if not photo_hit_is_video(h):
+            continue
+        out.append(
+            VideoHit(
+                provider_key=h.provider_key,
+                external_id=h.external_id,
+                video_external_id=h.external_id,
+                start_sec=0.0,
+                end_sec=float(h.duration_sec or 0.0),
+                label=h.original_filename or h.location or "Immich video",
+                play_url=h.web_url,
+                identity_trust=h.identity_trust,
+                mb_person_id=h.mb_person_id,
+                mb_person_name=h.mb_person_name,
+                attribution="video_asset",
+                taken_at=h.taken_at,
+                original_filename=h.original_filename,
+                thumb_url=h.thumb_url,
+                latitude=h.latitude,
+                longitude=h.longitude,
+                place=h.place or h.location,
+                city=h.city,
+                state=h.state,
+                duration_sec=h.duration_sec,
+                media_type="video",
+            )
+        )
+    return out
 
 
 def _origin_on_video_hit(h: VideoHit) -> VideoHit:
@@ -411,6 +462,18 @@ def _tell_pack_comms(plan: QueryPlan) -> bool:
     return "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
 
 
+def trip_discovery_pending(plan: QueryPlan) -> bool:
+    """Named trip TELL: person/time retrieve first; place is a hint until clustered."""
+    notes = getattr(plan, "notes", ()) or ()
+    return "trip_window_unresolved" in notes and "trip_window_resolved" not in notes
+
+
+def _exclusive_place_trip_keywords(plan: QueryPlan) -> list[str]:
+    if trip_discovery_pending(plan):
+        return []
+    return _place_trip_keywords(plan)
+
+
 def _bounded_period_tell(plan: QueryPlan) -> bool:
     """Dated tell (month, year, trip window): every in-scope row may contribute."""
     if not _tell_pack_comms(plan):
@@ -508,6 +571,58 @@ def _strip_temporal_tell_keywords(keywords: list[str], *, windows: list) -> list
     if windows:
         out = [k for k in out if not re.fullmatch(r"(?:19|20)\d{2}", k)]
         out = [k for k in out if k not in _MONTH_KEYWORD_STOP and k not in _TELL_KEYWORD_STOP]
+    return out
+
+
+def _place_trip_keywords(plan: QueryPlan) -> list[str]:
+    """Place/trip tokens that must survive a dated tell (not a year dump)."""
+    names: list[str] = []
+    for n in list(getattr(plan, "trip_labels", ()) or ()) + list(
+        getattr(plan, "place_names", ()) or ()
+    ):
+        if n:
+            names.append(str(n))
+    stop = {
+        "the",
+        "and",
+        "our",
+        "trip",
+        "my",
+        "a",
+        "an",
+        "to",
+        "in",
+    }
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        low = name.lower().strip()
+        if not low or low in stop:
+            continue
+        if low not in seen:
+            seen.add(low)
+            out.append(low)
+        for tok in re.findall(r"[a-z0-9']{4,}", low):
+            # Drop 3-letter splits ("las" from Las Vegas) — they false-hit unrelated mail.
+            if tok in stop or tok in seen:
+                continue
+            seen.add(tok)
+            out.append(tok)
+        try:
+            from memorybox.ask.place_match import geo_tokens_for_label, trip_hint_tokens
+
+            for tok in geo_tokens_for_label(low):
+                if tok in seen:
+                    continue
+                seen.add(tok)
+                out.append(tok)
+            for tok in trip_hint_tokens(low):
+                if tok in seen:
+                    continue
+                seen.add(tok)
+                out.append(tok)
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 
@@ -719,8 +834,9 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Month/year tell is a date window, not a keyword hunt for "narrative".
-        keywords = []
+        # Dated tell is a window, not a hunt for "narrative" — exclusive place
+        # keywords wait until trip discovery has a resolved window.
+        keywords = _exclusive_place_trip_keywords(plan)
     if last_n is not None:
         keywords = [k for k in keywords if not re.fullmatch(r"\d+", k)]
     if heart_only or attach_only:
@@ -1143,8 +1259,9 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     ]
     keywords = _strip_temporal_tell_keywords(keywords, windows=windows)
     if _tell_pack_comms(plan) and windows:
-        # Month/year tell is a date window, not a keyword hunt for "narrative".
-        keywords = []
+        # Dated tell is a window, not a hunt for "narrative" — exclusive place
+        # keywords wait until trip discovery has a resolved window.
+        keywords = _exclusive_place_trip_keywords(plan)
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -1381,6 +1498,10 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
             elif person_names and not _sms_name_match(blob, person_names, allow_first_token=False):
                 if not (person_ids and (have & person_ids)):
                     continue
+        place_trip = _exclusive_place_trip_keywords(plan)
+        if _tell_pack_comms(plan) and place_trip:
+            if not any(k in blob for k in place_trip):
+                continue
         people = [str(a) for a in (payload.get("attendees") or []) if str(a).strip()]
         org = str(payload.get("organizer") or "").strip()
         if org and org not in people:
@@ -1638,13 +1759,14 @@ def filter_hits_by_constraints(
                 h.sent_at or "",
             ]
         ).lower()
+        year_ok = True
         if year_cons:
             sent_y = str(h.sent_at or "")[:4]
-            if sent_y in year_cons:
-                if not other_cons or any(c.lower() in blob for c in other_cons):
-                    kept.append(h)
-                    continue
-        if any(c.lower() in blob for c in cons):
+            year_ok = sent_y in year_cons
+        other_ok = True
+        if other_cons:
+            other_ok = any(c.lower() in blob for c in other_cons)
+        if year_ok and other_ok:
             kept.append(h)
     return kept
 
@@ -1850,14 +1972,23 @@ def search_photos(
             status["before_temporal_filter"] = len(hits)
             status["after_temporal_filter"] = len(timed)
         out = timed
+        if places and trip_discovery_pending(plan):
+            status["place_filter"] = list(plan.place_names)
+            status["constraint_mode"] = "deferred_trip_discovery"
+            status["before_place_filter"] = len(timed)
+            status["after_place_filter"] = len(timed)
+            status["semantic_constraint"] = places[0]
+            return out
         if places:
             before = len(timed)
             out = filter_photo_hits_to_places(timed, places)
             spec = place_match_spec(tuple(places))
             status["place_filter"] = list(plan.place_names)
             status["place_match"] = spec
+            status["constraint_mode"] = "exclusive_place_filter"
             status["before_place_filter"] = before
             status["after_place_filter"] = len(out)
+            status["semantic_constraint"] = places[0]
             dropped = before - len(out)
             if dropped > 0:
                 label = places[0]
@@ -1875,7 +2006,32 @@ def search_photos(
         snap = getattr(client, "diag_snapshot", None)
         if callable(snap):
             status["immich_diag"] = snap()
+            diag = status["immich_diag"] if isinstance(status.get("immich_diag"), dict) else {}
+            for key in (
+                "person_library_unwindowed_n",
+                "person_assets_in_window_n",
+                "person_stills_in_window_n",
+                "person_videos_in_window_n",
+                "year_fair_applied",
+                "immich_person_asset_count",
+                "query_time_windows",
+            ):
+                if key in diag and status.get(key) is None:
+                    status[key] = diag.get(key)
+        status["gallery_display_is_presentation_only"] = True
+        status["media_provider_candidates"] = int(
+            status.get("media_provider_candidates") or len(hits)
+        )
+        status["person_filtered_media_count"] = len(hits)
         filtered = _filter_photo_hits(hits)
+        if "after_temporal_filter" in status:
+            status["time_filtered_media_count"] = int(status["after_temporal_filter"])
+        else:
+            status["time_filtered_media_count"] = len(filtered)
+        if "after_place_filter" in status:
+            status["location_filtered_count"] = int(status["after_place_filter"])
+        else:
+            status["location_filtered_count"] = None
         if _bounded_period_tell(plan) or int(limit) <= 0:
             status["photo_truncated"] = False
             status["eligible_n"] = len(filtered)
@@ -2113,7 +2269,8 @@ def search_photos(
                         time_windows=tuple(
                             getattr(plan, "temporal_windows", ()) or ()
                         ),
-                        need_location=bool(getattr(plan, "place_names", ()) or ()),
+                        need_location=bool(getattr(plan, "place_names", ()) or ())
+                        and not trip_discovery_pending(plan),
                     )
                 )
             except (ProviderError, ProviderUnavailable, Exception):  # noqa: BLE001
@@ -2258,6 +2415,21 @@ def search_photos(
             albums = tuple(getattr(a, "albums", ()) or ())
             if albums and "albums" not in exif_d:
                 exif_d["albums"] = ", ".join(str(x) for x in albums if x)
+            media_type = "image"
+            if str(exif_d.get("media") or "").lower() == "video":
+                media_type = "video"
+            fn = str(getattr(a, "original_filename", None) or "").lower()
+            if fn.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")):
+                media_type = "video"
+            dur = None
+            for k in ("Duration", "duration", "duration_sec"):
+                raw_d = exif_d.get(k)
+                if raw_d not in (None, ""):
+                    try:
+                        dur = float(str(raw_d).split()[0])
+                    except (TypeError, ValueError):
+                        dur = None
+                    break
             return PhotoHit(
                 provider_key=a.provider_key,
                 external_id=a.external_id,
@@ -2282,6 +2454,8 @@ def search_photos(
                 original_filename=getattr(a, "original_filename", None),
                 exif=exif_d or None,
                 faces=_faces_for_hit(a),
+                media_type=media_type,
+                duration_sec=dur,
             )
 
         if mapped_ext and asked_names:
@@ -3112,6 +3286,14 @@ def search_journals(plan: QueryPlan, *, limit: int = 12) -> list[JournalHit]:
     if not getattr(plan, "want_journal", False):
         return []
     tokens = [t for t in plan.retrieval_constraints if t and len(t) >= 2]
+    place_trip = _exclusive_place_trip_keywords(plan)
+    if place_trip:
+        tokens = [t for t in tokens if not re.fullmatch(r"(?:19|20)\d{2}", str(t))]
+        have = {str(t).lower() for t in tokens}
+        for k in place_trip:
+            if k not in have:
+                tokens.append(k)
+                have.add(k)
     if not tokens:
         tokens = [
             t

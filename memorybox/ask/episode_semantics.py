@@ -1,4 +1,8 @@
-"""Grounded life-period topics for I11 episodes — not subject-line or date buckets.
+"""I11 heuristic episode families — diagnostic/regression only after I11A.
+
+I11A inference is the product semantic engine for broad synthesis. Do not tune
+these families as importance rules. Keep this module for dump-i11-episodes and
+prove-i11 fixtures.
 
 Families describe what the evidence is *about*. Commerce/admin/promo are not banned;
 they are supporting archive unless a life-period topic is also grounded in the text.

@@ -196,7 +196,6 @@ class TracedLlmProvider:
                         "stack": traceback.format_exc(),
                     },
                 )
-                store.update_trace(tid, status="error", error_class=klass)
             raise
 
 

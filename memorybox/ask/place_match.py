@@ -217,6 +217,34 @@ _STATE_CITIES: dict[str, tuple[str, ...]] = {
         "rochester",
         "syracuse",
     ),
+    "alaska": (
+        "anchorage",
+        "juneau",
+        "ketchikan",
+        "skagway",
+        "sitka",
+        "seward",
+        "whittier",
+        "fairbanks",
+        "kodiak",
+        "homer",
+        "valdez",
+        "glacier bay",
+        "icy strait",
+        "icy strait point",
+        "college fjord",
+        "haines",
+        "petersburg",
+        "wrangell",
+    ),
+    "nevada": (
+        "las vegas",
+        "paradise",
+        "henderson",
+        "north las vegas",
+        "summerlin",
+        "boulder city",
+    ),
 }
 
 
@@ -236,6 +264,108 @@ def canonical_place(place: str) -> str:
         if collapsed.replace(" ", "") == name.replace(" ", ""):
             return name
     return collapsed
+
+
+_CITY_ALIASES: dict[str, tuple[str, ...]] = {
+    "las vegas": (
+        "vegas",
+        "paradise",
+        "henderson",
+        "harry reid",
+        "sphere",
+        "eagles",
+        "nevada",
+    ),
+    "vegas": (
+        "las vegas",
+        "paradise",
+        "henderson",
+        "harry reid",
+        "sphere",
+        "eagles",
+        "nevada",
+    ),
+    "paradise": ("las vegas", "vegas", "nevada"),
+}
+
+_CITY_BBOX: dict[str, tuple[float, float, float, float]] = {
+    # Presence at capture time in the Las Vegas valley (incl. Paradise, NV)
+    "las vegas": (35.85, 36.45, -115.45, -114.85),
+    "vegas": (35.85, 36.45, -115.45, -114.85),
+    "paradise": (35.95, 36.20, -115.30, -115.05),
+}
+
+_TRIP_HINT_ALIASES: dict[str, tuple[str, ...]] = {
+    "las vegas": (
+        "sphere",
+        "eagles",
+        "paradise",
+        "harry reid",
+        "nevada",
+        "henderson",
+    ),
+    "vegas": (
+        "las vegas",
+        "sphere",
+        "eagles",
+        "paradise",
+        "harry reid",
+        "nevada",
+    ),
+    "alaska": (
+        "princess",
+        "princess cruises",
+        "alaska airlines",
+        "inside passage",
+        "glacier bay",
+        "juneau",
+        "ketchikan",
+        "skagway",
+        "sitka",
+        "seward",
+        "whittier",
+        "anchorage",
+        "fairbanks",
+        "icy strait",
+        "college fjord",
+        "vancouver",
+        "yvr",
+        "lax",
+        "anc",
+        "jnu",
+        "shore excursion",
+        "cruise itinerary",
+    ),
+}
+
+
+def trip_hint_tokens(label: str) -> list[str]:
+    """Extra needles for named-trip discovery (not exclusive GPS filters)."""
+    low = _norm(label)
+    if not low:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for key, aliases in _TRIP_HINT_ALIASES.items():
+        if key in low or low == key:
+            for a in (key,) + aliases:
+                t = _norm(a)
+                if t and t not in seen:
+                    seen.add(t)
+                    out.append(t)
+    return out
+
+
+def geo_tokens_for_label(label: str) -> list[str]:
+    """State names mentioned in a place/trip label (not 2-letter codes)."""
+    low = _norm(label)
+    if not low:
+        return []
+    out: list[str] = []
+    for name in _STATE_ALIASES:
+        if re.search(rf"\b{re.escape(name)}\b", low):
+            out.append(name)
+    return out
 
 
 def place_needles(place: str) -> tuple[str, ...]:
@@ -259,13 +389,15 @@ def place_needles(place: str) -> tuple[str, ...]:
         add(a)
     for city in _STATE_CITIES.get(key, ()):
         add(city)
+    for a in _CITY_ALIASES.get(key, ()):
+        add(a)
     out.sort(key=lambda s: (-len(s), s))
     return tuple(out)
 
 
 def place_bbox(place: str) -> tuple[float, float, float, float] | None:
     key = canonical_place(place)
-    return _STATE_BBOX.get(key)
+    return _CITY_BBOX.get(key) or _STATE_BBOX.get(key)
 
 
 def place_match_spec(place_names: tuple[str, ...] | list[str] | None) -> dict[str, Any] | None:

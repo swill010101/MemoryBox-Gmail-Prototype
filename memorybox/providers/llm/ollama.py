@@ -1,6 +1,7 @@
 """Ollama LlmProvider adapter — in-package HTTP helpers (config-driven base_url)."""
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from memorybox.providers.base import ProviderError, ProviderHealth, ProviderUnavailable
@@ -63,6 +64,10 @@ class OllamaLlmProvider:
         if not user_parts:
             raise ProviderError("chat requires at least one user message")
         user = "\n".join(user_parts)
+        timeout = 90
+        raw_to = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
+        if raw_to.isdigit() and int(raw_to) >= 15:
+            timeout = int(raw_to)
         try:
             content = oh.ollama_chat(
                 self.base_url,
@@ -70,6 +75,7 @@ class OllamaLlmProvider:
                 system,
                 user,
                 format_json=json_mode,
+                timeout=timeout,
             )
         except Exception as exc:  # noqa: BLE001
             raise ProviderUnavailable(str(exc)) from exc

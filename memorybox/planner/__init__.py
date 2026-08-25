@@ -414,10 +414,50 @@ PLACE_IN_AT_RE = re.compile(
     rf"(?i)\b(?:in|at|near|around|to)\s+{_PLACE_NAME}\b"
 )
 PLACE_TRIP_RE = re.compile(
-    rf"(?i)\b(?:our|the|a|an|my|your)?\s*{_PLACE_NAME}\s+trip\b"
+    rf"(?i)\b(?:our|the|a|an|my|your|his|her|their)?\s*{_PLACE_NAME}\s+trip\b"
 )
 TRIP_TO_RE = re.compile(
     rf"(?i)\btrip\s+(?:to|in|around)\s+{_PLACE_NAME}\b"
+)
+# "Dad's Alaska trip" / "Peggy's Florida trip" / "my Alaska trip"
+# Do not let "about" in "narrative about Dad's …" become the possessor.
+TRIP_POSSESSIVE_RE = re.compile(
+    r"(?i)\b(?:(my|our|your|his|her|their)|"
+    r"(?!(?:about|write|narrative|tell|summarize|from)\s+)"
+    r"((?:[A-Za-z][A-Za-z-]*)(?:\s+[A-Za-z][A-Za-z-]*)?)(?:'s|’s))\s+"
+    rf"{_PLACE_NAME}\s+trip\b"
+)
+KINSHIP_ROLE_WORDS = frozenset(
+    {
+        "father",
+        "dad",
+        "mother",
+        "mom",
+        "son",
+        "daughter",
+        "child",
+        "parent",
+        "grandfather",
+        "grandmother",
+        "grandparent",
+        "grandpa",
+        "grandma",
+        "nana",
+        "grammy",
+        "gram",
+        "grandson",
+        "granddaughter",
+        "grandchild",
+        "uncle",
+        "aunt",
+        "spouse",
+        "partner",
+        "sibling",
+        "brother",
+        "sister",
+        "me",
+        "myself",
+    }
 )
 # "Pat Lee and Oregon" — second slot is a place, not a Person named Oregon.
 GEO_PLACE_WORDS = frozenset(
@@ -504,6 +544,23 @@ KNOWN_EVENT_WORDS = (
     "Anniversary",
     "Wedding",
     "Graduation",
+)
+
+_MONTH_NAME_STOP = frozenset(
+    {
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    }
 )
 
 _ENTITY_STOP = frozenset(
@@ -681,10 +738,10 @@ class QueryPlan:
 
 def _clean_entity(name: str) -> str | None:
     n = (name or "").strip()
-    if not n or n.lower() in _ENTITY_STOP:
+    if not n or n.lower() in _ENTITY_STOP or n.lower() in _MONTH_NAME_STOP:
         return None
     tokens = [t for t in re.split(r"\s+", n.lower()) if t]
-    if tokens and all(t in _ENTITY_STOP for t in tokens):
+    if tokens and all(t in _ENTITY_STOP or t in _MONTH_NAME_STOP for t in tokens):
         return None
     if len(n) < 2:
         return None
@@ -692,6 +749,40 @@ def _clean_entity(name: str) -> str | None:
     if n.islower() or n.isupper():
         n = n.title()
     return n
+
+
+_PLACE_DETERMINERS = frozenset(
+    {"my", "our", "the", "a", "an", "your", "his", "her", "their", "its"}
+)
+_LEADING_POSSESSIVE_RE = re.compile(r"(?i)^(.+?)(?:'s|’s)$")
+
+
+def _place_trip_label(name: str) -> str | None:
+    """Geographic slot only. Possessives are subject context, not place names."""
+    ent = _clean_entity(name)
+    if not ent:
+        return None
+    parts = [p for p in re.split(r"\s+", ent) if p]
+    while parts:
+        head = parts[0]
+        if head.lower() in _PLACE_DETERMINERS:
+            parts.pop(0)
+            continue
+        poss = _LEADING_POSSESSIVE_RE.match(head)
+        if poss:
+            parts.pop(0)
+            continue
+        role = head.lower().rstrip("s")
+        if head.lower() in KINSHIP_ROLE_WORDS or role in KINSHIP_ROLE_WORDS:
+            parts.pop(0)
+            continue
+        break
+    if not parts:
+        return None
+    rest = " ".join(parts)
+    if rest.islower() or rest.isupper() or rest[:1].islower():
+        rest = rest.title()
+    return rest
 
 
 def compile_output_mode(
@@ -761,36 +852,7 @@ def _theme_from_about(
 def _extract_people(text: str, *, want_email: bool) -> list[str]:
     # Relational kinship words are resolved via Profile/Relationship service (I9A),
     # never treated as display names ("mother" ≠ a Person named Mother).
-    kinship_stop = {
-        "father",
-        "dad",
-        "mother",
-        "mom",
-        "son",
-        "daughter",
-        "child",
-        "parent",
-        "grandfather",
-        "grandmother",
-        "grandparent",
-        "grandpa",
-        "grandma",
-        "nana",
-        "grammy",
-        "gram",
-        "grandson",
-        "granddaughter",
-        "grandchild",
-        "uncle",
-        "aunt",
-        "spouse",
-        "partner",
-        "sibling",
-        "brother",
-        "sister",
-        "me",
-        "myself",
-    }
+    kinship_stop = set(KINSHIP_ROLE_WORDS)
     found: list[str] = []
     patterns = [
         PICTURES_OF_AND_PEOPLE_RE,
@@ -841,18 +903,64 @@ def _extract_people(text: str, *, want_email: bool) -> list[str]:
     return found
 
 
+def _trip_possessive_notes_and_people(text: str) -> tuple[list[str], list[str]]:
+    """Possessive identifies subject/ownership; it is not part of the place name."""
+    people: list[str] = []
+    notes: list[str] = []
+    for m in TRIP_POSSESSIVE_RE.finditer(text or ""):
+        det = (m.group(1) or "").lower()
+        owner_raw = (m.group(2) or "").strip()
+        if det in {"my", "our", "your"}:
+            notes.append("possessive=requestor")
+            continue
+        if not owner_raw:
+            continue
+        parts = [p for p in re.split(r"\s+", owner_raw) if p]
+        while parts and parts[0].lower() in {
+            "about",
+            "write",
+            "narrative",
+            "tell",
+            "summarize",
+            "from",
+        }:
+            parts.pop(0)
+        owner_raw = " ".join(parts)
+        if not owner_raw:
+            continue
+        role = re.sub(r"(?:'s|’s)$", "", owner_raw, flags=re.I).strip().lower()
+        if role in KINSHIP_ROLE_WORDS:
+            notes.append(f"possessive=kinship:{role}")
+            continue
+        ent = _clean_entity(owner_raw)
+        if ent:
+            people.append(ent)
+            notes.append("possessive=named_subject")
+    return people, notes
+
+
 def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str], list[str]]:
     places: list[str] = []
     trips: list[str] = []
     q = text or ""
+    consumed: list[tuple[int, int]] = []
+
+    for m in TRIP_POSSESSIVE_RE.finditer(q):
+        ent = _place_trip_label(m.group(3) or "")
+        if ent:
+            trips.append(ent)
+            places.append(ent)
+            consumed.append(m.span())
 
     for m in PLACE_TRIP_RE.finditer(q):
-        ent = _clean_entity(m.group(1))
+        if any(m.start() < end and m.end() > start for start, end in consumed):
+            continue
+        ent = _place_trip_label(m.group(1))
         if ent:
             trips.append(ent)
             places.append(ent)
     for m in TRIP_TO_RE.finditer(q):
-        ent = _clean_entity(m.group(1))
+        ent = _place_trip_label(m.group(1))
         if ent:
             trips.append(ent)
             places.append(ent)
@@ -864,6 +972,9 @@ def _extract_places_and_trips(text: str, *, want_email: bool) -> tuple[list[str]
         ent = _clean_entity(m.group(1))
         # "at Christmas" is an event, not a place
         if ent and ent.lower() in {e.lower() for e in KNOWN_EVENT_WORDS}:
+            continue
+        # "in January" is a time constraint, not Place January
+        if ent and ent.lower() in _MONTH_NAME_STOP:
             continue
         if ent:
             places.append(ent)
@@ -1016,6 +1127,11 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     # SMS/text conversation "between me and X" is not I6 kinship.
     want_relationship = bool(RELATIONSHIP_RE.search(q)) and not want_sms
     u_places, u_trips = _extract_places_and_trips(q, want_email=want_email or want_sms)
+    poss_people, poss_notes = _trip_possessive_notes_and_people(q)
+    for p in poss_people:
+        if p.lower() not in {x.lower() for x in u_people}:
+            u_people.append(p)
+    notes.extend(poss_notes)
     u_people, u_places, geo_notes = _person_and_geo_place(u_people, u_places)
     notes.extend(geo_notes)
     u_events = _extract_events(q)
@@ -1035,7 +1151,12 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
     if temporal.life_event_kind == "anniversary" and "Anniversary" not in u_events:
         u_events.append("Anniversary")
 
-    about_trip = bool(PLACE_TRIP_RE.search(q) or TRIP_TO_RE.search(q) or re.search(r"(?i)\btrip\b", q))
+    about_trip = bool(
+        PLACE_TRIP_RE.search(q)
+        or TRIP_TO_RE.search(q)
+        or TRIP_POSSESSIVE_RE.search(q)
+        or re.search(r"(?i)\btrip\b", q)
+    )
     exploratory = bool(EXPLORATORY_RE.search(q))
     spoken_phrase = None
     spoken_about = None
@@ -1630,14 +1751,22 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         want_cal = True
         notes.append("default_comms_calendar")
 
-    # Rule G: retrieval constraints from resolved context
+    # Rule G: retrieval constraints from resolved context.
+    # Named-trip TELL: place/trip is a semantic hint, not an exclusive keyword.
+    # Exact trip window stays unresolved until evidence discovery.
+    trip_hint_tell = bool(about_trip and TELL_OUTPUT_RE.search(q))
     constraints: list[str] = []
     constraints.extend(people)
-    constraints.extend(places)
-    constraints.extend(trips)
+    if not trip_hint_tell:
+        constraints.extend(places)
+        constraints.extend(trips)
+    else:
+        notes.append("ask_kind=trip")
+        notes.append("trip_window_unresolved")
+        notes.append("place_as_semantic_hint")
     constraints.extend(events)
     constraints.extend(theme_labels)
-    if t0:
+    if t0 and not trips and not places:
         constraints.append(t0[:4] if len(t0) >= 4 else t0)
     constraints = _dedupe(constraints)
 

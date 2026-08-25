@@ -19,6 +19,7 @@ from memorybox.ask.narrative import (
     persistable_view,
     tell_from_hits,
 )
+from memorybox.ask.narrative_ground import ground_narrative
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.ask.retrieve import (
     EvidenceHit,
@@ -78,7 +79,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and "/story/drafts" in explore_js
         and "composed_by_model: true" in explore_js
         and "narrativeText" in explore_js
-        and "Writing the narrative" in explore_js
+        and "Collecting photos" in explore_js
         and 'method: "POST"' in explore_js
         and "tellOut !== \"tell\"" in explore_js,
         checks,
@@ -1263,6 +1264,55 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=str({"keys": sorted(nar.keys())}),
     )
+    _check(
+        "c26_narrator_is_documentary_historian",
+        "documentarian" in prompt_l
+        and "historian" in prompt_l
+        and "documentary" in prompt_l
+        and "bering sea" in prompt_l
+        and "the calendar showed" in prompt_l
+        and "dramatize" in prompt_l
+        and "observed_window" in SYSTEM_PROMPT,
+        checks,
+        problems,
+        detail=SYSTEM_PROMPT[:240],
+    )
+    bering_pack = {
+        "life_period_outline": {
+            "period": "January of 2025",
+            "episodes": [
+                {
+                    "theme_or_episode": "Harbor dinner",
+                    "claims": ["come to Sunday dinner at the harbor"],
+                    "evidence_ids": ["e-harbor"],
+                    "date_span": {"start": "2025-01-12", "end": "2025-01-12"},
+                    "people": ["Alex"],
+                    "places": ["harbor"],
+                }
+            ],
+        },
+        "units": [
+            {
+                "evidence_id": "e-harbor",
+                "kind": "communication",
+                "time": "2025-01-12",
+                "content": "come to Sunday dinner at the harbor",
+                "people": [{"name": "Alex"}],
+            }
+        ],
+    }
+    bering_kept, bering_rej = ground_narrative(
+        "They crossed the Bering Sea in a storm of excitement.",
+        bering_pack,
+    )
+    _check(
+        "c26_bering_sea_without_ids_rejected",
+        (not bering_kept or "bering" not in bering_kept.lower())
+        and bool(bering_rej),
+        checks,
+        problems,
+        detail=str({"kept": bering_kept, "rej": bering_rej}),
+    )
 
     trunc_hits = [
         EvidenceHit(
@@ -1551,7 +1601,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     if flightsim:
         print(
             "prove-i11 --flightsim: POST live /explore/api/find "
-            "(needs Ask/serve; can take a couple of minutes)...",
+            "(needs Ask/serve; live January tell can take several minutes)...",
             flush=True,
         )
         _prove_i11_flightsim_live(checks, problems, meta)
@@ -1578,7 +1628,11 @@ def _prove_i11_flightsim_live(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        live_timeout = 900
+        raw_to = (os.environ.get("MEMORYBOX_I11_LIVE_TIMEOUT") or "").strip()
+        if raw_to.isdigit() and int(raw_to) >= 30:
+            live_timeout = int(raw_to)
+        with urllib.request.urlopen(req, timeout=live_timeout) as resp:
             raw = resp.read().decode("utf-8")
             body = json.loads(raw)
             st = int(getattr(resp, "status", 200) or 200)

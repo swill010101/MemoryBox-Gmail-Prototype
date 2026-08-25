@@ -887,32 +887,47 @@ class AskOrchestrator:
         self.photo = photo if photo is not None else build_photo()
         from memorybox.ai_trace.wrapper import trace_llm
 
+        self._llm_injected = llm is not None
         self.llm = trace_llm(llm if llm is not None else build_llm())
         self.video = video if video is not None else build_video()
 
     def ask(self, text: str, *, session_id: str | None = None, narrate: bool = True) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
+        from memorybox.ask.progress import note_ask_progress
 
-        with tracing_ask(text, session_id) as tr:
-            result = self._ask_impl(text, session_id=session_id, narrate=narrate)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            tr.note_planner(plan)
-            tr.complete(
-                disposition={
-                    "answer_kind": result.answer_kind,
-                    "answer_text": (result.answer_text or "")[:500],
-                    "inventing": result.inventing,
-                    "evidence_hits": len(result.evidence_hits or []),
-                    "photo_hits": len(result.photo_hits or []),
-                    "missing_disclosure": result.missing_disclosure,
-                }
-            )
-            result.trace_id = tr.trace_id
-            return result
+        note_ask_progress(session_id, "Collecting photos")
+        try:
+            with tracing_ask(text, session_id) as tr:
+                result = self._ask_impl(text, session_id=session_id, narrate=narrate)
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                tr.note_planner(plan)
+                tr.complete(
+                    disposition={
+                        "answer_kind": result.answer_kind,
+                        "answer_text": (result.answer_text or "")[:500],
+                        "inventing": result.inventing,
+                        "evidence_hits": len(result.evidence_hits or []),
+                        "photo_hits": len(result.photo_hits or []),
+                        "missing_disclosure": result.missing_disclosure,
+                    }
+                )
+                result.trace_id = tr.trace_id
+                return result
+        finally:
+            note_ask_progress(session_id, "Done")
 
     def _ask_impl(
         self, text: str, *, session_id: str | None = None, narrate: bool = True
     ) -> AskResult:
+        from memorybox.ask.progress import note_ask_progress
+
+        def _stage(line: str, *, pause: bool = False) -> None:
+            import time as _time
+
+            note_ask_progress(session_id, line)
+            if pause:
+                _time.sleep(0.2)
+
         ctx = self.store.get_or_create(session_id)
         try:
             plan = compile_ask(text, ctx, llm=self.llm)
@@ -1303,6 +1318,13 @@ class AskOrchestrator:
             )
 
         if not plan.requires_clarification and not plan.journal_capture_intent:
+            if plan.want_still or plan.want_photo:
+                _stage("Collecting photos")
+            if plan.want_communication:
+                _stage("Collecting email", pause=True)
+                _stage("Collecting SMS", pause=True)
+            if plan.want_calendar:
+                _stage("Collecting calendar", pause=True)
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
                 tell_pack = (
@@ -1394,6 +1416,22 @@ class AskOrchestrator:
             else:
                 videos = appearance
 
+            immich_video_assets = R.video_assets_from_photo_hits(photos)
+            if immich_video_assets:
+                seen_va = {v.external_id for v in videos}
+                videos = list(videos) + [
+                    v for v in immich_video_assets if v.external_id not in seen_va
+                ]
+                video_status = {
+                    **(video_status or {}),
+                    "ok": bool((video_status or {}).get("ok", True)),
+                    "immich_video_assets": len(immich_video_assets),
+                    "detail": (
+                        str((video_status or {}).get("detail") or "")
+                        + f" immich_video_assets={len(immich_video_assets)}"
+                    ).strip(),
+                }
+
             if getattr(plan, "want_story", False):
                 stories = R.search_stories(
                     plan, limit=0 if R._bounded_period_tell(plan) else 12
@@ -1408,6 +1446,147 @@ class AskOrchestrator:
                 )
             if getattr(plan, "want_guided_capture", False):
                 guided_capture = R.search_guided_capture(plan)
+
+            tell_now = (
+                str(getattr(plan, "output_mode", "") or "") == "tell"
+                or "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
+            )
+            if tell_now:
+                from memorybox.ask.trip_discovery import (
+                    apply_plan_windows,
+                    emit_retrieval_resolution_span,
+                    resolve_trip,
+                )
+
+                if R.trip_discovery_pending(plan) or getattr(plan, "trip_labels", ()):
+                    _stage("Resolving trip evidence")
+                discovered = resolve_trip(
+                    plan,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                    photo_status=photo_status,
+                    video_status=video_status,
+                )
+                plan = discovered.plan
+                evidence = discovered.evidence
+                photos = discovered.photos
+                videos = discovered.videos
+                stories = discovered.stories
+                journals = discovered.journals
+                artifacts = discovered.artifacts
+                if discovered.needs_refetch and discovered.resolved and not discovered.ambiguous:
+                    _stage("Retrieving full trip span")
+                    if plan.want_still or plan.want_photo:
+                        photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                        photos, photo_status = R.search_photos(
+                            plan, self.photo, limit=photo_limit
+                        )
+                    if plan.want_communication or plan.want_calendar:
+                        evidence = R.search_evidence_pg(plan)
+                        if plan.retrieval_constraints:
+                            evidence = R.filter_hits_by_constraints(
+                                evidence, plan.retrieval_constraints
+                            )
+                    if getattr(plan, "want_story", False):
+                        stories = R.search_stories(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
+                    if getattr(plan, "want_journal", False):
+                        journals = R.search_journals(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
+                    if getattr(plan, "want_artifact", False):
+                        artifacts = R.search_artifacts(
+                            plan, limit=0 if R._bounded_period_tell(plan) else 12
+                        )
+                    extra_va = R.video_assets_from_photo_hits(photos)
+                    seen_va = {v.external_id for v in videos}
+                    videos = list(videos) + [
+                        v for v in extra_va if v.external_id not in seen_va
+                    ]
+                    filtered = apply_plan_windows(
+                        plan,
+                        evidence=evidence,
+                        photos=photos,
+                        videos=videos,
+                        stories=stories,
+                        journals=journals,
+                        artifacts=artifacts,
+                    )
+                    evidence = filtered["evidence"]
+                    photos = filtered["photos"]
+                    videos = filtered["videos"]
+                    stories = filtered["stories"]
+                    journals = filtered["journals"]
+                    artifacts = filtered["artifacts"]
+                    discovered.evidence = evidence
+                    discovered.photos = photos
+                    discovered.videos = videos
+                    discovered.stories = stories
+                    discovered.journals = journals
+                    discovered.artifacts = artifacts
+                    discovered.plan = plan
+                    payload = discovered.span_payload()
+                    payload["refetch_completed"] = True
+                    payload["photo_status_after_refetch"] = {
+                        k: photo_status.get(k)
+                        for k in (
+                            "temporal_windows",
+                            "person_library_unwindowed_n",
+                            "person_assets_in_window_n",
+                            "person_stills_in_window_n",
+                            "person_videos_in_window_n",
+                            "immich_person_asset_count",
+                            "year_fair_applied",
+                            "query_time_windows",
+                        )
+                        if k in photo_status or True
+                    }
+                    immich = photo_status.get("immich_diag") if isinstance(photo_status, dict) else None
+                    if isinstance(immich, dict):
+                        payload["photo_status_after_refetch"]["immich_diag"] = {
+                            k: immich.get(k)
+                            for k in (
+                                "person_library_unwindowed_n",
+                                "person_assets_in_window_n",
+                                "person_stills_in_window_n",
+                                "person_videos_in_window_n",
+                                "immich_person_asset_count",
+                                "query_time_windows",
+                                "year_fair_applied",
+                                "incomplete",
+                                "source",
+                            )
+                        }
+                    discovered.span_extra = {
+                        "refetch_completed": True,
+                        "needs_refetch": True,
+                        "photo_status_after_refetch": {
+                            "temporal_windows": photo_status.get("temporal_windows"),
+                            "person_library_unwindowed_n": photo_status.get(
+                                "person_library_unwindowed_n"
+                            ),
+                            "person_assets_in_window_n": photo_status.get(
+                                "person_assets_in_window_n"
+                            ),
+                            "person_stills_in_window_n": photo_status.get(
+                                "person_stills_in_window_n"
+                            ),
+                            "person_videos_in_window_n": photo_status.get(
+                                "person_videos_in_window_n"
+                            ),
+                            "immich_person_asset_count": photo_status.get(
+                                "immich_person_asset_count"
+                            ),
+                            "year_fair_applied": photo_status.get("year_fair_applied"),
+                            "immich_diag": photo_status.get("immich_diag"),
+                        },
+                    }
+                emit_retrieval_resolution_span(discovered)
 
         coverage: dict[str, Any] | None = None
         if getattr(plan, "want_cross_source", False) and not plan.requires_clarification:
@@ -1522,6 +1701,28 @@ class AskOrchestrator:
         )
         narrative_pack: dict[str, Any] | None = None
         narration_unavailable = False
+        from memorybox.ask.i11a import needs_semantic_inference
+        from memorybox.ask.i11a.infer import apply_inference_to_pack, rank_photos_by_candidates
+        from memorybox.ask.narrative import default_modality_state
+
+        def _overlay_modality() -> dict[str, str]:
+            state = default_modality_state(plan)
+            if photo_status.get("unavailable"):
+                state["photos"] = "failed"
+            elif not (plan.want_still or plan.want_photo):
+                state["photos"] = "not_requested"
+            elif photo_status.get("detail") == "not_requested":
+                state["photos"] = "not_requested"
+            else:
+                state["photos"] = "queried"
+            if video_status.get("unavailable"):
+                state["video_moments"] = "failed"
+            elif not plan.want_video:
+                state["video_moments"] = "not_requested"
+            else:
+                state["video_moments"] = "queried"
+            return state
+
         if (
             getattr(plan, "output_mode", "show") == "tell"
             and answer_kind not in {"clarification", "journal_capture"}
@@ -1530,7 +1731,10 @@ class AskOrchestrator:
             from memorybox.ask.narrative import tell_from_hits
 
             if narrate:
-                self.llm = _prefer_live_llm(self.llm)
+                _stage("Assimilating collections")
+                _stage("Refining…")
+                if not self._llm_injected:
+                    self.llm = _prefer_live_llm(self.llm)
                 answer_text, narrative_pack, synth_meta = tell_from_hits(
                     plan,
                     llm=self.llm,
@@ -1540,6 +1744,9 @@ class AskOrchestrator:
                     stories=stories,
                     journals=journals,
                     artifacts=artifacts,
+                    modality_state=_overlay_modality(),
+                    photo_status=photo_status,
+                    video_status=video_status,
                 )
                 narration_unavailable = bool(synth_meta.get("fail_closed"))
             else:
@@ -1551,9 +1758,16 @@ class AskOrchestrator:
                     stories=stories,
                     journals=journals,
                     artifacts=artifacts,
+                    photo_status=photo_status,
+                    video_status=video_status,
                 )
+                narrative_pack["modality_state"] = _overlay_modality()
                 answer_text = "Episode analysis only; narration was not requested."
                 narration_unavailable = False
+            if narrative_pack:
+                photos = rank_photos_by_candidates(
+                    photos, list(narrative_pack.get("candidate_visual_ids") or [])
+                )
             if narrative_pack and isinstance(narrative_pack.get("coverage"), dict):
                 pack_cov = narrative_pack["coverage"]
                 if coverage:
@@ -1565,6 +1779,37 @@ class AskOrchestrator:
                     }
                 else:
                     coverage = pack_cov
+        elif (
+            needs_semantic_inference(plan)
+            and answer_kind not in {"clarification", "journal_capture"}
+        ):
+            from memorybox.ask.evidence_prep import prepare_narrative_pack
+
+            _stage("Assimilating collections")
+            _stage("Refining…")
+            if not self._llm_injected:
+                self.llm = _prefer_live_llm(self.llm)
+            narrative_pack = prepare_narrative_pack(
+                plan,
+                evidence=evidence,
+                photos=photos,
+                videos=videos,
+                stories=stories,
+                journals=journals,
+                artifacts=artifacts,
+                photo_status=photo_status,
+                video_status=video_status,
+            )
+            narrative_pack["modality_state"] = _overlay_modality()
+            narrative_pack = apply_inference_to_pack(
+                plan,
+                narrative_pack,
+                self.llm,
+                modality_state=narrative_pack.get("modality_state"),
+            )
+            photos = rank_photos_by_candidates(
+                photos, list(narrative_pack.get("candidate_visual_ids") or [])
+            )
         if (
             coverage
             and coverage.get("summary")

@@ -38,6 +38,8 @@ _SHOW_ME_ROLE_RE = re.compile(
 _STORIES_ABOUT_ROLE_RE = re.compile(
     rf"(?i)\bstories?\s+about\s+(?:(?:my|our)\s+)?({_KINSHIP_ROLE})\b"
 )
+# "Dad's Alaska trip" — kinship is subject/ownership, not a place token
+_ROLE_POSSESSIVE_RE = re.compile(rf"(?i)\b({_KINSHIP_ROLE})(?:'s|’s)\b")
 # "pictures of me/myself", "show me myself", "show me me" → owner (not prior dad context)
 _PICTURES_OF_ME_RE = re.compile(
     r"(?i)"
@@ -151,6 +153,7 @@ def resolve_relational_ask(ask_text: str) -> RelationalAskResolve:
         _MY_ROLE_RE.search(q)
         or _SHOW_ME_ROLE_RE.search(q)
         or _STORIES_ABOUT_ROLE_RE.search(q)
+        or _ROLE_POSSESSIVE_RE.search(q)
     )
     cousins = bool(_COUSINS_RE.search(q))
     grandchildren = bool(_GRANDCHILDREN_RE.search(q))

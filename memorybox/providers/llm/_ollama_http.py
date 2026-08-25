@@ -72,7 +72,7 @@ def ollama_chat(
     *,
     format_json: bool = False,
     temperature: float = 0.1,
-    timeout: int = 300,
+    timeout: int = 90,
 ) -> str:
     payload: dict[str, Any] = {
         "model": model,
