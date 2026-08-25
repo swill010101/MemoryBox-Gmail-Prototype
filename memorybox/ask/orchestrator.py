@@ -893,27 +893,41 @@ class AskOrchestrator:
 
     def ask(self, text: str, *, session_id: str | None = None, narrate: bool = True) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
+        from memorybox.ask.progress import note_ask_progress
 
-        with tracing_ask(text, session_id) as tr:
-            result = self._ask_impl(text, session_id=session_id, narrate=narrate)
-            plan = result.plan if isinstance(result.plan, dict) else {}
-            tr.note_planner(plan)
-            tr.complete(
-                disposition={
-                    "answer_kind": result.answer_kind,
-                    "answer_text": (result.answer_text or "")[:500],
-                    "inventing": result.inventing,
-                    "evidence_hits": len(result.evidence_hits or []),
-                    "photo_hits": len(result.photo_hits or []),
-                    "missing_disclosure": result.missing_disclosure,
-                }
-            )
-            result.trace_id = tr.trace_id
-            return result
+        note_ask_progress(session_id, "Collecting photos")
+        try:
+            with tracing_ask(text, session_id) as tr:
+                result = self._ask_impl(text, session_id=session_id, narrate=narrate)
+                plan = result.plan if isinstance(result.plan, dict) else {}
+                tr.note_planner(plan)
+                tr.complete(
+                    disposition={
+                        "answer_kind": result.answer_kind,
+                        "answer_text": (result.answer_text or "")[:500],
+                        "inventing": result.inventing,
+                        "evidence_hits": len(result.evidence_hits or []),
+                        "photo_hits": len(result.photo_hits or []),
+                        "missing_disclosure": result.missing_disclosure,
+                    }
+                )
+                result.trace_id = tr.trace_id
+                return result
+        finally:
+            note_ask_progress(session_id, "Done")
 
     def _ask_impl(
         self, text: str, *, session_id: str | None = None, narrate: bool = True
     ) -> AskResult:
+        from memorybox.ask.progress import note_ask_progress
+
+        def _stage(line: str, *, pause: bool = False) -> None:
+            import time as _time
+
+            note_ask_progress(session_id, line)
+            if pause:
+                _time.sleep(0.2)
+
         ctx = self.store.get_or_create(session_id)
         try:
             plan = compile_ask(text, ctx, llm=self.llm)
@@ -1304,6 +1318,13 @@ class AskOrchestrator:
             )
 
         if not plan.requires_clarification and not plan.journal_capture_intent:
+            if plan.want_still or plan.want_photo:
+                _stage("Collecting photos")
+            if plan.want_communication:
+                _stage("Collecting email", pause=True)
+                _stage("Collecting SMS", pause=True)
+            if plan.want_calendar:
+                _stage("Collecting calendar", pause=True)
             if plan.want_communication or plan.want_calendar:
                 pg_hits = R.search_evidence_pg(plan)
                 tell_pack = (
@@ -1553,6 +1574,8 @@ class AskOrchestrator:
             from memorybox.ask.narrative import tell_from_hits
 
             if narrate:
+                _stage("Assimilating collections")
+                _stage("Refining…")
                 if not self._llm_injected:
                     self.llm = _prefer_live_llm(self.llm)
                 answer_text, narrative_pack, synth_meta = tell_from_hits(
@@ -1601,6 +1624,8 @@ class AskOrchestrator:
         ):
             from memorybox.ask.evidence_prep import prepare_narrative_pack
 
+            _stage("Assimilating collections")
+            _stage("Refining…")
             if not self._llm_injected:
                 self.llm = _prefer_live_llm(self.llm)
             narrative_pack = prepare_narrative_pack(

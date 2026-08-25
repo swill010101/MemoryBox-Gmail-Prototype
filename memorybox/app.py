@@ -781,6 +781,14 @@ def explore_find(
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
 
 
+@app.get("/explore/api/ask-progress")
+def explore_ask_progress(session_id: str | None = Query(None)) -> dict[str, Any]:
+    """One-line curator status for the in-flight Ask (does not include evidence)."""
+    from memorybox.ask.progress import get_ask_progress
+
+    return get_ask_progress(session_id)
+
+
 @app.post("/explore/api/find")
 def explore_find_post(
     body: AskRequest,

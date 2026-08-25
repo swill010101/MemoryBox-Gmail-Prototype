@@ -44,7 +44,7 @@ tr.active { background: #252a34; }
 .pane.mb h3 { color: var(--mb); }
 .pane.prov h3 { color: var(--prov); }
 .pane.err h3 { color: var(--err); }
-pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 220px; overflow: auto; }
 .timeline { margin: 16px 0; padding: 0; list-style: none; }
 .timeline li { border-left: 2px solid var(--line); padding: 0 0 12px 12px; }
 .actions { display: flex; gap: 8px; margin: 10px 0 16px; }

@@ -13,6 +13,8 @@
   let selectedId = null;
   let traces = [];
   let timer = null;
+  let lastDetailKey = "";
+  let detailPinned = false;
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -109,15 +111,45 @@
     );
   }
 
-  function renderDetail(pack) {
+  function payloadBytes(obj) {
+    try {
+      return JSON.stringify(obj || {}).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function renderDetail(pack, opts) {
+    const force = opts && opts.force;
     const t = pack.trace || pack;
     const spans = t.spans || [];
+    const detailKey = [
+      t.trace_id,
+      t.status,
+      t.model_call_count || 0,
+      spans.length,
+      (spans[spans.length - 1] || {}).status || "",
+    ].join("|");
+    if (!force && detailKey === lastDetailKey && t.trace_id === selectedId) {
+      renderList();
+      return;
+    }
+    const keepScroll = detailEl.scrollTop;
+    const pinned = detailPinned;
+    lastDetailKey = detailKey;
     const modelSpans = spans.filter((s) => s.operation === "chat" || s.operation === "embed");
     const firstModel = modelSpans[0] || {};
     const infSpans = spans.filter((s) => s.component === "i11a");
     const infLeaf = infSpans.find((s) => s.operation === "leaf") || {};
     const infVal = infSpans.find((s) => s.operation === "validate") || {};
     const chatSpans = modelSpans.filter((s) => s.operation === "chat");
+    const fattestChat = chatSpans.slice().sort(function (a, b) {
+      return payloadBytes(b.provider_payload) - payloadBytes(a.provider_payload);
+    })[0] || {};
+    const copyPayload =
+      fattestChat.provider_payload ||
+      infLeaf.provider_payload ||
+      firstModel.provider_payload;
     const narratorSpan =
       chatSpans.find((s) => {
         const msgs = ((s.provider_payload || {}).messages || []);
@@ -176,7 +208,7 @@
       "<div class=\"panes\">" +
       pane("Assembled MemoryBox context", "mb", t.assembled_context || firstModel.assembled_context, "copy-assembled") +
       pane("PersonContext / requestor / focal", "mb", (infVal.assembled_context || {}).request_context || infVal.assembled_context, "copy-person-context") +
-      pane("Copy Provider Payload", "prov", infLeaf.provider_payload || firstModel.provider_payload, "copy-provider-payload") +
+      pane("Copy Provider Payload", "prov", copyPayload, "copy-provider-payload") +
       pane("Copy Raw Model Response", "", infLeaf.raw_response || firstModel.raw_response, "copy-raw-response") +
       pane("Copy Parsed Inference", "", infLeaf.parsed || infVal.parsed, "copy-parsed-inference") +
       pane("Copy Validated Semantic Pack", "mb", (infVal.disposition || {}).validated_semantic_pack || infVal.parsed, "copy-validated-pack") +
@@ -218,6 +250,9 @@
       };
     });
     renderList();
+    if (pinned) {
+      detailEl.scrollTop = keepScroll;
+    }
   }
 
   async function loadList() {
@@ -263,7 +298,16 @@
     if (!tr) return;
     liveEl.checked = false;
     selectedId = tr.getAttribute("data-id");
-    jget("/dev/api/ai-trace/" + selectedId).then(renderDetail);
+    lastDetailKey = "";
+    detailPinned = false;
+    jget("/dev/api/ai-trace/" + selectedId).then(function (pack) {
+      renderDetail(pack, { force: true });
+    });
+  });
+
+  detailEl.addEventListener("scroll", function () {
+    const max = Math.max(0, detailEl.scrollHeight - detailEl.clientHeight);
+    detailPinned = max > 24 && detailEl.scrollTop < max - 48;
   });
 
   document.getElementById("btnRefresh").onclick = function () {

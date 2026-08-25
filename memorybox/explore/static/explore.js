@@ -833,9 +833,7 @@
       (state.timeline.rangeStart <= state.timeline.extentStart + 1 &&
         state.timeline.rangeEnd >= state.timeline.extentEnd - 1);
     if (state.domain.outputMode === "tell") {
-      const waiting =
-        state.domain.summary === "Searching…" ||
-        state.domain.summary === "Writing the narrative…";
+      const waiting = isAskWaitingSummary(state.domain.summary);
       if (waiting) return;
       const kept = state.domain.narrativeText || state.domain._askSummary;
       if (kept) {
@@ -1102,6 +1100,59 @@
     };
   }
 
+  let askStatusTimer = null;
+  let lastAskStatusLine = "";
+
+  function isAskWaitingSummary(s) {
+    const t = String(s || "");
+    return (
+      t === "Searching…" ||
+      t === "Writing the narrative…" ||
+      t === "Done" ||
+      t.indexOf("Collecting ") === 0 ||
+      t.indexOf("Assimilating") === 0 ||
+      t.indexOf("Refining") === 0
+    );
+  }
+
+  function setCuratorStatusLine(line) {
+    const text = String(line || "").trim();
+    if (!text) return;
+    const bodyEl = document.getElementById("mb-explore-curator-body");
+    if (!bodyEl) return;
+    if (state && state.domain) state.domain.summary = text;
+    const prev = bodyEl.querySelector(".mb-explore-status-line");
+    if (prev && prev.textContent === text) return;
+    lastAskStatusLine = text;
+    bodyEl.classList.add("is-status-ticker");
+    const span = document.createElement("span");
+    span.className = "mb-explore-status-line";
+    span.textContent = text;
+    bodyEl.replaceChildren(span);
+  }
+
+  function stopAskStatusPoll() {
+    if (askStatusTimer) {
+      clearInterval(askStatusTimer);
+      askStatusTimer = null;
+    }
+  }
+
+  function startAskStatusPoll() {
+    stopAskStatusPoll();
+    askStatusTimer = setInterval(function () {
+      const sid = encodeURIComponent(sessionId || "");
+      fetch("/explore/api/ask-progress?session_id=" + sid, { cache: "no-store" })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data && data.line) setCuratorStatusLine(data.line);
+        })
+        .catch(function () {});
+    }, 280);
+  }
+
   function showSearching(askText) {
     const title = String(askText || "").trim();
     const heading = title
@@ -1110,11 +1161,10 @@
         : title
       : "Memories";
     const titleEl = document.getElementById("mb-explore-curator-title");
-    const bodyEl = document.getElementById("mb-explore-curator-body");
     const curator = document.getElementById("mb-explore-curator");
     if (titleEl) titleEl.textContent = heading;
-    const waiting = isTellAsk(askText) ? "Writing the narrative…" : "Searching…";
-    if (bodyEl) bodyEl.textContent = waiting;
+    const waiting = "Collecting photos";
+    setCuratorStatusLine(waiting);
     if (curator) {
       curator.classList.add("is-searching");
       curator.classList.remove("is-tell");
@@ -1134,6 +1184,7 @@
       state.domain._askSummary = waiting;
       state.domain.outputMode = isTellAsk(askText) ? "tell" : "show";
     }
+    startAskStatusPoll();
   }
 
   function markAskDirty() {
@@ -1163,7 +1214,7 @@
         try {
           ctrl.abort();
         } catch (_) {}
-      }, 180000);
+      }, 900000);
     try {
       const params = new URLSearchParams();
       if (present) params.set("present", present);
@@ -1179,6 +1230,7 @@
       return res.json();
     } finally {
       if (timer) clearTimeout(timer);
+      stopAskStatusPoll();
     }
   }
 
@@ -2112,7 +2164,14 @@
     const titleNode = document.getElementById("mb-explore-curator-title");
     const bodyNode = document.getElementById("mb-explore-curator-body");
     if (titleNode) titleNode.textContent = heading;
-    if (bodyNode) bodyNode.textContent = state.domain.summary || "";
+    if (bodyNode) {
+      if (curator && curator.classList.contains("is-searching")) {
+        setCuratorStatusLine(state.domain.summary || lastAskStatusLine || "Collecting photos");
+      } else {
+        bodyNode.classList.remove("is-status-ticker");
+        bodyNode.textContent = state.domain.summary || "";
+      }
+    }
     const curator = document.getElementById("mb-explore-curator");
     const tell = state.domain.outputMode === "tell";
     if (curator) curator.classList.toggle("is-tell", Boolean(tell));
@@ -2180,7 +2239,7 @@
         covEl.hidden = true;
       }
     }
-    if (curator && state.domain.summary && state.domain.summary !== "Searching…") {
+    if (curator && state.domain.summary && !isAskWaitingSummary(state.domain.summary)) {
       curator.classList.remove("is-searching");
       const askField = document.querySelector(".mb-explore-ask-field");
       if (askField) askField.classList.remove("is-searching");
@@ -6622,7 +6681,7 @@
     if (saveStoryBtn) {
       saveStoryBtn.addEventListener("click", async () => {
         const body = String(state.domain._askSummary || state.domain.summary || "").trim();
-        if (!body || body === "Searching…") return;
+        if (!body || isAskWaitingSummary(body)) return;
         saveStoryBtn.disabled = true;
         try {
           const plan = (state.domain.livingView && state.domain.livingView.plan) || {};

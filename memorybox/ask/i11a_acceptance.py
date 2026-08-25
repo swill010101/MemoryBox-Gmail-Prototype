@@ -36,6 +36,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
 
     root = Path(__file__).resolve().parents[1]
     infer_py = (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
+    orch_py = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")
@@ -56,7 +57,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a" in html,
+        and "?v=i11a2" in html,
         checks,
         problems,
         detail="AI Trace Light I11A copy/export controls",
@@ -67,6 +68,19 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="no new Explore chrome required",
+    )
+    _check(
+        "a10_curator_status_ticker",
+        "Collecting photos" in explore_js
+        and "Collecting email" in orch_py
+        and "Collecting SMS" in orch_py
+        and "Collecting calendar" in orch_py
+        and "Assimilating collections" in orch_py
+        and "is-status-ticker" in explore_js
+        and "/explore/api/ask-progress" in explore_js,
+        checks,
+        problems,
+        detail="one-line scrolling Ask status in curator",
     )
 
     jan_plan = plan_ask("write a narrative about my January of 2025", AskContext(session_id="i11a-jan"))

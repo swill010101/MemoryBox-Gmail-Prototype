@@ -78,7 +78,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         and "/story/drafts" in explore_js
         and "composed_by_model: true" in explore_js
         and "narrativeText" in explore_js
-        and "Writing the narrative" in explore_js
+        and "Collecting photos" in explore_js
         and 'method: "POST"' in explore_js
         and "tellOut !== \"tell\"" in explore_js,
         checks,

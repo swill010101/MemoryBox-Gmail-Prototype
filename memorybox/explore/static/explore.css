@@ -337,6 +337,19 @@ body {
   font-size: 0.95rem;
   line-height: 1.4;
 }
+#mb-explore-curator-body.is-status-ticker {
+  height: 1.4em;
+  overflow: hidden;
+  position: relative;
+}
+#mb-explore-curator-body.is-status-ticker .mb-explore-status-line {
+  display: block;
+  animation: mb-status-scroll 0.32s ease;
+}
+@keyframes mb-status-scroll {
+  from { transform: translateY(110%); opacity: 0.35; }
+  to { transform: translateY(0); opacity: 1; }
+}
 
 .mb-explore-coverage {
   margin: 0.35rem 0 0;

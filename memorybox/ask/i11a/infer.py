@@ -8,7 +8,7 @@ from typing import Any
 
 from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
-from memorybox.ask.i11a.units import ask_kind_for_plan, units_from_pack
+from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -35,8 +35,8 @@ Merge leaf inference JSON objects into one schema_version 2 document for the Ask
 Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
 """
 
-_DEFAULT_BATCH_CHARS = 80_000
-_DEFAULT_RETRIES = 2
+_DEFAULT_BATCH_CHARS = 12_000
+_DEFAULT_RETRIES = 1
 
 
 def _batch_chars() -> int:
@@ -60,7 +60,7 @@ def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     size = 0
     for u in units:
         piece = len(json.dumps(u, default=str))
-        if cur and size + piece > budget:
+        if cur and (size + piece > budget or len(cur) >= 18):
             chunks.append(cur)
             cur = []
             size = 0
@@ -107,7 +107,9 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
             if text.strip():
                 return text
             last = ProviderError("empty inference response")
-        except (ProviderUnavailable, ProviderError, Exception) as exc:  # noqa: BLE001
+        except ProviderUnavailable:
+            raise
+        except (ProviderError, Exception) as exc:  # noqa: BLE001
             last = exc
             if i + 1 < attempts:
                 time.sleep(0.05 * (i + 1))
@@ -186,7 +188,8 @@ def run_inference(
     req = resolve_request_context(plan)
     kind = ask_kind_for_plan(plan)
     units = units_from_pack(pack)
-    chunks = _chunk_units(units)
+    model_units = compact_units_for_model(units)
+    chunks = _chunk_units(model_units)
     accounting = {
         "eligible_units": len(units),
         "chunk_n": len(chunks),
