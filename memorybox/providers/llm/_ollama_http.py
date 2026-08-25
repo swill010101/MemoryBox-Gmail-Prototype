@@ -99,6 +99,15 @@ def ollama_chat(
     return content
 
 
+def ollama_reachable(base_url: str, timeout: float = 1.5) -> bool:
+    """True when /api/tags answers. Used so Ask can find a local daemon without env."""
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
+            return 200 <= int(getattr(resp, "status", 200) or 200) < 300
+    except Exception:
+        return False
+
+
 def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
         return json.load(resp)

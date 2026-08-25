@@ -573,18 +573,27 @@ def _ollama_status(calculated_at: str) -> dict[str, Any]:
                         last_updated=calculated_at,
                         note=f"Configured MEMORYBOX_OLLAMA_BASE_URL={configured}",
                     )
+                if not configured:
+                    return _metric(
+                        "ollama",
+                        "Ollama",
+                        display="OK",
+                        state="available",
+                        source=f"ollama:{base}/api/tags",
+                        last_updated=calculated_at,
+                        note=(
+                            f"Ask auto-detected local Ollama at {base} "
+                            "(set MEMORYBOX_OLLAMA_BASE_URL to pin a host)"
+                        ),
+                    )
                 return _metric(
                     "ollama",
                     "Ollama",
-                    display="Reachable (not configured for MemoryBox)",
-                    state="partial",
+                    display="OK",
+                    state="available",
                     source=f"ollama:{base}/api/tags",
                     last_updated=calculated_at,
-                    reason="Partial — daemon responds but MEMORYBOX_OLLAMA_BASE_URL is unset",
-                    note=(
-                        f"Set MEMORYBOX_OLLAMA_BASE_URL={base} so Ask uses Ollama "
-                        "(otherwise FakeLlmProvider)"
-                    ),
+                    note=f"Reachable at {base}",
                 )
         except Exception as exc:  # noqa: BLE001
             last_err = str(exc)

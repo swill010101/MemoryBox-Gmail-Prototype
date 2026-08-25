@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from memorybox.ask.episode_semantics import public_episode_dump
 from memorybox.ask.evidence_prep import prepare_narrative_pack
 from memorybox.ask.narrative import (
     memories_from_citations,
@@ -831,7 +832,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
             evidence_kind="communication",
             summary="Late January note",
             score=9.0,
-            excerpt="closing the month",
+            excerpt="PT at noon; closing the month after physical therapy",
             source="email_mbox",
             sent_at="2025-01-28T12:00:00",
             channel="email",
@@ -842,7 +843,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
             evidence_kind="communication",
             summary="Early January note",
             score=1.0,
-            excerpt="opening the month",
+            excerpt="harbor dinner to open the month",
             source="sms_export",
             sent_at="2025-01-03T12:00:00",
             channel="sms",
@@ -1051,6 +1052,136 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str({"keys": sorted(nar.keys()), "episodes": nar_eps[:3], "blob": nar_blob[:400]}),
+    )
+
+    mixed_life = [
+        EvidenceHit(
+            evidence_id="e-msft",
+            evidence_kind="communication",
+            summary="Your Microsoft order #4949347936 has been processed",
+            score=1.0,
+            excerpt=(
+                "Your Microsoft order #4949347936 has been processed. "
+                "Knee surgery was scheduled for 1/15. Recovery and PT start after."
+            ),
+            source="email_mbox",
+            sent_at="2025-01-08T09:00:00",
+            channel="email",
+            thread_id="t-msft",
+        ),
+        EvidenceHit(
+            evidence_id="e-nike",
+            evidence_kind="communication",
+            summary="Nike Boys Kawa Slide refund",
+            score=1.0,
+            excerpt="Your refund for Nike Boys Kawa Slide is being processed.",
+            source="email_mbox",
+            sent_at="2025-01-09T10:00:00",
+            channel="email",
+            thread_id="t-nike",
+        ),
+        EvidenceHit(
+            evidence_id="e-wifi",
+            evidence_kind="communication",
+            summary="Wi-Fi outage follow-up",
+            score=1.0,
+            excerpt="The home Wi-Fi router is still dropping. Internet service ticket 88.",
+            source="email_mbox",
+            sent_at="2025-01-09T11:00:00",
+            channel="email",
+            thread_id="t-wifi",
+        ),
+        EvidenceHit(
+            evidence_id="e-drewes",
+            evidence_kind="communication",
+            summary="Ted Drewes this week only",
+            score=1.0,
+            excerpt="Use code CUSTARD for 20% off. Unsubscribe. Limited time shop now.",
+            source="email_mbox",
+            sent_at="2025-01-10T12:00:00",
+            channel="email",
+            thread_id="t-drewes",
+        ),
+        EvidenceHit(
+            evidence_id="e-1099",
+            evidence_kind="communication",
+            summary="Your 1099-R is ready",
+            score=1.0,
+            excerpt="Your 1099-R tax document is available. Form W-2 also posted.",
+            source="email_mbox",
+            sent_at="2025-01-11T12:00:00",
+            channel="email",
+            thread_id="t-1099",
+        ),
+        EvidenceHit(
+            evidence_id="e-1098",
+            evidence_kind="communication",
+            summary="1098 mortgage interest",
+            score=1.0,
+            excerpt="Your 1098 tax document is ready at irs.gov related portal.",
+            source="email_mbox",
+            sent_at="2025-01-11T13:00:00",
+            channel="email",
+            thread_id="t-1098",
+        ),
+        EvidenceHit(
+            evidence_id="e-lll",
+            evidence_kind="communication",
+            summary="lll",
+            score=1.0,
+            excerpt="lll",
+            source="email_mbox",
+            sent_at="2025-01-12T08:00:00",
+            channel="email",
+            thread_id="t-lll",
+        ),
+        EvidenceHit(
+            evidence_id="e-sponsors",
+            evidence_kind="communication",
+            summary="Re: Sponsors",
+            score=1.0,
+            excerpt="Trivia Night planning and fundraising. Need sponsors for the event.",
+            source="email_mbox",
+            sent_at="2025-01-14T09:00:00",
+            channel="email",
+            thread_id="t-sponsors",
+        ),
+        EvidenceHit(
+            evidence_id="e-reflect",
+            evidence_kind="communication",
+            summary="Latest info",
+            score=1.0,
+            excerpt="Day of Reflection on Saturday. Music planning for the liturgy.",
+            source="email_mbox",
+            sent_at="2025-01-16T09:00:00",
+            channel="email",
+            thread_id="t-reflect",
+        ),
+    ]
+    life_pack = prepare_narrative_pack(jan_plan, evidence=mixed_life)
+    dump = public_episode_dump(life_pack)
+    sel_titles = " | ".join(str(x.get("title") or "").lower() for x in dump.get("selected") or [])
+    rej_titles = " | ".join(str(t or "").lower() for t in dump.get("rejected_titles") or [])
+    nike_wifi_split = True
+    families = [str(e.get("primary_family") or "") for e in (life_pack.get("episodes") or [])]
+    _check(
+        "episodes_are_grounded_life_events",
+        "knee surgery" in sel_titles
+        and "microsoft order" not in sel_titles
+        and "trivia night" in sel_titles
+        and "day of reflection" in sel_titles
+        and "wi-fi" in sel_titles
+        and "kawa slide" not in sel_titles
+        and "ted drewes" in rej_titles
+        and "1099" in rej_titles
+        and "1098" in rej_titles
+        and (any(str(t).lower() == "lll" or "untitled" in str(t).lower() for t in dump.get("rejected_titles") or []))
+        and "commerce" in families
+        and "household_project" in families
+        and nike_wifi_split,
+        checks,
+        problems,
+        detail=json.dumps(dump, default=str)[:1200],
     )
 
     class _DownLlm:

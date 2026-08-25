@@ -7,6 +7,18 @@ from typing import Any
 from uuid import UUID
 
 from memorybox.ask.authored import authored_email_text, sms_location_assertions
+from memorybox.ask.episode_semantics import (
+    LIFE_FAMILIES,
+    SUPPORTING_FAMILIES,
+    annotate_unit,
+    apply_episode_meaning,
+    audit_row,
+    episode_group_key,
+    families_compatible,
+    is_life_family,
+    looks_supporting_subject,
+    score_reason,
+)
 from memorybox.ask.travel import extract_travel
 from memorybox.ingest.store import get_evidence
 
@@ -83,17 +95,19 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
     d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit)
     eid = str(d.get("evidence_id") or "")
     payload = {}
-    if eid and not (d.get("excerpt") or d.get("summary")):
-        payload = _payload_for(eid)
-    elif eid:
-        # Skip a per-row Evidence fetch unless travel-shaped; excerpt is enough for pack text.
-        subj = str(d.get("summary") or "")
-        if re.search(
+    subj = str(d.get("summary") or "")
+    excerpt = str(d.get("excerpt") or "")
+    if eid and (
+        not excerpt
+        or len(excerpt) < 120
+        or looks_supporting_subject(subj)
+        or re.search(
             r"(?i)\b(delta|united|spirit|marriott|hilton|hertz|itinerary|"
             r"boarding|reservation|rental)\b",
             subj,
-        ):
-            payload = _payload_for(eid)
+        )
+    ):
+        payload = _payload_for(eid)
     skip = _mailbox_skip(payload)
     if skip:
         return None
@@ -135,7 +149,7 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         "time": _time(d.get("sent_at") or payload.get("sent_at")),
         "people": [{"name": p, "role": "participant"} for p in people[:12]],
         "place": loc[0].get("place") if loc else None,
-        "content": (content or d.get("summary") or "")[:400],
+        "content": (content or d.get("summary") or "")[:2000],
         "claims": claims,
         "provenance": {"source": source_type, "evidence_id": eid},
         "rank": float(d.get("score") or 1.0),
@@ -476,7 +490,7 @@ def _content_tokens(unit: dict[str, Any]) -> set[str]:
     }
 
 
-def _episode_group_key(unit: dict[str, Any]) -> tuple[Any, ...]:
+def _raw_episode_group_key(unit: dict[str, Any]) -> tuple[Any, ...]:
     kind = str(unit.get("kind") or "")
     day = _unit_day(unit) or "undated"
     if kind == "communication":
@@ -495,6 +509,10 @@ def _episode_group_key(unit: dict[str, Any]) -> tuple[Any, ...]:
     if kind in {"journal", "story", "artifact", "place_event"}:
         return (kind, unit.get("unit_id"))
     return ("other", day, unit.get("unit_id"))
+
+
+def _episode_group_key(unit: dict[str, Any]) -> tuple[Any, ...]:
+    return episode_group_key(unit, _raw_episode_group_key(unit))
 
 
 def _episode_from_members(members: list[dict[str, Any]]) -> dict[str, Any]:
@@ -566,6 +584,8 @@ def _episode_from_members(members: list[dict[str, Any]]) -> dict[str, Any]:
         "week": _iso_week(day),
         "member_ids": [str(m.get("unit_id") or "") for m in members],
         "evidence_ids": evidence_ids,
+        "primary_family": None,
+        "significance_reason": None,
         "_members": members,
     }
 
@@ -608,10 +628,24 @@ def _merge_same_day_related(episodes: list[dict[str, Any]]) -> list[dict[str, An
             if day_i != day_j:
                 continue
             shared_tok = tok_i & tok_j
+            fam_i = str(episodes[i].get("primary_family") or episodes[i].get("_primary_family") or "")
+            fam_j = str(episodes[j].get("primary_family") or episodes[j].get("_primary_family") or "")
+            if not families_compatible(fam_i or "other", fam_j or "other"):
+                continue
             if (
                 (pe_i and pe_j and (pe_i & pe_j))
                 or (pl_i and pl_j and (pl_i & pl_j))
-                or len(shared_tok) >= 2
+            ) and not (
+                fam_i in SUPPORTING_FAMILIES
+                and fam_j in SUPPORTING_FAMILIES
+                and fam_i != fam_j
+            ):
+                union(i, j)
+            elif (
+                fam_i
+                and fam_i == fam_j
+                and fam_i in LIFE_FAMILIES
+                and len(shared_tok) >= 3
             ):
                 union(i, j)
     buckets: dict[int, list[dict[str, Any]]] = {}
@@ -626,55 +660,52 @@ def _merge_same_day_related(episodes: list[dict[str, Any]]) -> list[dict[str, An
 
 
 def _theme_key(episode: dict[str, Any]) -> str:
-    title = str(episode.get("title") or "")
-    title = re.sub(r"(?i)^(re:|fwd:|fw:)\s*", "", title).strip().lower()
-    return re.sub(r"\s+", " ", title)[:80]
+    return str(episode.get("event_key") or "")
 
 
 def _collapse_similar_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Same subject/confirmation across the period → one theme, not N week buckets."""
-    buckets: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    order: list[tuple[str, str]] = []
+    """Same grounded life-event across the period → one theme, not N subject lines."""
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
     passthrough: list[dict[str, Any]] = []
     for ep in episodes:
+        fam = str(ep.get("primary_family") or "")
+        key = str(ep.get("event_key") or "")
         conf = ""
         for m in ep.get("_members") or []:
             c = str(m.get("confirmation") or "").strip()
             if c:
-                conf = c
+                conf = c.lower()
                 break
-        kinds = set(ep.get("source_kinds") or {})
         if conf:
-            key = ("travel_conf", conf.lower())
+            key = f"travel_conf:{conf}"
+        if key and (fam in LIFE_FAMILIES or conf):
+            if key not in buckets:
+                buckets[key] = []
+                order.append(key)
+            buckets[key].append(ep)
         else:
-            tk = _theme_key(ep)
-            if tk and len(tk) >= 8 and kinds <= {"email"}:
-                key = ("title", tk)
-            else:
-                passthrough.append(ep)
-                continue
-        if key not in buckets:
-            buckets[key] = []
-            order.append(key)
-        buckets[key].append(ep)
+            passthrough.append(ep)
     out = list(passthrough)
     for key in order:
         group = buckets[key]
-        if len(group) < 3:
+        if len(group) < 2:
             out.extend(group)
             continue
         members: list[dict[str, Any]] = []
         for g in group:
             members.extend(list(g.get("_members") or []))
         merged = _episode_from_members(members)
+        apply_episode_meaning(merged)
         merged["kind"] = "theme"
-        merged["title"] = str(group[0].get("title") or merged.get("title") or "")[:160]
         out.append(merged)
     out.sort(key=lambda e: (_unit_day(e) or "9999-99-99", e.get("unit_id") or ""))
     return out
 
 
 def _build_episodes(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for u in units:
+        annotate_unit(u)
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     order: list[tuple[Any, ...]] = []
     for u in units:
@@ -683,11 +714,19 @@ def _build_episodes(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
             groups[key] = []
             order.append(key)
         groups[key].append(u)
-    episodes = [_episode_from_members(groups[k]) for k in order]
-    episodes = _merge_same_day_related(episodes)
-    episodes = _collapse_similar_episodes(episodes)
-    episodes.sort(key=lambda e: (_unit_day(e) or "9999-99-99", e.get("unit_id") or ""))
-    return episodes
+    episodes = []
+    for k in order:
+        ep = _episode_from_members(groups[k])
+        apply_episode_meaning(ep)
+        episodes.append(ep)
+    merged = _merge_same_day_related(episodes)
+    rebuilt = []
+    for ep in merged:
+        apply_episode_meaning(ep)
+        rebuilt.append(ep)
+    rebuilt = _collapse_similar_episodes(rebuilt)
+    rebuilt.sort(key=lambda e: (_unit_day(e) or "9999-99-99", e.get("unit_id") or ""))
+    return rebuilt
 
 
 _TRANSACTIONAL_RE = re.compile(
@@ -749,39 +788,41 @@ def _episode_transactional_only(episode: dict[str, Any]) -> bool:
 
 
 def _score_episode(episode: dict[str, Any]) -> float:
+    apply_episode_meaning(episode)
     members = list(episode.get("_members") or [])
     kinds = {str(m.get("kind") or "") for m in members}
-    score = 1.0
-    if "journal" in kinds or "story" in kinds:
-        score += 5.0
-    if "artifact" in kinds:
-        score += 3.0
-    if "travel" in kinds:
-        score += 4.0
-    if "calendar" in kinds:
-        score += 3.0
-    if "media_observation" in kinds or "spoken_moment" in kinds:
-        score += 2.0
-    if any(str(m.get("source_type") or "") == "sms" for m in members):
-        score += 1.5
-    if any(
-        str(m.get("kind") or "") == "communication" and not _likely_transactional(m)
-        for m in members
-    ):
-        score += 1.2
-    people_n = len(_people_names(episode))
-    score += min(2.0, 0.5 * people_n)
-    distinct_kinds = len({k for k in kinds if k})
-    score += min(3.0, max(0, distinct_kinds - 1) * 1.5)
-    score += min(1.5, 0.35 * len(episode.get("claims") or []))
-    if episode.get("kind") == "theme":
-        score += 1.5
-        score += min(2.0, 0.05 * int(episode.get("member_n") or 0))
-    if _episode_transactional_only(episode):
-        score *= 0.12
+    fam = str(episode.get("primary_family") or "other")
+    score = 0.6
+    if fam in LIFE_FAMILIES:
+        score = 6.0
+        if fam == "health":
+            score += 2.0
+        if fam in {"travel", "religious", "family_visit", "milestone"}:
+            score += 1.5
+        if "journal" in kinds or "story" in kinds:
+            score += 2.0
+        if "calendar" in kinds:
+            score += 0.8
+        people_n = len(_people_names(episode))
+        score += min(1.5, 0.4 * people_n)
+        score += min(1.0, 0.15 * len(members))
+    elif fam in SUPPORTING_FAMILIES:
+        score = 0.35
+    else:
+        if "journal" in kinds or "story" in kinds:
+            score = 6.5
+            episode["primary_family"] = "milestone"
+            fam = "milestone"
+        elif "travel" in kinds:
+            score = 7.0
+            episode["primary_family"] = "travel"
+            fam = "travel"
+        else:
+            score = 0.9
     episode["significance_score"] = round(score, 3)
     episode["significance"] = round(score, 3)
-    episode["routine_transactional"] = _episode_transactional_only(episode)
+    episode["significance_reason"] = score_reason(episode, score)
+    episode["routine_transactional"] = fam in SUPPORTING_FAMILIES
     return score
 
 
@@ -789,15 +830,12 @@ def _significant_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]
     scored = []
     for e in episodes:
         s = _score_episode(e)
-        scored.append((s, e))
-    keep = [e for s, e in scored if s >= 2.0 and not e.get("routine_transactional")]
-    if keep:
-        keep.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
-        return keep
-    # Nothing rose above routine: still allow non-transactional comms/life notes.
-    fallback = [e for s, e in scored if s >= 1.2 and not e.get("routine_transactional")]
-    fallback.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
-    return fallback
+        selected = is_life_family(str(e.get("primary_family") or "")) and s >= 5.0
+        e["narrator_selected"] = selected
+        scored.append(e)
+    keep = [e for e in scored if e.get("narrator_selected")]
+    keep.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
+    return keep
 
 
 def _beat_slot(day: str, days: list[str]) -> str:
@@ -909,6 +947,9 @@ def _claim_summaries(episode: dict[str, Any]) -> list[str]:
     for c in episode.get("claims") or []:
         if isinstance(c, dict):
             kind = str(c.get("type") or "claim")
+            if c.get("text"):
+                add(c.get("text"))
+                continue
             place = c.get("place")
             if kind == "travel":
                 add(f"Travel related to {place or episode.get('title') or 'a trip'}")
@@ -928,24 +969,7 @@ def _claim_summaries(episode: dict[str, Any]) -> list[str]:
 
 
 def _significance_label(episode: dict[str, Any]) -> str:
-    kinds = set(episode.get("source_kinds") or {})
-    if episode.get("routine_transactional"):
-        return "supporting archive traffic"
-    if episode.get("kind") == "theme":
-        return "recurring theme that characterizes the period"
-    if "travel" in kinds:
-        return "named travel or stay"
-    if "story" in kinds:
-        return "family story from the period"
-    if "journal" in kinds:
-        return "first-person journal from the period"
-    if "calendar" in kinds:
-        return "scheduled event"
-    if "photo" in kinds or "media_observation" in kinds or "spoken_moment" in kinds:
-        return "visual or spoken record of a day"
-    if "sms" in kinds:
-        return "family exchange that characterizes the period"
-    return "characterizes life in the period"
+    return str(episode.get("significance_reason") or score_reason(episode, 0))
 
 
 def _exemplars(episode: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1266,7 +1290,6 @@ def prepare_narrative_pack(
         derived = _travel_from_comm(u)
         if derived:
             units.append(derived)
-        u.pop("_raw_body", None)
     for p in photos:
         units.append(_media_unit(p))
     for v in videos:
@@ -1396,6 +1419,11 @@ def prepare_narrative_pack(
         "life_period_outline": life_outline,
         "period_understanding": understanding,
         "narrative_outline": story_outline,
+        "episode_audit": {
+            "candidates": [audit_row(e) for e in episodes],
+            "selected": [audit_row(e) for e in episodes if e.get("narrator_selected")],
+            "rejected": [audit_row(e) for e in episodes if not e.get("narrator_selected")],
+        },
         "derived_summaries": derived_summaries,
         "coverage": {
             "summary": coverage_summary,
