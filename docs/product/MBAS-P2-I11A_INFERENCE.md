@@ -32,4 +32,4 @@ Inference unavailable, unparsable, or unmergeable → fail closed for semantic s
 
 ## Batching
 
-Every eligible unit in at least one attempted leaf batch. Context limits are implementation partitions, not consider-caps. Retry failed batch up to 2 times (config).
+Every eligible unit in at least one attempted leaf batch. Context limits are implementation partitions, not consider-caps. Retry failed batch up to 2 times (config). Multi-leaf merge is deterministic concat + date sort by default; set `MEMORYBOX_I11A_LLM_MERGE=1` for a second model merge pass.

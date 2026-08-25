@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
-from memorybox.ask.i11a.person_context import build_person_context
+from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
 from memorybox.ask.i11a.units import ask_kind_for_plan, units_from_pack
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.providers.base import ProviderError, ProviderUnavailable
@@ -17,7 +17,7 @@ INFERENCE_SYSTEM = """EVIDENCE_INFERENCE
 You are MemoryBox's structured inference engine. Return JSON only. Do not write family prose.
 Interpret the evidence for the current Ask using Person context as interpretation aid, not as proof of period events.
 Rules:
-- Ground every material claim in supporting_evidence_ids that appear in the supplied units.
+- Ground every material claim in supporting_evidence_ids copied exactly from unit evidence_id or unit_id fields. Never invent IDs.
 - Do not invent people, places, dates, motives, emotions, photographer identity, trip purpose, or that a calendar event occurred.
 - Date proximity is not enough to merge records. Subject lines are not episode labels unless they name the real topic.
 - Do not apply hard-coded topic importance (commerce is noise, health is important, family messages matter).
@@ -35,7 +35,7 @@ Merge leaf inference JSON objects into one schema_version 2 document for the Ask
 Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
 """
 
-_DEFAULT_BATCH_CHARS = 24_000
+_DEFAULT_BATCH_CHARS = 80_000
 _DEFAULT_RETRIES = 2
 
 
@@ -116,6 +116,43 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
     raise last or ProviderError("inference failed")
 
 
+def _deterministic_merge(leaf_docs: list[dict[str, Any]]) -> dict[str, Any]:
+    episodes: list[dict[str, Any]] = []
+    themes: list[Any] = []
+    unresolved: list[Any] = []
+    focals: list[Any] = []
+    kind = "other"
+    for doc in leaf_docs:
+        if not isinstance(doc, dict):
+            continue
+        sem = doc.get("ask_semantics") if isinstance(doc.get("ask_semantics"), dict) else {}
+        if sem.get("kind"):
+            kind = str(sem.get("kind"))
+        episodes.extend([e for e in (doc.get("episodes") or []) if isinstance(e, dict)])
+        themes.extend(list(doc.get("themes") or []))
+        unresolved.extend(list(doc.get("unresolved") or []))
+        focals.extend(list(doc.get("focal_subjects") or []))
+
+    def _ep_key(ep: dict[str, Any]) -> str:
+        ds = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
+        return str(ds.get("start") or "") + "|" + str(ep.get("label") or "")
+
+    episodes.sort(key=_ep_key)
+    return {
+        "schema_version": 2,
+        "ask_semantics": {"kind": kind, "constraints": {}},
+        "focal_subjects": focals[:12],
+        "episodes": episodes[:80],
+        "themes": themes[:24],
+        "unresolved": unresolved[:24],
+    }
+
+
+def _llm_merge_enabled() -> bool:
+    raw = (os.environ.get("MEMORYBOX_I11A_LLM_MERGE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _leaf_payload(
     *,
     plan: Any,
@@ -127,7 +164,7 @@ def _leaf_payload(
     return {
         "original_ask": getattr(plan, "original_ask", ""),
         "ask_kind": kind,
-        "person_context": person_context,
+        "person_context": slim_person_context_for_model(person_context),
         "units": chunk,
         "modality_state": modality_state or {},
         "note": (
@@ -226,43 +263,53 @@ def run_inference(
     parsed_merge = leaf_docs[0]
     if len(leaf_docs) > 1:
         accounting["merge_depth"] = 1
-        merge_payload = {
-            "original_ask": getattr(plan, "original_ask", ""),
-            "leaf_results": leaf_docs,
-        }
-        try:
-            merged_raw = _call_with_retry(llm, MERGE_SYSTEM, merge_payload)
-            parsed_merge = parse_inference_json(merged_raw) or parsed_merge
+        if _llm_merge_enabled():
+            merge_payload = {
+                "original_ask": getattr(plan, "original_ask", ""),
+                "leaf_results": leaf_docs,
+            }
+            try:
+                merged_raw = _call_with_retry(llm, MERGE_SYSTEM, merge_payload)
+                parsed_merge = parse_inference_json(merged_raw) or parsed_merge
+                _trace_span(
+                    stage="i11a_inference",
+                    component="i11a",
+                    operation="merge",
+                    status="ok",
+                    provider_payload={"system": MERGE_SYSTEM, "user": merge_payload},
+                    raw_response={"content": merged_raw},
+                    parsed=parsed_merge,
+                )
+            except Exception as exc:  # noqa: BLE001
+                result = {
+                    "ok": False,
+                    "fail_closed": True,
+                    "reason": "inference merge failed",
+                    "document": None,
+                    "rejected": [{"reason": str(exc)}],
+                    "person_context": person_context,
+                    "request_context": req,
+                    "accounting": accounting,
+                    "partial": False,
+                }
+                _trace_span(
+                    stage="i11a_validate",
+                    component="i11a",
+                    operation="merge_fail",
+                    status="error",
+                    error_class="PARSE_SCHEMA",
+                    error={"message": str(exc)},
+                )
+                return result
+        else:
+            parsed_merge = _deterministic_merge(leaf_docs)
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
-                operation="merge",
+                operation="merge_deterministic",
                 status="ok",
-                provider_payload={"system": MERGE_SYSTEM, "user": merge_payload},
-                raw_response={"content": merged_raw},
                 parsed=parsed_merge,
             )
-        except Exception as exc:  # noqa: BLE001
-            result = {
-                "ok": False,
-                "fail_closed": True,
-                "reason": "inference merge failed",
-                "document": None,
-                "rejected": [{"reason": str(exc)}],
-                "person_context": person_context,
-                "request_context": req,
-                "accounting": accounting,
-                "partial": False,
-            }
-            _trace_span(
-                stage="i11a_validate",
-                component="i11a",
-                operation="merge_fail",
-                status="error",
-                error_class="PARSE_SCHEMA",
-                error={"message": str(exc)},
-            )
-            return result
     validated = validate_inference(
         parsed_merge, pack=pack, person_context=person_context
     )

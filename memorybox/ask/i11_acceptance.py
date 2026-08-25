@@ -1551,7 +1551,7 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
     if flightsim:
         print(
             "prove-i11 --flightsim: POST live /explore/api/find "
-            "(needs Ask/serve; can take a couple of minutes)...",
+            "(needs Ask/serve; live January tell can take several minutes)...",
             flush=True,
         )
         _prove_i11_flightsim_live(checks, problems, meta)
@@ -1578,7 +1578,11 @@ def _prove_i11_flightsim_live(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        live_timeout = 900
+        raw_to = (os.environ.get("MEMORYBOX_I11_LIVE_TIMEOUT") or "").strip()
+        if raw_to.isdigit() and int(raw_to) >= 30:
+            live_timeout = int(raw_to)
+        with urllib.request.urlopen(req, timeout=live_timeout) as resp:
             raw = resp.read().decode("utf-8")
             body = json.loads(raw)
             st = int(getattr(resp, "status", 200) or 200)

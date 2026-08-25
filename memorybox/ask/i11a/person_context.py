@@ -168,6 +168,42 @@ def build_person_context(plan: Any) -> dict[str, Any]:
     }
 
 
+def slim_person_context_for_model(ctx: dict[str, Any] | None) -> dict[str, Any]:
+    """Compact PersonContext for the inference payload (full ctx stays in the pack)."""
+
+    def _card(card: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not card:
+            return None
+        known = []
+        for row in (card.get("known_relationships") or [])[:24]:
+            known.append(
+                {
+                    "from_person_id": row.get("from_person_id"),
+                    "to_person_id": row.get("to_person_id"),
+                    "role_kind": row.get("role_kind"),
+                }
+            )
+        return {
+            "person_id": card.get("person_id"),
+            "display_name": card.get("display_name"),
+            "age_at_period": card.get("age_at_period"),
+            "known_relationships": known,
+            "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],
+        }
+
+    ctx = ctx or {}
+    return {
+        "requestor": _card(ctx.get("requestor") if isinstance(ctx.get("requestor"), dict) else None),
+        "focal_subjects": [
+            c
+            for c in (_card(x) for x in (ctx.get("focal_subjects") or []) if isinstance(x, dict))
+            if c
+        ],
+        "allowed_relationship_labels": ctx.get("allowed_relationship_labels") or [],
+        "as_of": ctx.get("as_of"),
+    }
+
+
 def allowed_relationship_labels(person_context: dict[str, Any] | None) -> set[str]:
     raw = (person_context or {}).get("allowed_relationship_labels") or []
     return {str(x).lower() for x in raw if str(x).strip()}

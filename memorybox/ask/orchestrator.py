@@ -887,6 +887,7 @@ class AskOrchestrator:
         self.photo = photo if photo is not None else build_photo()
         from memorybox.ai_trace.wrapper import trace_llm
 
+        self._llm_injected = llm is not None
         self.llm = trace_llm(llm if llm is not None else build_llm())
         self.video = video if video is not None else build_video()
 
@@ -1552,7 +1553,8 @@ class AskOrchestrator:
             from memorybox.ask.narrative import tell_from_hits
 
             if narrate:
-                self.llm = _prefer_live_llm(self.llm)
+                if not self._llm_injected:
+                    self.llm = _prefer_live_llm(self.llm)
                 answer_text, narrative_pack, synth_meta = tell_from_hits(
                     plan,
                     llm=self.llm,
@@ -1599,7 +1601,8 @@ class AskOrchestrator:
         ):
             from memorybox.ask.evidence_prep import prepare_narrative_pack
 
-            self.llm = _prefer_live_llm(self.llm)
+            if not self._llm_injected:
+                self.llm = _prefer_live_llm(self.llm)
             narrative_pack = prepare_narrative_pack(
                 plan,
                 evidence=evidence,

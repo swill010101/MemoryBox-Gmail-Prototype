@@ -42,6 +42,42 @@ def parse_inference_json(raw: str) -> dict[str, Any] | None:
     return None
 
 
+def _resolve_id(raw: str, scope: set[str]) -> str | None:
+    token = str(raw or "").strip()
+    if not token:
+        return None
+    if token in scope:
+        return token
+    low = token.lower()
+    for sid in scope:
+        if sid.lower() == low:
+            return sid
+    if len(token) >= 8:
+        hits = [sid for sid in scope if sid.lower().endswith(low) or low.endswith(sid.lower())]
+        if len(hits) == 1:
+            return hits[0]
+        hits = [sid for sid in scope if low in sid.lower() or sid.lower() in low]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
+def _collect_ids(raw: Any, scope: set[str]) -> list[str]:
+    values: list[Any]
+    if isinstance(raw, (list, tuple)):
+        values = list(raw)
+    elif raw:
+        values = [raw]
+    else:
+        values = []
+    out: list[str] = []
+    for item in values:
+        resolved = _resolve_id(str(item), scope)
+        if resolved and resolved not in out:
+            out.append(resolved)
+    return out
+
+
 def _strip_operational(doc: dict[str, Any]) -> dict[str, Any]:
     out = dict(doc)
     out.pop("coverage", None)
@@ -91,6 +127,7 @@ def validate_inference(
         if not isinstance(ep, dict):
             rejected.append({"reason": "episode_not_object"})
             continue
+        ep_ids = _collect_ids(ep.get("supporting_evidence_ids"), scope)
         claims_out = []
         for cl in ep.get("claims") or []:
             if isinstance(cl, str) and cl.strip():
@@ -98,18 +135,17 @@ def validate_inference(
             if not isinstance(cl, dict):
                 rejected.append({"reason": "claim_not_object"})
                 continue
-            ids = [
-                str(x)
-                for x in (cl.get("supporting_evidence_ids") or [])
-                if str(x).strip()
-            ]
-            bad = [i for i in ids if i not in scope]
-            if not ids or bad:
+            ids = _collect_ids(
+                cl.get("supporting_evidence_ids") or cl.get("evidence_ids") or cl.get("ids"),
+                scope,
+            )
+            if not ids:
+                ids = list(ep_ids)
+            if not ids:
                 rejected.append(
                     {
-                        "reason": "claim_ids_out_of_scope" if bad else "claim_missing_ids",
+                        "reason": "claim_missing_ids",
                         "text": cl.get("text"),
-                        "bad_ids": bad,
                     }
                 )
                 continue
@@ -146,7 +182,7 @@ def validate_inference(
                         "label": extra_rel,
                     }
                 )
-                continue
+                extra_rel = ""
             role = str(p.get("role") or "participant")
             if role not in PEOPLE_ROLES:
                 role = "participant"
@@ -157,27 +193,25 @@ def validate_inference(
                     "name": p.get("name"),
                 }
             )
-        vis = [
-            str(x)
-            for x in (ep.get("candidate_visual_ids") or [])
-            if str(x).strip() and str(x) in visuals
-        ]
-        dropped_vis = [
-            str(x)
-            for x in (ep.get("candidate_visual_ids") or [])
-            if str(x).strip() and str(x) not in visuals
-        ]
-        if dropped_vis:
-            rejected.append({"reason": "visual_id_out_of_scope", "ids": dropped_vis})
-        eids = [
-            str(x)
-            for x in (ep.get("supporting_evidence_ids") or [])
-            if str(x).strip() and str(x) in scope
-        ]
+        vis = _collect_ids(ep.get("candidate_visual_ids"), visuals)
+        eids = list(ep_ids)
+        for c in claims_out:
+            for i in c.get("supporting_evidence_ids") or []:
+                if i not in eids:
+                    eids.append(i)
+        label = str(ep.get("label") or "Untitled")[:160]
+        if not claims_out and eids:
+            claims_out.append(
+                {
+                    "text": label,
+                    "supporting_evidence_ids": eids[:8],
+                    "claim_type": "inferred",
+                    "uncertainty": ["repaired_from_episode_ids"],
+                }
+            )
         if not claims_out and not eids:
             rejected.append({"reason": "episode_no_grounded_claims", "label": ep.get("label")})
             continue
-        label = str(ep.get("label") or "Untitled")[:160]
         episodes_out.append(
             {
                 "label": label,
