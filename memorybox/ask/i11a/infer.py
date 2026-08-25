@@ -9,6 +9,7 @@ from typing import Any
 from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
 from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
+from memorybox.ask.i11a.support import rank_episodes_for_narrator
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -23,6 +24,7 @@ Rules:
 - Do not apply hard-coded topic importance (commerce is noise, health is important, family messages matter).
 - Relationship labels may only reuse labels supplied in PersonContext. Unknown contacts stay unknown. Warmth or frequency is not family.
 - candidate_visual_ids may only be asset/evidence ids from supplied media units.
+- Media units may include captured_at, reliable EXIF/GPS, observed people, and location provenance. Infer candidate episodes from those fields; do not infer photographer, purpose, emotion, or companions beyond the evidence.
 - Return unresolved items rather than guessing.
 - Do not include coverage, counts, provider status, eligible/processed totals, or incomplete flags in the JSON.
 - Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
@@ -189,6 +191,10 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "content": str(unit.get("content") or "")[:120],
         "asset_ref": unit.get("asset_ref"),
     }
+    if unit.get("media"):
+        row["media"] = unit.get("media")
+    elif unit.get("captured_at") or unit.get("exif_gps"):
+        row["captured_at"] = unit.get("captured_at")
     return row
 
 
@@ -454,14 +460,13 @@ def outline_from_inference(document: dict[str, Any], plan: Any) -> dict[str, Any
             "exemplars": [],
             "provenance": {"grounded_in_evidence_ids": True, "not_family_truth": True},
             "candidate_visual_ids": ep.get("candidate_visual_ids") or [],
+            "support_profile": ep.get("support_profile") or {},
+            "support_score": ep.get("support_score"),
         }
         if uncertainty:
             row["uncertainty"] = uncertainty
         episodes.append(row)
-    def _start(ep: dict[str, Any]) -> str:
-        span = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
-        return str((span or {}).get("start") or "9999")[:10]
-    episodes.sort(key=_start)
+    episodes = rank_episodes_for_narrator(episodes, budget=24)
     windows_raw = [tuple(w) for w in (getattr(plan, "temporal_windows", ()) or ()) if w]
     if not windows_raw:
         t0 = getattr(plan, "time_start", None)

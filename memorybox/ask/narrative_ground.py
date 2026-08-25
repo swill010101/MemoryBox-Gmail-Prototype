@@ -48,7 +48,9 @@ _EXPERIENTIAL = re.compile(
     r"beauty|beautiful|atmosphere|dramatic|awe|awesome|worried|"
     r"thrilled|heartwarming|breathtaking|majestic|solemn|tense|"
     r"anxious|delight|delighted|fear|afraid|wonderstruck|nostalgic|"
-    r"mood|felt|feeling|emotion|emotional"
+    r"mood|felt|feeling|emotion|emotional|"
+    r"grateful|gratitude|profound|much-needed|milestone|"
+    r"beautiful scenery|important milestone"
     r")\b"
 )
 _OCCURRED = re.compile(
@@ -296,6 +298,24 @@ def grounding_index(pack: dict[str, Any]) -> dict[str, Any]:
     derived_spans: list[tuple[date, date]] = []
     ids: set[str] = set()
     year_hint: int | None = None
+    place_ids: dict[str, list[str]] = {}
+    date_ids: dict[str, list[str]] = {}
+
+    def _bind(eid: str, place: Any, day: Any) -> None:
+        if not eid:
+            return
+        p = _lower(place)
+        if p and p not in {"none", "null", "unknown"}:
+            bucket = place_ids.setdefault(p, [])
+            if eid not in bucket:
+                bucket.append(eid)
+        if isinstance(day, dict):
+            day = day.get("value") or day.get("start")
+        d = _parse_iso(str(day or ""))
+        if d:
+            bucket = date_ids.setdefault(d.isoformat(), [])
+            if eid not in bucket:
+                bucket.append(eid)
 
     def add_blob(text: Any) -> None:
         t = _lower(text)
@@ -329,6 +349,7 @@ def grounding_index(pack: dict[str, Any]) -> dict[str, Any]:
         add_blob(u.get("title"))
         add_blob(u.get("place"))
         add_date(u.get("time") or u.get("capture_time"))
+        _bind(eid, u.get("place"), u.get("time") or u.get("capture_time"))
         for p in u.get("people") or []:
             if isinstance(p, dict):
                 add_person(p.get("name") or p.get("person_id"))
@@ -358,6 +379,8 @@ def grounding_index(pack: dict[str, Any]) -> dict[str, Any]:
         for eid in ep.get("evidence_ids") or ep.get("supporting_evidence_ids") or []:
             if str(eid).strip():
                 ids.add(str(eid).strip())
+                for pl in list(ep.get("places") or []) + [ep.get("place")]:
+                    _bind(str(eid).strip(), pl, (ep.get("date_span") or {}).get("start") if isinstance(ep.get("date_span"), dict) else None)
         span = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
         add_date(span.get("start"))
         add_date(span.get("end"))
@@ -431,6 +454,8 @@ def grounding_index(pack: dict[str, Any]) -> dict[str, Any]:
         "ids": ids,
         "year_hint": year_hint,
         "period": _lower(outline.get("period") or ""),
+        "place_ids": place_ids,
+        "date_ids": date_ids,
     }
 
 
@@ -571,6 +596,30 @@ def sentence_violations(sentence: str, index: dict[str, Any]) -> list[str]:
     return out
 
 
+def _evidence_ids_for_sentence(sentence: str, index: dict[str, Any]) -> list[str]:
+    """Map place/date mentions in a kept sentence to supporting evidence IDs."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add_all(ids: list[str] | None) -> None:
+        for i in ids or []:
+            if i and i not in seen:
+                seen.add(i)
+                found.append(i)
+
+    for m in _GEO_PHRASE.finditer(sentence):
+        add_all((index.get("place_ids") or {}).get(_lower(m.group(1))))
+    for m in _PREP_PLACE.finditer(sentence):
+        add_all((index.get("place_ids") or {}).get(_lower(m.group(1))))
+        core = re.sub(r"(?i)^the\s+", "", m.group(1)).strip()
+        add_all((index.get("place_ids") or {}).get(_lower(core)))
+    for m in _DATE_TOKEN.finditer(sentence):
+        d = _parse_date_token(m.group(1), year_hint=index.get("year_hint"))
+        if d:
+            add_all((index.get("date_ids") or {}).get(d.isoformat()))
+    return found
+
+
 def split_sentences(text: str) -> list[str]:
     parts: list[str] = []
     for para in re.split(r"\n{2,}", text or ""):
@@ -595,12 +644,16 @@ def enforce_narrative_grounding(
         return "", meta
     index = grounding_index(pack or {})
     kept: list[str] = []
+    sentence_evidence: list[dict[str, Any]] = []
     for sent in split_sentences(raw):
         reasons = sentence_violations(sent, index)
         if reasons:
             meta["rejected"].append({"sentence": sent, "reasons": reasons})
             continue
         kept.append(sent)
+        eids = _evidence_ids_for_sentence(sent, index)
+        if eids:
+            sentence_evidence.append({"sentence": sent, "evidence_ids": eids})
     if not kept:
         meta["ok"] = False
         meta["fail_closed"] = True
@@ -618,6 +671,7 @@ def enforce_narrative_grounding(
         paras.append(" ".join(buf))
     meta["kept_n"] = len(kept)
     meta["redacted_n"] = len(meta["rejected"])
+    meta["sentence_evidence"] = sentence_evidence
     return "\n\n".join(paras), meta
 
 

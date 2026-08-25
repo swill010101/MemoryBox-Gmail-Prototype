@@ -51,7 +51,11 @@ def _fake_inference(user_json: str) -> str:
         vis = []
         people = []
         eids = []
+        places: list[str] = []
         for u in rows[:12]:
+            pl = str(u.get("place") or "").strip()
+            if pl and pl not in places:
+                places.append(pl)
             eid = str(u.get("evidence_id") or u.get("unit_id") or "").strip()
             text = re.sub(r"\s+", " ", str(u.get("content") or kind)).strip()[:220]
             if eid and text:
@@ -93,7 +97,7 @@ def _fake_inference(user_json: str) -> str:
                 "label": label,
                 "date_span": {"start": None if day == "undated" else day, "end": None if day == "undated" else day},
                 "people": people[:8],
-                "places": [],
+                "places": places[:8],
                 "claims": claims,
                 "why_relevant_to_ask": "grounded in the supplied evidence",
                 "supporting_evidence_ids": list(dict.fromkeys(eids))[:24],

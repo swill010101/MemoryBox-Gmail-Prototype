@@ -44,20 +44,53 @@ def units_from_pack(pack: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             elif str(p).strip():
                 people.append({"name": str(p)})
-        out.append(
-            {
-                "unit_id": u.get("unit_id"),
+        if u.get("mb_person_id") and not any(
+            isinstance(p, dict) and p.get("person_id") == u.get("mb_person_id") for p in people
+        ):
+            people.insert(
+                0,
+                {"name": u.get("mb_person_name"), "person_id": u.get("mb_person_id")},
+            )
+        row = {
+            "unit_id": u.get("unit_id"),
+            "evidence_id": eid or u.get("unit_id"),
+            "kind": u.get("kind"),
+            "source_type": u.get("source_type")
+            or (u.get("normalization") or {}).get("source_type"),
+            "time": str(time_raw or "")[:32],
+            "people": people[:8],
+            "place": u.get("place"),
+            "content": str(u.get("content") or u.get("title") or "")[:180],
+            "asset_ref": u.get("asset_ref"),
+        }
+        kind = str(u.get("kind") or "")
+        st = str(row.get("source_type") or "")
+        if kind in {"media_observation", "spoken_moment"} or st in {"photo", "video"}:
+            lat, lon = u.get("latitude"), u.get("longitude")
+            gps = None
+            if lat is not None and lon is not None:
+                gps = {"latitude": lat, "longitude": lon, "reliable": True}
+            loc_conf = u.get("location_confidence")
+            if not loc_conf:
+                loc_conf = "high" if gps else ("medium" if u.get("place") else "low")
+            row["media"] = {
+                "asset_id": u.get("asset_ref") or eid or u.get("unit_id"),
                 "evidence_id": eid or u.get("unit_id"),
-                "kind": u.get("kind"),
-                "source_type": u.get("source_type")
-                or (u.get("normalization") or {}).get("source_type"),
-                "time": str(time_raw or "")[:32],
-                "people": people[:8],
-                "place": u.get("place"),
-                "content": str(u.get("content") or u.get("title") or "")[:180],
-                "asset_ref": u.get("asset_ref"),
+                "captured_at": str(
+                    u.get("captured_at") or u.get("capture_time") or time_raw or ""
+                )[:32],
+                "exif_gps": gps,
+                "people_observed": people[:8],
+                "provider": u.get("provider")
+                or (u.get("provenance") or {}).get("source"),
+                "location_confidence": loc_conf,
+                "location_provenance": u.get("location_provenance")
+                or u.get("place_basis"),
             }
-        )
+            row["captured_at"] = row["media"]["captured_at"]
+            row["latitude"] = lat
+            row["longitude"] = lon
+        out.append(row)
     return out
 
 

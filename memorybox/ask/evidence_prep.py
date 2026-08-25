@@ -20,6 +20,7 @@ from memorybox.ask.episode_semantics import (
     score_reason,
 )
 from memorybox.ask.travel import extract_travel
+from memorybox.ask.i11a.support import attach_support_profile, rank_episodes_for_narrator
 from memorybox.ask.i11a.windows import (
     attach_windows,
     pack_level_windows,
@@ -205,11 +206,19 @@ def _media_unit(photo: Any) -> dict[str, Any]:
                 "basis": (["face"] if (mb_id or people) else []) + basis,
             }
         )
+    people_rows = [{"name": p, "role": "depicted"} for p in people[:12]]
+    if mb_id:
+        if people_rows:
+            people_rows[0]["person_id"] = mb_id
+        else:
+            nm = str(d.get("mb_person_name") or "").strip()
+            people_rows.append({"name": nm or None, "person_id": mb_id, "role": "depicted"})
+    loc_conf = "high" if basis else ("medium" if place else "low")
     return {
         "unit_id": _uid("media", pid),
         "kind": "media_observation",
         "time": _time(d.get("taken_at")),
-        "people": [{"name": p, "role": "depicted"} for p in people[:12]],
+        "people": people_rows,
         "place": place,
         "content": d.get("caption") or d.get("description") or "",
         "claims": claims,
@@ -223,7 +232,13 @@ def _media_unit(photo: Any) -> dict[str, Any]:
         "asset_ref": pid,
         "source_type": "photo",
         "capture_time": d.get("taken_at"),
+        "captured_at": d.get("taken_at"),
+        "latitude": lat,
+        "longitude": lon,
+        "provider": d.get("provider_key"),
         "place_basis": basis[0] if basis else ("labeled_place" if place else None),
+        "location_confidence": loc_conf,
+        "location_provenance": basis[0] if basis else ("labeled_place" if place else None),
         "original_filename": d.get("original_filename"),
         "flags": {
             "filename_is_not_photographer": True,
@@ -1049,6 +1064,9 @@ def _life_period_outline(
     truncation: str | None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    all_members: list[dict[str, Any]] = []
+    for ep in episodes:
+        all_members.extend(list(ep.get("_members") or []))
     for ep in episodes:
         kinds = set(ep.get("source_kinds") or {})
         uncertainty: dict[str, Any] = {}
@@ -1080,6 +1098,7 @@ def _life_period_outline(
             windows_from_members(ep.get("_members") or [ep]),
             fallback_span=row["date_span"],
         )
+        attach_support_profile(row, pack={"units": all_members or list(ep.get("_members") or [ep])})
         if uncertainty:
             row["uncertainty"] = uncertainty
         rows.append(row)
@@ -1132,16 +1151,22 @@ def _week_summaries(units: list[dict[str, Any]], episodes: list[dict[str, Any]])
 
 def _select_narrator_episodes(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prompt-size budget for significant themes only — not a week-fair sample."""
-    ranked = sorted(
+    units: list[dict[str, Any]] = []
+    for e in episodes:
+        units.extend(list(e.get("_members") or []))
+    pack = {"units": units}
+    for e in episodes:
+        attach_support_profile(e, pack=pack)
+    by_support = sorted(
         episodes,
         key=lambda e: (
+            -float(e.get("support_score") or 0),
             -float(e.get("significance_score") or e.get("significance") or 0),
             _unit_day(e) or "9999",
         ),
     )
-    picked = ranked[:NARRATOR_EPISODE_BUDGET]
-    picked.sort(key=lambda e: (_unit_day(e) or "9999", e.get("unit_id") or ""))
-    return picked
+    picked = by_support[:NARRATOR_EPISODE_BUDGET]
+    return rank_episodes_for_narrator(picked, budget=None)
 
 
 def _public_unit(unit: dict[str, Any]) -> dict[str, Any]:
@@ -1289,6 +1314,7 @@ def prepare_narrative_pack(
                             "scheduled_not_occurred": True,
                         },
                         "title": d.get("summary"),
+                        "source_type": "calendar",
                     },
                 )
             )

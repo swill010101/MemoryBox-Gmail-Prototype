@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
 from memorybox.ask.i11a.infer import apply_inference_to_pack
+from memorybox.ask.i11a.units import units_from_pack
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.ask.evidence_prep import prepare_narrative_pack
 from memorybox.ask.i11_acceptance import _check
@@ -623,7 +624,9 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "dramatize" in prompt_l
         and "planned/scheduled" in prompt_l
         and "observed/actual" in prompt_l
-        and "do not convert plausible inference" in prompt_l,
+        and "do not convert plausible inference" in prompt_l
+        and "much-needed break" in prompt_l
+        and "do not turn place presence into meaning" in prompt_l,
         checks,
         problems,
         detail=SYSTEM_PROMPT[:280],
@@ -726,6 +729,171 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str({"kept": hedged_kept, "rej": hedged_rej}),
+    )
+
+    jan26 = plan_ask(
+        "write a narrative about my January of 2026",
+        AskContext(session_id="i11a-jan26-sphere"),
+    )
+    sphere_photo = PhotoHit(
+        provider_key="immich",
+        external_id="ph-sphere-vegas",
+        taken_at="2026-01-18T20:15:00",
+        people=["Tom Will"],
+        location="Las Vegas",
+        place="Las Vegas",
+        thumb_url=None,
+        web_url=None,
+        latitude=36.1699,
+        longitude=-115.1398,
+        mb_person_id="p-tom",
+        mb_person_name="Tom Will",
+        identity_trust="confirmed",
+    )
+    weak_photos = [
+        PhotoHit(
+            provider_key="immich",
+            external_id=f"ph-weak-{d:02d}",
+            taken_at=f"2026-01-{d:02d}T12:00:00",
+            people=[],
+            location="unspecified roadside",
+            place="unspecified roadside",
+            thumb_url=None,
+            web_url=None,
+            latitude=None,
+            longitude=None,
+            identity_trust="candidate",
+        )
+        for d in range(1, 21)
+        if d != 18
+    ]
+    sphere_hits = [
+        EvidenceHit(
+            evidence_id="e-sphere-cal",
+            evidence_kind="calendar_event",
+            summary="Eagles at Sphere, Las Vegas",
+            score=1.0,
+            excerpt="Eagles concert at the Sphere",
+            source="ics",
+            sent_at="2026-01-18T19:00:00",
+            channel="calendar",
+            people=["Tom Will"],
+        ),
+        EvidenceHit(
+            evidence_id="e-sphere-sms",
+            evidence_kind="communication",
+            summary="Sphere tonight",
+            score=1.0,
+            excerpt="We're at the Sphere in Las Vegas for the Eagles",
+            source="sms_export",
+            sent_at="2026-01-18T18:40:00",
+            channel="sms",
+            people=["Tom Will"],
+            thread_id="t-sphere",
+        ),
+        EvidenceHit(
+            evidence_id="e-vegas-mail",
+            evidence_kind="communication",
+            summary="Delta itinerary LAS",
+            score=1.0,
+            excerpt="Delta confirmation ABC12X: LAS Las Vegas 2026-01-17. Eagles at Sphere.",
+            source="email_mbox",
+            sent_at="2026-01-16T09:00:00",
+            channel="email",
+            people=["Tom Will"],
+            thread_id="t-vegas-air",
+        ),
+    ]
+    _sp_text, sp_pack, _ = tell_from_hits(
+        jan26,
+        llm=FakeLlmProvider(),
+        evidence=sphere_hits,
+        photos=[sphere_photo, *weak_photos],
+    )
+    sp_val = sp_pack.get("validated_inference") or {}
+    sp_eps = [e for e in (sp_val.get("episodes") or []) if isinstance(e, dict)]
+    nar_sp = pack_for_narrator(sp_pack)
+    nar_sp_blob = json.dumps(nar_sp, default=str)
+
+    def _blob(ep: dict[str, Any]) -> str:
+        return " ".join(
+            [
+                str(ep.get("label") or ""),
+                str(ep.get("theme_or_episode") or ""),
+                " ".join(str(p) for p in (ep.get("places") or [])),
+                json.dumps(ep.get("claims") or [], default=str),
+            ]
+        ).lower()
+
+    sphere_eps = [
+        e
+        for e in sp_eps
+        if any(tok in _blob(e) for tok in ("sphere", "eagles", "las vegas", "vegas"))
+    ]
+    weak_eps = [e for e in sp_eps if "roadside" in _blob(e) or "unspecified" in _blob(e)]
+    sphere_score = max((float(e.get("support_score") or 0) for e in sphere_eps), default=-1)
+    weak_score = max((float(e.get("support_score") or 0) for e in weak_eps), default=0)
+    ranked_first = _blob(sp_eps[0]) if sp_eps else ""
+    media_units = [
+        u
+        for u in units_from_pack(sp_pack)
+        if str(u.get("asset_ref") or "") == "ph-sphere-vegas" or "ph-sphere-vegas" in str(u.get("evidence_id") or "")
+    ]
+    media = (media_units[0].get("media") if media_units else {}) or {}
+    windows_ok = all(
+        isinstance(e.get("scheduled_window"), dict)
+        and isinstance(e.get("observed_window"), dict)
+        and isinstance(e.get("derived_window"), dict)
+        for e in sp_eps
+    ) and isinstance(sp_val.get("observed_window"), dict)
+    _check(
+        "jan2026_sphere_outranks_weak_place",
+        bool(sphere_eps)
+        and sphere_score > weak_score
+        and any(tok in ranked_first for tok in ("sphere", "eagles", "vegas", "las vegas"))
+        and "roadside" not in ranked_first
+        and (sphere_eps[0].get("support_profile") or {}).get("independent_sources", 0) >= 2
+        and "support_score" not in nar_sp_blob
+        and "support_profile" not in nar_sp_blob
+        and windows_ok
+        and bool(media.get("exif_gps"))
+        and media.get("captured_at")
+        and media.get("asset_id")
+        and any(
+            isinstance(p, dict) and p.get("person_id") == "p-tom"
+            for p in (media.get("people_observed") or [])
+        ),
+        checks,
+        problems,
+        detail=str(
+            {
+                "sphere_n": len(sphere_eps),
+                "weak_n": len(weak_eps),
+                "sphere_score": sphere_score,
+                "weak_score": weak_score,
+                "first": (sp_eps[0] if sp_eps else {}) .get("label"),
+                "profile": (sphere_eps[0].get("support_profile") if sphere_eps else None),
+                "media": media,
+                "nar_has_score": "support_score" in nar_sp_blob,
+            }
+        ),
+    )
+    mapped = (sp_pack.get("narrative_validation") or {}).get("sentence_evidence")
+    # Mapping is recorded on enforce meta; synthesize stores rejected only. Probe gate directly.
+    mapped_kept, _mapped_rej = ground_narrative(hedged, gate_pack)
+    from memorybox.ask.narrative_ground import enforce_narrative_grounding
+
+    _cleaned, gmeta = enforce_narrative_grounding(hedged, gate_pack)
+    _check(
+        "sentence_place_date_maps_to_evidence_ids",
+        any(
+            "ph-ak" in (row.get("evidence_ids") or []) or "e-ak-cal" in (row.get("evidence_ids") or [])
+            for row in (gmeta.get("sentence_evidence") or [])
+        )
+        and bool(mapped_kept),
+        checks,
+        problems,
+        detail=str(gmeta.get("sentence_evidence")),
     )
 
     meta["synthetic"] = str(uuid4())[:8]

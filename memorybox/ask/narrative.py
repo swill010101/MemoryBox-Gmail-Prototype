@@ -41,6 +41,8 @@ Rules:
 - Do not write retrieve/process completeness, evidence-considered counts, archive or week counts, missing-modality notices, eligible/processed totals, model name, or AI Trace diagnostics.
 - Do not list shipping notices, receipts, surveys, or ordinary order confirmations unless they are a listed characterizing claim.
 - Presence is not photographer, purpose, emotion, companions, or extra significance.
+- Do not write “much-needed break,” “grateful,” “profound impact,” “beautiful scenery,” “important milestone,” or other significance language unless those words appear in the grounded claims.
+- Do not turn place presence into meaning. If evidence only supports that someone was photographed in a place on a date, say that; do not invent why they were there or what it meant.
 - Do not treat filename, folder, or camera owner as photographer.
 - SMS timestamp is not location.
 - Do not invent people, places, or dates.
@@ -246,13 +248,21 @@ def _fail_closed(pack: dict[str, Any] | None, *, reason: str) -> str:
     return "\n\n".join(parts)
 
 
+def _narrator_episode(ep: dict[str, Any]) -> dict[str, Any]:
+    """Drop ranking-only fields so the narrator cannot treat them as family truth."""
+    row = dict(ep)
+    row.pop("support_score", None)
+    row.pop("support_profile", None)
+    return row
+
+
 def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
     """Semantic life-period outline for the model — never week/count diagnostics."""
     outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
     ask = pack.get("ask") or {}
     scope = pack.get("scope") if isinstance(pack.get("scope"), dict) else {}
     time_scope = scope.get("time") if isinstance(scope.get("time"), dict) else {}
-    episodes = list(outline.get("episodes") or [])
+    episodes = [_narrator_episode(e) for e in (outline.get("episodes") or []) if isinstance(e, dict)]
     return {
         "original_ask": ask.get("original_ask") if isinstance(ask, dict) else "",
         "background": pack.get("background") or {

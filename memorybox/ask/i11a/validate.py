@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from memorybox.ask.i11a.person_context import allowed_relationship_labels
+from memorybox.ask.i11a.support import attach_support_profile
 from memorybox.ask.i11a.units import (
     ASK_KINDS,
     CLAIM_TYPES,
@@ -360,7 +361,14 @@ def validate_inference(
             ),
             fallback_span=date_span,
         )
+        attach_support_profile(row, pack=pack)
         episodes_out.append(row)
+    episodes_out.sort(
+        key=lambda e: (
+            -float(e.get("support_score") or 0),
+            str(((e.get("date_span") or {}) if isinstance(e.get("date_span"), dict) else {}).get("start") or "9999")[:10],
+        )
+    )
     themes = []
     for th in doc.get("themes") or []:
         if isinstance(th, str) and th.strip():
