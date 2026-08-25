@@ -15,30 +15,21 @@ from memorybox.ask.i11a.ir import attach_links
 from memorybox.ask.i11a.windows import _day
 
 ASK_RELATIVE_SYSTEM = """ASK_RELATIVE_REASONING
-You organize grounded semantic observations to answer one Ask.
-Observations already say what the evidence establishes. Do not re-extract from raw mail.
-Do not invent people, places, dates, motives, emotions, or relationship labels.
-Do not use hard-coded topic importance. Commerce is not automatically noise.
-JSON only.
+You organize compact grounded observations to answer one Ask.
+Do not re-extract from raw mail. Do not invent people, places, dates, motives, or kin labels.
+JSON only. Return a small object — Python will assemble episodes from observation IDs.
 
-Return:
 {
   "answer_focus": "short string",
   "selected_observation_ids": ["obs-..."],
-  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "observation_ids": [], "why": ""}],
-  "episodes": [existing episode schema: label, date_span, people, places, claims[{text, supporting_evidence_ids, claim_type}], why_relevant_to_ask, supporting_evidence_ids, candidate_visual_ids],
-  "themes": [{"label": "", "supporting_evidence_ids": []}],
+  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "observation_ids": ["obs-..."], "why": ""}],
+  "themes": [{"label": ""}],
   "unresolved": ["..."]
 }
 
-Rules:
-- Every claim text must preserve grounded meaning from the observations (e.g. affectionate message content, scheduled calendar titles), not labels like "email from Peggy" or "calendar event".
-- Copy supporting_evidence_ids from the observations. Never invent IDs.
-- candidate_visual_ids only from media/place observations' evidence or asset ids.
-- Calendar supports scheduled/recorded, not occurrence. GPS presence is not residence. Itinerary is not completed travel.
-- New questions must work without a new reducer. ask_kind is a hint only.
-- Correlation may group Paradise GPS, a Sphere calendar listing, and a Las Vegas flight as the same trip when the Ask makes that relevant. Extraction must not have already decided that.
-- A Person Ask may synthesize what communication patterns say; do not collapse the subject into one life/trip episode.
+Select observations that matter to the Ask. Group those that describe the same real-world thing.
+Do not emit supporting_evidence_ids, excerpts, or episode prose. Copy observation_ids only.
+ask_kind_hint is a view strategy, not a closed taxonomy.
 """
 
 
@@ -358,30 +349,58 @@ def view_from_model_json(
     ask: str,
     ask_kind_hint: str,
 ) -> dict[str, Any]:
-    if not isinstance(parsed, dict) or not (parsed.get("episodes") or parsed.get("selected_observation_ids")):
+    if not isinstance(parsed, dict) or not (
+        parsed.get("episodes") or parsed.get("selected_observation_ids") or parsed.get("correlations")
+    ):
         return fallback_view(observations, ask=ask, ask_kind_hint=ask_kind_hint)
     by_id = {str(o.get("observation_id")): o for o in observations if o.get("observation_id")}
     selected_ids = [str(x) for x in (parsed.get("selected_observation_ids") or []) if str(x) in by_id]
-    if not selected_ids:
-        selected_ids = list(by_id)
-    selected = [by_id[i] for i in selected_ids if i in by_id]
+    correlations = [c for c in (parsed.get("correlations") or []) if isinstance(c, dict)]
+    used: set[str] = set()
     episodes = [e for e in (parsed.get("episodes") or []) if isinstance(e, dict)]
     if not episodes:
-        return fallback_view(selected or observations, ask=ask, ask_kind_hint=ask_kind_hint)
-    # Rehydrate any claim that lost evidence IDs from the cited observations.
-    for ep in episodes:
-        oids = [str(x) for x in (ep.get("observation_ids") or []) if str(x) in by_id]
-        if oids and not ep.get("claims"):
-            rebuilt = _episode_from_group([by_id[i] for i in oids], why=str(ep.get("why_relevant_to_ask") or ask)[:400])
-            ep.update({k: rebuilt[k] for k in rebuilt if k not in ep or not ep.get(k)})
-        for cl in ep.get("claims") or []:
-            if not isinstance(cl, dict):
+        groups: list[list[dict[str, Any]]] = []
+        for row in correlations:
+            oids = [str(x) for x in (row.get("observation_ids") or []) if str(x) in by_id]
+            if not oids:
                 continue
-            if not cl.get("supporting_evidence_ids") and oids:
-                ids: list[str] = []
-                for oid in oids:
-                    ids.extend(str(x) for x in (by_id[oid].get("supporting_evidence_ids") or []))
-                cl["supporting_evidence_ids"] = list(dict.fromkeys(ids))[:40]
+            groups.append([by_id[i] for i in oids])
+            used.update(oids)
+        for oid in selected_ids:
+            if oid not in used and oid in by_id:
+                groups.append([by_id[oid]])
+                used.add(oid)
+        if not groups:
+            return fallback_view(
+                [by_id[i] for i in selected_ids] or observations,
+                ask=ask,
+                ask_kind_hint=ask_kind_hint,
+            )
+        why = str(parsed.get("answer_focus") or ask)[:400]
+        episodes = [_episode_from_group(g, why=why) for g in groups if g]
+        episodes = [e for e in episodes if e.get("claims")]
+    else:
+        if not selected_ids:
+            selected_ids = list(by_id)
+        for ep in episodes:
+            oids = [str(x) for x in (ep.get("observation_ids") or []) if str(x) in by_id]
+            if oids and not ep.get("claims"):
+                rebuilt = _episode_from_group(
+                    [by_id[i] for i in oids],
+                    why=str(ep.get("why_relevant_to_ask") or ask)[:400],
+                )
+                ep.update({k: rebuilt[k] for k in rebuilt if k not in ep or not ep.get(k)})
+            for cl in ep.get("claims") or []:
+                if not isinstance(cl, dict):
+                    continue
+                if not cl.get("supporting_evidence_ids") and oids:
+                    ids: list[str] = []
+                    for oid in oids:
+                        ids.extend(str(x) for x in (by_id[oid].get("supporting_evidence_ids") or []))
+                    cl["supporting_evidence_ids"] = list(dict.fromkeys(ids))[:40]
+    if not selected_ids:
+        for e in episodes:
+            selected_ids.extend(str(x) for x in (e.get("observation_ids") or []) if str(x) in by_id)
     doc = {
         "schema_version": 2,
         "ask_semantics": {"kind": ask_kind_hint or "other", "constraints": {}},
@@ -390,12 +409,45 @@ def view_from_model_json(
         "themes": parsed.get("themes") or [],
         "unresolved": parsed.get("unresolved") or [],
         "answer_focus": parsed.get("answer_focus") or ask[:160],
-        "selected_observation_ids": selected_ids,
-        "correlations": parsed.get("correlations") or [],
+        "selected_observation_ids": list(dict.fromkeys(selected_ids)),
+        "correlations": correlations,
     }
     if ask_kind_hint == "person" and not doc.get("person_understanding"):
         doc["person_understanding"] = _person_projection(episodes, observations)
     return doc
+
+
+def compact_observation_for_reason(obs: dict[str, Any]) -> dict[str, Any]:
+    """Ask-relative input: meaning + typed fields, not full provenance dumps."""
+    people = []
+    for p in obs.get("people") or []:
+        if isinstance(p, dict) and p.get("name"):
+            people.append(str(p.get("name")))
+        elif str(p).strip():
+            people.append(str(p).strip())
+    places = []
+    for pl in obs.get("places") or []:
+        if isinstance(pl, dict):
+            lab = str(pl.get("name") or pl.get("label") or "").strip()
+        else:
+            lab = str(pl or "").strip()
+        if lab and lab not in places:
+            places.append(lab)
+    refs = [str(x) for x in (obs.get("representative_evidence_ids") or []) if str(x).strip()]
+    if not refs:
+        refs = [str(x) for x in (obs.get("supporting_evidence_ids") or []) if str(x).strip()][:3]
+    return {
+        "observation_id": obs.get("observation_id"),
+        "kind": obs.get("kind"),
+        "text": str(obs.get("text") or "")[:280],
+        "claim_type": obs.get("claim_type"),
+        "people": people[:8],
+        "places": places[:6],
+        "time": obs.get("time"),
+        "date_span": obs.get("date_span") or {},
+        "uncertainty": list(obs.get("uncertainty") or [])[:4],
+        "evidence_refs": refs[:3],
+    }
 
 
 def reason_payload(
@@ -407,6 +459,9 @@ def reason_payload(
     ask_kind_hint: str,
 ) -> dict[str, Any]:
     ask = str(getattr(plan, "original_ask", "") or "")
+    allowed = []
+    if isinstance(person_context, dict):
+        allowed = list(person_context.get("allowed_relationship_labels") or [])[:24]
     return {
         "ask": ask,
         "ask_kind_hint": ask_kind_hint,
@@ -415,26 +470,9 @@ def reason_payload(
             "focal_subject_person_ids": request_context.get("focal_subject_person_ids"),
             "focal_subject_names": request_context.get("focal_subject_names"),
         },
-        "person_context": person_context,
-        "observations": [
-            {
-                "observation_id": o.get("observation_id"),
-                "kind": o.get("kind"),
-                "text": o.get("text"),
-                "claim_type": o.get("claim_type"),
-                "people": o.get("people"),
-                "places": o.get("places"),
-                "time": o.get("time"),
-                "date_span": o.get("date_span"),
-                "source_type": o.get("source_type"),
-                "supporting_evidence_ids": o.get("supporting_evidence_ids"),
-                "excerpts": o.get("excerpts"),
-                "uncertainty": o.get("uncertainty"),
-                "occurrence_count": o.get("occurrence_count"),
-            }
-            for o in observations
-        ],
-        "note": "Organize these grounded observations for the Ask. Do not extract a new trip/person/period from raw evidence.",
+        "allowed_relationship_labels": allowed,
+        "observations": [compact_observation_for_reason(o) for o in observations],
+        "note": "Compact IR. Select and correlate by observation_id. Do not copy evidence arrays.",
     }
 
 

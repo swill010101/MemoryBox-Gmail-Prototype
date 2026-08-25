@@ -165,7 +165,7 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "place": unit.get("place"),
         "content": str(unit.get("content") or "")[:400],
         "asset_ref": unit.get("asset_ref"),
-        "extra_ids": (unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
+        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or [])[:8],
         "occurrence_count": unit.get("occurrence_count"),
         "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
@@ -184,6 +184,58 @@ def _obs_payload(chunk: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def classify_llm_error(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if "timed out" in msg or "timeout" in msg:
+        return "PROVIDER_TIMEOUT"
+    if isinstance(exc, ProviderUnavailable):
+        return "PROVIDER_TRANSPORT"
+    if isinstance(exc, ProviderError):
+        return "PARSE_SCHEMA" if "parse" in msg or "json" in msg else "MODEL_OUTPUT"
+    return "MODEL_OUTPUT"
+
+
+def _configured_chat_timeout() -> int | None:
+    try:
+        from memorybox.providers.llm.ollama import ollama_chat_timeout_seconds
+
+        return ollama_chat_timeout_seconds()
+    except Exception:  # noqa: BLE001
+        raw = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return 90
+
+
+def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:
+    raw = json.dumps({"system": system, "user": payload}, default=str)
+    n = len(raw)
+    obs = payload.get("observations") if isinstance(payload.get("observations"), list) else []
+    return {
+        "observation_n": len(obs),
+        "payload_bytes": n,
+        "approx_tokens": max(1, n // 4),
+        "timeout_seconds": _configured_chat_timeout(),
+        "num_ctx": None,
+        "num_ctx_note": "Ollama chat options set temperature only; num_ctx is the model default",
+        "compact_observations": True,
+        "includes_full_evidence_id_arrays": False,
+        "includes_excerpts": False,
+    }
+
+
+def _mark_trace_error(error_class: str, *, reason: str) -> None:
+    try:
+        from memorybox.ai_trace import context as ai_ctx
+        from memorybox.ai_trace import store
+
+        tid = ai_ctx.current_trace_id()
+        if tid:
+            store.update_trace(tid, status="error", error_class=error_class)
+    except Exception:  # noqa: BLE001
+        return
+
+
 def _fail(
     *,
     reason: str,
@@ -191,11 +243,15 @@ def _fail(
     req: dict[str, Any],
     accounting: dict[str, Any],
     rejected: list[Any] | None = None,
+    error_class: str = "PARSE_SCHEMA",
+    stage: str = "i11a_validate",
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result = {
         "ok": False,
         "fail_closed": True,
         "reason": reason,
+        "error_class": error_class,
         "document": None,
         "rejected": rejected or [],
         "person_context": slim_person_context_for_model(person_context)
@@ -205,24 +261,30 @@ def _fail(
         "accounting": accounting,
         "partial": False,
     }
+    assembled = {
+        "ok": False,
+        "reason": reason,
+        "partial": False,
+        "document": None,
+        "rejected": result["rejected"],
+        "accounting": accounting,
+        "fail_closed": True,
+        "error_class": error_class,
+        "person_context": slim_person_context_for_model(person_context),
+        "request_context": req,
+    }
+    if extra:
+        assembled.update(extra)
+        result.update({k: v for k, v in extra.items() if k not in result})
     _trace_span(
-        stage="i11a_validate",
+        stage=stage,
         component="i11a",
         operation="fail_closed",
         status="error",
-        error_class="PARSE_SCHEMA",
-        assembled_context={
-            "ok": False,
-            "reason": reason,
-            "partial": False,
-            "document": None,
-            "rejected": result["rejected"],
-            "accounting": accounting,
-            "fail_closed": True,
-            "person_context": slim_person_context_for_model(person_context),
-            "request_context": req,
-        },
+        error_class=error_class,
+        assembled_context=assembled,
     )
+    _mark_trace_error(error_class, reason=reason)
     return result
 
 
@@ -392,34 +454,87 @@ def run_inference(
         ask_kind_hint=kind_hint,
     )
     parsed_view = None
+    ask_t0 = time.perf_counter()
+    stats = _payload_stats(ASK_RELATIVE_SYSTEM, rp)
+    accounting["ask_relative_payload"] = stats
+    _trace_span(
+        stage="ask_relative_reasoning",
+        component="i11a",
+        operation="ask_relative_payload",
+        status="ok",
+        assembled_context=stats,
+        parsed=stats,
+    )
     try:
         accounting["ask_relative_calls"] = 1
         accounting["leaf_calls"] += 1
         raw_view = _call_with_retry(llm, ASK_RELATIVE_SYSTEM, rp)
         parsed_view = parse_inference_json(raw_view)
         _trace_span(
-            stage="i11a_inference",
+            stage="ask_relative_reasoning",
             component="i11a",
             operation="ask_relative",
             status="ok",
+            duration_ms=int((time.perf_counter() - ask_t0) * 1000),
             provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
             raw_response={"content": raw_view},
             parsed=parsed_view,
+            assembled_context={
+                **stats,
+                "retry_count": _retries(),
+                "provider_key": getattr(llm, "provider_key", None),
+                "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
+            },
         )
-    except ProviderUnavailable:
-        return _fail(
-            reason="inference unavailable or unparsable",
-            person_context=person_context,
-            req=req,
-            accounting=accounting,
-        )
-    except Exception as exc:  # noqa: BLE001
+    except ProviderUnavailable as exc:
+        klass = classify_llm_error(exc)
+        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        timeout_s = stats.get("timeout_seconds")
+        if klass == "PROVIDER_TIMEOUT":
+            reason = (
+                f"ask-relative reasoning timed out after {elapsed_ms}ms "
+                f"(limit {timeout_s}s)"
+            )
+        else:
+            reason = f"ask-relative reasoning unavailable: {exc}"
+        extra = {
+            "stage": "ask-relative reasoning",
+            "provider_key": getattr(llm, "provider_key", None),
+            "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
+            "timeout_seconds": timeout_s,
+            "duration_ms": elapsed_ms,
+            "retry_count": _retries(),
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc),
+            "ask_relative_payload": stats,
+        }
         _trace_span(
-            stage="i11a_inference",
+            stage="ask_relative_reasoning",
             component="i11a",
             operation="ask_relative",
             status="error",
-            error_class="MODEL_OUTPUT",
+            error_class=klass,
+            duration_ms=elapsed_ms,
+            error=extra,
+            assembled_context=extra,
+            provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
+        )
+        return _fail(
+            reason=reason,
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
+            error_class=klass,
+            stage="ask_relative_reasoning",
+            extra=extra,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _trace_span(
+            stage="ask_relative_reasoning",
+            component="i11a",
+            operation="ask_relative",
+            status="error",
+            error_class="PARSE_SCHEMA",
             error={"message": str(exc)},
         )
         parsed_view = None
@@ -562,6 +677,11 @@ def apply_inference_to_pack(
         "rejected": inf.get("rejected"),
         "request_context": inf.get("request_context"),
         "heuristic_not_product_truth": True,
+        "error_class": inf.get("error_class"),
+        "timeout_seconds": inf.get("timeout_seconds"),
+        "duration_ms": inf.get("duration_ms"),
+        "retry_count": inf.get("retry_count"),
+        "stage": inf.get("stage"),
     }
     pack["person_context"] = inf.get("person_context")
     pack["request_context"] = inf.get("request_context")

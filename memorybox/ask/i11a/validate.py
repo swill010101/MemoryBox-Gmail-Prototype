@@ -17,6 +17,7 @@ from memorybox.ask.i11a.units import (
 )
 from memorybox.ask.i11a.windows import (
     attach_windows,
+    leaf_unit_index,
     pack_level_windows,
     union_windows,
     windows_from_episode,
@@ -199,11 +200,19 @@ def validate_observations(
     scope = in_scope_ids(pack)
     allowed = allowed_relationship_labels(person_context)
     index = _index_pack_units(pack)
+    leaves = leaf_unit_index(pack)
     out: list[dict[str, Any]] = []
     for obs in observations or []:
         if not isinstance(obs, dict):
             rejected.append({"reason": "observation_not_object"})
             continue
+        from memorybox.ask.i11a.observations import canonicalize_observation
+
+        canon = canonicalize_observation(obs)
+        if not canon:
+            rejected.append({"reason": "observation_schema_invalid", "kind": obs.get("kind")})
+            continue
+        obs = canon
         text = str(obs.get("text") or "").strip()
         ids = _collect_ids(obs.get("supporting_evidence_ids") or obs.get("evidence_ids"), scope)
         if not ids:
@@ -216,7 +225,7 @@ def validate_observations(
             continue
         from memorybox.ask.i11a.claim_support import filter_claim_ids
 
-        kept, support_rej = filter_claim_ids(text, ids, index)
+        kept, support_rej = filter_claim_ids(text, ids, index, leaf_index=leaves)
         for row in support_rej:
             rejected.append({"reason": "evidence_cannot_support_claim", "text": text[:160], **row})
         if not kept:
@@ -347,8 +356,11 @@ def validate_inference(
                 rejected.append({"reason": "empty_claim"})
                 continue
             from memorybox.ask.i11a.claim_support import filter_claim_ids
+            from memorybox.ask.i11a.windows import leaf_unit_index as _leaf_idx
 
-            kept_ids, support_rej = filter_claim_ids(text, ids, _index_pack_units(pack))
+            kept_ids, support_rej = filter_claim_ids(
+                text, ids, _index_pack_units(pack), leaf_index=_leaf_idx(pack)
+            )
             for row in support_rej:
                 rejected.append(
                     {

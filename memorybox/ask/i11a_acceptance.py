@@ -60,11 +60,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a8" in html
+        and "?v=i11a9" in html
         and "copy-preaggregation" in js
         and "copy-semantic-observations" in js
         and "copy-semantic-ir" in js
         and "copy-ask-relative" in js
+        and "copy-ask-relative-payload" in js
         and "retrieval_resolution" in js
         and "copy-retrieval-resolution" in js
         and "copy-consideration" in js
@@ -240,11 +241,42 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a08_fail_closed",
         down_meta.get("fail_closed") is True
         and (down_pack.get("inference") or {}).get("fail_closed") is True
+        and (down_pack.get("inference") or {}).get("error_class") != "PARSE_SCHEMA"
         and "narration unavailable" in down_text.lower()
         and "evidence-backed account" not in down_text.lower(),
         checks,
         problems,
         detail=down_text[:200],
+    )
+
+    class _TimeoutLlm(FakeLlmProvider):
+        provider_key = "ollama"
+        chat_model = "llama3.2"
+
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            system = next((m.content for m in messages if m.role == "system"), "")
+            if "ASK_RELATIVE_REASONING" in (system or ""):
+                raise ProviderUnavailable("timed out after 90s")
+            return super().chat(messages, json_mode=json_mode)
+
+    to_text, to_pack, to_meta = tell_from_hits(jan_plan, llm=_TimeoutLlm(), evidence=hits)
+    to_inf = to_pack.get("inference") or {}
+    _check(
+        "ask_relative_timeout_is_not_parse_schema",
+        to_meta.get("fail_closed") is True
+        and to_inf.get("fail_closed") is True
+        and to_inf.get("error_class") == "PROVIDER_TIMEOUT"
+        and "timed out" in str(to_inf.get("reason") or "").lower()
+        and "PARSE_SCHEMA" not in str(to_inf.get("error_class") or "")
+        and to_inf.get("stage") == "ask-relative reasoning"
+        and to_inf.get("timeout_seconds") == 90
+        and to_pack.get("semantic_observations")
+        and not to_pack.get("validated_inference")
+        and "narration unavailable" in to_text.lower()
+        and "evidence-backed account" not in to_text.lower(),
+        checks,
+        problems,
+        detail=str({k: to_inf.get(k) for k in ("ok", "fail_closed", "reason", "error_class", "stage", "timeout_seconds", "retry_count")}),
     )
 
     fake = FakeLlmProvider()
@@ -1559,6 +1591,183 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=(synth or "")[:400],
+    )
+
+    from memorybox.ask.i11a.observations import canonicalize_observation
+    from memorybox.ask.i11a.reason import compact_observation_for_reason, reason_payload
+    from memorybox.ask.i11a.validate import validate_observations
+    from memorybox.ask.i11a.claim_support import claim_support_ok
+
+    repaired = canonicalize_observation(
+        {
+            "kind": "communication",
+            "claim_type": "location",
+            "text": "tickets@example.com confirmation",
+            "source_type": "email",
+            "places": [{"name": "Las Vegas"}],
+            "people": ["Tom"],
+            "supporting_evidence_ids": ["e-mail-1"],
+        }
+    )
+    place_at = canonicalize_observation(
+        {
+            "kind": "person_at_place_time",
+            "claim_type": "is",
+            "text": "noreply@delta.com itinerary",
+            "source_type": "email",
+            "supporting_evidence_ids": ["e-delta"],
+        }
+    )
+    _check(
+        "observation_schema_is_canonical",
+        repaired
+        and repaired.get("kind") == "communication_states"
+        and repaired.get("claim_type") == "observed"
+        and repaired.get("places") == ["Las Vegas"]
+        and place_at
+        and place_at.get("kind") == "communication_states",
+        checks,
+        problems,
+        detail=str({"repaired": repaired, "email_place": place_at}),
+    )
+    park_ok, park_why = claim_support_ok(
+        "Calendar records Eagles Live at Sphere",
+        {"kind": "calendar", "content": "Parking at Aria", "title": "Parking", "place": "Las Vegas"},
+    )
+    sphere_ok, sphere_why = claim_support_ok(
+        "Calendar records Eagles Live at Sphere",
+        {"kind": "calendar", "content": "Eagles Live at Sphere", "title": "Eagles Live at Sphere", "place": "Las Vegas"},
+    )
+    sphere_pack = {
+        "units": [
+            {
+                "kind": "calendar",
+                "evidence_id": "e-eagles-sphere",
+                "content": "Eagles Live at Sphere",
+                "title": "Eagles Live at Sphere",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-parking",
+                "content": "Parking at Aria",
+                "title": "Parking",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-dinner",
+                "content": "Mesa Grill reservation",
+                "title": "Dinner",
+            },
+        ]
+    }
+    sphere_val = validate_observations(
+        [
+            {
+                "kind": "calendar_records_event",
+                "claim_type": "recorded",
+                "text": "Calendar records Eagles Live at Sphere",
+                "supporting_evidence_ids": [
+                    "e-eagles-sphere",
+                    "e-parking",
+                    "e-dinner",
+                ],
+            }
+        ],
+        pack=sphere_pack,
+        person_context={},
+    )
+    sphere_kept = (sphere_val.get("observations") or [{}])[0].get("supporting_evidence_ids") or []
+    _check(
+        "named_event_does_not_inherit_batch_ids",
+        park_ok is False
+        and sphere_ok is True
+        and sphere_kept == ["e-eagles-sphere"],
+        checks,
+        problems,
+        detail=str({"park": park_why, "sphere": sphere_why, "kept": sphere_kept, "rej": sphere_val.get("rejected")}),
+    )
+
+    from memorybox.ask.i11a.infer import apply_inference_to_pack as _apply_lv
+
+    lv_plan = plan_ask(
+        "write a narrative about my trip to las vegas in January 2026",
+        AskContext(session_id="i11a-lv-compact"),
+    )
+    lv_pack = {
+        "units": [
+            {
+                "kind": "calendar",
+                "evidence_id": "e-las-flight",
+                "unit_id": "u-flight",
+                "time": "2026-01-29",
+                "content": "Flight to Las Vegas",
+                "title": "Flight to Las Vegas",
+                "place": "Las Vegas",
+                "source_type": "calendar",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-eagles-sphere",
+                "unit_id": "u-sphere",
+                "time": "2026-01-30",
+                "content": "Eagles Live at Sphere",
+                "title": "Eagles Live at Sphere",
+                "place": "Las Vegas",
+                "source_type": "calendar",
+            },
+            {
+                "kind": "communication",
+                "evidence_id": "e-stay-mail",
+                "unit_id": "u-stay",
+                "time": "2026-01-28",
+                "content": "Hotel stay Las Vegas Jan 29-Feb 3",
+                "source_type": "email",
+            },
+            {
+                "kind": "media_observation",
+                "evidence_id": "ph-paradise-nv",
+                "asset_ref": "ph-paradise-nv",
+                "time": "2026-01-30T16:00:00",
+                "place": "Paradise, Nevada",
+                "latitude": 36.12,
+                "longitude": -115.17,
+                "source_type": "photo",
+            },
+        ]
+    }
+    lv_pack = _apply_lv(lv_plan, lv_pack, FakeLlmProvider())
+    lv_obs = lv_pack.get("semantic_observations") or []
+    lv_view = lv_pack.get("ask_relative_view") or {}
+    compact_rows = [compact_observation_for_reason(o) for o in lv_obs]
+    compact_blob = json.dumps(compact_rows, default=str)
+    from memorybox.ask.i11a.infer import _payload_stats
+    from memorybox.ask.i11a.reason import ASK_RELATIVE_SYSTEM as _ARS
+    from memorybox.ask.i11a.person_context import slim_person_context_for_model as _slim
+
+    rp = reason_payload(
+        plan=lv_plan,
+        observations=lv_obs,
+        request_context=lv_pack.get("request_context") or {},
+        person_context=_slim(lv_pack.get("person_context") or {}),
+        ask_kind_hint="trip",
+    )
+    stats = _payload_stats(_ARS, rp)
+    lv_blob = json.dumps(lv_obs, default=str).lower() + json.dumps(lv_view, default=str).lower()
+    _check(
+        "las_vegas_ask_relative_completes_from_observations",
+        (lv_pack.get("inference") or {}).get("ok") is True
+        and (lv_pack.get("inference") or {}).get("fail_closed") is not True
+        and bool(lv_obs)
+        and bool(lv_view.get("selected_observation_ids") or lv_view.get("episodes"))
+        and "flight" in lv_blob
+        and "sphere" in lv_blob
+        and "excerpts" not in compact_blob
+        and "supporting_evidence_ids" not in compact_blob
+        and int(stats.get("payload_bytes") or 0) < 20_000
+        and stats.get("includes_full_evidence_id_arrays") is False,
+        checks,
+        problems,
+        detail=str({"n": len(lv_obs), "stats": stats, "sel": lv_view.get("selected_observation_ids"), "ok": (lv_pack.get("inference") or {}).get("ok"), "texts": [o.get("text") for o in lv_obs]}),
     )
 
     import inspect

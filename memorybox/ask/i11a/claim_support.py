@@ -95,6 +95,89 @@ def unit_places(unit: dict[str, Any]) -> set[str]:
     return places
 
 
+_GENERIC_PLACE = frozenset(
+    {"las vegas", "vegas", "paradise", "alaska", "anchorage", "vancouver", "maui", "hawaii"}
+)
+_SUPPORT_STOP = frozenset(
+    {
+        "this",
+        "that",
+        "with",
+        "from",
+        "have",
+        "been",
+        "were",
+        "they",
+        "them",
+        "their",
+        "about",
+        "after",
+        "calendar",
+        "records",
+        "record",
+        "email",
+        "message",
+        "messages",
+        "communication",
+        "observed",
+        "presence",
+        "ticket",
+        "tickets",
+        "event",
+        "live",
+        "item",
+        "items",
+        "unit",
+        "untitled",
+        "content",
+        "scheduled",
+        "listing",
+        "document",
+        "itinerary",
+        "reservation",
+        "stated",
+        "planned",
+        "together",
+        "someone",
+        "date",
+        "dates",
+        "time",
+        "times",
+        "year",
+        "years",
+        "month",
+        "days",
+        "through",
+    }
+)
+
+
+def distinctive_claim_tokens(text: str) -> set[str]:
+    low = (text or "").lower()
+    toks = {t for t in re.findall(r"[a-z0-9]{4,}", low) if t not in _SUPPORT_STOP}
+    toks |= _places_in_text(low)
+    return toks
+
+
+def unit_supports_observation_subject(text: str, unit: dict[str, Any]) -> tuple[bool, str]:
+    """Named-event tokens (Eagles, Sphere, Flight) must appear on that unit.
+
+    Sharing a city such as Las Vegas is not enough to attach parking or dinner
+    records to a Sphere concert observation.
+    """
+    blob = _blob(unit)
+    claim_toks = distinctive_claim_tokens(text)
+    specific = {t for t in claim_toks if t not in _GENERIC_PLACE and t not in {"nevada"}}
+    if not specific:
+        return True, "no_specific_subject_tokens"
+    if any(tok in blob for tok in specific):
+        return True, "subject_token_overlap"
+    uplaces = unit_places(unit)
+    if specific & uplaces:
+        return True, "subject_place_overlap"
+    return False, "unit_does_not_support_observation_subject"
+
+
 def claim_support_ok(text: str, unit: dict[str, Any]) -> tuple[bool, str]:
     """Return (ok, reason). Generic 'flight 2026-01-20' cannot locate Las Vegas."""
     claim_places = _places_in_text(text)
@@ -124,6 +207,11 @@ def claim_support_ok(text: str, unit: dict[str, Any]) -> tuple[bool, str]:
         return False, "calendar_supports_scheduled_not_occurrence"
     if occurrence and "observed" not in modes and "derived" not in modes:
         return False, "occurrence_needs_observed_or_derived"
+
+    ok_subj, subj_why = unit_supports_observation_subject(text, unit)
+    if not ok_subj:
+        return False, subj_why
+
     if scheduled_claim and kind == "calendar":
         return True, "calendar_scheduled"
     if kind in {"media_observation", "video_asset", "media_cluster", "place_observation"} and (
@@ -143,11 +231,14 @@ def filter_claim_ids(
     text: str,
     ids: list[str],
     index: dict[str, dict[str, Any]],
+    *,
+    leaf_index: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[str], list[dict[str, str]]]:
     kept: list[str] = []
     rejected: list[dict[str, str]] = []
+    leaf_index = leaf_index or {}
     for eid in ids:
-        unit = index.get(eid)
+        unit = leaf_index.get(eid) or index.get(eid)
         if not unit:
             rejected.append({"evidence_id": eid, "reason": "id_not_in_pack"})
             continue

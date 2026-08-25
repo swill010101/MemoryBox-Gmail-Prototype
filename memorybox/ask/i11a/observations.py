@@ -310,6 +310,125 @@ def _maybe_cached(unit: dict[str, Any], *, person_id: str | None) -> dict[str, A
     return None
 
 
+KIND_ALIASES = {
+    "communication": "communication_states",
+    "communications": "communication_states",
+    "email": "communication_states",
+    "sms": "communication_states",
+    "message": "communication_states",
+    "calendar": "calendar_records_event",
+    "calendar_event": "calendar_records_event",
+    "event": "activity_named",
+    "named": "activity_named",
+    "activity": "activity_named",
+    "travel": "travel_document_records",
+    "itinerary": "travel_document_records",
+    "pattern": "repeated_communication_pattern",
+    "media": "media_observation",
+    "photo": "media_observation",
+    "video": "media_observation",
+    "place": "place_referenced",
+    "location": "place_referenced",
+    "referenced": "place_referenced",
+    "relationship": "relationship_stated",
+    "interaction": "people_interacting",
+    "people": "people_interacting",
+}
+CLAIM_ALIASES = {
+    "is": "inferred",
+    "location": "observed",
+    "event": "recorded",
+    "named": "inferred",
+    "referenced": "inferred",
+    "scheduled": "recorded",
+    "planned": "derived",
+    "stated": "observed",
+}
+
+
+def _place_label(raw: Any) -> str | None:
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()[:80]
+    if isinstance(raw, dict):
+        for k in ("name", "label", "place", "value", "city"):
+            s = str(raw.get(k) or "").strip()
+            if s:
+                return s[:80]
+    return None
+
+
+def canonicalize_observation(obs: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Repair model enum/schema drift into the canonical IR types."""
+    if not isinstance(obs, dict):
+        return None
+    row = dict(obs)
+    kind = str(row.get("kind") or "").strip().lower().replace(" ", "_")
+    kind = KIND_ALIASES.get(kind, kind)
+    if kind not in OBSERVATION_KINDS:
+        kind = "activity_named"
+    source = str(row.get("source_type") or row.get("unit_kind") or "").lower()
+    text = str(row.get("text") or "").strip()
+    has_gps = row.get("latitude") is not None or (
+        isinstance(row.get("media"), dict) and (row.get("media") or {}).get("exif_gps")
+    )
+    if kind == "person_at_place_time" and (
+        "@" in text or source in {"email", "sms", "imessage", "communication"}
+    ) and not has_gps:
+        kind = "communication_states"
+    row["kind"] = kind
+    ctype = str(row.get("claim_type") or "").strip().lower()
+    ctype = CLAIM_ALIASES.get(ctype, ctype)
+    if ctype not in {"observed", "recorded", "recollection", "derived", "inferred"}:
+        if kind == "calendar_records_event":
+            ctype = "recorded"
+        elif kind == "travel_document_records":
+            ctype = "derived"
+        else:
+            ctype = "observed"
+    row["claim_type"] = ctype
+    places: list[str] = []
+    raw_places = row.get("places")
+    if isinstance(raw_places, dict):
+        raw_places = [raw_places]
+    if isinstance(raw_places, (list, tuple)):
+        for p in raw_places:
+            lab = _place_label(p)
+            if lab and lab not in places:
+                places.append(lab)
+    elif raw_places:
+        lab = _place_label(raw_places)
+        if lab:
+            places.append(lab)
+    if row.get("place") and not places:
+        lab = _place_label(row.get("place"))
+        if lab:
+            places.append(lab)
+    row["places"] = places[:8]
+    people_out: list[dict[str, Any]] = []
+    for p in row.get("people") or []:
+        if isinstance(p, str) and p.strip():
+            people_out.append({"name": p.strip(), "person_id": None, "role": "participant"})
+        elif isinstance(p, dict) and (p.get("name") or p.get("person_id")):
+            people_out.append(
+                {
+                    "name": p.get("name"),
+                    "person_id": p.get("person_id"),
+                    "role": p.get("role") or "participant",
+                }
+            )
+    row["people"] = people_out
+    ids = []
+    for i in row.get("supporting_evidence_ids") or row.get("evidence_ids") or []:
+        s = str(i).strip()
+        if s and s not in ids:
+            ids.append(s)
+    row["supporting_evidence_ids"] = ids
+    if not text or not ids:
+        return None
+    row["text"] = text[:500]
+    return row
+
+
 def extract_observations(
     units: list[dict[str, Any]] | None,
     *,
@@ -322,6 +441,7 @@ def extract_observations(
     for unit in units or []:
         cached = _maybe_cached(unit, person_id=person_id)
         obs = cached or observation_from_unit(unit)
+        obs = canonicalize_observation(obs)
         if not obs:
             continue
         oid = str(obs.get("observation_id") or "")
@@ -352,6 +472,9 @@ def merge_model_observations(
     for obs in list(base) + list(extra or []):
         if not isinstance(obs, dict):
             continue
+        obs = canonicalize_observation(obs)
+        if not obs:
+            continue
         ids = [str(x) for x in (obs.get("supporting_evidence_ids") or []) if str(x).strip()]
         if not ids:
             continue
@@ -364,11 +487,7 @@ def merge_model_observations(
             by_hash[key] = dict(obs)
             order.append(key)
             continue
-        prev_ids = [str(x) for x in (prev.get("supporting_evidence_ids") or [])]
-        for i in ids:
-            if i not in prev_ids:
-                prev_ids.append(i)
-        prev["supporting_evidence_ids"] = prev_ids
+        # Do not let a later model dump attach every batch ID onto a tighter observation.
         if len(text) > len(str(prev.get("text") or "")):
             prev["text"] = text[:500]
         by_hash[key] = prev

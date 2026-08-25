@@ -150,6 +150,8 @@
     const obsSpan = infSpans.find((s) => s.operation === "semantic_observations") || infSpans.find((s) => s.operation === "observation_extract") || {};
     const irSpan = infSpans.find((s) => s.operation === "semantic_ir") || {};
     const relSpan = infSpans.find((s) => s.operation === "ask_relative_view") || infSpans.find((s) => s.operation === "ask_relative") || {};
+    const relPay = infSpans.find((s) => s.operation === "ask_relative_payload") || {};
+    const failSpan = infSpans.find((s) => s.operation === "fail_closed") || {};
     const reduceSpan = infSpans.find((s) => s.operation === "reduce_correlate") || {};
     const infLeaf = infSpans.find((s) => s.operation === "observation_extract") || infSpans.find((s) => s.operation === "leaf") || {};
     const infVal = infSpans.find((s) => s.operation === "validate") || {};
@@ -226,6 +228,7 @@
       pane("Copy Raw Model Response", "", infLeaf.raw_response || relSpan.raw_response || firstModel.raw_response, "copy-raw-response") +
       pane("Semantic observations", "mb", obsSpan.parsed || (infVal.assembled_context || {}).semantic_observations, "copy-semantic-observations") +
       pane("Validated IR", "mb", irSpan.parsed || (infVal.assembled_context || {}).semantic_ir, "copy-semantic-ir") +
+      pane("Ask-relative payload stats", "mb", relPay.assembled_context || relPay.parsed, "copy-ask-relative-payload") +
       pane("Ask-relative view", "mb", relSpan.parsed || (infVal.assembled_context || {}).ask_relative_view, "copy-ask-relative") +
       pane("Copy Parsed Inference", "", infLeaf.parsed || infVal.parsed, "copy-parsed-inference") +
       pane("Copy Validated Semantic Pack", "mb", (infVal.disposition || {}).validated_semantic_pack || infVal.parsed, "copy-validated-pack") +
@@ -233,7 +236,7 @@
       pane("Validation / rejected", "", infVal.validation, "copy-validation") +
       pane("Narrator payload / response", "", { payload: narratorSpan.provider_payload, raw: narratorSpan.raw_response }, "copy-narrator") +
       pane("MemoryBox result", "mb", t.final_disposition, "copy-result") +
-      pane("Error", t.error_class ? "err" : "", t.error, "copy-error") +
+      pane("Fail-closed / error class", "err", failSpan.assembled_context || t.error, "copy-fail-closed") +
       "</div>" +
       "<h3>Stage timeline</h3><ul class=\"timeline\">" +
       timeline +
