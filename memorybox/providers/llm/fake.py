@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from memorybox.providers.base import ProviderHealth
 from memorybox.providers.llm.dto import ChatMessage, ChatResultDto, EmbeddingDto
@@ -113,6 +113,12 @@ def _fake_inference(user_json: str) -> str:
     )
 
 
+def _claim_line(claim: Any) -> str:
+    if isinstance(claim, dict):
+        return str(claim.get("text") or "").strip()
+    return str(claim or "").strip()
+
+
 def _fake_narrative(pack_json: str) -> str:
     try:
         pack = json.loads(pack_json)
@@ -122,12 +128,12 @@ def _fake_narrative(pack_json: str) -> str:
     episodes = [x for x in (pack.get("episodes") or []) if isinstance(x, dict)]
 
     paras: list[str] = [
-        f"During {label}, this is what stands out from family life in the archive, "
+        f"This is a chronological account of {label} from family records, "
         "without pasting the original messages."
     ]
     story_lines: list[str] = []
     for ep in episodes:
-        claims = [str(c).strip() for c in (ep.get("claims") or []) if str(c).strip()]
+        claims = [_claim_line(c) for c in (ep.get("claims") or []) if _claim_line(c)]
         theme = str(ep.get("theme_or_episode") or "").strip()
         text = claims[0] if claims else theme
         t = re.sub(r"\s+", " ", text).strip()
@@ -142,10 +148,28 @@ def _fake_narrative(pack_json: str) -> str:
             continue
         span = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
         when = str((span or {}).get("start") or "").strip()
-        people = [str(p) for p in (ep.get("people") or []) if str(p).strip()]
+        people = []
+        for p in ep.get("people") or []:
+            if isinstance(p, dict):
+                name = str(p.get("name") or p.get("person_id") or "").strip()
+            else:
+                name = str(p).strip()
+            if name:
+                people.append(name)
         if people:
             t = f"{t} — {', '.join(people[:3])}"
-        if len(when) >= 10:
+        unc = ep.get("uncertainty") if isinstance(ep.get("uncertainty"), dict) else {}
+        kinds = {str(k).lower() for k in (ep.get("source_kinds") or {})}
+        if unc.get("calendar_scheduled_not_occurred") or "calendar" in kinds:
+            if len(when) >= 10:
+                story_lines.append(f"The calendar showed {when[:10]}: {t.rstrip('.')}.")
+            else:
+                story_lines.append(f"The calendar showed {t.rstrip('.')}.")
+        elif unc.get("travel_derived_from_communication"):
+            story_lines.append(f"Travel records indicate {t.rstrip('.')}.")
+        elif any(k in {"photo", "photos", "media_observation"} for k in kinds):
+            story_lines.append(f"Photos place {t.rstrip('.')}.")
+        elif len(when) >= 10:
             story_lines.append(f"On {when[:10]}, {t.rstrip('.')}.")
         else:
             story_lines.append(t if t.endswith(".") else f"{t}.")
@@ -158,7 +182,6 @@ def _fake_narrative(pack_json: str) -> str:
         paras.append(
             f"Nothing in the prepared outline rose above ordinary correspondence for {label}."
         )
-    paras.append(f"That is the shape of {label} as the meaningful episodes tell it.")
     return "\n\n".join(p for p in paras if p)
 
 

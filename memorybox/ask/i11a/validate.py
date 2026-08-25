@@ -14,6 +14,7 @@ from memorybox.ask.i11a.units import (
     in_scope_ids,
     in_scope_visual_ids,
 )
+from memorybox.ask.i11a.windows import attach_windows, pack_level_windows, windows_from_episode
 
 _REL_EMIT = re.compile(
     r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
@@ -339,18 +340,27 @@ def validate_inference(
         if not claims_out and not eids:
             rejected.append({"reason": "episode_no_grounded_claims", "label": ep.get("label")})
             continue
-        episodes_out.append(
-            {
-                "label": label,
-                "date_span": date_span,
-                "people": people_out[:24],
-                "places": places[:12],
-                "claims": claims_out,
-                "why_relevant_to_ask": str(ep.get("why_relevant_to_ask") or "")[:400],
-                "supporting_evidence_ids": eids[:40],
-                "candidate_visual_ids": vis[:24],
-            }
+        row = {
+            "label": label,
+            "date_span": date_span,
+            "people": people_out[:24],
+            "places": places[:12],
+            "claims": claims_out,
+            "why_relevant_to_ask": str(ep.get("why_relevant_to_ask") or "")[:400],
+            "supporting_evidence_ids": eids[:40],
+            "candidate_visual_ids": vis[:24],
+        }
+        attach_windows(
+            row,
+            windows_from_episode(
+                claims=claims_out,
+                evidence_ids=eids,
+                date_span=date_span,
+                pack=pack,
+            ),
+            fallback_span=date_span,
         )
+        episodes_out.append(row)
     themes = []
     for th in doc.get("themes") or []:
         if isinstance(th, str) and th.strip():
@@ -375,6 +385,7 @@ def validate_inference(
         "episodes": episodes_out,
         "themes": themes,
         "unresolved": unresolved,
+        **pack_level_windows(episodes_out),
     }
     ok = bool(episodes_out or unresolved or themes)
     return {

@@ -19,6 +19,7 @@ from memorybox.ask.narrative import (
     persistable_view,
     tell_from_hits,
 )
+from memorybox.ask.narrative_ground import ground_narrative
 from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.ask.retrieve import (
     EvidenceHit,
@@ -1262,6 +1263,55 @@ def run_prove_i11(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str({"keys": sorted(nar.keys())}),
+    )
+    _check(
+        "c26_narrator_is_documentary_historian",
+        "documentarian" in prompt_l
+        and "historian" in prompt_l
+        and "documentary" in prompt_l
+        and "bering sea" in prompt_l
+        and "the calendar showed" in prompt_l
+        and "dramatize" in prompt_l
+        and "observed_window" in SYSTEM_PROMPT,
+        checks,
+        problems,
+        detail=SYSTEM_PROMPT[:240],
+    )
+    bering_pack = {
+        "life_period_outline": {
+            "period": "January of 2025",
+            "episodes": [
+                {
+                    "theme_or_episode": "Harbor dinner",
+                    "claims": ["come to Sunday dinner at the harbor"],
+                    "evidence_ids": ["e-harbor"],
+                    "date_span": {"start": "2025-01-12", "end": "2025-01-12"},
+                    "people": ["Alex"],
+                    "places": ["harbor"],
+                }
+            ],
+        },
+        "units": [
+            {
+                "evidence_id": "e-harbor",
+                "kind": "communication",
+                "time": "2025-01-12",
+                "content": "come to Sunday dinner at the harbor",
+                "people": [{"name": "Alex"}],
+            }
+        ],
+    }
+    bering_kept, bering_rej = ground_narrative(
+        "They crossed the Bering Sea in a storm of excitement.",
+        bering_pack,
+    )
+    _check(
+        "c26_bering_sea_without_ids_rejected",
+        (not bering_kept or "bering" not in bering_kept.lower())
+        and bool(bering_rej),
+        checks,
+        problems,
+        detail=str({"kept": bering_kept, "rej": bering_rej}),
     )
 
     trunc_hits = [

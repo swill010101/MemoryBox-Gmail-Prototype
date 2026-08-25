@@ -445,6 +445,9 @@ def outline_from_inference(document: dict[str, Any], plan: Any) -> dict[str, Any
             "claims": claims,
             "evidence_ids": eids[:40],
             "date_span": ep.get("date_span") or {},
+            "scheduled_window": ep.get("scheduled_window") or {"start": None, "end": None, "evidence_ids": []},
+            "observed_window": ep.get("observed_window") or {"start": None, "end": None, "evidence_ids": []},
+            "derived_window": ep.get("derived_window") or {"start": None, "end": None, "evidence_ids": []},
             "people": people[:12],
             "places": ep.get("places") or [],
             "significance": str(ep.get("why_relevant_to_ask") or "characterizes the period"),
@@ -465,10 +468,13 @@ def outline_from_inference(document: dict[str, Any], plan: Any) -> dict[str, Any
         t1 = getattr(plan, "time_end", None)
         if t0 and t1:
             windows_raw = [(t0, t1)]
+    from memorybox.ask.i11a.windows import pack_level_windows
+
     return {
         "period": str(getattr(plan, "temporal_label", None) or "this period"),
         "windows": [{"start": str(a)[:10], "end": str(b)[:10]} for a, b in windows_raw],
         "episodes": episodes,
+        **pack_level_windows(episodes),
     }
 
 

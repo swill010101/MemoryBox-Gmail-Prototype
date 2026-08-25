@@ -18,6 +18,7 @@ from memorybox.ask.narrative import (
     pack_for_narrator,
     tell_from_hits,
 )
+from memorybox.ask.narrative_ground import ground_narrative
 from memorybox.ask.retrieve import EvidenceHit, PhotoHit, filter_hits_by_constraints
 from memorybox.context import AskContext
 from memorybox.planner import plan_ask
@@ -609,6 +610,122 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str(salvaged.get("document"))[:500],
+    )
+
+    prompt_l = SYSTEM_PROMPT.lower()
+    _check(
+        "narrator_prompt_documentary_historian",
+        "documentarian" in prompt_l
+        and "historian" in prompt_l
+        and "documentary" in prompt_l
+        and "bering sea" in prompt_l
+        and "the calendar showed" in prompt_l
+        and "dramatize" in prompt_l
+        and "planned/scheduled" in prompt_l
+        and "observed/actual" in prompt_l
+        and "do not convert plausible inference" in prompt_l,
+        checks,
+        problems,
+        detail=SYSTEM_PROMPT[:280],
+    )
+    gate_pack = {
+        "units": [
+            {
+                "unit_id": "e-ak-cal",
+                "evidence_id": "e-ak-cal",
+                "kind": "calendar",
+                "time": "2026-05-01",
+                "date_end": "2026-05-15",
+                "place": "Alaska",
+                "content": "Alaska trip (calendar block)",
+                "people": [{"name": "Peggy"}],
+            },
+            {
+                "unit_id": "ph-ak",
+                "evidence_id": "ph-ak",
+                "kind": "photo",
+                "time": "2026-05-06",
+                "place": "Anchorage",
+                "content": "photo in Anchorage, Alaska",
+                "people": [{"name": "Peggy"}],
+            },
+        ],
+        "life_period_outline": {
+            "period": "Alaska trip 2026",
+            "episodes": [
+                {
+                    "theme_or_episode": "Alaska",
+                    "claims": ["Flight to Anchorage for the Alaska trip"],
+                    "evidence_ids": ["e-ak-cal", "ph-ak"],
+                    "date_span": {"start": "2026-05-06", "end": "2026-05-06"},
+                    "people": ["Peggy"],
+                    "places": ["Anchorage", "Alaska"],
+                    "scheduled_window": {
+                        "start": "2026-05-01",
+                        "end": "2026-05-15",
+                        "evidence_ids": ["e-ak-cal"],
+                    },
+                    "observed_window": {
+                        "start": "2026-05-06",
+                        "end": "2026-05-06",
+                        "evidence_ids": ["ph-ak"],
+                    },
+                    "uncertainty": {"calendar_scheduled_not_occurred": True},
+                }
+            ],
+            "scheduled_window": {
+                "start": "2026-05-01",
+                "end": "2026-05-15",
+                "evidence_ids": ["e-ak-cal"],
+            },
+            "observed_window": {
+                "start": "2026-05-06",
+                "end": "2026-05-06",
+                "evidence_ids": ["ph-ak"],
+            },
+        },
+    }
+    bering = (
+        "They crossed the Bering Sea in a storm, filled with excitement and concern."
+    )
+    bering_kept, bering_rej = ground_narrative(bering, gate_pack)
+    bering_reasons = [r for row in bering_rej for r in (row.get("reasons") or [])]
+    _check(
+        "bering_sea_without_ids_rejected",
+        (not bering_kept or "bering" not in bering_kept.lower())
+        and any("bering" in r.lower() or r.startswith("place:") for r in bering_reasons)
+        and any("weather:" in r or "experiential:" in r for r in bering_reasons),
+        checks,
+        problems,
+        detail=str({"kept": bering_kept, "reasons": bering_reasons}),
+    )
+    spent = "They spent May 1 through May 15 traveling across Alaska."
+    spent_kept, spent_rej = ground_narrative(spent, gate_pack)
+    spent_reasons = [r for row in spent_rej for r in (row.get("reasons") or [])]
+    _check(
+        "calendar_range_not_treated_as_actual",
+        (not spent_kept or "spent may 1" not in spent_kept.lower())
+        and "calendar_span_as_actual" in spent_reasons,
+        checks,
+        problems,
+        detail=str({"kept": spent_kept, "reasons": spent_reasons}),
+    )
+    hedged = (
+        "The calendar showed Alaska from May 1 through May 15. "
+        "Photos place Peggy in Anchorage on 2026-05-06."
+    )
+    hedged_kept, hedged_rej = ground_narrative(hedged, gate_pack)
+    _check(
+        "calendar_vs_actual_hedged_kept",
+        "calendar showed" in hedged_kept.lower()
+        and "anchorage" in hedged_kept.lower()
+        and "2026-05-06" in hedged_kept
+        and not any(
+            "calendar_span_as_actual" in (row.get("reasons") or []) for row in hedged_rej
+        ),
+        checks,
+        problems,
+        detail=str({"kept": hedged_kept, "rej": hedged_rej}),
     )
 
     meta["synthetic"] = str(uuid4())[:8]

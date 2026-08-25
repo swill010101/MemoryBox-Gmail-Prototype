@@ -20,6 +20,11 @@ from memorybox.ask.episode_semantics import (
     score_reason,
 )
 from memorybox.ask.travel import extract_travel
+from memorybox.ask.i11a.windows import (
+    attach_windows,
+    pack_level_windows,
+    windows_from_members,
+)
 from memorybox.ingest.store import get_evidence
 
 PACK_SCHEMA = 1
@@ -1070,6 +1075,11 @@ def _life_period_outline(
                 "not_family_truth": True,
             },
         }
+        attach_windows(
+            row,
+            windows_from_members(ep.get("_members") or [ep]),
+            fallback_span=row["date_span"],
+        )
         if uncertainty:
             row["uncertainty"] = uncertainty
         rows.append(row)
@@ -1078,6 +1088,7 @@ def _life_period_outline(
         "period": str(getattr(plan, "temporal_label", None) or "this period"),
         "windows": windows,
         "episodes": rows,
+        **pack_level_windows(rows),
         "coverage": {
             "incomplete": bool(incomplete),
             "note": truncation if incomplete else None,

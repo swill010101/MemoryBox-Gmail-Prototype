@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from memorybox.ask.evidence_prep import prepare_narrative_pack
+from memorybox.ask.narrative_ground import ground_narrative
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
 
@@ -16,25 +17,32 @@ NARRATION_UNAVAILABLE = (
 )
 
 SYSTEM_PROMPT = """NARRATIVE_SYNTHESIS
-You write a family story of life during the requested period.
+Write like a careful family documentarian or historian, not a novelist.
 The user JSON is a semantic life-period outline produced before narration. It is not an archive dump.
-You receive: relevant Person/relationship/background context; significant chronological episodes/themes; grounded claim summaries; limited exemplars only where useful for human detail; story-claim uncertainty (calendar scheduled is not occurred; travel may be derived).
-You do not receive, and must not invent, archive-count summaries, week-count summaries, raw date buckets, or implementation diagnostics.
+You receive: Person/relationship/background context; chronological episodes with grounded claims and evidence IDs; explicit scheduled_window, observed_window, and derived_window on episodes and the pack; story-claim uncertainty.
+You do not receive, and must not invent, archive-count summaries, week-count summaries, or implementation diagnostics.
 
 The narrator never renders system truth fields. Python, the UI, and AI Trace render retrieve/process completeness, evidence-considered counts, volume, missing-modality notices, eligible/processed totals, model name, and diagnostics.
 
+Write a factual chronological account in natural prose. Connect grounded facts. Do not dramatize, embellish, or add scene-setting that is not directly supported.
+
 Rules:
-- Understand that the pipeline already considered the whole period. Narrate only the episodes and themes in this outline — the ones that meaningfully characterize the period. Do not mention every week. Do not iterate dates that have no characterizing episode.
-- Continuous prose (about 2–8 short paragraphs). Chronological. Natural language. Begin with the story.
-- Each episode lists grounded claims, supporting evidence IDs, a date span, people, and why it is significant. Write from the claims. Use an exemplar only when a human detail helps; do not paste bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
-- Do not write about how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
+- Documentary, not literary. Precise, restrained wording. No colorful scene-setting.
+- Narrate only the episodes and themes in this outline. Do not mention every week. Do not iterate dates that have no characterizing episode.
+- Continuous prose (about 2–8 short paragraphs). Chronological. Begin with the account.
+- Write from grounded claims and evidence IDs. Do not paste bodies, headers, quoted replies, addresses, or "On … wrote:" chains.
+- Do not introduce geographic details (for example “Bering Sea”) unless a supporting evidence ID / listed place or claim establishes that location.
+- Do not describe weather, emotional reactions, motives, atmosphere, excitement, concern, disappointment, beauty, or other experiential details unless those words appear in the grounded claims.
+- Distinguish planned/scheduled from observed/actual. A calendar range is not proof of travel across that entire range.
+- Prefer observed_window when photos, GPS, or other observations corroborate an actual span. Keep scheduled_window as planning evidence if useful. derived_window is inferred (for example travel extracted from mail) — not narrative fact of presence.
+- When evidence type affects certainty, use phrasing such as “the calendar showed…,” “travel records indicate…,” “photos place…,” or “messages suggest…”.
+- Do not convert plausible inference into narrative fact.
+- Do not write how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
 - Do not write retrieve/process completeness, evidence-considered counts, archive or week counts, missing-modality notices, eligible/processed totals, model name, or AI Trace diagnostics.
-- Routine transactional material is not in this outline unless it belongs to a characterizing episode. Do not list shipping notices, receipts, surveys, or ordinary order confirmations.
-- A source supports only the listed claim. Presence is not photographer, purpose, emotion, companions, or extra significance. Do not invent motives or feelings.
+- Do not list shipping notices, receipts, surveys, or ordinary order confirmations unless they are a listed characterizing claim.
+- Presence is not photographer, purpose, emotion, companions, or extra significance.
 - Do not treat filename, folder, or camera owner as photographer.
 - SMS timestamp is not location.
-- Calendar rows are scheduled/recorded, not proof the event occurred unless corroborating claims exist.
-- Travel facts may be derived; do not treat derivation as the original source.
 - Do not invent people, places, or dates.
 - If episodes is empty, say the period was examined and nothing standout emerged. Do not dump ordinary correspondence.
 """
@@ -209,7 +217,10 @@ def _story_uncertainty(episodes: list[Any]) -> dict[str, Any]:
         "provenance": (
             "Claims are grounded in the evidence IDs on each episode. "
             "Do not invent facts. Calendar scheduled is not proof the event occurred. "
-            "Travel facts may be derived from communication."
+            "A calendar range is not proof of travel across that entire range. "
+            "Prefer the strongest corroborated actual window; keep broader scheduled windows as planning. "
+            "Travel facts may be derived from communication. "
+            "Do not add places, weather, emotions, companions, or transitions unless an evidence ID supports them."
         ),
     }
     for ep in episodes:
@@ -255,6 +266,9 @@ def pack_for_narrator(pack: dict[str, Any]) -> dict[str, Any]:
             for w in (time_scope.get("windows") or [])
             if isinstance(w, (list, tuple)) and len(w) >= 2
         ],
+        "scheduled_window": outline.get("scheduled_window"),
+        "observed_window": outline.get("observed_window"),
+        "derived_window": outline.get("derived_window"),
         "episodes": episodes,
         "uncertainty": _story_uncertainty(episodes),
     }
@@ -307,6 +321,20 @@ def synthesize_tell(
             meta["fail_closed"] = True
             return _fail_closed(pack, reason="The model returned no narration."), meta
         text = _strip_debug_leak(text)
+        grounded, rejected_adds = ground_narrative(text, pack)
+        if rejected_adds:
+            meta["narrative_rejected"] = rejected_adds
+            pack["narrative_validation"] = {
+                "rejected": rejected_adds,
+                "ok": bool(grounded),
+            }
+        if not grounded:
+            meta["fail_closed"] = True
+            return _fail_closed(
+                pack,
+                reason="Narration added unsupported detail and was rejected.",
+            ), meta
+        text = grounded
         cov_line = coverage_incomplete_line(pack)
         if cov_line:
             text = text.rstrip() + "\n\n" + cov_line
