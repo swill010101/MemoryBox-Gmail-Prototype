@@ -547,15 +547,15 @@ def _ollama_status(calculated_at: str) -> dict[str, Any]:
     """Probe configured Ollama or common local default — do not pretend connected."""
     import urllib.request
 
-    from memorybox.config import settings
+    from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
 
     configured = (settings.ollama_base_url or "").strip()
     candidates: list[str] = []
     if configured:
         candidates.append(configured.rstrip("/"))
-    default = "http://127.0.0.1:11434"
-    if default not in candidates:
-        candidates.append(default)
+    for default in OLLAMA_AUTODETECT_URLS:
+        if default not in candidates:
+            candidates.append(default)
 
     last_err = "Not connected"
     for base in candidates:

@@ -23,18 +23,22 @@ def _truthy(name: str) -> bool:
 
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+# P1 runtime hostname — cloud/desktop agents probe this after loopback.
+FLIGHTSIM_OLLAMA_BASE_URL = "http://flightsim:11434"
+OLLAMA_AUTODETECT_URLS = (DEFAULT_OLLAMA_BASE_URL, FLIGHTSIM_OLLAMA_BASE_URL)
 
 
 def _resolve_ollama_base_url(configured: str | None) -> str | None:
-    """Honor MEMORYBOX_OLLAMA_BASE_URL; otherwise use local Ollama if it answers."""
+    """Honor MEMORYBOX_OLLAMA_BASE_URL; otherwise use the first Ollama that answers."""
     explicit = (configured or "").strip() or None
     if explicit:
         return explicit
     try:
         from memorybox.providers.llm._ollama_http import ollama_reachable
 
-        if ollama_reachable(DEFAULT_OLLAMA_BASE_URL):
-            return DEFAULT_OLLAMA_BASE_URL
+        for url in OLLAMA_AUTODETECT_URLS:
+            if ollama_reachable(url):
+                return url
     except Exception:
         return None
     return None
