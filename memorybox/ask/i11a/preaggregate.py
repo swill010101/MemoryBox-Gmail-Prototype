@@ -9,7 +9,12 @@ from typing import Any
 
 from memorybox.ask.i11a.comm_compact import omit_covered_communication_units, unit_evidence_ids
 from memorybox.ask.i11a.comm_patterns import communication_pattern_units
-from memorybox.ask.i11a.observation_cache import load_observation, save_observation, source_hash
+from memorybox.ask.i11a.observation_cache import (
+    load_observation,
+    save_observation,
+    source_hash,
+    unit_source_hash,
+)
 from memorybox.ask.i11a.windows import _day
 
 _BURST_HOURS = 6
@@ -679,6 +684,24 @@ def preaggregate_pack(
     compact_trace["provenance_coverage"] = (
         round(len(raw_comm_ids & kept_ids) / len(raw_comm_ids), 4) if raw_comm_ids else 1.0
     )
+    eligible_ids = sorted(kept_ids | raw_comm_ids)
+    unit_fps = sorted({unit_source_hash(u) for u in inference})
+    sms_ids: list[str] = []
+    email_ids: list[str] = []
+    seen_s: set[str] = set()
+    seen_e: set[str] = set()
+    for u in sms:
+        for i in unit_evidence_ids(u):
+            if i not in seen_s:
+                seen_s.add(i)
+                sms_ids.append(i)
+    for u in emails:
+        for i in unit_evidence_ids(u):
+            if i not in seen_e:
+                seen_e.add(i)
+                email_ids.append(i)
+    sms_ids = sorted(sms_ids)
+    email_ids = sorted(email_ids)
     compact_trace["provenance_gap_ids"] = sorted(raw_comm_ids - kept_ids)[:40]
     trace = {
         "raw_eligible": raw_n,
@@ -748,6 +771,14 @@ def preaggregate_pack(
         "journals": len(by_kind.get("journal") or []),
         "artifacts": len(by_kind.get("artifact") or []),
         "inference_units": len(inference),
+        "eligible_evidence_id_digest": source_hash(eligible_ids),
+        "eligible_evidence_id_n": len(eligible_ids),
+        "eligible_evidence_ids": eligible_ids,
+        "sms_evidence_ids": sms_ids,
+        "email_evidence_ids": email_ids,
+        "semantic_unit_fingerprint_digest": source_hash(unit_fps),
+        "semantic_unit_fingerprint_n": len(unit_fps),
+        "semantic_unit_fingerprints": unit_fps,
         "note": (
             "Pre-aggregation retains all source evidence IDs. "
             "Lower-level communication rows are omitted from extract only when a "

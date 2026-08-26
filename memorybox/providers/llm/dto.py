@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -22,3 +22,4 @@ class EmbeddingDto:
 class ChatResultDto:
     model: str
     content: str
+    usage: dict[str, Any] | None = None

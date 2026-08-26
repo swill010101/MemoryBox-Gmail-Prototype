@@ -52,8 +52,6 @@ class EvidenceHit:
 SMS_RETRIEVE_CAP = 25000
 # SQL page size only — not a semantic evidence limit.
 TELL_DB_PAGE = 500
-# Unwindowed person packs must not sit in OFFSET scans of full email JSON.
-EVIDENCE_SCAN_SEC = 25
 
 _MONTH_KEYWORD_STOP = {
     "january",
@@ -486,6 +484,15 @@ def _bounded_period_tell(plan: QueryPlan) -> bool:
     return bool(getattr(plan, "time_start", None) and getattr(plan, "time_end", None))
 
 
+def _complete_comm_retrieve(plan: QueryPlan) -> bool:
+    """Person/tell packs return the full matching communication set (no year-fair sample)."""
+    if _bounded_period_tell(plan) or _tell_pack_comms(plan):
+        return True
+    if plan.want_communication and (plan.person_ids or plan.person_names):
+        return True
+    return False
+
+
 def visual_library_person_ids(plan: QueryPlan) -> tuple[list[str], str | None]:
     """Person ids for photo/video library search.
 
@@ -570,22 +577,20 @@ def _sql_person_text_hint(
     return "(" + " OR ".join(parts) + ")", params
 
 
-def _iter_evidence_rows(where_sql: str, params: list[Any]):
-    """Page through Evidence by id. Page size is not a semantic consider-cap."""
+def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[str, Any] | None = None):
+    """Page through Evidence by id until the matching set is exhausted.
+
+    Page size is not a semantic consider-cap. Wall-clock is not a completeness
+    cutoff: a later Ask on a warmer cache must not see extra rows that a slower
+    first pass dropped.
+    """
     from memorybox.ai_trace.request import heartbeat_retrieve
 
     last_id = None
-    deadline = time.monotonic() + EVIDENCE_SCAN_SEC
     yielded = 0
+    t0 = time.monotonic()
     with connection() as conn:
         while True:
-            if time.monotonic() > deadline:
-                heartbeat_retrieve(
-                    offset=yielded,
-                    line=f"paging evidence stopped after {EVIDENCE_SCAN_SEC}s n={yielded}",
-                    span=True,
-                )
-                break
             clause = where_sql
             qparams = list(params)
             if last_id is not None:
@@ -614,6 +619,11 @@ def _iter_evidence_rows(where_sql: str, params: list[Any]):
             if len(rows) < TELL_DB_PAGE:
                 break
             last_id = rows[-1]["id"]
+    if scan_stats is not None:
+        scan_stats["complete"] = True
+        scan_stats["stopped_by_wall_clock"] = False
+        scan_stats["rows_scanned"] = yielded
+        scan_stats["duration_ms"] = int((time.monotonic() - t0) * 1000)
 
 
 def _sql_json_day_windows(
@@ -957,7 +967,10 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         "IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
         f"AND {win_sql} AND {hint_sql}"
     )
-    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
+    scan_stats: dict[str, Any] = {}
+    for r in _iter_evidence_rows(
+        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+    ):
         payload = _payload_dict(r["payload_json"])
         ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
         if ch not in _SMS_CHANNELS:
@@ -1045,17 +1058,27 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
             seen_sms_sig.add(sig)
         hits.append(_sms_hit(r, payload, score=1.0))
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
-    if _bounded_period_tell(plan):
+    scan_note = (
+        f"scan_complete={str(bool(scan_stats.get('complete'))).lower()}; "
+        f"rows_scanned={int(scan_stats.get('rows_scanned') or 0)}; "
+        f"scan_ms={int(scan_stats.get('duration_ms') or 0)}; "
+        "stopped_by_wall_clock=false"
+    )
+    if _complete_comm_retrieve(plan):
         total = len(hits)
         for h in hits:
             h.match_total = total
             h.truncated = False
+            h.count_scope = f"complete_sms; processed={total}; eligible={total}; {scan_note}"
         if hits:
-            hits[0].count_scope = f"bounded_tell_sms; processed={total}; eligible={total}"
+            hits[0].count_scope = (
+                f"complete_sms; processed={total}; eligible={total}; {scan_note}"
+            )
         return hits
     scope_bits = [
         "ingested SMS/iMessage/MMS export",
         f"n={len(hits)}",
+        scan_note,
     ]
     if person_names:
         scope_bits.append("person=" + ", ".join(n for n in plan.person_names if str(n).lower() not in _SMS_FAKE_PEOPLE))
@@ -1378,7 +1401,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         "NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
         f"AND {win_sql} AND {hint_sql}"
     )
-    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
+    scan_stats: dict[str, Any] = {}
+    for r in _iter_evidence_rows(
+        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+    ):
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
             continue
@@ -1461,17 +1487,23 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             matched.extend(extra)
     hits = matched
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
-    if _bounded_period_tell(plan):
+    scan_note = (
+        f"scan_complete={str(bool(scan_stats.get('complete'))).lower()}; "
+        f"rows_scanned={int(scan_stats.get('rows_scanned') or 0)}; "
+        f"scan_ms={int(scan_stats.get('duration_ms') or 0)}; "
+        "stopped_by_wall_clock=false"
+    )
+    if _complete_comm_retrieve(plan):
         total = len(hits)
         for h in hits:
             h.match_total = total
             h.truncated = False
-        if hits:
-            hits[0].count_scope = f"bounded_tell_email; processed={total}; eligible={total}"
+            h.count_scope = f"complete_email; processed={total}; eligible={total}; {scan_note}"
         return hits
     scope_bits = [
         "ingested email export",
         f"n={len(hits)}",
+        scan_note,
     ]
     if person_names:
         scope_bits.append(
@@ -1537,7 +1569,10 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
     win_sql, win_params = _sql_json_day_windows(windows, "start")
     hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
     where_sql = f"evidence_kind = 'calendar_event' AND {win_sql} AND {hint_sql}"
-    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
+    scan_stats: dict[str, Any] = {}
+    for r in _iter_evidence_rows(
+        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+    ):
         payload = _payload_dict(r["payload_json"])
         start = str(payload.get("start") or "")
         day = start[:10]
@@ -1593,12 +1628,17 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
         )
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     total = len(hits)
-    if _bounded_period_tell(plan):
+    scan_note = (
+        f"scan_complete={str(bool(scan_stats.get('complete'))).lower()}; "
+        f"rows_scanned={int(scan_stats.get('rows_scanned') or 0)}; "
+        f"scan_ms={int(scan_stats.get('duration_ms') or 0)}; "
+        "stopped_by_wall_clock=false"
+    )
+    if _complete_comm_retrieve(plan):
         for h in hits:
             h.match_total = total
             h.truncated = False
-        if hits:
-            hits[0].count_scope = f"bounded_tell_calendar; processed={total}; eligible={total}"
+            h.count_scope = f"complete_calendar; processed={total}; eligible={total}; {scan_note}"
         return hits
     cap_n = max(1, int(limit))
     sliced = hits[:cap_n] if hits else []

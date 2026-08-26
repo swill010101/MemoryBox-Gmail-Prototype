@@ -74,7 +74,7 @@ class OllamaLlmProvider:
         user = "\n".join(user_parts)
         timeout = ollama_chat_timeout_seconds()
         try:
-            content = oh.ollama_chat(
+            content, usage = oh.ollama_chat(
                 self.base_url,
                 self.chat_model,
                 system,
@@ -89,4 +89,4 @@ class OllamaLlmProvider:
             if "timed out" in msg or "timeout" in msg:
                 raise ProviderUnavailable(f"timed out after {timeout}s") from exc
             raise ProviderUnavailable(str(exc)) from exc
-        return ChatResultDto(model=self.chat_model, content=content)
+        return ChatResultDto(model=self.chat_model, content=content, usage=usage)

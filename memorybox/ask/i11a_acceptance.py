@@ -77,11 +77,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "a_person_comm_retrieve_not_full_export_scan",
         "_sql_person_text_hint" in retrieve_py
-        and "EVIDENCE_SCAN_SEC" in retrieve_py
-        and "AND id > %s" in retrieve_py,
+        and "_complete_comm_retrieve" in retrieve_py
+        and "AND id > %s" in retrieve_py
+        and "stopped_by_wall_clock=false" in retrieve_py
+        and "EVIDENCE_SCAN_SEC" not in retrieve_py
+        and "paging evidence stopped after" not in retrieve_py,
         checks,
         problems,
-        detail="Unwindowed Peggy must not OFFSET-scan every email payload",
+        detail="Unwindowed Peggy keyset-pages the matching set to completion; wall-clock is not a cutoff",
     )
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
@@ -94,6 +97,18 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="provider-neutral inference role",
+    )
+    ollama_http = (root / "providers" / "llm" / "_ollama_http.py").read_text(encoding="utf-8")
+    _check(
+        "ask_relative_timeout_is_not_retried_and_timings_are_captured",
+        "except ProviderUnavailable" in infer_py
+        and "_call_with_retry_meta" in infer_py
+        and "prompt_eval_duration" in infer_py
+        and 'keep_alive: str = "30m"' in ollama_http
+        and "num_ctx" in ollama_http,
+        checks,
+        problems,
+        detail="Timeouts fail closed without a second 90s retry; Ollama eval timings are recorded",
     )
     from memorybox.ask.i11a_regression import REGRESSION_ASKS
 
@@ -983,7 +998,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and new_tok * 2 <= old_tok
         and int(rp_stats.get("rollup_n") or 0) >= 1
         and bool(rp_stats.get("compact_rollups"))
-        and int(warm_acc.get("observations_expanded") or 0) >= 1,
+        and int(warm_acc.get("observations_expanded") or 0) >= 1
+        and any(
+            "check-in" in str(u.get("label") or "").lower()
+            or "visit" in str(u.get("label") or "").lower()
+            for u in (rolled.get("rollups") or [])
+        ),
         checks,
         problems,
         detail={

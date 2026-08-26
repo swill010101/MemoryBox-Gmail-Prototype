@@ -6,6 +6,8 @@ to exactly one roll-up. Evidence is never sampled or discarded.
 from __future__ import annotations
 
 import hashlib
+import re
+from collections import Counter
 from datetime import date
 from typing import Any
 
@@ -15,6 +17,68 @@ CLAIM_TYPE = "derived"
 UNCERTAINTY = "rollup_is_derived_not_family_fact"
 PROXIMITY_DAYS = 21
 MAX_CLUSTER_SPAN_DAYS = 42
+_LABEL_MAX = 140
+
+_STOP = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "they",
+        "them",
+        "their",
+        "was",
+        "were",
+        "have",
+        "has",
+        "had",
+        "you",
+        "your",
+        "are",
+        "but",
+        "not",
+        "sent",
+        "message",
+        "messages",
+        "sms",
+        "email",
+        "text",
+        "texts",
+        "said",
+        "says",
+        "about",
+        "just",
+        "got",
+        "get",
+        "one",
+        "also",
+        "will",
+        "can",
+        "involving",
+        "observation",
+        "observations",
+        "records",
+        "recorded",
+        "calendar",
+        "exchanged",
+    }
+)
+
+_ROLE = {
+    "pattern": "recurring interaction pattern",
+    "travel": "travel/event participation",
+    "calendar": "scheduled events",
+    "place": "place/time",
+    "relationship": "stated relationship",
+    "communication": "exchanges",
+    "activity": "named activity",
+    "media": "media",
+    "other": "grouped observations",
+}
 
 _KIND_BUCKET = {
     "communication_states": "communication",
@@ -176,6 +240,53 @@ def _merge_proximate(
     return [m["rows"] for m in merged]
 
 
+def _grounded_gist(rows: list[dict[str, Any]], people: list[str], places: list[str]) -> str:
+    """Copy words that already appear in validated observation text. Do not invent."""
+    skip = set(_STOP)
+    for n in people:
+        skip.add(n.lower())
+        first = n.split()[0].lower() if n.split() else ""
+        if first:
+            skip.add(first)
+    for p in places:
+        skip.add(p.lower())
+    counts: Counter[str] = Counter()
+    bigrams: Counter[str] = Counter()
+    first_text = ""
+    for o in rows:
+        t = re.sub(r"\s+", " ", str(o.get("text") or "").strip())
+        if t and not first_text:
+            first_text = t
+        toks = [
+            w
+            for w in re.findall(r"[A-Za-z][A-Za-z']{2,}", t.lower())
+            if w not in skip and len(w) > 3
+        ]
+        counts.update(toks)
+        bigrams.update(f"{a} {b}" for a, b in zip(toks, toks[1:]))
+    phrases = [p for p, c in bigrams.most_common(6) if c >= 2][:3]
+    if not phrases:
+        phrases = [w for w, c in counts.most_common(8) if c >= 2][:4]
+    if phrases:
+        return "; ".join(phrases)
+    if first_text:
+        return first_text[:110]
+    return ""
+
+
+def _role(rows: list[dict[str, Any]], bucket: str) -> str:
+    kinds = {str(o.get("kind") or "") for o in rows}
+    if "repeated_communication_pattern" in kinds:
+        return "recurring interaction pattern"
+    if "travel_document_records" in kinds:
+        return "travel/event participation"
+    if "relationship_stated" in kinds:
+        return "stated relationship"
+    if "activity_named" in kinds:
+        return "named activity"
+    return _ROLE.get(bucket, "grouped observations")
+
+
 def _label(rows: list[dict[str, Any]], bucket: str) -> str:
     people = []
     seen: set[str] = set()
@@ -185,6 +296,15 @@ def _label(rows: list[dict[str, Any]], bucket: str) -> str:
             if n and n.lower() not in seen:
                 seen.add(n.lower())
                 people.append(n)
+    places = []
+    for o in rows:
+        for p in _place_names(o):
+            if p not in places:
+                places.append(p)
+    gist = _grounded_gist(rows, people, places)
+    role = _role(rows, bucket)
+    if gist:
+        return f"{role}: {gist}"[:_LABEL_MAX]
     who = ", ".join(people[:4]) if people else "unattributed"
     start, end = _span(rows)
     if start and end and start == end:
@@ -193,13 +313,8 @@ def _label(rows: list[dict[str, Any]], bucket: str) -> str:
         when = f"{start.isoformat()}–{end.isoformat()}"
     else:
         when = "undated"
-    places = []
-    for o in rows:
-        for p in _place_names(o):
-            if p not in places:
-                places.append(p)
     where = f" @ {', '.join(places[:3])}" if places else ""
-    return f"{bucket} involving {who}, {when}{where} ({len(rows)} observations)"
+    return f"{role} involving {who}, {when}{where}"[:_LABEL_MAX]
 
 
 def _rollup_id(rows: list[dict[str, Any]], bucket: str) -> str:
@@ -314,7 +429,7 @@ def compact_rollup_for_reason(unit: dict[str, Any]) -> dict[str, Any]:
     """Ask-relative input: compact derived unit, not low-level observation text."""
     return {
         "rollup_id": unit.get("rollup_id"),
-        "label": str(unit.get("label") or "")[:180],
+        "label": str(unit.get("label") or "")[:140],
         "kind": unit.get("kind"),
         "people": list(unit.get("people") or [])[:8],
         "places": list(unit.get("places") or [])[:6],
