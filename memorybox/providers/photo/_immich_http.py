@@ -18,8 +18,7 @@ _CIRCUIT_COOLDOWN_SEC = 300
 _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
-_PERSON_TIMELINE_MONTH_BUDGET = 18
-_PERSON_TIMELINE_MONTH_WALK = 720
+_PERSON_LIB_WALK_SEC = 40
 _PERSON_LIB_CACHE_VER = "v10"
 
 
@@ -471,13 +470,15 @@ class ImmichHttpClient:
         self._reset_call_log()
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
-        reported = self._reported_person_asset_count(person_ids)
-        self._immich_person_asset_count = reported
         cache_key = (
             f"{_PERSON_LIB_CACHE_VER}:"
             + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))
         )
         cached = self._read_person_lib_cache(cache_key, allow_stale=True)
+        reported = None
+        if not self._circuit():
+            reported = self._reported_person_asset_count(person_ids)
+            self._immich_person_asset_count = reported
         if cached and reported and len(cached) < max(40, int(reported * 0.4)):
             cached = None
             self._last_person_source = "cache_skipped_truncated"
@@ -609,51 +610,43 @@ class ImmichHttpClient:
     def _assets_from_person_timeline(
         self, person_ids: list[str], target: int
     ) -> list[dict[str, Any]]:
-        """Immich UI person library: time buckets, then bucket asset ids."""
+        """Immich UI person library: one YEAR bucket per year, months only if YEAR is empty.
+
+        Never walk hundreds of MONTH buckets. FlightSim Peggy (~600 assets) sat
+        ~2h because month_mode issued one HTTP GET per month (up to 720).
+        Ask windows filter after cache — do not cache a dated walk as the library.
+        """
         by_id: dict[str, dict[str, Any]] = {}
+        deadline = time.monotonic() + _PERSON_LIB_WALK_SEC
+        reported = getattr(self, "_immich_person_asset_count", None)
         for pid in person_ids:
             pid = str(pid or "").strip()
             if not pid:
                 continue
             if self._circuit():
                 break
-            # Walk the full person timeline. Ask windows filter assets after
-            # cache — never cache a January walk as the unwindowed library.
             raw_buckets = self._list_person_time_buckets(pid)
             by_year = self._group_buckets_by_year(raw_buckets)
             years = sorted(by_year.keys(), reverse=True)
-            month_mode = any(len(v) > 1 for v in by_year.values()) or any(
-                self._stamp_is_month(s) for s in raw_buckets
-            )
             budget = _PERSON_TIMELINE_YEAR_BUDGET
             self._timeline_http = 0
             self._person_lib_incomplete = False
-            if month_mode:
-                stamps = raw_buckets[:_PERSON_TIMELINE_MONTH_WALK]
-                if len(raw_buckets) > _PERSON_TIMELINE_MONTH_WALK:
-                    self._person_lib_incomplete = True
-                for tb in stamps:
-                    if self._circuit():
-                        self._person_lib_incomplete = True
-                        break
-                    for it in self._list_person_bucket_assets(pid, tb, size="MONTH"):
-                        eid = str(it.get("id") or "").strip()
-                        if not eid or eid in by_id:
-                            continue
-                        people = it.get("people")
-                        if not isinstance(people, list) or not people:
-                            it = dict(it)
-                            it["people"] = [{"id": pid}]
-                        by_id[eid] = it
-                continue
             if len(years) > budget:
                 self._person_lib_incomplete = True
             years_walked = 0
             for year in years[:budget]:
-                if self._circuit():
+                if self._circuit() or time.monotonic() > deadline:
                     self._person_lib_incomplete = True
                     break
+                if reported and len(by_id) >= int(reported):
+                    break
                 years_walked += 1
+                try:
+                    from memorybox.ai_trace.request import heartbeat_retrieve
+
+                    heartbeat_retrieve(line=f"Immich person timeline {year}")
+                except Exception:  # noqa: BLE001
+                    pass
                 rows = self._list_person_year_assets(pid, year, by_year.get(year) or [])
                 for it in rows:
                     eid = str(it.get("id") or "").strip()
@@ -665,6 +658,8 @@ class ImmichHttpClient:
                         it["people"] = [{"id": pid}]
                     by_id[eid] = it
             if years_walked < min(len(years), budget):
+                self._person_lib_incomplete = True
+            if time.monotonic() > deadline:
                 self._person_lib_incomplete = True
         return list(by_id.values())
 

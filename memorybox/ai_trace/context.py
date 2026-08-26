@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from typing import Any
 
 _trace_id: ContextVar[str | None] = ContextVar("mb_ai_trace_id", default=None)
+_trace_t0: ContextVar[float | None] = ContextVar("mb_ai_trace_t0", default=None)
 _assembled: ContextVar[dict[str, Any] | None] = ContextVar(
     "mb_ai_trace_assembled", default=None
 )
@@ -13,6 +14,18 @@ _purpose: ContextVar[str | None] = ContextVar("mb_ai_trace_purpose", default=Non
 
 def current_trace_id() -> str | None:
     return _trace_id.get()
+
+
+def current_trace_t0() -> float | None:
+    return _trace_t0.get()
+
+
+def set_current_trace_t0(t0: float | None):
+    return _trace_t0.set(t0)
+
+
+def reset_current_trace_t0(token) -> None:
+    _trace_t0.reset(token)
 
 
 def set_current_trace_id(trace_id: str | None):

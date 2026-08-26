@@ -39,6 +39,37 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     infer_py = (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
     orch_py = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
+    impl_py = orch_py.split("def _ask_impl", 1)[-1]
+    _check(
+        "a_planner_span_before_retrieve",
+        impl_py.find("note_planner") >= 0
+        and impl_py.find("note_planner") < impl_py.find("search_evidence_pg")
+        and impl_py.find("note_retrieve") >= 0
+        and impl_py.find("note_retrieve") < impl_py.find("search_evidence_pg"),
+        checks,
+        problems,
+        detail="Live Follow must show planner + retrieve progress before lifetime SMS/email/photo scans",
+    )
+    immich_http = (root / "providers" / "photo" / "_immich_http.py").read_text(encoding="utf-8")
+    _check(
+        "a_immich_person_timeline_is_year_first",
+        "_PERSON_TIMELINE_MONTH_WALK" not in immich_http
+        and "one YEAR bucket per year" in immich_http
+        and "_PERSON_LIB_WALK_SEC" in immich_http,
+        checks,
+        problems,
+        detail="Peggy person library must not walk up to 720 Immich MONTH buckets",
+    )
+    retrieve_py = (root / "ask" / "retrieve.py").read_text(encoding="utf-8")
+    _check(
+        "a_person_comm_retrieve_not_full_export_scan",
+        "_sql_person_text_hint" in retrieve_py
+        and "EVIDENCE_SCAN_SEC" in retrieve_py
+        and "AND id > %s" in retrieve_py,
+        checks,
+        problems,
+        detail="Unwindowed Peggy must not OFFSET-scan every email payload",
+    )
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")
@@ -57,14 +88,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a_regression_harness_four_asks",
         REGRESSION_ASKS
         == (
+            "tell me what you know about Peggy",
             "write a narrative about my January 2025",
             "write a narrative about my trip to las vegas in January 2026",
             "write a narrative about my alaska trip in 2026",
-            "tell me what you know about Peggy",
         ),
         checks,
         problems,
-        detail="i11a-regression canonical asks (live Asks are not part of prove-i11a)",
+        detail="i11a-regression runs Peggy first so a person-library hang is not after three TELL asks",
     )
     from memorybox.ask.i11a.observations import requires_model_interpretation
 
@@ -1810,9 +1841,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "immich_timeline_not_windowed_before_cache",
-        "Walk the full person timeline" in (root / "providers" / "photo" / "_immich_http.py").read_text(
-            encoding="utf-8"
-        )
+        "do not cache a dated walk as the library"
+        in (root / "providers" / "photo" / "_immich_http.py").read_text(encoding="utf-8")
         and "_PERSON_LIB_CACHE_VER = \"v10\""
         in (root / "providers" / "photo" / "_immich_http.py").read_text(encoding="utf-8"),
         checks,

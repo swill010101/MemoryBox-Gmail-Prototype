@@ -898,7 +898,9 @@ class AskOrchestrator:
         note_ask_progress(session_id, "Collecting photos")
         try:
             with tracing_ask(text, session_id) as tr:
-                result = self._ask_impl(text, session_id=session_id, narrate=narrate)
+                result = self._ask_impl(
+                    text, session_id=session_id, narrate=narrate, trace=tr
+                )
                 plan = result.plan if isinstance(result.plan, dict) else {}
                 tr.note_planner(plan)
                 tr.complete(
@@ -917,7 +919,12 @@ class AskOrchestrator:
             note_ask_progress(session_id, "Done")
 
     def _ask_impl(
-        self, text: str, *, session_id: str | None = None, narrate: bool = True
+        self,
+        text: str,
+        *,
+        session_id: str | None = None,
+        narrate: bool = True,
+        trace: Any = None,
     ) -> AskResult:
         from memorybox.ask.progress import note_ask_progress
 
@@ -925,6 +932,8 @@ class AskOrchestrator:
             import time as _time
 
             note_ask_progress(session_id, line)
+            if trace is not None:
+                trace.note_retrieve(line)
             if pause:
                 _time.sleep(0.2)
 
@@ -933,6 +942,8 @@ class AskOrchestrator:
             plan = compile_ask(text, ctx, llm=self.llm)
         except Exception:  # noqa: BLE001 — Q4: never fail Ask because MBQL failed
             plan = plan_ask(text, ctx)
+        if trace is not None:
+            trace.note_planner(plan.to_dict() if hasattr(plan, "to_dict") else {})
 
         # I9A: owner → Relationship service → Person id (no display_name string hacks)
         from dataclasses import replace
@@ -1326,6 +1337,8 @@ class AskOrchestrator:
             if plan.want_calendar:
                 _stage("Collecting calendar", pause=True)
             if plan.want_communication or plan.want_calendar:
+                if plan.want_communication:
+                    _stage("Collecting communications")
                 pg_hits = R.search_evidence_pg(plan)
                 tell_pack = (
                     str((plan.output_mode if hasattr(plan, "output_mode") else "") or "")
@@ -1360,6 +1373,7 @@ class AskOrchestrator:
             # Photos first, then video. They share the Immich client for identity;
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
+                _stage("Collecting photos")
                 photo_limit = 0 if R._bounded_period_tell(plan) else 5000
                 photos, photo_status = R.search_photos(plan, self.photo, limit=photo_limit)
             spoken_videos: list[R.VideoHit] = []

@@ -355,7 +355,12 @@ def main(argv: list[str] | None = None) -> int:
         "--max-age-seconds",
         type=int,
         default=120,
-        help="Only traces with no update for this many seconds (default 120)",
+        help="Only traces with no update for this many seconds (default 120; 0 is allowed)",
+    )
+    p_abandon.add_argument(
+        "--force",
+        action="store_true",
+        help="Mark every status=running trace abandoned, even if it is still heartbeating",
     )
     p_dump_i11 = sub.add_parser(
         "dump-i11-episodes",
@@ -778,7 +783,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "ai-trace-abandon":
         from memorybox.ai_trace.store import abandon_stale_running_traces
 
-        payload = abandon_stale_running_traces(max_age_seconds=int(args.max_age_seconds))
+        payload = abandon_stale_running_traces(
+            max_age_seconds=int(args.max_age_seconds),
+            force=bool(getattr(args, "force", False)),
+        )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
