@@ -305,7 +305,8 @@ def abandon_stale_running_traces(*, max_age_seconds: int = 120) -> dict[str, Any
     """Mark traces left `running` after the process died.
 
     AI Trace status is a Postgres row. Restarting Ollama or serve does not
-    close it. Live Asks bump updated_at on every model call, so they are kept.
+    close it. Live Asks bump updated_at on model calls and retrieve heartbeats
+    (lifetime person scans can run many minutes with 0 models).
     """
     age = max(15, int(max_age_seconds))
     ensure_schema()

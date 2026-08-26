@@ -39,6 +39,17 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     infer_py = (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
     orch_py = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
+    impl_py = orch_py.split("def _ask_impl", 1)[-1]
+    _check(
+        "a_planner_span_before_retrieve",
+        impl_py.find("note_planner") >= 0
+        and impl_py.find("note_planner") < impl_py.find("search_evidence_pg")
+        and impl_py.find("note_retrieve") >= 0
+        and impl_py.find("note_retrieve") < impl_py.find("search_evidence_pg"),
+        checks,
+        problems,
+        detail="Live Follow must show planner + retrieve progress before lifetime SMS/email/photo scans",
+    )
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")

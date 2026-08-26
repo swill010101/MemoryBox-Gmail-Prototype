@@ -525,10 +525,13 @@ def _provider_fetch_n(limit: int | None) -> int:
 
 
 def _iter_evidence_rows(where_sql: str, params: list[Any]):
-    """Page through Evidence. Page size is not a consider-cap."""
+    """Page through Evidence. Page size is not a semantic consider-cap."""
+    from memorybox.ai_trace.request import heartbeat_retrieve
+
     offset = 0
     with connection() as conn:
         while True:
+            heartbeat_retrieve(offset=offset, line="paging evidence")
             rows = conn.execute(
                 f"""
                 SELECT id, evidence_kind, summary, payload_json

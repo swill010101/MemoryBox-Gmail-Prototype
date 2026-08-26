@@ -89,6 +89,16 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         problems,
         "Deterministic Ask still emits end-to-end trace",
     )
+    impl = orch.split("def _ask_impl", 1)[-1]
+    _check(
+        "retrieve_heartbeat_before_evidence",
+        "note_retrieve" in impl
+        and impl.find("note_planner") < impl.find("search_evidence_pg")
+        and "heartbeat_retrieve" in (root / "ask" / "retrieve.py").read_text(encoding="utf-8"),
+        checks,
+        problems,
+        "Lifetime retrieve must heartbeat AI Trace before/while paging evidence",
+    )
     _check(
         "polling_not_sse",
         "750" in js and "EventSource" not in js and "WebSocket" not in js,
