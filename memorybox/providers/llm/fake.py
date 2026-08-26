@@ -19,6 +19,83 @@ _TXN_NOISE = re.compile(
 )
 
 
+def _fake_observations(user_json: str) -> str:
+    try:
+        data = json.loads(user_json)
+    except Exception:
+        return json.dumps({"observations": []})
+    units = [u for u in (data.get("units") or []) if isinstance(u, dict)]
+    try:
+        from memorybox.ask.i11a.observations import observation_from_unit
+    except Exception:
+        observation_from_unit = None  # type: ignore[assignment]
+    rows = []
+    for u in units:
+        obs = observation_from_unit(u) if observation_from_unit else None
+        if obs:
+            rows.append(obs)
+    return json.dumps({"observations": rows})
+
+
+def _fake_ask_relative(user_json: str) -> str:
+    try:
+        data = json.loads(user_json)
+    except Exception:
+        return json.dumps({"schema_version": 2, "episodes": [], "themes": [], "unresolved": []})
+    observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
+    for o in observations:
+        if not o.get("supporting_evidence_ids") and o.get("evidence_refs"):
+            o["supporting_evidence_ids"] = list(o.get("evidence_refs") or [])
+    ask = str(data.get("ask") or "")
+    hint = str(data.get("ask_kind_hint") or "other")
+    try:
+        from memorybox.ask.i11a.reason import fallback_view
+
+        view = fallback_view(observations, ask=ask, ask_kind_hint=hint)
+        drop = {
+            str(o.get("observation_id") or "")
+            for o in observations
+            if _TXN_NOISE.search(json.dumps(o, default=str) or "")
+            and not re.search(
+                r"(?i)\b(trip|visit|dinner|family|journal|surgery|harbor|alaska)\b",
+                json.dumps(o, default=str),
+            )
+        }
+        selected = [
+            str(x)
+            for x in (view.get("selected_observation_ids") or [])
+            if str(x) not in drop
+        ]
+        correlations = [
+            c
+            for c in (view.get("correlations") or [])
+            if isinstance(c, dict)
+            and not drop.intersection({str(x) for x in (c.get("observation_ids") or [])})
+        ]
+        return json.dumps(
+            {
+                "answer_focus": view.get("answer_focus") or ask[:160],
+                "selected_observation_ids": selected
+                or [o.get("observation_id") for o in observations if o.get("observation_id") not in drop],
+                "correlations": correlations,
+                "themes": view.get("themes") or [],
+                "unresolved": view.get("unresolved") or [],
+            },
+            default=str,
+        )
+    except Exception:
+        return json.dumps(
+            {
+                "schema_version": 2,
+                "ask_semantics": {"kind": hint, "constraints": {}},
+                "episodes": [],
+                "themes": [],
+                "unresolved": [],
+                "selected_observation_ids": [o.get("observation_id") for o in observations],
+            }
+        )
+
+
 def _fake_inference(user_json: str) -> str:
     try:
         data = json.loads(user_json)
@@ -226,7 +303,11 @@ class FakeLlmProvider:
         last = messages[-1].content if messages else ""
         system = next((m.content for m in messages if m.role == "system"), "")
         if json_mode:
-            if "EVIDENCE_INFERENCE" in (system or "") or "INFERENCE_MERGE" in (system or ""):
+            if "ASK_RELATIVE_REASONING" in (system or ""):
+                content = _fake_ask_relative(last)
+            elif "OBSERVATION_EXTRACT" in (system or ""):
+                content = _fake_observations(last)
+            elif "EVIDENCE_INFERENCE" in (system or "") or "INFERENCE_MERGE" in (system or ""):
                 content = _fake_inference(last)
             else:
                 content = '{"ok":true}'

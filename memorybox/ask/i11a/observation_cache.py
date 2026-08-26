@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-METHOD_VERSION = "i11a_person_obs_v1"
+METHOD_VERSION = "i11a_obs_v2"
 
 
 def source_hash(evidence_ids: list[str]) -> str:

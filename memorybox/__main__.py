@@ -333,6 +333,20 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
     )
+    p_i11a_reg = sub.add_parser(
+        "i11a-regression",
+        help="I11A sequential Ask + full AI Trace regression file (does not change model)",
+    )
+    p_i11a_reg.add_argument(
+        "--out",
+        default=None,
+        help="Output JSON path (default: docs/test-output/I11A_regression_<UTC timestamp>.json)",
+    )
+    p_i11a_reg.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1 (same env flag as other prove commands; does not change model)",
+    )
     p_dump_i11 = sub.add_parser(
         "dump-i11-episodes",
         help="I11 period episode analysis only — no narration",
@@ -733,6 +747,23 @@ def main(argv: list[str] | None = None) -> int:
         payload = run_prove_i10c(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a-regression":
+        from pathlib import Path
+
+        from memorybox.ask.i11a_regression import run_i11a_regression
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        out = Path(args.out) if args.out else None
+        payload = run_i11a_regression(out_path=out)
+        summary = payload.get("summary") or {}
+        print(json.dumps({
+            "ok": True,
+            "output_path": payload.get("_output_path"),
+            "summary": summary,
+        }, indent=2, default=str), flush=True)
+        return 0
 
     if args.cmd == "dump-i11-episodes":
         from memorybox.app import get_orchestrator

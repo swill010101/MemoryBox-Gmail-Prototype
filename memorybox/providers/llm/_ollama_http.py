@@ -15,8 +15,16 @@ def _post_json(url: str, payload: dict[str, Any], *, timeout: int) -> dict[str, 
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp)
+    except TimeoutError as exc:
+        raise TimeoutError(f"timed out after {timeout}s") from exc
+    except urllib.error.URLError as exc:
+        reason = str(getattr(exc, "reason", exc) or exc).lower()
+        if "timed out" in reason or "timeout" in reason:
+            raise TimeoutError(f"timed out after {timeout}s") from exc
+        raise
 
 
 def ollama_embed(

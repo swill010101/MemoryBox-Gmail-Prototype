@@ -9,6 +9,14 @@ from memorybox.providers.llm.dto import ChatMessage, ChatResultDto, EmbeddingDto
 from memorybox.providers.llm import _ollama_http as oh
 
 
+def ollama_chat_timeout_seconds() -> int:
+    timeout = 90
+    raw_to = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
+    if raw_to.isdigit() and int(raw_to) >= 15:
+        timeout = int(raw_to)
+    return timeout
+
+
 class OllamaLlmProvider:
     provider_key = "ollama"
 
@@ -64,10 +72,7 @@ class OllamaLlmProvider:
         if not user_parts:
             raise ProviderError("chat requires at least one user message")
         user = "\n".join(user_parts)
-        timeout = 90
-        raw_to = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
-        if raw_to.isdigit() and int(raw_to) >= 15:
-            timeout = int(raw_to)
+        timeout = ollama_chat_timeout_seconds()
         try:
             content = oh.ollama_chat(
                 self.base_url,
@@ -77,6 +82,11 @@ class OllamaLlmProvider:
                 format_json=json_mode,
                 timeout=timeout,
             )
+        except TimeoutError as exc:
+            raise ProviderUnavailable(f"timed out after {timeout}s") from exc
         except Exception as exc:  # noqa: BLE001
+            msg = str(exc).lower()
+            if "timed out" in msg or "timeout" in msg:
+                raise ProviderUnavailable(f"timed out after {timeout}s") from exc
             raise ProviderUnavailable(str(exc)) from exc
         return ChatResultDto(model=self.chat_model, content=content)

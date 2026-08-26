@@ -32,6 +32,9 @@ def _model_meta(inner: Any, *, capability: str, model: str | None) -> dict[str, 
 
 
 def _classify(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if "timed out" in msg or "timeout" in msg:
+        return "PROVIDER_TIMEOUT"
     if isinstance(exc, ProviderUnavailable):
         return "PROVIDER_TRANSPORT"
     if isinstance(exc, ProviderError):

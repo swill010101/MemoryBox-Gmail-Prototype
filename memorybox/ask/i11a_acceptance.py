@@ -51,6 +51,179 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="provider-neutral inference role",
     )
+    from memorybox.ask.i11a_regression import REGRESSION_ASKS
+
+    _check(
+        "a_regression_harness_four_asks",
+        REGRESSION_ASKS
+        == (
+            "write a narrative about my January 2025",
+            "write a narrative about my trip to las vegas in January 2026",
+            "write a narrative about my alaska trip in 2026",
+            "tell me what you know about Peggy",
+        ),
+        checks,
+        problems,
+        detail="i11a-regression canonical asks (live Asks are not part of prove-i11a)",
+    )
+    from memorybox.ask.i11a.observations import requires_model_interpretation
+
+    _check(
+        "extract_llm_only_for_freeform_b_units",
+        (not requires_model_interpretation({"kind": "calendar"}))
+        and (not requires_model_interpretation({"kind": "calendar_series"}))
+        and (not requires_model_interpretation({"kind": "travel"}))
+        and (not requires_model_interpretation({"kind": "comm_pattern"}))
+        and (not requires_model_interpretation({"kind": "correlated_event"}))
+        and (not requires_model_interpretation({"kind": "place_observation"}))
+        and (not requires_model_interpretation({"kind": "media_cluster"}))
+        and (not requires_model_interpretation({"kind": "media_observation"}))
+        and (not requires_model_interpretation({"kind": "video_asset"}))
+        and requires_model_interpretation({"kind": "communication_thread"})
+        and requires_model_interpretation({"kind": "sms_segment"})
+        and requires_model_interpretation({"kind": "spoken_moment"})
+        and requires_model_interpretation({"kind": "communication", "source_type": "email"})
+        and requires_model_interpretation(
+            {"kind": "journal", "content": "A long free-form recollection about the week we spent driving."}
+        )
+        and not requires_model_interpretation({"kind": "journal", "title": "Note", "content": "Note"}),
+        checks,
+        problems,
+        detail="A units bypass OBSERVATION_EXTRACT; B is free-form only",
+    )
+    from memorybox.ask.i11a.infer import run_inference
+    from memorybox.providers.llm.fake import FakeLlmProvider
+
+    inf_a = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-cal"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-cal-a",
+                    "kind": "calendar",
+                    "source_type": "calendar",
+                    "time": "2026-01-30",
+                    "title": "Eagles Live at Sphere",
+                    "content": "Eagles Live at Sphere",
+                    "people": [{"name": "Tom"}],
+                    "place": "Las Vegas",
+                    "provenance": {"evidence_id": "e-cal-a"},
+                }
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_a = inf_a.get("accounting") or {}
+    _check(
+        "calendar_units_skip_observation_extract",
+        acc_a.get("extract_calls") == 0
+        and int(acc_a.get("observations_a") or 0) >= 1
+        and int(acc_a.get("ask_relative_calls") or 0) == 1,
+        checks,
+        problems,
+        detail={k: acc_a.get(k) for k in ("extract_calls", "observations_a", "observations_b", "leaf_calls", "ask_relative_calls")},
+    )
+    inf_b = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-em"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-em-a",
+                    "kind": "communication",
+                    "source_type": "email",
+                    "time": "2026-01-29",
+                    "content": "Your Las Vegas hotel reservation is confirmed for Jan 29.",
+                    "people": [{"name": "Tom"}],
+                    "place": "Las Vegas",
+                    "provenance": {"evidence_id": "e-em-a"},
+                }
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_b = inf_b.get("accounting") or {}
+    _check(
+        "email_units_still_use_observation_extract",
+        int(acc_b.get("extract_calls") or 0) >= 1
+        and int(acc_b.get("units_model_extract") or 0) >= 1,
+        checks,
+        problems,
+        detail={k: acc_b.get(k) for k in ("extract_calls", "observations_a", "observations_b", "units_model_extract")},
+    )
+    from memorybox.ask.i11a.observations import observation_from_unit
+
+    pat = observation_from_unit(
+        {
+            "kind": "comm_pattern",
+            "evidence_id": "e-pat",
+            "content": "repeated affectionate messages",
+            "extra_ids": ["e-1", "e-2"],
+        }
+    ) or {}
+    corr = observation_from_unit(
+        {
+            "kind": "correlated_event",
+            "evidence_id": "e-corr",
+            "content": "Dinner with calendar and texts",
+            "extra_ids": ["e-cal", "e-sms"],
+        }
+    ) or {}
+    _check(
+        "pattern_and_correlation_bypass_extract_as_derived",
+        (not requires_model_interpretation({"kind": "comm_pattern"}))
+        and (not requires_model_interpretation({"kind": "correlated_event"}))
+        and pat.get("claim_type") == "derived"
+        and corr.get("claim_type") == "derived"
+        and pat.get("supporting_evidence_ids")
+        and corr.get("supporting_evidence_ids"),
+        checks,
+        problems,
+        detail={"pat": pat.get("claim_type"), "corr": corr.get("claim_type")},
+    )
+    inf_mix = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-mix"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-cal-mix",
+                    "kind": "calendar",
+                    "source_type": "calendar",
+                    "time": "2026-01-30",
+                    "title": "Eagles Live at Sphere",
+                    "content": "Eagles Live at Sphere",
+                    "provenance": {"evidence_id": "e-cal-mix"},
+                },
+                {
+                    "unit_id": "u-em-mix",
+                    "kind": "communication",
+                    "source_type": "email",
+                    "time": "2026-01-29",
+                    "content": "Your Las Vegas hotel reservation is confirmed for Jan 29.",
+                    "provenance": {"evidence_id": "e-em-mix"},
+                },
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_mix = inf_mix.get("accounting") or {}
+    _check(
+        "mixed_pack_extracts_only_b",
+        int(acc_mix.get("extract_calls") or 0) == 1
+        and int(acc_mix.get("units_model_extract") or 0) == 1
+        and int(acc_mix.get("units_deterministic") or 0) >= 1,
+        checks,
+        problems,
+        detail={k: acc_mix.get(k) for k in ("extract_calls", "units_model_extract", "units_deterministic", "observations_a", "observations_b")},
+    )
     _check(
         "a09_trace_light_copy_export",
         "copy-provider-payload" in js
@@ -60,8 +233,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "Copy Full Trace JSON" in js
         and "exportJsonFile" in js
         and "copy-pane" in js
-        and "?v=i11a7" in html
+        and "?v=i11a9" in html
         and "copy-preaggregation" in js
+        and "copy-semantic-observations" in js
+        and "copy-semantic-ir" in js
+        and "copy-ask-relative" in js
+        and "copy-ask-relative-payload" in js
         and "retrieval_resolution" in js
         and "copy-retrieval-resolution" in js
         and "copy-consideration" in js
@@ -237,6 +414,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a08_fail_closed",
         down_meta.get("fail_closed") is True
         and (down_pack.get("inference") or {}).get("fail_closed") is True
+        and (down_pack.get("inference") or {}).get("error_class") != "PARSE_SCHEMA"
         and "narration unavailable" in down_text.lower()
         and "evidence-backed account" not in down_text.lower(),
         checks,
@@ -244,15 +422,44 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         detail=down_text[:200],
     )
 
+    class _TimeoutLlm(FakeLlmProvider):
+        provider_key = "ollama"
+        chat_model = "llama3.2"
+
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            system = next((m.content for m in messages if m.role == "system"), "")
+            if "ASK_RELATIVE_REASONING" in (system or ""):
+                raise ProviderUnavailable("timed out after 90s")
+            return super().chat(messages, json_mode=json_mode)
+
+    to_text, to_pack, to_meta = tell_from_hits(jan_plan, llm=_TimeoutLlm(), evidence=hits)
+    to_inf = to_pack.get("inference") or {}
+    _check(
+        "ask_relative_timeout_is_not_parse_schema",
+        to_meta.get("fail_closed") is True
+        and to_inf.get("fail_closed") is True
+        and to_inf.get("error_class") == "PROVIDER_TIMEOUT"
+        and "timed out" in str(to_inf.get("reason") or "").lower()
+        and "PARSE_SCHEMA" not in str(to_inf.get("error_class") or "")
+        and to_inf.get("stage") == "ask-relative reasoning"
+        and to_inf.get("timeout_seconds") == 90
+        and to_pack.get("semantic_observations")
+        and not to_pack.get("validated_inference")
+        and "narration unavailable" in to_text.lower()
+        and "evidence-backed account" not in to_text.lower(),
+        checks,
+        problems,
+        detail=str({k: to_inf.get(k) for k in ("ok", "fail_closed", "reason", "error_class", "stage", "timeout_seconds", "retry_count")}),
+    )
+
     fake = FakeLlmProvider()
     raw = fake.chat(
         [
-            ChatMessage(role="system", content="EVIDENCE_INFERENCE"),
+            ChatMessage(role="system", content="OBSERVATION_EXTRACT"),
             ChatMessage(
                 role="user",
                 content=json.dumps(
                     {
-                        "ask_kind": "period",
                         "units": [
                             {
                                 "unit_id": "u1",
@@ -260,7 +467,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                                 "kind": "communication",
                                 "time": "2025-01-12",
                                 "content": "harbor dinner",
-                                "people": [],
+                                "people": [{"name": "Tom"}],
                             }
                         ],
                     }
@@ -273,9 +480,9 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "a05_fake_inference_schema",
         parsed
-        and parsed.get("schema_version") == 2
+        and (parsed.get("observations") or [])
         and "coverage" not in parsed
-        and (parsed.get("episodes") or []),
+        and "harbor" in json.dumps(parsed, default=str).lower(),
         checks,
         problems,
         detail=str(parsed)[:300],
@@ -542,8 +749,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "inference_prompt_untouched_by_alaska_trace",
-        "EVIDENCE_INFERENCE" in infer_py
-        and "Do not invent people, places, dates" in infer_py,
+        "OBSERVATION_EXTRACT" in infer_py
+        and "ASK_RELATIVE_REASONING" in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8")
+        and "Do not invent people, places, dates" in infer_py
+        and "MERGE_SYSTEM_PERSON" not in infer_py
+        and "select_for_ask" not in infer_py
+        and "select_for_ask" not in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8"),
         checks,
         problems,
         detail="I11A system prompt must stay fail-closed; this increment is upstream",
@@ -1203,7 +1414,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     from memorybox.ask.retrieve import video_assets_from_photo_hits
     from memorybox.ask.i11a.claim_support import claim_support_ok
-    from memorybox.ask.i11a.reduce import reduce_leaf_observations
+    from memorybox.ask.i11a.observations import extract_observations
+    from memorybox.ask.i11a.reason import fallback_view
     from memorybox.providers.photo._immich_http import ImmichHttpClient
 
     lv_disc = _resolve_trip2(
@@ -1328,51 +1540,63 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail=str({"generic": generic_why, "cal": cal_why, "gps": gps_why}),
     )
-    reduced = reduce_leaf_observations(
+    vegas_units = [
         {
-            "schema_version": 2,
-            "ask_semantics": {"kind": "period", "constraints": {}},
-            "episodes": [
-                {
-                    "label": "Flight to Las Vegas",
-                    "date_span": {"start": "2026-01-29", "end": "2026-01-29"},
-                    "claims": [{"text": "calendar showed Flight to Las Vegas"}],
-                },
-                {
-                    "label": "Eagles at Sphere",
-                    "date_span": {"start": "2026-01-30", "end": "2026-01-30"},
-                    "places": ["Las Vegas"],
-                    "claims": [{"text": "Eagles Live at Sphere"}],
-                },
-            ],
+            "kind": "calendar",
+            "evidence_id": "e-las-flight",
+            "unit_id": "u-flight",
+            "time": "2026-01-29",
+            "content": "Flight to Las Vegas",
+            "title": "Flight to Las Vegas",
+            "place": "Las Vegas",
         },
-        pack={
-            "units": [
-                {
-                    "kind": "media_observation",
-                    "evidence_id": "ph-paradise-nv",
-                    "asset_ref": "ph-paradise-nv",
-                    "time": "2026-01-30T16:00:00",
-                    "place": "Paradise, Nevada",
-                    "latitude": 36.12,
-                    "longitude": -115.17,
-                }
-            ]
+        {
+            "kind": "calendar",
+            "evidence_id": "e-eagles-sphere",
+            "unit_id": "u-sphere",
+            "time": "2026-01-30",
+            "content": "Eagles Live at Sphere",
+            "title": "Eagles Live at Sphere",
+            "place": "Las Vegas",
         },
+        {
+            "kind": "media_observation",
+            "evidence_id": "ph-paradise-nv",
+            "asset_ref": "ph-paradise-nv",
+            "time": "2026-01-30T16:00:00",
+            "place": "Paradise, Nevada",
+            "latitude": 36.12,
+            "longitude": -115.17,
+            "people": [{"name": "Tom"}],
+        },
+    ]
+    vegas_obs = extract_observations(vegas_units, persist=False)
+    vegas_kinds = {str(o.get("kind") or "") for o in vegas_obs}
+    vegas_view = fallback_view(
+        vegas_obs, ask="Summarize our Las Vegas trip", ask_kind_hint="trip"
     )
+    vegas_blob = json.dumps(vegas_view, default=str).lower()
+    vegas_eids = set()
+    for ep in vegas_view.get("episodes") or []:
+        vegas_eids.update(str(x) for x in (ep.get("supporting_evidence_ids") or []))
+        for cl in ep.get("claims") or []:
+            if isinstance(cl, dict):
+                vegas_eids.update(str(x) for x in (cl.get("supporting_evidence_ids") or []))
     _check(
         "leaf_reduce_one_vegas_trip",
-        len(reduced.get("episodes") or []) == 1
-        and (reduced["episodes"][0].get("label") == "Las Vegas trip")
-        and reduced["episodes"][0].get("correlated_from_leaves") is True
-        and (reduced.get("ask_semantics") or {}).get("kind") == "trip"
-        and (reduced["episodes"][0].get("observed_window") or {}).get("start")
-        and "ph-paradise-nv"
-        in ((reduced["episodes"][0].get("observed_window") or {}).get("evidence_ids") or [])
-        and "ph-paradise-nv" in (reduced["episodes"][0].get("candidate_visual_ids") or []),
+        "calendar_records_event" in vegas_kinds
+        and "person_at_place_time" in vegas_kinds
+        and "trip" not in vegas_kinds
+        and "e-las-flight" in vegas_eids
+        and "e-eagles-sphere" in vegas_eids
+        and "ph-paradise-nv" in vegas_eids
+        and "flight to las vegas" in vegas_blob
+        and "sphere" in vegas_blob
+        and "paradise" in vegas_blob
+        and "reduce_leaf_observations(" not in infer_py,
         checks,
         problems,
-        detail=str(reduced.get("episodes")),
+        detail=str({"kinds": sorted(vegas_kinds), "eids": sorted(vegas_eids), "eps": vegas_view.get("episodes")}),
     )
     _check(
         "immich_timeline_not_windowed_before_cache",
@@ -1421,11 +1645,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "person_reduce_is_not_one_trip_episode",
-        "Ask-kind-specific" in (root / "ask" / "i11a" / "reduce.py").read_text(encoding="utf-8")
-        and "MERGE_SYSTEM_PERSON" in (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
-        and "Do not collapse the subject into a single" in (root / "ask" / "i11a" / "infer.py").read_text(
-            encoding="utf-8"
-        ),
+        "DEPRECATED" in (root / "ask" / "i11a" / "reduce.py").read_text(encoding="utf-8")
+        and "MERGE_SYSTEM_PERSON" not in infer_py
+        and "ASK_RELATIVE_REASONING" in (root / "ask" / "i11a" / "reason.py").read_text(encoding="utf-8")
+        and "ask_kind" not in __import__("inspect").signature(
+            extract_observations
+        ).parameters,
         checks,
         problems,
         detail="Person merge/reduce must not be trip-only",
@@ -1539,6 +1764,242 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=(synth or "")[:400],
+    )
+
+    from memorybox.ask.i11a.observations import canonicalize_observation
+    from memorybox.ask.i11a.reason import compact_observation_for_reason, reason_payload
+    from memorybox.ask.i11a.validate import validate_observations
+    from memorybox.ask.i11a.claim_support import claim_support_ok
+
+    repaired = canonicalize_observation(
+        {
+            "kind": "communication",
+            "claim_type": "location",
+            "text": "tickets@example.com confirmation",
+            "source_type": "email",
+            "places": [{"name": "Las Vegas"}],
+            "people": ["Tom"],
+            "supporting_evidence_ids": ["e-mail-1"],
+        }
+    )
+    place_at = canonicalize_observation(
+        {
+            "kind": "person_at_place_time",
+            "claim_type": "is",
+            "text": "noreply@delta.com itinerary",
+            "source_type": "email",
+            "supporting_evidence_ids": ["e-delta"],
+        }
+    )
+    _check(
+        "observation_schema_is_canonical",
+        repaired
+        and repaired.get("kind") == "communication_states"
+        and repaired.get("claim_type") == "observed"
+        and repaired.get("places") == ["Las Vegas"]
+        and place_at
+        and place_at.get("kind") == "communication_states",
+        checks,
+        problems,
+        detail=str({"repaired": repaired, "email_place": place_at}),
+    )
+    park_ok, park_why = claim_support_ok(
+        "Calendar records Eagles Live at Sphere",
+        {"kind": "calendar", "content": "Parking at Aria", "title": "Parking", "place": "Las Vegas"},
+    )
+    sphere_ok, sphere_why = claim_support_ok(
+        "Calendar records Eagles Live at Sphere",
+        {"kind": "calendar", "content": "Eagles Live at Sphere", "title": "Eagles Live at Sphere", "place": "Las Vegas"},
+    )
+    sphere_pack = {
+        "units": [
+            {
+                "kind": "calendar",
+                "evidence_id": "e-eagles-sphere",
+                "content": "Eagles Live at Sphere",
+                "title": "Eagles Live at Sphere",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-parking",
+                "content": "Parking at Aria",
+                "title": "Parking",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-dinner",
+                "content": "Mesa Grill reservation",
+                "title": "Dinner",
+            },
+        ]
+    }
+    sphere_val = validate_observations(
+        [
+            {
+                "kind": "calendar_records_event",
+                "claim_type": "recorded",
+                "text": "Calendar records Eagles Live at Sphere",
+                "supporting_evidence_ids": [
+                    "e-eagles-sphere",
+                    "e-parking",
+                    "e-dinner",
+                ],
+            }
+        ],
+        pack=sphere_pack,
+        person_context={},
+    )
+    sphere_kept = (sphere_val.get("observations") or [{}])[0].get("supporting_evidence_ids") or []
+    _check(
+        "named_event_does_not_inherit_batch_ids",
+        park_ok is False
+        and sphere_ok is True
+        and sphere_kept == ["e-eagles-sphere"],
+        checks,
+        problems,
+        detail=str({"park": park_why, "sphere": sphere_why, "kept": sphere_kept, "rej": sphere_val.get("rejected")}),
+    )
+
+    from memorybox.ask.i11a.infer import apply_inference_to_pack as _apply_lv
+
+    lv_plan = plan_ask(
+        "write a narrative about my trip to las vegas in January 2026",
+        AskContext(session_id="i11a-lv-compact"),
+    )
+    lv_pack = {
+        "units": [
+            {
+                "kind": "calendar",
+                "evidence_id": "e-las-flight",
+                "unit_id": "u-flight",
+                "time": "2026-01-29",
+                "content": "Flight to Las Vegas",
+                "title": "Flight to Las Vegas",
+                "place": "Las Vegas",
+                "source_type": "calendar",
+            },
+            {
+                "kind": "calendar",
+                "evidence_id": "e-eagles-sphere",
+                "unit_id": "u-sphere",
+                "time": "2026-01-30",
+                "content": "Eagles Live at Sphere",
+                "title": "Eagles Live at Sphere",
+                "place": "Las Vegas",
+                "source_type": "calendar",
+            },
+            {
+                "kind": "communication",
+                "evidence_id": "e-stay-mail",
+                "unit_id": "u-stay",
+                "time": "2026-01-28",
+                "content": "Hotel stay Las Vegas Jan 29-Feb 3",
+                "source_type": "email",
+            },
+            {
+                "kind": "media_observation",
+                "evidence_id": "ph-paradise-nv",
+                "asset_ref": "ph-paradise-nv",
+                "time": "2026-01-30T16:00:00",
+                "place": "Paradise, Nevada",
+                "latitude": 36.12,
+                "longitude": -115.17,
+                "source_type": "photo",
+            },
+        ]
+    }
+    lv_pack = _apply_lv(lv_plan, lv_pack, FakeLlmProvider())
+    lv_obs = lv_pack.get("semantic_observations") or []
+    lv_view = lv_pack.get("ask_relative_view") or {}
+    compact_rows = [compact_observation_for_reason(o) for o in lv_obs]
+    compact_blob = json.dumps(compact_rows, default=str)
+    from memorybox.ask.i11a.infer import _payload_stats
+    from memorybox.ask.i11a.reason import ASK_RELATIVE_SYSTEM as _ARS
+    from memorybox.ask.i11a.person_context import slim_person_context_for_model as _slim
+
+    rp = reason_payload(
+        plan=lv_plan,
+        observations=lv_obs,
+        request_context=lv_pack.get("request_context") or {},
+        person_context=_slim(lv_pack.get("person_context") or {}),
+        ask_kind_hint="trip",
+    )
+    stats = _payload_stats(_ARS, rp)
+    lv_blob = json.dumps(lv_obs, default=str).lower() + json.dumps(lv_view, default=str).lower()
+    _check(
+        "las_vegas_ask_relative_completes_from_observations",
+        (lv_pack.get("inference") or {}).get("ok") is True
+        and (lv_pack.get("inference") or {}).get("fail_closed") is not True
+        and bool(lv_obs)
+        and bool(lv_view.get("selected_observation_ids") or lv_view.get("episodes"))
+        and "flight" in lv_blob
+        and "sphere" in lv_blob
+        and "excerpts" not in compact_blob
+        and "supporting_evidence_ids" not in compact_blob
+        and int(stats.get("payload_bytes") or 0) < 20_000
+        and stats.get("includes_full_evidence_id_arrays") is False,
+        checks,
+        problems,
+        detail=str({"n": len(lv_obs), "stats": stats, "sel": lv_view.get("selected_observation_ids"), "ok": (lv_pack.get("inference") or {}).get("ok"), "texts": [o.get("text") for o in lv_obs]}),
+    )
+
+    import inspect
+    from memorybox.ask.i11a.observations import extract_observations as _xo
+    from memorybox.ask.i11a.ir import ir_from_observations as _ir
+
+    jan_units = [
+        {"kind": "calendar", "evidence_id": "e-pt", "time": "2026-01-06", "content": "Physical therapy", "title": "Physical therapy"},
+        {"kind": "communication", "evidence_id": "e-jan-mail", "time": "2026-01-12", "content": "harbor dinner next week", "people": [{"name": "Tom"}]},
+    ]
+    ak_units = [
+        {"kind": "travel", "evidence_id": "e-ak-itin", "time": "2026-05-10", "content": "Princess Alaska cruise itinerary", "place": "Alaska"},
+        {"kind": "media_observation", "evidence_id": "ph-van", "time": "2026-05-08", "place": "Vancouver", "content": "photo", "people": [{"name": "Tom"}]},
+    ]
+    xmas_units = [
+        {"kind": "calendar", "evidence_id": "e-xmas", "time": "2019-12-25", "content": "Christmas dinner", "title": "Christmas dinner"},
+        {"kind": "communication", "evidence_id": "e-xmas-sms", "time": "2019-12-25", "content": "Merry Christmas love you", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+    ]
+    rel_units = [
+        {"kind": "communication", "evidence_id": "e-rel-1", "time": "2024-03-01", "content": "love you", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        {"kind": "communication", "evidence_id": "e-rel-2", "time": "2024-03-02", "content": "Want to come over for dinner tomorrow?", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        {"kind": "calendar", "evidence_id": "e-rel-cal", "time": "2024-03-02", "content": "Dinner with Peggy", "title": "Dinner with Peggy"},
+    ]
+    fixtures = {
+        "january_period": jan_units,
+        "las_vegas_trip": vegas_units,
+        "alaska_trip": ak_units,
+        "peggy_person": [
+            {"kind": "media_observation", "evidence_id": "ph-peg-x", "time": "2024-06-01", "place": "Manchester", "people": [{"name": "Peggy"}], "latitude": 53.48, "longitude": -2.24},
+            {"kind": "communication", "evidence_id": "e-peg-love", "time": "2024-06-02", "content": "love you Peggy", "people": [{"name": "Peggy"}, {"name": "Tom"}]},
+        ],
+        "peggy_tom_together": rel_units,
+        "christmas_event": xmas_units,
+    }
+    engine_ok = "ask_kind" not in inspect.signature(_xo).parameters
+    ir_blobs = {}
+    for name, rows in fixtures.items():
+        obs = _xo(rows, persist=False)
+        ir = _ir(obs)
+        blob = json.dumps({"obs": obs, "ir": ir}, default=str).lower()
+        ir_blobs[name] = blob
+        engine_ok = engine_ok and bool(obs) and bool(ir.get("nodes"))
+    _check(
+        "common_observation_engine_multiple_asks",
+        engine_ok
+        and "physical therapy" in ir_blobs["january_period"]
+        and "flight to las vegas" in ir_blobs["las_vegas_trip"]
+        and "sphere" in ir_blobs["las_vegas_trip"]
+        and "alaska" in ir_blobs["alaska_trip"]
+        and "vancouver" in ir_blobs["alaska_trip"]
+        and "peggy" in ir_blobs["peggy_person"]
+        and "love" in ir_blobs["peggy_tom_together"]
+        and "dinner" in ir_blobs["peggy_tom_together"]
+        and "christmas" in ir_blobs["christmas_event"]
+        and "email from peggy" not in ir_blobs["peggy_person"]
+        and all("trip_span" not in json.dumps(_xo(rows, persist=False), default=str) for rows in fixtures.values()),
+        checks,
+        problems,
+        detail={k: v[:180] for k, v in ir_blobs.items()},
     )
 
     meta["synthetic"] = str(uuid4())[:8]

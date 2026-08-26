@@ -137,6 +137,58 @@ def _index_pack_units(pack: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     return idx
 
 
+def leaf_unit_index(pack: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Index original retrieved units only — not aggregated extra_id aliases.
+
+    Claim validation must not treat a parking receipt as Sphere evidence because
+    both IDs appear on the same inference cluster.
+    """
+    idx: dict[str, dict[str, Any]] = {}
+    if not isinstance(pack, dict):
+        return idx
+    for u in pack.get("units") or []:
+        if not isinstance(u, dict):
+            continue
+        for key in (
+            u.get("unit_id"),
+            u.get("evidence_id"),
+            u.get("asset_ref"),
+        ):
+            s = str(key or "").strip()
+            if s and s not in idx:
+                idx[s] = u
+        prov = u.get("provenance") if isinstance(u.get("provenance"), dict) else {}
+        for k in ("evidence_id", "external_id"):
+            s = str(prov.get(k) or "").strip()
+            if s and s not in idx:
+                idx[s] = u
+    return idx
+    idx: dict[str, dict[str, Any]] = {}
+    if not isinstance(pack, dict):
+        return idx
+    for u in list(pack.get("units") or []) + list(pack.get("inference_units") or []):
+        if not isinstance(u, dict):
+            continue
+        keys = [
+            u.get("unit_id"),
+            u.get("evidence_id"),
+            u.get("asset_ref"),
+            (u.get("provenance") or {}).get("evidence_id")
+            if isinstance(u.get("provenance"), dict)
+            else None,
+            (u.get("provenance") or {}).get("external_id")
+            if isinstance(u.get("provenance"), dict)
+            else None,
+        ]
+        for extra in list(u.get("extra_ids") or []) + list(u.get("source_evidence_ids") or []):
+            keys.append(extra)
+        for key in keys:
+            s = str(key or "").strip()
+            if s and s not in idx:
+                idx[s] = u
+    return idx
+
+
 def windows_from_members(members: list[dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
     buckets = {
         "scheduled": empty_window(),

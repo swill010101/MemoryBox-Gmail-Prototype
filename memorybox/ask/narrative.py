@@ -39,7 +39,7 @@ Rules:
 - Do not convert plausible inference into narrative fact.
 - Do not write how much mail, how many texts, how many weeks, or how MemoryBox processed the archive.
 - Do not write retrieve/process completeness, evidence-considered counts, archive or week counts, missing-modality notices, eligible/processed totals, model name, or AI Trace diagnostics.
-- Do not write evidence IDs, internal episode names as labels, or the words scheduled_window, observed_window, derived_window, or person_understanding in the family story.
+- Do not write evidence IDs, IR node IDs, observation IDs, internal episode names or numbers as labels, confidence fields, or the words scheduled_window, observed_window, derived_window, or person_understanding in the family story.
 - For a person Ask, write a documentary portrait from the episodes and themes. Do not collapse the person into a single trip. Do not diagnose personality from messages.
 - Do not add a closing corroboration or provenance paragraph. Python appends a short Evidence behind this story section after your prose.
 - Do not list shipping notices, receipts, surveys, or ordinary order confirmations unless they are a listed characterizing claim.

@@ -1,4 +1,4 @@
-"""Provider-neutral I11A inference: batch, retry, merge, validate."""
+"""Provider-neutral I11A inference: observations → IR → Ask-relative view → validate."""
 from __future__ import annotations
 
 import json
@@ -7,104 +7,77 @@ import time
 from typing import Any
 
 from memorybox.ask.i11a import needs_semantic_inference, resolve_request_context
+from memorybox.ask.i11a.ir import ir_from_observations
+from memorybox.ask.i11a.observations import (
+    extract_observations,
+    merge_model_observations,
+    observation_from_unit,
+    requires_model_interpretation,
+)
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
-from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
+from memorybox.ask.i11a.reason import (
+    ASK_RELATIVE_SYSTEM,
+    apply_correlations_to_ir,
+    eligible_observations,
+    fallback_view,
+    reason_payload,
+    view_from_model_json,
+)
 from memorybox.ask.i11a.support import rank_episodes_for_narrator
+from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
+from memorybox.ask.i11a.validate import parse_inference_json, validate_inference, validate_observations
 from memorybox.ask.i11a.windows import _day
-from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
 
-INFERENCE_SYSTEM = """EVIDENCE_INFERENCE
-You are MemoryBox's structured inference engine. Return JSON only. Do not write family prose.
-Interpret the evidence for the current Ask using Person context as interpretation aid, not as proof of period events.
-This leaf sees one batch of pre-aggregated units (threads, media clusters, patterns, calendar, travel), not raw archive dumps.
-Emit grounded observations. A later Ask-kind-specific reduce/correlation stage organizes them (Person understanding, trip episode, or period). Do not assume the Ask is a trip.
+OBSERVATION_EXTRACT = """OBSERVATION_EXTRACT
+You extract Ask-independent grounded semantic observations. Return JSON only.
+Answer: what does this evidence actually establish?
+Do not create a trip, Person portrait, period narrative, holiday story, or relationship essay.
+Do not use the user's question. These observations must be reusable across future Asks.
+
+Emit objects with: observation_id (optional), kind, text, claim_type, people, places, time,
+supporting_evidence_ids copied exactly from unit evidence_id / extra_ids / source_evidence_ids,
+uncertainty[].
+
+Kinds: person_at_place_time, calendar_records_event, communication_states,
+travel_document_records, repeated_communication_pattern, people_interacting,
+activity_named, place_referenced, relationship_stated, media_observation.
+
+Preserve communication meaning (what was stated, offered, planned, or recollected),
+not labels such as "email from Peggy" or "calendar event".
+Examples of grounded text:
+- Peggy and Tom exchanged affectionate messages: love you
+- Calendar records Eagles Live at Sphere
+- Travel document records Flight to Las Vegas
+- Tom observed at Paradise on 2026-01-30
+
 Rules:
-- Ground every material claim in supporting_evidence_ids copied exactly from unit evidence_id or unit_id fields. Never invent IDs.
-- Do not invent people, places, dates, motives, emotions, photographer identity, trip purpose, or that a calendar event occurred.
-- Date proximity is not enough to merge records. Subject lines are not episode labels unless they name the real topic.
-- Do not apply hard-coded topic importance (commerce is noise, health is important, family messages matter).
-- Relationship labels may only reuse labels supplied in PersonContext. Unknown contacts stay unknown. Warmth or frequency is not family.
-- candidate_visual_ids may only be asset/evidence ids from supplied media units.
-- Media units may include captured_at, reliable EXIF/GPS, observed people, and location provenance. Infer candidate episodes from those fields; do not infer photographer, purpose, emotion, or companions beyond the evidence.
-- A GPS or reverse-geocode city is presence at capture time, not residence or a month-long stay. Correlate nearby calendar/travel/media (for example Paradise, NV with Las Vegas) instead of inventing an independent period episode.
-- Video assets (file + capture time + optional GPS) are evidence even without a face-appearance moment. Video moments (a span on a video) are a separate concept.
-- A calendar 'Flight to Las Vegas' supports scheduled travel, not that the flight occurred. A generic flight without a destination cannot support 'flew to Las Vegas'. A Person+GPS photo supports physical presence at capture time.
-- Return unresolved items rather than guessing.
-- Do not include coverage, counts, provider status, eligible/processed totals, or incomplete flags in the JSON.
-- Schema keys: schema_version, ask_semantics, focal_subjects, episodes, themes, unresolved.
-- ask_semantics.kind must be period|trip|person|event|communications|other.
-- Each episode needs label, date_span, people[].role, claims[].text, claims[].supporting_evidence_ids copied from unit evidence_id or unit_id, claim_type observed|recorded|recollection|derived|inferred.
-- unresolved is short strings only. Do not copy whole units into unresolved.
-Episode people.role: participant|mentioned|unknown.
+- Do not invent people, places, dates, motives, or emotions.
+- Never invent IDs.
+- GPS/reverse-geocode city is presence at capture, not residence.
+- Calendar listing is scheduled/recorded, not occurrence.
+- Itinerary/reservation is not completed travel.
+- Relationship labels only if the evidence states them; kin labels are validated later against the graph.
+- Return {"observations": [...]} with no coverage counts.
 """
-
-MERGE_SYSTEM_TRIP = """INFERENCE_MERGE
-Correlate leaf observation JSON objects into one schema_version 2 document for a trip Ask.
-Leaves are observations, not competing final trip truth. Produce one normalized trip episode when they describe the same travel cluster.
-Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
-"""
-
-MERGE_SYSTEM_PERSON = """INFERENCE_MERGE
-Correlate leaf observation JSON objects into one schema_version 2 Person understanding.
-Do not collapse the subject into a single “life” or trip episode. Keep multiple episodes, themes, communication patterns, observed places, trips, and unresolved questions.
-Preserve original evidence IDs. Do not invent claims or family relationship labels. JSON only. No coverage or counts.
-"""
-
-MERGE_SYSTEM_DEFAULT = """INFERENCE_MERGE
-Correlate leaf observation JSON objects into one schema_version 2 document for the Ask.
-Leaves are observations. Preserve original evidence IDs. Do not invent claims. JSON only. No coverage or counts.
-"""
-
-# Back-compat for tests that read MERGE_SYSTEM from this module.
-MERGE_SYSTEM = MERGE_SYSTEM_TRIP
-
-
-def _inference_system(kind: str) -> str:
-    extra = ""
-    if kind == "person":
-        extra = (
-            "Ask kind is person. Communications, calendar, travel, stories, journals, "
-            "artifacts, and media all contribute. Do not let media volume dominate. "
-            "GPS/photo presence is not residence. Affection in messages supports expressed "
-            "affection, not a personality diagnosis. Relationship labels only from PersonContext."
-        )
-    elif kind == "trip":
-        extra = (
-            "Ask kind is trip. Correlate calendar/travel/media into trip observations. "
-            "GPS city is presence at capture time, not a month-long stay."
-        )
-    return INFERENCE_SYSTEM + ("\n- " + extra if extra else "")
-
-
-def _merge_system(kind: str) -> str:
-    if kind == "person":
-        return MERGE_SYSTEM_PERSON
-    if kind == "trip":
-        return MERGE_SYSTEM_TRIP
-    return MERGE_SYSTEM_DEFAULT
-
-_DEFAULT_BATCH_CHARS = 12_000
-_DEFAULT_RETRIES = 1
 
 
 def _batch_chars() -> int:
     raw = (os.environ.get("MEMORYBOX_I11A_BATCH_CHARS") or "").strip()
     if raw.isdigit() and int(raw) > 500:
         return int(raw)
-    return _DEFAULT_BATCH_CHARS
+    return 12_000
 
 
 def _retries() -> int:
     raw = (os.environ.get("MEMORYBOX_I11A_BATCH_RETRIES") or "").strip()
     if raw.isdigit():
         return max(0, min(5, int(raw)))
-    return _DEFAULT_RETRIES
+    return 1
 
 
 def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Split by character budget. Interleave kinds so media cannot starve communications."""
     budget = _batch_chars()
     buckets: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
@@ -182,99 +155,6 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
     raise last or ProviderError("inference failed")
 
 
-def _deterministic_merge(
-    leaf_docs: list[dict[str, Any]],
-    *,
-    keep_ids: set[str] | None = None,
-) -> dict[str, Any]:
-    episodes: list[dict[str, Any]] = []
-    themes: list[Any] = []
-    unresolved: list[Any] = []
-    focals: list[Any] = []
-    kind = "other"
-    for doc in leaf_docs:
-        if not isinstance(doc, dict):
-            continue
-        sem = doc.get("ask_semantics") if isinstance(doc.get("ask_semantics"), dict) else {}
-        if sem.get("kind"):
-            kind = str(sem.get("kind"))
-        episodes.extend([e for e in (doc.get("episodes") or []) if isinstance(e, dict)])
-        themes.extend(list(doc.get("themes") or []))
-        unresolved.extend(list(doc.get("unresolved") or []))
-        focals.extend(list(doc.get("focal_subjects") or []))
-
-    def _ep_key(ep: dict[str, Any]) -> str:
-        ds = ep.get("date_span") if isinstance(ep.get("date_span"), dict) else {}
-        return str(ds.get("start") or "") + "|" + str(ep.get("label") or "")
-
-    episodes.sort(key=_ep_key)
-
-    def _ep_keep_priority(ep: dict[str, Any]) -> int:
-        blob = " ".join(
-            str(x or "")
-            for x in (
-                ep.get("label"),
-                ep.get("content"),
-                " ".join(str(p) for p in (ep.get("places") or [])),
-            )
-        ).lower()
-        kinds = " ".join(str(x) for x in (ep.get("source_kinds") or []))
-        if any(tok in blob for tok in ("calendar", "flight", "sphere", "eagles", "cruise", "itinerary")):
-            return 0
-        if "calendar" in kinds or "travel" in kinds:
-            return 0
-        return 1
-
-    ranked = sorted(episodes, key=lambda e: (_ep_keep_priority(e), _ep_key(e)))
-    keep_ids = keep_ids or set()
-
-    def _cites_keep(ep: dict[str, Any]) -> bool:
-        ids: list[str] = []
-        for raw in ep.get("supporting_evidence_ids") or []:
-            ids.append(str(raw))
-        for cl in ep.get("claims") or []:
-            if isinstance(cl, dict):
-                ids.extend(str(x) for x in (cl.get("supporting_evidence_ids") or []))
-        return any(i in keep_ids for i in ids)
-
-    pinned = [e for e in ranked if _cites_keep(e)]
-    rest = [e for e in ranked if e not in pinned]
-    room = max(0, 80 - len(pinned))
-    return {
-        "schema_version": 2,
-        "ask_semantics": {"kind": kind, "constraints": {}},
-        "focal_subjects": focals[:12],
-        "episodes": (pinned + rest[:room])[: max(80, len(pinned))],
-        "themes": themes[:24],
-        "unresolved": unresolved[:24],
-    }
-
-
-def _llm_merge_enabled() -> bool:
-    raw = (os.environ.get("MEMORYBOX_I11A_LLM_MERGE") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _leaf_payload(
-    *,
-    plan: Any,
-    person_context: dict[str, Any],
-    chunk: list[dict[str, Any]],
-    kind: str,
-    modality_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    return {
-        "original_ask": getattr(plan, "original_ask", ""),
-        "ask_kind": kind,
-        "person_context": slim_person_context_for_model(person_context),
-        "units": [_unit_for_model(u) for u in chunk],
-        "modality_state": modality_state or {},
-        "note": (
-            "modality_state is operational. Do not restate counts or coverage in JSON."
-        ),
-    }
-
-
 def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
     row = {
         "unit_id": unit.get("unit_id"),
@@ -284,18 +164,129 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:240],
+        "content": str(unit.get("content") or "")[:400],
         "asset_ref": unit.get("asset_ref"),
-        "extra_ids": (unit.get("extra_ids") or unit.get("source_evidence_ids") or [])[:40],
+        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or [])[:8],
         "occurrence_count": unit.get("occurrence_count"),
         "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
+        "title": unit.get("title"),
+        "authored_text": str(unit.get("authored_text") or "")[:240],
     }
     if unit.get("media"):
         row["media"] = unit.get("media")
-    elif unit.get("captured_at") or unit.get("exif_gps"):
-        row["captured_at"] = unit.get("captured_at")
     return row
+
+
+def _obs_payload(chunk: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "units": [_unit_for_model(u) for u in chunk],
+        "note": "Ask-independent. Do not invent a trip, Person portrait, or period story.",
+    }
+
+
+def classify_llm_error(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if "timed out" in msg or "timeout" in msg:
+        return "PROVIDER_TIMEOUT"
+    if isinstance(exc, ProviderUnavailable):
+        return "PROVIDER_TRANSPORT"
+    if isinstance(exc, ProviderError):
+        return "PARSE_SCHEMA" if "parse" in msg or "json" in msg else "MODEL_OUTPUT"
+    return "MODEL_OUTPUT"
+
+
+def _configured_chat_timeout() -> int | None:
+    try:
+        from memorybox.providers.llm.ollama import ollama_chat_timeout_seconds
+
+        return ollama_chat_timeout_seconds()
+    except Exception:  # noqa: BLE001
+        raw = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return 90
+
+
+def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:
+    raw = json.dumps({"system": system, "user": payload}, default=str)
+    n = len(raw)
+    obs = payload.get("observations") if isinstance(payload.get("observations"), list) else []
+    return {
+        "observation_n": len(obs),
+        "payload_bytes": n,
+        "approx_tokens": max(1, n // 4),
+        "timeout_seconds": _configured_chat_timeout(),
+        "num_ctx": None,
+        "num_ctx_note": "Ollama chat options set temperature only; num_ctx is the model default",
+        "compact_observations": True,
+        "includes_full_evidence_id_arrays": False,
+        "includes_excerpts": False,
+    }
+
+
+def _mark_trace_error(error_class: str, *, reason: str) -> None:
+    try:
+        from memorybox.ai_trace import context as ai_ctx
+        from memorybox.ai_trace import store
+
+        tid = ai_ctx.current_trace_id()
+        if tid:
+            store.update_trace(tid, status="error", error_class=error_class)
+    except Exception:  # noqa: BLE001
+        return
+
+
+def _fail(
+    *,
+    reason: str,
+    person_context: dict[str, Any],
+    req: dict[str, Any],
+    accounting: dict[str, Any],
+    rejected: list[Any] | None = None,
+    error_class: str = "PARSE_SCHEMA",
+    stage: str = "i11a_validate",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = {
+        "ok": False,
+        "fail_closed": True,
+        "reason": reason,
+        "error_class": error_class,
+        "document": None,
+        "rejected": rejected or [],
+        "person_context": slim_person_context_for_model(person_context)
+        if reason == "no evidence units"
+        else person_context,
+        "request_context": req,
+        "accounting": accounting,
+        "partial": False,
+    }
+    assembled = {
+        "ok": False,
+        "reason": reason,
+        "partial": False,
+        "document": None,
+        "rejected": result["rejected"],
+        "accounting": accounting,
+        "fail_closed": True,
+        "error_class": error_class,
+        "person_context": slim_person_context_for_model(person_context),
+        "request_context": req,
+    }
+    if extra:
+        assembled.update(extra)
+        result.update({k: v for k, v in extra.items() if k not in result})
+    _trace_span(
+        stage=stage,
+        component="i11a",
+        operation="fail_closed",
+        status="error",
+        error_class=error_class,
+        assembled_context=assembled,
+    )
+    _mark_trace_error(error_class, reason=reason)
+    return result
 
 
 def run_inference(
@@ -305,11 +296,11 @@ def run_inference(
     *,
     modality_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run inference+validate. Never returns heuristic episodes as product truth."""
+    """Observations → IR → Ask-relative view. Heuristic episodes are never product truth."""
     t0 = time.perf_counter()
     person_context = build_person_context(plan)
     req = resolve_request_context(plan)
-    kind = ask_kind_for_plan(plan)
+    kind_hint = ask_kind_for_plan(plan)
     from memorybox.ask.i11a.preaggregate import preaggregate_pack
 
     units = units_from_pack(pack)
@@ -320,8 +311,13 @@ def run_inference(
     agg = preaggregate_pack(pack, person_id=focal_id)
     pack["preaggregation"] = agg.get("trace") or {}
     pack["inference_units"] = agg.get("units") or []
-    model_units = compact_units_for_model(agg.get("units") or units)
-    pack["preaggregation"]["inference_units_after_compact"] = len(model_units)
+    agg_units = list(agg.get("units") or units)
+    a_units = [u for u in agg_units if not requires_model_interpretation(u)]
+    b_units = [u for u in agg_units if requires_model_interpretation(u)]
+    model_units = compact_units_for_model(b_units)
+    pack["preaggregation"]["inference_units_after_compact"] = len(agg_units)
+    pack["preaggregation"]["deterministic_units"] = len(a_units)
+    pack["preaggregation"]["extract_units"] = len(model_units)
     chunks = _chunk_units(model_units)
     _trace_span(
         stage="i11a_inference",
@@ -342,21 +338,6 @@ def run_inference(
                 s = str(extra or "").strip()
                 if s:
                     chunk_map[s] = i
-    keep_ids = {
-        str(u.get("evidence_id") or u.get("unit_id") or "")
-        for u in model_units
-        if str(u.get("kind") or "") in {
-            "calendar",
-            "calendar_series",
-            "travel",
-            "video_asset",
-            "comm_pattern",
-            "communication_thread",
-            "sms_segment",
-            "correlated_event",
-        }
-    }
-    keep_ids = {x for x in keep_ids if x}
     accounting = {
         "eligible_units": len(units),
         "chunk_n": len(chunks),
@@ -367,71 +348,65 @@ def run_inference(
         "merge_depth": 0,
         "units_generated": len(units),
         "units_passed_to_inference": len(model_units),
-        "dropped_before_inference": max(0, len(units) - len(model_units)),
+        "units_deterministic": len(a_units),
+        "units_model_extract": len(model_units),
+        "dropped_before_inference": max(0, len(units) - len(agg_units)),
+        "extract_calls": 0,
         "leaf_calls": 0,
+        "ask_relative_calls": 0,
+        "observations_a": 0,
+        "observations_b": 0,
+        "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
+        "preaggregation_units": len(agg_units),
         "preaggregation": pack.get("preaggregation"),
+        "engine": "observations_ir_ask_relative",
     }
     if not units:
-        result = {
-            "ok": False,
-            "fail_closed": True,
-            "reason": "no evidence units",
-            "document": None,
-            "rejected": [],
-            "person_context": slim_person_context_for_model(person_context),
-            "request_context": req,
-            "accounting": accounting,
-            "partial": False,
-        }
-        _trace_span(
-            stage="i11a_validate",
-            component="i11a",
-            operation="fail_closed",
-            status="error",
-            error_class="PARSE_SCHEMA",
-            assembled_context={
-                "ok": False,
-                "reason": result["reason"],
-                "partial": False,
-                "document": None,
-                "rejected": [],
-                "accounting": accounting,
-                "fail_closed": True,
-                "person_context": slim_person_context_for_model(person_context),
-                "request_context": req,
-            },
+        return _fail(
+            reason="no evidence units",
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
         )
-        return result
-    leaf_docs: list[dict[str, Any]] = []
+
+    deterministic = extract_observations(a_units, person_id=focal_id)
+    accounting["observations_a"] = len(deterministic)
+    model_obs: list[dict[str, Any]] = []
     failed_chunks = 0
-    raw_leaves: list[str] = []
     for idx, chunk in enumerate(chunks):
         accounting["attempted_units"] += len(chunk)
         accounting["leaf_calls"] += 1
-        payload = _leaf_payload(
-            plan=plan,
-            person_context=person_context,
-            chunk=chunk,
-            kind=kind,
-            modality_state=modality_state,
-        )
+        accounting["extract_calls"] += 1
+        payload = _obs_payload(chunk)
         try:
-            raw = _call_with_retry(llm, _inference_system(kind), payload)
-            raw_leaves.append(raw)
-            parsed = parse_inference_json(raw)
-            if not parsed:
-                raise ProviderError("inference JSON parse failed")
-            leaf_docs.append(parsed)
+            raw = _call_with_retry(llm, OBSERVATION_EXTRACT, payload)
+            parsed = parse_inference_json(raw) or {}
+            rows = parsed.get("observations") if isinstance(parsed.get("observations"), list) else []
+            if not rows and parsed.get("episodes"):
+                for ep in parsed.get("episodes") or []:
+                    if isinstance(ep, dict):
+                        rows.append(
+                            {
+                                "kind": "activity_named",
+                                "text": ep.get("label") or "",
+                                "claim_type": "observed",
+                                "supporting_evidence_ids": ep.get("supporting_evidence_ids") or [],
+                                "people": ep.get("people") or [],
+                                "places": ep.get("places") or [],
+                                "time": (ep.get("date_span") or {}).get("start"),
+                            }
+                        )
+            model_obs.extend([r for r in rows if isinstance(r, dict)])
             accounting["successful_units"] += len(chunk)
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
-                operation="leaf",
+                operation="observation_extract",
                 status="ok",
                 assembled_context={"chunk": idx, "unit_n": len(chunk)},
-                provider_payload={"system": _inference_system(kind), "user": payload},
+                provider_payload={"system": OBSERVATION_EXTRACT, "user": payload},
                 raw_response={"content": raw},
-                parsed=parsed,
+                parsed={"observations": rows},
             )
         except Exception as exc:  # noqa: BLE001
             failed_chunks += 1
@@ -439,132 +414,182 @@ def run_inference(
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
-                operation="leaf",
+                operation="observation_extract",
                 status="error",
                 error_class="MODEL_OUTPUT",
                 assembled_context={"chunk": idx, "unit_n": len(chunk)},
                 error={"message": str(exc)},
             )
-    merged_raw = None
-    if not leaf_docs:
-        result = {
-            "ok": False,
-            "fail_closed": True,
-            "reason": "inference unavailable or unparsable",
-            "document": None,
-            "rejected": [],
-            "person_context": slim_person_context_for_model(person_context),
-            "request_context": req,
-            "accounting": accounting,
-            "partial": False,
-        }
-        _trace_span(
-            stage="i11a_validate",
-            component="i11a",
-            operation="fail_closed",
-            status="error",
-            error_class="PARSE_SCHEMA",
-            assembled_context={
-                "ok": False,
-                "reason": result["reason"],
-                "partial": False,
-                "document": None,
-                "rejected": [],
-                "accounting": accounting,
-                "fail_closed": True,
-                "person_context": slim_person_context_for_model(person_context),
-                "request_context": req,
-            },
-        )
-        return result
-    parsed_merge = leaf_docs[0]
-    if len(leaf_docs) > 1:
-        accounting["merge_depth"] = 1
-        if _llm_merge_enabled():
-            merge_payload = {
-                "original_ask": getattr(plan, "original_ask", ""),
-                "leaf_results": leaf_docs,
-            }
-            try:
-                merged_raw = _call_with_retry(llm, _merge_system(kind), merge_payload)
-                parsed_merge = parse_inference_json(merged_raw) or parsed_merge
-                _trace_span(
-                    stage="i11a_inference",
-                    component="i11a",
-                    operation="merge",
-                    status="ok",
-                    provider_payload={"system": _merge_system(kind), "user": merge_payload},
-                    raw_response={"content": merged_raw},
-                    parsed=parsed_merge,
-                )
-            except Exception as exc:  # noqa: BLE001
-                result = {
-                    "ok": False,
-                    "fail_closed": True,
-                    "reason": "inference merge failed",
-                    "document": None,
-                    "rejected": [{"reason": str(exc)}],
-                    "person_context": person_context,
-                    "request_context": req,
-                    "accounting": accounting,
-                    "partial": False,
-                }
-                _trace_span(
-                    stage="i11a_validate",
-                    component="i11a",
-                    operation="merge_fail",
-                    status="error",
-                    error_class="PARSE_SCHEMA",
-                    error={"message": str(exc)},
-                )
-                return result
-        else:
-            parsed_merge = _deterministic_merge(leaf_docs, keep_ids=keep_ids)
-            _trace_span(
-                stage="i11a_inference",
-                component="i11a",
-                operation="merge_deterministic",
-                status="ok",
-                parsed=parsed_merge,
-            )
-    from memorybox.ask.i11a.reduce import reduce_leaf_observations
 
-    parsed_merge = reduce_leaf_observations(parsed_merge, pack=pack, ask_kind=kind)
+    accounting["observations_b"] = len(model_obs)
+    merged = merge_model_observations(deterministic, model_obs)
+    if not merged:
+        merged = [observation_from_unit(u) for u in (agg.get("units") or units)]
+        merged = [o for o in merged if o]
+    validated_obs = validate_observations(
+        merged, pack=pack, person_context=person_context
+    )
+    observations = validated_obs.get("observations") or []
+    pack["semantic_observations"] = observations
     _trace_span(
         stage="i11a_inference",
         component="i11a",
-        operation="reduce_correlate",
+        operation="semantic_observations",
+        status="ok" if observations else "error",
+        parsed={"observations": observations, "rejected": validated_obs.get("rejected")},
+        validation={"rejected": validated_obs.get("rejected"), "ok": validated_obs.get("ok")},
+    )
+    if not observations:
+        return _fail(
+            reason="no grounded observations",
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
+            rejected=validated_obs.get("rejected") or [],
+        )
+
+    ir = ir_from_observations(observations)
+    pack["semantic_ir"] = ir
+    _trace_span(
+        stage="i11a_inference",
+        component="i11a",
+        operation="semantic_ir",
         status="ok",
-        parsed=parsed_merge,
+        parsed=ir,
     )
-    validated = validate_inference(
-        parsed_merge, pack=pack, person_context=person_context
+
+    eligible = eligible_observations(
+        observations, plan=plan, request_context=req
     )
+    ask = str(getattr(plan, "original_ask", "") or "")
+    rp = reason_payload(
+        plan=plan,
+        observations=eligible,
+        request_context=req,
+        person_context=slim_person_context_for_model(person_context),
+        ask_kind_hint=kind_hint,
+    )
+    parsed_view = None
+    ask_t0 = time.perf_counter()
+    stats = _payload_stats(ASK_RELATIVE_SYSTEM, rp)
+    accounting["ask_relative_payload"] = stats
+    _trace_span(
+        stage="ask_relative_reasoning",
+        component="i11a",
+        operation="ask_relative_payload",
+        status="ok",
+        assembled_context=stats,
+        parsed=stats,
+    )
+    try:
+        accounting["ask_relative_calls"] = 1
+        accounting["leaf_calls"] += 1
+        raw_view = _call_with_retry(llm, ASK_RELATIVE_SYSTEM, rp)
+        parsed_view = parse_inference_json(raw_view)
+        _trace_span(
+            stage="ask_relative_reasoning",
+            component="i11a",
+            operation="ask_relative",
+            status="ok",
+            duration_ms=int((time.perf_counter() - ask_t0) * 1000),
+            provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
+            raw_response={"content": raw_view},
+            parsed=parsed_view,
+            assembled_context={
+                **stats,
+                "retry_count": _retries(),
+                "provider_key": getattr(llm, "provider_key", None),
+                "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
+            },
+        )
+    except ProviderUnavailable as exc:
+        klass = classify_llm_error(exc)
+        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        timeout_s = stats.get("timeout_seconds")
+        if klass == "PROVIDER_TIMEOUT":
+            reason = (
+                f"ask-relative reasoning timed out after {elapsed_ms}ms "
+                f"(limit {timeout_s}s)"
+            )
+        else:
+            reason = f"ask-relative reasoning unavailable: {exc}"
+        extra = {
+            "stage": "ask-relative reasoning",
+            "provider_key": getattr(llm, "provider_key", None),
+            "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
+            "timeout_seconds": timeout_s,
+            "duration_ms": elapsed_ms,
+            "retry_count": _retries(),
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc),
+            "ask_relative_payload": stats,
+        }
+        _trace_span(
+            stage="ask_relative_reasoning",
+            component="i11a",
+            operation="ask_relative",
+            status="error",
+            error_class=klass,
+            duration_ms=elapsed_ms,
+            error=extra,
+            assembled_context=extra,
+            provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
+        )
+        return _fail(
+            reason=reason,
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
+            error_class=klass,
+            stage="ask_relative_reasoning",
+            extra=extra,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _trace_span(
+            stage="ask_relative_reasoning",
+            component="i11a",
+            operation="ask_relative",
+            status="error",
+            error_class="PARSE_SCHEMA",
+            error={"message": str(exc)},
+        )
+        parsed_view = None
+
+    view = view_from_model_json(
+        parsed_view, eligible, ask=ask, ask_kind_hint=kind_hint
+    )
+    if not view.get("episodes"):
+        view = fallback_view(eligible, ask=ask, ask_kind_hint=kind_hint)
+    ir = apply_correlations_to_ir(ir, view)
+    pack["semantic_ir"] = ir
+    pack["ask_relative_view"] = view
+    _trace_span(
+        stage="i11a_inference",
+        component="i11a",
+        operation="ask_relative_view",
+        status="ok",
+        parsed=view,
+    )
+
+    validated = validate_inference(view, pack=pack, person_context=person_context)
     incomplete = failed_chunks > 0
     fail_closed = not validated.get("ok")
-    if incomplete and accounting["successful_units"] == 0:
-        fail_closed = True
-    if incomplete and accounting["attempted_units"] and (
-        accounting["successful_units"] < max(1, accounting["attempted_units"] // 2)
-    ):
-        fail_closed = True
-        incomplete = False
     result = {
         "ok": bool(validated.get("ok")) and not fail_closed,
         "fail_closed": fail_closed,
         "partial": incomplete and not fail_closed,
         "reason": None if validated.get("ok") and not fail_closed else "validation failed",
         "document": validated.get("document") if not fail_closed else None,
-        "rejected": validated.get("rejected") or [],
+        "rejected": list(validated_obs.get("rejected") or []) + list(validated.get("rejected") or []),
         "person_context": person_context,
         "request_context": req,
         "accounting": accounting,
         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
-        "raw_leaf_n": len(raw_leaves),
         "chunk_map": chunk_map,
+        "observations": observations,
+        "semantic_ir": ir,
+        "ask_relative_view": view,
     }
-    if fail_closed and not leaf_docs:
-        result["reason"] = "inference unavailable or unparsable"
     _trace_span(
         stage="i11a_validate",
         component="i11a",
@@ -577,6 +602,9 @@ def run_inference(
             "accounting": accounting,
             "partial": result["partial"],
             "person_context": slim_person_context_for_model(person_context),
+            "semantic_observations": observations,
+            "semantic_ir": ir,
+            "ask_relative_view": view,
         },
         disposition={"validated_semantic_pack": validated.get("document") if result["ok"] else None},
     )
@@ -654,6 +682,7 @@ def apply_inference_to_pack(
 ) -> dict[str, Any]:
     if not needs_semantic_inference(plan):
         pack["inference"] = {"ok": False, "bypassed": True}
+        pack["i11a_ab_metrics"] = {}
         return pack
     inf = run_inference(plan, pack, llm, modality_state=modality_state)
     pack["inference"] = {
@@ -665,9 +694,28 @@ def apply_inference_to_pack(
         "rejected": inf.get("rejected"),
         "request_context": inf.get("request_context"),
         "heuristic_not_product_truth": True,
+        "error_class": inf.get("error_class"),
+        "timeout_seconds": inf.get("timeout_seconds"),
+        "duration_ms": inf.get("duration_ms"),
+        "retry_count": inf.get("retry_count"),
+        "stage": inf.get("stage"),
     }
     pack["person_context"] = inf.get("person_context")
     pack["request_context"] = inf.get("request_context")
+    acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
+    pack["i11a_ab_metrics"] = {
+        "raw_eligible": acc.get("raw_eligible"),
+        "preaggregation_units": acc.get("preaggregation_units"),
+        "a_deterministic_units": acc.get("units_deterministic"),
+        "b_semantic_units": acc.get("units_model_extract"),
+        "deterministic_observations": acc.get("observations_a"),
+        "model_derived_observations": acc.get("observations_b"),
+        "observation_extract_calls": acc.get("extract_calls"),
+        "ask_relative_calls": acc.get("ask_relative_calls"),
+    }
+    pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
+    pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
+    pack["ask_relative_view"] = inf.get("ask_relative_view") or pack.get("ask_relative_view")
     if inf.get("partial"):
         cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
         cov["incomplete"] = True

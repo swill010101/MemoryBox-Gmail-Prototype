@@ -1,4 +1,9 @@
-"""Correlate leaf observations into trip episodes. Leaves are not final trip truth."""
+"""DEPRECATED: Ask-kind-specific leaf correlation is not the product path.
+
+Product inference is observations → IR → ASK_RELATIVE_REASONING (see infer.py).
+These reducers remain only as a non-product fixture helper and must not be
+called from run_inference.
+"""
 from __future__ import annotations
 
 from typing import Any
