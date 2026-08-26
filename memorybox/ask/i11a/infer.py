@@ -29,8 +29,8 @@ from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.ask.i11a.comm_compact import (
     chunk_units_semantically,
     filter_extract_observations,
+    unit_for_extract_model,
 )
-from memorybox.ask.i11a.windows import _day
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
 
@@ -143,45 +143,7 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
 
 
 def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
-    row = {
-        "unit_id": unit.get("unit_id"),
-        "evidence_id": unit.get("evidence_id"),
-        "kind": unit.get("kind"),
-        "source_type": unit.get("source_type"),
-        "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
-        "people": unit.get("people") or [],
-        "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:1200],
-        "asset_ref": unit.get("asset_ref"),
-        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
-        "source_evidence_ids": list(unit.get("source_evidence_ids") or unit.get("extra_ids") or []),
-        "occurrence_count": unit.get("occurrence_count"),
-        "pattern_type": unit.get("pattern_type"),
-        "thread_id": unit.get("thread_id"),
-        "title": unit.get("title"),
-        "authored_text": str(unit.get("authored_text") or "")[:800],
-    }
-    msgs = unit.get("messages")
-    if isinstance(msgs, list) and msgs:
-        row["messages"] = []
-        for m in msgs:
-            if not isinstance(m, dict):
-                continue
-            row["messages"].append(
-                {
-                    "sender": m.get("sender"),
-                    "sender_person_id": m.get("sender_person_id"),
-                    "from_owner": m.get("from_owner"),
-                    "recipients": list(m.get("recipients") or [])[:12],
-                    "conversation": m.get("conversation") or unit.get("thread_id"),
-                    "time": m.get("time"),
-                    "text": str(m.get("text") or "")[:400],
-                    "evidence_id": m.get("evidence_id"),
-                }
-            )
-    if unit.get("media"):
-        row["media"] = unit.get("media")
-    return row
+    return unit_for_extract_model(unit)
 
 
 def _obs_payload(chunk: list[dict[str, Any]]) -> dict[str, Any]:
@@ -457,6 +419,28 @@ def run_inference(
                 assembled_context={"chunk": idx, "unit_n": len(chunk), **extract_stats},
                 error={"message": str(exc), "error_class": klass},
             )
+            if klass == "PROVIDER_TIMEOUT":
+                extra = {
+                    "stage": "observation extract",
+                    "chunk": idx,
+                    "unit_n": len(chunk),
+                    "message_n": extract_stats.get("message_n"),
+                    "extract_payloads": accounting.get("extract_payloads"),
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                }
+                return _fail(
+                    reason=(
+                        f"observation extract timed out after retry "
+                        f"(chunk {idx}, {extract_stats.get('message_n') or 0} messages)"
+                    ),
+                    person_context=person_context,
+                    req=req,
+                    accounting=accounting,
+                    error_class=klass,
+                    stage="i11a_inference",
+                    extra=extra,
+                )
 
     accounting["observations_b"] = len(model_obs)
     merged = merge_model_observations(deterministic, model_obs)

@@ -907,6 +907,9 @@ class AskOrchestrator:
                 pack = result.narrative_pack if isinstance(result.narrative_pack, dict) else {}
                 if isinstance(pack.get("inference"), dict):
                     inf = pack["inference"]
+                req = pack.get("request_context") if isinstance(pack.get("request_context"), dict) else {}
+                if not req and isinstance(inf.get("request_context"), dict):
+                    req = inf["request_context"]
                 fail = bool(result.narration_unavailable) or bool(inf.get("fail_closed"))
                 partial = bool(inf.get("partial"))
                 status = "error" if fail else "ok"
@@ -922,6 +925,10 @@ class AskOrchestrator:
                         "fail_closed": fail,
                         "partial": partial,
                         "inference_reason": inf.get("reason"),
+                        "person_ids": plan.get("person_ids"),
+                        "person_names": plan.get("person_names"),
+                        "focal_subject_person_ids": req.get("focal_subject_person_ids"),
+                        "requestor_person_id": req.get("requestor_person_id"),
                     },
                     status=status,
                     error_class=(str(inf.get("error_class") or "") or None) if fail else None,

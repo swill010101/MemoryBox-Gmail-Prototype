@@ -220,6 +220,10 @@ def semantic_group_key(unit: dict[str, Any]) -> str:
         n = int(occ) if occ is not None else 1
     except (TypeError, ValueError):
         n = 1
+    msgs = unit.get("messages") if isinstance(unit.get("messages"), list) else []
+    if msgs:
+        # Already a bounded semantic window — do not regroup by thread into a mega extract.
+        return f"window:{unit.get('unit_id') or unit.get('evidence_id') or tid or 'comm'}"
     if tid and n > 1:
         return f"thread:{tid}"
     people = _people_key(unit)
@@ -238,23 +242,60 @@ def semantic_group_key(unit: dict[str, Any]) -> str:
     return f"kind:{kind}"
 
 
-def payload_piece_bytes(unit: dict[str, Any]) -> int:
-    """Size the extract payload row, not the full in-memory unit."""
+def unit_for_extract_model(unit: dict[str, Any]) -> dict[str, Any]:
+    """The OBSERVATION_EXTRACT row. Must match payload_piece_bytes sizing."""
+    msgs = unit.get("messages") if isinstance(unit.get("messages"), list) else []
+    header = str(unit.get("content") or "").split("\n", 1)[0][:240]
+    if msgs:
+        header = header or (
+            f"{unit.get('kind') or 'communication'} ({len(msgs)} attributed messages)"
+        )
     row = {
         "unit_id": unit.get("unit_id"),
         "evidence_id": unit.get("evidence_id"),
         "kind": unit.get("kind"),
         "source_type": unit.get("source_type"),
-        "time": unit.get("time"),
+        "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:1200],
+        "content": header if msgs else str(unit.get("content") or "")[:1200],
+        "asset_ref": unit.get("asset_ref"),
         "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
+        "source_evidence_ids": list(unit.get("source_evidence_ids") or unit.get("extra_ids") or []),
+        "occurrence_count": unit.get("occurrence_count"),
+        "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
         "title": unit.get("title"),
-        "authored_text": str(unit.get("authored_text") or "")[:800],
+        "authored_text": "" if msgs else str(unit.get("authored_text") or "")[:800],
     }
-    return len(json.dumps(row, default=str))
+    if msgs:
+        row["messages"] = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            row["messages"].append(
+                {
+                    "sender": m.get("sender"),
+                    "sender_person_id": m.get("sender_person_id"),
+                    "from_owner": m.get("from_owner"),
+                    "recipients": list(m.get("recipients") or [])[:12],
+                    "conversation": m.get("conversation") or unit.get("thread_id"),
+                    "time": m.get("time"),
+                    "text": str(m.get("text") or "")[:400],
+                    "evidence_id": m.get("evidence_id"),
+                }
+            )
+        row["message_n"] = len(row["messages"])
+        span = unit.get("date_span") if isinstance(unit.get("date_span"), dict) else {}
+        row["date_span"] = span or None
+    if unit.get("media"):
+        row["media"] = unit.get("media")
+    return row
+
+
+def payload_piece_bytes(unit: dict[str, Any]) -> int:
+    """Size the extract payload row, including attributed messages[]."""
+    return len(json.dumps(unit_for_extract_model(unit), default=str))
 
 
 def _split_group(group: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
@@ -482,6 +523,17 @@ def filter_extract_observations(
             ]
             if not places_ok:
                 rejected.append({"reason": "place_referenced_without_place", "text": text[:160]})
+                continue
+        if str(canon.get("kind") or "") == "person_at_place_time":
+            places_ok = [
+                str(p).strip()
+                for p in (canon.get("places") or [])
+                if str(p).strip()
+                and str(p).strip().lower() not in _GENERIC_PLACES
+                and "unspecified" not in str(p).strip().lower()
+            ]
+            if not places_ok:
+                rejected.append({"reason": "person_at_place_time_without_place", "text": text[:160]})
                 continue
         if str(canon.get("kind") or "") == "relationship_stated" and not _REL_STATED.search(text):
             rejected.append({"reason": "relationship_stated_without_relationship", "text": text[:160]})

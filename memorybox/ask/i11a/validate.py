@@ -241,6 +241,17 @@ def validate_observations(
             if not places_ok:
                 rejected.append({"reason": "place_referenced_without_place", "text": text[:160]})
                 continue
+        if str(obs.get("kind") or "") == "person_at_place_time":
+            places_ok = [
+                str(p).strip()
+                for p in (obs.get("places") or [])
+                if str(p).strip()
+                and str(p).strip().lower() not in _GENERIC_PLACES
+                and "unspecified" not in str(p).strip().lower()
+            ]
+            if not places_ok:
+                rejected.append({"reason": "person_at_place_time_without_place", "text": text[:160]})
+                continue
         if str(obs.get("kind") or "") == "relationship_stated" and not _REL_EMIT.search(text):
             rejected.append({"reason": "relationship_stated_without_relationship", "text": text[:160]})
             continue

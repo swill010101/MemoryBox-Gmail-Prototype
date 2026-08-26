@@ -276,7 +276,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         chunk_units_semantically,
         filter_extract_observations,
     )
-    from memorybox.ask.i11a.observations import canonicalize_observation
+    from memorybox.ask.i11a.observations import canonicalize_observation, observation_from_unit
 
     fat_emails = [
         {
@@ -406,6 +406,89 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail={"n_units": len(mega_units), "ns": mega_ns, "spans": spans, "ids": len(mega_ids)},
+    )
+    year_sms = []
+    for i in range(220):
+        year = 2010 + (i // 16)
+        month = (i % 12) + 1
+        day = (i % 27) + 1
+        year_sms.append(
+            {
+                "unit_id": f"u-yr-{i}",
+                "kind": "communication",
+                "source_type": "sms",
+                "time": f"{year}-{month:02d}-{day:02d}T12:00:00",
+                "thread_id": "thr-peggy-george",
+                "content": f"Check-in {i} from the long thread.",
+                "sender_name": "Peggy" if i % 2 == 0 else "Rick",
+                "from_owner": i % 2 == 1,
+                "people": [{"name": "Peggy"}, {"name": "Rick"}],
+                "evidence_id": f"e-yr-{i}",
+            }
+        )
+    year_pre = _pre_compact({"units": year_sms})
+    year_units = [u for u in (year_pre.get("units") or []) if str(u.get("kind") or "") == "sms_segment"]
+    year_ns = [int(u.get("message_n") or 0) for u in year_units]
+    year_ids: set[str] = set()
+    for u in year_units:
+        year_ids.update(str(x) for x in (u.get("source_evidence_ids") or []))
+        for m in u.get("messages") or []:
+            if isinstance(m, dict):
+                year_ids.add(str(m.get("evidence_id") or ""))
+    year_chunks = chunk_units_semantically(year_units, budget=12_000)
+    year_chunk_msgs = [
+        sum(len(u.get("messages") or []) for u in ch)
+        for ch in year_chunks
+    ]
+    from datetime import date as _date
+
+    year_span_days: list[int] = []
+    for u in year_units:
+        ds = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        a, b = ds.get("start"), ds.get("end")
+        if a and b:
+            try:
+                year_span_days.append(
+                    abs(
+                        (
+                            _date.fromisoformat(str(b)[:10])
+                            - _date.fromisoformat(str(a)[:10])
+                        ).days
+                    )
+                )
+            except ValueError:
+                pass
+    from memorybox.ask.i11a.comm_compact import unit_for_extract_model
+
+    extract_row = unit_for_extract_model(year_units[0]) if year_units else {}
+    extract_senders = {
+        str(m.get("sender") or "")
+        for m in (extract_row.get("messages") or [])
+        if isinstance(m, dict)
+    }
+    _check(
+        "peggy_scale_sms_windows_do_not_rebatch_into_mega_extract",
+        len(year_sms) == 220
+        and max(year_ns or [0]) <= 24
+        and max(year_span_days or [0]) <= 370
+        and {f"e-yr-{i}" for i in range(220)} <= year_ids
+        and max(year_chunk_msgs or [0]) <= 24
+        and "Peggy" in extract_senders
+        and "Rick" in extract_senders
+        and "---" not in str(extract_row.get("content") or "")
+        and isinstance(extract_row.get("messages"), list)
+        and len(extract_row.get("messages") or []) == int(year_units[0].get("message_n") or 0),
+        checks,
+        problems,
+        detail={
+            "windows": len(year_units),
+            "ns": year_ns[:12],
+            "max_n": max(year_ns or [0]),
+            "max_span_days": max(year_span_days or [0]),
+            "chunks": len(year_chunks),
+            "chunk_msgs": year_chunk_msgs[:12],
+            "ids": len(year_ids),
+        },
     )
     mixed_chunk = chunk_units_semantically(fat_b, budget=12_000)
     trivia_only = any(
@@ -619,7 +702,22 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and canonicalize_observation(
             {"kind": "communication_states", "text": "None", "supporting_evidence_ids": ["e-em-0"]}
         )
-        is None,
+        is None
+        and canonicalize_observation(
+            {"kind": "communication_states", "text": None, "supporting_evidence_ids": ["e-em-0"]}
+        )
+        is None
+        and (observation_from_unit(
+            {
+                "kind": "media_cluster",
+                "people": [{"name": "Peggy"}],
+                "place": None,
+                "evidence_id": "ph-unspec",
+                "extra_ids": ["ph-unspec"],
+                "time": "2020-01-01",
+            }
+        ) or {}).get("kind")
+        != "person_at_place_time",
         checks,
         problems,
         detail={"none": rej_none, "place": rej_place_kind, "rel": rej_rel, "attr": rej_attr},
@@ -864,6 +962,9 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "extract_timeout_stays_provider_timeout",
         int(to_ex_acc.get("extract_timeouts") or 0) >= 1
+        and to_ex.get("fail_closed") is True
+        and to_ex.get("error_class") == "PROVIDER_TIMEOUT"
+        and int(to_ex_acc.get("ask_relative_calls") or 0) == 0
         and "classify_llm_error(exc)" in infer_py
         and 'error_class="MODEL_OUTPUT"' not in infer_py[
             infer_py.find("operation=\"observation_extract\"") : infer_py.find(
@@ -872,7 +973,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         ],
         checks,
         problems,
-        detail={"extract_timeouts": to_ex_acc.get("extract_timeouts"), "error_class": to_ex.get("error_class")},
+        detail={"extract_timeouts": to_ex_acc.get("extract_timeouts"), "error_class": to_ex.get("error_class"), "ask_relative": to_ex_acc.get("ask_relative_calls")},
     )
 
     class _PersonAskTimeout(FakeLlmProvider):

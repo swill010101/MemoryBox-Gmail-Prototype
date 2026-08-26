@@ -25,10 +25,13 @@ def _generic_place(place: str) -> bool:
     if not p or p in _GENERIC_PLACES:
         return True
     return "unspecified" in p
-_SMS_GAP_DAYS = 3
+# Inactivity / span bounds: a window may cover a season or year of a thread,
+# never a 10–15 year mega-segment. Message count and payload still cap bursts.
+_SMS_GAP_DAYS = 90
+_MAX_WINDOW_SPAN_DAYS = 366
 # Mechanical bounds so one extract unit is not hundreds of messages across years.
 _MAX_COMM_MESSAGES = 24
-_MAX_WINDOW_CHARS = 8000
+_MAX_WINDOW_CHARS = 6000
 _MEDIA_KINDS = frozenset(
     {"media_observation", "video_asset", "video_moment", "spoken_moment"}
 )
@@ -287,10 +290,19 @@ def _message_record(unit: dict[str, Any]) -> dict[str, Any]:
         unit.get("sender_name") or unit.get("speaker") or unit.get("from") or ""
     ).strip()
     if not sender:
-        sender = recipients[0] if recipients else ("owner" if unit.get("from_owner") else "unknown sender")
+        sender = "owner" if unit.get("from_owner") else "unknown sender"
+    pid = unit.get("speaker_person_id") or unit.get("sender_person_id")
+    if not pid:
+        sl = sender.lower()
+        for p in unit.get("people") or []:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("name") or "").strip().lower() == sl and p.get("person_id"):
+                pid = p.get("person_id")
+                break
     return {
         "sender": sender,
-        "sender_person_id": unit.get("speaker_person_id") or unit.get("sender_person_id"),
+        "sender_person_id": pid,
         "from_owner": bool(unit.get("from_owner")),
         "recipients": recipients[:12],
         "conversation": unit.get("thread_id"),
@@ -320,11 +332,14 @@ def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]
     segs: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     last_d: datetime | None = None
+    first_d: datetime | None = None
     for u in ordered:
         dt = _parse_dt(u.get("time") or u.get("timestamp") or u.get("sent_at"))
         split = False
         if current:
             if last_d and dt and (dt - last_d) > timedelta(days=_SMS_GAP_DAYS):
+                split = True
+            elif first_d and dt and (dt - first_d) > timedelta(days=_MAX_WINDOW_SPAN_DAYS):
                 split = True
             elif len(current) >= _MAX_COMM_MESSAGES:
                 split = True
@@ -333,8 +348,11 @@ def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]
         if split:
             segs.append(current)
             current = []
+            first_d = None
         current.append(u)
         last_d = dt or last_d
+        if first_d is None:
+            first_d = dt or last_d
     if current:
         segs.append(current)
     return segs
