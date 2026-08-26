@@ -891,7 +891,14 @@ class AskOrchestrator:
         self.llm = trace_llm(llm if llm is not None else build_llm())
         self.video = video if video is not None else build_video()
 
-    def ask(self, text: str, *, session_id: str | None = None, narrate: bool = True) -> AskResult:
+    def ask(
+        self,
+        text: str,
+        *,
+        session_id: str | None = None,
+        narrate: bool = True,
+        inference_stage: str = "ask",
+    ) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
         from memorybox.ask.progress import note_ask_progress
 
@@ -899,7 +906,11 @@ class AskOrchestrator:
         try:
             with tracing_ask(text, session_id) as tr:
                 result = self._ask_impl(
-                    text, session_id=session_id, narrate=narrate, trace=tr
+                    text,
+                    session_id=session_id,
+                    narrate=narrate,
+                    trace=tr,
+                    inference_stage=inference_stage,
                 )
                 plan = result.plan if isinstance(result.plan, dict) else {}
                 tr.note_planner(plan)
@@ -945,6 +956,7 @@ class AskOrchestrator:
         session_id: str | None = None,
         narrate: bool = True,
         trace: Any = None,
+        inference_stage: str = "ask",
     ) -> AskResult:
         from memorybox.ask.progress import note_ask_progress
 
@@ -1760,6 +1772,7 @@ class AskOrchestrator:
                 state["video_moments"] = "queried"
             return state
 
+        enriching = str(inference_stage or "ask").strip().lower() == "enrich"
         if (
             getattr(plan, "output_mode", "show") == "tell"
             and answer_kind not in {"clarification", "journal_capture"}
@@ -1767,7 +1780,32 @@ class AskOrchestrator:
             from memorybox.ask.evidence_prep import prepare_narrative_pack
             from memorybox.ask.narrative import tell_from_hits
 
-            if narrate:
+            if enriching:
+                _stage("Enriching observations")
+                if not self._llm_injected:
+                    self.llm = _prefer_live_llm(self.llm)
+                narrative_pack = prepare_narrative_pack(
+                    plan,
+                    evidence=evidence,
+                    photos=photos,
+                    videos=videos,
+                    stories=stories,
+                    journals=journals,
+                    artifacts=artifacts,
+                    photo_status=photo_status,
+                    video_status=video_status,
+                )
+                narrative_pack["modality_state"] = _overlay_modality()
+                narrative_pack = apply_inference_to_pack(
+                    plan,
+                    narrative_pack,
+                    self.llm,
+                    modality_state=narrative_pack.get("modality_state"),
+                    stage="enrich",
+                )
+                answer_text = "Observation enrichment complete; Ask-relative was not run."
+                narration_unavailable = False
+            elif narrate:
                 _stage("Assimilating collections")
                 _stage("Refining…")
                 if not self._llm_injected:
@@ -1822,8 +1860,9 @@ class AskOrchestrator:
         ):
             from memorybox.ask.evidence_prep import prepare_narrative_pack
 
-            _stage("Assimilating collections")
-            _stage("Refining…")
+            _stage("Enriching observations" if enriching else "Assimilating collections")
+            if not enriching:
+                _stage("Refining…")
             if not self._llm_injected:
                 self.llm = _prefer_live_llm(self.llm)
             narrative_pack = prepare_narrative_pack(
@@ -1843,17 +1882,23 @@ class AskOrchestrator:
                 narrative_pack,
                 self.llm,
                 modality_state=narrative_pack.get("modality_state"),
+                stage="enrich" if enriching else "ask",
             )
             photos = rank_photos_by_candidates(
                 photos, list(narrative_pack.get("candidate_visual_ids") or [])
             )
-            from memorybox.ask.narrative import synthesize_tell
+            if enriching:
+                answer_text = "Observation enrichment complete; Ask-relative was not run."
+                person_synth = False
+                narration_unavailable = False
+            else:
+                from memorybox.ask.narrative import synthesize_tell
 
-            synth_text, synth_meta = synthesize_tell(plan, narrative_pack, self.llm)
-            if synth_text:
-                answer_text = synth_text
-                person_synth = True
-            narration_unavailable = bool(synth_meta.get("fail_closed"))
+                synth_text, synth_meta = synthesize_tell(plan, narrative_pack, self.llm)
+                if synth_text:
+                    answer_text = synth_text
+                    person_synth = True
+                narration_unavailable = bool(synth_meta.get("fail_closed"))
         if (
             coverage
             and coverage.get("summary")

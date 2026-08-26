@@ -333,6 +333,28 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             inf_acc.get("ask_relative_payload"),
             acc.get("ask_relative_payload"),
         ),
+        "validated_observations": _first(
+            named.get("validated_observations"),
+            inf_acc.get("validated_observations"),
+        ),
+        "rollup_units": _first(named.get("rollup_units"), inf_acc.get("rollup_units")),
+        "rollup_provenance_coverage": _first(
+            named.get("rollup_provenance_coverage"),
+            inf_acc.get("rollup_provenance_coverage"),
+        ),
+        "observations_expanded": _first(
+            named.get("observations_expanded"),
+            inf_acc.get("observations_expanded"),
+        ),
+        "enrichment_deferred": _first(
+            named.get("enrichment_deferred"),
+            inf_acc.get("enrichment_deferred"),
+        ),
+        "inference_stage": _first(
+            named.get("inference_stage"),
+            inf_acc.get("inference_stage"),
+            inf.get("stage"),
+        ),
         "sms_raw": _first(named.get("sms_raw"), inf_acc.get("sms_raw"), pre.get("sms_raw")),
         "sms_windows": _first(named.get("sms_windows"), inf_acc.get("sms_windows"), pre.get("sms_windows")),
         "max_messages_per_comm_unit": pre.get("max_messages_per_comm_unit"),
@@ -345,7 +367,15 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, Any]:
+def _run_one(
+    orch: Any,
+    ask: str,
+    index: int,
+    *,
+    total: int = 4,
+    inference_stage: str = "ask",
+    pass_kind: str = "ask",
+) -> dict[str, Any]:
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
@@ -353,9 +383,17 @@ def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, An
     started_iso = started.isoformat()
     result: AskResult | None = None
     harness_error: dict[str, Any] | None = None
-    print(f"I11A regression TEST {index}/{total} starting: {ask!r} session={session_id}", flush=True)
+    print(
+        f"I11A regression TEST {index}/{total} starting ({pass_kind}): {ask!r} session={session_id}",
+        flush=True,
+    )
     try:
-        result = orch.ask(ask, session_id=session_id)
+        result = orch.ask(
+            ask,
+            session_id=session_id,
+            narrate=inference_stage != "enrich",
+            inference_stage=inference_stage,
+        )
     except Exception as exc:  # noqa: BLE001 — capture and continue
         harness_error = {
             "type": type(exc).__name__,
@@ -416,6 +454,8 @@ def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, An
     record = {
         "index": index,
         "ask": ask,
+        "pass_kind": pass_kind,
+        "inference_stage": inference_stage,
         "session_id": session_id,
         "trace_id": str(trace_id) if trace_id else None,
         "started_at": started_iso,
@@ -461,6 +501,10 @@ def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, An
             "model_derived_observations": metrics.get("model_derived_observations"),
             "deterministic_observations": metrics.get("deterministic_observations"),
             "ask_relative_payload": metrics.get("ask_relative_payload"),
+            "validated_observations": metrics.get("validated_observations"),
+            "rollup_units": metrics.get("rollup_units"),
+            "rollup_provenance_coverage": metrics.get("rollup_provenance_coverage"),
+            "observations_expanded": metrics.get("observations_expanded"),
             "narrator_invoked": bool(metrics.get("narrator_calls")),
             "narrator_calls": metrics.get("narrator_calls"),
             "total_runtime_ms": duration_ms,
@@ -529,6 +573,8 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
         "per_test": [
             {
                 "ask": t.get("ask"),
+                "pass_kind": t.get("pass_kind"),
+                "inference_stage": t.get("inference_stage"),
                 "status": t.get("status"),
                 "error_class": t.get("error_class"),
                 "model_calls": t.get("model_call_count"),
@@ -544,6 +590,28 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
             for t in tests
         ],
     }
+    enrich_tests = [t for t in tests if t.get("pass_kind") == "cold_enrichment"]
+    warm_tests = [t for t in tests if t.get("pass_kind") == "warm_ask"]
+    if not warm_tests:
+        warm_tests = [t for t in tests if t.get("pass_kind") != "cold_enrichment"]
+    def _tok(t: dict[str, Any]) -> int:
+        payload = ((t.get("metrics") or {}).get("ask_relative_payload") or {})
+        try:
+            return int(payload.get("approx_tokens") or 0)
+        except (TypeError, ValueError):
+            return 0
+    summary["cold_enrichment_ms"] = sum(int(t.get("duration_ms") or 0) for t in enrich_tests)
+    summary["warm_ask_ms"] = [int(t.get("duration_ms") or 0) for t in warm_tests]
+    summary["cold_extract_calls"] = sum(
+        int((t.get("metrics") or {}).get("observation_extract_calls") or 0) for t in enrich_tests
+    )
+    summary["warm_extract_calls"] = [
+        int((t.get("metrics") or {}).get("observation_extract_calls") or 0) for t in warm_tests
+    ]
+    summary["warm_ask_relative_tokens"] = [_tok(t) for t in warm_tests]
+    summary["warm_narrator_calls"] = [
+        int((t.get("metrics") or {}).get("narrator_calls") or 0) for t in warm_tests
+    ]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "model": settings.ollama_chat_model,
@@ -559,6 +627,7 @@ def run_i11a_regression(
     asks: tuple[str, ...] | None = None,
     rebuild_observations: bool = False,
     repeat: int = 1,
+    enrich_first: bool = False,
 ) -> dict[str, Any]:
     """Run the canonical Asks sequentially and write one UTF-8 JSON file. Returns payload."""
     from memorybox.app import get_orchestrator
@@ -569,13 +638,42 @@ def run_i11a_regression(
         invalidate_extract_cache()
     orch = get_orchestrator()
     runtime = _llm_runtime(orch)
-    sequence = asks if asks is not None else REGRESSION_ASKS
-    if repeat > 1:
-        sequence = tuple(sequence) * max(1, int(repeat))
+    base = asks if asks is not None else REGRESSION_ASKS
     tests: list[dict[str, Any]] = []
-    total = len(sequence)
-    for i, ask in enumerate(sequence, start=1):
-        tests.append(_run_one(orch, ask, i, total=total))
+    index = 1
+    if enrich_first:
+        unique = tuple(dict.fromkeys(base))
+        total = len(unique) + len(tuple(base) * max(1, int(repeat)))
+        for ask in unique:
+            tests.append(
+                _run_one(
+                    orch,
+                    ask,
+                    index,
+                    total=total,
+                    inference_stage="enrich",
+                    pass_kind="cold_enrichment",
+                )
+            )
+            index += 1
+        sequence = tuple(base) * max(1, int(repeat))
+        for ask in sequence:
+            tests.append(
+                _run_one(
+                    orch,
+                    ask,
+                    index,
+                    total=total,
+                    inference_stage="ask",
+                    pass_kind="warm_ask",
+                )
+            )
+            index += 1
+    else:
+        sequence = tuple(base) * max(1, int(repeat))
+        total = len(sequence)
+        for i, ask in enumerate(sequence, start=1):
+            tests.append(_run_one(orch, ask, i, total=total))
 
     payload = build_payload(tests, runtime=runtime)
     path = out_path or default_output_path()

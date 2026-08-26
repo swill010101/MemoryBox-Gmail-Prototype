@@ -12,23 +12,26 @@ from datetime import date
 from typing import Any
 
 from memorybox.ask.i11a.ir import attach_links
+from memorybox.ask.i11a.rollup import compact_rollup_for_reason, expand_rollup_ids
 from memorybox.ask.i11a.windows import _day
 
 ASK_RELATIVE_SYSTEM = """ASK_RELATIVE_REASONING
-You organize compact grounded observations to answer one Ask.
+You organize compact derived semantic roll-ups to answer one Ask.
+Roll-ups are derived groupings of validated observations — not family facts.
 Do not re-extract from raw mail. Do not invent people, places, dates, motives, or kin labels.
-JSON only. Return a small object — Python will assemble episodes from observation IDs.
+JSON only. Python expands selected roll-ups to every underlying observation.
 
 {
   "answer_focus": "short string",
-  "selected_observation_ids": ["obs-..."],
-  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "observation_ids": ["obs-..."], "why": ""}],
+  "selected_rollup_ids": ["ru-..."],
+  "selected_observation_ids": [],
+  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "rollup_ids": ["ru-..."], "why": ""}],
   "themes": [{"label": ""}],
   "unresolved": ["..."]
 }
 
-Select observations that matter to the Ask. Group those that describe the same real-world thing.
-Do not emit supporting_evidence_ids, excerpts, or episode prose. Copy observation_ids only.
+Select roll-up ids that matter to the Ask. Do not copy observation text, evidence arrays, or episode prose.
+Treat roll-up labels as derived summaries, not established facts.
 ask_kind_hint is a view strategy, not a closed taxonomy.
 """
 
@@ -348,18 +351,55 @@ def view_from_model_json(
     *,
     ask: str,
     ask_kind_hint: str,
+    rollups: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(parsed, dict) or not (
-        parsed.get("episodes") or parsed.get("selected_observation_ids") or parsed.get("correlations")
+        parsed.get("episodes")
+        or parsed.get("selected_observation_ids")
+        or parsed.get("selected_rollup_ids")
+        or parsed.get("correlations")
     ):
         return fallback_view(observations, ask=ask, ask_kind_hint=ask_kind_hint)
     by_id = {str(o.get("observation_id")): o for o in observations if o.get("observation_id")}
+    expanded = []
+    if rollups and parsed.get("selected_rollup_ids"):
+        expanded = expand_rollup_ids(
+            [str(x) for x in (parsed.get("selected_rollup_ids") or [])],
+            rollups=rollups,
+            observations=observations,
+        )
     selected_ids = [str(x) for x in (parsed.get("selected_observation_ids") or []) if str(x) in by_id]
+    for row in expanded:
+        oid = str(row.get("observation_id") or "")
+        if oid and oid not in selected_ids:
+            selected_ids.append(oid)
     correlations = [c for c in (parsed.get("correlations") or []) if isinstance(c, dict)]
+    for row in correlations:
+        extra_ru = [str(x) for x in (row.get("rollup_ids") or []) if str(x).strip()]
+        if extra_ru and rollups:
+            more = expand_rollup_ids(extra_ru, rollups=rollups, observations=observations)
+            oids = list(row.get("observation_ids") or [])
+            for extra in more:
+                oid = str(extra.get("observation_id") or "")
+                if oid and oid not in oids:
+                    oids.append(oid)
+                if oid and oid not in selected_ids:
+                    selected_ids.append(oid)
+            row["observation_ids"] = oids
     used: set[str] = set()
     episodes = [e for e in (parsed.get("episodes") or []) if isinstance(e, dict)]
     if not episodes:
         groups: list[list[dict[str, Any]]] = []
+        if rollups and parsed.get("selected_rollup_ids"):
+            by_ru = rollups.get("by_id") if isinstance(rollups.get("by_id"), dict) else {}
+            for rid in parsed.get("selected_rollup_ids") or []:
+                unit = by_ru.get(str(rid)) if isinstance(by_ru, dict) else None
+                if not isinstance(unit, dict):
+                    continue
+                g = [by_id[i] for i in (unit.get("observation_ids") or []) if str(i) in by_id]
+                if g:
+                    groups.append(g)
+                    used.update(str(o.get("observation_id") or "") for o in g)
         for row in correlations:
             oids = [str(x) for x in (row.get("observation_ids") or []) if str(x) in by_id]
             if not oids:
@@ -410,6 +450,10 @@ def view_from_model_json(
         "unresolved": parsed.get("unresolved") or [],
         "answer_focus": parsed.get("answer_focus") or ask[:160],
         "selected_observation_ids": list(dict.fromkeys(selected_ids)),
+        "selected_rollup_ids": [
+            str(x) for x in (parsed.get("selected_rollup_ids") or []) if str(x).strip()
+        ],
+        "observations_expanded": len(list(dict.fromkeys(selected_ids))),
         "correlations": correlations,
     }
     if ask_kind_hint == "person" and not doc.get("person_understanding"):
@@ -457,11 +501,13 @@ def reason_payload(
     request_context: dict[str, Any],
     person_context: dict[str, Any],
     ask_kind_hint: str,
+    rollups: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     ask = str(getattr(plan, "original_ask", "") or "")
     allowed = []
     if isinstance(person_context, dict):
         allowed = list(person_context.get("allowed_relationship_labels") or [])[:24]
+    compact = [compact_rollup_for_reason(r) for r in (rollups or []) if isinstance(r, dict)]
     return {
         "ask": ask,
         "ask_kind_hint": ask_kind_hint,
@@ -471,8 +517,13 @@ def reason_payload(
             "focal_subject_names": request_context.get("focal_subject_names"),
         },
         "allowed_relationship_labels": allowed,
-        "observations": [compact_observation_for_reason(o) for o in observations],
-        "note": "Compact IR. Select and correlate by observation_id. Do not copy evidence arrays.",
+        "rollups": compact,
+        "validated_observation_count": len(observations),
+        "rollup_unit_count": len(compact),
+        "note": (
+            "Derived semantic roll-ups, not family facts. Select rollup_id values. "
+            "Underlying observations expand on demand. Do not copy evidence arrays."
+        ),
     }
 
 

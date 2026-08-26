@@ -42,12 +42,35 @@ def _fake_ask_relative(user_json: str) -> str:
         data = json.loads(user_json)
     except Exception:
         return json.dumps({"schema_version": 2, "episodes": [], "themes": [], "unresolved": []})
+    rollups = [r for r in (data.get("rollups") or []) if isinstance(r, dict)]
     observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
     for o in observations:
         if not o.get("supporting_evidence_ids") and o.get("evidence_refs"):
             o["supporting_evidence_ids"] = list(o.get("evidence_refs") or [])
     ask = str(data.get("ask") or "")
     hint = str(data.get("ask_kind_hint") or "other")
+    if rollups:
+        selected_ru = [str(r.get("rollup_id") or "") for r in rollups if r.get("rollup_id")]
+        return json.dumps(
+            {
+                "answer_focus": ask[:160],
+                "selected_rollup_ids": selected_ru,
+                "selected_observation_ids": [],
+                "correlations": [
+                    {
+                        "label": str(r.get("label") or "")[:80],
+                        "kind": "period_cluster",
+                        "rollup_ids": [str(r.get("rollup_id"))],
+                        "why": "derived roll-up selected for the Ask",
+                    }
+                    for r in rollups[:12]
+                    if r.get("rollup_id")
+                ],
+                "themes": [],
+                "unresolved": [],
+            },
+            default=str,
+        )
     try:
         from memorybox.ask.i11a.reason import fallback_view
 

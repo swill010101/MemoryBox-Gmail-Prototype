@@ -23,6 +23,7 @@ from memorybox.ask.i11a.reason import (
     reason_payload,
     view_from_model_json,
 )
+from memorybox.ask.i11a.rollup import roll_up_observations
 from memorybox.ask.i11a.support import rank_episodes_for_narrator
 from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference, validate_observations
@@ -38,6 +39,9 @@ from memorybox.ask.i11a.observation_cache import (
 )
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
+
+STAGE_ASK = "ask"
+STAGE_ENRICH = "enrich"
 
 OBSERVATION_EXTRACT = """OBSERVATION_EXTRACT
 You extract Ask-independent grounded semantic observations. Return JSON only.
@@ -188,14 +192,20 @@ def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:
     raw = json.dumps({"system": system, "user": payload}, default=str)
     n = len(raw)
     obs = payload.get("observations") if isinstance(payload.get("observations"), list) else []
+    rollups = payload.get("rollups") if isinstance(payload.get("rollups"), list) else []
+    obs_n = len(obs)
+    if not obs_n and rollups:
+        obs_n = sum(int(r.get("observation_n") or 0) for r in rollups if isinstance(r, dict))
     return {
-        "observation_n": len(obs),
+        "observation_n": obs_n,
+        "rollup_n": len(rollups),
         "payload_bytes": n,
         "approx_tokens": max(1, n // 4),
         "timeout_seconds": _configured_chat_timeout(),
         "num_ctx": None,
         "num_ctx_note": "Ollama chat options set temperature only; num_ctx is the model default",
         "compact_observations": True,
+        "compact_rollups": bool(rollups),
         "includes_full_evidence_id_arrays": False,
         "includes_excerpts": False,
     }
@@ -271,9 +281,16 @@ def run_inference(
     llm: Any,
     *,
     modality_state: dict[str, Any] | None = None,
+    stage: str = STAGE_ASK,
 ) -> dict[str, Any]:
-    """Observations → IR → Ask-relative view. Heuristic episodes are never product truth."""
+    """Observations → IR → Ask-relative view. Heuristic episodes are never product truth.
+
+    stage=ask never calls OBSERVATION_EXTRACT; it reuses persisted fingerprints.
+    stage=enrich runs Ask-independent extract + persist and stops before Ask-relative.
+    """
     t0 = time.perf_counter()
+    stage = STAGE_ENRICH if str(stage or "").strip().lower() == STAGE_ENRICH else STAGE_ASK
+    allow_llm_extract = stage == STAGE_ENRICH
     person_context = build_person_context(plan)
     req = resolve_request_context(plan)
     kind_hint = ask_kind_for_plan(plan)
@@ -339,6 +356,8 @@ def run_inference(
         "extract_cache_hits": 0,
         "extract_cache_misses": 0,
         "persisted_observations": 0,
+        "enrichment_deferred": 0,
+        "inference_stage": stage,
         "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
         "raw_comm_items": (pack.get("preaggregation") or {}).get("raw_comm_items"),
         "email_thread_units": (pack.get("preaggregation") or {}).get("email_thread_units"),
@@ -395,6 +414,26 @@ def run_inference(
                     "observation_n": len(cached_rows),
                 },
                 parsed={"observations": cached_rows, "rejected": [], "cache_hit": True},
+            )
+            continue
+        if not allow_llm_extract:
+            accounting["enrichment_deferred"] = int(accounting.get("enrichment_deferred") or 0) + len(
+                pending
+            )
+            accounting["successful_units"] += len(chunk) - len(pending)
+            _trace_span(
+                stage="i11a_inference",
+                component="i11a",
+                operation="observation_extract",
+                status="ok",
+                assembled_context={
+                    "chunk": idx,
+                    "unit_n": len(chunk),
+                    "cache_hit": bool(cached_rows),
+                    "deferred": len(pending),
+                    "ask_reuses_persisted_only": True,
+                },
+                parsed={"observations": cached_rows, "rejected": [], "deferred": True},
             )
             continue
         accounting["leaf_calls"] += 1
@@ -476,7 +515,7 @@ def run_inference(
     accounting["observations_b"] = len(model_obs)
     merged = merge_model_observations(deterministic, model_obs)
     if not merged:
-        if int(accounting.get("extract_timeouts") or 0) > 0:
+        if stage == STAGE_ENRICH and int(accounting.get("extract_timeouts") or 0) > 0:
             return _fail(
                 reason="observation extract timed out after retry",
                 person_context=person_context,
@@ -492,6 +531,11 @@ def run_inference(
     )
     observations = validated_obs.get("observations") or []
     pack["semantic_observations"] = observations
+    rolled = roll_up_observations(observations)
+    pack["semantic_rollups"] = rolled.get("rollups") or []
+    accounting["validated_observations"] = len(observations)
+    accounting["rollup_units"] = int(rolled.get("rollup_unit_count") or 0)
+    accounting["rollup_provenance_coverage"] = rolled.get("provenance_coverage")
     _trace_span(
         stage="i11a_inference",
         component="i11a",
@@ -518,10 +562,47 @@ def run_inference(
         status="ok",
         parsed=ir,
     )
+    _trace_span(
+        stage="i11a_inference",
+        component="i11a",
+        operation="semantic_rollup",
+        status="ok",
+        parsed={
+            "validated_observations": accounting.get("validated_observations"),
+            "rollup_units": accounting.get("rollup_units"),
+            "provenance_coverage": accounting.get("rollup_provenance_coverage"),
+            "claim_type": "derived",
+            "not_family_fact": True,
+        },
+    )
+    if stage == STAGE_ENRICH:
+        return {
+            "ok": True,
+            "fail_closed": False,
+            "partial": failed_chunks > 0,
+            "reason": None,
+            "document": None,
+            "rejected": validated_obs.get("rejected") or [],
+            "person_context": person_context,
+            "request_context": req,
+            "accounting": accounting,
+            "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+            "chunk_map": chunk_map,
+            "observations": observations,
+            "semantic_ir": ir,
+            "semantic_rollups": rolled,
+            "ask_relative_view": None,
+            "stage": STAGE_ENRICH,
+        }
 
     eligible = eligible_observations(
         observations, plan=plan, request_context=req
     )
+    rolled_eligible = roll_up_observations(eligible)
+    pack["semantic_rollups"] = rolled_eligible.get("rollups") or []
+    accounting["validated_observations"] = len(eligible)
+    accounting["rollup_units"] = int(rolled_eligible.get("rollup_unit_count") or 0)
+    accounting["rollup_provenance_coverage"] = rolled_eligible.get("provenance_coverage")
     ask = str(getattr(plan, "original_ask", "") or "")
     rp = reason_payload(
         plan=plan,
@@ -529,6 +610,7 @@ def run_inference(
         request_context=req,
         person_context=slim_person_context_for_model(person_context),
         ask_kind_hint=kind_hint,
+        rollups=rolled_eligible.get("rollups") or [],
     )
     parsed_view = None
     ask_t0 = time.perf_counter()
@@ -641,10 +723,15 @@ def run_inference(
         )
 
     view = view_from_model_json(
-        parsed_view, eligible, ask=ask, ask_kind_hint=kind_hint
+        parsed_view,
+        eligible,
+        ask=ask,
+        ask_kind_hint=kind_hint,
+        rollups=rolled_eligible,
     )
     if not view.get("episodes"):
         view = fallback_view(eligible, ask=ask, ask_kind_hint=kind_hint)
+    accounting["observations_expanded"] = len(view.get("selected_observation_ids") or [])
     ir = apply_correlations_to_ir(ir, view)
     pack["semantic_ir"] = ir
     pack["ask_relative_view"] = view
@@ -674,6 +761,8 @@ def run_inference(
         "observations": observations,
         "semantic_ir": ir,
         "ask_relative_view": view,
+        "semantic_rollups": rolled_eligible,
+        "stage": STAGE_ASK,
     }
     _trace_span(
         stage="i11a_validate",
@@ -764,12 +853,13 @@ def apply_inference_to_pack(
     llm: Any,
     *,
     modality_state: dict[str, Any] | None = None,
+    stage: str = STAGE_ASK,
 ) -> dict[str, Any]:
     if not needs_semantic_inference(plan):
         pack["inference"] = {"ok": False, "bypassed": True}
         pack["i11a_ab_metrics"] = {}
         return pack
-    inf = run_inference(plan, pack, llm, modality_state=modality_state)
+    inf = run_inference(plan, pack, llm, modality_state=modality_state, stage=stage)
     pack["inference"] = {
         "ok": inf.get("ok"),
         "fail_closed": inf.get("fail_closed"),
@@ -783,7 +873,7 @@ def apply_inference_to_pack(
         "timeout_seconds": inf.get("timeout_seconds"),
         "duration_ms": inf.get("duration_ms"),
         "retry_count": inf.get("retry_count"),
-        "stage": inf.get("stage"),
+        "stage": inf.get("stage") or stage,
     }
     pack["person_context"] = inf.get("person_context")
     pack["request_context"] = inf.get("request_context")
@@ -812,6 +902,12 @@ def apply_inference_to_pack(
         "extract_cache_misses": acc.get("extract_cache_misses"),
         "persisted_observations": acc.get("persisted_observations"),
         "ask_relative_payload": acc.get("ask_relative_payload"),
+        "validated_observations": acc.get("validated_observations"),
+        "rollup_units": acc.get("rollup_units"),
+        "rollup_provenance_coverage": acc.get("rollup_provenance_coverage"),
+        "observations_expanded": acc.get("observations_expanded"),
+        "enrichment_deferred": acc.get("enrichment_deferred"),
+        "inference_stage": acc.get("inference_stage") or stage,
         "sms_raw": acc.get("sms_raw") or (pack.get("preaggregation") or {}).get("sms_raw"),
         "sms_windows": (pack.get("preaggregation") or {}).get("sms_windows"),
         "sms_episode_units": acc.get("sms_segment_units")
@@ -819,6 +915,7 @@ def apply_inference_to_pack(
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
+    pack["semantic_rollups"] = pack.get("semantic_rollups") or inf.get("semantic_rollups")
     pack["ask_relative_view"] = inf.get("ask_relative_view") or pack.get("ask_relative_view")
     if inf.get("partial"):
         cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}

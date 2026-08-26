@@ -113,10 +113,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     main_py = (root / "__main__.py").read_text(encoding="utf-8")
     _check(
         "a_regression_only_peggy_flag",
-        "--only-peggy" in main_py and "only_peggy" in main_py and "rebuild-observations" in main_py,
+        "--only-peggy" in main_py
+        and "only_peggy" in main_py
+        and "rebuild-observations" in main_py
+        and "enrich-first" in main_py
+        and "i11a-enrich" in main_py,
         checks,
         problems,
-        detail="Peggy-only diagnostic run before four-case resume",
+        detail="Peggy-only diagnostic run: enrich then warm Ask, separate from four-case resume",
     )
     from memorybox.ask.i11a.observations import requires_model_interpretation
 
@@ -143,7 +147,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="A units bypass OBSERVATION_EXTRACT; B is free-form only",
     )
-    from memorybox.ask.i11a.infer import run_inference
+    from memorybox.ask.i11a.infer import STAGE_ASK, STAGE_ENRICH, run_inference
     from memorybox.providers.llm.fake import FakeLlmProvider
 
     inf_a = run_inference(
@@ -198,15 +202,44 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             ]
         },
         FakeLlmProvider(),
+        stage=STAGE_ENRICH,
+    )
+    inf_b_ask = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-em-ask"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-em-a",
+                    "kind": "communication",
+                    "source_type": "email",
+                    "time": "2026-01-29",
+                    "content": "Your Las Vegas hotel reservation is confirmed for Jan 29.",
+                    "people": [{"name": "Tom"}],
+                    "place": "Las Vegas",
+                    "provenance": {"evidence_id": "e-em-a"},
+                }
+            ]
+        },
+        FakeLlmProvider(),
+        stage=STAGE_ASK,
     )
     acc_b = inf_b.get("accounting") or {}
+    acc_b_ask = inf_b_ask.get("accounting") or {}
     _check(
         "email_units_still_use_observation_extract",
         int(acc_b.get("extract_calls") or 0) >= 1
-        and int(acc_b.get("units_model_extract") or 0) >= 1,
+        and int(acc_b.get("units_model_extract") or 0) >= 1
+        and int(acc_b.get("ask_relative_calls") or 0) == 0
+        and int(acc_b_ask.get("extract_calls") or 0) == 0,
         checks,
         problems,
-        detail={k: acc_b.get(k) for k in ("extract_calls", "observations_a", "observations_b", "units_model_extract")},
+        detail={
+            "enrich": {k: acc_b.get(k) for k in ("extract_calls", "observations_a", "observations_b", "units_model_extract", "ask_relative_calls")},
+            "ask": {k: acc_b_ask.get(k) for k in ("extract_calls", "ask_relative_calls")},
+        },
     )
     from memorybox.ask.i11a.observations import observation_from_unit
 
@@ -265,6 +298,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             ]
         },
         FakeLlmProvider(),
+        stage=STAGE_ENRICH,
     )
     acc_mix = inf_mix.get("accounting") or {}
     _check(
@@ -333,6 +367,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         ),
         {"units": fat_emails + fat_sms},
         FakeLlmProvider(),
+        stage=STAGE_ENRICH,
     )
     acc_fat = inf_fat.get("accounting") or {}
     _check(
@@ -539,6 +574,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         ),
         {"units": same_day},
         FakeLlmProvider(),
+        stage=STAGE_ENRICH,
     )
     acc_day = inf_day.get("accounting") or {}
     packed_day = chunk_units_semantically(same_day, budget=12_000)
@@ -815,10 +851,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "tell me what you know about Peggy",
         AskContext(session_id="i11a-obs-cache"),
     )
-    cold = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider())
+    unenriched_ask = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider(), stage=STAGE_ASK)
+    unenriched_acc = unenriched_ask.get("accounting") or {}
+    cold = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider(), stage=STAGE_ENRICH)
     cold_acc = cold.get("accounting") or {}
-    warm = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider())
+    warm = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider(), stage=STAGE_ASK)
     warm_acc = warm.get("accounting") or {}
+    warm2 = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider(), stage=STAGE_ASK)
+    warm2_acc = warm2.get("accounting") or {}
     cold_ids = {
         str(x)
         for o in (cold.get("observations") or [])
@@ -830,12 +870,23 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         for x in (o.get("supporting_evidence_ids") or [])
     }
     _check(
+        "ask_does_not_run_observation_extract",
+        int(unenriched_acc.get("extract_calls") or 0) == 0
+        and int(unenriched_acc.get("ask_relative_calls") or 0) >= 1
+        and int(unenriched_acc.get("enrichment_deferred") or 0) >= 1,
+        checks,
+        problems,
+        detail={k: unenriched_acc.get(k) for k in ("extract_calls", "ask_relative_calls", "enrichment_deferred", "extract_cache_misses")},
+    )
+    _check(
         "warm_ask_reuses_persisted_communication_observations",
         int(cold_acc.get("extract_calls") or 0) >= 1
         and int(cold_acc.get("extract_cache_misses") or 0) >= 1
+        and int(cold_acc.get("ask_relative_calls") or 0) == 0
         and int(warm_acc.get("extract_calls") or 0) == 0
         and int(warm_acc.get("extract_cache_hits") or 0) >= 1
         and int(warm_acc.get("ask_relative_calls") or 0) >= 1
+        and int(warm2_acc.get("extract_calls") or 0) == 0
         and float(warm_acc.get("provenance_coverage") or 0) == 1.0
         and bool(warm.get("observations") or cold.get("observations")),
         checks,
@@ -864,6 +915,85 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             },
             "cold_ids": sorted(cold_ids),
             "warm_ids": sorted(warm_ids),
+            "warm2_extract": warm2_acc.get("extract_calls"),
+        },
+    )
+    from memorybox.ask.i11a.reason import reason_payload as _reason_payload
+    from memorybox.ask.i11a.rollup import roll_up_observations as _roll_up
+
+    rollup_obs = []
+    for i in range(40):
+        month = 1 + (i % 8)
+        rollup_obs.append(
+            {
+                "observation_id": f"obs-roll-{i}",
+                "kind": "communication_states",
+                "text": f"SMS check-in {i} about the week and a visit.",
+                "claim_type": "observed",
+                "people": [{"name": "Alex"}, {"name": "Sam"}],
+                "places": ["Harbor"] if i % 5 == 0 else [],
+                "time": f"2024-{month:02d}-{(i % 27) + 1:02d}",
+                "supporting_evidence_ids": [f"e-roll-{i}"],
+            }
+        )
+    rolled = _roll_up(rollup_obs)
+    ru_obs = {oid for u in rolled.get("rollups") or [] for oid in (u.get("observation_ids") or [])}
+    ru_eids = {eid for u in rolled.get("rollups") or [] for eid in (u.get("supporting_evidence_ids") or [])}
+    src_obs = {str(o["observation_id"]) for o in rollup_obs}
+    src_eids = {f"e-roll-{i}" for i in range(40)}
+    class _Plan:
+        original_ask = "tell me what you know"
+    old_payload = {
+        "ask": "tell me what you know",
+        "observations": [
+            {
+                "observation_id": o["observation_id"],
+                "kind": o["kind"],
+                "text": o["text"][:280],
+                "claim_type": o["claim_type"],
+                "people": ["Alex", "Sam"],
+                "places": o["places"],
+                "time": o["time"],
+                "evidence_refs": o["supporting_evidence_ids"][:3],
+            }
+            for o in rollup_obs
+        ],
+    }
+    new_payload = _reason_payload(
+        plan=_Plan(),
+        observations=rollup_obs,
+        request_context={},
+        person_context={},
+        ask_kind_hint="person",
+        rollups=rolled.get("rollups") or [],
+    )
+    old_tok = max(1, len(json.dumps(old_payload, default=str)) // 4)
+    new_tok = max(1, len(json.dumps(new_payload, default=str)) // 4)
+    rp_stats = warm_acc.get("ask_relative_payload") or {}
+    _check(
+        "semantic_rollup_preserves_all_provenance",
+        ru_obs == src_obs
+        and ru_eids == src_eids
+        and float(rolled.get("provenance_coverage") or 0) == 1.0
+        and int(rolled.get("rollup_unit_count") or 0) >= 2
+        and int(rolled.get("rollup_unit_count") or 0) < len(rollup_obs)
+        and all(u.get("claim_type") == "derived" and u.get("not_family_fact") for u in (rolled.get("rollups") or []))
+        and "observations" not in new_payload
+        and new_tok < old_tok
+        and new_tok * 2 <= old_tok
+        and int(rp_stats.get("rollup_n") or 0) >= 1
+        and bool(rp_stats.get("compact_rollups"))
+        and int(warm_acc.get("observations_expanded") or 0) >= 1,
+        checks,
+        problems,
+        detail={
+            "obs": len(rollup_obs),
+            "rollups": rolled.get("rollup_unit_count"),
+            "old_tok": old_tok,
+            "new_tok": new_tok,
+            "coverage": rolled.get("provenance_coverage"),
+            "ask_payload": {k: rp_stats.get(k) for k in ("rollup_n", "observation_n", "approx_tokens", "compact_rollups")},
+            "expanded": warm_acc.get("observations_expanded"),
         },
     )
     _check(
@@ -1101,7 +1231,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                 raise ProviderUnavailable("timed out after 90s")
             return super().chat(messages, json_mode=json_mode)
 
-    to_ex = run_inference(jan_plan, {"units": fat_sms[:2]}, _ExtractTimeout())
+    to_ex = run_inference(jan_plan, {"units": fat_sms[:2]}, _ExtractTimeout(), stage=STAGE_ENRICH)
     to_ex_acc = to_ex.get("accounting") or {}
     _check(
         "extract_timeout_stays_provider_timeout",

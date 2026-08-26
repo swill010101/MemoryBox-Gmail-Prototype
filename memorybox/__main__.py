@@ -361,7 +361,31 @@ def main(argv: list[str] | None = None) -> int:
         "--repeat",
         type=int,
         default=1,
-        help="Repeat the Ask sequence N times (use 2 with --only-peggy for cold then warm)",
+        help="Repeat the Ask sequence N times (use 2 with --only-peggy --enrich-first for two warm Asks)",
+    )
+    p_i11a_reg.add_argument(
+        "--enrich-first",
+        action="store_true",
+        help="Run Ask-independent observation enrichment before Ask (cold enrichment vs warm Ask)",
+    )
+    p_i11a_enrich = sub.add_parser(
+        "i11a-enrich",
+        help="Ask-independent OBSERVATION_EXTRACT persist for an archive (no Ask-relative)",
+    )
+    p_i11a_enrich.add_argument(
+        "--ask",
+        default="tell me what you know about Peggy",
+        help="Retrieve/eligibility Ask used to select evidence (default: Peggy)",
+    )
+    p_i11a_enrich.add_argument(
+        "--rebuild-observations",
+        action="store_true",
+        help="Invalidate persisted extract cache before enrichment",
+    )
+    p_i11a_enrich.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1 (does not change model)",
     )
     p_abandon = sub.add_parser(
         "ai-trace-abandon",
@@ -792,6 +816,7 @@ def main(argv: list[str] | None = None) -> int:
             asks=("tell me what you know about Peggy",) if getattr(args, "only_peggy", False) else None,
             rebuild_observations=bool(getattr(args, "rebuild_observations", False)),
             repeat=int(getattr(args, "repeat", 1) or 1),
+            enrich_first=bool(getattr(args, "enrich_first", False)),
         )
         summary = payload.get("summary") or {}
         print(json.dumps({
@@ -800,6 +825,43 @@ def main(argv: list[str] | None = None) -> int:
             "summary": summary,
         }, indent=2, default=str), flush=True)
         return 0
+
+    if args.cmd == "i11a-enrich":
+        from memorybox.app import get_orchestrator
+        from memorybox.ask.i11a.observation_cache import invalidate_extract_cache
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        if getattr(args, "rebuild_observations", False):
+            invalidate_extract_cache()
+        orch = get_orchestrator()
+        started = __import__("time").perf_counter()
+        result = orch.ask(
+            args.ask,
+            session_id="i11a-enrich",
+            narrate=False,
+            inference_stage="enrich",
+        )
+        elapsed_ms = int((__import__("time").perf_counter() - started) * 1000)
+        pack = result.narrative_pack if isinstance(getattr(result, "narrative_pack", None), dict) else {}
+        inf = pack.get("inference") if isinstance(pack.get("inference"), dict) else {}
+        acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
+        metrics = pack.get("i11a_ab_metrics") if isinstance(pack.get("i11a_ab_metrics"), dict) else {}
+        payload = {
+            "ok": bool(inf.get("ok", True)) and not inf.get("fail_closed"),
+            "pass_kind": "cold_enrichment",
+            "duration_ms": elapsed_ms,
+            "extract_calls": acc.get("extract_calls") or metrics.get("observation_extract_calls"),
+            "extract_cache_hits": acc.get("extract_cache_hits"),
+            "extract_cache_misses": acc.get("extract_cache_misses"),
+            "persisted_observations": acc.get("persisted_observations"),
+            "validated_observations": acc.get("validated_observations")
+            or metrics.get("validated_observations"),
+            "ask_relative_calls": acc.get("ask_relative_calls") or 0,
+            "inference_stage": acc.get("inference_stage") or inf.get("stage"),
+        }
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "ai-trace-abandon":
         from memorybox.ai_trace.store import abandon_stale_running_traces
