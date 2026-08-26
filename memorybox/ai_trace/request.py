@@ -218,20 +218,34 @@ _HB_LAST = 0.0
 _HB_MIN_SEC = 2.0
 
 
-def heartbeat_retrieve(*, offset: int | None = None, line: str | None = None) -> None:
+def heartbeat_retrieve(
+    *, offset: int | None = None, line: str | None = None, span: bool = False
+) -> None:
     """Fail-open retrieve heartbeat; throttled so paging does not hammer Postgres."""
     global _HB_LAST
     tid = ctx.current_trace_id()
     if not tid:
         return
     now = time.monotonic()
-    if now - _HB_LAST < _HB_MIN_SEC and offset is None:
+    if now - _HB_LAST < _HB_MIN_SEC and offset is None and not span:
         return
     _HB_LAST = now
     t0 = ctx.current_trace_t0()
     elapsed = int((time.perf_counter() - t0) * 1000) if t0 is not None else None
-    del line
     store.update_trace(tid, duration_ms=elapsed)
+    if span and line:
+        store.insert_span(
+            trace_id=tid,
+            stage="retrieve",
+            component="retrieve",
+            operation="retrieve_progress",
+            status="running",
+            assembled_context={
+                "line": line,
+                "offset": offset,
+                "elapsed_ms": elapsed,
+            },
+        )
 
 
 def tracing_ask(text: str, session_id: str | None = None) -> RequestTrace:

@@ -60,6 +60,16 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="Peggy person library must not walk up to 720 Immich MONTH buckets",
     )
+    retrieve_py = (root / "ask" / "retrieve.py").read_text(encoding="utf-8")
+    _check(
+        "a_person_comm_retrieve_not_full_export_scan",
+        "_sql_person_text_hint" in retrieve_py
+        and "EVIDENCE_SCAN_SEC" in retrieve_py
+        and "AND id > %s" in retrieve_py,
+        checks,
+        problems,
+        detail="Unwindowed Peggy must not OFFSET-scan every email payload",
+    )
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
     explore_js = (root / "explore" / "static" / "explore.js").read_text(encoding="utf-8")

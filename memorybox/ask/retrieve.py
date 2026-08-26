@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from uuid import UUID
@@ -51,6 +52,8 @@ class EvidenceHit:
 SMS_RETRIEVE_CAP = 25000
 # SQL page size only — not a semantic evidence limit.
 TELL_DB_PAGE = 500
+# Unwindowed person packs must not sit in OFFSET scans of full email JSON.
+EVIDENCE_SCAN_SEC = 25
 
 _MONTH_KEYWORD_STOP = {
     "january",
@@ -524,31 +527,93 @@ def _provider_fetch_n(limit: int | None) -> int:
     return max(1, int(limit))
 
 
+def _sql_person_text_hint(
+    person_names: list[str],
+    person_ids: set[str] | None = None,
+) -> tuple[str, list[Any]]:
+    """SQL prefilter so Peggy does not load every communication payload.
+
+    Body match uses a prefix only — full payload_json::text ILIKE on Takeout
+    emails is what left Collecting communications at 20+ minutes with 0 models.
+    """
+    parts: list[str] = []
+    params: list[Any] = []
+    ids = [str(p) for p in (person_ids or ()) if str(p).strip()]
+    if ids:
+        parts.append(
+            "EXISTS ("
+            " SELECT 1 FROM jsonb_array_elements_text("
+            " coalesce(payload_json->'person_ids', '[]'::jsonb)) x"
+            " WHERE x = ANY(%s)"
+            ")"
+        )
+        params.append(ids)
+    for raw in person_names or ():
+        token = str(raw or "").strip()
+        if len(token) < 2:
+            continue
+        like = f"%{token}%"
+        parts.append(
+            "("
+            " coalesce(summary, '') ILIKE %s"
+            " OR coalesce(payload_json->>'sender_name', '') ILIKE %s"
+            " OR coalesce(payload_json->>'subject', '') ILIKE %s"
+            " OR coalesce(payload_json->>'thread_id', '') ILIKE %s"
+            " OR left(coalesce(payload_json->>'body_text', ''), 4000) ILIKE %s"
+            " OR coalesce(payload_json->>'from', '') ILIKE %s"
+            " OR coalesce(payload_json->>'to', '') ILIKE %s"
+            ")"
+        )
+        params.extend([like] * 7)
+    if not parts:
+        return "TRUE", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
 def _iter_evidence_rows(where_sql: str, params: list[Any]):
-    """Page through Evidence. Page size is not a semantic consider-cap."""
+    """Page through Evidence by id. Page size is not a semantic consider-cap."""
     from memorybox.ai_trace.request import heartbeat_retrieve
 
-    offset = 0
+    last_id = None
+    deadline = time.monotonic() + EVIDENCE_SCAN_SEC
+    yielded = 0
     with connection() as conn:
         while True:
-            heartbeat_retrieve(offset=offset, line="paging evidence")
+            if time.monotonic() > deadline:
+                heartbeat_retrieve(
+                    offset=yielded,
+                    line=f"paging evidence stopped after {EVIDENCE_SCAN_SEC}s n={yielded}",
+                    span=True,
+                )
+                break
+            clause = where_sql
+            qparams = list(params)
+            if last_id is not None:
+                clause = f"({where_sql}) AND id > %s"
+                qparams.append(last_id)
+            heartbeat_retrieve(
+                offset=yielded,
+                line=f"paging evidence n={yielded}",
+                span=(yielded == 0 or yielded % 2000 == 0),
+            )
             rows = conn.execute(
                 f"""
                 SELECT id, evidence_kind, summary, payload_json
                 FROM evidence
-                WHERE {where_sql}
+                WHERE {clause}
                 ORDER BY id
-                LIMIT %s OFFSET %s
+                LIMIT %s
                 """,
-                list(params) + [TELL_DB_PAGE, offset],
+                qparams + [TELL_DB_PAGE],
             ).fetchall()
             if not rows:
                 break
             for r in rows:
                 yield r
+                yielded += 1
             if len(rows) < TELL_DB_PAGE:
                 break
-            offset += TELL_DB_PAGE
+            last_id = rows[-1]["id"]
 
 
 def _sql_json_day_windows(
@@ -885,13 +950,14 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     ):
         return []
     win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
+    hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
     where_sql = (
         "evidence_kind = 'communication' "
         "AND lower(coalesce(payload_json->>'evidence_channel', '')) "
         "IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
-        f"AND {win_sql}"
+        f"AND {win_sql} AND {hint_sql}"
     )
-    for r in _iter_evidence_rows(where_sql, list(win_params)):
+    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
         payload = _payload_dict(r["payload_json"])
         ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
         if ch not in _SMS_CHANNELS:
@@ -1305,13 +1371,14 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     ):
         return []
     win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
+    hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
     where_sql = (
         "evidence_kind = 'communication' "
         "AND lower(coalesce(payload_json->>'evidence_channel', 'email')) "
         "NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
-        f"AND {win_sql}"
+        f"AND {win_sql} AND {hint_sql}"
     )
-    for r in _iter_evidence_rows(where_sql, list(win_params)):
+    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
             continue
@@ -1468,8 +1535,9 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
     if _tell_pack_comms(plan) and not windows and not person_ids and not person_names:
         return []
     win_sql, win_params = _sql_json_day_windows(windows, "start")
-    where_sql = f"evidence_kind = 'calendar_event' AND {win_sql}"
-    for r in _iter_evidence_rows(where_sql, list(win_params)):
+    hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
+    where_sql = f"evidence_kind = 'calendar_event' AND {win_sql} AND {hint_sql}"
+    for r in _iter_evidence_rows(where_sql, list(win_params) + list(hint_params)):
         payload = _payload_dict(r["payload_json"])
         start = str(payload.get("start") or "")
         day = start[:10]
