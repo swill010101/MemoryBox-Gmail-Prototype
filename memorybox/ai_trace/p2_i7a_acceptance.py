@@ -83,11 +83,13 @@ def _structural(checks: dict[str, Any], problems: list[str]) -> None:
         "Store errors are swallowed",
     )
     _check(
-        "ask_always_traced",
-        "tracing_ask" in orch and "note_planner" in orch,
+        "abandon_force_closes_running_rows",
+        "ai-trace-abandon" in main
+        and "force" in main
+        and "force: bool = False" in store,
         checks,
         problems,
-        "Deterministic Ask still emits end-to-end trace",
+        "Killing python does not close AI Trace; abandon --force must exist",
     )
     impl = orch.split("def _ask_impl", 1)[-1]
     _check(
