@@ -1203,11 +1203,10 @@ def _prove_harness() -> dict[str, Any]:
         months.search_by_person_ids(["person-1"], size=50)
         month_gets = [p for p in months.paths if "timeline/bucket?" in p]
         _check(
-            "immich_walks_listed_month_buckets",
-            len(month_gets) == 4
-            and any("2023-12-01" in p for p in month_gets)
-            and any("2022-04-01" in p for p in month_gets)
-            and any("size=MONTH" in p or "size=YEAR" not in p for p in month_gets),
+            "immich_prefers_year_bucket_not_month_walk",
+            any("size=YEAR" in p and "2023" in p for p in month_gets)
+            and any("size=YEAR" in p and "2022" in p for p in month_gets)
+            and len(month_gets) <= 6,
             checks,
             problems,
             f"bucket_gets={month_gets}",
