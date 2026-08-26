@@ -1073,10 +1073,15 @@ def find_source(explicit: Path | None) -> Path:
     search = [
         Path("/workspace/docs/test-output"),
         env,
+        Path(r"C:\memorybox\docs\test-output"),
+        Path(r"C:\memorybox"),
         Path("/home/ubuntu/.cursor/projects/workspace/uploads"),
         Path("/tmp"),
         Path.cwd(),
     ]
+    # Also search the current directory tree one level for a ~141 MB capture.
+    if Path.cwd().is_dir():
+        search.append(Path.cwd() / "docs" / "test-output")
     found: list[Path] = []
     for root in search:
         if not root.is_dir():
