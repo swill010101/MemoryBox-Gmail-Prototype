@@ -135,6 +135,13 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
     speaker = (
         str(payload.get("sender_name") or payload.get("from") or "").strip() or None
     )
+    mapped = None
+    if d.get("identity_mapped"):
+        mapped = (d.get("identity_mapped") or [{}])[0].get("person_id")
+    payload_pids = [str(x) for x in (payload.get("person_ids") or []) if x]
+    from_owner = bool(payload.get("from_owner") or str(d.get("direction") or "").lower() == "outbound")
+    if not mapped and payload_pids and not from_owner:
+        mapped = payload_pids[0]
     meta = _comm_flags(and_i, speaker, people, plan)
     unit_id = _uid("communication", eid)
     content = authored if meta["keep_authored"] else ""
@@ -168,9 +175,10 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         "source_id": eid,
         "evidence_id": eid,
         "thread_id": d.get("thread_id") or payload.get("thread_id"),
-        "speaker_person_id": (d.get("identity_mapped") or [{}])[0].get("person_id")
-        if d.get("identity_mapped")
-        else None,
+        "speaker_person_id": mapped,
+        "sender_name": speaker,
+        "sender_handle": payload.get("sender_handle") or d.get("sender_handle"),
+        "from_owner": from_owner,
         "participants": people,
         "group_thread": meta["group_thread"],
         "timestamp": d.get("sent_at"),

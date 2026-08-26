@@ -97,11 +97,23 @@ class RequestTrace:
         )
 
     def note_planner(self, plan: dict[str, Any]) -> None:
+        self.set_assembled({"plan": plan})
         if self._planner_noted:
-            self.heartbeat(extra={"planner_refresh": True})
+            store.insert_span(
+                trace_id=self.trace_id,
+                stage="planner",
+                component="planner",
+                operation="plan_ask_resolved",
+                assembled_context={"plan": plan},
+                disposition={
+                    "person_ids": plan.get("person_ids"),
+                    "person_names": plan.get("person_names"),
+                    "want_communication": plan.get("want_communication"),
+                    "want_visual": plan.get("want_visual"),
+                },
+            )
             return
         self._planner_noted = True
-        self.set_assembled({"plan": plan})
         store.insert_span(
             trace_id=self.trace_id,
             stage="planner",

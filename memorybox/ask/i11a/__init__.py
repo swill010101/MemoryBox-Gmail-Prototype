@@ -16,6 +16,23 @@ def resolve_request_context(plan: Any) -> dict[str, Any]:
         requestor = None
     names = [str(n).strip() for n in (getattr(plan, "person_names", ()) or ()) if str(n).strip()]
     ids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+    if names and not ids:
+        try:
+            from memorybox.person import AmbiguousIdentityError, find_ask_person_by_name
+
+            resolved: list[str] = []
+            for name in names:
+                try:
+                    view = find_ask_person_by_name(name, lazy_seed=False)
+                except AmbiguousIdentityError:
+                    view = None
+                except Exception:  # noqa: BLE001
+                    view = None
+                if view and getattr(view, "id", None):
+                    resolved.append(str(view.id))
+            ids = list(dict.fromkeys(resolved))
+        except Exception:  # noqa: BLE001
+            pass
     focal_ids = list(dict.fromkeys(ids))
     if not names and not ids and requestor:
         focal_ids = [requestor]

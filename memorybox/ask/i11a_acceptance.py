@@ -50,6 +50,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail="Live Follow must show planner + retrieve progress before lifetime SMS/email/photo scans",
     )
+    req_py = (root / "ai_trace" / "request.py").read_text(encoding="utf-8")
+    _check(
+        "a_planner_refresh_includes_resolved_person_ids",
+        "plan_ask_resolved" in req_py,
+        checks,
+        problems,
+        detail="Planner span must refresh after canonical person_id attach",
+    )
     immich_http = (root / "providers" / "photo" / "_immich_http.py").read_text(encoding="utf-8")
     _check(
         "a_immich_person_timeline_is_year_first",
@@ -96,6 +104,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail="i11a-regression runs Peggy first so a person-library hang is not after three TELL asks",
+    )
+    main_py = (root / "__main__.py").read_text(encoding="utf-8")
+    _check(
+        "a_regression_only_peggy_flag",
+        "--only-peggy" in main_py and "only_peggy" in main_py,
+        checks,
+        problems,
+        detail="Peggy-only diagnostic run before four-case resume",
     )
     from memorybox.ask.i11a.observations import requires_model_interpretation
 
@@ -260,6 +276,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         chunk_units_semantically,
         filter_extract_observations,
     )
+    from memorybox.ask.i11a.observations import canonicalize_observation, observation_from_unit
 
     fat_emails = [
         {
@@ -287,6 +304,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             "time": f"2025-01-11T18:0{i}:00",
             "thread_id": "thr-peggy-sms",
             "content": "Love you. Wishing you well." if i % 2 == 0 else "See you after practice.",
+            "sender_name": "Peggy" if i % 2 == 0 else "Tom",
+            "from_owner": i % 2 == 1,
             "people": [{"name": "Peggy"}, {"name": "Tom"}],
             "evidence_id": f"e-sms-{i}",
         }
@@ -331,6 +350,144 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             "b": len(fat_b),
             "extract_calls": acc_fat.get("extract_calls"),
             "gap": sorted(raw_ids - kept_ids),
+        },
+    )
+    mega_sms = [
+        {
+            "unit_id": f"u-mega-{i}",
+            "kind": "communication",
+            "source_type": "sms",
+            "time": f"2012-06-{(i % 28) + 1:02d}T12:00:00" if i < 28 else f"2012-07-{(i - 27):02d}T12:00:00",
+            "thread_id": "thr-mega-sms",
+            "content": f"Regular check-in {i}. Love you.",
+            "sender_name": "Peggy" if i % 2 == 0 else "Rick",
+            "from_owner": i % 2 == 1,
+            "people": [{"name": "Peggy"}, {"name": "Rick"}],
+            "evidence_id": f"e-mega-{i}",
+        }
+        for i in range(50)
+    ]
+    mega_pre = _pre_compact({"units": mega_sms})
+    mega_units = [u for u in (mega_pre.get("units") or []) if str(u.get("kind") or "") == "sms_segment"]
+    mega_ns = [int(u.get("message_n") or u.get("occurrence_count") or 0) for u in mega_units]
+    mega_ids: set[str] = set()
+    for u in mega_units:
+        mega_ids.update(str(x) for x in (u.get("source_evidence_ids") or u.get("extra_ids") or []))
+        msgs = u.get("messages") or []
+        senders = {str(m.get("sender") or "") for m in msgs if isinstance(m, dict)}
+        eids_m = {str(m.get("evidence_id") or "") for m in msgs if isinstance(m, dict)}
+        if not senders.issuperset({"Peggy", "Rick"} if len(msgs) >= 2 else senders):
+            pass
+        mega_ids.update(eids_m)
+    attributed = all(
+        isinstance(u.get("messages"), list)
+        and len(u.get("messages") or []) == int(u.get("message_n") or 0)
+        and all(
+            isinstance(m, dict)
+            and m.get("sender")
+            and m.get("text")
+            and m.get("evidence_id")
+            and m.get("time")
+            for m in (u.get("messages") or [])
+        )
+        for u in mega_units
+    )
+    spans = []
+    for u in mega_units:
+        ds = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        spans.append((ds.get("start"), ds.get("end"), u.get("message_n")))
+    _check(
+        "sms_windows_are_bounded_attributed_not_mega_segments",
+        len(mega_sms) == 50
+        and len(mega_units) >= 2
+        and max(mega_ns or [0]) <= 24
+        and {f"e-mega-{i}" for i in range(50)} <= mega_ids
+        and attributed,
+        checks,
+        problems,
+        detail={"n_units": len(mega_units), "ns": mega_ns, "spans": spans, "ids": len(mega_ids)},
+    )
+    year_sms = []
+    for i in range(220):
+        year = 2010 + (i // 16)
+        month = (i % 12) + 1
+        day = (i % 27) + 1
+        year_sms.append(
+            {
+                "unit_id": f"u-yr-{i}",
+                "kind": "communication",
+                "source_type": "sms",
+                "time": f"{year}-{month:02d}-{day:02d}T12:00:00",
+                "thread_id": "thr-peggy-george",
+                "content": f"Check-in {i} from the long thread.",
+                "sender_name": "Peggy" if i % 2 == 0 else "Rick",
+                "from_owner": i % 2 == 1,
+                "people": [{"name": "Peggy"}, {"name": "Rick"}],
+                "evidence_id": f"e-yr-{i}",
+            }
+        )
+    year_pre = _pre_compact({"units": year_sms})
+    year_units = [u for u in (year_pre.get("units") or []) if str(u.get("kind") or "") == "sms_segment"]
+    year_ns = [int(u.get("message_n") or 0) for u in year_units]
+    year_ids: set[str] = set()
+    for u in year_units:
+        year_ids.update(str(x) for x in (u.get("source_evidence_ids") or []))
+        for m in u.get("messages") or []:
+            if isinstance(m, dict):
+                year_ids.add(str(m.get("evidence_id") or ""))
+    year_chunks = chunk_units_semantically(year_units, budget=12_000)
+    year_chunk_msgs = [
+        sum(len(u.get("messages") or []) for u in ch)
+        for ch in year_chunks
+    ]
+    from datetime import date as _date
+
+    year_span_days: list[int] = []
+    for u in year_units:
+        ds = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        a, b = ds.get("start"), ds.get("end")
+        if a and b:
+            try:
+                year_span_days.append(
+                    abs(
+                        (
+                            _date.fromisoformat(str(b)[:10])
+                            - _date.fromisoformat(str(a)[:10])
+                        ).days
+                    )
+                )
+            except ValueError:
+                pass
+    from memorybox.ask.i11a.comm_compact import unit_for_extract_model
+
+    extract_row = unit_for_extract_model(year_units[0]) if year_units else {}
+    extract_senders = {
+        str(m.get("sender") or "")
+        for m in (extract_row.get("messages") or [])
+        if isinstance(m, dict)
+    }
+    _check(
+        "peggy_scale_sms_windows_do_not_rebatch_into_mega_extract",
+        len(year_sms) == 220
+        and max(year_ns or [0]) <= 24
+        and max(year_span_days or [0]) <= 370
+        and {f"e-yr-{i}" for i in range(220)} <= year_ids
+        and max(year_chunk_msgs or [0]) <= 24
+        and "Peggy" in extract_senders
+        and "Rick" in extract_senders
+        and "---" not in str(extract_row.get("content") or "")
+        and isinstance(extract_row.get("messages"), list)
+        and len(extract_row.get("messages") or []) == int(year_units[0].get("message_n") or 0),
+        checks,
+        problems,
+        detail={
+            "windows": len(year_units),
+            "ns": year_ns[:12],
+            "max_n": max(year_ns or [0]),
+            "max_span_days": max(year_span_days or [0]),
+            "chunks": len(year_chunks),
+            "chunk_msgs": year_chunk_msgs[:12],
+            "ids": len(year_ids),
         },
     )
     mixed_chunk = chunk_units_semantically(fat_b, budget=12_000)
@@ -464,6 +621,106 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail={"ok": kept_ok, "kind": rej_kind, "id": rej_id, "place": rej_place, "pres": rej_presence, "tr": rej_transport},
+    )
+    _, rej_none = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "None",
+                "supporting_evidence_ids": ["e-em-0"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_place_kind = filter_extract_observations(
+        [
+            {
+                "kind": "place_referenced",
+                "text": "Somewhere was mentioned",
+                "supporting_evidence_ids": ["e-em-0"],
+                "places": [],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_rel = filter_extract_observations(
+        [
+            {
+                "kind": "relationship_stated",
+                "text": "Tom wrote a note",
+                "supporting_evidence_ids": ["e-em-0"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    attr_chunk = [
+        {
+            "kind": "sms_segment",
+            "evidence_id": "e-sms-a",
+            "extra_ids": ["e-sms-a", "e-sms-b"],
+            "source_evidence_ids": ["e-sms-a", "e-sms-b"],
+            "content": "[2012-06-01] Peggy: Love you.  (evidence_id=e-sms-a)",
+            "people": [{"name": "Peggy"}, {"name": "Rick"}, {"name": "Tom"}],
+            "messages": [
+                {
+                    "sender": "Peggy",
+                    "recipients": ["Rick"],
+                    "time": "2012-06-01",
+                    "text": "Love you.",
+                    "evidence_id": "e-sms-a",
+                },
+                {
+                    "sender": "Rick",
+                    "recipients": ["Peggy"],
+                    "time": "2012-06-01",
+                    "text": "See you soon.",
+                    "evidence_id": "e-sms-b",
+                },
+            ],
+        }
+    ]
+    _, rej_attr = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Tom said the concert was cancelled.",
+                "supporting_evidence_ids": ["e-sms-a"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        attr_chunk,
+    )
+    _check(
+        "extract_rejects_none_place_relationship_and_unsupported_people",
+        any(r.get("reason") == "empty_observation" for r in rej_none)
+        and any(r.get("reason") == "place_referenced_without_place" for r in rej_place_kind)
+        and any(r.get("reason") == "relationship_stated_without_relationship" for r in rej_rel)
+        and any(r.get("reason") == "people_not_in_authored_message" for r in rej_attr)
+        and canonicalize_observation(
+            {"kind": "communication_states", "text": "None", "supporting_evidence_ids": ["e-em-0"]}
+        )
+        is None
+        and canonicalize_observation(
+            {"kind": "communication_states", "text": None, "supporting_evidence_ids": ["e-em-0"]}
+        )
+        is None
+        and (observation_from_unit(
+            {
+                "kind": "media_cluster",
+                "people": [{"name": "Peggy"}],
+                "place": None,
+                "evidence_id": "ph-unspec",
+                "extra_ids": ["ph-unspec"],
+                "time": "2020-01-01",
+            }
+        ) or {}).get("kind")
+        != "person_at_place_time",
+        checks,
+        problems,
+        detail={"none": rej_none, "place": rej_place_kind, "rel": rej_rel, "attr": rej_attr},
     )
     _check(
         "a09_trace_light_copy_export",
@@ -691,6 +948,67 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail=str({k: to_inf.get(k) for k in ("ok", "fail_closed", "reason", "error_class", "stage", "timeout_seconds", "retry_count")}),
+    )
+
+    class _ExtractTimeout(FakeLlmProvider):
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            system = next((m.content for m in messages if m.role == "system"), "")
+            if "OBSERVATION_EXTRACT" in (system or ""):
+                raise ProviderUnavailable("timed out after 90s")
+            return super().chat(messages, json_mode=json_mode)
+
+    to_ex = run_inference(jan_plan, {"units": fat_sms[:2]}, _ExtractTimeout())
+    to_ex_acc = to_ex.get("accounting") or {}
+    _check(
+        "extract_timeout_stays_provider_timeout",
+        int(to_ex_acc.get("extract_timeouts") or 0) >= 1
+        and to_ex.get("fail_closed") is True
+        and to_ex.get("error_class") == "PROVIDER_TIMEOUT"
+        and int(to_ex_acc.get("ask_relative_calls") or 0) == 0
+        and "classify_llm_error(exc)" in infer_py
+        and 'error_class="MODEL_OUTPUT"' not in infer_py[
+            infer_py.find("operation=\"observation_extract\"") : infer_py.find(
+                'operation="semantic_observations"'
+            )
+        ],
+        checks,
+        problems,
+        detail={"extract_timeouts": to_ex_acc.get("extract_timeouts"), "error_class": to_ex.get("error_class"), "ask_relative": to_ex_acc.get("ask_relative_calls")},
+    )
+
+    class _PersonAskTimeout(FakeLlmProvider):
+        narrator_calls = 0
+
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            system = next((m.content for m in messages if m.role == "system"), "")
+            if "NARRATIVE_SYNTHESIS" in (system or ""):
+                type(self).narrator_calls += 1
+            if "ASK_RELATIVE_REASONING" in (system or ""):
+                raise ProviderUnavailable("timed out after 90s")
+            return super().chat(messages, json_mode=json_mode)
+
+    _PersonAskTimeout.narrator_calls = 0
+    person_pack = prepare_narrative_pack(peggy_plan, evidence=hits, photos=[], videos=[])
+    person_pack = apply_inference_to_pack(peggy_plan, person_pack, _PersonAskTimeout())
+    from memorybox.ask.narrative import synthesize_tell as _synth_person
+
+    person_text, person_meta = _synth_person(peggy_plan, person_pack, _PersonAskTimeout())
+    person_inf = person_pack.get("inference") or {}
+    _check(
+        "person_ask_relative_timeout_skips_narrator",
+        person_meta.get("fail_closed") is True
+        and person_inf.get("fail_closed") is True
+        and person_inf.get("error_class") == "PROVIDER_TIMEOUT"
+        and _PersonAskTimeout.narrator_calls == 0
+        and "narration unavailable" in person_text.lower()
+        and "evidence-backed account" not in person_text.lower()
+        and bool(person_pack.get("semantic_observations") or hits),
+        checks,
+        problems,
+        detail={
+            "inf": {k: person_inf.get(k) for k in ("ok", "fail_closed", "error_class", "stage")},
+            "narrator_calls": _PersonAskTimeout.narrator_calls,
+        },
     )
 
     fake = FakeLlmProvider()

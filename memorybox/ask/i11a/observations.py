@@ -118,6 +118,17 @@ def _base(
     start = _day(span.get("start")) or day
     end = _day(span.get("end")) or day
     place = str(unit.get("place") or unit.get("city") or "").strip()
+    if not place or place.lower() in {
+        "unplaced",
+        "unspecified",
+        "unknown",
+        "none",
+        "n/a",
+        "null",
+        "unspecified roadside",
+        "an unspecified place",
+    } or "unspecified" in place.lower():
+        place = ""
     places = [place] if place else []
     return {
         "observation_id": _obs_id(kind, ids, text),
@@ -222,21 +233,35 @@ def observation_from_unit(unit: dict[str, Any]) -> dict[str, Any] | None:
             ids=ids,
         )
     if kind in {"media_observation", "video_asset", "video_moment", "spoken_moment", "media_cluster"}:
-        loc = place or "an unspecified place"
+        generic = (not place) or place.lower() in {
+            "unplaced",
+            "unspecified",
+            "unknown",
+            "none",
+            "n/a",
+            "null",
+            "unspecified roadside",
+            "an unspecified place",
+        } or "unspecified" in place.lower()
+        loc = place if place and not generic else None
         subject = who or "A person"
         when = f" on {day}" if day else ""
         media_kind = "Video asset" if kind == "video_asset" else "Photograph"
         if kind == "media_cluster":
             media_kind = excerpt or "Media observations"
-            text = f"{subject} observed at {loc}{when}. {media_kind}"
+            text = (
+                f"{subject} observed at {loc}{when}. {media_kind}"
+                if loc
+                else f"{subject} appears in media{when}. {media_kind}"
+            )
         elif kind == "spoken_moment":
-            text = f"Spoken moment{when}" + (f" at {loc}" if place else "")
+            text = f"Spoken moment{when}" + (f" at {loc}" if loc else "")
             if excerpt:
                 text = f"{text}: {excerpt[:160]}"
         else:
-            text = f"{subject} observed at {loc}{when}"
-        unc = ["gps_or_labeled_place_is_presence_not_residence"] if place else []
-        obs_kind = "person_at_place_time" if (who or place) else "media_observation"
+            text = f"{subject} observed at {loc}{when}" if loc else f"{subject} appears in a photograph{when}"
+        unc = ["gps_or_labeled_place_is_presence_not_residence"] if loc else []
+        obs_kind = "person_at_place_time" if loc else "media_observation"
         return _base(
             kind=obs_kind,
             text=text,
@@ -427,7 +452,12 @@ def canonicalize_observation(
             return None
         kind = "activity_named"
     source = str(row.get("source_type") or row.get("unit_kind") or "").lower()
-    text = str(row.get("text") or "").strip()
+    raw_text = row.get("text")
+    if raw_text is None:
+        return None
+    text = str(raw_text).strip()
+    if not text or text.lower() in {"none", "null", "n/a", "undefined", ""}:
+        return None
     has_gps = row.get("latitude") is not None or (
         isinstance(row.get("media"), dict) and (row.get("media") or {}).get("exif_gps")
     )

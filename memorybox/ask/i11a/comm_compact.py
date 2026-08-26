@@ -11,6 +11,18 @@ from typing import Any
 from memorybox.ask.i11a.observations import OBSERVATION_KINDS, canonicalize_observation
 from memorybox.ask.i11a.windows import _day
 
+_EMPTY_TEXT = frozenset({"", "none", "null", "n/a", "undefined"})
+_GENERIC_PLACES = frozenset(
+    {"unplaced", "unspecified", "unknown", "none", "n/a", "null", "unspecified roadside"}
+)
+_REL_STATED = re.compile(
+    r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
+    r"parent|father|mother|family|friend|colleague|uncle|aunt|"
+    r"niece|nephew|grandparent|grandchild|husband|wife|married|"
+    r"related|kin|cousin)\b",
+    re.I,
+)
+
 _PRESENCE_STATED = re.compile(
     r"(?i)\b("
     r"i(?:'m| am)\s+(?:in|at|near)|"
@@ -95,18 +107,30 @@ def _people_key(unit: dict[str, Any]) -> str:
 
 
 def _blob(unit: dict[str, Any]) -> str:
-    return " ".join(
-        str(x or "")
-        for x in (
-            unit.get("content"),
-            unit.get("authored_text"),
-            unit.get("subject"),
-            unit.get("title"),
-            unit.get("excerpt"),
-            unit.get("place"),
-            unit.get("time"),
+    parts = [
+        unit.get("content"),
+        unit.get("authored_text"),
+        unit.get("subject"),
+        unit.get("title"),
+        unit.get("excerpt"),
+        unit.get("place"),
+        unit.get("time"),
+        unit.get("sender_name"),
+        unit.get("thread_id"),
+    ]
+    for m in unit.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        parts.extend(
+            [
+                m.get("sender"),
+                m.get("text"),
+                m.get("time"),
+                m.get("evidence_id"),
+                " ".join(str(x) for x in (m.get("recipients") or [])),
+            ]
         )
-    )
+    return " ".join(str(x or "") for x in parts)
 
 
 def omit_covered_communication_units(
@@ -196,6 +220,10 @@ def semantic_group_key(unit: dict[str, Any]) -> str:
         n = int(occ) if occ is not None else 1
     except (TypeError, ValueError):
         n = 1
+    msgs = unit.get("messages") if isinstance(unit.get("messages"), list) else []
+    if msgs:
+        # Already a bounded semantic window — do not regroup by thread into a mega extract.
+        return f"window:{unit.get('unit_id') or unit.get('evidence_id') or tid or 'comm'}"
     if tid and n > 1:
         return f"thread:{tid}"
     people = _people_key(unit)
@@ -214,23 +242,60 @@ def semantic_group_key(unit: dict[str, Any]) -> str:
     return f"kind:{kind}"
 
 
-def payload_piece_bytes(unit: dict[str, Any]) -> int:
-    """Size the extract payload row, not the full in-memory unit."""
+def unit_for_extract_model(unit: dict[str, Any]) -> dict[str, Any]:
+    """The OBSERVATION_EXTRACT row. Must match payload_piece_bytes sizing."""
+    msgs = unit.get("messages") if isinstance(unit.get("messages"), list) else []
+    header = str(unit.get("content") or "").split("\n", 1)[0][:240]
+    if msgs:
+        header = header or (
+            f"{unit.get('kind') or 'communication'} ({len(msgs)} attributed messages)"
+        )
     row = {
         "unit_id": unit.get("unit_id"),
         "evidence_id": unit.get("evidence_id"),
         "kind": unit.get("kind"),
         "source_type": unit.get("source_type"),
-        "time": unit.get("time"),
+        "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:1200],
+        "content": header if msgs else str(unit.get("content") or "")[:1200],
+        "asset_ref": unit.get("asset_ref"),
         "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
+        "source_evidence_ids": list(unit.get("source_evidence_ids") or unit.get("extra_ids") or []),
+        "occurrence_count": unit.get("occurrence_count"),
+        "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
         "title": unit.get("title"),
-        "authored_text": str(unit.get("authored_text") or "")[:800],
+        "authored_text": "" if msgs else str(unit.get("authored_text") or "")[:800],
     }
-    return len(json.dumps(row, default=str))
+    if msgs:
+        row["messages"] = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            row["messages"].append(
+                {
+                    "sender": m.get("sender"),
+                    "sender_person_id": m.get("sender_person_id"),
+                    "from_owner": m.get("from_owner"),
+                    "recipients": list(m.get("recipients") or [])[:12],
+                    "conversation": m.get("conversation") or unit.get("thread_id"),
+                    "time": m.get("time"),
+                    "text": str(m.get("text") or "")[:400],
+                    "evidence_id": m.get("evidence_id"),
+                }
+            )
+        row["message_n"] = len(row["messages"])
+        span = unit.get("date_span") if isinstance(unit.get("date_span"), dict) else {}
+        row["date_span"] = span or None
+    if unit.get("media"):
+        row["media"] = unit.get("media")
+    return row
+
+
+def payload_piece_bytes(unit: dict[str, Any]) -> int:
+    """Size the extract payload row, including attributed messages[]."""
+    return len(json.dumps(unit_for_extract_model(unit), default=str))
 
 
 def _split_group(group: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
@@ -302,16 +367,58 @@ def _evidence_blob(chunk: list[dict[str, Any]]) -> str:
 
 def _names_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
     names: set[str] = set()
+
+    def _add(raw: Any) -> None:
+        n = str(raw or "").strip().lower()
+        if not n:
+            return
+        names.add(n)
+        names.update(part for part in n.split() if len(part) > 1)
+
     for u in chunk:
         for p in u.get("people") or []:
             if isinstance(p, dict):
-                n = str(p.get("name") or "").strip().lower()
+                _add(p.get("name"))
             else:
-                n = str(p).strip().lower()
-            if n:
-                names.add(n)
-                names.update(part for part in n.split() if len(part) > 1)
+                _add(p)
+        _add(u.get("sender_name"))
+        for m in u.get("messages") or []:
+            if not isinstance(m, dict):
+                continue
+            _add(m.get("sender"))
+            for r in m.get("recipients") or []:
+                _add(r)
     return names
+
+
+def _authored_names_for_ids(chunk: list[dict[str, Any]], ids: list[str]) -> set[str] | None:
+    """Names that appear as sender/recipient on supporting messages, if any."""
+    wanted = {str(i) for i in ids if str(i).strip()}
+    names: set[str] = set()
+    saw_messages = False
+
+    def _add(raw: Any) -> None:
+        n = str(raw or "").strip().lower()
+        if not n:
+            return
+        names.add(n)
+        names.update(part for part in n.split() if len(part) > 1)
+
+    for u in chunk:
+        msgs = u.get("messages") if isinstance(u.get("messages"), list) else []
+        if not msgs:
+            continue
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            eid = str(m.get("evidence_id") or "").strip()
+            if wanted and eid and eid not in wanted:
+                continue
+            saw_messages = True
+            _add(m.get("sender"))
+            for r in m.get("recipients") or []:
+                _add(r)
+    return names if saw_messages else None
 
 
 def _places_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
@@ -390,6 +497,10 @@ def filter_extract_observations(
                 ids.append(s)
         if invented_eid:
             continue
+        raw_text = raw.get("text")
+        if raw_text is None or str(raw_text).strip().lower() in _EMPTY_TEXT:
+            rejected.append({"reason": "empty_observation", "text": None if raw_text is None else str(raw_text)[:80]})
+            continue
         if not ids:
             rejected.append({"reason": "observation_ids_not_from_chunk", "text": str(raw.get("text") or "")[:160]})
             continue
@@ -401,8 +512,31 @@ def filter_extract_observations(
             rejected.append({"reason": "observation_schema_invalid", "kind": kind})
             continue
         text = str(canon.get("text") or "").strip()
-        if not text:
+        if not text or text.lower() in _EMPTY_TEXT:
             rejected.append({"reason": "empty_observation"})
+            continue
+        if str(canon.get("kind") or "") == "place_referenced":
+            places_ok = [
+                str(p).strip()
+                for p in (canon.get("places") or [])
+                if str(p).strip() and str(p).strip().lower() not in _GENERIC_PLACES
+            ]
+            if not places_ok:
+                rejected.append({"reason": "place_referenced_without_place", "text": text[:160]})
+                continue
+        if str(canon.get("kind") or "") == "person_at_place_time":
+            places_ok = [
+                str(p).strip()
+                for p in (canon.get("places") or [])
+                if str(p).strip()
+                and str(p).strip().lower() not in _GENERIC_PLACES
+                and "unspecified" not in str(p).strip().lower()
+            ]
+            if not places_ok:
+                rejected.append({"reason": "person_at_place_time_without_place", "text": text[:160]})
+                continue
+        if str(canon.get("kind") or "") == "relationship_stated" and not _REL_STATED.search(text):
+            rejected.append({"reason": "relationship_stated_without_relationship", "text": text[:160]})
             continue
         if _TRANSPORT_ONLY.match(text):
             rejected.append({"reason": "transport_metadata_only", "text": text[:160]})
@@ -449,6 +583,21 @@ def filter_extract_observations(
         if invented_person:
             rejected.append({"reason": "invented_person", "text": text[:160]})
             continue
+        authored = _authored_names_for_ids(chunk, ids)
+        if authored is not None:
+            unsupported = False
+            for p in canon.get("people") or []:
+                n = str((p.get("name") if isinstance(p, dict) else p) or "").strip().lower()
+                if not n:
+                    continue
+                tokens = [t for t in n.split() if len(t) > 1]
+                if n in authored or (tokens and all(t in authored for t in tokens)):
+                    continue
+                unsupported = True
+                break
+            if unsupported:
+                rejected.append({"reason": "people_not_in_authored_message", "text": text[:160]})
+                continue
         t = str(canon.get("time") or "")[:10]
         if t and _DATE.match(t) and t not in dates and t not in blob:
             rejected.append({"reason": "invented_date", "time": t, "text": text[:160]})

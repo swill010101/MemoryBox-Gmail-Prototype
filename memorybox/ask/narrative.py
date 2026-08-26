@@ -398,6 +398,12 @@ def synthesize_tell(
     if llm is None:
         meta["fail_closed"] = True
         return _fail_closed(pack, reason="No language model is configured."), meta
+    if pack.get("inference", {}).get("fail_closed"):
+        meta["fail_closed"] = True
+        reason = str(
+            pack.get("inference", {}).get("reason") or "Semantic inference is unavailable."
+        )
+        return _fail_closed(pack, reason=reason), meta
     narrator = pack_for_narrator(pack)
     narrator.pop("coverage", None)
     payload = json.dumps(narrator, default=str)

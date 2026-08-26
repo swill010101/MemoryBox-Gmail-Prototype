@@ -308,6 +308,22 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             named.get("extract_observations_rejected"),
             inf_acc.get("extract_observations_rejected"),
         ),
+        "extract_timeouts": _first(
+            named.get("extract_timeouts"),
+            inf_acc.get("extract_timeouts"),
+        ),
+        "extract_payloads": _first(
+            named.get("extract_payloads"),
+            inf_acc.get("extract_payloads"),
+        ),
+        "ask_relative_payload": _first(
+            named.get("ask_relative_payload"),
+            inf_acc.get("ask_relative_payload"),
+            acc.get("ask_relative_payload"),
+        ),
+        "sms_raw": _first(named.get("sms_raw"), inf_acc.get("sms_raw"), pre.get("sms_raw")),
+        "sms_windows": _first(named.get("sms_windows"), inf_acc.get("sms_windows"), pre.get("sms_windows")),
+        "max_messages_per_comm_unit": pre.get("max_messages_per_comm_unit"),
         "observation_extract_calls": extract,
         "ask_relative_calls": ask_rel,
         "narrator_calls": narrator,
@@ -317,7 +333,7 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
+def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, Any]:
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
@@ -325,7 +341,7 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
     started_iso = started.isoformat()
     result: AskResult | None = None
     harness_error: dict[str, Any] | None = None
-    print(f"I11A regression TEST {index}/4 starting: {ask!r} session={session_id}", flush=True)
+    print(f"I11A regression TEST {index}/{total} starting: {ask!r} session={session_id}", flush=True)
     try:
         result = orch.ask(ask, session_id=session_id)
     except Exception as exc:  # noqa: BLE001 — capture and continue
@@ -335,7 +351,7 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
             "traceback": traceback.format_exc(),
         }
         print(
-            f"I11A regression TEST {index}/4 raised {type(exc).__name__}: {exc}",
+            f"I11A regression TEST {index}/{total} raised {type(exc).__name__}: {exc}",
             flush=True,
         )
     ended = datetime.now(timezone.utc)
@@ -365,7 +381,13 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
             except (TypeError, ValueError):
                 duration_ms = wall_ms
     if result is not None and getattr(result, "narration_unavailable", False):
-        status = status or "ok"
+        pack = getattr(result, "narrative_pack", None)
+        inf = pack.get("inference") if isinstance(pack, dict) else {}
+        if isinstance(inf, dict) and inf.get("fail_closed"):
+            status = "error"
+            error_class = error_class or inf.get("error_class")
+        else:
+            status = status or "ok"
     if harness_error is not None:
         status = status or "error"
         error_class = error_class or "ORCHESTRATION"
@@ -400,11 +422,33 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
         "provider_calls": _provider_call_stats(trace if isinstance(trace, dict) else None),
         "inference_accounting": _accounting_from_trace(trace if isinstance(trace, dict) else None),
         "metrics": metrics,
+        "request_context": _jsonable(
+            ((getattr(result, "narrative_pack", None) or {}) if result is not None else {}).get(
+                "request_context"
+            )
+        )
+        if result is not None
+        else None,
+        "peggy_diagnostics": {
+            "sms_raw": metrics.get("sms_raw"),
+            "sms_segment_units": metrics.get("sms_segment_units"),
+            "sms_windows": metrics.get("sms_windows"),
+            "max_messages_per_comm_unit": metrics.get("max_messages_per_comm_unit"),
+            "extract_payloads": metrics.get("extract_payloads"),
+            "extract_timeouts": metrics.get("extract_timeouts"),
+            "extract_observations_rejected": metrics.get("extract_observations_rejected"),
+            "model_derived_observations": metrics.get("model_derived_observations"),
+            "deterministic_observations": metrics.get("deterministic_observations"),
+            "ask_relative_payload": metrics.get("ask_relative_payload"),
+            "narrator_invoked": bool(metrics.get("narrator_calls")),
+            "narrator_calls": metrics.get("narrator_calls"),
+            "total_runtime_ms": duration_ms,
+        },
         "harness_error": harness_error,
         "trace": _jsonable(trace) if trace is not None else None,
     }
     print(
-        f"I11A regression TEST {index}/4 done status={status} error_class={error_class} "
+        f"I11A regression TEST {index}/{total} done status={status} error_class={error_class} "
         f"model_calls={model_call_count} duration_ms={duration_ms} trace_id={trace_id}",
         flush=True,
     )
@@ -488,15 +532,21 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
     }
 
 
-def run_i11a_regression(*, out_path: Path | None = None) -> dict[str, Any]:
-    """Run the four Asks sequentially and write one UTF-8 JSON file. Returns payload."""
+def run_i11a_regression(
+    *,
+    out_path: Path | None = None,
+    asks: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Run the canonical Asks sequentially and write one UTF-8 JSON file. Returns payload."""
     from memorybox.app import get_orchestrator
 
     orch = get_orchestrator()
     runtime = _llm_runtime(orch)
+    sequence = asks if asks is not None else REGRESSION_ASKS
     tests: list[dict[str, Any]] = []
-    for i, ask in enumerate(REGRESSION_ASKS, start=1):
-        tests.append(_run_one(orch, ask, i))
+    total = len(sequence)
+    for i, ask in enumerate(sequence, start=1):
+        tests.append(_run_one(orch, ask, i, total=total))
 
     payload = build_payload(tests, runtime=runtime)
     path = out_path or default_output_path()

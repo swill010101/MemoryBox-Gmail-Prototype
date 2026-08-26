@@ -25,7 +25,13 @@ def _generic_place(place: str) -> bool:
     if not p or p in _GENERIC_PLACES:
         return True
     return "unspecified" in p
-_SMS_GAP_DAYS = 3
+# Inactivity / span bounds: a window may cover a season or year of a thread,
+# never a 10–15 year mega-segment. Message count and payload still cap bursts.
+_SMS_GAP_DAYS = 90
+_MAX_WINDOW_SPAN_DAYS = 366
+# Mechanical bounds so one extract unit is not hundreds of messages across years.
+_MAX_COMM_MESSAGES = 24
+_MAX_WINDOW_CHARS = 6000
 _MEDIA_KINDS = frozenset(
     {"media_observation", "video_asset", "video_moment", "spoken_moment"}
 )
@@ -239,13 +245,161 @@ def _place_history_units(
     return out
 
 
-def _message_bodies(group: list[dict[str, Any]], *, each: int = 900) -> str:
-    parts: list[str] = []
-    for x in group:
-        t = str(x.get("content") or x.get("authored_text") or x.get("excerpt") or "").strip()
-        if t:
-            parts.append(t[:each])
-    return "\n---\n".join(parts)[:4000]
+def _sender_label(unit: dict[str, Any]) -> str:
+    name = str(
+        unit.get("sender_name")
+        or unit.get("speaker")
+        or unit.get("from")
+        or ""
+    ).strip()
+    if not name:
+        for p in unit.get("people") or []:
+            n = str((p.get("name") if isinstance(p, dict) else p) or "").strip()
+            if n:
+                name = n
+                break
+    if unit.get("from_owner") and not name:
+        name = "owner"
+    pid = unit.get("speaker_person_id") or unit.get("sender_person_id")
+    bits = [name or "unknown sender"]
+    if pid:
+        bits.append(f"person_id={pid}")
+    if unit.get("from_owner"):
+        bits.append("from_owner")
+    return " ".join(bits) if len(bits) == 1 else f"{bits[0]} [{', '.join(bits[1:])}]"
+
+
+def _message_text(unit: dict[str, Any], *, each: int = 900) -> str:
+    return str(
+        unit.get("content")
+        or unit.get("authored_text")
+        or unit.get("excerpt")
+        or unit.get("subject")
+        or ""
+    ).strip()[:each]
+
+
+def _message_record(unit: dict[str, Any]) -> dict[str, Any]:
+    eids = _ids(unit)
+    recipients: list[str] = []
+    for p in unit.get("participants") or unit.get("people") or []:
+        n = str((p.get("name") if isinstance(p, dict) else p) or "").strip()
+        if n and n not in recipients:
+            recipients.append(n)
+    sender = str(
+        unit.get("sender_name") or unit.get("speaker") or unit.get("from") or ""
+    ).strip()
+    if not sender:
+        sender = "owner" if unit.get("from_owner") else "unknown sender"
+    pid = unit.get("speaker_person_id") or unit.get("sender_person_id")
+    if not pid:
+        sl = sender.lower()
+        for p in unit.get("people") or []:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("name") or "").strip().lower() == sl and p.get("person_id"):
+                pid = p.get("person_id")
+                break
+    return {
+        "sender": sender,
+        "sender_person_id": pid,
+        "from_owner": bool(unit.get("from_owner")),
+        "recipients": recipients[:12],
+        "conversation": unit.get("thread_id"),
+        "time": unit.get("time") or unit.get("timestamp") or unit.get("sent_at"),
+        "text": _message_text(unit),
+        "evidence_id": eids[0] if eids else unit.get("evidence_id"),
+    }
+
+
+def _format_message_line(unit: dict[str, Any]) -> str:
+    rec = _message_record(unit)
+    t = _day(rec.get("time")) or str(rec.get("time") or "")[:16]
+    eid = rec.get("evidence_id") or ""
+    return f"[{t}] {_sender_label(unit)}: {rec.get('text') or ''}  (evidence_id={eid})"
+
+
+def _window_chars(group: list[dict[str, Any]]) -> int:
+    return sum(len(_format_message_line(x)) + 1 for x in group)
+
+
+def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split a thread/conversation without dropping messages.
+
+    Boundaries: temporal gap, message count, and attributed payload size.
+    """
+    ordered = sorted(group, key=lambda x: str(x.get("time") or x.get("timestamp") or ""))
+    segs: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    last_d: datetime | None = None
+    first_d: datetime | None = None
+    for u in ordered:
+        dt = _parse_dt(u.get("time") or u.get("timestamp") or u.get("sent_at"))
+        split = False
+        if current:
+            if last_d and dt and (dt - last_d) > timedelta(days=_SMS_GAP_DAYS):
+                split = True
+            elif first_d and dt and (dt - first_d) > timedelta(days=_MAX_WINDOW_SPAN_DAYS):
+                split = True
+            elif len(current) >= _MAX_COMM_MESSAGES:
+                split = True
+            elif _window_chars(current) + len(_format_message_line(u)) > _MAX_WINDOW_CHARS:
+                split = True
+        if split:
+            segs.append(current)
+            current = []
+            first_d = None
+        current.append(u)
+        last_d = dt or last_d
+        if first_d is None:
+            first_d = dt or last_d
+    if current:
+        segs.append(current)
+    return segs
+
+
+def _comm_window_unit(
+    seg: list[dict[str, Any]],
+    *,
+    kind: str,
+    source_type: str,
+    thread_key: str,
+    header_label: str,
+) -> dict[str, Any]:
+    days = sorted(d for d in (_day(x.get("time") or x.get("timestamp")) for x in seg) if d)
+    eids: list[str] = []
+    for x in seg:
+        for i in _ids(x):
+            if i not in eids:
+                eids.append(i)
+    first = seg[0]
+    lines = [_format_message_line(x) for x in seg]
+    body = "\n".join(lines)
+    header = (
+        f"{header_label} ({len(seg)} messages"
+        + (f", {days[0]}–{days[-1]}" if days else "")
+        + ")."
+    )
+    return {
+        "unit_id": f"{'sms' if source_type == 'sms' else 'eth'}-{eids[0] if eids else thread_key}"[:80],
+        "evidence_id": eids[0] if eids else first.get("evidence_id"),
+        "kind": kind,
+        "source_type": source_type,
+        "time": days[0] if days else first.get("time"),
+        "people": _collect_people(seg) or first.get("people") or [],
+        "place": first.get("place"),
+        "content": (header + "\n" + body)[:4000],
+        "authored_text": body[:2400],
+        "subject": first.get("subject"),
+        "thread_id": first.get("thread_id") or thread_key,
+        "extra_ids": eids,
+        "source_evidence_ids": eids,
+        "occurrence_count": len(seg),
+        "asset_ref": None,
+        "messages": [_message_record(x) for x in seg],
+        "date_span": {"start": days[0] if days else None, "end": days[-1] if days else None},
+        "message_n": len(seg),
+    }
 
 
 def _collect_people(group: list[dict[str, Any]]) -> list[Any]:
@@ -273,39 +427,18 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         buckets.setdefault(key, []).append(u)
     out: list[dict[str, Any]] = []
     for key, group in buckets.items():
-        days = sorted(d for d in (_day(x.get("time")) for x in group) if d)
-        eids: list[str] = []
-        for x in group:
-            for i in _ids(x):
-                if i not in eids:
-                    eids.append(i)
         first = group[0]
         subj = str(first.get("subject") or first.get("content") or "thread")[:80]
-        body = _message_bodies(group)
-        header = (
-            f"Email thread “{subj}” ({len(group)} messages"
-            + (f", {days[0]}–{days[-1]}" if len(days) > 1 else "")
-            + ")."
-        )
-        out.append(
-            {
-                "unit_id": f"eth-{eids[0] if eids else key}"[:80],
-                "evidence_id": eids[0] if eids else first.get("evidence_id"),
-                "kind": "communication_thread",
-                "source_type": "email",
-                "time": days[0] if days else first.get("time"),
-                "people": _collect_people(group) or first.get("people") or [],
-                "place": first.get("place"),
-                "content": (header + "\n" + body)[:4000],
-                "authored_text": body[:2400],
-                "subject": subj,
-                "thread_id": first.get("thread_id") or key,
-                "extra_ids": eids,
-                "source_evidence_ids": eids,
-                "occurrence_count": len(group),
-                "asset_ref": None,
-            }
-        )
+        for seg in _split_comm_windows(group):
+            unit = _comm_window_unit(
+                seg,
+                kind="communication_thread",
+                source_type="email",
+                thread_key=key,
+                header_label=f"Email thread “{subj}”",
+            )
+            unit["subject"] = subj
+            out.append(unit)
     for u in unthreaded:
         row = dict(u)
         row["kind"] = "communication_thread"
@@ -334,50 +467,15 @@ def _sms_segments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         buckets.setdefault(tid, []).append(u)
     out: list[dict[str, Any]] = []
     for tid, group in buckets.items():
-        group = sorted(group, key=lambda x: str(x.get("time") or ""))
-        current: list[dict[str, Any]] = []
-        last_d: datetime | None = None
-        segs: list[list[dict[str, Any]]] = []
-        for u in group:
-            dt = _parse_dt(u.get("time"))
-            if current and last_d and dt and (dt - last_d) > timedelta(days=_SMS_GAP_DAYS):
-                segs.append(current)
-                current = []
-            current.append(u)
-            last_d = dt or last_d
-        if current:
-            segs.append(current)
-        for seg in segs:
-            days = sorted(d for d in (_day(x.get("time")) for x in seg) if d)
-            eids: list[str] = []
-            for x in seg:
-                for i in _ids(x):
-                    if i not in eids:
-                        eids.append(i)
-            first = seg[0]
-            body = _message_bodies(seg)
-            header = (
-                f"Text conversation ({len(seg)} messages"
-                + (f", {days[0]}–{days[-1]}" if days else "")
-                + ")."
-            )
+        for seg in _split_comm_windows(group):
             out.append(
-                {
-                    "unit_id": f"sms-{eids[0] if eids else tid}"[:80],
-                    "evidence_id": eids[0] if eids else first.get("evidence_id"),
-                    "kind": "sms_segment",
-                    "source_type": "sms",
-                    "time": days[0] if days else first.get("time"),
-                    "people": _collect_people(seg) or first.get("people") or [],
-                    "place": first.get("place"),
-                    "content": (header + "\n" + body)[:4000],
-                    "authored_text": body[:2400],
-                    "thread_id": first.get("thread_id") or tid,
-                    "extra_ids": eids,
-                    "source_evidence_ids": eids,
-                    "occurrence_count": len(seg),
-                    "asset_ref": None,
-                }
+                _comm_window_unit(
+                    seg,
+                    kind="sms_segment",
+                    source_type="sms",
+                    thread_key=tid,
+                    header_label="Text conversation",
+                )
             )
     return out
 
@@ -601,6 +699,23 @@ def preaggregate_pack(
         ),
         "sms_raw": len(sms),
         "sms_segment_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
+        "sms_windows": [
+            {
+                "n": int(u.get("message_n") or u.get("occurrence_count") or 0),
+                "start": (u.get("date_span") or {}).get("start") if isinstance(u.get("date_span"), dict) else None,
+                "end": (u.get("date_span") or {}).get("end") if isinstance(u.get("date_span"), dict) else None,
+                "thread_id": u.get("thread_id"),
+            }
+            for u in sms_units
+            if str(u.get("kind") or "") == "sms_segment"
+        ],
+        "max_messages_per_comm_unit": max(
+            [
+                int(u.get("message_n") or u.get("occurrence_count") or 0)
+                for u in list(sms_units) + list(email_units)
+            ]
+            or [0]
+        ),
         "raw_comm_items": raw_comm_n,
         "semantic_comm_units_before_dedupe": sum(
             1
