@@ -352,6 +352,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run only the Peggy Ask (do not run the four-case regression)",
     )
+    p_i11a_reg.add_argument(
+        "--rebuild-observations",
+        action="store_true",
+        help="Invalidate persisted OBSERVATION_EXTRACT cache before the run (cold enrichment)",
+    )
+    p_i11a_reg.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Repeat the Ask sequence N times (use 2 with --only-peggy for cold then warm)",
+    )
     p_abandon = sub.add_parser(
         "ai-trace-abandon",
         help="Mark stale AI Trace rows still listed as running after the Ask process died",
@@ -779,6 +790,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = run_i11a_regression(
             out_path=out,
             asks=("tell me what you know about Peggy",) if getattr(args, "only_peggy", False) else None,
+            rebuild_observations=bool(getattr(args, "rebuild_observations", False)),
+            repeat=int(getattr(args, "repeat", 1) or 1),
         )
         summary = payload.get("summary") or {}
         print(json.dumps({

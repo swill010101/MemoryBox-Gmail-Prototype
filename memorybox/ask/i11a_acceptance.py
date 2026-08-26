@@ -36,6 +36,11 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems.append("prove-i11a --flightsim requires MEMORYBOX_P1_RUNTIME_HOST=1")
         return {"ok": False, "checks": checks, "problems": problems, "meta": meta}
 
+    from memorybox.ask.i11a.observation_cache import clear_memory_cache, invalidate_extract_cache
+
+    clear_memory_cache()
+    invalidate_extract_cache()
+
     root = Path(__file__).resolve().parents[1]
     infer_py = (root / "ask" / "i11a" / "infer.py").read_text(encoding="utf-8")
     orch_py = (root / "ask" / "orchestrator.py").read_text(encoding="utf-8")
@@ -108,7 +113,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     main_py = (root / "__main__.py").read_text(encoding="utf-8")
     _check(
         "a_regression_only_peggy_flag",
-        "--only-peggy" in main_py and "only_peggy" in main_py,
+        "--only-peggy" in main_py and "only_peggy" in main_py and "rebuild-observations" in main_py,
         checks,
         problems,
         detail="Peggy-only diagnostic run before four-case resume",
@@ -333,12 +338,13 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "comm_thread_replaces_raw_email_rows_in_extract",
         int(fat_trace.get("email_raw") or 0) == 20
-        and int(fat_trace.get("email_thread_units") or 0) == 1
-        and int(fat_trace.get("sms_segment_units") or 0) == 1
-        and len(fat_b) <= 2
+        and int(fat_trace.get("email_thread_units") or 0) >= 1
+        and int(fat_trace.get("sms_segment_units") or 0) >= 1
+        and len(fat_b) <= 8
         and raw_ids <= kept_ids
         and float(fat_trace.get("provenance_coverage") or 0) == 1.0
-        and int(acc_fat.get("extract_calls") or 99) <= 2,
+        and int(acc_fat.get("extract_calls") or 99) <= 8
+        and int(fat_trace.get("max_messages_per_comm_unit") or 0) <= 8,
         checks,
         problems,
         detail={
@@ -400,7 +406,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "sms_windows_are_bounded_attributed_not_mega_segments",
         len(mega_sms) == 50
         and len(mega_units) >= 2
-        and max(mega_ns or [0]) <= 24
+        and max(mega_ns or [0]) <= 8
         and {f"e-mega-{i}" for i in range(50)} <= mega_ids
         and attributed,
         checks,
@@ -463,16 +469,17 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     extract_row = unit_for_extract_model(year_units[0]) if year_units else {}
     extract_senders = {
         str(m.get("sender") or "")
-        for m in (extract_row.get("messages") or [])
+        for u in year_units
+        for m in (u.get("messages") or [])
         if isinstance(m, dict)
     }
     _check(
         "peggy_scale_sms_windows_do_not_rebatch_into_mega_extract",
         len(year_sms) == 220
-        and max(year_ns or [0]) <= 24
-        and max(year_span_days or [0]) <= 370
+        and max(year_ns or [0]) <= 8
+        and max(year_span_days or [0]) <= 45
         and {f"e-yr-{i}" for i in range(220)} <= year_ids
-        and max(year_chunk_msgs or [0]) <= 24
+        and max(year_chunk_msgs or [0]) <= 8
         and "Peggy" in extract_senders
         and "Rick" in extract_senders
         and "---" not in str(extract_row.get("content") or "")
@@ -501,7 +508,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     )
     _check(
         "extract_chunks_are_semantically_grouped",
-        trivia_only and sms_only and len(mixed_chunk) == 2,
+        trivia_only and sms_only and mixed_chunk
+        and all(
+            len({str(u.get("thread_id") or "") for u in ch}) == 1
+            for ch in mixed_chunk
+            if ch
+        ),
         checks,
         problems,
         detail={"chunks": len(mixed_chunk), "b": len(fat_b)},
@@ -721,6 +733,138 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         checks,
         problems,
         detail={"none": rej_none, "place": rej_place_kind, "rel": rej_rel, "attr": rej_attr},
+    )
+    surgery_chunk = [
+        {
+            "kind": "sms_segment",
+            "evidence_id": "e-surg",
+            "extra_ids": ["e-surg"],
+            "source_evidence_ids": ["e-surg"],
+            "content": "Dad's surgery is Tuesday morning.",
+            "people": [{"name": "Peggy George"}],
+            "messages": [
+                {
+                    "sender": "Peggy George",
+                    "text": "Dad's surgery is Tuesday morning.",
+                    "time": "2012-06-01",
+                    "evidence_id": "e-surg",
+                }
+            ],
+        }
+    ]
+    kept_surg, rej_surg = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Peggy George mentioned Dad's surgery on Tuesday morning.",
+                "supporting_evidence_ids": ["e-surg"],
+                "people": [{"name": "Peggy George"}],
+            },
+            {
+                "kind": "communication_states",
+                "text": "Peggy George and the music group discussed evening practice and key changes",
+                "supporting_evidence_ids": ["e-surg"],
+                "people": [{"name": "Peggy George"}],
+            },
+        ],
+        surgery_chunk,
+    )
+    _check(
+        "extract_rejects_topics_not_in_supporting_messages",
+        any("surgery" in str(o.get("text") or "").lower() for o in kept_surg)
+        and any(
+            r.get("reason") == "observation_not_entailed_by_supporting_messages"
+            for r in rej_surg
+        )
+        and not any("music" in str(o.get("text") or "").lower() for o in kept_surg),
+        checks,
+        problems,
+        detail={"kept": kept_surg, "rej": rej_surg},
+    )
+    extract_prompt = infer_py.split("def _batch_chars", 1)[0]
+    _check(
+        "extract_prompt_has_no_archive_exemplars",
+        "music group" not in extract_prompt
+        and "Trivia" not in extract_prompt
+        and "Peggy expressed affection" not in extract_prompt
+        and "key changes" not in extract_prompt
+        and "OBSERVATION_EXTRACT" in extract_prompt,
+        checks,
+        problems,
+        detail="llama3.2 must not copy prompt exemplars into unrelated SMS",
+    )
+    from memorybox.ask.i11a.observation_cache import clear_memory_cache, invalidate_extract_cache
+
+    clear_memory_cache()
+    invalidate_extract_cache()
+    cache_units = [
+        {
+            "unit_id": f"u-cache-{i}",
+            "kind": "communication",
+            "source_type": "sms",
+            "time": f"2024-03-0{i+1}T12:00:00",
+            "thread_id": "thr-cache-sms",
+            "content": f"Dad surgery update {i}.",
+            "sender_name": "Peggy",
+            "people": [{"name": "Peggy"}],
+            "evidence_id": f"e-cache-{i}",
+        }
+        for i in range(3)
+    ]
+    cache_plan = plan_ask(
+        "tell me what you know about Peggy",
+        AskContext(session_id="i11a-obs-cache"),
+    )
+    cold = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider())
+    cold_acc = cold.get("accounting") or {}
+    warm = run_inference(cache_plan, {"units": cache_units}, FakeLlmProvider())
+    warm_acc = warm.get("accounting") or {}
+    cold_ids = {
+        str(x)
+        for o in (cold.get("observations") or [])
+        for x in (o.get("supporting_evidence_ids") or [])
+    }
+    warm_ids = {
+        str(x)
+        for o in (warm.get("observations") or [])
+        for x in (o.get("supporting_evidence_ids") or [])
+    }
+    _check(
+        "warm_ask_reuses_persisted_communication_observations",
+        int(cold_acc.get("extract_calls") or 0) >= 1
+        and int(cold_acc.get("extract_cache_misses") or 0) >= 1
+        and int(warm_acc.get("extract_calls") or 0) == 0
+        and int(warm_acc.get("extract_cache_hits") or 0) >= 1
+        and int(warm_acc.get("ask_relative_calls") or 0) >= 1
+        and float(warm_acc.get("provenance_coverage") or 0) == 1.0
+        and bool(warm.get("observations") or cold.get("observations")),
+        checks,
+        problems,
+        detail={
+            "cold": {
+                k: cold_acc.get(k)
+                for k in (
+                    "extract_calls",
+                    "extract_cache_hits",
+                    "extract_cache_misses",
+                    "persisted_observations",
+                    "sms_segment_units",
+                    "provenance_coverage",
+                )
+            },
+            "warm": {
+                k: warm_acc.get(k)
+                for k in (
+                    "extract_calls",
+                    "extract_cache_hits",
+                    "extract_cache_misses",
+                    "ask_relative_calls",
+                    "provenance_coverage",
+                )
+            },
+            "cold_ids": sorted(cold_ids),
+            "warm_ids": sorted(warm_ids),
+        },
     )
     _check(
         "a09_trace_light_copy_export",
