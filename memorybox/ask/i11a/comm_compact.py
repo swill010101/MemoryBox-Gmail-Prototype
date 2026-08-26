@@ -173,23 +173,81 @@ def omit_covered_communication_units(
     }
 
 
-def semantic_group_key(unit: dict[str, Any]) -> str:
+def _real_thread_id(unit: dict[str, Any]) -> str:
     tid = str(unit.get("thread_id") or "").strip()
-    if tid:
+    if not tid:
+        return ""
+    uid = str(unit.get("unit_id") or "").strip()
+    eid = str(unit.get("evidence_id") or "").strip()
+    if tid in {uid, eid, "email", "sms"}:
+        return ""
+    return tid
+
+
+def semantic_group_key(unit: dict[str, Any]) -> str:
+    """Batch key: shared thread, else same people+day, else same calendar day.
+
+    Unique per-row keys are forbidden — they create one OBSERVATION_EXTRACT
+    call per email.
+    """
+    tid = _real_thread_id(unit)
+    occ = unit.get("occurrence_count")
+    try:
+        n = int(occ) if occ is not None else 1
+    except (TypeError, ValueError):
+        n = 1
+    if tid and n > 1:
         return f"thread:{tid}"
     people = _people_key(unit)
     day = _day(unit.get("time")) or ""
     kind = str(unit.get("kind") or "other")
+    src = str(unit.get("source_type") or kind)
     if people and day:
         return f"people-day:{people}:{day}"
+    cluster = str(unit.get("pattern_type") or unit.get("topic") or "").strip()
+    if cluster and day:
+        return f"topic:{cluster}:{day}"
+    if day:
+        return f"day-src:{src}:{day}"
     if people:
         return f"people:{people}"
-    cluster = str(unit.get("pattern_type") or unit.get("topic") or "").strip()
-    if cluster:
-        return f"topic:{cluster}:{day or kind}"
-    if day:
-        return f"kind-day:{kind}:{day}"
-    return f"kind:{kind}:{str(unit.get('unit_id') or unit.get('evidence_id') or '')[:40]}"
+    return f"kind:{kind}"
+
+
+def payload_piece_bytes(unit: dict[str, Any]) -> int:
+    """Size the extract payload row, not the full in-memory unit."""
+    row = {
+        "unit_id": unit.get("unit_id"),
+        "evidence_id": unit.get("evidence_id"),
+        "kind": unit.get("kind"),
+        "source_type": unit.get("source_type"),
+        "time": unit.get("time"),
+        "people": unit.get("people") or [],
+        "place": unit.get("place"),
+        "content": str(unit.get("content") or "")[:1200],
+        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
+        "thread_id": unit.get("thread_id"),
+        "title": unit.get("title"),
+        "authored_text": str(unit.get("authored_text") or "")[:800],
+    }
+    return len(json.dumps(row, default=str))
+
+
+def _split_group(group: list[dict[str, Any]], budget: int) -> list[list[dict[str, Any]]]:
+    chunks: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    size = 0
+    for u in group:
+        piece = payload_piece_bytes(u)
+        if cur and size + piece > budget:
+            chunks.append(cur)
+            cur = []
+            size = 0
+        cur.append(u)
+        size += piece
+    if cur:
+        chunks.append(cur)
+    return chunks
 
 
 def chunk_units_semantically(
@@ -197,7 +255,11 @@ def chunk_units_semantically(
     *,
     budget: int,
 ) -> list[list[dict[str, Any]]]:
-    """Keep related communication together; split oversized groups, never mix kinds of talk."""
+    """Keep a real multi-message thread together; pack same-day/same-people units.
+
+    Do not emit one chunk per unique thread id. That is how January exploded
+    past 200 extract calls.
+    """
     groups: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
     for u in units:
@@ -206,21 +268,28 @@ def chunk_units_semantically(
             groups[key] = []
             order.append(key)
         groups[key].append(u)
-    chunks: list[list[dict[str, Any]]] = []
+    # Pack leftover singleton groups that share a calendar day (narrow time band).
+    packed: list[list[dict[str, Any]]] = []
+    day_bins: dict[str, list[dict[str, Any]]] = {}
+    day_order: list[str] = []
     for key in order:
-        cur: list[dict[str, Any]] = []
-        size = 0
-        for u in groups[key]:
-            piece = len(json.dumps(u, default=str))
-            if cur and size + piece > budget:
-                chunks.append(cur)
-                cur = []
-                size = 0
-            cur.append(u)
-            size += piece
-        if cur:
-            chunks.append(cur)
-    return chunks
+        group = groups[key]
+        if key.startswith("thread:"):
+            packed.extend(_split_group(group, budget))
+            continue
+        day = ""
+        if ":20" in key:
+            day = key.rsplit(":", 1)[-1]
+        if len(day) == 10 and day[4] == "-":
+            if day not in day_bins:
+                day_bins[day] = []
+                day_order.append(day)
+            day_bins[day].extend(group)
+        else:
+            packed.extend(_split_group(group, budget))
+    for day in day_order:
+        packed.extend(_split_group(day_bins[day], budget))
+    return packed
 
 
 def chunk_provenance_ids(chunk: list[dict[str, Any]]) -> set[str]:

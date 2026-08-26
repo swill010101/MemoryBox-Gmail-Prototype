@@ -302,14 +302,54 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             "gap": sorted(raw_ids - kept_ids),
         },
     )
-    mixed_chunk = chunk_units_semantically(fat_b, budget=50_000)
+    mixed_chunk = chunk_units_semantically(fat_b, budget=12_000)
+    trivia_only = any(
+        all(str(u.get("thread_id") or "") == "thr-trivia" for u in ch) and ch
+        for ch in mixed_chunk
+    )
+    sms_only = any(
+        all(str(u.get("thread_id") or "") == "thr-peggy-sms" for u in ch) and ch
+        for ch in mixed_chunk
+    )
     _check(
         "extract_chunks_are_semantically_grouped",
-        len(mixed_chunk) == len(fat_b)
-        and all(len({str(u.get("thread_id") or "") for u in ch}) == 1 for ch in mixed_chunk),
+        trivia_only and sms_only and len(mixed_chunk) == 2,
         checks,
         problems,
         detail={"chunks": len(mixed_chunk), "b": len(fat_b)},
+    )
+    same_day = [
+        {
+            "unit_id": f"u-loose-{i}",
+            "kind": "communication_thread",
+            "source_type": "email",
+            "time": "2025-01-10",
+            "subject": f"Unique subject {i}",
+            "content": f"Planning note {i}: tables, donations, volunteers.",
+            "people": [{"name": "Tom"}],
+            "evidence_id": f"e-loose-{i}",
+            "extra_ids": [f"e-loose-{i}"],
+        }
+        for i in range(24)
+    ]
+    inf_day = run_inference(
+        plan_ask(
+            "write a narrative about my January 2025",
+            AskContext(session_id="i11a-same-day-pack"),
+        ),
+        {"units": same_day},
+        FakeLlmProvider(),
+    )
+    acc_day = inf_day.get("accounting") or {}
+    packed_day = chunk_units_semantically(same_day, budget=12_000)
+    _check(
+        "same_day_singleton_threads_share_extract_chunk",
+        len(packed_day) == 1
+        and int(acc_day.get("extract_calls") or 99) == 1
+        and int(acc_day.get("units_model_extract") or 0) == 24,
+        checks,
+        problems,
+        detail={"chunks": len(packed_day), "extract_calls": acc_day.get("extract_calls"), "b": acc_day.get("units_model_extract")},
     )
     chunk0 = [
         {

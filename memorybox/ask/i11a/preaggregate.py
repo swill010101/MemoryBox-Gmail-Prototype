@@ -312,7 +312,7 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row.setdefault("source_type", "email")
         row["extra_ids"] = list(row.get("extra_ids") or _ids(u))
         row["source_evidence_ids"] = list(row.get("source_evidence_ids") or row["extra_ids"])
-        row.setdefault("thread_id", str(u.get("unit_id") or u.get("evidence_id") or "email"))
+        # Do not invent a unique thread_id: that forces one extract call per row.
         out.append(row)
     return out
 

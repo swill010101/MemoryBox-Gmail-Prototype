@@ -146,7 +146,7 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:2000],
+        "content": str(unit.get("content") or "")[:1200],
         "asset_ref": unit.get("asset_ref"),
         "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
         "source_evidence_ids": list(unit.get("source_evidence_ids") or unit.get("extra_ids") or []),
@@ -154,7 +154,7 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
         "title": unit.get("title"),
-        "authored_text": str(unit.get("authored_text") or "")[:1200],
+        "authored_text": str(unit.get("authored_text") or "")[:800],
     }
     if unit.get("media"):
         row["media"] = unit.get("media")
