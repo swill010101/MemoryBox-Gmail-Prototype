@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from memorybox.ask.i11a.comm_compact import omit_covered_communication_units, unit_evidence_ids
 from memorybox.ask.i11a.comm_patterns import communication_pattern_units
 from memorybox.ask.i11a.observation_cache import load_observation, save_observation, source_hash
 from memorybox.ask.i11a.windows import _day
@@ -61,7 +62,7 @@ def _ids(unit: dict[str, Any]) -> list[str]:
         s = str(prov.get(k) or "").strip()
         if s and s not in out:
             out.append(s)
-    for extra in unit.get("extra_ids") or []:
+    for extra in list(unit.get("extra_ids") or []) + list(unit.get("source_evidence_ids") or []):
         s = str(extra or "").strip()
         if s and s not in out:
             out.append(s)
@@ -238,6 +239,27 @@ def _place_history_units(
     return out
 
 
+def _message_bodies(group: list[dict[str, Any]], *, each: int = 900) -> str:
+    parts: list[str] = []
+    for x in group:
+        t = str(x.get("content") or x.get("authored_text") or x.get("excerpt") or "").strip()
+        if t:
+            parts.append(t[:each])
+    return "\n---\n".join(parts)[:4000]
+
+
+def _collect_people(group: list[dict[str, Any]]) -> list[Any]:
+    people: list[Any] = []
+    seen_p: set[str] = set()
+    for x in group:
+        for p in x.get("people") or []:
+            k = str((p.get("name") if isinstance(p, dict) else p) or "")
+            if k and k not in seen_p:
+                seen_p.add(k)
+                people.append(p)
+    return people[:12]
+
+
 def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     buckets: dict[str, list[dict[str, Any]]] = {}
     unthreaded: list[dict[str, Any]] = []
@@ -251,30 +273,20 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         buckets.setdefault(key, []).append(u)
     out: list[dict[str, Any]] = []
     for key, group in buckets.items():
-        if len(group) == 1:
-            row = dict(group[0])
-            row.setdefault("extra_ids", _ids(group[0]))
-            out.append(row)
-            continue
         days = sorted(d for d in (_day(x.get("time")) for x in group) if d)
         eids: list[str] = []
-        snippets: list[str] = []
-        people: list[Any] = []
-        seen_p: set[str] = set()
         for x in group:
             for i in _ids(x):
                 if i not in eids:
                     eids.append(i)
-            t = str(x.get("content") or x.get("authored_text") or "").strip()
-            if t:
-                snippets.append(t[:80])
-            for p in x.get("people") or []:
-                k = str((p.get("name") if isinstance(p, dict) else p) or "")
-                if k and k not in seen_p:
-                    seen_p.add(k)
-                    people.append(p)
         first = group[0]
         subj = str(first.get("subject") or first.get("content") or "thread")[:80]
+        body = _message_bodies(group)
+        header = (
+            f"Email thread “{subj}” ({len(group)} messages"
+            + (f", {days[0]}–{days[-1]}" if len(days) > 1 else "")
+            + ")."
+        )
         out.append(
             {
                 "unit_id": f"eth-{eids[0] if eids else key}"[:80],
@@ -282,14 +294,10 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "kind": "communication_thread",
                 "source_type": "email",
                 "time": days[0] if days else first.get("time"),
-                "people": people[:12],
+                "people": _collect_people(group) or first.get("people") or [],
                 "place": first.get("place"),
-                "content": (
-                    f"Email thread “{subj}” ({len(group)} messages"
-                    + (f", {days[0]}–{days[-1]}" if len(days) > 1 else "")
-                    + "). "
-                    + " · ".join(snippets[:3])
-                )[:400],
+                "content": (header + "\n" + body)[:4000],
+                "authored_text": body[:2400],
                 "subject": subj,
                 "thread_id": first.get("thread_id") or key,
                 "extra_ids": eids,
@@ -298,7 +306,14 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "asset_ref": None,
             }
         )
-    out.extend(unthreaded)
+    for u in unthreaded:
+        row = dict(u)
+        row["kind"] = "communication_thread"
+        row.setdefault("source_type", "email")
+        row["extra_ids"] = list(row.get("extra_ids") or _ids(u))
+        row["source_evidence_ids"] = list(row.get("source_evidence_ids") or row["extra_ids"])
+        row.setdefault("thread_id", str(u.get("unit_id") or u.get("evidence_id") or "email"))
+        out.append(row)
     return out
 
 
@@ -333,22 +348,19 @@ def _sms_segments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if current:
             segs.append(current)
         for seg in segs:
-            if len(seg) == 1:
-                row = dict(seg[0])
-                row.setdefault("extra_ids", _ids(seg[0]))
-                out.append(row)
-                continue
             days = sorted(d for d in (_day(x.get("time")) for x in seg) if d)
             eids: list[str] = []
-            snippets: list[str] = []
             for x in seg:
                 for i in _ids(x):
                     if i not in eids:
                         eids.append(i)
-                t = str(x.get("content") or x.get("authored_text") or "").strip()
-                if t:
-                    snippets.append(t[:72])
             first = seg[0]
+            body = _message_bodies(seg)
+            header = (
+                f"Text conversation ({len(seg)} messages"
+                + (f", {days[0]}–{days[-1]}" if days else "")
+                + ")."
+            )
             out.append(
                 {
                     "unit_id": f"sms-{eids[0] if eids else tid}"[:80],
@@ -356,14 +368,10 @@ def _sms_segments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "kind": "sms_segment",
                     "source_type": "sms",
                     "time": days[0] if days else first.get("time"),
-                    "people": first.get("people") or [],
+                    "people": _collect_people(seg) or first.get("people") or [],
                     "place": first.get("place"),
-                    "content": (
-                        f"Text conversation ({len(seg)} messages"
-                        + (f", {days[0]}–{days[-1]}" if days else "")
-                        + "). "
-                        + " · ".join(snippets[:3])
-                    )[:400],
+                    "content": (header + "\n" + body)[:4000],
+                    "authored_text": body[:2400],
                     "thread_id": first.get("thread_id") or tid,
                     "extra_ids": eids,
                     "source_evidence_ids": eids,
@@ -547,7 +555,7 @@ def preaggregate_pack(
         for c in media_clusters
         if not c.get("place") or _generic_place(str(c.get("place") or ""))
     ]
-    inference = (
+    inference_raw = (
         list(cal_units)
         + list(travel)
         + list(email_units)
@@ -559,6 +567,20 @@ def preaggregate_pack(
         + list(generic_clusters)
         + list(rest)
     )
+    inference, compact_trace = omit_covered_communication_units(inference_raw)
+    raw_comm_n = len(emails) + len(sms) + len(other_comm)
+    raw_comm_ids: set[str] = set()
+    for u in list(emails) + list(sms) + list(other_comm):
+        raw_comm_ids.update(unit_evidence_ids(u))
+    kept_ids: set[str] = set()
+    for u in inference:
+        kept_ids.update(unit_evidence_ids(u))
+    compact_trace["provenance_ids_raw_comm"] = len(raw_comm_ids)
+    compact_trace["provenance_ids_retained"] = len(raw_comm_ids & kept_ids)
+    compact_trace["provenance_coverage"] = (
+        round(len(raw_comm_ids & kept_ids) / len(raw_comm_ids), 4) if raw_comm_ids else 1.0
+    )
+    compact_trace["provenance_gap_ids"] = sorted(raw_comm_ids - kept_ids)[:40]
     trace = {
         "raw_eligible": raw_n,
         "normalized": raw_n,
@@ -579,6 +601,23 @@ def preaggregate_pack(
         ),
         "sms_raw": len(sms),
         "sms_segment_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
+        "raw_comm_items": raw_comm_n,
+        "semantic_comm_units_before_dedupe": sum(
+            1
+            for u in inference_raw
+            if str(u.get("kind") or "")
+            in {"communication", "communication_thread", "sms_segment"}
+        ),
+        "semantic_comm_units_after_dedupe": compact_trace.get(
+            "semantic_comm_units_after_dedupe"
+        ),
+        "duplicate_comm_units_omitted_from_extract": compact_trace.get(
+            "duplicate_comm_units_omitted_from_extract"
+        ),
+        "provenance_ids_raw_comm": compact_trace.get("provenance_ids_raw_comm"),
+        "provenance_ids_retained": compact_trace.get("provenance_ids_retained"),
+        "provenance_coverage": compact_trace.get("provenance_coverage"),
+        "provenance_gap_ids": compact_trace.get("provenance_gap_ids") or [],
         "calendar_event_count": len(by_kind.get("calendar") or []),
         "calendar_series_units": sum(
             1 for u in cal_units if str(u.get("kind") or "") == "calendar_series"
@@ -592,6 +631,10 @@ def preaggregate_pack(
         "journals": len(by_kind.get("journal") or []),
         "artifacts": len(by_kind.get("artifact") or []),
         "inference_units": len(inference),
-        "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+        "note": (
+            "Pre-aggregation retains all source evidence IDs. "
+            "Lower-level communication rows are omitted from extract only when a "
+            "richer unit already carries those IDs — not sampling."
+        ),
     }
     return {"units": inference, "trace": trace, "patterns": patterns}

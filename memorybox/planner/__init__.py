@@ -1255,6 +1255,7 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         and not SHOW_ME_RE.search(q)
     ):
         want_email = True
+        want_sms = True
         want_cal = True
         visual_scope = "broad"
         want_still = True

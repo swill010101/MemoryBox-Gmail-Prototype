@@ -207,6 +207,7 @@ def validate_observations(
             rejected.append({"reason": "observation_not_object"})
             continue
         from memorybox.ask.i11a.observations import canonicalize_observation
+        from memorybox.ask.i11a.comm_compact import _TRANSPORT_ONLY
 
         canon = canonicalize_observation(obs)
         if not canon:
@@ -214,6 +215,9 @@ def validate_observations(
             continue
         obs = canon
         text = str(obs.get("text") or "").strip()
+        if _TRANSPORT_ONLY.match(text):
+            rejected.append({"reason": "transport_metadata_only", "text": text[:160]})
+            continue
         ids = _collect_ids(obs.get("supporting_evidence_ids") or obs.get("evidence_ids"), scope)
         if not ids:
             ids = [str(x) for x in (obs.get("supporting_evidence_ids") or []) if str(x) in scope]

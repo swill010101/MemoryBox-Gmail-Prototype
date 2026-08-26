@@ -26,6 +26,10 @@ from memorybox.ask.i11a.reason import (
 from memorybox.ask.i11a.support import rank_episodes_for_narrator
 from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
 from memorybox.ask.i11a.validate import parse_inference_json, validate_inference, validate_observations
+from memorybox.ask.i11a.comm_compact import (
+    chunk_units_semantically,
+    filter_extract_observations,
+)
 from memorybox.ask.i11a.windows import _day
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -36,25 +40,30 @@ Answer: what does this evidence actually establish?
 Do not create a trip, Person portrait, period narrative, holiday story, or relationship essay.
 Do not use the user's question. These observations must be reusable across future Asks.
 
-Emit objects with: observation_id (optional), kind, text, claim_type, people, places, time,
-supporting_evidence_ids copied exactly from unit evidence_id / extra_ids / source_evidence_ids,
-uncertainty[].
+Emit objects with: kind, text, claim_type, people, places, time,
+supporting_evidence_ids copied exactly from the supplied units' evidence_id /
+extra_ids / source_evidence_ids. Do not invent observation IDs or evidence IDs.
 
-Kinds: person_at_place_time, calendar_records_event, communication_states,
-travel_document_records, repeated_communication_pattern, people_interacting,
-activity_named, place_referenced, relationship_stated, media_observation.
+Kinds (canonical only): person_at_place_time, calendar_records_event,
+communication_states, travel_document_records, repeated_communication_pattern,
+people_interacting, activity_named, place_referenced, relationship_stated,
+media_observation.
 
-Preserve communication meaning (what was stated, offered, planned, or recollected),
-not labels such as "email from Peggy" or "calendar event".
-Examples of grounded text:
-- Peggy and Tom exchanged affectionate messages: love you
-- Calendar records Eagles Live at Sphere
-- Travel document records Flight to Las Vegas
-- Tom observed at Paradise on 2026-01-30
+Communications must state meaning, not transport:
+Bad: "Tom sent an email". "Tom received a text". "email thread exists".
+Good: "Tom and the music group discussed evening practice and key changes."
+Good: "Peggy expressed affection and wished Tom well."
+Good: "Trivia planning centered on questions, donations, volunteers, tables, and supplies."
+Good: "Communications referenced preparation for surgery."
+Do not infer personality or character from message volume or tone.
+
+person_at_place_time is only valid when the evidence explicitly states presence
+(for example "I'm at", "we are in", "arrived in"). Mentioning a place in an email
+is place_referenced or communication_states, not presence.
 
 Rules:
 - Do not invent people, places, dates, motives, or emotions.
-- Never invent IDs.
+- Never invent IDs. Copy supporting_evidence_ids from the supplied units only.
 - GPS/reverse-geocode city is presence at capture, not residence.
 - Calendar listing is scheduled/recorded, not occurrence.
 - Itinerary/reservation is not completed travel.
@@ -78,34 +87,7 @@ def _retries() -> int:
 
 
 def _chunk_units(units: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    budget = _batch_chars()
-    buckets: dict[str, list[dict[str, Any]]] = {}
-    order: list[str] = []
-    for u in units:
-        k = str(u.get("kind") or "other")
-        if k not in buckets:
-            buckets[k] = []
-            order.append(k)
-        buckets[k].append(u)
-    mixed: list[dict[str, Any]] = []
-    while any(buckets[k] for k in order):
-        for k in order:
-            if buckets[k]:
-                mixed.append(buckets[k].pop(0))
-    chunks: list[list[dict[str, Any]]] = []
-    cur: list[dict[str, Any]] = []
-    size = 0
-    for u in mixed:
-        piece = len(json.dumps(u, default=str))
-        if cur and size + piece > budget:
-            chunks.append(cur)
-            cur = []
-            size = 0
-        cur.append(u)
-        size += piece
-    if cur:
-        chunks.append(cur)
-    return chunks
+    return chunk_units_semantically(units, budget=_batch_chars())
 
 
 def _trace_span(**kwargs: Any) -> None:
@@ -164,14 +146,15 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "time": _day(unit.get("time")) or str(unit.get("time") or "")[:10],
         "people": unit.get("people") or [],
         "place": unit.get("place"),
-        "content": str(unit.get("content") or "")[:400],
+        "content": str(unit.get("content") or "")[:2000],
         "asset_ref": unit.get("asset_ref"),
-        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or [])[:8],
+        "extra_ids": list(unit.get("extra_ids") or unit.get("source_evidence_ids") or []),
+        "source_evidence_ids": list(unit.get("source_evidence_ids") or unit.get("extra_ids") or []),
         "occurrence_count": unit.get("occurrence_count"),
         "pattern_type": unit.get("pattern_type"),
         "thread_id": unit.get("thread_id"),
         "title": unit.get("title"),
-        "authored_text": str(unit.get("authored_text") or "")[:240],
+        "authored_text": str(unit.get("authored_text") or "")[:1200],
     }
     if unit.get("media"):
         row["media"] = unit.get("media")
@@ -356,7 +339,18 @@ def run_inference(
         "ask_relative_calls": 0,
         "observations_a": 0,
         "observations_b": 0,
+        "extract_observations_rejected": 0,
+        "extract_chunks": len(chunks),
         "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
+        "raw_comm_items": (pack.get("preaggregation") or {}).get("raw_comm_items"),
+        "email_thread_units": (pack.get("preaggregation") or {}).get("email_thread_units"),
+        "sms_segment_units": (pack.get("preaggregation") or {}).get("sms_segment_units"),
+        "semantic_comm_units_after_dedupe": (pack.get("preaggregation") or {}).get(
+            "semantic_comm_units_after_dedupe"
+        ),
+        "provenance_coverage": (pack.get("preaggregation") or {}).get("provenance_coverage"),
+        "provenance_ids_raw_comm": (pack.get("preaggregation") or {}).get("provenance_ids_raw_comm"),
+        "provenance_ids_retained": (pack.get("preaggregation") or {}).get("provenance_ids_retained"),
         "preaggregation_units": len(agg_units),
         "preaggregation": pack.get("preaggregation"),
         "engine": "observations_ir_ask_relative",
@@ -396,7 +390,11 @@ def run_inference(
                                 "time": (ep.get("date_span") or {}).get("start"),
                             }
                         )
-            model_obs.extend([r for r in rows if isinstance(r, dict)])
+            kept, rej = filter_extract_observations(rows, chunk)
+            model_obs.extend(kept)
+            accounting["extract_observations_rejected"] = int(
+                accounting.get("extract_observations_rejected") or 0
+            ) + len(rej)
             accounting["successful_units"] += len(chunk)
             _trace_span(
                 stage="i11a_inference",
@@ -406,7 +404,7 @@ def run_inference(
                 assembled_context={"chunk": idx, "unit_n": len(chunk)},
                 provider_payload={"system": OBSERVATION_EXTRACT, "user": payload},
                 raw_response={"content": raw},
-                parsed={"observations": rows},
+                parsed={"observations": kept, "rejected": rej},
             )
         except Exception as exc:  # noqa: BLE001
             failed_chunks += 1
@@ -712,6 +710,15 @@ def apply_inference_to_pack(
         "model_derived_observations": acc.get("observations_b"),
         "observation_extract_calls": acc.get("extract_calls"),
         "ask_relative_calls": acc.get("ask_relative_calls"),
+        "extract_chunks": acc.get("extract_chunks"),
+        "raw_comm_items": acc.get("raw_comm_items"),
+        "email_thread_units": acc.get("email_thread_units"),
+        "sms_segment_units": acc.get("sms_segment_units"),
+        "semantic_comm_units_after_dedupe": acc.get("semantic_comm_units_after_dedupe"),
+        "provenance_coverage": acc.get("provenance_coverage"),
+        "provenance_ids_raw_comm": acc.get("provenance_ids_raw_comm"),
+        "provenance_ids_retained": acc.get("provenance_ids_retained"),
+        "extract_observations_rejected": acc.get("extract_observations_rejected"),
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")

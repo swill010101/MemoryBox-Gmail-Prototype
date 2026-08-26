@@ -1,0 +1,388 @@
+"""Prefer richer communication units; coherent extract batches; reject bad model rows.
+
+Not sampling: every source evidence ID stays on a retained unit.
+"""
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from memorybox.ask.i11a.observations import OBSERVATION_KINDS, canonicalize_observation
+from memorybox.ask.i11a.windows import _day
+
+_PRESENCE_STATED = re.compile(
+    r"(?i)\b("
+    r"i(?:'m| am)\s+(?:in|at|near)|"
+    r"we(?:'re| are)\s+(?:in|at|near)|"
+    r"arrived\s+(?:in|at)|"
+    r"staying\s+(?:in|at)|"
+    r"here\s+(?:in|at)|"
+    r"currently\s+(?:in|at)|"
+    r"visiting\s+"
+    r")\b"
+)
+_TRANSPORT_ONLY = re.compile(
+    r"(?i)^\s*("
+    r"(?:tom|the user|owner|i)?\s*(?:sent|received|got|has)\s+"
+    r"(?:an?\s+)?(?:email|text|sms|imessage|message)s?"
+    r"|(?:an?\s+)?email thread (?:exists|was found|is present)"
+    r"|(?:there )?(?:is|was) (?:an?\s+)?(?:email|sms|text) "
+    r"(?:thread|conversation|message)"
+    r"|(?:email|sms|text|message)s? (?:from|to) [\w .'-]+"
+    r"|communications? (?:occurred|existed|were exchanged)"
+    r")\s*[.!]?\s*$"
+)
+_PERSONALITY = re.compile(
+    r"(?i)\b("
+    r"personality|character trait|narciss|"
+    r"always there for|tends to|is a (?:kind|loving|generous|anxious|warm|cold) person|"
+    r"kind[- ]hearted|warm[- ]hearted"
+    r")\b"
+)
+_DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+_COMM_KINDS = frozenset(
+    {"communication", "communication_thread", "sms_segment"}
+)
+_HIGHER_KINDS = frozenset(
+    {"communication_thread", "sms_segment"}
+)
+_PATTERN_KIND = "comm_pattern"
+
+
+def unit_evidence_ids(unit: dict[str, Any] | None) -> list[str]:
+    out: list[str] = []
+    if not isinstance(unit, dict):
+        return out
+    for key in (
+        unit.get("evidence_id"),
+        unit.get("asset_ref"),
+        unit.get("unit_id"),
+        unit.get("source_id"),
+    ):
+        s = str(key or "").strip()
+        if s and s not in out:
+            out.append(s)
+    prov = unit.get("provenance") if isinstance(unit.get("provenance"), dict) else {}
+    for k in ("evidence_id", "external_id", "journal_id", "story_id", "artifact_id"):
+        s = str(prov.get(k) or "").strip()
+        if s and s not in out:
+            out.append(s)
+    for extra in list(unit.get("extra_ids") or []) + list(unit.get("source_evidence_ids") or []):
+        s = str(extra or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _id_set(units: list[dict[str, Any]]) -> set[str]:
+    ids: set[str] = set()
+    for u in units:
+        ids.update(unit_evidence_ids(u))
+    return ids
+
+
+def _people_key(unit: dict[str, Any]) -> str:
+    names: list[str] = []
+    for p in unit.get("people") or []:
+        if isinstance(p, dict):
+            n = str(p.get("person_id") or p.get("name") or "").strip()
+        else:
+            n = str(p).strip()
+        if n:
+            names.append(n.lower())
+    return "|".join(sorted(set(names))[:8])
+
+
+def _blob(unit: dict[str, Any]) -> str:
+    return " ".join(
+        str(x or "")
+        for x in (
+            unit.get("content"),
+            unit.get("authored_text"),
+            unit.get("subject"),
+            unit.get("title"),
+            unit.get("excerpt"),
+            unit.get("place"),
+            unit.get("time"),
+        )
+    )
+
+
+def omit_covered_communication_units(
+    units: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Drop raw communication rows fully represented by a richer unit.
+
+    Preference: thread > SMS segment > pattern fragments. Correlated events
+    stay as A units; they do not swallow a whole thread's remaining meaning.
+    """
+    higher_ids: set[str] = set()
+    pattern_ids: set[str] = set()
+    for u in units:
+        kind = str(u.get("kind") or "")
+        ids = unit_evidence_ids(u)
+        if kind in _HIGHER_KINDS:
+            higher_ids.update(ids)
+        if kind == _PATTERN_KIND:
+            pattern_ids.update(ids)
+    kept: list[dict[str, Any]] = []
+    omitted = 0
+    omitted_ids: list[str] = []
+    for u in units:
+        kind = str(u.get("kind") or "")
+        ids = set(unit_evidence_ids(u))
+        if kind == "communication" and ids and ids <= higher_ids:
+            omitted += 1
+            omitted_ids.extend(sorted(ids))
+            continue
+        if (
+            kind == "communication"
+            and ids
+            and ids <= pattern_ids
+            and len(_blob(u).strip()) < 80
+        ):
+            omitted += 1
+            omitted_ids.extend(sorted(ids))
+            continue
+        kept.append(u)
+    retained = _id_set(kept)
+    raw_comm = [
+        u
+        for u in units
+        if str(u.get("kind") or "") in _COMM_KINDS
+        or str(u.get("source_type") or "") in {"email", "sms", "imessage", "text", "mms"}
+    ]
+    raw_ids = _id_set(raw_comm)
+    covered = raw_ids & retained if raw_ids else set()
+    # IDs only on omitted rows must still live on a higher unit in `units`.
+    higher_and_pattern = higher_ids | pattern_ids | retained
+    return kept, {
+        "duplicate_comm_units_omitted_from_extract": omitted,
+        "semantic_comm_units_after_dedupe": sum(
+            1 for u in kept if str(u.get("kind") or "") in _COMM_KINDS
+        ),
+        "provenance_ids_raw_comm": len(raw_ids),
+        "provenance_ids_retained": len(raw_ids & higher_and_pattern),
+        "provenance_coverage": (
+            round(len(raw_ids & higher_and_pattern) / len(raw_ids), 4) if raw_ids else 1.0
+        ),
+        "provenance_gap_ids": sorted(raw_ids - higher_and_pattern)[:40],
+        "omitted_but_covered": omitted_ids[:80],
+        "covered_n": len(covered),
+    }
+
+
+def semantic_group_key(unit: dict[str, Any]) -> str:
+    tid = str(unit.get("thread_id") or "").strip()
+    if tid:
+        return f"thread:{tid}"
+    people = _people_key(unit)
+    day = _day(unit.get("time")) or ""
+    kind = str(unit.get("kind") or "other")
+    if people and day:
+        return f"people-day:{people}:{day}"
+    if people:
+        return f"people:{people}"
+    cluster = str(unit.get("pattern_type") or unit.get("topic") or "").strip()
+    if cluster:
+        return f"topic:{cluster}:{day or kind}"
+    if day:
+        return f"kind-day:{kind}:{day}"
+    return f"kind:{kind}:{str(unit.get('unit_id') or unit.get('evidence_id') or '')[:40]}"
+
+
+def chunk_units_semantically(
+    units: list[dict[str, Any]],
+    *,
+    budget: int,
+) -> list[list[dict[str, Any]]]:
+    """Keep related communication together; split oversized groups, never mix kinds of talk."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for u in units:
+        key = semantic_group_key(u)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(u)
+    chunks: list[list[dict[str, Any]]] = []
+    for key in order:
+        cur: list[dict[str, Any]] = []
+        size = 0
+        for u in groups[key]:
+            piece = len(json.dumps(u, default=str))
+            if cur and size + piece > budget:
+                chunks.append(cur)
+                cur = []
+                size = 0
+            cur.append(u)
+            size += piece
+        if cur:
+            chunks.append(cur)
+    return chunks
+
+
+def chunk_provenance_ids(chunk: list[dict[str, Any]]) -> set[str]:
+    return _id_set(chunk)
+
+
+def _evidence_blob(chunk: list[dict[str, Any]]) -> str:
+    return " ".join(_blob(u) for u in chunk).lower()
+
+
+def _names_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for u in chunk:
+        for p in u.get("people") or []:
+            if isinstance(p, dict):
+                n = str(p.get("name") or "").strip().lower()
+            else:
+                n = str(p).strip().lower()
+            if n:
+                names.add(n)
+                names.update(part for part in n.split() if len(part) > 1)
+    return names
+
+
+def _places_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
+    places: set[str] = set()
+    for u in chunk:
+        lab = str(u.get("place") or "").strip().lower()
+        if lab:
+            places.add(lab)
+    return places
+
+
+def _dates_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
+    days: set[str] = set()
+    blob = _evidence_blob(chunk)
+    days.update(_DATE.findall(blob))
+    for u in chunk:
+        d = _day(u.get("time"))
+        if d:
+            days.add(d)
+        span = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        for k in ("start", "end"):
+            d2 = _day(span.get(k))
+            if d2:
+                days.add(d2)
+    return days
+
+
+def _is_comm_chunk(chunk: list[dict[str, Any]]) -> bool:
+    for u in chunk:
+        kind = str(u.get("kind") or "")
+        src = str(u.get("source_type") or "").lower()
+        if kind in _COMM_KINDS or src in {"email", "sms", "imessage", "text", "mms"}:
+            return True
+    return False
+
+
+def filter_extract_observations(
+    rows: list[Any],
+    chunk: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Drop invalid / transport-only model observations immediately."""
+    scope = chunk_provenance_ids(chunk)
+    blob = _evidence_blob(chunk)
+    names = _names_in_chunk(chunk)
+    places = _places_in_chunk(chunk)
+    dates = _dates_in_chunk(chunk)
+    comm = _is_comm_chunk(chunk)
+    kept: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            rejected.append({"reason": "observation_not_object"})
+            continue
+        kind_raw = str(raw.get("kind") or "").strip().lower().replace(" ", "_")
+        from memorybox.ask.i11a.observations import KIND_ALIASES
+
+        kind = KIND_ALIASES.get(kind_raw, kind_raw)
+        if kind not in OBSERVATION_KINDS:
+            rejected.append({"reason": "kind_not_canonical", "kind": raw.get("kind")})
+            continue
+        oid = str(raw.get("observation_id") or "").strip()
+        if oid and oid not in scope and not oid.startswith("obs"):
+            rejected.append({"reason": "invented_observation_id", "observation_id": oid[:80]})
+            continue
+        ids: list[str] = []
+        invented_eid = False
+        for i in raw.get("supporting_evidence_ids") or raw.get("evidence_ids") or []:
+            s = str(i).strip()
+            if not s:
+                continue
+            if s not in scope:
+                rejected.append({"reason": "evidence_id_not_in_unit_provenance", "id": s[:80]})
+                invented_eid = True
+                break
+            if s not in ids:
+                ids.append(s)
+        if invented_eid:
+            continue
+        if not ids:
+            rejected.append({"reason": "observation_ids_not_from_chunk", "text": str(raw.get("text") or "")[:160]})
+            continue
+        row = dict(raw)
+        row["kind"] = kind
+        row["supporting_evidence_ids"] = ids
+        canon = canonicalize_observation(row, strict_kind=True)
+        if not canon:
+            rejected.append({"reason": "observation_schema_invalid", "kind": kind})
+            continue
+        text = str(canon.get("text") or "").strip()
+        if not text:
+            rejected.append({"reason": "empty_observation"})
+            continue
+        if _TRANSPORT_ONLY.match(text):
+            rejected.append({"reason": "transport_metadata_only", "text": text[:160]})
+            continue
+        if _PERSONALITY.search(text) and not _PERSONALITY.search(blob):
+            rejected.append({"reason": "unsupported_personality_inference", "text": text[:160]})
+            continue
+        if comm and str(canon.get("kind") or "") == "person_at_place_time":
+            if not _PRESENCE_STATED.search(blob) and not _PRESENCE_STATED.search(text):
+                rejected.append(
+                    {
+                        "reason": "person_at_place_time_without_stated_presence",
+                        "text": text[:160],
+                    }
+                )
+                continue
+        invented_place = False
+        for p in canon.get("places") or []:
+            lab = str(p or "").strip().lower()
+            if not lab:
+                continue
+            if lab in places or lab in blob:
+                continue
+            tokens = [t for t in re.split(r"[^a-z0-9]+", lab) if len(t) > 2]
+            if tokens and all(t in blob for t in tokens):
+                continue
+            invented_place = True
+            break
+        if invented_place:
+            rejected.append({"reason": "invented_place", "text": text[:160], "places": canon.get("places")})
+            continue
+        invented_person = False
+        for p in canon.get("people") or []:
+            n = str((p.get("name") if isinstance(p, dict) else p) or "").strip().lower()
+            if not n:
+                continue
+            if n in names or n in blob:
+                continue
+            tokens = [t for t in n.split() if len(t) > 1]
+            if tokens and all(t in blob or t in names for t in tokens):
+                continue
+            invented_person = True
+            break
+        if invented_person:
+            rejected.append({"reason": "invented_person", "text": text[:160]})
+            continue
+        t = str(canon.get("time") or "")[:10]
+        if t and _DATE.match(t) and t not in dates and t not in blob:
+            rejected.append({"reason": "invented_date", "time": t, "text": text[:160]})
+            continue
+        kept.append(canon)
+    return kept, rejected

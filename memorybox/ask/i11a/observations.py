@@ -411,7 +411,11 @@ def _place_label(raw: Any) -> str | None:
     return None
 
 
-def canonicalize_observation(obs: dict[str, Any] | None) -> dict[str, Any] | None:
+def canonicalize_observation(
+    obs: dict[str, Any] | None,
+    *,
+    strict_kind: bool = False,
+) -> dict[str, Any] | None:
     """Repair model enum/schema drift into the canonical IR types."""
     if not isinstance(obs, dict):
         return None
@@ -419,15 +423,22 @@ def canonicalize_observation(obs: dict[str, Any] | None) -> dict[str, Any] | Non
     kind = str(row.get("kind") or "").strip().lower().replace(" ", "_")
     kind = KIND_ALIASES.get(kind, kind)
     if kind not in OBSERVATION_KINDS:
+        if strict_kind:
+            return None
         kind = "activity_named"
     source = str(row.get("source_type") or row.get("unit_kind") or "").lower()
     text = str(row.get("text") or "").strip()
     has_gps = row.get("latitude") is not None or (
         isinstance(row.get("media"), dict) and (row.get("media") or {}).get("exif_gps")
     )
-    if kind == "person_at_place_time" and (
-        "@" in text or source in {"email", "sms", "imessage", "communication"}
-    ) and not has_gps:
+    if (
+        not strict_kind
+        and kind == "person_at_place_time"
+        and (
+            "@" in text or source in {"email", "sms", "imessage", "communication"}
+        )
+        and not has_gps
+    ):
         kind = "communication_states"
     row["kind"] = kind
     ctype = str(row.get("claim_type") or "").strip().lower()
