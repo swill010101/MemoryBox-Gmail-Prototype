@@ -453,7 +453,7 @@ def _email_ask(plan: QueryPlan) -> bool:
     if _tell_pack_comms(plan):
         return bool(EMAIL_ASK_RE.search(ask))
     blob = f"{ask} {plan.effective_ask or ''} {' '.join(plan.notes or ())}"
-    return bool(EMAIL_ASK_RE.search(blob))
+    return bool(EMAIL_ASK_RE.search(blob)) or "want_email_modality" in (plan.notes or ())
 
 
 def _tell_pack_comms(plan: QueryPlan) -> bool:
@@ -1557,6 +1557,28 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
                 f"tell pack; email_n={mail[0].match_total if mail else 0}; "
                 f"sms_n={sms[0].match_total if sms else 0}; "
                 f"cal_n={len(cal)}"
+            )
+            combined[0].match_total = (
+                (mail[0].match_total if mail else 0)
+                + (sms[0].match_total if sms else 0)
+                + len(cal)
+            )
+        return combined
+    if (
+        plan.want_communication
+        and (plan.person_ids or plan.person_names)
+        and not sms_q
+        and not email_q
+        and not _tell_pack_comms(plan)
+    ):
+        mail = search_email_messages(plan)
+        sms = search_sms_messages(plan)
+        cal = search_calendar_events(plan) if cal_q else []
+        combined = list(mail) + list(sms) + list(cal)
+        if combined:
+            combined[0].count_scope = (
+                f"person pack; email_n={mail[0].match_total if mail else 0}; "
+                f"sms_n={sms[0].match_total if sms else 0}; cal_n={len(cal)}"
             )
             combined[0].match_total = (
                 (mail[0].match_total if mail else 0)

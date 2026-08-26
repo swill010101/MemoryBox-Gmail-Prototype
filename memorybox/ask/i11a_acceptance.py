@@ -224,6 +224,216 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail={k: acc_mix.get(k) for k in ("extract_calls", "units_model_extract", "units_deterministic", "observations_a", "observations_b")},
     )
+    from memorybox.ask.i11a.preaggregate import preaggregate_pack as _pre_compact
+    from memorybox.ask.i11a.comm_compact import (
+        chunk_units_semantically,
+        filter_extract_observations,
+    )
+
+    fat_emails = [
+        {
+            "unit_id": f"u-em-{i}",
+            "kind": "communication",
+            "source_type": "email",
+            "time": "2025-01-10",
+            "thread_id": "thr-trivia",
+            "subject": "Trivia night",
+            "content": (
+                "Trivia planning: questions, donations, volunteers, tables, and supplies. "
+                f"Note {i}."
+            ),
+            "people": [{"name": "Tom"}, {"name": "Alex"}],
+            "evidence_id": f"e-em-{i}",
+            "provenance": {"evidence_id": f"e-em-{i}"},
+        }
+        for i in range(20)
+    ]
+    fat_sms = [
+        {
+            "unit_id": f"u-sms-{i}",
+            "kind": "communication",
+            "source_type": "sms",
+            "time": f"2025-01-11T18:0{i}:00",
+            "thread_id": "thr-peggy-sms",
+            "content": "Love you. Wishing you well." if i % 2 == 0 else "See you after practice.",
+            "people": [{"name": "Peggy"}, {"name": "Tom"}],
+            "evidence_id": f"e-sms-{i}",
+        }
+        for i in range(6)
+    ]
+    fat_pre = _pre_compact({"units": fat_emails + fat_sms})
+    fat_units = fat_pre.get("units") or []
+    fat_trace = fat_pre.get("trace") or {}
+    fat_b = [u for u in fat_units if requires_model_interpretation(u)]
+    raw_ids = {f"e-em-{i}" for i in range(20)} | {f"e-sms-{i}" for i in range(6)}
+    kept_ids = set()
+    for u in fat_units:
+        kept_ids.update(str(x) for x in (u.get("extra_ids") or []) + (u.get("source_evidence_ids") or []))
+        if u.get("evidence_id"):
+            kept_ids.add(str(u.get("evidence_id")))
+    inf_fat = run_inference(
+        plan_ask(
+            "write a narrative about my January 2025",
+            AskContext(session_id="i11a-comm-compact"),
+        ),
+        {"units": fat_emails + fat_sms},
+        FakeLlmProvider(),
+    )
+    acc_fat = inf_fat.get("accounting") or {}
+    _check(
+        "comm_thread_replaces_raw_email_rows_in_extract",
+        int(fat_trace.get("email_raw") or 0) == 20
+        and int(fat_trace.get("email_thread_units") or 0) == 1
+        and int(fat_trace.get("sms_segment_units") or 0) == 1
+        and len(fat_b) <= 2
+        and raw_ids <= kept_ids
+        and float(fat_trace.get("provenance_coverage") or 0) == 1.0
+        and int(acc_fat.get("extract_calls") or 99) <= 2,
+        checks,
+        problems,
+        detail={
+            "trace": {k: fat_trace.get(k) for k in (
+                "email_raw", "email_thread_units", "sms_raw", "sms_segment_units",
+                "raw_comm_items", "semantic_comm_units_after_dedupe", "provenance_coverage",
+                "duplicate_comm_units_omitted_from_extract",
+            )},
+            "b": len(fat_b),
+            "extract_calls": acc_fat.get("extract_calls"),
+            "gap": sorted(raw_ids - kept_ids),
+        },
+    )
+    mixed_chunk = chunk_units_semantically(fat_b, budget=12_000)
+    trivia_only = any(
+        all(str(u.get("thread_id") or "") == "thr-trivia" for u in ch) and ch
+        for ch in mixed_chunk
+    )
+    sms_only = any(
+        all(str(u.get("thread_id") or "") == "thr-peggy-sms" for u in ch) and ch
+        for ch in mixed_chunk
+    )
+    _check(
+        "extract_chunks_are_semantically_grouped",
+        trivia_only and sms_only and len(mixed_chunk) == 2,
+        checks,
+        problems,
+        detail={"chunks": len(mixed_chunk), "b": len(fat_b)},
+    )
+    same_day = [
+        {
+            "unit_id": f"u-loose-{i}",
+            "kind": "communication_thread",
+            "source_type": "email",
+            "time": "2025-01-10",
+            "subject": f"Unique subject {i}",
+            "content": f"Planning note {i}: tables, donations, volunteers.",
+            "people": [{"name": "Tom"}],
+            "evidence_id": f"e-loose-{i}",
+            "extra_ids": [f"e-loose-{i}"],
+        }
+        for i in range(24)
+    ]
+    inf_day = run_inference(
+        plan_ask(
+            "write a narrative about my January 2025",
+            AskContext(session_id="i11a-same-day-pack"),
+        ),
+        {"units": same_day},
+        FakeLlmProvider(),
+    )
+    acc_day = inf_day.get("accounting") or {}
+    packed_day = chunk_units_semantically(same_day, budget=12_000)
+    _check(
+        "same_day_singleton_threads_share_extract_chunk",
+        len(packed_day) == 1
+        and int(acc_day.get("extract_calls") or 99) == 1
+        and int(acc_day.get("units_model_extract") or 0) == 24,
+        checks,
+        problems,
+        detail={"chunks": len(packed_day), "extract_calls": acc_day.get("extract_calls"), "b": acc_day.get("units_model_extract")},
+    )
+    chunk0 = [
+        {
+            "kind": "communication_thread",
+            "evidence_id": "e-em-0",
+            "extra_ids": ["e-em-0", "e-em-1"],
+            "content": "Tom and the band discussed evening practice and key changes.",
+            "people": [{"name": "Tom"}],
+            "time": "2025-01-10",
+        }
+    ]
+    kept_ok, rej_ok = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Tom and the band discussed evening practice and key changes.",
+                "supporting_evidence_ids": ["e-em-0"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_kind = filter_extract_observations(
+        [{"kind": "vibes", "text": "good energy", "supporting_evidence_ids": ["e-em-0"]}],
+        chunk0,
+    )
+    _, rej_id = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Tom and the band discussed evening practice and key changes.",
+                "supporting_evidence_ids": ["invented-id"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_place = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Tom mentioned Paris.",
+                "supporting_evidence_ids": ["e-em-0"],
+                "places": ["Paris"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_presence = filter_extract_observations(
+        [
+            {
+                "kind": "person_at_place_time",
+                "text": "Tom was in Paris",
+                "supporting_evidence_ids": ["e-em-0"],
+                "places": ["Paris"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _, rej_transport = filter_extract_observations(
+        [
+            {
+                "kind": "communication_states",
+                "text": "Tom sent an email",
+                "supporting_evidence_ids": ["e-em-0"],
+                "people": [{"name": "Tom"}],
+            }
+        ],
+        chunk0,
+    )
+    _check(
+        "extract_rejects_invalid_kinds_ids_places_presence_transport",
+        bool(kept_ok)
+        and any(r.get("reason") == "kind_not_canonical" for r in rej_kind)
+        and any(r.get("reason") == "evidence_id_not_in_unit_provenance" for r in rej_id)
+        and any(r.get("reason") == "invented_place" for r in rej_place)
+        and any(r.get("reason") == "person_at_place_time_without_stated_presence" for r in rej_presence)
+        and any(r.get("reason") == "transport_metadata_only" for r in rej_transport),
+        checks,
+        problems,
+        detail={"ok": kept_ok, "kind": rej_kind, "id": rej_id, "place": rej_place, "pres": rej_presence, "tr": rej_transport},
+    )
     _check(
         "a09_trace_light_copy_export",
         "copy-provider-payload" in js

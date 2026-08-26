@@ -347,6 +347,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1 (same env flag as other prove commands; does not change model)",
     )
+    p_abandon = sub.add_parser(
+        "ai-trace-abandon",
+        help="Mark stale AI Trace rows still listed as running after the Ask process died",
+    )
+    p_abandon.add_argument(
+        "--max-age-seconds",
+        type=int,
+        default=120,
+        help="Only traces with no update for this many seconds (default 120)",
+    )
     p_dump_i11 = sub.add_parser(
         "dump-i11-episodes",
         help="I11 period episode analysis only — no narration",
@@ -765,6 +775,13 @@ def main(argv: list[str] | None = None) -> int:
         }, indent=2, default=str), flush=True)
         return 0
 
+    if args.cmd == "ai-trace-abandon":
+        from memorybox.ai_trace.store import abandon_stale_running_traces
+
+        payload = abandon_stale_running_traces(max_age_seconds=int(args.max_age_seconds))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
     if args.cmd == "dump-i11-episodes":
         from memorybox.app import get_orchestrator
         from memorybox.ask.episode_semantics import public_episode_dump
@@ -1079,9 +1096,13 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"migrate warning: {exc}", flush=True)
         try:
-            from memorybox.ai_trace.store import ensure_schema
+            from memorybox.ai_trace.store import abandon_stale_running_traces, ensure_schema
 
             ensure_schema()
+            abandoned = abandon_stale_running_traces(max_age_seconds=120)
+            n = int(abandoned.get("abandoned_n") or 0)
+            if n:
+                print(f"ai_trace: abandoned {n} stale running trace(s)", flush=True)
         except Exception as exc:  # noqa: BLE001
             print(f"ai_trace schema warning: {exc}", flush=True)
 

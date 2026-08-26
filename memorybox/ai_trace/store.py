@@ -301,6 +301,52 @@ def update_trace(
         return False
 
 
+def abandon_stale_running_traces(*, max_age_seconds: int = 120) -> dict[str, Any]:
+    """Mark traces left `running` after the process died.
+
+    AI Trace status is a Postgres row. Restarting Ollama or serve does not
+    close it. Live Asks bump updated_at on every model call, so they are kept.
+    """
+    age = max(15, int(max_age_seconds))
+    ensure_schema()
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                UPDATE ai_traces
+                SET status = 'error',
+                    error_class = 'ABANDONED',
+                    error = COALESCE(error, '{}'::jsonb)
+                        || jsonb_build_object(
+                            'reason',
+                            'Ask process gone; trace left running'
+                        ),
+                    updated_at = now()
+                WHERE status = 'running'
+                  AND updated_at < now() - (%s * interval '1 second')
+                RETURNING trace_id, originating_ask, model_call_count
+                """,
+                (age,),
+            ).fetchall()
+        abandoned = [dict(r) if not isinstance(r, dict) else r for r in (rows or [])]
+        return {
+            "ok": True,
+            "max_age_seconds": age,
+            "abandoned_n": len(abandoned),
+            "abandoned": [
+                {
+                    "trace_id": str(r.get("trace_id")),
+                    "ask": r.get("originating_ask"),
+                    "model_call_count": r.get("model_call_count"),
+                }
+                for r in abandoned
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001
+        _warn("abandon_stale_running_traces", exc)
+        return {"ok": False, "error": str(exc), "abandoned_n": 0, "abandoned": []}
+
+
 def next_seq(trace_id: str) -> int:
     try:
         with connection() as conn:
