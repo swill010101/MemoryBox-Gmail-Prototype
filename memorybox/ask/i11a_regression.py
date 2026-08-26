@@ -18,10 +18,10 @@ from typing import Any
 from uuid import uuid4
 
 REGRESSION_ASKS: tuple[str, ...] = (
+    "tell me what you know about Peggy",
     "write a narrative about my January 2025",
     "write a narrative about my trip to las vegas in January 2026",
     "write a narrative about my alaska trip in 2026",
-    "tell me what you know about Peggy",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]

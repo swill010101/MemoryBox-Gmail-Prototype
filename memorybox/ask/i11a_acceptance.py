@@ -78,14 +78,14 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a_regression_harness_four_asks",
         REGRESSION_ASKS
         == (
+            "tell me what you know about Peggy",
             "write a narrative about my January 2025",
             "write a narrative about my trip to las vegas in January 2026",
             "write a narrative about my alaska trip in 2026",
-            "tell me what you know about Peggy",
         ),
         checks,
         problems,
-        detail="i11a-regression canonical asks (live Asks are not part of prove-i11a)",
+        detail="i11a-regression runs Peggy first so a person-library hang is not after three TELL asks",
     )
     from memorybox.ask.i11a.observations import requires_model_interpretation
 
