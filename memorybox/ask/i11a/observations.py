@@ -210,7 +210,7 @@ def observation_from_unit(unit: dict[str, Any]) -> dict[str, Any] | None:
             kind="repeated_communication_pattern",
             text=text,
             unit=unit,
-            claim_type="observed",
+            claim_type="derived",
             ids=ids,
         )
     if kind in {"communication", "communication_thread", "sms_segment"}:

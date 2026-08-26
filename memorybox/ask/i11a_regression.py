@@ -180,7 +180,96 @@ def _accounting_from_trace(trace: dict[str, Any] | None) -> dict[str, Any]:
     return {}
 
 
-def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
+def _count_chats_with(trace: dict[str, Any] | None, needle: str) -> int:
+    n = 0
+    if not isinstance(trace, dict):
+        return 0
+    for span in trace.get("spans") or []:
+        if not isinstance(span, dict):
+            continue
+        if str(span.get("operation") or "") != "chat":
+            continue
+        blob = json.dumps(span.get("provider_payload") or {}, default=str)
+        if needle in blob:
+            n += 1
+    return n
+
+
+def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
+    pack = getattr(result, "narrative_pack", None) if result is not None else None
+    if not isinstance(pack, dict):
+        pack = {}
+    named = pack.get("i11a_ab_metrics") if isinstance(pack.get("i11a_ab_metrics"), dict) else {}
+    acc = _accounting_from_trace(trace)
+    inf = pack.get("inference") if isinstance(pack.get("inference"), dict) else {}
+    inf_acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
+    pre = pack.get("preaggregation") if isinstance(pack.get("preaggregation"), dict) else {}
+    vol = pack.get("volume") if isinstance(pack.get("volume"), dict) else {}
+    calls = _provider_call_stats(trace)
+
+    def _first(*vals: Any) -> Any:
+        for v in vals:
+            if v is not None:
+                return v
+        return None
+
+    extract = _first(
+        named.get("observation_extract_calls"),
+        inf_acc.get("extract_calls"),
+        acc.get("extract_calls"),
+        _count_chats_with(trace, "OBSERVATION_EXTRACT"),
+    )
+    ask_rel = _first(
+        named.get("ask_relative_calls"),
+        inf_acc.get("ask_relative_calls"),
+        acc.get("ask_relative_calls"),
+        _count_chats_with(trace, "ASK_RELATIVE_REASONING"),
+    )
+    narrator = _count_chats_with(trace, "NARRATIVE_SYNTHESIS")
+    return {
+        "raw_eligible_evidence": _first(
+            named.get("raw_eligible"),
+            inf_acc.get("raw_eligible"),
+            acc.get("raw_eligible"),
+            pre.get("raw_eligible"),
+            vol.get("eligible_n"),
+            vol.get("retrieved_n"),
+        ),
+        "preaggregation_units": _first(
+            named.get("preaggregation_units"),
+            inf_acc.get("preaggregation_units"),
+            acc.get("preaggregation_units"),
+            pre.get("inference_units"),
+        ),
+        "a_deterministic_units": _first(
+            named.get("a_deterministic_units"),
+            inf_acc.get("units_deterministic"),
+            acc.get("units_deterministic"),
+            pre.get("deterministic_units"),
+        ),
+        "b_semantic_units": _first(
+            named.get("b_semantic_units"),
+            inf_acc.get("units_model_extract"),
+            acc.get("units_model_extract"),
+            pre.get("extract_units"),
+        ),
+        "deterministic_observations": _first(
+            named.get("deterministic_observations"),
+            inf_acc.get("observations_a"),
+            acc.get("observations_a"),
+        ),
+        "model_derived_observations": _first(
+            named.get("model_derived_observations"),
+            inf_acc.get("observations_b"),
+            acc.get("observations_b"),
+        ),
+        "observation_extract_calls": extract,
+        "ask_relative_calls": ask_rel,
+        "narrator_calls": narrator,
+        "total_model_calls": None,
+        "timeout_count": calls.get("timeouts"),
+        "total_duration_ms": None,
+    }
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
@@ -238,6 +327,10 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
     if result is not None:
         curator = result.answer_text if result.answer_text is not None else ""
 
+    metrics = _ab_metrics(result, trace if isinstance(trace, dict) else None)
+    metrics["total_model_calls"] = model_call_count
+    metrics["total_duration_ms"] = duration_ms
+
     record = {
         "index": index,
         "ask": ask,
@@ -258,6 +351,7 @@ def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
         "evidence_considered": _evidence_considered(result),
         "provider_calls": _provider_call_stats(trace if isinstance(trace, dict) else None),
         "inference_accounting": _accounting_from_trace(trace if isinstance(trace, dict) else None),
+        "metrics": metrics,
         "harness_error": harness_error,
         "trace": _jsonable(trace) if trace is not None else None,
     }
@@ -294,6 +388,20 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
         "total_model_calls": sum(int(t.get("model_call_count") or 0) for t in tests),
         "total_duration_ms": sum(int(t.get("duration_ms") or 0) for t in tests),
         "total_timeouts": sum(int((t.get("provider_calls") or {}).get("timeouts") or 0) for t in tests),
+        "totals": {
+            "raw_eligible_evidence": sum(int((t.get("metrics") or {}).get("raw_eligible_evidence") or 0) for t in tests),
+            "preaggregation_units": sum(int((t.get("metrics") or {}).get("preaggregation_units") or 0) for t in tests),
+            "a_deterministic_units": sum(int((t.get("metrics") or {}).get("a_deterministic_units") or 0) for t in tests),
+            "b_semantic_units": sum(int((t.get("metrics") or {}).get("b_semantic_units") or 0) for t in tests),
+            "deterministic_observations": sum(int((t.get("metrics") or {}).get("deterministic_observations") or 0) for t in tests),
+            "model_derived_observations": sum(int((t.get("metrics") or {}).get("model_derived_observations") or 0) for t in tests),
+            "observation_extract_calls": sum(int((t.get("metrics") or {}).get("observation_extract_calls") or 0) for t in tests),
+            "ask_relative_calls": sum(int((t.get("metrics") or {}).get("ask_relative_calls") or 0) for t in tests),
+            "narrator_calls": sum(int((t.get("metrics") or {}).get("narrator_calls") or 0) for t in tests),
+            "total_model_calls": sum(int(t.get("model_call_count") or 0) for t in tests),
+            "timeout_count": sum(int((t.get("metrics") or {}).get("timeout_count") or 0) for t in tests),
+            "total_duration_ms": sum(int(t.get("duration_ms") or 0) for t in tests),
+        },
         "calls_by_stage": {
             "chat": sum(int((t.get("provider_calls") or {}).get("chat") or 0) for t in tests),
             "embed": sum(int((t.get("provider_calls") or {}).get("embed") or 0) for t in tests),
@@ -311,6 +419,7 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
                 "observations_a": (t.get("inference_accounting") or {}).get("observations_a"),
                 "observations_b": (t.get("inference_accounting") or {}).get("observations_b"),
                 "extract_calls": (t.get("inference_accounting") or {}).get("extract_calls"),
+                "metrics": t.get("metrics") or {},
                 "evidence_considered": t.get("evidence_considered") or {},
             }
             for t in tests

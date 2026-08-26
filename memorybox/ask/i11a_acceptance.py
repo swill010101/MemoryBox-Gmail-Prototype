@@ -156,6 +156,74 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         problems,
         detail={k: acc_b.get(k) for k in ("extract_calls", "observations_a", "observations_b", "units_model_extract")},
     )
+    from memorybox.ask.i11a.observations import observation_from_unit
+
+    pat = observation_from_unit(
+        {
+            "kind": "comm_pattern",
+            "evidence_id": "e-pat",
+            "content": "repeated affectionate messages",
+            "extra_ids": ["e-1", "e-2"],
+        }
+    ) or {}
+    corr = observation_from_unit(
+        {
+            "kind": "correlated_event",
+            "evidence_id": "e-corr",
+            "content": "Dinner with calendar and texts",
+            "extra_ids": ["e-cal", "e-sms"],
+        }
+    ) or {}
+    _check(
+        "pattern_and_correlation_bypass_extract_as_derived",
+        (not requires_model_interpretation({"kind": "comm_pattern"}))
+        and (not requires_model_interpretation({"kind": "correlated_event"}))
+        and pat.get("claim_type") == "derived"
+        and corr.get("claim_type") == "derived"
+        and pat.get("supporting_evidence_ids")
+        and corr.get("supporting_evidence_ids"),
+        checks,
+        problems,
+        detail={"pat": pat.get("claim_type"), "corr": corr.get("claim_type")},
+    )
+    inf_mix = run_inference(
+        plan_ask(
+            "write a narrative about my trip to las vegas in January 2026",
+            AskContext(session_id="i11a-ab-mix"),
+        ),
+        {
+            "units": [
+                {
+                    "unit_id": "u-cal-mix",
+                    "kind": "calendar",
+                    "source_type": "calendar",
+                    "time": "2026-01-30",
+                    "title": "Eagles Live at Sphere",
+                    "content": "Eagles Live at Sphere",
+                    "provenance": {"evidence_id": "e-cal-mix"},
+                },
+                {
+                    "unit_id": "u-em-mix",
+                    "kind": "communication",
+                    "source_type": "email",
+                    "time": "2026-01-29",
+                    "content": "Your Las Vegas hotel reservation is confirmed for Jan 29.",
+                    "provenance": {"evidence_id": "e-em-mix"},
+                },
+            ]
+        },
+        FakeLlmProvider(),
+    )
+    acc_mix = inf_mix.get("accounting") or {}
+    _check(
+        "mixed_pack_extracts_only_b",
+        int(acc_mix.get("extract_calls") or 0) == 1
+        and int(acc_mix.get("units_model_extract") or 0) == 1
+        and int(acc_mix.get("units_deterministic") or 0) >= 1,
+        checks,
+        problems,
+        detail={k: acc_mix.get(k) for k in ("extract_calls", "units_model_extract", "units_deterministic", "observations_a", "observations_b")},
+    )
     _check(
         "a09_trace_light_copy_export",
         "copy-provider-payload" in js

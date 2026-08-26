@@ -356,6 +356,8 @@ def run_inference(
         "ask_relative_calls": 0,
         "observations_a": 0,
         "observations_b": 0,
+        "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
+        "preaggregation_units": len(agg_units),
         "preaggregation": pack.get("preaggregation"),
         "engine": "observations_ir_ask_relative",
     }
@@ -680,6 +682,7 @@ def apply_inference_to_pack(
 ) -> dict[str, Any]:
     if not needs_semantic_inference(plan):
         pack["inference"] = {"ok": False, "bypassed": True}
+        pack["i11a_ab_metrics"] = {}
         return pack
     inf = run_inference(plan, pack, llm, modality_state=modality_state)
     pack["inference"] = {
@@ -699,6 +702,17 @@ def apply_inference_to_pack(
     }
     pack["person_context"] = inf.get("person_context")
     pack["request_context"] = inf.get("request_context")
+    acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
+    pack["i11a_ab_metrics"] = {
+        "raw_eligible": acc.get("raw_eligible"),
+        "preaggregation_units": acc.get("preaggregation_units"),
+        "a_deterministic_units": acc.get("units_deterministic"),
+        "b_semantic_units": acc.get("units_model_extract"),
+        "deterministic_observations": acc.get("observations_a"),
+        "model_derived_observations": acc.get("observations_b"),
+        "observation_extract_calls": acc.get("extract_calls"),
+        "ask_relative_calls": acc.get("ask_relative_calls"),
+    }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
     pack["ask_relative_view"] = inf.get("ask_relative_view") or pack.get("ask_relative_view")
