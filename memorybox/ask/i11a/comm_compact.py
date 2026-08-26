@@ -53,6 +53,92 @@ _PERSONALITY = re.compile(
     r")\b"
 )
 _DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+_OBS_STOP = frozenset(
+    {
+        "this",
+        "that",
+        "with",
+        "from",
+        "have",
+        "been",
+        "were",
+        "they",
+        "them",
+        "their",
+        "about",
+        "after",
+        "before",
+        "into",
+        "over",
+        "also",
+        "just",
+        "then",
+        "when",
+        "what",
+        "discussed",
+        "stated",
+        "expressed",
+        "mentioned",
+        "referenced",
+        "planned",
+        "said",
+        "told",
+        "wrote",
+        "sent",
+        "received",
+        "asked",
+        "replied",
+        "noted",
+        "shared",
+        "message",
+        "messages",
+        "email",
+        "emails",
+        "text",
+        "texts",
+        "sms",
+        "thread",
+        "conversation",
+        "communication",
+        "communications",
+        "people",
+        "person",
+        "someone",
+        "together",
+        "well",
+        "very",
+        "some",
+        "more",
+        "than",
+        "only",
+        "other",
+        "there",
+        "here",
+        "would",
+        "could",
+        "should",
+        "will",
+        "being",
+        "doing",
+        "made",
+        "make",
+        "named",
+        "called",
+        "using",
+        "used",
+        "appears",
+        "appeared",
+        "observed",
+        "records",
+        "recorded",
+        "calendar",
+        "listing",
+        "presence",
+        "capture",
+        "affectionate",
+        "affection",
+    }
+)
 _COMM_KINDS = frozenset(
     {"communication", "communication_thread", "sms_segment"}
 )
@@ -421,6 +507,42 @@ def _authored_names_for_ids(chunk: list[dict[str, Any]], ids: list[str]) -> set[
     return names if saw_messages else None
 
 
+def _authored_blob_for_ids(chunk: list[dict[str, Any]], ids: list[str]) -> str:
+    wanted = {str(i) for i in ids if str(i).strip()}
+    parts: list[str] = []
+    for u in chunk:
+        msgs = u.get("messages") if isinstance(u.get("messages"), list) else []
+        if msgs:
+            for m in msgs:
+                if not isinstance(m, dict):
+                    continue
+                eid = str(m.get("evidence_id") or "").strip()
+                if wanted and eid and eid not in wanted:
+                    continue
+                parts.append(str(m.get("text") or ""))
+                parts.append(str(m.get("sender") or ""))
+                parts.extend(str(x) for x in (m.get("recipients") or []))
+            continue
+        eids = set(unit_evidence_ids(u))
+        if wanted and eids and not (wanted & eids):
+            continue
+        parts.append(_blob(u))
+    return " ".join(parts).lower()
+
+
+def missing_entailment_tokens(text: str, support_blob: str, names: set[str]) -> list[str]:
+    """Content tokens in the observation that the supporting messages do not contain."""
+    blob = support_blob or ""
+    missing: list[str] = []
+    for tok in re.findall(r"[a-z]{4,}", (text or "").lower()):
+        if tok in _OBS_STOP or tok in names:
+            continue
+        if tok in blob:
+            continue
+        missing.append(tok)
+    return missing
+
+
 def _places_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
     places: set[str] = set()
     for u in chunk:
@@ -598,6 +720,17 @@ def filter_extract_observations(
             if unsupported:
                 rejected.append({"reason": "people_not_in_authored_message", "text": text[:160]})
                 continue
+        support_blob = _authored_blob_for_ids(chunk, ids)
+        missing = missing_entailment_tokens(text, support_blob, names)
+        if missing:
+            rejected.append(
+                {
+                    "reason": "observation_not_entailed_by_supporting_messages",
+                    "text": text[:160],
+                    "missing": missing[:12],
+                }
+            )
+            continue
         t = str(canon.get("time") or "")[:10]
         if t and _DATE.match(t) and t not in dates and t not in blob:
             rejected.append({"reason": "invented_date", "time": t, "text": text[:160]})

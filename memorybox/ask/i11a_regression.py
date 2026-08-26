@@ -312,6 +312,18 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             named.get("extract_timeouts"),
             inf_acc.get("extract_timeouts"),
         ),
+        "extract_cache_hits": _first(
+            named.get("extract_cache_hits"),
+            inf_acc.get("extract_cache_hits"),
+        ),
+        "extract_cache_misses": _first(
+            named.get("extract_cache_misses"),
+            inf_acc.get("extract_cache_misses"),
+        ),
+        "persisted_observations": _first(
+            named.get("persisted_observations"),
+            inf_acc.get("persisted_observations"),
+        ),
         "extract_payloads": _first(
             named.get("extract_payloads"),
             inf_acc.get("extract_payloads"),
@@ -436,6 +448,15 @@ def _run_one(orch: Any, ask: str, index: int, *, total: int = 4) -> dict[str, An
             "max_messages_per_comm_unit": metrics.get("max_messages_per_comm_unit"),
             "extract_payloads": metrics.get("extract_payloads"),
             "extract_timeouts": metrics.get("extract_timeouts"),
+            "extract_cache_hits": metrics.get("extract_cache_hits"),
+            "extract_cache_misses": metrics.get("extract_cache_misses"),
+            "persisted_observations": metrics.get("persisted_observations"),
+            "sms_episode_units": metrics.get("sms_segment_units")
+            or (getattr(result, "narrative_pack", None) or {}).get("preaggregation", {}).get(
+                "sms_episode_units"
+            )
+            if result is not None
+            else metrics.get("sms_segment_units"),
             "extract_observations_rejected": metrics.get("extract_observations_rejected"),
             "model_derived_observations": metrics.get("model_derived_observations"),
             "deterministic_observations": metrics.get("deterministic_observations"),
@@ -536,13 +557,21 @@ def run_i11a_regression(
     *,
     out_path: Path | None = None,
     asks: tuple[str, ...] | None = None,
+    rebuild_observations: bool = False,
+    repeat: int = 1,
 ) -> dict[str, Any]:
     """Run the canonical Asks sequentially and write one UTF-8 JSON file. Returns payload."""
     from memorybox.app import get_orchestrator
 
+    if rebuild_observations:
+        from memorybox.ask.i11a.observation_cache import invalidate_extract_cache
+
+        invalidate_extract_cache()
     orch = get_orchestrator()
     runtime = _llm_runtime(orch)
     sequence = asks if asks is not None else REGRESSION_ASKS
+    if repeat > 1:
+        sequence = tuple(sequence) * max(1, int(repeat))
     tests: list[dict[str, Any]] = []
     total = len(sequence)
     for i, ask in enumerate(sequence, start=1):

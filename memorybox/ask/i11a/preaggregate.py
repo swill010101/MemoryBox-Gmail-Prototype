@@ -25,13 +25,12 @@ def _generic_place(place: str) -> bool:
     if not p or p in _GENERIC_PLACES:
         return True
     return "unspecified" in p
-# Inactivity / span bounds: a window may cover a season or year of a thread,
-# never a 10–15 year mega-segment. Message count and payload still cap bursts.
-_SMS_GAP_DAYS = 90
-_MAX_WINDOW_SPAN_DAYS = 366
-# Mechanical bounds so one extract unit is not hundreds of messages across years.
-_MAX_COMM_MESSAGES = 24
-_MAX_WINDOW_CHARS = 6000
+# Active conversation pause vs multi-year bag-of-messages.
+# Count/chars are safety limits for dense bursts, not the primary slicer.
+_SMS_GAP_DAYS = 14
+_MAX_WINDOW_SPAN_DAYS = 42
+_MAX_COMM_MESSAGES = 8
+_MAX_WINDOW_CHARS = 3500
 _MEDIA_KINDS = frozenset(
     {"media_observation", "video_asset", "video_moment", "spoken_moment"}
 )
@@ -324,9 +323,11 @@ def _window_chars(group: list[dict[str, Any]]) -> int:
 
 
 def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Split a thread/conversation without dropping messages.
+    """Split a thread into coherent communication episodes.
 
-    Boundaries: temporal gap, message count, and attributed payload size.
+    Boundaries: conversation already grouped by caller; then active-gap,
+    calendar span, message continuity (order preserved), and payload safety.
+    Messages are never sampled or dropped.
     """
     ordered = sorted(group, key=lambda x: str(x.get("time") or x.get("timestamp") or ""))
     segs: list[list[dict[str, Any]]] = []
@@ -698,6 +699,7 @@ def preaggregate_pack(
             1 for u in email_units if str(u.get("kind") or "") == "communication_thread"
         ),
         "sms_raw": len(sms),
+        "sms_episode_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
         "sms_segment_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
         "sms_windows": [
             {

@@ -29,7 +29,12 @@ from memorybox.ask.i11a.validate import parse_inference_json, validate_inference
 from memorybox.ask.i11a.comm_compact import (
     chunk_units_semantically,
     filter_extract_observations,
+    unit_evidence_ids,
     unit_for_extract_model,
+)
+from memorybox.ask.i11a.observation_cache import (
+    load_episode_observations,
+    save_episode_observations,
 )
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -42,7 +47,8 @@ Do not use the user's question. These observations must be reusable across futur
 
 Emit objects with: kind, text, claim_type, people, places, time,
 supporting_evidence_ids copied exactly from the supplied units' evidence_id /
-extra_ids / source_evidence_ids. Do not invent observation IDs or evidence IDs.
+extra_ids / source_evidence_ids / messages[].evidence_id.
+Do not invent observation IDs or evidence IDs.
 
 Kinds (canonical only): person_at_place_time, calendar_records_event,
 communication_states, travel_document_records, repeated_communication_pattern,
@@ -55,11 +61,11 @@ and evidence_id. Attribute “X said …” only to that message’s sender. Do 
 treat the conversation as unattributed text.
 
 Communications must state meaning, not transport:
-Bad: "Tom sent an email". "Tom received a text". "email thread exists".
-Good: "Tom and the music group discussed evening practice and key changes."
-Good: "Peggy expressed affection and wished Tom well."
-Good: "Trivia planning centered on questions, donations, volunteers, tables, and supplies."
-Good: "Communications referenced preparation for surgery."
+Bad: "A sent a message." "A thread exists." "Mail was exchanged."
+Good: restated only using names, places, dates, and activities that appear in
+the supplied message text (copy those words; do not substitute a different topic).
+If the messages mention a medical appointment, the observation may mention that
+appointment — not an unrelated hobby, event, or group.
 Do not infer personality or character from message volume or tone.
 
 person_at_place_time is only valid when the evidence explicitly states presence
@@ -67,8 +73,10 @@ person_at_place_time is only valid when the evidence explicitly states presence
 is place_referenced or communication_states, not presence.
 
 Rules:
-- Do not invent people, places, dates, motives, or emotions.
+- Do not invent people, places, dates, motives, topics, or emotions.
 - Never invent IDs. Copy supporting_evidence_ids from the supplied units only.
+- An observation is invalid if it names a topic, entity, or activity that is
+  not present in its supporting authored message text.
 - GPS/reverse-geocode city is presence at capture, not residence.
 - Calendar listing is scheduled/recorded, not occurrence.
 - Itinerary/reservation is not completed travel.
@@ -328,6 +336,9 @@ def run_inference(
         "extract_timeouts": 0,
         "extract_payloads": [],
         "extract_chunks": len(chunks),
+        "extract_cache_hits": 0,
+        "extract_cache_misses": 0,
+        "persisted_observations": 0,
         "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
         "raw_comm_items": (pack.get("preaggregation") or {}).get("raw_comm_items"),
         "email_thread_units": (pack.get("preaggregation") or {}).get("email_thread_units"),
@@ -358,15 +369,43 @@ def run_inference(
     failed_chunks = 0
     for idx, chunk in enumerate(chunks):
         accounting["attempted_units"] += len(chunk)
+        cached_rows: list[dict[str, Any]] = []
+        pending: list[dict[str, Any]] = []
+        for unit in chunk:
+            hit = load_episode_observations(unit)
+            if hit is not None:
+                cached_rows.extend(hit)
+                accounting["extract_cache_hits"] = int(accounting.get("extract_cache_hits") or 0) + 1
+            else:
+                pending.append(unit)
+                accounting["extract_cache_misses"] = int(accounting.get("extract_cache_misses") or 0) + 1
+        if cached_rows:
+            model_obs.extend(cached_rows)
+        if not pending:
+            accounting["successful_units"] += len(chunk)
+            _trace_span(
+                stage="i11a_inference",
+                component="i11a",
+                operation="observation_extract",
+                status="ok",
+                assembled_context={
+                    "chunk": idx,
+                    "unit_n": len(chunk),
+                    "cache_hit": True,
+                    "observation_n": len(cached_rows),
+                },
+                parsed={"observations": cached_rows, "rejected": [], "cache_hit": True},
+            )
+            continue
         accounting["leaf_calls"] += 1
         accounting["extract_calls"] += 1
-        payload = _obs_payload(chunk)
+        payload = _obs_payload(pending)
         extract_stats = _payload_stats(OBSERVATION_EXTRACT, payload)
         extract_stats["chunk"] = idx
-        extract_stats["unit_n"] = len(chunk)
+        extract_stats["unit_n"] = len(pending)
         extract_stats["message_n"] = sum(
             len(u.get("messages") or []) if isinstance(u.get("messages"), list) else 0
-            for u in chunk
+            for u in pending
         )
         accounting.setdefault("extract_payloads", []).append(extract_stats)
         try:
@@ -387,25 +426,37 @@ def run_inference(
                                 "time": (ep.get("date_span") or {}).get("start"),
                             }
                         )
-            kept, rej = filter_extract_observations(rows, chunk)
+            kept, rej = filter_extract_observations(rows, pending)
             model_obs.extend(kept)
             accounting["extract_observations_rejected"] = int(
                 accounting.get("extract_observations_rejected") or 0
             ) + len(rej)
-            accounting["successful_units"] += len(chunk)
+            accounting["successful_units"] += len(pending)
+            model_name = getattr(llm, "chat_model", None) or getattr(llm, "model", None)
+            for unit in pending:
+                uids = set(unit_evidence_ids(unit))
+                subset = [
+                    obs
+                    for obs in kept
+                    if set(str(x) for x in (obs.get("supporting_evidence_ids") or [])) & uids
+                ]
+                save_episode_observations(unit, subset, model=str(model_name) if model_name else None)
+                accounting["persisted_observations"] = int(
+                    accounting.get("persisted_observations") or 0
+                ) + len(subset)
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
                 operation="observation_extract",
                 status="ok",
-                assembled_context={"chunk": idx, "unit_n": len(chunk)},
+                assembled_context={"chunk": idx, "unit_n": len(pending), "cache_hit": False},
                 provider_payload={"system": OBSERVATION_EXTRACT, "user": payload},
                 raw_response={"content": raw},
                 parsed={"observations": kept, "rejected": rej},
             )
         except Exception as exc:  # noqa: BLE001
             failed_chunks += 1
-            accounting["failed_units"] += len(chunk)
+            accounting["failed_units"] += len(pending)
             klass = classify_llm_error(exc)
             if klass == "PROVIDER_TIMEOUT":
                 accounting["extract_timeouts"] = int(accounting.get("extract_timeouts") or 0) + 1
@@ -416,35 +467,24 @@ def run_inference(
                 operation="observation_extract",
                 status="error",
                 error_class=klass,
-                assembled_context={"chunk": idx, "unit_n": len(chunk), **extract_stats},
+                assembled_context={"chunk": idx, "unit_n": len(pending), **extract_stats},
                 error={"message": str(exc), "error_class": klass},
             )
-            if klass == "PROVIDER_TIMEOUT":
-                extra = {
-                    "stage": "observation extract",
-                    "chunk": idx,
-                    "unit_n": len(chunk),
-                    "message_n": extract_stats.get("message_n"),
-                    "extract_payloads": accounting.get("extract_payloads"),
-                    "exception_type": type(exc).__name__,
-                    "exception_message": str(exc),
-                }
-                return _fail(
-                    reason=(
-                        f"observation extract timed out after retry "
-                        f"(chunk {idx}, {extract_stats.get('message_n') or 0} messages)"
-                    ),
-                    person_context=person_context,
-                    req=req,
-                    accounting=accounting,
-                    error_class=klass,
-                    stage="i11a_inference",
-                    extra=extra,
-                )
+            # Persist successful episodes already stored; skip this episode and continue
+            # so a later Ask can reuse cache hits without repeating finished work.
 
     accounting["observations_b"] = len(model_obs)
     merged = merge_model_observations(deterministic, model_obs)
     if not merged:
+        if int(accounting.get("extract_timeouts") or 0) > 0:
+            return _fail(
+                reason="observation extract timed out after retry",
+                person_context=person_context,
+                req=req,
+                accounting=accounting,
+                error_class="PROVIDER_TIMEOUT",
+                stage="i11a_inference",
+            )
         merged = [observation_from_unit(u) for u in (agg.get("units") or units)]
         merged = [o for o in merged if o]
     validated_obs = validate_observations(
@@ -768,9 +808,14 @@ def apply_inference_to_pack(
         "extract_observations_rejected": acc.get("extract_observations_rejected"),
         "extract_timeouts": acc.get("extract_timeouts"),
         "extract_payloads": acc.get("extract_payloads"),
+        "extract_cache_hits": acc.get("extract_cache_hits"),
+        "extract_cache_misses": acc.get("extract_cache_misses"),
+        "persisted_observations": acc.get("persisted_observations"),
         "ask_relative_payload": acc.get("ask_relative_payload"),
         "sms_raw": acc.get("sms_raw") or (pack.get("preaggregation") or {}).get("sms_raw"),
         "sms_windows": (pack.get("preaggregation") or {}).get("sms_windows"),
+        "sms_episode_units": acc.get("sms_segment_units")
+        or (pack.get("preaggregation") or {}).get("sms_episode_units"),
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
