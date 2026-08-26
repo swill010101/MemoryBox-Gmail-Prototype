@@ -270,6 +270,9 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
         "timeout_count": calls.get("timeouts"),
         "total_duration_ms": None,
     }
+
+
+def _run_one(orch: Any, ask: str, index: int) -> dict[str, Any]:
     from memorybox.ask.orchestrator import AskResult
 
     session_id = f"i11a-regression-{index}-{uuid4()}"
