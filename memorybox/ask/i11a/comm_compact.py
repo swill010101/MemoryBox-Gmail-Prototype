@@ -11,6 +11,18 @@ from typing import Any
 from memorybox.ask.i11a.observations import OBSERVATION_KINDS, canonicalize_observation
 from memorybox.ask.i11a.windows import _day
 
+_EMPTY_TEXT = frozenset({"", "none", "null", "n/a", "undefined"})
+_GENERIC_PLACES = frozenset(
+    {"unplaced", "unspecified", "unknown", "none", "n/a", "null", "unspecified roadside"}
+)
+_REL_STATED = re.compile(
+    r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
+    r"parent|father|mother|family|friend|colleague|uncle|aunt|"
+    r"niece|nephew|grandparent|grandchild|husband|wife|married|"
+    r"related|kin|cousin)\b",
+    re.I,
+)
+
 _PRESENCE_STATED = re.compile(
     r"(?i)\b("
     r"i(?:'m| am)\s+(?:in|at|near)|"
@@ -95,18 +107,30 @@ def _people_key(unit: dict[str, Any]) -> str:
 
 
 def _blob(unit: dict[str, Any]) -> str:
-    return " ".join(
-        str(x or "")
-        for x in (
-            unit.get("content"),
-            unit.get("authored_text"),
-            unit.get("subject"),
-            unit.get("title"),
-            unit.get("excerpt"),
-            unit.get("place"),
-            unit.get("time"),
+    parts = [
+        unit.get("content"),
+        unit.get("authored_text"),
+        unit.get("subject"),
+        unit.get("title"),
+        unit.get("excerpt"),
+        unit.get("place"),
+        unit.get("time"),
+        unit.get("sender_name"),
+        unit.get("thread_id"),
+    ]
+    for m in unit.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        parts.extend(
+            [
+                m.get("sender"),
+                m.get("text"),
+                m.get("time"),
+                m.get("evidence_id"),
+                " ".join(str(x) for x in (m.get("recipients") or [])),
+            ]
         )
-    )
+    return " ".join(str(x or "") for x in parts)
 
 
 def omit_covered_communication_units(
@@ -302,16 +326,58 @@ def _evidence_blob(chunk: list[dict[str, Any]]) -> str:
 
 def _names_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
     names: set[str] = set()
+
+    def _add(raw: Any) -> None:
+        n = str(raw or "").strip().lower()
+        if not n:
+            return
+        names.add(n)
+        names.update(part for part in n.split() if len(part) > 1)
+
     for u in chunk:
         for p in u.get("people") or []:
             if isinstance(p, dict):
-                n = str(p.get("name") or "").strip().lower()
+                _add(p.get("name"))
             else:
-                n = str(p).strip().lower()
-            if n:
-                names.add(n)
-                names.update(part for part in n.split() if len(part) > 1)
+                _add(p)
+        _add(u.get("sender_name"))
+        for m in u.get("messages") or []:
+            if not isinstance(m, dict):
+                continue
+            _add(m.get("sender"))
+            for r in m.get("recipients") or []:
+                _add(r)
     return names
+
+
+def _authored_names_for_ids(chunk: list[dict[str, Any]], ids: list[str]) -> set[str] | None:
+    """Names that appear as sender/recipient on supporting messages, if any."""
+    wanted = {str(i) for i in ids if str(i).strip()}
+    names: set[str] = set()
+    saw_messages = False
+
+    def _add(raw: Any) -> None:
+        n = str(raw or "").strip().lower()
+        if not n:
+            return
+        names.add(n)
+        names.update(part for part in n.split() if len(part) > 1)
+
+    for u in chunk:
+        msgs = u.get("messages") if isinstance(u.get("messages"), list) else []
+        if not msgs:
+            continue
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            eid = str(m.get("evidence_id") or "").strip()
+            if wanted and eid and eid not in wanted:
+                continue
+            saw_messages = True
+            _add(m.get("sender"))
+            for r in m.get("recipients") or []:
+                _add(r)
+    return names if saw_messages else None
 
 
 def _places_in_chunk(chunk: list[dict[str, Any]]) -> set[str]:
@@ -390,6 +456,10 @@ def filter_extract_observations(
                 ids.append(s)
         if invented_eid:
             continue
+        raw_text = raw.get("text")
+        if raw_text is None or str(raw_text).strip().lower() in _EMPTY_TEXT:
+            rejected.append({"reason": "empty_observation", "text": None if raw_text is None else str(raw_text)[:80]})
+            continue
         if not ids:
             rejected.append({"reason": "observation_ids_not_from_chunk", "text": str(raw.get("text") or "")[:160]})
             continue
@@ -401,8 +471,20 @@ def filter_extract_observations(
             rejected.append({"reason": "observation_schema_invalid", "kind": kind})
             continue
         text = str(canon.get("text") or "").strip()
-        if not text:
+        if not text or text.lower() in _EMPTY_TEXT:
             rejected.append({"reason": "empty_observation"})
+            continue
+        if str(canon.get("kind") or "") == "place_referenced":
+            places_ok = [
+                str(p).strip()
+                for p in (canon.get("places") or [])
+                if str(p).strip() and str(p).strip().lower() not in _GENERIC_PLACES
+            ]
+            if not places_ok:
+                rejected.append({"reason": "place_referenced_without_place", "text": text[:160]})
+                continue
+        if str(canon.get("kind") or "") == "relationship_stated" and not _REL_STATED.search(text):
+            rejected.append({"reason": "relationship_stated_without_relationship", "text": text[:160]})
             continue
         if _TRANSPORT_ONLY.match(text):
             rejected.append({"reason": "transport_metadata_only", "text": text[:160]})
@@ -449,6 +531,21 @@ def filter_extract_observations(
         if invented_person:
             rejected.append({"reason": "invented_person", "text": text[:160]})
             continue
+        authored = _authored_names_for_ids(chunk, ids)
+        if authored is not None:
+            unsupported = False
+            for p in canon.get("people") or []:
+                n = str((p.get("name") if isinstance(p, dict) else p) or "").strip().lower()
+                if not n:
+                    continue
+                tokens = [t for t in n.split() if len(t) > 1]
+                if n in authored or (tokens and all(t in authored for t in tokens)):
+                    continue
+                unsupported = True
+                break
+            if unsupported:
+                rejected.append({"reason": "people_not_in_authored_message", "text": text[:160]})
+                continue
         t = str(canon.get("time") or "")[:10]
         if t and _DATE.match(t) and t not in dates and t not in blob:
             rejected.append({"reason": "invented_date", "time": t, "text": text[:160]})

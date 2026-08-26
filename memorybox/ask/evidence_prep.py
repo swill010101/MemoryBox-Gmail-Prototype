@@ -171,6 +171,9 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         "speaker_person_id": (d.get("identity_mapped") or [{}])[0].get("person_id")
         if d.get("identity_mapped")
         else None,
+        "sender_name": speaker,
+        "sender_handle": payload.get("sender_handle") or d.get("sender_handle"),
+        "from_owner": bool(payload.get("from_owner") or str(d.get("direction") or "").lower() == "outbound"),
         "participants": people,
         "group_thread": meta["group_thread"],
         "timestamp": d.get("sent_at"),

@@ -27,8 +27,12 @@ from memorybox.ask.i11a.windows import (
 _REL_EMIT = re.compile(
     r"\b(spouse|partner|sibling|brother|sister|child|son|daughter|"
     r"parent|father|mother|family|friend|colleague|uncle|aunt|"
-    r"niece|nephew|grandparent|grandchild)\b",
+    r"niece|nephew|grandparent|grandchild|husband|wife|married|"
+    r"related|kin|cousin)\b",
     re.I,
+)
+_GENERIC_PLACES = frozenset(
+    {"unplaced", "unspecified", "unknown", "none", "n/a", "null", "unspecified roadside"}
 )
 
 
@@ -214,7 +218,11 @@ def validate_observations(
             rejected.append({"reason": "observation_schema_invalid", "kind": obs.get("kind")})
             continue
         obs = canon
-        text = str(obs.get("text") or "").strip()
+        raw_text = obs.get("text")
+        text = str(raw_text or "").strip()
+        if raw_text is None or text.lower() in {"none", "null", "n/a", "undefined"}:
+            rejected.append({"reason": "empty_observation", "text": None if raw_text is None else text[:80]})
+            continue
         if _TRANSPORT_ONLY.match(text):
             rejected.append({"reason": "transport_metadata_only", "text": text[:160]})
             continue
@@ -223,6 +231,18 @@ def validate_observations(
             ids = [str(x) for x in (obs.get("supporting_evidence_ids") or []) if str(x) in scope]
         if not text:
             rejected.append({"reason": "empty_observation"})
+            continue
+        if str(obs.get("kind") or "") == "place_referenced":
+            places_ok = [
+                str(p).strip()
+                for p in (obs.get("places") or [])
+                if str(p).strip() and str(p).strip().lower() not in _GENERIC_PLACES
+            ]
+            if not places_ok:
+                rejected.append({"reason": "place_referenced_without_place", "text": text[:160]})
+                continue
+        if str(obs.get("kind") or "") == "relationship_stated" and not _REL_EMIT.search(text):
+            rejected.append({"reason": "relationship_stated_without_relationship", "text": text[:160]})
             continue
         if not ids:
             rejected.append({"reason": "observation_missing_ids", "text": text[:160]})

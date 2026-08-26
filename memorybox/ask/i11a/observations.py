@@ -427,7 +427,13 @@ def canonicalize_observation(
             return None
         kind = "activity_named"
     source = str(row.get("source_type") or row.get("unit_kind") or "").lower()
-    text = str(row.get("text") or "").strip()
+    raw_text = row.get("text")
+    if raw_text is None:
+        text = ""
+    else:
+        text = str(raw_text).strip()
+        if text.lower() in {"none", "null", "n/a", "undefined"}:
+            return None
     has_gps = row.get("latitude") is not None or (
         isinstance(row.get("media"), dict) and (row.get("media") or {}).get("exif_gps")
     )

@@ -49,6 +49,11 @@ communication_states, travel_document_records, repeated_communication_pattern,
 people_interacting, activity_named, place_referenced, relationship_stated,
 media_observation.
 
+When a unit includes messages[], each object is one authored message with
+sender / sender_person_id / from_owner, recipients, conversation, time, text,
+and evidence_id. Attribute “X said …” only to that message’s sender. Do not
+treat the conversation as unattributed text.
+
 Communications must state meaning, not transport:
 Bad: "Tom sent an email". "Tom received a text". "email thread exists".
 Good: "Tom and the music group discussed evening practice and key changes."
@@ -156,6 +161,24 @@ def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
         "title": unit.get("title"),
         "authored_text": str(unit.get("authored_text") or "")[:800],
     }
+    msgs = unit.get("messages")
+    if isinstance(msgs, list) and msgs:
+        row["messages"] = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            row["messages"].append(
+                {
+                    "sender": m.get("sender"),
+                    "sender_person_id": m.get("sender_person_id"),
+                    "from_owner": m.get("from_owner"),
+                    "recipients": list(m.get("recipients") or [])[:12],
+                    "conversation": m.get("conversation") or unit.get("thread_id"),
+                    "time": m.get("time"),
+                    "text": str(m.get("text") or "")[:400],
+                    "evidence_id": m.get("evidence_id"),
+                }
+            )
     if unit.get("media"):
         row["media"] = unit.get("media")
     return row
@@ -340,11 +363,15 @@ def run_inference(
         "observations_a": 0,
         "observations_b": 0,
         "extract_observations_rejected": 0,
+        "extract_timeouts": 0,
+        "extract_payloads": [],
         "extract_chunks": len(chunks),
         "raw_eligible": (pack.get("preaggregation") or {}).get("raw_eligible"),
         "raw_comm_items": (pack.get("preaggregation") or {}).get("raw_comm_items"),
         "email_thread_units": (pack.get("preaggregation") or {}).get("email_thread_units"),
         "sms_segment_units": (pack.get("preaggregation") or {}).get("sms_segment_units"),
+        "sms_raw": (pack.get("preaggregation") or {}).get("sms_raw"),
+        "sms_windows": (pack.get("preaggregation") or {}).get("sms_windows"),
         "semantic_comm_units_after_dedupe": (pack.get("preaggregation") or {}).get(
             "semantic_comm_units_after_dedupe"
         ),
@@ -372,6 +399,14 @@ def run_inference(
         accounting["leaf_calls"] += 1
         accounting["extract_calls"] += 1
         payload = _obs_payload(chunk)
+        extract_stats = _payload_stats(OBSERVATION_EXTRACT, payload)
+        extract_stats["chunk"] = idx
+        extract_stats["unit_n"] = len(chunk)
+        extract_stats["message_n"] = sum(
+            len(u.get("messages") or []) if isinstance(u.get("messages"), list) else 0
+            for u in chunk
+        )
+        accounting.setdefault("extract_payloads", []).append(extract_stats)
         try:
             raw = _call_with_retry(llm, OBSERVATION_EXTRACT, payload)
             parsed = parse_inference_json(raw) or {}
@@ -409,14 +444,18 @@ def run_inference(
         except Exception as exc:  # noqa: BLE001
             failed_chunks += 1
             accounting["failed_units"] += len(chunk)
+            klass = classify_llm_error(exc)
+            if klass == "PROVIDER_TIMEOUT":
+                accounting["extract_timeouts"] = int(accounting.get("extract_timeouts") or 0) + 1
+            extract_stats["error_class"] = klass
             _trace_span(
                 stage="i11a_inference",
                 component="i11a",
                 operation="observation_extract",
                 status="error",
-                error_class="MODEL_OUTPUT",
-                assembled_context={"chunk": idx, "unit_n": len(chunk)},
-                error={"message": str(exc)},
+                error_class=klass,
+                assembled_context={"chunk": idx, "unit_n": len(chunk), **extract_stats},
+                error={"message": str(exc), "error_class": klass},
             )
 
     accounting["observations_b"] = len(model_obs)
@@ -543,15 +582,39 @@ def run_inference(
             extra=extra,
         )
     except Exception as exc:  # noqa: BLE001
+        klass = classify_llm_error(exc)
+        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        extra = {
+            "stage": "ask-relative reasoning",
+            "provider_key": getattr(llm, "provider_key", None),
+            "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
+            "timeout_seconds": stats.get("timeout_seconds"),
+            "duration_ms": elapsed_ms,
+            "retry_count": _retries(),
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc),
+            "ask_relative_payload": stats,
+        }
         _trace_span(
             stage="ask_relative_reasoning",
             component="i11a",
             operation="ask_relative",
             status="error",
-            error_class="PARSE_SCHEMA",
-            error={"message": str(exc)},
+            error_class=klass,
+            duration_ms=elapsed_ms,
+            error=extra,
+            assembled_context=extra,
+            provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
         )
-        parsed_view = None
+        return _fail(
+            reason=f"ask-relative reasoning failed: {exc}",
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
+            error_class=klass,
+            stage="ask_relative_reasoning",
+            extra=extra,
+        )
 
     view = view_from_model_json(
         parsed_view, eligible, ask=ask, ask_kind_hint=kind_hint
@@ -719,6 +782,11 @@ def apply_inference_to_pack(
         "provenance_ids_raw_comm": acc.get("provenance_ids_raw_comm"),
         "provenance_ids_retained": acc.get("provenance_ids_retained"),
         "extract_observations_rejected": acc.get("extract_observations_rejected"),
+        "extract_timeouts": acc.get("extract_timeouts"),
+        "extract_payloads": acc.get("extract_payloads"),
+        "ask_relative_payload": acc.get("ask_relative_payload"),
+        "sms_raw": acc.get("sms_raw") or (pack.get("preaggregation") or {}).get("sms_raw"),
+        "sms_windows": (pack.get("preaggregation") or {}).get("sms_windows"),
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")

@@ -347,6 +347,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1 (same env flag as other prove commands; does not change model)",
     )
+    p_i11a_reg.add_argument(
+        "--only-peggy",
+        action="store_true",
+        help="Run only the Peggy Ask (do not run the four-case regression)",
+    )
     p_abandon = sub.add_parser(
         "ai-trace-abandon",
         help="Mark stale AI Trace rows still listed as running after the Ask process died",
@@ -771,7 +776,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         out = Path(args.out) if args.out else None
-        payload = run_i11a_regression(out_path=out)
+        payload = run_i11a_regression(
+            out_path=out,
+            asks=("tell me what you know about Peggy",) if getattr(args, "only_peggy", False) else None,
+        )
         summary = payload.get("summary") or {}
         print(json.dumps({
             "ok": True,

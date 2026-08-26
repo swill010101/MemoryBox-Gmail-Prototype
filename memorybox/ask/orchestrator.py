@@ -903,6 +903,13 @@ class AskOrchestrator:
                 )
                 plan = result.plan if isinstance(result.plan, dict) else {}
                 tr.note_planner(plan)
+                inf = {}
+                pack = result.narrative_pack if isinstance(result.narrative_pack, dict) else {}
+                if isinstance(pack.get("inference"), dict):
+                    inf = pack["inference"]
+                fail = bool(result.narration_unavailable) or bool(inf.get("fail_closed"))
+                partial = bool(inf.get("partial"))
+                status = "error" if fail else "ok"
                 tr.complete(
                     disposition={
                         "answer_kind": result.answer_kind,
@@ -911,7 +918,13 @@ class AskOrchestrator:
                         "evidence_hits": len(result.evidence_hits or []),
                         "photo_hits": len(result.photo_hits or []),
                         "missing_disclosure": result.missing_disclosure,
-                    }
+                        "ok": not fail,
+                        "fail_closed": fail,
+                        "partial": partial,
+                        "inference_reason": inf.get("reason"),
+                    },
+                    status=status,
+                    error_class=(str(inf.get("error_class") or "") or None) if fail else None,
                 )
                 result.trace_id = tr.trace_id
                 return result
@@ -1130,6 +1143,8 @@ class AskOrchestrator:
         from memorybox.ask.semantic import apply_constraints_to_plan
 
         plan = apply_constraints_to_plan(plan)
+        if trace is not None:
+            trace.note_planner(plan.to_dict() if hasattr(plan, "to_dict") else {})
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
