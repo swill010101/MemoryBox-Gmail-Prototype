@@ -36,6 +36,7 @@ from memorybox.ask.i11a.comm_compact import (
 from memorybox.ask.i11a.observation_cache import (
     load_episode_observations,
     save_episode_observations,
+    source_hash,
 )
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -128,20 +129,32 @@ def _chat_json(llm: Any, system: str, payload: dict[str, Any]) -> tuple[str, dic
         ChatMessage(role="user", content=json.dumps(payload, default=str)),
     ]
     result = llm.chat(messages, json_mode=True)
-    return str(getattr(result, "content", "") or ""), {
-        "model": getattr(result, "model", None),
-        "provider_key": getattr(llm, "provider_key", None),
-    }
+    usage = dict(getattr(result, "usage", None) or {})
+    usage.setdefault("provider_key", getattr(llm, "provider_key", None))
+    usage.setdefault(
+        "model",
+        getattr(result, "model", None)
+        or getattr(llm, "chat_model", None)
+        or getattr(llm, "model", None),
+    )
+    return str(getattr(result, "content", "") or ""), usage
 
 
-def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
+def _call_with_retry_meta(
+    llm: Any, system: str, payload: dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
     last: Exception | None = None
     attempts = 1 + _retries()
     for i in range(attempts):
         try:
-            text, _meta = _chat_json(llm, system, payload)
+            text, usage = _chat_json(llm, system, payload)
             if text.strip():
-                return text
+                return text, {
+                    **usage,
+                    "attempts": i + 1,
+                    "retries": i,
+                    "timeout_retried": False,
+                }
             last = ProviderError("empty inference response")
         except ProviderUnavailable:
             raise
@@ -152,6 +165,11 @@ def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
                 continue
             raise last
     raise last or ProviderError("inference failed")
+
+
+def _call_with_retry(llm: Any, system: str, payload: dict[str, Any]) -> str:
+    text, _usage = _call_with_retry_meta(llm, system, payload)
+    return text
 
 
 def _unit_for_model(unit: dict[str, Any]) -> dict[str, Any]:
@@ -372,6 +390,16 @@ def run_inference(
         "provenance_ids_retained": (pack.get("preaggregation") or {}).get("provenance_ids_retained"),
         "preaggregation_units": len(agg_units),
         "preaggregation": pack.get("preaggregation"),
+        "eligible_evidence_id_digest": (pack.get("preaggregation") or {}).get(
+            "eligible_evidence_id_digest"
+        ),
+        "eligible_evidence_id_n": (pack.get("preaggregation") or {}).get("eligible_evidence_id_n"),
+        "semantic_unit_fingerprint_digest": (pack.get("preaggregation") or {}).get(
+            "semantic_unit_fingerprint_digest"
+        ),
+        "semantic_unit_fingerprint_n": (pack.get("preaggregation") or {}).get(
+            "semantic_unit_fingerprint_n"
+        ),
         "engine": "observations_ir_ask_relative",
     }
     if not units:
@@ -536,6 +564,8 @@ def run_inference(
     accounting["validated_observations"] = len(observations)
     accounting["rollup_units"] = int(rolled.get("rollup_unit_count") or 0)
     accounting["rollup_provenance_coverage"] = rolled.get("provenance_coverage")
+    oids = sorted(str(o.get("observation_id") or "") for o in observations if o.get("observation_id"))
+    accounting["validated_observation_digest"] = source_hash(oids) if oids else ""
     _trace_span(
         stage="i11a_inference",
         component="i11a",
@@ -627,7 +657,42 @@ def run_inference(
     try:
         accounting["ask_relative_calls"] = 1
         accounting["leaf_calls"] += 1
-        raw_view = _call_with_retry(llm, ASK_RELATIVE_SYSTEM, rp)
+        raw_view, call_meta = _call_with_retry_meta(llm, ASK_RELATIVE_SYSTEM, rp)
+        stats = {
+            **stats,
+            "provider_eval": {
+                k: call_meta.get(k)
+                for k in (
+                    "total_duration",
+                    "load_duration",
+                    "prompt_eval_count",
+                    "prompt_eval_duration",
+                    "eval_count",
+                    "eval_duration",
+                    "attempts",
+                    "retries",
+                    "timeout_retried",
+                    "keep_alive",
+                    "done_reason",
+                    "num_ctx",
+                    "num_ctx_note",
+                    "options",
+                    "timeout_seconds",
+                    "model",
+                    "provider_key",
+                )
+                if call_meta.get(k) is not None or k in {"attempts", "retries", "timeout_retried"}
+            },
+        }
+        if call_meta.get("prompt_eval_count") is not None:
+            stats["prompt_tokens"] = call_meta.get("prompt_eval_count")
+        if call_meta.get("eval_count") is not None:
+            stats["response_tokens"] = call_meta.get("eval_count")
+        if call_meta.get("num_ctx") is not None:
+            stats["num_ctx"] = call_meta.get("num_ctx")
+        if call_meta.get("num_ctx_note"):
+            stats["num_ctx_note"] = call_meta.get("num_ctx_note")
+        accounting["ask_relative_payload"] = stats
         parsed_view = parse_inference_json(raw_view)
         _trace_span(
             stage="ask_relative_reasoning",
@@ -640,7 +705,8 @@ def run_inference(
             parsed=parsed_view,
             assembled_context={
                 **stats,
-                "retry_count": _retries(),
+                "retry_count": int((stats.get("provider_eval") or {}).get("retries") or 0),
+                "timeout_retried": False,
                 "provider_key": getattr(llm, "provider_key", None),
                 "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
             },
@@ -912,6 +978,13 @@ def apply_inference_to_pack(
         "sms_windows": (pack.get("preaggregation") or {}).get("sms_windows"),
         "sms_episode_units": acc.get("sms_segment_units")
         or (pack.get("preaggregation") or {}).get("sms_episode_units"),
+        "eligible_evidence_id_digest": acc.get("eligible_evidence_id_digest")
+        or (pack.get("preaggregation") or {}).get("eligible_evidence_id_digest"),
+        "eligible_evidence_id_n": acc.get("eligible_evidence_id_n")
+        or (pack.get("preaggregation") or {}).get("eligible_evidence_id_n"),
+        "semantic_unit_fingerprint_digest": acc.get("semantic_unit_fingerprint_digest")
+        or (pack.get("preaggregation") or {}).get("semantic_unit_fingerprint_digest"),
+        "validated_observation_digest": acc.get("validated_observation_digest"),
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")

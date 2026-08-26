@@ -358,6 +358,29 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
         "sms_raw": _first(named.get("sms_raw"), inf_acc.get("sms_raw"), pre.get("sms_raw")),
         "sms_windows": _first(named.get("sms_windows"), inf_acc.get("sms_windows"), pre.get("sms_windows")),
         "max_messages_per_comm_unit": pre.get("max_messages_per_comm_unit"),
+        "eligible_evidence_id_digest": _first(
+            named.get("eligible_evidence_id_digest"),
+            inf_acc.get("eligible_evidence_id_digest"),
+            pre.get("eligible_evidence_id_digest"),
+        ),
+        "eligible_evidence_id_n": _first(
+            named.get("eligible_evidence_id_n"),
+            inf_acc.get("eligible_evidence_id_n"),
+            pre.get("eligible_evidence_id_n"),
+        ),
+        "semantic_unit_fingerprint_digest": _first(
+            named.get("semantic_unit_fingerprint_digest"),
+            inf_acc.get("semantic_unit_fingerprint_digest"),
+            pre.get("semantic_unit_fingerprint_digest"),
+        ),
+        "validated_observation_digest": _first(
+            named.get("validated_observation_digest"),
+            inf_acc.get("validated_observation_digest"),
+        ),
+        "eligible_evidence_ids": pre.get("eligible_evidence_ids"),
+        "sms_evidence_ids": pre.get("sms_evidence_ids"),
+        "email_evidence_ids": pre.get("email_evidence_ids"),
+        "semantic_unit_fingerprints": pre.get("semantic_unit_fingerprints"),
         "observation_extract_calls": extract,
         "ask_relative_calls": ask_rel,
         "narrator_calls": narrator,
@@ -502,9 +525,13 @@ def _run_one(
             "deterministic_observations": metrics.get("deterministic_observations"),
             "ask_relative_payload": metrics.get("ask_relative_payload"),
             "validated_observations": metrics.get("validated_observations"),
+            "validated_observation_digest": metrics.get("validated_observation_digest"),
             "rollup_units": metrics.get("rollup_units"),
             "rollup_provenance_coverage": metrics.get("rollup_provenance_coverage"),
             "observations_expanded": metrics.get("observations_expanded"),
+            "eligible_evidence_id_digest": metrics.get("eligible_evidence_id_digest"),
+            "semantic_unit_fingerprint_digest": metrics.get("semantic_unit_fingerprint_digest"),
+            "sms_raw": metrics.get("sms_raw"),
             "narrator_invoked": bool(metrics.get("narrator_calls")),
             "narrator_calls": metrics.get("narrator_calls"),
             "total_runtime_ms": duration_ms,
@@ -612,6 +639,93 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
     summary["warm_narrator_calls"] = [
         int((t.get("metrics") or {}).get("narrator_calls") or 0) for t in warm_tests
     ]
+
+    def _ids(t: dict[str, Any], key: str) -> list[str]:
+        raw = (t.get("metrics") or {}).get(key) or []
+        return [str(x) for x in raw if str(x).strip()]
+
+    def _id_diff(a: list[str], b: list[str]) -> dict[str, Any]:
+        sa, sb = set(a), set(b)
+        added = sorted(sb - sa)
+        missing = sorted(sa - sb)
+        return {
+            "added_n": len(added),
+            "missing_n": len(missing),
+            "added_ids": added[:80],
+            "missing_ids": missing[:80],
+        }
+
+    def _fp(t: dict[str, Any]) -> dict[str, Any]:
+        m = t.get("metrics") or {}
+        pay = m.get("ask_relative_payload") if isinstance(m.get("ask_relative_payload"), dict) else {}
+        return {
+            "pass_kind": t.get("pass_kind"),
+            "sms_raw": m.get("sms_raw"),
+            "sms_segment_units": m.get("sms_segment_units"),
+            "email_raw": m.get("email_thread_units"),
+            "eligible_evidence_id_n": m.get("eligible_evidence_id_n"),
+            "eligible_evidence_id_digest": m.get("eligible_evidence_id_digest"),
+            "semantic_unit_fingerprint_digest": m.get("semantic_unit_fingerprint_digest"),
+            "validated_observation_digest": m.get("validated_observation_digest"),
+            "extract_calls": m.get("observation_extract_calls"),
+            "ask_relative_tokens": _tok(t),
+            "provider_eval": pay.get("provider_eval"),
+            "prompt_tokens": pay.get("prompt_tokens"),
+            "response_tokens": pay.get("response_tokens"),
+        }
+
+    compare_pairs: list[dict[str, Any]] = []
+    all_for_cmp = list(enrich_tests) + list(warm_tests)
+    if all_for_cmp:
+        base = all_for_cmp[0]
+        base_ids = _ids(base, "eligible_evidence_ids")
+        base_sms = _ids(base, "sms_evidence_ids")
+        for other in all_for_cmp[1:]:
+            compare_pairs.append(
+                {
+                    "from": base.get("pass_kind"),
+                    "to": other.get("pass_kind"),
+                    "from_index": base.get("index"),
+                    "to_index": other.get("index"),
+                    "source_counts": {"from": _fp(base), "to": _fp(other)},
+                    "eligible_evidence_diff": _id_diff(base_ids, _ids(other, "eligible_evidence_ids")),
+                    "sms_evidence_diff": _id_diff(base_sms, _ids(other, "sms_evidence_ids")),
+                    "digests_equal": (
+                        (base.get("metrics") or {}).get("eligible_evidence_id_digest")
+                        == (other.get("metrics") or {}).get("eligible_evidence_id_digest")
+                        and (base.get("metrics") or {}).get("semantic_unit_fingerprint_digest")
+                        == (other.get("metrics") or {}).get("semantic_unit_fingerprint_digest")
+                    ),
+                    "wall_clock_cutoff_used": False,
+                    "why_retrieval_changed": (
+                        None
+                        if (base.get("metrics") or {}).get("eligible_evidence_id_digest")
+                        == (other.get("metrics") or {}).get("eligible_evidence_id_digest")
+                        else (
+                            "eligible evidence ID set differed; paging no longer stops on wall-clock. "
+                            "If this is nonempty after this fix, inspect planner person_ids/windows."
+                        )
+                    ),
+                }
+            )
+    warm_stable = False
+    if len(warm_tests) >= 2:
+        d0 = (warm_tests[0].get("metrics") or {}).get("eligible_evidence_id_digest")
+        f0 = (warm_tests[0].get("metrics") or {}).get("semantic_unit_fingerprint_digest")
+        o0 = (warm_tests[0].get("metrics") or {}).get("validated_observation_digest")
+        warm_stable = all(
+            (t.get("metrics") or {}).get("eligible_evidence_id_digest") == d0
+            and (t.get("metrics") or {}).get("semantic_unit_fingerprint_digest") == f0
+            and (t.get("metrics") or {}).get("validated_observation_digest") == o0
+            and int((t.get("metrics") or {}).get("observation_extract_calls") or 0) == 0
+            for t in warm_tests
+        )
+    summary["retrieve_stability"] = {
+        "wall_clock_cutoff_used": False,
+        "warm_asks_identical": warm_stable,
+        "per_pass": [_fp(t) for t in all_for_cmp],
+        "pairwise_vs_first": compare_pairs,
+    }
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "model": settings.ollama_chat_model,

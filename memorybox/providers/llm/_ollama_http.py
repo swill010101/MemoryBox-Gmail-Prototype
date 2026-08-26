@@ -81,10 +81,12 @@ def ollama_chat(
     format_json: bool = False,
     temperature: float = 0.1,
     timeout: int = 90,
-) -> str:
+    keep_alive: str = "30m",
+) -> tuple[str, dict[str, Any]]:
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
+        "keep_alive": keep_alive,
         "options": {"temperature": temperature},
         "messages": [
             {"role": "system", "content": system},
@@ -104,7 +106,23 @@ def ollama_chat(
     content = msg.get("content")
     if not content:
         raise RuntimeError(f"empty chat response: {str(data)[:300]}")
-    return content
+    usage = {
+        "total_duration": data.get("total_duration"),
+        "load_duration": data.get("load_duration"),
+        "prompt_eval_count": data.get("prompt_eval_count"),
+        "prompt_eval_duration": data.get("prompt_eval_duration"),
+        "eval_count": data.get("eval_count"),
+        "eval_duration": data.get("eval_duration"),
+        "timeout_seconds": timeout,
+        "keep_alive": keep_alive,
+        "options": {"temperature": temperature},
+        "num_ctx": (data.get("options") or {}).get("num_ctx")
+        if isinstance(data.get("options"), dict)
+        else None,
+        "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+        "done_reason": data.get("done_reason"),
+    }
+    return str(content), usage
 
 
 def ollama_reachable(base_url: str, timeout: float = 1.5) -> bool:
