@@ -211,21 +211,54 @@ def _classify_chat(span: dict[str, Any]) -> str:
     return "narrator"
 
 
-def _timeout_count(test: dict[str, Any], spans: list[dict[str, Any]]) -> int:
-    n = 0
-    calls = test.get("provider_calls") if isinstance(test.get("provider_calls"), dict) else {}
-    n = max(n, _as_int(calls.get("timeouts")))
-    m = test.get("metrics") if isinstance(test.get("metrics"), dict) else {}
-    n = max(n, _as_int(m.get("timeout_count")), _as_int(m.get("extract_timeouts")))
-    span_to = 0
+def _is_timeout(span: dict[str, Any]) -> bool:
+    cls = str(span.get("error_class") or "")
+    if cls == "PROVIDER_TIMEOUT" or "TIMEOUT" in cls:
+        return True
+    err = span.get("error")
+    if isinstance(err, dict) and "TIMEOUT" in str(err.get("class") or err.get("error_class") or ""):
+        return True
+    return False
+
+
+def _timeout_events(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One event per timed-out extract chunk or Ask-relative call (no chat+named double count)."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
     for s in spans:
-        cls = str(s.get("error_class") or "")
-        if cls == "PROVIDER_TIMEOUT" or "TIMEOUT" in cls:
-            span_to += 1
-        err = s.get("error")
-        if isinstance(err, dict) and "TIMEOUT" in str(err.get("class") or err.get("error_class") or ""):
-            span_to += 1
-    return max(n, span_to)
+        if not _is_timeout(s):
+            continue
+        op = str(s.get("operation") or "")
+        if op == "chat" and _classify_chat(s) == "observation_extract":
+            continue
+        ac = s.get("assembled_context") if isinstance(s.get("assembled_context"), dict) else {}
+        chunk = ac.get("chunk")
+        key = f"{op}:{chunk}:{s.get('span_id')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        err = s.get("error") if isinstance(s.get("error"), dict) else {}
+        out.append(
+            {
+                "operation": op,
+                "chunk": chunk,
+                "duration_ms": s.get("duration_ms"),
+                "error_class": s.get("error_class") or err.get("class") or err.get("error_class"),
+                "message": (str(err.get("message") or err.get("exception_message") or "")[:240] or None),
+            }
+        )
+    return out
+
+
+def _timeout_count(test: dict[str, Any], spans: list[dict[str, Any]]) -> int:
+    m = test.get("metrics") if isinstance(test.get("metrics"), dict) else {}
+    inf = test.get("inference_accounting") if isinstance(test.get("inference_accounting"), dict) else {}
+    events = _timeout_events(spans)
+    return max(
+        _as_int(m.get("extract_timeouts")),
+        _as_int(inf.get("extract_timeouts")),
+        len(events),
+    )
 
 
 def _error_classes(test: dict[str, Any], spans: list[dict[str, Any]]) -> list[str]:
@@ -356,7 +389,15 @@ def _units_from_extract_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any
             for u in rows:
                 if isinstance(u, dict):
                     units.append(u)
-    return units
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for u in units:
+        key = str(u.get("unit_id") or u.get("evidence_id") or json.dumps(u.get("date_span"), default=str))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(u)
+    return deduped
 
 
 def _slim_unit_stats(units: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -419,7 +460,22 @@ def _slim_unit_stats(units: list[dict[str, Any]]) -> tuple[dict[str, Any], list[
                 "kind": kind or u.get("source_type"),
             }
         )
-    longest.sort(key=lambda r: (_as_int(r.get("span_days")), _as_int(r.get("message_count"))), reverse=True)
+    uniq: list[dict[str, Any]] = []
+    seen_l: set[tuple[Any, ...]] = set()
+    for row in longest:
+        key = (
+            row.get("conversation_or_thread_name"),
+            row.get("start_date"),
+            row.get("end_date"),
+            row.get("span_days"),
+            row.get("message_count"),
+        )
+        if key in seen_l:
+            continue
+        seen_l.add(key)
+        uniq.append(row)
+    uniq.sort(key=lambda r: (_as_int(r.get("span_days")), _as_int(r.get("message_count"))), reverse=True)
+    longest = uniq
     stats = {
         "messages_per_semantic_unit": _dist(msg_counts),
         "span_day_buckets": {
@@ -524,24 +580,38 @@ def _compact_rollup(r: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ask_relative_output(spans: list[dict[str, Any]]) -> Any:
+    """Complete model output only (small). Do not substitute the Python-expanded view."""
     for s in _span_op(spans, "ask_relative"):
-        parsed = s.get("parsed")
-        if parsed not in (None, {}, []):
-            return parsed
         raw = s.get("raw_response")
         if isinstance(raw, dict) and raw.get("content"):
             return _json_load_maybe(raw.get("content"))
         if isinstance(raw, str) and raw.strip():
             return _json_load_maybe(raw)
+        if s.get("parsed") not in (None, {}, []):
+            return s.get("parsed")
     for s in spans:
         if str(s.get("operation") or "") == "chat" and _classify_chat(s) == "ask_relative":
             raw = s.get("raw_response")
             if isinstance(raw, dict) and raw.get("content"):
                 return _json_load_maybe(raw.get("content"))
-    for s in _span_op(spans, "ask_relative_view"):
-        if s.get("parsed") not in (None, {}, []):
-            return {"_note": "ask_relative_view (Python-expanded, model JSON missing)", "view": s.get("parsed")}
     return None
+
+
+def _ask_relative_view_counts(spans: list[dict[str, Any]]) -> dict[str, Any]:
+    for s in _span_op(spans, "ask_relative_view"):
+        parsed = s.get("parsed")
+        if not isinstance(parsed, dict):
+            continue
+        ep_n, th_n, cl_n = _count_view(parsed)
+        return {
+            "answer_focus": parsed.get("answer_focus"),
+            "output_episode_count": ep_n,
+            "output_theme_count": th_n,
+            "output_claim_count": cl_n,
+            "unresolved": parsed.get("unresolved") if isinstance(parsed.get("unresolved"), list) else [],
+            "note": "Python-expanded view after model JSON; observation bodies omitted",
+        }
+    return {}
 
 
 def _count_view(obj: Any) -> tuple[int, int, int]:
@@ -577,8 +647,8 @@ def _stage_timing(test: dict[str, Any], spans: list[dict[str, Any]]) -> dict[str
     retrieve_spans = [
         s
         for s in spans
-        if str(s.get("stage") or "") == "retrieve"
-        or str(s.get("operation") or "") in {"retrieval_resolution", "retrieve", "retrieve_complete"}
+        if str(s.get("operation") or "") in {"retrieve_progress", "retrieval_resolution", "retrieve", "retrieve_complete"}
+        or (str(s.get("stage") or "") == "retrieve" and str(s.get("operation") or "") != "plan_ask")
     ]
     # Heartbeats are snapshots; use wall clock of the retrieve phase, not the sum.
     retrieval_ms = _wall_ms(retrieve_spans) if retrieve_spans else 0
@@ -744,6 +814,21 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
         if s.get("provider_payload") or _as_int(s.get("duration_ms")) > 5:
             named_extract_llm.append(s)
     extract_model_calls = max(extract_calls, len(extract_chats), len(named_extract_llm))
+    span_hits = span_miss = span_defer = 0
+    for s in _span_op(spans, "observation_extract"):
+        ac = s.get("assembled_context") if isinstance(s.get("assembled_context"), dict) else {}
+        if ac.get("cache_hit"):
+            span_hits += 1
+        if ac.get("deferred"):
+            span_defer += 1
+        if ac.get("cache_hit") is False or (not ac.get("cache_hit") and not ac.get("deferred") and s.get("provider_payload")):
+            span_miss += 1
+    cons_acc = {}
+    for s in _span_op(spans, "consideration"):
+        ac = s.get("assembled_context") if isinstance(s.get("assembled_context"), dict) else {}
+        if isinstance(ac.get("accounting"), dict):
+            cons_acc = ac["accounting"]
+            break
 
     units = _units_from_extract_spans(spans)
     unit_stats, _ = _slim_unit_stats(units)
@@ -760,7 +845,12 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
         or _as_int(_first(m.get("ask_relative_calls"), inf.get("ask_relative_calls")))
     )
     ask_out = _ask_relative_output(spans) if ask_invoked else None
-    ep_n, th_n, cl_n = _count_view(ask_out)
+    view_counts = _ask_relative_view_counts(spans)
+    ep_n = view_counts.get("output_episode_count") or 0
+    th_n = view_counts.get("output_theme_count") or 0
+    cl_n = view_counts.get("output_claim_count") or 0
+    if not (ep_n or th_n or cl_n):
+        ep_n, th_n, cl_n = _count_view(ask_out)
     ask_payload = _first(m.get("ask_relative_payload"), inf.get("ask_relative_payload"), pd.get("ask_relative_payload"))
     if not isinstance(ask_payload, dict):
         ask_payload = {}
@@ -861,6 +951,7 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
         "error_classes_including_spans": errors,
         "total_model_calls": _as_int(_first(test.get("model_call_count"), m.get("total_model_calls"))),
         "timeout_count": _timeout_count(test, spans),
+        "timeout_events": _timeout_events(spans),
         "retrieval": _retrieval_block(test, spans, pre),
         "determinism_vs_cold": det,
         "preaggregation_enrichment": {
@@ -875,9 +966,27 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
             ),
             "email_thread_unit_count": _first(pre.get("email_thread_units"), m.get("email_thread_units")),
             "observation_extract_calls": extract_model_calls,
-            "extraction_cache_hits": _first(m.get("extract_cache_hits"), inf.get("extract_cache_hits"), pd.get("extract_cache_hits")),
-            "extraction_cache_misses": _first(m.get("extract_cache_misses"), inf.get("extract_cache_misses"), pd.get("extract_cache_misses")),
-            "extract_timeout_count": _first(m.get("extract_timeouts"), inf.get("extract_timeouts"), pd.get("extract_timeouts")),
+            "extraction_cache_hits": max(
+                _as_int(m.get("extract_cache_hits")),
+                _as_int(inf.get("extract_cache_hits")),
+                _as_int(pd.get("extract_cache_hits")),
+                _as_int(cons_acc.get("extract_cache_hits")),
+                span_hits,
+            ),
+            "extraction_cache_misses": max(
+                _as_int(m.get("extract_cache_misses")),
+                _as_int(inf.get("extract_cache_misses")),
+                _as_int(pd.get("extract_cache_misses")),
+                _as_int(cons_acc.get("extract_cache_misses")),
+                span_miss,
+            ),
+            "enrichment_deferred_units": max(
+                _as_int(m.get("enrichment_deferred")),
+                _as_int(inf.get("enrichment_deferred")),
+                _as_int(cons_acc.get("enrichment_deferred")),
+                span_defer,
+            ),
+            "extract_timeout_count": _first(m.get("extract_timeouts"), inf.get("extract_timeouts"), pd.get("extract_timeouts"), cons_acc.get("extract_timeouts")),
             "persisted_observation_count": persisted,
             "accepted_model_derived_observation_count": _first(
                 m.get("model_derived_observations"), inf.get("observations_b")
@@ -920,6 +1029,7 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
             "output_theme_count": th_n,
             "output_claim_count": cl_n,
             "rejected_ask_relative_claims_count": _rejected_ask_relative(spans, test),
+            "python_expanded_view": view_counts or None,
             "model_output": ask_out,
             "provider_eval": ask_payload.get("provider_eval"),
         },
@@ -953,6 +1063,33 @@ def _build_run(test: dict[str, Any], cold: dict[str, Any] | None) -> dict[str, A
         "_ask_payload_bytes": ask_payload.get("payload_bytes"),
         "_ask_tokens": ask_payload.get("approx_tokens"),
     }
+
+
+DROP_SUMMARY_KEYS = {
+    "eligible_evidence_ids",
+    "sms_evidence_ids",
+    "email_evidence_ids",
+    "semantic_unit_fingerprints",
+    "extract_payloads",
+    "sms_windows",
+}
+
+
+def _slim_summary(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k in DROP_SUMMARY_KEYS:
+                if isinstance(v, list):
+                    out[f"{k}_n"] = len(v)
+                continue
+            out[k] = _slim_summary(v)
+        return out
+    if isinstance(obj, list):
+        if obj and all(isinstance(i, str) for i in obj) and len(obj) > 40:
+            return {"_omitted_id_list_n": len(obj)}
+        return [_slim_summary(i) for i in obj]
+    return obj
 
 
 def _peggy_tests(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1057,7 +1194,7 @@ def build_summary(data: dict[str, Any], *, source_path: Path, source_bytes: int)
             "base_url": runtime.get("base_url"),
             "health": runtime.get("health"),
         },
-        "overall_regression_summary": data.get("summary"),
+        "overall_regression_summary": _slim_summary(data.get("summary")),
         "peggy_runs": public_runs,
         "three_run_comparison": comparison,
     }
@@ -1153,6 +1290,10 @@ def main(argv: list[str] | None = None) -> int:
     parsed = json.loads(text)
     out.write_text(json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8")
     json.loads(out.read_text(encoding="utf-8"))
+    size = out.stat().st_size
+    if size > 1_000_000:
+        print(f"ERROR: diagnostic {size} bytes exceeds 1 MB cap", flush=True)
+        return 1
     print(console_summary(source, out, parsed), flush=True)
     print(f"wrote {out}", flush=True)
     return 0

@@ -1,0 +1,2738 @@
+{
+  "generated_at": "2026-08-27T01:37:55.661901+00:00",
+  "source": {
+    "path": "/tmp/i11a-src/drive_download.bin",
+    "bytes": 148745759
+  },
+  "model": "llama3.2",
+  "runtime": {
+    "provider": "ollama",
+    "model": "llama3.2",
+    "base_url": "http://127.0.0.1:11434",
+    "health": {
+      "ok": true,
+      "detail": "tags ok"
+    }
+  },
+  "overall_regression_summary": {
+    "tests_run": 4,
+    "tests_completed": 4,
+    "tests_with_errors": 1,
+    "total_model_calls": 476,
+    "total_duration_ms": 3451069,
+    "total_timeouts": 6,
+    "totals": {
+      "raw_eligible_evidence": 16572,
+      "preaggregation_units": 2048,
+      "a_deterministic_units": 168,
+      "b_semantic_units": 1880,
+      "deterministic_observations": 168,
+      "model_derived_observations": 2752,
+      "raw_comm_items": 14636,
+      "email_thread_units": 0,
+      "sms_segment_units": 1880,
+      "semantic_comm_units_after_dedupe": 1880,
+      "extract_chunks": 1880,
+      "extract_observations_rejected": 1042,
+      "observation_extract_calls": 470,
+      "ask_relative_calls": 3,
+      "narrator_calls": 3,
+      "total_model_calls": 476,
+      "timeout_count": 6,
+      "total_duration_ms": 3451069
+    },
+    "calls_by_stage": {
+      "chat": 476,
+      "embed": 0,
+      "by_stage": {
+        "provider_call": 476
+      }
+    },
+    "per_test": [
+      {
+        "ask": "tell me what you know about Peggy",
+        "pass_kind": "cold_enrichment",
+        "inference_stage": "enrich",
+        "status": "ok",
+        "error_class": "PROVIDER_TIMEOUT",
+        "model_calls": 470,
+        "duration_ms": 2025962,
+        "timeouts": 6,
+        "provider_calls": {
+          "chat": 470,
+          "embed": 0,
+          "by_operation": {
+            "chat": 470
+          },
+          "by_stage": {
+            "provider_call": 470
+          },
+          "timeouts": 6,
+          "errors": 3
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "metrics": {
+          "raw_eligible_evidence": 4143,
+          "preaggregation_units": 512,
+          "a_deterministic_units": 42,
+          "b_semantic_units": 470,
+          "deterministic_observations": 42,
+          "model_derived_observations": 688,
+          "raw_comm_items": 3659,
+          "email_thread_units": 0,
+          "sms_segment_units": 470,
+          "semantic_comm_units_after_dedupe": 470,
+          "extract_chunks": 470,
+          "provenance_coverage": 1.0,
+          "provenance_ids_raw_comm": 7318,
+          "provenance_ids_retained": 7318,
+          "extract_observations_rejected": 1042,
+          "extract_timeouts": 3,
+          "extract_cache_hits": 0,
+          "extract_cache_misses": 470,
+          "persisted_observations": 688,
+          "extract_payloads_n": 470,
+          "ask_relative_payload": null,
+          "validated_observations": 584,
+          "rollup_units": 286,
+          "rollup_provenance_coverage": 1.0,
+          "observations_expanded": null,
+          "enrichment_deferred": 0,
+          "inference_stage": "enrich",
+          "sms_raw": 3659,
+          "sms_windows_n": 470,
+          "max_messages_per_comm_unit": 8,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "eligible_evidence_id_n": 8801,
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "eligible_evidence_ids_n": 8801,
+          "sms_evidence_ids_n": 7318,
+          "email_evidence_ids_n": 0,
+          "semantic_unit_fingerprints_n": 512,
+          "observation_extract_calls": 470,
+          "ask_relative_calls": 0,
+          "narrator_calls": 0,
+          "total_model_calls": 470,
+          "timeout_count": 6,
+          "total_duration_ms": 2025962
+        },
+        "evidence_considered": {
+          "communication": 3659,
+          "photo": 428,
+          "story": 0,
+          "journal": 0,
+          "video": 56,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 4143 eligible item(s); processed 4143; 201 episode(s); 24 narrator structures.",
+            "missing": [],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": true,
+            "incomplete": true,
+            "truncation_disclosure": "Some evidence batches could not be inferred."
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 4143,
+            "eligible_n": 4143,
+            "processed_n": 4143,
+            "prepared_n": 4143,
+            "supplied_to_model_n": 24,
+            "narrator_input_n": 24,
+            "episode_n": 201,
+            "significant_episode_n": 28,
+            "reduction": "hierarchical_episode"
+          }
+        }
+      },
+      {
+        "ask": "tell me what you know about Peggy",
+        "pass_kind": "warm_ask",
+        "inference_stage": "ask",
+        "status": "ok",
+        "error_class": null,
+        "model_calls": 2,
+        "duration_ms": 505928,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 2,
+          "embed": 0,
+          "by_operation": {
+            "chat": 2
+          },
+          "by_stage": {
+            "provider_call": 2
+          },
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "metrics": {
+          "raw_eligible_evidence": 4143,
+          "preaggregation_units": 512,
+          "a_deterministic_units": 42,
+          "b_semantic_units": 470,
+          "deterministic_observations": 42,
+          "model_derived_observations": 688,
+          "raw_comm_items": 3659,
+          "email_thread_units": 0,
+          "sms_segment_units": 470,
+          "semantic_comm_units_after_dedupe": 470,
+          "extract_chunks": 470,
+          "provenance_coverage": 1.0,
+          "provenance_ids_raw_comm": 7318,
+          "provenance_ids_retained": 7318,
+          "extract_observations_rejected": 0,
+          "extract_timeouts": 0,
+          "extract_cache_hits": 467,
+          "extract_cache_misses": 3,
+          "persisted_observations": 0,
+          "extract_payloads_n": 0,
+          "ask_relative_payload": {
+            "observation_n": 584,
+            "rollup_n": 286,
+            "payload_bytes": 107413,
+            "approx_tokens": 26853,
+            "timeout_seconds": 90,
+            "num_ctx": null,
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "compact_observations": true,
+            "compact_rollups": true,
+            "includes_full_evidence_id_arrays": false,
+            "includes_excerpts": false,
+            "provider_eval": {
+              "total_duration": 1807593700,
+              "load_duration": 20160800,
+              "prompt_eval_count": 16386,
+              "prompt_eval_duration": 961056000,
+              "eval_count": 109,
+              "eval_duration": 596879000,
+              "attempts": 1,
+              "retries": 0,
+              "timeout_retried": false,
+              "keep_alive": "30m",
+              "done_reason": "stop",
+              "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+              "options": {
+                "temperature": 0.1
+              },
+              "timeout_seconds": 90,
+              "model": "llama3.2",
+              "provider_key": "ollama"
+            },
+            "prompt_tokens": 16386,
+            "response_tokens": 109
+          },
+          "validated_observations": 584,
+          "rollup_units": 286,
+          "rollup_provenance_coverage": 1.0,
+          "observations_expanded": 42,
+          "enrichment_deferred": 3,
+          "inference_stage": "ask",
+          "sms_raw": 3659,
+          "sms_windows_n": 470,
+          "max_messages_per_comm_unit": 8,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "eligible_evidence_id_n": 8801,
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "eligible_evidence_ids_n": 8801,
+          "sms_evidence_ids_n": 7318,
+          "email_evidence_ids_n": 0,
+          "semantic_unit_fingerprints_n": 512,
+          "observation_extract_calls": 0,
+          "ask_relative_calls": 1,
+          "narrator_calls": 1,
+          "total_model_calls": 2,
+          "timeout_count": 0,
+          "total_duration_ms": 505928
+        },
+        "evidence_considered": {
+          "communication": 3659,
+          "photo": 428,
+          "story": 0,
+          "journal": 0,
+          "video": 56,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 4143 eligible item(s); processed 4143; 201 episode(s); 24 narrator structures.",
+            "missing": [],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 4143,
+            "eligible_n": 4143,
+            "processed_n": 4143,
+            "prepared_n": 4143,
+            "supplied_to_model_n": 24,
+            "narrator_input_n": 24,
+            "episode_n": 201,
+            "significant_episode_n": 28,
+            "reduction": "i11a_inference"
+          }
+        }
+      },
+      {
+        "ask": "tell me what you know about Peggy",
+        "pass_kind": "warm_ask",
+        "inference_stage": "ask",
+        "status": "ok",
+        "error_class": null,
+        "model_calls": 2,
+        "duration_ms": 457268,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 2,
+          "embed": 0,
+          "by_operation": {
+            "chat": 2
+          },
+          "by_stage": {
+            "provider_call": 2
+          },
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "metrics": {
+          "raw_eligible_evidence": 4143,
+          "preaggregation_units": 512,
+          "a_deterministic_units": 42,
+          "b_semantic_units": 470,
+          "deterministic_observations": 42,
+          "model_derived_observations": 688,
+          "raw_comm_items": 3659,
+          "email_thread_units": 0,
+          "sms_segment_units": 470,
+          "semantic_comm_units_after_dedupe": 470,
+          "extract_chunks": 470,
+          "provenance_coverage": 1.0,
+          "provenance_ids_raw_comm": 7318,
+          "provenance_ids_retained": 7318,
+          "extract_observations_rejected": 0,
+          "extract_timeouts": 0,
+          "extract_cache_hits": 467,
+          "extract_cache_misses": 3,
+          "persisted_observations": 0,
+          "extract_payloads_n": 0,
+          "ask_relative_payload": {
+            "observation_n": 584,
+            "rollup_n": 286,
+            "payload_bytes": 107413,
+            "approx_tokens": 26853,
+            "timeout_seconds": 90,
+            "num_ctx": null,
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "compact_observations": true,
+            "compact_rollups": true,
+            "includes_full_evidence_id_arrays": false,
+            "includes_excerpts": false,
+            "provider_eval": {
+              "total_duration": 1334959400,
+              "load_duration": 17353700,
+              "prompt_eval_count": 16386,
+              "prompt_eval_duration": 30389000,
+              "eval_count": 109,
+              "eval_duration": 614833000,
+              "attempts": 1,
+              "retries": 0,
+              "timeout_retried": false,
+              "keep_alive": "30m",
+              "done_reason": "stop",
+              "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+              "options": {
+                "temperature": 0.1
+              },
+              "timeout_seconds": 90,
+              "model": "llama3.2",
+              "provider_key": "ollama"
+            },
+            "prompt_tokens": 16386,
+            "response_tokens": 109
+          },
+          "validated_observations": 584,
+          "rollup_units": 286,
+          "rollup_provenance_coverage": 1.0,
+          "observations_expanded": 42,
+          "enrichment_deferred": 3,
+          "inference_stage": "ask",
+          "sms_raw": 3659,
+          "sms_windows_n": 470,
+          "max_messages_per_comm_unit": 8,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "eligible_evidence_id_n": 8801,
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "eligible_evidence_ids_n": 8801,
+          "sms_evidence_ids_n": 7318,
+          "email_evidence_ids_n": 0,
+          "semantic_unit_fingerprints_n": 512,
+          "observation_extract_calls": 0,
+          "ask_relative_calls": 1,
+          "narrator_calls": 1,
+          "total_model_calls": 2,
+          "timeout_count": 0,
+          "total_duration_ms": 457268
+        },
+        "evidence_considered": {
+          "communication": 3659,
+          "photo": 428,
+          "story": 0,
+          "journal": 0,
+          "video": 56,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 4143 eligible item(s); processed 4143; 201 episode(s); 24 narrator structures.",
+            "missing": [],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 4143,
+            "eligible_n": 4143,
+            "processed_n": 4143,
+            "prepared_n": 4143,
+            "supplied_to_model_n": 24,
+            "narrator_input_n": 24,
+            "episode_n": 201,
+            "significant_episode_n": 28,
+            "reduction": "i11a_inference"
+          }
+        }
+      },
+      {
+        "ask": "tell me what you know about Peggy",
+        "pass_kind": "warm_ask",
+        "inference_stage": "ask",
+        "status": "ok",
+        "error_class": null,
+        "model_calls": 2,
+        "duration_ms": 461911,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 2,
+          "embed": 0,
+          "by_operation": {
+            "chat": 2
+          },
+          "by_stage": {
+            "provider_call": 2
+          },
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "metrics": {
+          "raw_eligible_evidence": 4143,
+          "preaggregation_units": 512,
+          "a_deterministic_units": 42,
+          "b_semantic_units": 470,
+          "deterministic_observations": 42,
+          "model_derived_observations": 688,
+          "raw_comm_items": 3659,
+          "email_thread_units": 0,
+          "sms_segment_units": 470,
+          "semantic_comm_units_after_dedupe": 470,
+          "extract_chunks": 470,
+          "provenance_coverage": 1.0,
+          "provenance_ids_raw_comm": 7318,
+          "provenance_ids_retained": 7318,
+          "extract_observations_rejected": 0,
+          "extract_timeouts": 0,
+          "extract_cache_hits": 467,
+          "extract_cache_misses": 3,
+          "persisted_observations": 0,
+          "extract_payloads_n": 0,
+          "ask_relative_payload": {
+            "observation_n": 584,
+            "rollup_n": 286,
+            "payload_bytes": 107413,
+            "approx_tokens": 26853,
+            "timeout_seconds": 90,
+            "num_ctx": null,
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "compact_observations": true,
+            "compact_rollups": true,
+            "includes_full_evidence_id_arrays": false,
+            "includes_excerpts": false,
+            "provider_eval": {
+              "total_duration": 1195671100,
+              "load_duration": 3617000,
+              "prompt_eval_count": 16386,
+              "prompt_eval_duration": 25590000,
+              "eval_count": 109,
+              "eval_duration": 593685000,
+              "attempts": 1,
+              "retries": 0,
+              "timeout_retried": false,
+              "keep_alive": "30m",
+              "done_reason": "stop",
+              "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+              "options": {
+                "temperature": 0.1
+              },
+              "timeout_seconds": 90,
+              "model": "llama3.2",
+              "provider_key": "ollama"
+            },
+            "prompt_tokens": 16386,
+            "response_tokens": 109
+          },
+          "validated_observations": 584,
+          "rollup_units": 286,
+          "rollup_provenance_coverage": 1.0,
+          "observations_expanded": 42,
+          "enrichment_deferred": 3,
+          "inference_stage": "ask",
+          "sms_raw": 3659,
+          "sms_windows_n": 470,
+          "max_messages_per_comm_unit": 8,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "eligible_evidence_id_n": 8801,
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "eligible_evidence_ids_n": 8801,
+          "sms_evidence_ids_n": 7318,
+          "email_evidence_ids_n": 0,
+          "semantic_unit_fingerprints_n": 512,
+          "observation_extract_calls": 0,
+          "ask_relative_calls": 1,
+          "narrator_calls": 1,
+          "total_model_calls": 2,
+          "timeout_count": 0,
+          "total_duration_ms": 461911
+        },
+        "evidence_considered": {
+          "communication": 3659,
+          "photo": 428,
+          "story": 0,
+          "journal": 0,
+          "video": 56,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 4143 eligible item(s); processed 4143; 201 episode(s); 24 narrator structures.",
+            "missing": [],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 4143,
+            "eligible_n": 4143,
+            "processed_n": 4143,
+            "prepared_n": 4143,
+            "supplied_to_model_n": 24,
+            "narrator_input_n": 24,
+            "episode_n": 201,
+            "significant_episode_n": 28,
+            "reduction": "i11a_inference"
+          }
+        }
+      }
+    ],
+    "cold_enrichment_ms": 2025962,
+    "warm_ask_ms": [
+      505928,
+      457268,
+      461911
+    ],
+    "cold_extract_calls": 470,
+    "warm_extract_calls": [
+      0,
+      0,
+      0
+    ],
+    "warm_ask_relative_tokens": [
+      26853,
+      26853,
+      26853
+    ],
+    "warm_narrator_calls": [
+      1,
+      1,
+      1
+    ],
+    "retrieve_stability": {
+      "wall_clock_cutoff_used": false,
+      "warm_asks_identical": true,
+      "per_pass": [
+        {
+          "pass_kind": "cold_enrichment",
+          "sms_raw": 3659,
+          "sms_segment_units": 470,
+          "email_raw": 0,
+          "eligible_evidence_id_n": 8801,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "extract_calls": 470,
+          "ask_relative_tokens": 0,
+          "provider_eval": null,
+          "prompt_tokens": null,
+          "response_tokens": null
+        },
+        {
+          "pass_kind": "warm_ask",
+          "sms_raw": 3659,
+          "sms_segment_units": 470,
+          "email_raw": 0,
+          "eligible_evidence_id_n": 8801,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "extract_calls": 0,
+          "ask_relative_tokens": 26853,
+          "provider_eval": {
+            "total_duration": 1807593700,
+            "load_duration": 20160800,
+            "prompt_eval_count": 16386,
+            "prompt_eval_duration": 961056000,
+            "eval_count": 109,
+            "eval_duration": 596879000,
+            "attempts": 1,
+            "retries": 0,
+            "timeout_retried": false,
+            "keep_alive": "30m",
+            "done_reason": "stop",
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "options": {
+              "temperature": 0.1
+            },
+            "timeout_seconds": 90,
+            "model": "llama3.2",
+            "provider_key": "ollama"
+          },
+          "prompt_tokens": 16386,
+          "response_tokens": 109
+        },
+        {
+          "pass_kind": "warm_ask",
+          "sms_raw": 3659,
+          "sms_segment_units": 470,
+          "email_raw": 0,
+          "eligible_evidence_id_n": 8801,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "extract_calls": 0,
+          "ask_relative_tokens": 26853,
+          "provider_eval": {
+            "total_duration": 1334959400,
+            "load_duration": 17353700,
+            "prompt_eval_count": 16386,
+            "prompt_eval_duration": 30389000,
+            "eval_count": 109,
+            "eval_duration": 614833000,
+            "attempts": 1,
+            "retries": 0,
+            "timeout_retried": false,
+            "keep_alive": "30m",
+            "done_reason": "stop",
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "options": {
+              "temperature": 0.1
+            },
+            "timeout_seconds": 90,
+            "model": "llama3.2",
+            "provider_key": "ollama"
+          },
+          "prompt_tokens": 16386,
+          "response_tokens": 109
+        },
+        {
+          "pass_kind": "warm_ask",
+          "sms_raw": 3659,
+          "sms_segment_units": 470,
+          "email_raw": 0,
+          "eligible_evidence_id_n": 8801,
+          "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+          "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+          "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+          "extract_calls": 0,
+          "ask_relative_tokens": 26853,
+          "provider_eval": {
+            "total_duration": 1195671100,
+            "load_duration": 3617000,
+            "prompt_eval_count": 16386,
+            "prompt_eval_duration": 25590000,
+            "eval_count": 109,
+            "eval_duration": 593685000,
+            "attempts": 1,
+            "retries": 0,
+            "timeout_retried": false,
+            "keep_alive": "30m",
+            "done_reason": "stop",
+            "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+            "options": {
+              "temperature": 0.1
+            },
+            "timeout_seconds": 90,
+            "model": "llama3.2",
+            "provider_key": "ollama"
+          },
+          "prompt_tokens": 16386,
+          "response_tokens": 109
+        }
+      ],
+      "pairwise_vs_first": [
+        {
+          "from": "cold_enrichment",
+          "to": "warm_ask",
+          "from_index": 1,
+          "to_index": 2,
+          "source_counts": {
+            "from": {
+              "pass_kind": "cold_enrichment",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 470,
+              "ask_relative_tokens": 0,
+              "provider_eval": null,
+              "prompt_tokens": null,
+              "response_tokens": null
+            },
+            "to": {
+              "pass_kind": "warm_ask",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 0,
+              "ask_relative_tokens": 26853,
+              "provider_eval": {
+                "total_duration": 1807593700,
+                "load_duration": 20160800,
+                "prompt_eval_count": 16386,
+                "prompt_eval_duration": 961056000,
+                "eval_count": 109,
+                "eval_duration": 596879000,
+                "attempts": 1,
+                "retries": 0,
+                "timeout_retried": false,
+                "keep_alive": "30m",
+                "done_reason": "stop",
+                "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+                "options": {
+                  "temperature": 0.1
+                },
+                "timeout_seconds": 90,
+                "model": "llama3.2",
+                "provider_key": "ollama"
+              },
+              "prompt_tokens": 16386,
+              "response_tokens": 109
+            }
+          },
+          "eligible_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "sms_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "digests_equal": true,
+          "wall_clock_cutoff_used": false,
+          "why_retrieval_changed": null
+        },
+        {
+          "from": "cold_enrichment",
+          "to": "warm_ask",
+          "from_index": 1,
+          "to_index": 3,
+          "source_counts": {
+            "from": {
+              "pass_kind": "cold_enrichment",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 470,
+              "ask_relative_tokens": 0,
+              "provider_eval": null,
+              "prompt_tokens": null,
+              "response_tokens": null
+            },
+            "to": {
+              "pass_kind": "warm_ask",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 0,
+              "ask_relative_tokens": 26853,
+              "provider_eval": {
+                "total_duration": 1334959400,
+                "load_duration": 17353700,
+                "prompt_eval_count": 16386,
+                "prompt_eval_duration": 30389000,
+                "eval_count": 109,
+                "eval_duration": 614833000,
+                "attempts": 1,
+                "retries": 0,
+                "timeout_retried": false,
+                "keep_alive": "30m",
+                "done_reason": "stop",
+                "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+                "options": {
+                  "temperature": 0.1
+                },
+                "timeout_seconds": 90,
+                "model": "llama3.2",
+                "provider_key": "ollama"
+              },
+              "prompt_tokens": 16386,
+              "response_tokens": 109
+            }
+          },
+          "eligible_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "sms_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "digests_equal": true,
+          "wall_clock_cutoff_used": false,
+          "why_retrieval_changed": null
+        },
+        {
+          "from": "cold_enrichment",
+          "to": "warm_ask",
+          "from_index": 1,
+          "to_index": 4,
+          "source_counts": {
+            "from": {
+              "pass_kind": "cold_enrichment",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 470,
+              "ask_relative_tokens": 0,
+              "provider_eval": null,
+              "prompt_tokens": null,
+              "response_tokens": null
+            },
+            "to": {
+              "pass_kind": "warm_ask",
+              "sms_raw": 3659,
+              "sms_segment_units": 470,
+              "email_raw": 0,
+              "eligible_evidence_id_n": 8801,
+              "eligible_evidence_id_digest": "a14e9b6b38a071d2d32f6f7c6907f6784bc0bf5b",
+              "semantic_unit_fingerprint_digest": "4fd44353268da40237947d9fc7469f836942e67e",
+              "validated_observation_digest": "0e9c6fdd9dd98c534f7be8dab3df04c805210089",
+              "extract_calls": 0,
+              "ask_relative_tokens": 26853,
+              "provider_eval": {
+                "total_duration": 1195671100,
+                "load_duration": 3617000,
+                "prompt_eval_count": 16386,
+                "prompt_eval_duration": 25590000,
+                "eval_count": 109,
+                "eval_duration": 593685000,
+                "attempts": 1,
+                "retries": 0,
+                "timeout_retried": false,
+                "keep_alive": "30m",
+                "done_reason": "stop",
+                "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+                "options": {
+                  "temperature": 0.1
+                },
+                "timeout_seconds": 90,
+                "model": "llama3.2",
+                "provider_key": "ollama"
+              },
+              "prompt_tokens": 16386,
+              "response_tokens": 109
+            }
+          },
+          "eligible_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "sms_evidence_diff": {
+            "added_n": 0,
+            "missing_n": 0,
+            "added_ids": [],
+            "missing_ids": []
+          },
+          "digests_equal": true,
+          "wall_clock_cutoff_used": false,
+          "why_retrieval_changed": null
+        }
+      ]
+    }
+  },
+  "peggy_runs": [
+    {
+      "index": 1,
+      "pass_kind": "cold_enrichment",
+      "inference_stage": "enrich",
+      "ask_text": "tell me what you know about Peggy",
+      "trace_id": "f5351d61-bf0b-49bc-8b30-e0fd0d192093",
+      "started_at": "2026-08-26T21:20:23.034239+00:00",
+      "ended_at": "2026-08-26T21:54:09.332485+00:00",
+      "total_duration_ms": 2025962,
+      "status": "ok",
+      "error_class": "PROVIDER_TIMEOUT",
+      "error_classes_including_spans": [
+        "PROVIDER_TIMEOUT"
+      ],
+      "total_model_calls": 470,
+      "timeout_count": 3,
+      "timeout_events": [
+        {
+          "operation": "observation_extract",
+          "chunk": 201,
+          "duration_ms": 0,
+          "error_class": "PROVIDER_TIMEOUT",
+          "message": "timed out after 90s"
+        },
+        {
+          "operation": "observation_extract",
+          "chunk": 206,
+          "duration_ms": 0,
+          "error_class": "PROVIDER_TIMEOUT",
+          "message": "timed out after 90s"
+        },
+        {
+          "operation": "observation_extract",
+          "chunk": 419,
+          "duration_ms": 0,
+          "error_class": "PROVIDER_TIMEOUT",
+          "message": "timed out after 90s"
+        }
+      ],
+      "retrieval": {
+        "focal_person_name": "Peggy",
+        "canonical_person_id": "549b1e3b-1c8d-4df9-87a5-c2ba56d29680",
+        "requestor_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+        "retrieval_scope": {
+          "person_ids": [],
+          "person_names": [
+            "Peggy"
+          ],
+          "time_start": null,
+          "time_end": null,
+          "want_communication": true,
+          "modalities": null
+        },
+        "raw_eligible_evidence_count": 4143,
+        "counts_by_modality": {
+          "photo": 419,
+          "video_asset": 18,
+          "video_moment": 47,
+          "sms": 3659,
+          "email": 0,
+          "calendar": 0,
+          "travel": 0,
+          "artifact": 0,
+          "audio": 0
+        },
+        "total_raw_communication_items": 3659,
+        "retrieval_pages_or_calls": 16,
+        "retrieval_duration_ms": 179868,
+        "retrieval_completeness_flag": {
+          "incomplete": true,
+          "truncated": true,
+          "missing": []
+        }
+      },
+      "determinism_vs_cold": null,
+      "preaggregation_enrichment": {
+        "preaggregation_duration_ms": 0,
+        "normalized_eligible_evidence_count": 4143,
+        "deterministic_unit_count": 42,
+        "semantic_unit_count": 470,
+        "sms_semantic_unit_count": 470,
+        "email_thread_unit_count": 0,
+        "observation_extract_calls": 470,
+        "extraction_cache_hits": 0,
+        "extraction_cache_misses": 470,
+        "enrichment_deferred_units": 0,
+        "extract_timeout_count": 3,
+        "persisted_observation_count": 688,
+        "accepted_model_derived_observation_count": 688,
+        "rejected_observation_count": 1042,
+        "provenance_coverage": 1.0,
+        "extraction_aggregates": {
+          "messages_per_semantic_unit": {
+            "min": 1.0,
+            "median": 8.0,
+            "p95": 8.0,
+            "max": 8.0,
+            "n": 470
+          },
+          "span_day_buckets": {
+            "leq_1_day": 92,
+            "days_2_to_7": 123,
+            "days_8_to_30": 158,
+            "days_31_to_90": 76,
+            "days_91_to_365": 10,
+            "days_over_365": 11,
+            "units_with_span": 470
+          },
+          "longest_span_semantic_units": [
+            {
+              "conversation_or_thread_name": "Peggy George & Rick George & Sue Will",
+              "start_date": "2017-03-09",
+              "end_date": "2024-05-19",
+              "span_days": 2628,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Andy George & Peggy George & Tim George",
+              "start_date": "2015-07-10",
+              "end_date": "2019-09-13",
+              "span_days": 1526,
+              "message_count": 6,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Peggy George & Rick George",
+              "start_date": "2013-01-25",
+              "end_date": "2016-11-24",
+              "span_days": 1399,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Andy George & Peggy George & Rick George & Tim George & Carri Mensinger",
+              "start_date": "2020-12-25",
+              "end_date": "2023-12-31",
+              "span_days": 1101,
+              "message_count": 3,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Andy George & Peggy George & Rick George & Carri Mensinger",
+              "start_date": "2019-12-25",
+              "end_date": "2022-05-20",
+              "span_days": 877,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Peggy George & Rick George",
+              "start_date": "2019-05-06",
+              "end_date": "2021-02-14",
+              "span_days": 650,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Peggy George & Rick George",
+              "start_date": "2023-11-10",
+              "end_date": "2025-08-15",
+              "span_days": 644,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Peggy George & Sue Will",
+              "start_date": "2016-11-25",
+              "end_date": "2018-05-26",
+              "span_days": 547,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Peggy George & Rick George",
+              "start_date": "2022-05-14",
+              "end_date": "2023-10-22",
+              "span_days": 526,
+              "message_count": 8,
+              "kind": "sms_segment"
+            },
+            {
+              "conversation_or_thread_name": "Matt Will & Peggy George",
+              "start_date": "2024-03-24",
+              "end_date": "2025-08-10",
+              "span_days": 504,
+              "message_count": 5,
+              "kind": "sms_segment"
+            }
+          ],
+          "payload_bytes": {
+            "min": 3828.0,
+            "median": 7463.0,
+            "p95": 8690.749999999996,
+            "max": 9380.0,
+            "n": 470
+          },
+          "approx_tokens": {
+            "min": 957.0,
+            "median": 1865.5,
+            "p95": 2172.3499999999995,
+            "max": 2345.0,
+            "n": 470
+          },
+          "model_call_duration_ms": {
+            "min": 468.0,
+            "median": 1713.0,
+            "p95": 5608.499999999994,
+            "max": 90009.0,
+            "n": 470
+          },
+          "extract_payload_records": 470
+        }
+      },
+      "persisted_semantic_representation": {
+        "total_persisted_observations_available_to_warm_ask": 688,
+        "deterministic_observations_available": 42,
+        "model_derived_observations_available": 688,
+        "rollup_count": 286,
+        "rollup_generation_duration_ms": 0,
+        "rollups_by_kind": {},
+        "lower_level_observations_represented_by_rollups": null,
+        "provenance_coverage_rollup_to_observation_to_raw": 1.0,
+        "representative_rollups": []
+      },
+      "ask_relative": {
+        "invoked": false,
+        "call_count": 0,
+        "payload_bytes": null,
+        "approximate_input_tokens": null,
+        "observation_count_in_payload": null,
+        "rollup_count_in_payload": null,
+        "duration_ms": 0,
+        "timeout_seconds": null,
+        "status": null,
+        "error_class": null,
+        "output_episode_count": 0,
+        "output_theme_count": 0,
+        "output_claim_count": 0,
+        "rejected_ask_relative_claims_count": 0,
+        "python_expanded_view": null,
+        "model_output": null,
+        "provider_eval": null
+      },
+      "narrator": {
+        "invoked": false,
+        "duration_ms": 0,
+        "input_bytes": null,
+        "approximate_input_tokens": null,
+        "status": null,
+        "error_class": null,
+        "final_answer_text": "Observation enrichment complete; Ask-relative was not run."
+      },
+      "stage_timing": {
+        "retrieval_ms": 179868,
+        "assimilation_ms": 0,
+        "preaggregation_ms": 0,
+        "observation_extract_ms": 1356922,
+        "rollup_ms": 0,
+        "ask_relative_ms": 0,
+        "narrator_ms": 0,
+        "other_ms": 489172,
+        "total_ms": 2025962
+      }
+    },
+    {
+      "index": 2,
+      "pass_kind": "warm_ask",
+      "inference_stage": "ask",
+      "ask_text": "tell me what you know about Peggy",
+      "trace_id": "7d1942e0-a18f-4aa1-96d6-cc0c34859f77",
+      "started_at": "2026-08-26T21:54:10.777045+00:00",
+      "ended_at": "2026-08-26T22:02:36.907441+00:00",
+      "total_duration_ms": 505928,
+      "status": "ok",
+      "error_class": null,
+      "error_classes_including_spans": [],
+      "total_model_calls": 2,
+      "timeout_count": 0,
+      "timeout_events": [],
+      "retrieval": {
+        "focal_person_name": "Peggy",
+        "canonical_person_id": "549b1e3b-1c8d-4df9-87a5-c2ba56d29680",
+        "requestor_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+        "retrieval_scope": {
+          "person_ids": [],
+          "person_names": [
+            "Peggy"
+          ],
+          "time_start": null,
+          "time_end": null,
+          "want_communication": true,
+          "modalities": null
+        },
+        "raw_eligible_evidence_count": 4143,
+        "counts_by_modality": {
+          "photo": 419,
+          "video_asset": 18,
+          "video_moment": 47,
+          "sms": 3659,
+          "email": 0,
+          "calendar": 0,
+          "travel": 0,
+          "artifact": 0,
+          "audio": 0
+        },
+        "total_raw_communication_items": 3659,
+        "retrieval_pages_or_calls": 17,
+        "retrieval_duration_ms": 313484,
+        "retrieval_completeness_flag": {
+          "incomplete": false,
+          "truncated": false,
+          "missing": []
+        }
+      },
+      "determinism_vs_cold": {
+        "compared_to_run_index": 1,
+        "same_raw_eligible_evidence_ids": true,
+        "same_sms_evidence_ids": true,
+        "raw_eligible_added_count": 0,
+        "raw_eligible_missing_count": 0,
+        "sms_added_count": 0,
+        "sms_missing_count": 0,
+        "semantic_unit_fingerprint_match_count": 512,
+        "semantic_unit_fingerprint_mismatch_count": 0,
+        "semantic_unit_fingerprint_added_count": 0,
+        "semantic_unit_fingerprint_missing_count": 0
+      },
+      "preaggregation_enrichment": {
+        "preaggregation_duration_ms": 0,
+        "normalized_eligible_evidence_count": 4143,
+        "deterministic_unit_count": 42,
+        "semantic_unit_count": 470,
+        "sms_semantic_unit_count": 470,
+        "email_thread_unit_count": 0,
+        "observation_extract_calls": 0,
+        "extraction_cache_hits": 467,
+        "extraction_cache_misses": 3,
+        "enrichment_deferred_units": 3,
+        "extract_timeout_count": 0,
+        "persisted_observation_count": 0,
+        "accepted_model_derived_observation_count": 688,
+        "rejected_observation_count": 0,
+        "provenance_coverage": 1.0,
+        "extraction_aggregates": {
+          "messages_per_semantic_unit": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "span_day_buckets": {
+            "leq_1_day": 0,
+            "days_2_to_7": 0,
+            "days_8_to_30": 0,
+            "days_31_to_90": 0,
+            "days_91_to_365": 0,
+            "days_over_365": 0,
+            "units_with_span": 0
+          },
+          "longest_span_semantic_units": [],
+          "payload_bytes": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "approx_tokens": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "model_call_duration_ms": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "extract_payload_records": 0
+        }
+      },
+      "persisted_semantic_representation": {
+        "total_persisted_observations_available_to_warm_ask": 0,
+        "deterministic_observations_available": 42,
+        "model_derived_observations_available": 688,
+        "rollup_count": 286,
+        "rollup_generation_duration_ms": 0,
+        "rollups_by_kind": {
+          "activity": 1,
+          "communication": 1,
+          "media": 1,
+          "pattern": 24,
+          "place": 14,
+          "relationship": 1
+        },
+        "lower_level_observations_represented_by_rollups": 46,
+        "provenance_coverage_rollup_to_observation_to_raw": 1.0,
+        "representative_rollups": [
+          {
+            "text": "named activity: Easter",
+            "kind": "activity",
+            "start_date": "2019-04-21",
+            "end_date": "2019-04-21",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "exchanges: sun porch",
+            "kind": "communication",
+            "start_date": "2021-07-10",
+            "end_date": "2021-07-10",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "media: media",
+            "kind": "media",
+            "start_date": "1972-12-19",
+            "end_date": "1972-12-19",
+            "participant_names": [
+              "Peggy"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly planned dinners or meals together.",
+            "kind": "pattern",
+            "start_date": "2010-10-02",
+            "end_date": "2010-10-02",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will",
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly discussed travel plans together.",
+            "kind": "pattern",
+            "start_date": "2010-05-15",
+            "end_date": "2010-05-15",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "Rick George",
+              "+13148097875"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included affectionate sign-offs such as “love you”.",
+            "kind": "pattern",
+            "start_date": "2011-10-07",
+            "end_date": "2011-10-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "peggo417@hotmail.com",
+              "Peggy George & Sue Will",
+              "Peggy George & Rick George",
+              "Peggy George & Rick George & Sue Will",
+              "Sam LaMartina",
+              "lamartina.sam@icloud.com"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly mentioned gifts, meals, or support sent or offered.",
+            "kind": "pattern",
+            "start_date": "2010-05-29",
+            "end_date": "2010-05-29",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "peggo417@hotmail.com",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly used heart emojis.",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Andy George & Peggy George & Rick George & Carri Mensinger",
+              "Peggy George & +13148372052",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included invitations to get together.",
+            "kind": "pattern",
+            "start_date": "2011-06-05",
+            "end_date": "2011-06-05",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Andy George & Peggy George & Tim George",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2020-01-06",
+            "end_date": "2020-01-06",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +13144012093, Peggy George across 1312 messages.",
+            "kind": "pattern",
+            "start_date": "2009-10-10",
+            "end_date": "2009-10-10",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2023-05-11",
+            "end_date": "2023-05-11",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & +13148372052"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-05-07",
+            "end_date": "2015-05-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george george",
+            "kind": "pattern",
+            "start_date": "2013-10-12",
+            "end_date": "2013-10-12",
+            "participant_names": [
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +16363462342, Peggy George & Sue Will, Sue Will across 212 messages.",
+            "kind": "pattern",
+            "start_date": "2016-11-25",
+            "end_date": "2016-11-25",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2019-12-25",
+            "end_date": "2019-12-25",
+            "participant_names": [
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-07-10",
+            "end_date": "2015-07-10",
+            "participant_names": [
+              "Andy George & Peggy George & Tim George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          }
+        ]
+      },
+      "ask_relative": {
+        "invoked": true,
+        "call_count": 1,
+        "payload_bytes": 107413,
+        "approximate_input_tokens": 26853,
+        "observation_count_in_payload": 584,
+        "rollup_count_in_payload": 286,
+        "duration_ms": 2032,
+        "timeout_seconds": 90,
+        "status": "ok",
+        "error_class": null,
+        "output_episode_count": 80,
+        "output_theme_count": 0,
+        "output_claim_count": 140,
+        "rejected_ask_relative_claims_count": 8807,
+        "python_expanded_view": {
+          "answer_focus": "tell me what you know about Peggy",
+          "output_episode_count": 80,
+          "output_theme_count": 0,
+          "output_claim_count": 140,
+          "unresolved": [],
+          "note": "Python-expanded view after model JSON; observation bodies omitted"
+        },
+        "model_output": {
+          "rollup_id": "ru-ccbdd2738c79770396ab",
+          "label": "exchanges: good",
+          "kind": "communication",
+          "people": [
+            "Peggy George"
+          ],
+          "places": [],
+          "date_span": {
+            "start": "2023-07-09",
+            "end": "2023-07-11"
+          },
+          "observation_n": 5,
+          "claim_type": "derived",
+          "not_family_fact": true,
+          "uncertainty": [
+            "rollup_is_derived_not_family_fact"
+          ]
+        },
+        "provider_eval": {
+          "total_duration": 1807593700,
+          "load_duration": 20160800,
+          "prompt_eval_count": 16386,
+          "prompt_eval_duration": 961056000,
+          "eval_count": 109,
+          "eval_duration": 596879000,
+          "attempts": 1,
+          "retries": 0,
+          "timeout_retried": false,
+          "keep_alive": "30m",
+          "done_reason": "stop",
+          "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+          "options": {
+            "temperature": 0.1
+          },
+          "timeout_seconds": 90,
+          "model": "llama3.2",
+          "provider_key": "ollama"
+        }
+      },
+      "narrator": {
+        "invoked": true,
+        "duration_ms": 3459,
+        "input_bytes": 854037,
+        "approximate_input_tokens": 213509,
+        "status": "ok",
+        "error_class": null,
+        "final_answer_text": "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around the following topics:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes some specific dates and times, such as:. * 2010-10-02: Repeated planning of dinners or meals together.\n* 2010-05-29: Repeated mention of gifts, meals, or support sent or offered.\n* 2011-06-05: Repeated invitations to get together.\n* 2016-11-22: Repeated contact among +16363462342, Peggy George, and Sue Will.\n* 2023-05-11: Repeated contact among +13144012093, Peggy George, and +13148372052. The conversation also includes some specific people, such as:.\n\n* Peggy George\n* +13144012093\n* Sue Will\n* Rick George\n* Carri Mensinger\n* Andy George\n* Matt Will\n* LaMartina Laura\n* Mike LaMartina\n* Sam LaMartina.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts."
+      },
+      "stage_timing": {
+        "retrieval_ms": 313484,
+        "assimilation_ms": 0,
+        "preaggregation_ms": 0,
+        "observation_extract_ms": 0,
+        "rollup_ms": 0,
+        "ask_relative_ms": 2032,
+        "narrator_ms": 3459,
+        "other_ms": 186953,
+        "total_ms": 505928
+      }
+    },
+    {
+      "index": 3,
+      "pass_kind": "warm_ask",
+      "inference_stage": "ask",
+      "ask_text": "tell me what you know about Peggy",
+      "trace_id": "7eb65408-8617-4762-a0ba-670ca47b59ed",
+      "started_at": "2026-08-26T22:02:37.509946+00:00",
+      "ended_at": "2026-08-26T22:10:14.923831+00:00",
+      "total_duration_ms": 457268,
+      "status": "ok",
+      "error_class": null,
+      "error_classes_including_spans": [],
+      "total_model_calls": 2,
+      "timeout_count": 0,
+      "timeout_events": [],
+      "retrieval": {
+        "focal_person_name": "Peggy",
+        "canonical_person_id": "549b1e3b-1c8d-4df9-87a5-c2ba56d29680",
+        "requestor_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+        "retrieval_scope": {
+          "person_ids": [],
+          "person_names": [
+            "Peggy"
+          ],
+          "time_start": null,
+          "time_end": null,
+          "want_communication": true,
+          "modalities": null
+        },
+        "raw_eligible_evidence_count": 4143,
+        "counts_by_modality": {
+          "photo": 419,
+          "video_asset": 18,
+          "video_moment": 47,
+          "sms": 3659,
+          "email": 0,
+          "calendar": 0,
+          "travel": 0,
+          "artifact": 0,
+          "audio": 0
+        },
+        "total_raw_communication_items": 3659,
+        "retrieval_pages_or_calls": 17,
+        "retrieval_duration_ms": 203949,
+        "retrieval_completeness_flag": {
+          "incomplete": false,
+          "truncated": false,
+          "missing": []
+        }
+      },
+      "determinism_vs_cold": {
+        "compared_to_run_index": 1,
+        "same_raw_eligible_evidence_ids": true,
+        "same_sms_evidence_ids": true,
+        "raw_eligible_added_count": 0,
+        "raw_eligible_missing_count": 0,
+        "sms_added_count": 0,
+        "sms_missing_count": 0,
+        "semantic_unit_fingerprint_match_count": 512,
+        "semantic_unit_fingerprint_mismatch_count": 0,
+        "semantic_unit_fingerprint_added_count": 0,
+        "semantic_unit_fingerprint_missing_count": 0
+      },
+      "preaggregation_enrichment": {
+        "preaggregation_duration_ms": 0,
+        "normalized_eligible_evidence_count": 4143,
+        "deterministic_unit_count": 42,
+        "semantic_unit_count": 470,
+        "sms_semantic_unit_count": 470,
+        "email_thread_unit_count": 0,
+        "observation_extract_calls": 0,
+        "extraction_cache_hits": 467,
+        "extraction_cache_misses": 3,
+        "enrichment_deferred_units": 3,
+        "extract_timeout_count": 0,
+        "persisted_observation_count": 0,
+        "accepted_model_derived_observation_count": 688,
+        "rejected_observation_count": 0,
+        "provenance_coverage": 1.0,
+        "extraction_aggregates": {
+          "messages_per_semantic_unit": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "span_day_buckets": {
+            "leq_1_day": 0,
+            "days_2_to_7": 0,
+            "days_8_to_30": 0,
+            "days_31_to_90": 0,
+            "days_91_to_365": 0,
+            "days_over_365": 0,
+            "units_with_span": 0
+          },
+          "longest_span_semantic_units": [],
+          "payload_bytes": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "approx_tokens": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "model_call_duration_ms": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "extract_payload_records": 0
+        }
+      },
+      "persisted_semantic_representation": {
+        "total_persisted_observations_available_to_warm_ask": 0,
+        "deterministic_observations_available": 42,
+        "model_derived_observations_available": 688,
+        "rollup_count": 286,
+        "rollup_generation_duration_ms": 0,
+        "rollups_by_kind": {
+          "activity": 1,
+          "communication": 1,
+          "media": 1,
+          "pattern": 24,
+          "place": 14,
+          "relationship": 1
+        },
+        "lower_level_observations_represented_by_rollups": 46,
+        "provenance_coverage_rollup_to_observation_to_raw": 1.0,
+        "representative_rollups": [
+          {
+            "text": "named activity: Easter",
+            "kind": "activity",
+            "start_date": "2019-04-21",
+            "end_date": "2019-04-21",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "exchanges: sun porch",
+            "kind": "communication",
+            "start_date": "2021-07-10",
+            "end_date": "2021-07-10",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "media: media",
+            "kind": "media",
+            "start_date": "1972-12-19",
+            "end_date": "1972-12-19",
+            "participant_names": [
+              "Peggy"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly planned dinners or meals together.",
+            "kind": "pattern",
+            "start_date": "2010-10-02",
+            "end_date": "2010-10-02",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will",
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly discussed travel plans together.",
+            "kind": "pattern",
+            "start_date": "2010-05-15",
+            "end_date": "2010-05-15",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "Rick George",
+              "+13148097875"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included affectionate sign-offs such as “love you”.",
+            "kind": "pattern",
+            "start_date": "2011-10-07",
+            "end_date": "2011-10-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "peggo417@hotmail.com",
+              "Peggy George & Sue Will",
+              "Peggy George & Rick George",
+              "Peggy George & Rick George & Sue Will",
+              "Sam LaMartina",
+              "lamartina.sam@icloud.com"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly mentioned gifts, meals, or support sent or offered.",
+            "kind": "pattern",
+            "start_date": "2010-05-29",
+            "end_date": "2010-05-29",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "peggo417@hotmail.com",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly used heart emojis.",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Andy George & Peggy George & Rick George & Carri Mensinger",
+              "Peggy George & +13148372052",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included invitations to get together.",
+            "kind": "pattern",
+            "start_date": "2011-06-05",
+            "end_date": "2011-06-05",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Andy George & Peggy George & Tim George",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2020-01-06",
+            "end_date": "2020-01-06",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +13144012093, Peggy George across 1312 messages.",
+            "kind": "pattern",
+            "start_date": "2009-10-10",
+            "end_date": "2009-10-10",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2023-05-11",
+            "end_date": "2023-05-11",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & +13148372052"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-05-07",
+            "end_date": "2015-05-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george george",
+            "kind": "pattern",
+            "start_date": "2013-10-12",
+            "end_date": "2013-10-12",
+            "participant_names": [
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +16363462342, Peggy George & Sue Will, Sue Will across 212 messages.",
+            "kind": "pattern",
+            "start_date": "2016-11-25",
+            "end_date": "2016-11-25",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2019-12-25",
+            "end_date": "2019-12-25",
+            "participant_names": [
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-07-10",
+            "end_date": "2015-07-10",
+            "participant_names": [
+              "Andy George & Peggy George & Tim George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          }
+        ]
+      },
+      "ask_relative": {
+        "invoked": true,
+        "call_count": 1,
+        "payload_bytes": 107413,
+        "approximate_input_tokens": 26853,
+        "observation_count_in_payload": 584,
+        "rollup_count_in_payload": 286,
+        "duration_ms": 2523,
+        "timeout_seconds": 90,
+        "status": "ok",
+        "error_class": null,
+        "output_episode_count": 80,
+        "output_theme_count": 0,
+        "output_claim_count": 140,
+        "rejected_ask_relative_claims_count": 8807,
+        "python_expanded_view": {
+          "answer_focus": "tell me what you know about Peggy",
+          "output_episode_count": 80,
+          "output_theme_count": 0,
+          "output_claim_count": 140,
+          "unresolved": [],
+          "note": "Python-expanded view after model JSON; observation bodies omitted"
+        },
+        "model_output": {
+          "rollup_id": "ru-ccbdd2738c79770396ab",
+          "label": "exchanges: good",
+          "kind": "communication",
+          "people": [
+            "Peggy George"
+          ],
+          "places": [],
+          "date_span": {
+            "start": "2023-07-09",
+            "end": "2023-07-11"
+          },
+          "observation_n": 5,
+          "claim_type": "derived",
+          "not_family_fact": true,
+          "uncertainty": [
+            "rollup_is_derived_not_family_fact"
+          ]
+        },
+        "provider_eval": {
+          "total_duration": 1334959400,
+          "load_duration": 17353700,
+          "prompt_eval_count": 16386,
+          "prompt_eval_duration": 30389000,
+          "eval_count": 109,
+          "eval_duration": 614833000,
+          "attempts": 1,
+          "retries": 0,
+          "timeout_retried": false,
+          "keep_alive": "30m",
+          "done_reason": "stop",
+          "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+          "options": {
+            "temperature": 0.1
+          },
+          "timeout_seconds": 90,
+          "model": "llama3.2",
+          "provider_key": "ollama"
+        }
+      },
+      "narrator": {
+        "invoked": true,
+        "duration_ms": 4111,
+        "input_bytes": 854037,
+        "approximate_input_tokens": 213509,
+        "status": "ok",
+        "error_class": null,
+        "final_answer_text": "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around the following topics:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes some specific dates and times, such as:. * 2010-10-02: Repeated planning of dinners or meals together.\n* 2010-05-29: Repeated mention of gifts, meals, or support sent or offered.\n* 2011-06-05: Repeated invitations to get together.\n* 2016-11-22: Repeated contact among +16363462342, Peggy George, and Sue Will.\n* 2020-01-06: Repeated contact among +13144012093, Andy George, Peggy George, and Rick George. The conversation also includes some specific people, such as:.\n\n* Peggy George\n* Andy George\n* Rick George\n* Sue Will\n* Matt Will\n* LaMartina Laura\n* Mike LaMartina\n* Sam LaMartina\n* Carri Mensinger.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts."
+      },
+      "stage_timing": {
+        "retrieval_ms": 203949,
+        "assimilation_ms": 0,
+        "preaggregation_ms": 0,
+        "observation_extract_ms": 0,
+        "rollup_ms": 0,
+        "ask_relative_ms": 2523,
+        "narrator_ms": 4111,
+        "other_ms": 246685,
+        "total_ms": 457268
+      }
+    },
+    {
+      "index": 4,
+      "pass_kind": "warm_ask",
+      "inference_stage": "ask",
+      "ask_text": "tell me what you know about Peggy",
+      "trace_id": "1883831f-4d92-4cb3-a691-044963046075",
+      "started_at": "2026-08-26T22:10:15.485897+00:00",
+      "ended_at": "2026-08-26T22:17:57.524778+00:00",
+      "total_duration_ms": 461911,
+      "status": "ok",
+      "error_class": null,
+      "error_classes_including_spans": [],
+      "total_model_calls": 2,
+      "timeout_count": 0,
+      "timeout_events": [],
+      "retrieval": {
+        "focal_person_name": "Peggy",
+        "canonical_person_id": "549b1e3b-1c8d-4df9-87a5-c2ba56d29680",
+        "requestor_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+        "retrieval_scope": {
+          "person_ids": [],
+          "person_names": [
+            "Peggy"
+          ],
+          "time_start": null,
+          "time_end": null,
+          "want_communication": true,
+          "modalities": null
+        },
+        "raw_eligible_evidence_count": 4143,
+        "counts_by_modality": {
+          "photo": 419,
+          "video_asset": 18,
+          "video_moment": 47,
+          "sms": 3659,
+          "email": 0,
+          "calendar": 0,
+          "travel": 0,
+          "artifact": 0,
+          "audio": 0
+        },
+        "total_raw_communication_items": 3659,
+        "retrieval_pages_or_calls": 17,
+        "retrieval_duration_ms": 309468,
+        "retrieval_completeness_flag": {
+          "incomplete": false,
+          "truncated": false,
+          "missing": []
+        }
+      },
+      "determinism_vs_cold": {
+        "compared_to_run_index": 1,
+        "same_raw_eligible_evidence_ids": true,
+        "same_sms_evidence_ids": true,
+        "raw_eligible_added_count": 0,
+        "raw_eligible_missing_count": 0,
+        "sms_added_count": 0,
+        "sms_missing_count": 0,
+        "semantic_unit_fingerprint_match_count": 512,
+        "semantic_unit_fingerprint_mismatch_count": 0,
+        "semantic_unit_fingerprint_added_count": 0,
+        "semantic_unit_fingerprint_missing_count": 0
+      },
+      "preaggregation_enrichment": {
+        "preaggregation_duration_ms": 0,
+        "normalized_eligible_evidence_count": 4143,
+        "deterministic_unit_count": 42,
+        "semantic_unit_count": 470,
+        "sms_semantic_unit_count": 470,
+        "email_thread_unit_count": 0,
+        "observation_extract_calls": 0,
+        "extraction_cache_hits": 467,
+        "extraction_cache_misses": 3,
+        "enrichment_deferred_units": 3,
+        "extract_timeout_count": 0,
+        "persisted_observation_count": 0,
+        "accepted_model_derived_observation_count": 688,
+        "rejected_observation_count": 0,
+        "provenance_coverage": 1.0,
+        "extraction_aggregates": {
+          "messages_per_semantic_unit": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "span_day_buckets": {
+            "leq_1_day": 0,
+            "days_2_to_7": 0,
+            "days_8_to_30": 0,
+            "days_31_to_90": 0,
+            "days_91_to_365": 0,
+            "days_over_365": 0,
+            "units_with_span": 0
+          },
+          "longest_span_semantic_units": [],
+          "payload_bytes": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "approx_tokens": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "model_call_duration_ms": {
+            "min": null,
+            "median": null,
+            "p95": null,
+            "max": null,
+            "n": 0
+          },
+          "extract_payload_records": 0
+        }
+      },
+      "persisted_semantic_representation": {
+        "total_persisted_observations_available_to_warm_ask": 0,
+        "deterministic_observations_available": 42,
+        "model_derived_observations_available": 688,
+        "rollup_count": 286,
+        "rollup_generation_duration_ms": 0,
+        "rollups_by_kind": {
+          "activity": 1,
+          "communication": 1,
+          "media": 1,
+          "pattern": 24,
+          "place": 14,
+          "relationship": 1
+        },
+        "lower_level_observations_represented_by_rollups": 46,
+        "provenance_coverage_rollup_to_observation_to_raw": 1.0,
+        "representative_rollups": [
+          {
+            "text": "named activity: Easter",
+            "kind": "activity",
+            "start_date": "2019-04-21",
+            "end_date": "2019-04-21",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "exchanges: sun porch",
+            "kind": "communication",
+            "start_date": "2021-07-10",
+            "end_date": "2021-07-10",
+            "participant_names": [],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "media: media",
+            "kind": "media",
+            "start_date": "1972-12-19",
+            "end_date": "1972-12-19",
+            "participant_names": [
+              "Peggy"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly planned dinners or meals together.",
+            "kind": "pattern",
+            "start_date": "2010-10-02",
+            "end_date": "2010-10-02",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will",
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly discussed travel plans together.",
+            "kind": "pattern",
+            "start_date": "2010-05-15",
+            "end_date": "2010-05-15",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "Rick George",
+              "+13148097875"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included affectionate sign-offs such as “love you”.",
+            "kind": "pattern",
+            "start_date": "2011-10-07",
+            "end_date": "2011-10-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "peggo417@hotmail.com",
+              "Peggy George & Sue Will",
+              "Peggy George & Rick George",
+              "Peggy George & Rick George & Sue Will",
+              "Sam LaMartina",
+              "lamartina.sam@icloud.com"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly mentioned gifts, meals, or support sent or offered.",
+            "kind": "pattern",
+            "start_date": "2010-05-29",
+            "end_date": "2010-05-29",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will",
+              "peggo417@hotmail.com",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly used heart emojis.",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Andy George & Peggy George & Rick George & Carri Mensinger",
+              "Peggy George & +13148372052",
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Messages repeatedly included invitations to get together.",
+            "kind": "pattern",
+            "start_date": "2011-06-05",
+            "end_date": "2011-06-05",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will",
+              "Sue Will",
+              "+16363462342",
+              "Andy George & Peggy George & Tim George",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2020-01-06",
+            "end_date": "2020-01-06",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +13144012093, Peggy George across 1312 messages.",
+            "kind": "pattern",
+            "start_date": "2009-10-10",
+            "end_date": "2009-10-10",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2023-05-11",
+            "end_date": "2023-05-11",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & +13148372052"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-05-07",
+            "end_date": "2015-05-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-11-22",
+            "end_date": "2016-11-22",
+            "participant_names": [
+              "Peggy George",
+              "+13144012093",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george george",
+            "kind": "pattern",
+            "start_date": "2013-10-12",
+            "end_date": "2013-10-12",
+            "participant_names": [
+              "Rick George",
+              "+13148097875",
+              "Peggy George & Rick George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2016-07-07",
+            "end_date": "2016-07-07",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Rick George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: Repeated contact among +16363462342, Peggy George & Sue Will, Sue Will across 212 messages.",
+            "kind": "pattern",
+            "start_date": "2016-11-25",
+            "end_date": "2016-11-25",
+            "participant_names": [
+              "Sue Will",
+              "+16363462342",
+              "Peggy George & Sue Will"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2019-12-25",
+            "end_date": "2019-12-25",
+            "participant_names": [
+              "Andy George & Peggy George & Rick George & Carri Mensinger"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          },
+          {
+            "text": "recurring interaction pattern: george",
+            "kind": "pattern",
+            "start_date": "2015-07-10",
+            "end_date": "2015-07-10",
+            "participant_names": [
+              "Andy George & Peggy George & Tim George"
+            ],
+            "underlying_observation_count": 1,
+            "underlying_evidence_count": 0
+          }
+        ]
+      },
+      "ask_relative": {
+        "invoked": true,
+        "call_count": 1,
+        "payload_bytes": 107413,
+        "approximate_input_tokens": 26853,
+        "observation_count_in_payload": 584,
+        "rollup_count_in_payload": 286,
+        "duration_ms": 1327,
+        "timeout_seconds": 90,
+        "status": "ok",
+        "error_class": null,
+        "output_episode_count": 80,
+        "output_theme_count": 0,
+        "output_claim_count": 140,
+        "rejected_ask_relative_claims_count": 8807,
+        "python_expanded_view": {
+          "answer_focus": "tell me what you know about Peggy",
+          "output_episode_count": 80,
+          "output_theme_count": 0,
+          "output_claim_count": 140,
+          "unresolved": [],
+          "note": "Python-expanded view after model JSON; observation bodies omitted"
+        },
+        "model_output": {
+          "rollup_id": "ru-ccbdd2738c79770396ab",
+          "label": "exchanges: good",
+          "kind": "communication",
+          "people": [
+            "Peggy George"
+          ],
+          "places": [],
+          "date_span": {
+            "start": "2023-07-09",
+            "end": "2023-07-11"
+          },
+          "observation_n": 5,
+          "claim_type": "derived",
+          "not_family_fact": true,
+          "uncertainty": [
+            "rollup_is_derived_not_family_fact"
+          ]
+        },
+        "provider_eval": {
+          "total_duration": 1195671100,
+          "load_duration": 3617000,
+          "prompt_eval_count": 16386,
+          "prompt_eval_duration": 25590000,
+          "eval_count": 109,
+          "eval_duration": 593685000,
+          "attempts": 1,
+          "retries": 0,
+          "timeout_retried": false,
+          "keep_alive": "30m",
+          "done_reason": "stop",
+          "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+          "options": {
+            "temperature": 0.1
+          },
+          "timeout_seconds": 90,
+          "model": "llama3.2",
+          "provider_key": "ollama"
+        }
+      },
+      "narrator": {
+        "invoked": true,
+        "duration_ms": 2654,
+        "input_bytes": 854037,
+        "approximate_input_tokens": 213509,
+        "status": "ok",
+        "error_class": null,
+        "final_answer_text": "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around several topics, including:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes several claims and supporting evidence IDs, which are used to organize and analyze the data. The user is asking for information about Peggy George, and the conversation is structured around several themes and topics related to her communication patterns and relationships with others. Some of the key points from the conversation include:.\n\nOverall, the conversation is structured around several themes and topics related to Peggy George's communication patterns and relationships with others. The user is asking for information about her, and the conversation is organized around several claims and supporting evidence IDs.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts."
+      },
+      "stage_timing": {
+        "retrieval_ms": 309468,
+        "assimilation_ms": 0,
+        "preaggregation_ms": 0,
+        "observation_extract_ms": 0,
+        "rollup_ms": 0,
+        "ask_relative_ms": 1327,
+        "narrator_ms": 2654,
+        "other_ms": 148462,
+        "total_ms": 461911
+      }
+    }
+  ],
+  "three_run_comparison": {
+    "retrieval_stable": true,
+    "semantic_unit_fingerprints_stable": true,
+    "warm_runs_used_zero_observation_extract_calls": true,
+    "persisted_observation_set_stable": true,
+    "ask_relative_payload_stable": true,
+    "warm_run_2_completed": true,
+    "warm_run_3_completed": true,
+    "warm_run_duration_ms": [
+      505928,
+      457268,
+      461911
+    ],
+    "ask_relative_duration_ms": [
+      2032,
+      2523,
+      1327
+    ],
+    "narrator_duration_ms": [
+      3459,
+      4111,
+      2654
+    ],
+    "final_answers": [
+      "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around the following topics:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes some specific dates and times, such as:. * 2010-10-02: Repeated planning of dinners or meals together.\n* 2010-05-29: Repeated mention of gifts, meals, or support sent or offered.\n* 2011-06-05: Repeated invitations to get together.\n* 2016-11-22: Repeated contact among +16363462342, Peggy George, and Sue Will.\n* 2023-05-11: Repeated contact among +13144012093, Peggy George, and +13148372052. The conversation also includes some specific people, such as:.\n\n* Peggy George\n* +13144012093\n* Sue Will\n* Rick George\n* Carri Mensinger\n* Andy George\n* Matt Will\n* LaMartina Laura\n* Mike LaMartina\n* Sam LaMartina.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts.",
+      "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around the following topics:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes some specific dates and times, such as:. * 2010-10-02: Repeated planning of dinners or meals together.\n* 2010-05-29: Repeated mention of gifts, meals, or support sent or offered.\n* 2011-06-05: Repeated invitations to get together.\n* 2016-11-22: Repeated contact among +16363462342, Peggy George, and Sue Will.\n* 2020-01-06: Repeated contact among +13144012093, Andy George, Peggy George, and Rick George. The conversation also includes some specific people, such as:.\n\n* Peggy George\n* Andy George\n* Rick George\n* Sue Will\n* Matt Will\n* LaMartina Laura\n* Mike LaMartina\n* Sam LaMartina\n* Carri Mensinger.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts.",
+      "The conversation is about Peggy George, and the user is asking for information about her. The conversation is organized around several topics, including:. 1.\n\nRepeated use of heart emojis in messages.\n2. Repeated planning of dinners or meals together.\n3. Repeated mention of gifts, meals, or support sent or offered.\n4.\n\nRepeated invitations to get together.\n5. Repeated discussion of travel plans together.\n6. Repeated contact among various individuals, including Peggy George and her family members.\n\nThe conversation also includes several claims and supporting evidence IDs, which are used to organize and analyze the data. The user is asking for information about Peggy George, and the conversation is structured around several themes and topics related to her communication patterns and relationships with others. Some of the key points from the conversation include:.\n\nOverall, the conversation is structured around several themes and topics related to Peggy George's communication patterns and relationships with others. The user is asking for information about her, and the conversation is organized around several claims and supporting evidence IDs.\n\nEvidence behind this story\nPhotographs place people there from 1972-12-19 through 2025-10-10.\n\nFamily evidence considered: 419 photos · 47 video moments · 0 emails · 3659 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts."
+    ],
+    "warm_run_statuses": [
+      "ok",
+      "ok",
+      "ok"
+    ],
+    "warm_run_error_classes": [
+      null,
+      null,
+      null
+    ],
+    "warm_extract_calls": [
+      0,
+      0,
+      0
+    ],
+    "warm_run_2_status": "ok",
+    "warm_run_3_status": "ok"
+  }
+}
