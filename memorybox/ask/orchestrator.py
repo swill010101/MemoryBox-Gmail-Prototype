@@ -1383,8 +1383,15 @@ class AskOrchestrator:
                 inventing=False,
             )
 
+        retrieve_diag = None
+        _rq_tok = None
         if not plan.requires_clarification and not plan.journal_capture_intent:
             _rt0 = _time.perf_counter()
+            _rq_tok = None
+            try:
+                _rq_tok = R.begin_retrieve_accounting()
+            except Exception:  # noqa: BLE001
+                _rq_tok = None
             if plan.want_still or plan.want_photo:
                 _stage("Collecting photos")
             if plan.want_communication:
@@ -1747,6 +1754,16 @@ class AskOrchestrator:
             stage_clock.add("retrieval_ms", int((_time.perf_counter() - _rt0) * 1000))
         except NameError:
             pass
+        retrieve_diag = None
+        try:
+            retrieve_diag = R.retrieve_accounting_snapshot()
+        except Exception:  # noqa: BLE001
+            retrieve_diag = None
+        if _rq_tok is not None:
+            try:
+                R.reset_retrieve_accounting(_rq_tok)
+            except Exception:  # noqa: BLE001
+                pass
 
         # Disclose failed relational resolve when no other answer path
         if (
@@ -2026,6 +2043,12 @@ class AskOrchestrator:
                 else "not_requested"
             ),
         }
+
+        if narrative_pack and retrieve_diag:
+            narrative_pack["retrieve_diagnostics"] = retrieve_diag
+            named = narrative_pack.get("i11a_ab_metrics")
+            if isinstance(named, dict):
+                named["retrieve_diagnostics"] = retrieve_diag
 
         return AskResult(
             session_id=new_ctx.session_id,

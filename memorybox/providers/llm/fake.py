@@ -41,7 +41,7 @@ def _fake_ask_relative(user_json: str) -> str:
     try:
         data = json.loads(user_json)
     except Exception:
-        return json.dumps({"schema_version": 2, "answer_focus": "", "selected_rollup_ids": [], "selected_observation_ids": [], "themes": [], "unresolved": [], "episodes": []})
+        return json.dumps({"schema_version": 2, "answer_focus": "", "selected_higher_order_ids": [], "selected_rollup_ids": [], "selected_observation_ids": [], "themes": [], "unresolved": [], "episodes": []})
     rollups = [r for r in (data.get("rollups") or []) if isinstance(r, dict)]
     observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
     for o in observations:
@@ -50,21 +50,55 @@ def _fake_ask_relative(user_json: str) -> str:
     ask = str(data.get("ask") or "")
     hint = str(data.get("ask_kind_hint") or "other")
     if rollups:
+        selected_ho = [
+            str(r.get("higher_order_id") or "")
+            for r in (data.get("higher_order") or [])
+            if isinstance(r, dict) and r.get("higher_order_id")
+        ]
         selected_ru = [str(r.get("rollup_id") or "") for r in rollups if r.get("rollup_id")]
         return json.dumps(
             {
                 "answer_focus": ask[:160],
-                "selected_rollup_ids": selected_ru,
+                "selected_higher_order_ids": selected_ho,
+                "selected_rollup_ids": [] if selected_ho else selected_ru,
                 "selected_observation_ids": [],
                 "correlations": [
                     {
                         "label": str(r.get("label") or "")[:80],
                         "kind": "period_cluster",
-                        "rollup_ids": [str(r.get("rollup_id"))],
-                        "why": "derived roll-up selected for the Ask",
+                        "higher_order_ids": [str(r.get("higher_order_id"))]
+                        if r.get("higher_order_id")
+                        else [],
+                        "rollup_ids": [str(r.get("rollup_id"))] if r.get("rollup_id") else [],
+                        "why": "derived unit selected for the Ask",
                     }
-                    for r in rollups[:12]
-                    if r.get("rollup_id")
+                    for r in (data.get("higher_order") or rollups)[:12]
+                    if isinstance(r, dict)
+                    and (r.get("higher_order_id") or r.get("rollup_id"))
+                ],
+                "themes": [],
+                "unresolved": [],
+            },
+            default=str,
+        )
+    hos = [r for r in (data.get("higher_order") or []) if isinstance(r, dict)]
+    if hos:
+        selected_ho = [str(r.get("higher_order_id") or "") for r in hos if r.get("higher_order_id")]
+        return json.dumps(
+            {
+                "answer_focus": ask[:160],
+                "selected_higher_order_ids": selected_ho,
+                "selected_rollup_ids": [],
+                "selected_observation_ids": [],
+                "correlations": [
+                    {
+                        "label": str(r.get("label") or "")[:80],
+                        "kind": "period_cluster",
+                        "higher_order_ids": [str(r.get("higher_order_id"))],
+                        "why": "derived Person unit selected for the Ask",
+                    }
+                    for r in hos[:12]
+                    if r.get("higher_order_id")
                 ],
                 "themes": [],
                 "unresolved": [],
@@ -98,6 +132,7 @@ def _fake_ask_relative(user_json: str) -> str:
         return json.dumps(
             {
                 "answer_focus": view.get("answer_focus") or ask[:160],
+                "selected_higher_order_ids": [],
                 "selected_rollup_ids": [],
                 "selected_observation_ids": selected
                 or [o.get("observation_id") for o in observations if o.get("observation_id") not in drop],
@@ -116,6 +151,7 @@ def _fake_ask_relative(user_json: str) -> str:
                 "episodes": [],
                 "themes": [],
                 "unresolved": [],
+                "selected_higher_order_ids": [],
                 "selected_rollup_ids": [],
                 "selected_observation_ids": [o.get("observation_id") for o in observations],
             }

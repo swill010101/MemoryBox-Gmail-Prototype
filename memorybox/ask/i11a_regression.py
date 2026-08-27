@@ -358,6 +358,20 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             else None,
         ),
         "rollup_total": _first(named.get("rollup_total"), inf_acc.get("rollup_total")),
+        "higher_order_unit_total": _first(
+            named.get("higher_order_unit_total"), inf_acc.get("higher_order_unit_total")
+        ),
+        "higher_order_units_sent": _first(
+            named.get("higher_order_units_sent"), inf_acc.get("higher_order_units_sent")
+        ),
+        "lower_level_rollups_expanded": _first(
+            named.get("lower_level_rollups_expanded"),
+            inf_acc.get("lower_level_rollups_expanded"),
+        ),
+        "higher_order_provenance_coverage": _first(
+            named.get("higher_order_provenance_coverage"),
+            inf_acc.get("higher_order_provenance_coverage"),
+        ),
         "rollups_sent_to_ask_relative": _first(
             named.get("rollups_sent_to_ask_relative"),
             inf_acc.get("rollups_sent_to_ask_relative"),
@@ -367,6 +381,10 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             inf_acc.get("observations_sent_to_ask_relative"),
         ),
         "max_sms_window_span_days": pre.get("max_sms_window_span_days"),
+        "segmentation_version": pre.get("segmentation_version"),
+        "segmentation_quality": pre.get("segmentation_quality"),
+        "retrieve_diagnostics": pack.get("retrieve_diagnostics")
+        or named.get("retrieve_diagnostics"),
         "enrichment_deferred": _first(
             named.get("enrichment_deferred"),
             inf_acc.get("enrichment_deferred"),
@@ -606,9 +624,15 @@ def _run_one(
             "lower_level_expansion_count": metrics.get("lower_level_expansion_count"),
             "validated_observation_total": metrics.get("validated_observation_total"),
             "rollup_total": metrics.get("rollup_total"),
+            "higher_order_unit_total": metrics.get("higher_order_unit_total"),
+            "higher_order_units_sent": metrics.get("higher_order_units_sent"),
+            "lower_level_rollups_expanded": metrics.get("lower_level_rollups_expanded"),
+            "higher_order_provenance_coverage": metrics.get("higher_order_provenance_coverage"),
             "rollups_sent_to_ask_relative": metrics.get("rollups_sent_to_ask_relative"),
             "observations_sent_to_ask_relative": metrics.get("observations_sent_to_ask_relative"),
             "max_sms_window_span_days": metrics.get("max_sms_window_span_days"),
+            "segmentation_quality": metrics.get("segmentation_quality"),
+            "retrieve_diagnostics": metrics.get("retrieve_diagnostics"),
             "eligible_evidence_id_digest": metrics.get("eligible_evidence_id_digest"),
             "semantic_unit_fingerprint_digest": metrics.get("semantic_unit_fingerprint_digest"),
             "sms_raw": metrics.get("sms_raw"),
@@ -768,6 +792,10 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
             "enrichment_complete": m.get("enrichment_complete"),
             "stage_timings": m.get("stage_timings"),
             "rollups_sent_to_ask_relative": m.get("rollups_sent_to_ask_relative"),
+            "higher_order_unit_total": m.get("higher_order_unit_total"),
+            "higher_order_units_sent": m.get("higher_order_units_sent"),
+            "lower_level_rollups_expanded": m.get("lower_level_rollups_expanded"),
+            "retrieve_diagnostics": m.get("retrieve_diagnostics"),
             "observations_sent_to_ask_relative": m.get("observations_sent_to_ask_relative"),
             "validated_observation_total": m.get("validated_observation_total"),
             "lower_level_expansion_count": m.get("lower_level_expansion_count"),

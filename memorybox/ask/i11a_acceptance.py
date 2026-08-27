@@ -77,6 +77,13 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "a_person_comm_retrieve_not_full_export_scan",
         "_sql_person_text_hint" in retrieve_py
+        and "include_body: bool = False" in retrieve_py
+        and "_sql_person_ids_gin" in retrieve_py
+        and "_exists_evidence" not in retrieve_py
+        and "jsonb_array_elements" not in retrieve_py
+        and "_explain_indexes" not in retrieve_py
+        and "_person_scoped_comm_where" in retrieve_py
+        and "body_text" in retrieve_py
         and "_complete_comm_retrieve" in retrieve_py
         and "AND id > %s" in retrieve_py
         and "stopped_by_wall_clock=false" in retrieve_py
@@ -589,7 +596,20 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and max(sparse_ns or [0]) <= 8
         and max(sparse_spans or [0]) < 60
         and int((sparse_pre.get("trace") or {}).get("max_sms_window_span_days") or 0) < 60
-        and {f"e-sparse-{i}" for i in range(8)} <= sparse_ids,
+        and {f"e-sparse-{i}" for i in range(8)} <= sparse_ids
+        and (sparse_pre.get("trace") or {}).get("segmentation_version") == "episode_v2"
+        and int(
+            ((sparse_pre.get("trace") or {}).get("segmentation_quality") or {})
+            .get("episode_v2_current", {})
+            .get("span_gt_365d")
+            or 0
+        )
+        < int(
+            ((sparse_pre.get("trace") or {}).get("segmentation_quality") or {})
+            .get("episode_v1_count_ceiling_only", {})
+            .get("span_gt_365d")
+            or 99
+        ),
         checks,
         problems,
         detail={
@@ -1038,31 +1058,37 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     new_tok = max(1, len(json.dumps(new_payload, default=str)) // 4)
     rp_stats = warm_acc.get("ask_relative_payload") or {}
     from memorybox.ask.i11a.rollup import expand_rollup_ids as _expand_ru
+    from memorybox.ask.i11a.person_ir import higher_order_from_rollups as _ho_from
 
     expanded_obs = _expand_ru(
         [str(u.get("rollup_id")) for u in (rolled.get("rollups") or [])],
         rollups=rolled,
         observations=rollup_obs,
     )
+    ho = _ho_from(rolled)
     _check(
         "semantic_rollup_preserves_all_provenance",
         ru_obs == src_obs
         and ru_eids == src_eids
         and float(rolled.get("provenance_coverage") or 0) == 1.0
+        and float(ho.get("provenance_coverage") or 0) == 1.0
         and int(rolled.get("rollup_unit_count") or 0) >= 1
         and int(rolled.get("rollup_unit_count") or 0) < len(rollup_obs)
         and all(u.get("claim_type") == "derived" and u.get("not_family_fact") for u in (rolled.get("rollups") or []))
+        and all(u.get("claim_type") == "derived" and u.get("not_family_fact") for u in (ho.get("units") or []))
         and "observations" not in new_payload
+        and "rollups" not in new_payload
         and int(new_payload.get("observations_sent_to_ask_relative", 99)) == 0
-        and int(new_payload.get("rollups_sent_to_ask_relative") or 0)
-        == int(rolled.get("rollup_unit_count") or 0)
+        and int(new_payload.get("rollups_sent_to_ask_relative", 99)) == 0
+        and int(new_payload.get("higher_order_units_sent") or 0) >= 1
+        and int(new_payload.get("higher_order_units_sent") or 0) <= int(rolled.get("rollup_unit_count") or 0)
         and len(expanded_obs) == len(rollup_obs)
         and new_tok < old_tok
         and new_tok * 2 <= old_tok
-        and int(rp_stats.get("rollup_n") or 0) >= 1
-        and bool(rp_stats.get("compact_rollups"))
+        and int(rp_stats.get("higher_order_n") or 0) >= 1
+        and bool(rp_stats.get("compact_higher_order"))
         and int(rp_stats.get("observations_sent_to_ask_relative", 99)) == 0
-        and int(rp_stats.get("rollups_sent_to_ask_relative") or rp_stats.get("rollup_n") or 0) >= 1
+        and int(rp_stats.get("rollups_sent_to_ask_relative", 99)) == 0
         and int(warm_acc.get("observations_sent_to_ask_relative", 99)) == 0
         and any(
             any(
@@ -1083,12 +1109,15 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
                 k: rp_stats.get(k)
                 for k in (
                     "rollup_n",
+                    "higher_order_n",
                     "observation_n",
                     "approx_tokens",
-                    "compact_rollups",
+                    "compact_higher_order",
                     "observations_sent_to_ask_relative",
+                    "rollups_sent_to_ask_relative",
                 )
             },
+            "ho_n": ho.get("higher_order_unit_total"),
             "expanded_after_selection": len(expanded_obs),
             "observations_sent": new_payload.get("observations_sent_to_ask_relative"),
         },

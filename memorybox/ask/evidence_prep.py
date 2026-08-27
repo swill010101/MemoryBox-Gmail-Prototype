@@ -102,9 +102,11 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
     d = hit.to_dict() if hasattr(hit, "to_dict") else dict(hit)
     eid = str(d.get("evidence_id") or "")
     payload = {}
+    if isinstance(d.get("payload"), dict) and d.get("payload"):
+        payload = d["payload"]
     subj = str(d.get("summary") or "")
     excerpt = str(d.get("excerpt") or "")
-    if eid and (
+    if eid and not payload and (
         not excerpt
         or len(excerpt) < 120
         or looks_supporting_subject(subj)
@@ -115,6 +117,19 @@ def _communication_unit(hit: Any, plan: Any, *, and_i: bool) -> dict[str, Any] |
         )
     ):
         payload = _payload_for(eid)
+    elif eid and not payload:
+        payload = {
+            "body_text": excerpt,
+            "evidence_channel": d.get("channel"),
+            "sent_at": d.get("sent_at"),
+            "thread_id": d.get("thread_id"),
+            "sender_name": None,
+            "person_ids": [
+                str(m.get("person_id"))
+                for m in (d.get("identity_mapped") or [])
+                if isinstance(m, dict) and m.get("person_id")
+            ],
+        }
     skip = _mailbox_skip(payload)
     if skip:
         return None

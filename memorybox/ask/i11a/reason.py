@@ -12,31 +12,39 @@ from datetime import date
 from typing import Any
 
 from memorybox.ask.i11a.ir import attach_links
+from memorybox.ask.i11a.person_ir import (
+    compact_higher_order_for_reason,
+    expand_higher_order_ids,
+    higher_order_from_rollups,
+)
 from memorybox.ask.i11a.rollup import compact_rollup_for_reason, expand_rollup_ids
 from memorybox.ask.i11a.windows import _day
 
 ASK_RELATIVE_SYSTEM = """ASK_RELATIVE_REASONING
-You organize compact derived semantic roll-ups to answer one Ask.
-Roll-ups are derived groupings of validated observations — not family facts.
+You organize compact higher-order Person semantic units to answer one Ask.
+These units are derived summaries of roll-ups of validated observations — not family facts.
 Do not re-extract from raw mail. Do not invent people, places, dates, motives, or kin labels.
-JSON only. Python expands selected roll-ups to every underlying observation.
+JSON only. Python expands selected higher-order units to every child roll-up and observation.
 
 {
   "answer_focus": "short string",
-  "selected_rollup_ids": ["ru-..."],
+  "selected_higher_order_ids": ["ho-..."],
+  "selected_rollup_ids": [],
   "selected_observation_ids": [],
-  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "rollup_ids": ["ru-..."], "why": ""}],
+  "correlations": [{"label": "", "kind": "trip_span|event|relationship|theme|period_cluster|other", "higher_order_ids": ["ho-..."], "why": ""}],
   "themes": [{"label": ""}],
   "unresolved": ["..."]
 }
 
-Select roll-up ids that matter to the Ask. Do not copy observation text, evidence arrays, or episode prose.
-Treat roll-up labels as derived summaries, not established facts.
+Select higher-order ids that matter to the Ask. Leave selected_rollup_ids empty unless a unit needs explicit roll-up resolution.
+Do not copy observation text, evidence arrays, or episode prose.
+Treat labels as derived summaries, not established facts.
 ask_kind_hint is a view strategy, not a closed taxonomy.
 """
 
 ASK_RELATIVE_SCHEMA_KEYS = (
     "answer_focus",
+    "selected_higher_order_ids",
     "selected_rollup_ids",
     "selected_observation_ids",
     "themes",
@@ -45,16 +53,20 @@ ASK_RELATIVE_SCHEMA_KEYS = (
 
 
 def ask_relative_schema_ok(parsed: Any) -> tuple[bool, str]:
-    """Fail-closed ASK_RELATIVE schema. Compact roll-up echoes are invalid."""
+    """Fail-closed ASK_RELATIVE schema. Compact roll-up/HO echoes are invalid."""
     if not isinstance(parsed, dict):
         return False, "ask-relative output is not a JSON object"
     if parsed.get("rollup_id") and "selected_rollup_ids" not in parsed:
         return False, "ask-relative output is a roll-up object, not ASK_RELATIVE schema"
+    if parsed.get("higher_order_id") and "selected_higher_order_ids" not in parsed:
+        return False, "ask-relative output is a higher-order object, not ASK_RELATIVE schema"
     missing = [k for k in ASK_RELATIVE_SCHEMA_KEYS if k not in parsed]
     if missing:
         return False, "ask-relative schema missing: " + ", ".join(missing)
     if not isinstance(parsed.get("answer_focus"), str):
         return False, "answer_focus must be a string"
+    if not isinstance(parsed.get("selected_higher_order_ids"), list):
+        return False, "selected_higher_order_ids must be a list"
     if not isinstance(parsed.get("selected_rollup_ids"), list):
         return False, "selected_rollup_ids must be a list"
     if not isinstance(parsed.get("selected_observation_ids"), list):
@@ -73,6 +85,7 @@ def ask_relative_semantic_ok(
     *,
     rollups: dict[str, Any] | None = None,
     observations: list[dict[str, Any]] | None = None,
+    higher_order: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
     """Fail-closed semantic check after ASK_RELATIVE schema validation."""
     if not isinstance(parsed, dict):
@@ -85,15 +98,29 @@ def ask_relative_semantic_ok(
         for row in rollups.get("rollups") or []:
             if isinstance(row, dict) and row.get("rollup_id"):
                 by_ru[str(row.get("rollup_id"))] = row
+    by_ho: dict[str, Any] = {}
+    if isinstance(higher_order, dict):
+        raw_ho = higher_order.get("by_id")
+        if isinstance(raw_ho, dict):
+            by_ho = {str(k): v for k, v in raw_ho.items()}
+        for row in higher_order.get("units") or []:
+            if isinstance(row, dict) and row.get("higher_order_id"):
+                by_ho[str(row.get("higher_order_id"))] = row
     known_obs = {
         str(o.get("observation_id"))
         for o in (observations or [])
         if isinstance(o, dict) and o.get("observation_id")
     }
+    ho_ids = [
+        str(x).strip() for x in (parsed.get("selected_higher_order_ids") or []) if str(x).strip()
+    ]
     ru_ids = [str(x).strip() for x in (parsed.get("selected_rollup_ids") or []) if str(x).strip()]
     ob_ids = [
         str(x).strip() for x in (parsed.get("selected_observation_ids") or []) if str(x).strip()
     ]
+    unknown_ho = [h for h in ho_ids if h not in by_ho]
+    if unknown_ho:
+        return False, "unknown selected_higher_order_ids: " + ", ".join(unknown_ho[:8])
     unknown_ru = [r for r in ru_ids if r not in by_ru]
     if unknown_ru:
         return False, "unknown selected_rollup_ids: " + ", ".join(unknown_ru[:8])
@@ -101,8 +128,8 @@ def ask_relative_semantic_ok(
     if unknown_ob:
         return False, "unknown selected_observation_ids: " + ", ".join(unknown_ob[:8])
     corr = [c for c in (parsed.get("correlations") or []) if isinstance(c, dict)]
-    if not ru_ids and not ob_ids and not corr:
-        return False, "ask-relative selected no roll-ups or observations"
+    if not ho_ids and not ru_ids and not ob_ids and not corr:
+        return False, "ask-relative selected no higher-order units, roll-ups, or observations"
     return True, ""
 
 
@@ -408,6 +435,8 @@ def fallback_view(
         "unresolved": [],
         "answer_focus": ask[:160],
         "selected_observation_ids": list(dict.fromkeys(selected)),
+        "selected_rollup_ids": [],
+        "selected_higher_order_ids": [],
         "correlations": correlations,
     }
     if ask_kind_hint == "person":
@@ -422,6 +451,7 @@ def view_from_model_json(
     ask: str,
     ask_kind_hint: str,
     rollups: dict[str, Any] | None = None,
+    higher_order: dict[str, Any] | None = None,
     allow_fallback: bool = True,
 ) -> dict[str, Any]:
     empty = {
@@ -434,25 +464,43 @@ def view_from_model_json(
         "answer_focus": ask[:160],
         "selected_observation_ids": [],
         "selected_rollup_ids": [],
+        "selected_higher_order_ids": [],
         "correlations": [],
+        "lower_level_rollups_expanded": 0,
     }
     if not isinstance(parsed, dict) or not (
         parsed.get("episodes")
         or parsed.get("selected_observation_ids")
         or parsed.get("selected_rollup_ids")
+        or parsed.get("selected_higher_order_ids")
         or parsed.get("correlations")
     ):
         if allow_fallback:
             return fallback_view(observations, ask=ask, ask_kind_hint=ask_kind_hint)
         return empty
     by_id = {str(o.get("observation_id")): o for o in observations if o.get("observation_id")}
-    expanded = []
+    expanded: list[dict[str, Any]] = []
+    expanded_ru: list[str] = []
+    if higher_order and parsed.get("selected_higher_order_ids"):
+        ho_obs, ru_ids = expand_higher_order_ids(
+            [str(x) for x in (parsed.get("selected_higher_order_ids") or [])],
+            higher_order=higher_order,
+            rollups=rollups or {},
+            observations=observations,
+        )
+        expanded.extend(ho_obs)
+        expanded_ru.extend(ru_ids)
     if rollups and parsed.get("selected_rollup_ids"):
-        expanded = expand_rollup_ids(
+        more_obs = expand_rollup_ids(
             [str(x) for x in (parsed.get("selected_rollup_ids") or [])],
             rollups=rollups,
             observations=observations,
         )
+        expanded.extend(more_obs)
+        for rid in parsed.get("selected_rollup_ids") or []:
+            s = str(rid)
+            if s and s not in expanded_ru:
+                expanded_ru.append(s)
     selected_ids = [str(x) for x in (parsed.get("selected_observation_ids") or []) if str(x) in by_id]
     for row in expanded:
         oid = str(row.get("observation_id") or "")
@@ -460,8 +508,29 @@ def view_from_model_json(
             selected_ids.append(oid)
     correlations = [c for c in (parsed.get("correlations") or []) if isinstance(c, dict)]
     for row in correlations:
+        extra_ho = [str(x) for x in (row.get("higher_order_ids") or []) if str(x).strip()]
         extra_ru = [str(x) for x in (row.get("rollup_ids") or []) if str(x).strip()]
-        if extra_ru and rollups:
+        if extra_ho and higher_order:
+            more, ru_ids = expand_higher_order_ids(
+                extra_ho,
+                higher_order=higher_order,
+                rollups=rollups or {},
+                observations=observations,
+            )
+            extra_ru = list(dict.fromkeys(extra_ru + ru_ids))
+            oids = list(row.get("observation_ids") or [])
+            for extra in more:
+                oid = str(extra.get("observation_id") or "")
+                if oid and oid not in oids:
+                    oids.append(oid)
+                if oid and oid not in selected_ids:
+                    selected_ids.append(oid)
+            row["observation_ids"] = oids
+            row["rollup_ids"] = extra_ru
+            for rid in ru_ids:
+                if rid not in expanded_ru:
+                    expanded_ru.append(rid)
+        elif extra_ru and rollups:
             more = expand_rollup_ids(extra_ru, rollups=rollups, observations=observations)
             oids = list(row.get("observation_ids") or [])
             for extra in more:
@@ -471,10 +540,23 @@ def view_from_model_json(
                 if oid and oid not in selected_ids:
                     selected_ids.append(oid)
             row["observation_ids"] = oids
+            for rid in extra_ru:
+                if rid not in expanded_ru:
+                    expanded_ru.append(rid)
     used: set[str] = set()
     episodes = [e for e in (parsed.get("episodes") or []) if isinstance(e, dict)]
     if not episodes:
         groups: list[list[dict[str, Any]]] = []
+        if higher_order and parsed.get("selected_higher_order_ids"):
+            by_ho = higher_order.get("by_id") if isinstance(higher_order.get("by_id"), dict) else {}
+            for hid in parsed.get("selected_higher_order_ids") or []:
+                unit = by_ho.get(str(hid)) if isinstance(by_ho, dict) else None
+                if not isinstance(unit, dict):
+                    continue
+                g = [by_id[i] for i in (unit.get("observation_ids") or []) if str(i) in by_id]
+                if g:
+                    groups.append(g)
+                    used.update(str(o.get("observation_id") or "") for o in g)
         if rollups and parsed.get("selected_rollup_ids"):
             by_ru = rollups.get("by_id") if isinstance(rollups.get("by_id"), dict) else {}
             for rid in parsed.get("selected_rollup_ids") or []:
@@ -537,10 +619,12 @@ def view_from_model_json(
         "unresolved": parsed.get("unresolved") or [],
         "answer_focus": parsed.get("answer_focus") or ask[:160],
         "selected_observation_ids": list(dict.fromkeys(selected_ids)),
-        "selected_rollup_ids": [
-            str(x) for x in (parsed.get("selected_rollup_ids") or []) if str(x).strip()
+        "selected_rollup_ids": list(dict.fromkeys(expanded_ru)),
+        "selected_higher_order_ids": [
+            str(x) for x in (parsed.get("selected_higher_order_ids") or []) if str(x).strip()
         ],
         "observations_expanded": len(list(dict.fromkeys(selected_ids))),
+        "lower_level_rollups_expanded": len(list(dict.fromkeys(expanded_ru))),
         "correlations": correlations,
     }
     if ask_kind_hint == "person" and not doc.get("person_understanding"):
@@ -589,18 +673,31 @@ def reason_payload(
     person_context: dict[str, Any],
     ask_kind_hint: str,
     rollups: list[dict[str, Any]] | None = None,
+    higher_order: list[dict[str, Any]] | dict[str, Any] | None = None,
     observations_for_resolution: list[dict[str, Any]] | None = None,
+    rollups_for_resolution: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Default Ask-relative IR is compact roll-ups, not the observation set.
+    """Default Ask-relative IR is higher-order Person units, not roll-ups or observations.
 
-    Lower-level observations are omitted unless explicitly passed for
-    evidence-resolution stubs (never a full dump, never sampling of evidence).
+    Child roll-ups and observations are omitted unless explicitly passed for
+    resolution stubs (never a full dump, never sampling of evidence).
     """
     ask = str(getattr(plan, "original_ask", "") or "")
     allowed = []
     if isinstance(person_context, dict):
         allowed = list(person_context.get("allowed_relationship_labels") or [])[:24]
-    compact = [compact_rollup_for_reason(r) for r in (rollups or []) if isinstance(r, dict)]
+    ho_rows: list[dict[str, Any]]
+    if isinstance(higher_order, dict):
+        ho_rows = [u for u in (higher_order.get("units") or []) if isinstance(u, dict)]
+    elif isinstance(higher_order, list):
+        ho_rows = [u for u in higher_order if isinstance(u, dict)]
+    else:
+        built = higher_order_from_rollups(rollups or [])
+        ho_rows = built.get("units") or []
+    compact_ho = [compact_higher_order_for_reason(u) for u in ho_rows]
+    ru_stubs = [
+        compact_rollup_for_reason(r) for r in (rollups_for_resolution or []) if isinstance(r, dict)
+    ]
     stubs: list[dict[str, Any]] = []
     for obs in observations_for_resolution or []:
         if isinstance(obs, dict):
@@ -614,25 +711,26 @@ def reason_payload(
             "focal_subject_names": request_context.get("focal_subject_names"),
         },
         "allowed_relationship_labels": allowed,
-        "rollups": compact,
+        "higher_order": compact_ho,
         "validated_observation_total": len(observations),
         "validated_observation_count": len(observations),
-        "rollup_total": len(compact),
-        "rollup_unit_count": len(compact),
-        "rollups_sent_to_ask_relative": len(compact),
+        "rollup_total": len(rollups or []),
+        "higher_order_unit_total": len(compact_ho),
+        "higher_order_units_sent": len(compact_ho),
+        "rollups_sent_to_ask_relative": len(ru_stubs),
         "observations_sent_to_ask_relative": len(stubs),
         "note": (
-            "Derived semantic roll-ups are the Ask-relative IR, not family facts. "
-            "Select rollup_id values. Lower-level observations are not in this payload; "
-            "Python expands selected roll-ups to every underlying observation."
+            "Higher-order Person units are the Ask-relative IR, not family facts. "
+            "Select higher_order_id values. Child roll-ups and observations are not in "
+            "this payload; Python expands selected units to every child roll-up and observation."
         ),
     }
+    if ru_stubs:
+        payload["rollup_stubs"] = ru_stubs
+        payload["note"] += " rollup_stubs are explicit lower-level expansions, not a full dump."
     if stubs:
         payload["observation_stubs"] = stubs
-        payload["note"] = (
-            payload["note"]
-            + " observation_stubs are explicit evidence-resolution expansions, not a full dump."
-        )
+        payload["note"] += " observation_stubs are explicit evidence-resolution expansions, not a full dump."
     return payload
 
 
