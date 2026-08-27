@@ -204,9 +204,9 @@ def _configured_chat_timeout() -> int | None:
         return ollama_chat_timeout_seconds()
     except Exception:  # noqa: BLE001
         raw = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
-        if raw.isdigit():
+        if raw.isdigit() and int(raw) >= 600:
             return int(raw)
-        return 90
+        return 600
 
 
 def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:

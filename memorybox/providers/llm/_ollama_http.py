@@ -80,7 +80,7 @@ def ollama_chat(
     *,
     format_json: bool = False,
     temperature: float = 0.1,
-    timeout: int = 90,
+    timeout: int = 600,
     keep_alive: str = "30m",
 ) -> tuple[str, dict[str, Any]]:
     payload: dict[str, Any] = {

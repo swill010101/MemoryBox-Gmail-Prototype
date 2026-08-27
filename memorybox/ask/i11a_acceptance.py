@@ -1327,7 +1327,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
             system = next((m.content for m in messages if m.role == "system"), "")
             if "ASK_RELATIVE_REASONING" in (system or ""):
-                raise ProviderUnavailable("timed out after 90s")
+                raise ProviderUnavailable("timed out after 600s")
             return super().chat(messages, json_mode=json_mode)
 
     to_text, to_pack, to_meta = tell_from_hits(jan_plan, llm=_TimeoutLlm(), evidence=hits)
@@ -1340,7 +1340,7 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "timed out" in str(to_inf.get("reason") or "").lower()
         and "PARSE_SCHEMA" not in str(to_inf.get("error_class") or "")
         and to_inf.get("stage") == "ask-relative reasoning"
-        and to_inf.get("timeout_seconds") == 90
+        and to_inf.get("timeout_seconds") == 600
         and to_pack.get("semantic_observations")
         and not to_pack.get("validated_inference")
         and "narration unavailable" in to_text.lower()
