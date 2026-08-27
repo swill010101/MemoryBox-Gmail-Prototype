@@ -10,9 +10,10 @@ from memorybox.providers.llm import _ollama_http as oh
 
 
 def ollama_chat_timeout_seconds() -> int:
-    timeout = 90
+    """Seconds for POST /api/chat (urllib). Diagnostic floor 600; env may only raise it."""
+    timeout = 600
     raw_to = (os.environ.get("MEMORYBOX_OLLAMA_CHAT_TIMEOUT") or "").strip()
-    if raw_to.isdigit() and int(raw_to) >= 15:
+    if raw_to.isdigit() and int(raw_to) > timeout:
         timeout = int(raw_to)
     return timeout
 

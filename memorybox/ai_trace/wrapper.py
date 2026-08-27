@@ -141,10 +141,18 @@ class TracedLlmProvider:
         self, messages: list[ChatMessage], *, json_mode: bool = False
     ) -> ChatResultDto:
         assembled = ctx.current_assembled_context()
+        timeout_seconds = None
+        try:
+            from memorybox.providers.llm.ollama import ollama_chat_timeout_seconds
+
+            timeout_seconds = ollama_chat_timeout_seconds()
+        except Exception:  # noqa: BLE001
+            timeout_seconds = None
         payload = {
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "json_mode": bool(json_mode),
             "model": getattr(self.inner, "chat_model", None),
+            "timeout_seconds": timeout_seconds,
         }
         t0 = time.perf_counter()
         started = store._now()
@@ -166,10 +174,18 @@ class TracedLlmProvider:
                     raw_response={
                         "model": result.model,
                         "content": result.content,
+                        "timeout_seconds": (result.usage or {}).get("timeout_seconds")
+                        if isinstance(result.usage, dict)
+                        else timeout_seconds,
                     },
-                    model=_model_meta(
-                        self.inner, capability="llm", model=result.model
-                    ),
+                    model={
+                        **_model_meta(
+                            self.inner, capability="llm", model=result.model
+                        ),
+                        "timeout_seconds": (result.usage or {}).get("timeout_seconds")
+                        if isinstance(result.usage, dict)
+                        else timeout_seconds,
+                    },
                 )
             return result
         except Exception as exc:  # noqa: BLE001
@@ -187,11 +203,14 @@ class TracedLlmProvider:
                     duration_ms=ms,
                     assembled_context=assembled,
                     provider_payload=payload,
-                    model=_model_meta(
-                        self.inner,
-                        capability="llm",
-                        model=getattr(self.inner, "chat_model", None),
-                    ),
+                    model={
+                        **_model_meta(
+                            self.inner,
+                            capability="llm",
+                            model=getattr(self.inner, "chat_model", None),
+                        ),
+                        "timeout_seconds": timeout_seconds,
+                    },
                     error={
                         "class": klass,
                         "type": type(exc).__name__,
