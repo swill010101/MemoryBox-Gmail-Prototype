@@ -25,7 +25,7 @@ from memorybox.context import AskContext
 from memorybox.planner import plan_ask
 from memorybox.providers.base import ProviderHealth, ProviderUnavailable
 from memorybox.providers.llm.fake import FakeLlmProvider
-from memorybox.providers.llm.dto import ChatMessage
+from memorybox.providers.llm.dto import ChatMessage, ChatResultDto
 
 
 def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
@@ -1302,6 +1302,55 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         detail={
             "inf": {k: person_inf.get(k) for k in ("ok", "fail_closed", "error_class", "stage")},
             "narrator_calls": _PersonAskTimeout.narrator_calls,
+        },
+    )
+
+    class _InvalidAskRelativeSchema(FakeLlmProvider):
+        narrator_calls = 0
+
+        def chat(self, messages, *, json_mode=False):  # type: ignore[no-untyped-def]
+            system = next((m.content for m in messages if m.role == "system"), "")
+            if "NARRATIVE_SYNTHESIS" in (system or ""):
+                type(self).narrator_calls += 1
+            if "ASK_RELATIVE_REASONING" in (system or ""):
+                return ChatResultDto(
+                    model="fake-chat",
+                    content=json.dumps(
+                        {
+                            "label": "exchanges: good",
+                            "kind": "communication",
+                            "rollup_id": "ru-ccbdd2738c79770396ab",
+                        }
+                    ),
+                )
+            return super().chat(messages, json_mode=json_mode)
+
+    _InvalidAskRelativeSchema.narrator_calls = 0
+    bad_pack = prepare_narrative_pack(peggy_plan, evidence=hits, photos=[], videos=[])
+    bad_pack = apply_inference_to_pack(peggy_plan, bad_pack, _InvalidAskRelativeSchema())
+    bad_text, bad_meta = _synth_person(peggy_plan, bad_pack, _InvalidAskRelativeSchema())
+    bad_inf = bad_pack.get("inference") or {}
+    bad_view = bad_pack.get("ask_relative_view") or {}
+    _check(
+        "invalid_ask_relative_schema_skips_narrator",
+        bad_meta.get("fail_closed") is True
+        and bad_inf.get("fail_closed") is True
+        and bad_inf.get("error_class") == "MODEL_OUTPUT"
+        and _InvalidAskRelativeSchema.narrator_calls == 0
+        and not bad_pack.get("validated_inference")
+        and not (bad_view.get("episodes") if isinstance(bad_view, dict) else None)
+        and not bad_pack.get("life_period_outline")
+        and "narration unavailable" in bad_text.lower()
+        and "evidence-backed account" not in bad_text.lower(),
+        checks,
+        problems,
+        detail={
+            "inf": {
+                k: bad_inf.get(k)
+                for k in ("ok", "fail_closed", "error_class", "stage", "reason", "schema_reason")
+            },
+            "narrator_calls": _InvalidAskRelativeSchema.narrator_calls,
+            "assertion": "invalid_ask_relative_schema => narrator_calls == 0",
         },
     )
 

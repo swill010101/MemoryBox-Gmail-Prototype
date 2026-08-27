@@ -901,8 +901,10 @@ class AskOrchestrator:
     ) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
         from memorybox.ask.progress import note_ask_progress
+        from memorybox.ask import stage_clock
 
         note_ask_progress(session_id, "Collecting photos")
+        clock_tok = stage_clock.start()
         try:
             with tracing_ask(text, session_id) as tr:
                 result = self._ask_impl(
@@ -922,8 +924,20 @@ class AskOrchestrator:
                 if not req and isinstance(inf.get("request_context"), dict):
                     req = inf["request_context"]
                 fail = bool(result.narration_unavailable) or bool(inf.get("fail_closed"))
-                partial = bool(inf.get("partial"))
-                status = "error" if fail else "ok"
+                partial = bool(inf.get("partial")) or inf.get("enrichment_complete") is False
+                if fail:
+                    status = "error"
+                elif partial:
+                    status = "partial"
+                else:
+                    status = "ok"
+                timings = stage_clock.snapshot()
+                if isinstance(result.narrative_pack, dict):
+                    result.narrative_pack["stage_timings"] = timings
+                    if isinstance(result.narrative_pack.get("inference"), dict):
+                        result.narrative_pack["inference"]["stage_timings"] = timings
+                    if isinstance(result.narrative_pack.get("i11a_ab_metrics"), dict):
+                        result.narrative_pack["i11a_ab_metrics"]["stage_timings"] = timings
                 tr.complete(
                     disposition={
                         "answer_kind": result.answer_kind,
@@ -935,6 +949,8 @@ class AskOrchestrator:
                         "ok": not fail,
                         "fail_closed": fail,
                         "partial": partial,
+                        "enrichment_complete": inf.get("enrichment_complete"),
+                        "stage_timings": timings,
                         "inference_reason": inf.get("reason"),
                         "person_ids": plan.get("person_ids"),
                         "person_names": plan.get("person_names"),
@@ -942,11 +958,14 @@ class AskOrchestrator:
                         "requestor_person_id": req.get("requestor_person_id"),
                     },
                     status=status,
-                    error_class=(str(inf.get("error_class") or "") or None) if fail else None,
+                    error_class=(str(inf.get("error_class") or "") or None)
+                    if fail or status == "partial"
+                    else None,
                 )
                 result.trace_id = tr.trace_id
                 return result
         finally:
+            stage_clock.reset(clock_tok)
             note_ask_progress(session_id, "Done")
 
     def _ask_impl(
@@ -959,16 +978,17 @@ class AskOrchestrator:
         inference_stage: str = "ask",
     ) -> AskResult:
         from memorybox.ask.progress import note_ask_progress
+        from memorybox.ask import stage_clock
+        import time as _time
 
         def _stage(line: str, *, pause: bool = False) -> None:
-            import time as _time
-
             note_ask_progress(session_id, line)
             if trace is not None:
                 trace.note_retrieve(line)
             if pause:
                 _time.sleep(0.2)
 
+        _pr_t0 = _time.perf_counter()
         ctx = self.store.get_or_create(session_id)
         try:
             plan = compile_ask(text, ctx, llm=self.llm)
@@ -1164,6 +1184,7 @@ class AskOrchestrator:
         plan = apply_constraints_to_plan(plan)
         if trace is not None:
             trace.note_planner(plan.to_dict() if hasattr(plan, "to_dict") else {})
+        stage_clock.add("person_resolution_ms", int((_time.perf_counter() - _pr_t0) * 1000))
 
         evidence: list[R.EvidenceHit] = []
         qdrant_status: dict[str, Any] = {"ok": False, "detail": "skipped"}
@@ -1363,6 +1384,7 @@ class AskOrchestrator:
             )
 
         if not plan.requires_clarification and not plan.journal_capture_intent:
+            _rt0 = _time.perf_counter()
             if plan.want_still or plan.want_photo:
                 _stage("Collecting photos")
             if plan.want_communication:
@@ -1414,7 +1436,8 @@ class AskOrchestrator:
             if getattr(plan, "want_spoken", False):
                 from memorybox.speech.retrieve import search_spoken_moments
 
-                spoken_rows = search_spoken_moments(plan)
+                with stage_clock.timed("spoken_ms", provider=True):
+                    spoken_rows = search_spoken_moments(plan)
                 spoken_videos = [
                     R.VideoHit(
                         provider_key=str(r.get("provider_key") or "hvrt"),
@@ -1720,6 +1743,11 @@ class AskOrchestrator:
                 evidence = []
                 break
 
+        try:
+            stage_clock.add("retrieval_ms", int((_time.perf_counter() - _rt0) * 1000))
+        except NameError:
+            pass
+
         # Disclose failed relational resolve when no other answer path
         if (
             getattr(plan, "profile_answer", None)
@@ -1840,9 +1868,10 @@ class AskOrchestrator:
                 answer_text = "Episode analysis only; narration was not requested."
                 narration_unavailable = False
             if narrative_pack:
-                photos = rank_photos_by_candidates(
-                    photos, list(narrative_pack.get("candidate_visual_ids") or [])
-                )
+                with stage_clock.timed("gallery_pack_assembly_ms"):
+                    photos = rank_photos_by_candidates(
+                        photos, list(narrative_pack.get("candidate_visual_ids") or [])
+                    )
             if narrative_pack and isinstance(narrative_pack.get("coverage"), dict):
                 pack_cov = narrative_pack["coverage"]
                 if coverage:
@@ -1884,9 +1913,10 @@ class AskOrchestrator:
                 modality_state=narrative_pack.get("modality_state"),
                 stage="enrich" if enriching else "ask",
             )
-            photos = rank_photos_by_candidates(
-                photos, list(narrative_pack.get("candidate_visual_ids") or [])
-            )
+            with stage_clock.timed("gallery_pack_assembly_ms"):
+                photos = rank_photos_by_candidates(
+                    photos, list(narrative_pack.get("candidate_visual_ids") or [])
+                )
             if enriching:
                 answer_text = "Observation enrichment complete; Ask-relative was not run."
                 person_synth = False

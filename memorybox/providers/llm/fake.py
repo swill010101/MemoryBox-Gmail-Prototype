@@ -41,7 +41,7 @@ def _fake_ask_relative(user_json: str) -> str:
     try:
         data = json.loads(user_json)
     except Exception:
-        return json.dumps({"schema_version": 2, "episodes": [], "themes": [], "unresolved": []})
+        return json.dumps({"schema_version": 2, "answer_focus": "", "selected_rollup_ids": [], "selected_observation_ids": [], "themes": [], "unresolved": [], "episodes": []})
     rollups = [r for r in (data.get("rollups") or []) if isinstance(r, dict)]
     observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
     for o in observations:
@@ -98,6 +98,7 @@ def _fake_ask_relative(user_json: str) -> str:
         return json.dumps(
             {
                 "answer_focus": view.get("answer_focus") or ask[:160],
+                "selected_rollup_ids": [],
                 "selected_observation_ids": selected
                 or [o.get("observation_id") for o in observations if o.get("observation_id") not in drop],
                 "correlations": correlations,
@@ -111,9 +112,11 @@ def _fake_ask_relative(user_json: str) -> str:
             {
                 "schema_version": 2,
                 "ask_semantics": {"kind": hint, "constraints": {}},
+                "answer_focus": ask[:160],
                 "episodes": [],
                 "themes": [],
                 "unresolved": [],
+                "selected_rollup_ids": [],
                 "selected_observation_ids": [o.get("observation_id") for o in observations],
             }
         )

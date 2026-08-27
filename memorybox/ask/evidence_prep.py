@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from typing import Any
 from uuid import UUID
 
@@ -1419,6 +1420,9 @@ def prepare_narrative_pack(
     photo_status: dict[str, Any] | None = None,
     video_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from memorybox.ask import stage_clock
+
+    _norm_t0 = time.perf_counter()
     evidence = list(evidence or [])
     photos = list(photos or [])
     videos = list(videos or [])
@@ -1766,4 +1770,5 @@ def prepare_narrative_pack(
             },
         },
     }
+    stage_clock.add("normalization_ms", int((time.perf_counter() - _norm_t0) * 1000))
     return pack

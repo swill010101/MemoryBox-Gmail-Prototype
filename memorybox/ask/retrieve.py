@@ -5,7 +5,8 @@ import json
 import re
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from functools import wraps
+from typing import Any, Callable
 from uuid import UUID
 
 from memorybox.ask.place_match import (
@@ -52,6 +53,20 @@ class EvidenceHit:
 SMS_RETRIEVE_CAP = 25000
 # SQL page size only — not a semantic evidence limit.
 TELL_DB_PAGE = 500
+
+
+def _timed_provider(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(fn)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            from memorybox.ask import stage_clock
+
+            with stage_clock.timed(name, provider=True):
+                return fn(*args, **kwargs)
+
+        return wrapped
+
+    return deco
 
 _MONTH_KEYWORD_STOP = {
     "january",
@@ -585,6 +600,7 @@ def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[s
     first pass dropped.
     """
     from memorybox.ai_trace.request import heartbeat_retrieve
+    from memorybox.ask import stage_clock
 
     last_id = None
     yielded = 0
@@ -601,16 +617,18 @@ def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[s
                 line=f"paging evidence n={yielded}",
                 span=(yielded == 0 or yielded % 2000 == 0),
             )
-            rows = conn.execute(
-                f"""
-                SELECT id, evidence_kind, summary, payload_json
-                FROM evidence
-                WHERE {clause}
-                ORDER BY id
-                LIMIT %s
-                """,
-                qparams + [TELL_DB_PAGE],
-            ).fetchall()
+            with stage_clock.timed("paging_ms"):
+                rows = conn.execute(
+                    f"""
+                    SELECT id, evidence_kind, summary, payload_json
+                    FROM evidence
+                    WHERE {clause}
+                    ORDER BY id
+                    LIMIT %s
+                    """,
+                    qparams + [TELL_DB_PAGE],
+                ).fetchall()
+            stage_clock.bump_pages(1)
             if not rows:
                 break
             for r in rows:
@@ -869,6 +887,7 @@ def _year_fair_slice(hits: list[EvidenceHit], limit: int) -> tuple[list[Evidence
     return selected, True
 
 
+@_timed_provider("sms_ms")
 def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date / keyword retrieve over ingested SMS/iMessage Evidence."""
     from memorybox.person.phone_map import normalize_handle
@@ -1277,6 +1296,7 @@ def _email_person_blob(payload: dict[str, Any]) -> str:
     return " ".join(bits).lower()
 
 
+@_timed_provider("email_ms")
 def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date / keyword retrieve over ingested email Evidence."""
     ask = plan.original_ask or ""
@@ -1551,6 +1571,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     return sliced
 
 
+@_timed_provider("calendar_ms")
 def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date retrieve over ingested calendar_event Evidence."""
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
@@ -1904,6 +1925,7 @@ def filter_hits_by_constraints(
     return kept
 
 
+@_timed_provider("qdrant_ms")
 def search_evidence_qdrant(
     plan: QueryPlan, *, limit: int = 12, cfg: Settings | None = None
 ) -> tuple[list[EvidenceHit], dict[str, Any]]:
@@ -2046,6 +2068,7 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
     return ranked[:limit]
 
 
+@_timed_provider("photos_ms")
 def search_photos(
     plan: QueryPlan, photo: PhotoProvider, *, limit: int = 5000
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
@@ -2910,6 +2933,7 @@ def _dedupe_video_hits(
     return merged[: int(limit)]
 
 
+@_timed_provider("videos_ms")
 def search_videos(
     plan: QueryPlan,
     video: Any,

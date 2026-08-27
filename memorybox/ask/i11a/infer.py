@@ -18,8 +18,9 @@ from memorybox.ask.i11a.person_context import build_person_context, slim_person_
 from memorybox.ask.i11a.reason import (
     ASK_RELATIVE_SYSTEM,
     apply_correlations_to_ir,
+    ask_relative_schema_ok,
+    ask_relative_semantic_ok,
     eligible_observations,
-    fallback_view,
     reason_payload,
     view_from_model_json,
 )
@@ -37,6 +38,7 @@ from memorybox.ask.i11a.observation_cache import (
     load_episode_observations,
     save_episode_observations,
     source_hash,
+    unit_source_hash,
 )
 from memorybox.providers.base import ProviderError, ProviderUnavailable
 from memorybox.providers.llm.dto import ChatMessage
@@ -265,7 +267,15 @@ def _fail(
         "request_context": req,
         "accounting": accounting,
         "partial": False,
+        "enrichment_complete": accounting.get("enrichment_complete"),
+        "stage_timings": None,
     }
+    try:
+        from memorybox.ask import stage_clock
+
+        result["stage_timings"] = stage_clock.snapshot()
+    except Exception:  # noqa: BLE001
+        pass
     assembled = {
         "ok": False,
         "reason": reason,
@@ -309,8 +319,11 @@ def run_inference(
     t0 = time.perf_counter()
     stage = STAGE_ENRICH if str(stage or "").strip().lower() == STAGE_ENRICH else STAGE_ASK
     allow_llm_extract = stage == STAGE_ENRICH
-    person_context = build_person_context(plan)
-    req = resolve_request_context(plan)
+    from memorybox.ask import stage_clock
+
+    with stage_clock.timed("person_resolution_ms"):
+        person_context = build_person_context(plan)
+        req = resolve_request_context(plan)
     kind_hint = ask_kind_for_plan(plan)
     from memorybox.ask.i11a.preaggregate import preaggregate_pack
 
@@ -319,7 +332,8 @@ def run_inference(
     focals = req.get("focal_subject_person_ids") or []
     if focals:
         focal_id = str(focals[0])
-    agg = preaggregate_pack(pack, person_id=focal_id)
+    with stage_clock.timed("preaggregation_ms"):
+        agg = preaggregate_pack(pack, person_id=focal_id)
     pack["preaggregation"] = agg.get("trace") or {}
     pack["inference_units"] = agg.get("units") or []
     agg_units = list(agg.get("units") or units)
@@ -400,7 +414,22 @@ def run_inference(
         "semantic_unit_fingerprint_n": (pack.get("preaggregation") or {}).get(
             "semantic_unit_fingerprint_n"
         ),
+        "distinct_raw_evidence_items": (pack.get("preaggregation") or {}).get(
+            "distinct_raw_evidence_items"
+        ),
+        "distinct_sms_messages": (pack.get("preaggregation") or {}).get("distinct_sms_messages"),
+        "sms_provenance_id_n": (pack.get("preaggregation") or {}).get("sms_provenance_id_n"),
+        "eligible_provenance_id_n": (pack.get("preaggregation") or {}).get("eligible_provenance_id_n"),
+        "eligible_representation_id_n": (pack.get("preaggregation") or {}).get(
+            "eligible_representation_id_n"
+        ),
+        "count_labels": (pack.get("preaggregation") or {}).get("count_labels"),
         "engine": "observations_ir_ask_relative",
+        "units_total": len(model_units),
+        "units_complete": 0,
+        "units_deferred": 0,
+        "enrichment_complete": True,
+        "deferred_unit_fingerprints": [],
     }
     if not units:
         return _fail(
@@ -419,7 +448,8 @@ def run_inference(
         cached_rows: list[dict[str, Any]] = []
         pending: list[dict[str, Any]] = []
         for unit in chunk:
-            hit = load_episode_observations(unit)
+            with stage_clock.timed("observation_cache_lookup_ms"):
+                hit = load_episode_observations(unit)
             if hit is not None:
                 cached_rows.extend(hit)
                 accounting["extract_cache_hits"] = int(accounting.get("extract_cache_hits") or 0) + 1
@@ -448,6 +478,12 @@ def run_inference(
             accounting["enrichment_deferred"] = int(accounting.get("enrichment_deferred") or 0) + len(
                 pending
             )
+            accounting["units_deferred"] = int(accounting.get("units_deferred") or 0) + len(pending)
+            fps = accounting.setdefault("deferred_unit_fingerprints", [])
+            for unit in pending:
+                fp = unit_source_hash(unit)
+                if fp and fp not in fps:
+                    fps.append(fp)
             accounting["successful_units"] += len(chunk) - len(pending)
             _trace_span(
                 stage="i11a_inference",
@@ -527,6 +563,12 @@ def run_inference(
             klass = classify_llm_error(exc)
             if klass == "PROVIDER_TIMEOUT":
                 accounting["extract_timeouts"] = int(accounting.get("extract_timeouts") or 0) + 1
+            fps = accounting.setdefault("deferred_unit_fingerprints", [])
+            for unit in pending:
+                fp = unit_source_hash(unit)
+                if fp and fp not in fps:
+                    fps.append(fp)
+            accounting["units_deferred"] = int(accounting.get("units_deferred") or 0) + len(pending)
             extract_stats["error_class"] = klass
             _trace_span(
                 stage="i11a_inference",
@@ -539,6 +581,13 @@ def run_inference(
             )
             # Persist successful episodes already stored; skip this episode and continue
             # so a later Ask can reuse cache hits without repeating finished work.
+
+    accounting["units_total"] = len(model_units)
+    accounting["units_complete"] = int(accounting.get("successful_units") or 0)
+    accounting["units_deferred"] = int(accounting.get("units_deferred") or 0)
+    accounting["enrichment_complete"] = int(accounting.get("units_deferred") or 0) == 0
+    if accounting.get("deferred_unit_fingerprints"):
+        accounting["deferred_unit_fingerprints"] = list(accounting["deferred_unit_fingerprints"])[:80]
 
     accounting["observations_b"] = len(model_obs)
     merged = merge_model_observations(deterministic, model_obs)
@@ -554,12 +603,14 @@ def run_inference(
             )
         merged = [observation_from_unit(u) for u in (agg.get("units") or units)]
         merged = [o for o in merged if o]
-    validated_obs = validate_observations(
-        merged, pack=pack, person_context=person_context
-    )
+    with stage_clock.timed("provenance_validation_ms"):
+        validated_obs = validate_observations(
+            merged, pack=pack, person_context=person_context
+        )
     observations = validated_obs.get("observations") or []
     pack["semantic_observations"] = observations
-    rolled = roll_up_observations(observations)
+    with stage_clock.timed("rollup_ms"):
+        rolled = roll_up_observations(observations)
     pack["semantic_rollups"] = rolled.get("rollups") or []
     accounting["validated_observations"] = len(observations)
     accounting["rollup_units"] = int(rolled.get("rollup_unit_count") or 0)
@@ -606,11 +657,30 @@ def run_inference(
         },
     )
     if stage == STAGE_ENRICH:
+        complete = bool(accounting.get("enrichment_complete"))
+        klass = None
+        if not complete and int(accounting.get("extract_timeouts") or 0) > 0:
+            klass = "PROVIDER_TIMEOUT"
+        try:
+            from memorybox.ai_trace import context as ai_ctx
+            from memorybox.ai_trace import store
+
+            tid = ai_ctx.current_trace_id()
+            if tid:
+                store.update_trace(
+                    tid,
+                    status="ok" if complete else "partial",
+                    error_class=klass,
+                )
+        except Exception:  # noqa: BLE001
+            pass
         return {
             "ok": True,
             "fail_closed": False,
-            "partial": failed_chunks > 0,
-            "reason": None,
+            "partial": (not complete) or failed_chunks > 0,
+            "enrichment_complete": complete,
+            "reason": None if complete else "partial observation enrichment; deferred units remain",
+            "error_class": klass,
             "document": None,
             "rejected": validated_obs.get("rejected") or [],
             "person_context": person_context,
@@ -623,12 +693,14 @@ def run_inference(
             "semantic_rollups": rolled,
             "ask_relative_view": None,
             "stage": STAGE_ENRICH,
+            "stage_timings": stage_clock.snapshot(),
         }
 
     eligible = eligible_observations(
         observations, plan=plan, request_context=req
     )
-    rolled_eligible = roll_up_observations(eligible)
+    with stage_clock.timed("rollup_ms"):
+        rolled_eligible = roll_up_observations(eligible)
     pack["semantic_rollups"] = rolled_eligible.get("rollups") or []
     accounting["validated_observations"] = len(eligible)
     accounting["rollup_units"] = int(rolled_eligible.get("rollup_unit_count") or 0)
@@ -694,23 +766,60 @@ def run_inference(
             stats["num_ctx_note"] = call_meta.get("num_ctx_note")
         accounting["ask_relative_payload"] = stats
         parsed_view = parse_inference_json(raw_view)
+        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        stage_clock.add("ask_relative_ms", elapsed_ms)
+        if parsed_view is None:
+            schema_ok, schema_reason = False, "ask-relative output is not valid JSON"
+            sem_ok, sem_reason = False, schema_reason
+        else:
+            schema_ok, schema_reason = ask_relative_schema_ok(parsed_view)
+            if schema_ok:
+                sem_ok, sem_reason = ask_relative_semantic_ok(
+                    parsed_view, rollups=rolled_eligible, observations=eligible
+                )
+            else:
+                sem_ok, sem_reason = False, schema_reason
+        valid = bool(schema_ok and sem_ok)
+        fail_reason = schema_reason if not schema_ok else sem_reason
         _trace_span(
             stage="ask_relative_reasoning",
             component="i11a",
             operation="ask_relative",
-            status="ok",
-            duration_ms=int((time.perf_counter() - ask_t0) * 1000),
+            status="ok" if valid else "error",
+            error_class=None if valid else "MODEL_OUTPUT",
+            duration_ms=elapsed_ms,
             provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
             raw_response={"content": raw_view},
             parsed=parsed_view,
             assembled_context={
                 **stats,
+                "schema_ok": schema_ok,
+                "schema_reason": None if schema_ok else schema_reason,
+                "semantic_ok": sem_ok,
+                "semantic_reason": None if sem_ok else sem_reason,
                 "retry_count": int((stats.get("provider_eval") or {}).get("retries") or 0),
                 "timeout_retried": False,
                 "provider_key": getattr(llm, "provider_key", None),
                 "model": getattr(llm, "chat_model", None) or getattr(llm, "model", None),
             },
         )
+        if not valid:
+            extra = {
+                "stage": "ask-relative reasoning",
+                "schema_reason": schema_reason if not schema_ok else None,
+                "semantic_reason": sem_reason if schema_ok and not sem_ok else None,
+                "ask_relative_payload": stats,
+                "raw_ask_relative": (raw_view or "")[:4000],
+            }
+            return _fail(
+                reason=fail_reason or "ask-relative validation failed",
+                person_context=person_context,
+                req=req,
+                accounting=accounting,
+                error_class="MODEL_OUTPUT",
+                stage="ask_relative_reasoning",
+                extra=extra,
+            )
     except ProviderUnavailable as exc:
         klass = classify_llm_error(exc)
         elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
@@ -744,6 +853,7 @@ def run_inference(
             assembled_context=extra,
             provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
         )
+        stage_clock.add("ask_relative_ms", elapsed_ms)
         return _fail(
             reason=reason,
             person_context=person_context,
@@ -756,6 +866,7 @@ def run_inference(
     except Exception as exc:  # noqa: BLE001
         klass = classify_llm_error(exc)
         elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        stage_clock.add("ask_relative_ms", elapsed_ms)
         extra = {
             "stage": "ask-relative reasoning",
             "provider_key": getattr(llm, "provider_key", None),
@@ -794,9 +905,22 @@ def run_inference(
         ask=ask,
         ask_kind_hint=kind_hint,
         rollups=rolled_eligible,
+        allow_fallback=False,
     )
     if not view.get("episodes"):
-        view = fallback_view(eligible, ask=ask, ask_kind_hint=kind_hint)
+        return _fail(
+            reason="ask-relative produced no grounded episodes",
+            person_context=person_context,
+            req=req,
+            accounting=accounting,
+            error_class="MODEL_OUTPUT",
+            stage="ask_relative_reasoning",
+            extra={
+                "stage": "ask-relative reasoning",
+                "semantic_reason": "no grounded episodes after ASK_RELATIVE expansion",
+                "ask_relative_payload": stats,
+            },
+        )
     accounting["observations_expanded"] = len(view.get("selected_observation_ids") or [])
     ir = apply_correlations_to_ir(ir, view)
     pack["semantic_ir"] = ir
@@ -809,7 +933,8 @@ def run_inference(
         parsed=view,
     )
 
-    validated = validate_inference(view, pack=pack, person_context=person_context)
+    with stage_clock.timed("provenance_validation_ms"):
+        validated = validate_inference(view, pack=pack, person_context=person_context)
     incomplete = failed_chunks > 0
     fail_closed = not validated.get("ok")
     result = {
@@ -817,6 +942,7 @@ def run_inference(
         "fail_closed": fail_closed,
         "partial": incomplete and not fail_closed,
         "reason": None if validated.get("ok") and not fail_closed else "validation failed",
+        "error_class": "MODEL_OUTPUT" if fail_closed else None,
         "document": validated.get("document") if not fail_closed else None,
         "rejected": list(validated_obs.get("rejected") or []) + list(validated.get("rejected") or []),
         "person_context": person_context,
@@ -829,6 +955,8 @@ def run_inference(
         "ask_relative_view": view,
         "semantic_rollups": rolled_eligible,
         "stage": STAGE_ASK,
+        "enrichment_complete": accounting.get("enrichment_complete"),
+        "stage_timings": stage_clock.snapshot(),
     }
     _trace_span(
         stage="i11a_validate",
@@ -926,6 +1054,7 @@ def apply_inference_to_pack(
         pack["i11a_ab_metrics"] = {}
         return pack
     inf = run_inference(plan, pack, llm, modality_state=modality_state, stage=stage)
+    acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
     pack["inference"] = {
         "ok": inf.get("ok"),
         "fail_closed": inf.get("fail_closed"),
@@ -940,10 +1069,13 @@ def apply_inference_to_pack(
         "duration_ms": inf.get("duration_ms"),
         "retry_count": inf.get("retry_count"),
         "stage": inf.get("stage") or stage,
+        "schema_reason": inf.get("schema_reason"),
+        "semantic_reason": inf.get("semantic_reason"),
+        "enrichment_complete": inf.get("enrichment_complete"),
+        "stage_timings": inf.get("stage_timings"),
     }
     pack["person_context"] = inf.get("person_context")
     pack["request_context"] = inf.get("request_context")
-    acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
     pack["i11a_ab_metrics"] = {
         "raw_eligible": acc.get("raw_eligible"),
         "preaggregation_units": acc.get("preaggregation_units"),
@@ -985,11 +1117,33 @@ def apply_inference_to_pack(
         "semantic_unit_fingerprint_digest": acc.get("semantic_unit_fingerprint_digest")
         or (pack.get("preaggregation") or {}).get("semantic_unit_fingerprint_digest"),
         "validated_observation_digest": acc.get("validated_observation_digest"),
+        "units_total": acc.get("units_total"),
+        "units_complete": acc.get("units_complete"),
+        "units_deferred": acc.get("units_deferred"),
+        "enrichment_complete": acc.get("enrichment_complete"),
+        "deferred_unit_fingerprints": acc.get("deferred_unit_fingerprints"),
+        "stage_timings": inf.get("stage_timings"),
+        "distinct_raw_evidence_items": acc.get("distinct_raw_evidence_items")
+        or (pack.get("preaggregation") or {}).get("distinct_raw_evidence_items"),
+        "distinct_sms_messages": acc.get("distinct_sms_messages")
+        or (pack.get("preaggregation") or {}).get("distinct_sms_messages"),
+        "sms_provenance_id_n": acc.get("sms_provenance_id_n")
+        or (pack.get("preaggregation") or {}).get("sms_provenance_id_n"),
+        "eligible_provenance_id_n": acc.get("eligible_provenance_id_n")
+        or (pack.get("preaggregation") or {}).get("eligible_provenance_id_n"),
+        "eligible_representation_id_n": acc.get("eligible_representation_id_n")
+        or (pack.get("preaggregation") or {}).get("eligible_representation_id_n"),
+        "count_labels": acc.get("count_labels")
+        or (pack.get("preaggregation") or {}).get("count_labels"),
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
     pack["semantic_rollups"] = pack.get("semantic_rollups") or inf.get("semantic_rollups")
-    pack["ask_relative_view"] = inf.get("ask_relative_view") or pack.get("ask_relative_view")
+    pack["ask_relative_view"] = inf.get("ask_relative_view")
+    if inf.get("fail_closed"):
+        pack["ask_relative_view"] = None
+        pack.pop("validated_inference", None)
+        pack.pop("life_period_outline", None)
     if inf.get("partial"):
         cov = pack.get("coverage") if isinstance(pack.get("coverage"), dict) else {}
         cov["incomplete"] = True
@@ -1013,13 +1167,15 @@ def apply_inference_to_pack(
             vis.extend(ep.get("candidate_visual_ids") or [])
         pack["candidate_visual_ids"] = list(dict.fromkeys(vis))
     from memorybox.ask.i11a.consideration import finish_consideration
+    from memorybox.ask import stage_clock
 
-    finish_consideration(
-        pack,
-        chunk_map=inf.get("chunk_map") or {},
-        document=inf.get("document"),
-        accounting=inf.get("accounting"),
-    )
+    with stage_clock.timed("gallery_pack_assembly_ms"):
+        finish_consideration(
+            pack,
+            chunk_map=inf.get("chunk_map") or {},
+            document=inf.get("document"),
+            accounting=inf.get("accounting"),
+        )
     return pack
 
 
