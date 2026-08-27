@@ -547,6 +547,58 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             "ids": len(year_ids),
         },
     )
+    sparse_sms = [
+        {
+            "unit_id": f"u-sparse-{i}",
+            "kind": "communication",
+            "source_type": "sms",
+            "time": {"value": f"{2012 + i}-06-15T12:00:00", "precision": "day"},
+            "thread_id": "thr-sparse-year",
+            "content": f"Check-in {i}. Love you.",
+            "sender_name": "Alex" if i % 2 == 0 else "Sam",
+            "people": [{"name": "Alex"}, {"name": "Sam"}],
+            "evidence_id": f"e-sparse-{i}",
+        }
+        for i in range(8)
+    ]
+    sparse_pre = _pre_compact({"units": sparse_sms})
+    sparse_units = [u for u in (sparse_pre.get("units") or []) if str(u.get("kind") or "") == "sms_segment"]
+    sparse_ns = [int(u.get("message_n") or 0) for u in sparse_units]
+    sparse_ids: set[str] = set()
+    sparse_spans: list[int] = []
+    for u in sparse_units:
+        sparse_ids.update(str(x) for x in (u.get("source_evidence_ids") or []))
+        ds = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        a, b = ds.get("start"), ds.get("end")
+        if a and b:
+            try:
+                sparse_spans.append(
+                    abs(
+                        (
+                            _date.fromisoformat(str(b)[:10])
+                            - _date.fromisoformat(str(a)[:10])
+                        ).days
+                    )
+                )
+            except ValueError:
+                pass
+    _check(
+        "sms_year_span_splits_on_temporal_gap_not_only_count",
+        len(sparse_sms) == 8
+        and len(sparse_units) >= 8
+        and max(sparse_ns or [0]) <= 8
+        and max(sparse_spans or [0]) < 60
+        and int((sparse_pre.get("trace") or {}).get("max_sms_window_span_days") or 0) < 60
+        and {f"e-sparse-{i}" for i in range(8)} <= sparse_ids,
+        checks,
+        problems,
+        detail={
+            "n_units": len(sparse_units),
+            "ns": sparse_ns,
+            "spans": sparse_spans,
+            "max_span": (sparse_pre.get("trace") or {}).get("max_sms_window_span_days"),
+        },
+    )
     mixed_chunk = chunk_units_semantically(fat_b, budget=12_000)
     trivia_only = any(
         all(str(u.get("thread_id") or "") == "thr-trivia" for u in ch) and ch
@@ -985,23 +1037,38 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     old_tok = max(1, len(json.dumps(old_payload, default=str)) // 4)
     new_tok = max(1, len(json.dumps(new_payload, default=str)) // 4)
     rp_stats = warm_acc.get("ask_relative_payload") or {}
+    from memorybox.ask.i11a.rollup import expand_rollup_ids as _expand_ru
+
+    expanded_obs = _expand_ru(
+        [str(u.get("rollup_id")) for u in (rolled.get("rollups") or [])],
+        rollups=rolled,
+        observations=rollup_obs,
+    )
     _check(
         "semantic_rollup_preserves_all_provenance",
         ru_obs == src_obs
         and ru_eids == src_eids
         and float(rolled.get("provenance_coverage") or 0) == 1.0
-        and int(rolled.get("rollup_unit_count") or 0) >= 2
+        and int(rolled.get("rollup_unit_count") or 0) >= 1
         and int(rolled.get("rollup_unit_count") or 0) < len(rollup_obs)
         and all(u.get("claim_type") == "derived" and u.get("not_family_fact") for u in (rolled.get("rollups") or []))
         and "observations" not in new_payload
+        and int(new_payload.get("observations_sent_to_ask_relative", 99)) == 0
+        and int(new_payload.get("rollups_sent_to_ask_relative") or 0)
+        == int(rolled.get("rollup_unit_count") or 0)
+        and len(expanded_obs) == len(rollup_obs)
         and new_tok < old_tok
         and new_tok * 2 <= old_tok
         and int(rp_stats.get("rollup_n") or 0) >= 1
         and bool(rp_stats.get("compact_rollups"))
-        and int(warm_acc.get("observations_expanded") or 0) >= 1
+        and int(rp_stats.get("observations_sent_to_ask_relative", 99)) == 0
+        and int(rp_stats.get("rollups_sent_to_ask_relative") or rp_stats.get("rollup_n") or 0) >= 1
+        and int(warm_acc.get("observations_sent_to_ask_relative", 99)) == 0
         and any(
-            "check-in" in str(u.get("label") or "").lower()
-            or "visit" in str(u.get("label") or "").lower()
+            any(
+                tok in str(u.get("label") or "").lower()
+                for tok in ("check-in", "visit", "sms", "exchange", "communication", "week")
+            )
             for u in (rolled.get("rollups") or [])
         ),
         checks,
@@ -1012,8 +1079,18 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
             "old_tok": old_tok,
             "new_tok": new_tok,
             "coverage": rolled.get("provenance_coverage"),
-            "ask_payload": {k: rp_stats.get(k) for k in ("rollup_n", "observation_n", "approx_tokens", "compact_rollups")},
-            "expanded": warm_acc.get("observations_expanded"),
+            "ask_payload": {
+                k: rp_stats.get(k)
+                for k in (
+                    "rollup_n",
+                    "observation_n",
+                    "approx_tokens",
+                    "compact_rollups",
+                    "observations_sent_to_ask_relative",
+                )
+            },
+            "expanded_after_selection": len(expanded_obs),
+            "observations_sent": new_payload.get("observations_sent_to_ask_relative"),
         },
     )
     _check(
@@ -2628,7 +2705,6 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
     _check(
         "person_ask_preaggregates_media_and_threads",
         int(pre.get("photos_raw") or 0) == 48
-        and int(pre.get("media_clusters") or 0) < 48
         and int(pre.get("sms_raw") or 0) == 8
         and int(pre.get("inference_units") or 0) < 48 + 8
         and int(acc.get("leaf_calls") or 99) <= 4

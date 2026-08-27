@@ -589,13 +589,23 @@ def reason_payload(
     person_context: dict[str, Any],
     ask_kind_hint: str,
     rollups: list[dict[str, Any]] | None = None,
+    observations_for_resolution: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Default Ask-relative IR is compact roll-ups, not the observation set.
+
+    Lower-level observations are omitted unless explicitly passed for
+    evidence-resolution stubs (never a full dump, never sampling of evidence).
+    """
     ask = str(getattr(plan, "original_ask", "") or "")
     allowed = []
     if isinstance(person_context, dict):
         allowed = list(person_context.get("allowed_relationship_labels") or [])[:24]
     compact = [compact_rollup_for_reason(r) for r in (rollups or []) if isinstance(r, dict)]
-    return {
+    stubs: list[dict[str, Any]] = []
+    for obs in observations_for_resolution or []:
+        if isinstance(obs, dict):
+            stubs.append(compact_observation_for_reason(obs))
+    payload: dict[str, Any] = {
         "ask": ask,
         "ask_kind_hint": ask_kind_hint,
         "request_context": {
@@ -605,13 +615,25 @@ def reason_payload(
         },
         "allowed_relationship_labels": allowed,
         "rollups": compact,
+        "validated_observation_total": len(observations),
         "validated_observation_count": len(observations),
+        "rollup_total": len(compact),
         "rollup_unit_count": len(compact),
+        "rollups_sent_to_ask_relative": len(compact),
+        "observations_sent_to_ask_relative": len(stubs),
         "note": (
-            "Derived semantic roll-ups, not family facts. Select rollup_id values. "
-            "Underlying observations expand on demand. Do not copy evidence arrays."
+            "Derived semantic roll-ups are the Ask-relative IR, not family facts. "
+            "Select rollup_id values. Lower-level observations are not in this payload; "
+            "Python expands selected roll-ups to every underlying observation."
         ),
     }
+    if stubs:
+        payload["observation_stubs"] = stubs
+        payload["note"] = (
+            payload["note"]
+            + " observation_stubs are explicit evidence-resolution expansions, not a full dump."
+        )
+    return payload
 
 
 def apply_correlations_to_ir(ir: dict[str, Any], view: dict[str, Any]) -> dict[str, Any]:

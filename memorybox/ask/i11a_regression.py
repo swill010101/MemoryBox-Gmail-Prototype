@@ -346,6 +346,27 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
             named.get("observations_expanded"),
             inf_acc.get("observations_expanded"),
         ),
+        "lower_level_expansion_count": _first(
+            named.get("lower_level_expansion_count"),
+            inf_acc.get("lower_level_expansion_count"),
+        ),
+        "validated_observation_total": _first(
+            named.get("validated_observation_total"),
+            inf_acc.get("validated_observation_total"),
+            (named.get("ask_relative_payload") or {}).get("validated_observation_total")
+            if isinstance(named.get("ask_relative_payload"), dict)
+            else None,
+        ),
+        "rollup_total": _first(named.get("rollup_total"), inf_acc.get("rollup_total")),
+        "rollups_sent_to_ask_relative": _first(
+            named.get("rollups_sent_to_ask_relative"),
+            inf_acc.get("rollups_sent_to_ask_relative"),
+        ),
+        "observations_sent_to_ask_relative": _first(
+            named.get("observations_sent_to_ask_relative"),
+            inf_acc.get("observations_sent_to_ask_relative"),
+        ),
+        "max_sms_window_span_days": pre.get("max_sms_window_span_days"),
         "enrichment_deferred": _first(
             named.get("enrichment_deferred"),
             inf_acc.get("enrichment_deferred"),
@@ -582,6 +603,12 @@ def _run_one(
             "rollup_units": metrics.get("rollup_units"),
             "rollup_provenance_coverage": metrics.get("rollup_provenance_coverage"),
             "observations_expanded": metrics.get("observations_expanded"),
+            "lower_level_expansion_count": metrics.get("lower_level_expansion_count"),
+            "validated_observation_total": metrics.get("validated_observation_total"),
+            "rollup_total": metrics.get("rollup_total"),
+            "rollups_sent_to_ask_relative": metrics.get("rollups_sent_to_ask_relative"),
+            "observations_sent_to_ask_relative": metrics.get("observations_sent_to_ask_relative"),
+            "max_sms_window_span_days": metrics.get("max_sms_window_span_days"),
             "eligible_evidence_id_digest": metrics.get("eligible_evidence_id_digest"),
             "semantic_unit_fingerprint_digest": metrics.get("semantic_unit_fingerprint_digest"),
             "sms_raw": metrics.get("sms_raw"),
@@ -740,6 +767,11 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
             "units_deferred": m.get("units_deferred"),
             "enrichment_complete": m.get("enrichment_complete"),
             "stage_timings": m.get("stage_timings"),
+            "rollups_sent_to_ask_relative": m.get("rollups_sent_to_ask_relative"),
+            "observations_sent_to_ask_relative": m.get("observations_sent_to_ask_relative"),
+            "validated_observation_total": m.get("validated_observation_total"),
+            "lower_level_expansion_count": m.get("lower_level_expansion_count"),
+            "max_sms_window_span_days": m.get("max_sms_window_span_days"),
             "semantic_unit_fingerprint_digest": m.get("semantic_unit_fingerprint_digest"),
             "validated_observation_digest": m.get("validated_observation_digest"),
             "extract_calls": m.get("observation_extract_calls"),
