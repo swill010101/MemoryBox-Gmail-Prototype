@@ -387,6 +387,49 @@ def _ab_metrics(result: Any, trace: dict[str, Any] | None) -> dict[str, Any]:
         "total_model_calls": None,
         "timeout_count": calls.get("timeouts"),
         "total_duration_ms": None,
+        "units_total": _first(named.get("units_total"), inf_acc.get("units_total")),
+        "units_complete": _first(named.get("units_complete"), inf_acc.get("units_complete")),
+        "units_deferred": _first(named.get("units_deferred"), inf_acc.get("units_deferred")),
+        "enrichment_complete": _first(
+            named.get("enrichment_complete"),
+            inf.get("enrichment_complete"),
+            inf_acc.get("enrichment_complete"),
+        ),
+        "deferred_unit_fingerprints": _first(
+            named.get("deferred_unit_fingerprints"),
+            inf_acc.get("deferred_unit_fingerprints"),
+        ),
+        "stage_timings": _first(
+            pack.get("stage_timings"),
+            inf.get("stage_timings"),
+            named.get("stage_timings"),
+        ),
+        "distinct_raw_evidence_items": _first(
+            named.get("distinct_raw_evidence_items"),
+            inf_acc.get("distinct_raw_evidence_items"),
+            pre.get("distinct_raw_evidence_items"),
+        ),
+        "distinct_sms_messages": _first(
+            named.get("distinct_sms_messages"),
+            inf_acc.get("distinct_sms_messages"),
+            pre.get("distinct_sms_messages"),
+        ),
+        "sms_provenance_id_n": _first(
+            named.get("sms_provenance_id_n"),
+            inf_acc.get("sms_provenance_id_n"),
+            pre.get("sms_provenance_id_n"),
+        ),
+        "eligible_provenance_id_n": _first(
+            named.get("eligible_provenance_id_n"),
+            inf_acc.get("eligible_provenance_id_n"),
+            pre.get("eligible_provenance_id_n"),
+        ),
+        "eligible_representation_id_n": _first(
+            named.get("eligible_representation_id_n"),
+            inf_acc.get("eligible_representation_id_n"),
+            pre.get("eligible_representation_id_n"),
+        ),
+        "count_labels": _first(named.get("count_labels"), pre.get("count_labels")),
     }
 
 
@@ -461,6 +504,16 @@ def _run_one(
             error_class = error_class or inf.get("error_class")
         else:
             status = status or "ok"
+    if result is not None:
+        pack_st = getattr(result, "narrative_pack", None)
+        inf_st = pack_st.get("inference") if isinstance(pack_st, dict) else {}
+        if (
+            isinstance(inf_st, dict)
+            and inf_st.get("enrichment_complete") is False
+            and not inf_st.get("fail_closed")
+        ):
+            status = "partial"
+            error_class = error_class or inf_st.get("error_class")
     if harness_error is not None:
         status = status or "error"
         error_class = error_class or "ORCHESTRATION"
@@ -535,6 +588,19 @@ def _run_one(
             "narrator_invoked": bool(metrics.get("narrator_calls")),
             "narrator_calls": metrics.get("narrator_calls"),
             "total_runtime_ms": duration_ms,
+            "units_total": metrics.get("units_total"),
+            "units_complete": metrics.get("units_complete"),
+            "units_deferred": metrics.get("units_deferred"),
+            "enrichment_complete": metrics.get("enrichment_complete"),
+            "deferred_unit_fingerprints": metrics.get("deferred_unit_fingerprints"),
+            "stage_timings": metrics.get("stage_timings"),
+            "distinct_raw_evidence_items": metrics.get("distinct_raw_evidence_items"),
+            "distinct_sms_messages": metrics.get("distinct_sms_messages"),
+            "sms_provenance_id_n": metrics.get("sms_provenance_id_n"),
+            "eligible_provenance_id_n": metrics.get("eligible_provenance_id_n"),
+            "eligible_representation_id_n": metrics.get("eligible_representation_id_n"),
+            "eligible_evidence_id_n": metrics.get("eligible_evidence_id_n"),
+            "count_labels": metrics.get("count_labels"),
         },
         "harness_error": harness_error,
         "trace": _jsonable(trace) if trace is not None else None,
@@ -554,8 +620,7 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
     with_errors = sum(
         1
         for t in tests
-        if t.get("error_class")
-        or t.get("harness_error")
+        if t.get("harness_error")
         or str(t.get("status") or "") in {"error", "failed"}
     )
     stage_totals: dict[str, int] = {}
@@ -665,6 +730,16 @@ def build_payload(tests: list[dict[str, Any]], *, runtime: dict[str, Any]) -> di
             "email_raw": m.get("email_thread_units"),
             "eligible_evidence_id_n": m.get("eligible_evidence_id_n"),
             "eligible_evidence_id_digest": m.get("eligible_evidence_id_digest"),
+            "distinct_raw_evidence_items": m.get("distinct_raw_evidence_items"),
+            "distinct_sms_messages": m.get("distinct_sms_messages"),
+            "sms_provenance_id_n": m.get("sms_provenance_id_n"),
+            "eligible_provenance_id_n": m.get("eligible_provenance_id_n"),
+            "eligible_representation_id_n": m.get("eligible_representation_id_n"),
+            "units_total": m.get("units_total"),
+            "units_complete": m.get("units_complete"),
+            "units_deferred": m.get("units_deferred"),
+            "enrichment_complete": m.get("enrichment_complete"),
+            "stage_timings": m.get("stage_timings"),
             "semantic_unit_fingerprint_digest": m.get("semantic_unit_fingerprint_digest"),
             "validated_observation_digest": m.get("validated_observation_digest"),
             "extract_calls": m.get("observation_extract_calls"),

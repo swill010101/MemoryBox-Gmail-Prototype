@@ -35,6 +35,76 @@ Treat roll-up labels as derived summaries, not established facts.
 ask_kind_hint is a view strategy, not a closed taxonomy.
 """
 
+ASK_RELATIVE_SCHEMA_KEYS = (
+    "answer_focus",
+    "selected_rollup_ids",
+    "selected_observation_ids",
+    "themes",
+    "unresolved",
+)
+
+
+def ask_relative_schema_ok(parsed: Any) -> tuple[bool, str]:
+    """Fail-closed ASK_RELATIVE schema. Compact roll-up echoes are invalid."""
+    if not isinstance(parsed, dict):
+        return False, "ask-relative output is not a JSON object"
+    if parsed.get("rollup_id") and "selected_rollup_ids" not in parsed:
+        return False, "ask-relative output is a roll-up object, not ASK_RELATIVE schema"
+    missing = [k for k in ASK_RELATIVE_SCHEMA_KEYS if k not in parsed]
+    if missing:
+        return False, "ask-relative schema missing: " + ", ".join(missing)
+    if not isinstance(parsed.get("answer_focus"), str):
+        return False, "answer_focus must be a string"
+    if not isinstance(parsed.get("selected_rollup_ids"), list):
+        return False, "selected_rollup_ids must be a list"
+    if not isinstance(parsed.get("selected_observation_ids"), list):
+        return False, "selected_observation_ids must be a list"
+    if not isinstance(parsed.get("themes"), list):
+        return False, "themes must be a list"
+    if not isinstance(parsed.get("unresolved"), list):
+        return False, "unresolved must be a list"
+    if parsed.get("correlations") is not None and not isinstance(parsed.get("correlations"), list):
+        return False, "correlations must be a list"
+    return True, ""
+
+
+def ask_relative_semantic_ok(
+    parsed: Any,
+    *,
+    rollups: dict[str, Any] | None = None,
+    observations: list[dict[str, Any]] | None = None,
+) -> tuple[bool, str]:
+    """Fail-closed semantic check after ASK_RELATIVE schema validation."""
+    if not isinstance(parsed, dict):
+        return False, "ask-relative output is not a JSON object"
+    by_ru: dict[str, Any] = {}
+    if isinstance(rollups, dict):
+        raw_by = rollups.get("by_id")
+        if isinstance(raw_by, dict):
+            by_ru = {str(k): v for k, v in raw_by.items()}
+        for row in rollups.get("rollups") or []:
+            if isinstance(row, dict) and row.get("rollup_id"):
+                by_ru[str(row.get("rollup_id"))] = row
+    known_obs = {
+        str(o.get("observation_id"))
+        for o in (observations or [])
+        if isinstance(o, dict) and o.get("observation_id")
+    }
+    ru_ids = [str(x).strip() for x in (parsed.get("selected_rollup_ids") or []) if str(x).strip()]
+    ob_ids = [
+        str(x).strip() for x in (parsed.get("selected_observation_ids") or []) if str(x).strip()
+    ]
+    unknown_ru = [r for r in ru_ids if r not in by_ru]
+    if unknown_ru:
+        return False, "unknown selected_rollup_ids: " + ", ".join(unknown_ru[:8])
+    unknown_ob = [o for o in ob_ids if o not in known_obs]
+    if unknown_ob:
+        return False, "unknown selected_observation_ids: " + ", ".join(unknown_ob[:8])
+    corr = [c for c in (parsed.get("correlations") or []) if isinstance(c, dict)]
+    if not ru_ids and not ob_ids and not corr:
+        return False, "ask-relative selected no roll-ups or observations"
+    return True, ""
+
 
 def _parse_day(raw: Any) -> date | None:
     d = _day(raw)
@@ -352,14 +422,29 @@ def view_from_model_json(
     ask: str,
     ask_kind_hint: str,
     rollups: dict[str, Any] | None = None,
+    allow_fallback: bool = True,
 ) -> dict[str, Any]:
+    empty = {
+        "schema_version": 2,
+        "ask_semantics": {"kind": ask_kind_hint or "other", "constraints": {}},
+        "focal_subjects": [],
+        "episodes": [],
+        "themes": [],
+        "unresolved": [],
+        "answer_focus": ask[:160],
+        "selected_observation_ids": [],
+        "selected_rollup_ids": [],
+        "correlations": [],
+    }
     if not isinstance(parsed, dict) or not (
         parsed.get("episodes")
         or parsed.get("selected_observation_ids")
         or parsed.get("selected_rollup_ids")
         or parsed.get("correlations")
     ):
-        return fallback_view(observations, ask=ask, ask_kind_hint=ask_kind_hint)
+        if allow_fallback:
+            return fallback_view(observations, ask=ask, ask_kind_hint=ask_kind_hint)
+        return empty
     by_id = {str(o.get("observation_id")): o for o in observations if o.get("observation_id")}
     expanded = []
     if rollups and parsed.get("selected_rollup_ids"):
@@ -411,11 +496,13 @@ def view_from_model_json(
                 groups.append([by_id[oid]])
                 used.add(oid)
         if not groups:
-            return fallback_view(
-                [by_id[i] for i in selected_ids] or observations,
-                ask=ask,
-                ask_kind_hint=ask_kind_hint,
-            )
+            if allow_fallback:
+                return fallback_view(
+                    [by_id[i] for i in selected_ids] or observations,
+                    ask=ask,
+                    ask_kind_hint=ask_kind_hint,
+                )
+            return empty
         why = str(parsed.get("answer_focus") or ask)[:400]
         episodes = [_episode_from_group(g, why=why) for g in groups if g]
         episodes = [e for e in episodes if e.get("claims")]

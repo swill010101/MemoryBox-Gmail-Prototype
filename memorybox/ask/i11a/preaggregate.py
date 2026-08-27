@@ -700,6 +700,21 @@ def preaggregate_pack(
             if i not in seen_e:
                 seen_e.add(i)
                 email_ids.append(i)
+    sms_message_ids: list[str] = []
+    seen_sms_msg: set[str] = set()
+    for u in sms:
+        eid = str(u.get("evidence_id") or "").strip()
+        if eid and eid not in seen_sms_msg:
+            seen_sms_msg.add(eid)
+            sms_message_ids.append(eid)
+    representation_ids: list[str] = []
+    seen_rep: set[str] = set()
+    for u in units:
+        uid = str(u.get("unit_id") or "").strip()
+        if uid and uid not in seen_rep:
+            seen_rep.add(uid)
+            representation_ids.append(uid)
+    provenance_ids = list(eligible_ids)
     sms_ids = sorted(sms_ids)
     email_ids = sorted(email_ids)
     compact_trace["provenance_gap_ids"] = sorted(raw_comm_ids - kept_ids)[:40]
@@ -722,6 +737,11 @@ def preaggregate_pack(
             1 for u in email_units if str(u.get("kind") or "") == "communication_thread"
         ),
         "sms_raw": len(sms),
+        "distinct_raw_evidence_items": raw_n,
+        "distinct_sms_messages": len(sms_message_ids) or len(sms),
+        "sms_provenance_id_n": len(sms_ids),
+        "eligible_provenance_id_n": len(provenance_ids),
+        "eligible_representation_id_n": len(representation_ids),
         "sms_episode_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
         "sms_segment_units": sum(1 for u in sms_units if str(u.get("kind") or "") == "sms_segment"),
         "sms_windows": [
@@ -779,6 +799,22 @@ def preaggregate_pack(
         "semantic_unit_fingerprint_digest": source_hash(unit_fps),
         "semantic_unit_fingerprint_n": len(unit_fps),
         "semantic_unit_fingerprints": unit_fps,
+        "count_labels": {
+            "distinct_raw_evidence_items": "raw retrieved evidence items after pack construction",
+            "distinct_sms_messages": "distinct SMS evidence_id values (not unit_id/extra_ids)",
+            "sms_provenance_id_n": (
+                "union of unit_evidence_ids on SMS units (evidence_id + unit_id + extras); "
+                "not distinct SMS messages"
+            ),
+            "eligible_provenance_id_n": (
+                "union of unit_evidence_ids across eligible units — mixed provenance IDs"
+            ),
+            "eligible_representation_id_n": "distinct unit_id values (semantic representations)",
+            "eligible_evidence_id_n": (
+                "same mixed provenance-ID union used for retrieve-stability digests; "
+                "do not label this count as SMS"
+            ),
+        },
         "note": (
             "Pre-aggregation retains all source evidence IDs. "
             "Lower-level communication rows are omitted from extract only when a "

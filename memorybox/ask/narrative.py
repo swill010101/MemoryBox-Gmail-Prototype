@@ -404,6 +404,10 @@ def synthesize_tell(
             pack.get("inference", {}).get("reason") or "Semantic inference is unavailable."
         )
         return _fail_closed(pack, reason=reason), meta
+    from memorybox.ask import stage_clock
+    import time as _time
+
+    t_nar = _time.perf_counter()
     narrator = pack_for_narrator(pack)
     narrator.pop("coverage", None)
     payload = json.dumps(narrator, default=str)
@@ -478,6 +482,8 @@ def synthesize_tell(
         meta["fail_closed"] = True
         meta["error"] = str(exc)
         return _fail_closed(pack, reason="The narrator model is unavailable."), meta
+    finally:
+        stage_clock.add("narrator_ms", int((_time.perf_counter() - t_nar) * 1000))
 
 
 def tell_from_hits(
@@ -494,29 +500,40 @@ def tell_from_hits(
     photo_status: dict[str, Any] | None = None,
     video_status: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
-    pack = prepare_narrative_pack(
-        plan,
-        evidence=evidence,
-        photos=photos,
-        videos=videos,
-        stories=stories,
-        journals=journals,
-        artifacts=artifacts,
-        photo_status=photo_status,
-        video_status=video_status,
-    )
-    from memorybox.ask.i11a import needs_semantic_inference
-    from memorybox.ask.i11a.infer import apply_inference_to_pack
+    from memorybox.ask import stage_clock
 
-    pack["modality_state"] = {
-        **default_modality_state(plan, pack),
-        **(modality_state or {}),
-    }
-    if needs_semantic_inference(plan):
-        pack = apply_inference_to_pack(plan, pack, llm, modality_state=pack.get("modality_state"))
-        if pack.get("inference", {}).get("fail_closed"):
-            meta = {"ok": False, "fail_closed": True, "i11a": True}
-            reason = str(pack.get("inference", {}).get("reason") or "Semantic inference is unavailable.")
-            return _fail_closed(pack, reason=reason), pack, meta
-    text, meta = synthesize_tell(plan, pack, llm)
-    return text, pack, meta
+    owned = stage_clock.ensure()
+    try:
+        pack = prepare_narrative_pack(
+            plan,
+            evidence=evidence,
+            photos=photos,
+            videos=videos,
+            stories=stories,
+            journals=journals,
+            artifacts=artifacts,
+            photo_status=photo_status,
+            video_status=video_status,
+        )
+        from memorybox.ask.i11a import needs_semantic_inference
+        from memorybox.ask.i11a.infer import apply_inference_to_pack
+
+        pack["modality_state"] = {
+            **default_modality_state(plan, pack),
+            **(modality_state or {}),
+        }
+        if needs_semantic_inference(plan):
+            pack = apply_inference_to_pack(plan, pack, llm, modality_state=pack.get("modality_state"))
+            if pack.get("inference", {}).get("fail_closed"):
+                meta = {"ok": False, "fail_closed": True, "i11a": True}
+                reason = str(
+                    pack.get("inference", {}).get("reason") or "Semantic inference is unavailable."
+                )
+                pack["stage_timings"] = stage_clock.snapshot()
+                return _fail_closed(pack, reason=reason), pack, meta
+        text, meta = synthesize_tell(plan, pack, llm)
+        pack["stage_timings"] = stage_clock.snapshot()
+        return text, pack, meta
+    finally:
+        if owned is not None:
+            stage_clock.reset(owned)
