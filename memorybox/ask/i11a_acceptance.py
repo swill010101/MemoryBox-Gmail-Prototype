@@ -78,7 +78,10 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a_person_comm_retrieve_not_full_export_scan",
         "_sql_person_text_hint" in retrieve_py
         and "include_body: bool = False" in retrieve_py
-        and "identity_probe_empty" in retrieve_py
+        and "_sql_person_ids_gin" in retrieve_py
+        and "_exists_evidence" not in retrieve_py
+        and "jsonb_array_elements" not in retrieve_py
+        and "_explain_indexes" not in retrieve_py
         and "_person_scoped_comm_where" in retrieve_py
         and "body_text" in retrieve_py
         and "_complete_comm_retrieve" in retrieve_py

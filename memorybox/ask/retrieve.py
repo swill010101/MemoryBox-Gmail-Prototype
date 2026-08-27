@@ -603,6 +603,41 @@ def _provider_fetch_n(limit: int | None) -> int:
     return max(1, int(limit))
 
 
+def _sql_person_ids_gin(person_ids: set[str] | list[str]) -> tuple[str, list[Any]]:
+    """Indexable person_ids containment. Do not OR with jsonb unnest (seq scan)."""
+    ids = [str(p) for p in person_ids if str(p).strip()]
+    if not ids:
+        return "FALSE", []
+    return "(payload_json->'person_ids') ?| %s::text[]", [ids]
+
+
+def _sql_sender_prefix(person_names: list[str]) -> tuple[str, list[Any]]:
+    """Btree-friendly sender match. Leading-wildcard ILIKE is a seq scan — do not use it."""
+    parts: list[str] = []
+    params: list[Any] = []
+    seen: set[str] = set()
+    for raw in person_names or ():
+        token = str(raw or "").strip()
+        if len(token) < 2:
+            continue
+        bits = [token, token.split()[0]]
+        for t in bits:
+            low = t.strip().lower()
+            if len(low) < 2 or low in seen:
+                continue
+            seen.add(low)
+            parts.append(
+                "("
+                " lower(coalesce(payload_json->>'sender_name', '')) = %s"
+                " OR lower(coalesce(payload_json->>'sender_name', '')) LIKE %s"
+                ")"
+            )
+            params.extend([low, low + " %"])
+    if not parts:
+        return "FALSE", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
 def _sql_person_text_hint(
     person_names: list[str],
     person_ids: set[str] | None = None,
@@ -618,16 +653,9 @@ def _sql_person_text_hint(
     params: list[Any] = []
     ids = [str(p) for p in (person_ids or ()) if str(p).strip()]
     if ids:
-        parts.append("(payload_json->'person_ids') ?| %s::text[]")
-        params.append(ids)
-        parts.append(
-            "EXISTS ("
-            " SELECT 1 FROM jsonb_array_elements("
-            " coalesce(payload_json->'identity_resolution'->'mapped', '[]'::jsonb)) m"
-            " WHERE m->>'person_id' = ANY(%s)"
-            ")"
-        )
-        params.append(ids)
+        gin_sql, gin_params = _sql_person_ids_gin(ids)
+        parts.append(gin_sql)
+        params.extend(gin_params)
     for raw in person_names or ():
         token = str(raw or "").strip()
         if len(token) < 2:
@@ -660,58 +688,34 @@ def _person_scoped_comm_where(
     win_params: list[Any],
     person_names: list[str],
     person_ids: set[str],
+    header_fallback: bool = True,
 ) -> tuple[str | None, list[Any], str]:
-    """Prefer person_ids GIN; fall back to header names; skip empty email scans."""
+    """Indexable Person filter. Never probe-scan the archive with jsonb unnest or %name%.
+
+    SMS: GIN person_ids, optionally BitmapOr indexed sender_name prefix.
+    Email: GIN person_ids only so Takeout is not ILIKE-scanned when Peggy has no mail.
+    Empty pages are cheap; do not SELECT 1 LIMIT 1 as a separate existence scan.
+    """
     base = f"evidence_kind = 'communication' AND {channel_sql} AND {win_sql}"
+    clauses: list[str] = []
+    params: list[Any] = list(win_params)
+    scopes: list[str] = []
     if person_ids:
-        id_sql, id_params = _sql_person_text_hint([], person_ids)
-        where = f"{base} AND {id_sql}"
-        params = list(win_params) + list(id_params)
-        if _exists_evidence(where, params):
-            return where, params, "person_ids"
-        if person_names:
-            name_sql, name_params = _sql_person_text_hint(person_names, None)
-            where = f"{base} AND {name_sql}"
-            params = list(win_params) + list(name_params)
-            if _exists_evidence(where, params):
-                return where, params, "person_name_headers"
-        return None, [], "identity_probe_empty"
-    if person_names:
-        name_sql, name_params = _sql_person_text_hint(person_names, None)
-        where = f"{base} AND {name_sql}"
-        params = list(win_params) + list(name_params)
-        if _exists_evidence(where, params):
-            return where, params, "person_name_headers"
-        return None, [], "identity_probe_empty"
-    return f"{base}", list(win_params), "unscoped"
-
-
-def _exists_evidence(where_sql: str, params: list[Any]) -> bool:
-    with connection() as conn:
-        row = conn.execute(
-            f"SELECT 1 FROM evidence WHERE {where_sql} LIMIT 1",
-            params,
-        ).fetchone()
-    return bool(row)
-
-
-def _explain_indexes(where_sql: str, params: list[Any]) -> list[str]:
-    indexes: list[str] = []
-    try:
-        with connection() as conn:
-            row = conn.execute(
-                f"EXPLAIN (FORMAT JSON) SELECT id FROM evidence WHERE {where_sql} LIMIT 1",
-                params,
-            ).fetchone()
-        raw = row[0] if row else None
-        blob = json.dumps(raw, default=str)
-        for m in re.findall(r"Index(?: Scan| Only Scan|es)?[^\n]*", blob):
-            indexes.append(m[:160])
-        if "Seq Scan" in blob and not indexes:
-            indexes.append("Seq Scan on evidence")
-    except Exception:  # noqa: BLE001
-        return indexes
-    return indexes[:8]
+        gin_sql, gin_params = _sql_person_ids_gin(person_ids)
+        clauses.append(gin_sql)
+        params.extend(gin_params)
+        scopes.append("person_ids_gin")
+    if header_fallback and person_names:
+        name_sql, name_params = _sql_sender_prefix(person_names)
+        if name_sql != "FALSE":
+            clauses.append(name_sql)
+            params.extend(name_params)
+            scopes.append("sender_name_prefix")
+    if not clauses:
+        if person_ids or person_names:
+            return None, [], "identity_probe_empty"
+        return f"{base}", list(win_params), "unscoped"
+    return f"{base} AND ({' OR '.join(clauses)})", params, "+".join(scopes)
 
 
 def _iter_evidence_rows(
@@ -720,6 +724,7 @@ def _iter_evidence_rows(
     *,
     scan_stats: dict[str, Any] | None = None,
     channel: str | None = None,
+    filter_scope: str | None = None,
 ):
     """Page through Evidence by id until the matching set is exhausted.
 
@@ -734,7 +739,7 @@ def _iter_evidence_rows(
     yielded = 0
     t0 = time.monotonic()
     pages = 0
-    indexes = _explain_indexes(where_sql, params)
+    indexes: list[str] = []
     with connection() as conn:
         while True:
             clause = where_sql
@@ -774,14 +779,16 @@ def _iter_evidence_rows(
         scan_stats["rows_scanned"] = yielded
         scan_stats["duration_ms"] = int((time.monotonic() - t0) * 1000)
         scan_stats["pages"] = pages
-        scan_stats["indexes_used"] = indexes
+        scan_stats["indexes_used"] = [filter_scope] if filter_scope else indexes
         scan_stats["channel"] = channel
+        scan_stats["filter_scope"] = filter_scope
     _note_query(
         channel=channel,
         rows_scanned=yielded,
         rows_returned=yielded,
         pages=pages,
-        indexes_used=indexes,
+        indexes_used=[filter_scope] if filter_scope else indexes,
+        filter_scope=filter_scope,
         paging_reason="keyset id > last_id until matching set exhausted",
         skipped=False,
         duration_ms=int((time.monotonic() - t0) * 1000),
@@ -1134,6 +1141,7 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         win_params=list(win_params),
         person_names=person_names,
         person_ids=person_ids,
+        header_fallback=True,
     )
     scan_stats: dict[str, Any] = {}
     if where_sql is None:
@@ -1146,7 +1154,11 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
         )
         return []
     for r in _iter_evidence_rows(
-        where_sql, where_params, scan_stats=scan_stats, channel="sms"
+        where_sql,
+        where_params,
+        scan_stats=scan_stats,
+        channel="sms",
+        filter_scope=scope,
     ):
         payload = _payload_dict(r["payload_json"])
         ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
@@ -1583,6 +1595,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         win_params=list(win_params),
         person_names=person_names,
         person_ids=person_ids,
+        header_fallback=False,
     )
     scan_stats: dict[str, Any] = {}
     if where_sql is None:
@@ -1596,7 +1609,11 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         )
         return []
     for r in _iter_evidence_rows(
-        where_sql, where_params, scan_stats=scan_stats, channel="email"
+        where_sql,
+        where_params,
+        scan_stats=scan_stats,
+        channel="email",
+        filter_scope=scope,
     ):
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
