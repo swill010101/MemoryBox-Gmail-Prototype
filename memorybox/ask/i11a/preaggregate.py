@@ -37,6 +37,9 @@ _SMS_GAP_DAYS = 14
 _MAX_WINDOW_SPAN_DAYS = 42
 _MAX_COMM_MESSAGES = 8
 _MAX_WINDOW_CHARS = 3500
+# episode_v2: temporal-gap / pause / topic-family splits. max-8 is a ceiling.
+# Window fingerprints hash the message set, so regrouped windows miss cache once.
+SEGMENTATION_VERSION = "episode_v2"
 _MEDIA_KINDS = frozenset(
     {"media_observation", "video_asset", "video_moment", "spoken_moment"}
 )
@@ -427,6 +430,106 @@ def _split_comm_windows(
     if current:
         segs.append(current)
     return segs
+
+
+def _split_comm_windows_count_ceiling(
+    group: list[dict[str, Any]], *, source_type: str = "sms"
+) -> list[list[dict[str, Any]]]:
+    """episode_v1: count/char ceilings only (year-span n<=8 bags). Diagnostic."""
+    ordered = sorted(
+        group,
+        key=lambda x: str(
+            _parse_dt(x.get("time") or x.get("timestamp") or x.get("sent_at"))
+            or _day(x.get("time") or x.get("timestamp") or x.get("sent_at"))
+            or ""
+        ),
+    )
+    segs: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for u in ordered:
+        split = False
+        if current:
+            if len(current) >= _MAX_COMM_MESSAGES:
+                split = True
+            elif _window_chars(current) + len(_format_message_line(u)) > _MAX_WINDOW_CHARS:
+                split = True
+        if split:
+            segs.append(current)
+            current = []
+        current.append(u)
+    if current:
+        segs.append(current)
+    return segs
+
+
+def _seg_span_days(seg: list[dict[str, Any]]) -> int:
+    days = sorted(
+        d
+        for d in (
+            _day(x.get("time") or x.get("timestamp") or x.get("sent_at")) for x in seg
+        )
+        if d
+    )
+    if len(days) < 2:
+        return 0
+    try:
+        return (date.fromisoformat(days[-1]) - date.fromisoformat(days[0])).days
+    except ValueError:
+        return 0
+
+
+def _window_quality(segs: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    ns = [len(s) for s in segs]
+    spans = [_seg_span_days(s) for s in segs]
+    ordered = sorted(ns)
+    mid = ordered[len(ordered) // 2] if ordered else 0
+    return {
+        "unit_n": len(segs),
+        "median_messages": mid,
+        "mean_messages": round(sum(ns) / len(ns), 2) if ns else 0.0,
+        "max_messages": max(ns or [0]),
+        "span_gt_30d": sum(1 for d in spans if d > 30),
+        "span_gt_90d": sum(1 for d in spans if d > 90),
+        "span_gt_365d": sum(1 for d in spans if d > 365),
+        "max_span_days": max(spans or [0]),
+        "singleton_units": sum(1 for n in ns if n == 1),
+    }
+
+
+def _sms_segmentation_compare(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for u in rows:
+        tid = str(u.get("thread_id") or "") or "|".join(
+            sorted(_people_key(u).split("|"))
+        ) or str(u.get("unit_id") or "sms")
+        buckets.setdefault(tid, []).append(u)
+    v2: list[list[dict[str, Any]]] = []
+    v1: list[list[dict[str, Any]]] = []
+    for group in buckets.values():
+        v2.extend(_split_comm_windows(group, source_type="sms"))
+        v1.extend(_split_comm_windows_count_ceiling(group, source_type="sms"))
+    q2 = _window_quality(v2)
+    q1 = _window_quality(v1)
+    keep_v2 = (
+        int(q2.get("span_gt_365d") or 0) < int(q1.get("span_gt_365d") or 0)
+        or int(q2.get("span_gt_90d") or 0) <= int(q1.get("span_gt_90d") or 0)
+    )
+    return {
+        "segmentation_version": SEGMENTATION_VERSION,
+        "fingerprint_note": (
+            "unit_source_hash covers the message set in each window; regrouped "
+            "windows miss extract cache once. EXTRACT_VERSION includes episode_v2."
+        ),
+        "episode_v2_current": q2,
+        "episode_v1_count_ceiling_only": q1,
+        "keep_episode_v2": keep_v2,
+        "reason": (
+            "Keep episode_v2 because year-long n<=8 bags are not semantic episodes; "
+            "max-8 remains a safety ceiling. Do not prefer a higher unit count alone."
+        ),
+        "attribution_error_rate": None,
+        "attribution_note": "sender/subject attribution sample is a FlightSim review, not auto-labeled",
+    }
 
 
 def _comm_window_unit(
@@ -835,6 +938,8 @@ def preaggregate_pack(
             for u in sms_units
             if str(u.get("kind") or "") == "sms_segment"
         ],
+        "segmentation_version": SEGMENTATION_VERSION,
+        "segmentation_quality": _sms_segmentation_compare(sms),
         "max_sms_window_span_days": max(sms_span_days or [0]),
         "max_messages_per_comm_unit": max(
             [

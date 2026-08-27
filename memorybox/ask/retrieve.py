@@ -5,6 +5,7 @@ import json
 import re
 import time
 from dataclasses import asdict, dataclass, field
+from contextvars import ContextVar
 from functools import wraps
 from typing import Any, Callable
 from uuid import UUID
@@ -42,9 +43,12 @@ class EvidenceHit:
     identity_mapped: list[dict[str, str]] | None = None
     from_header: str | None = None
     to_header: str | None = None
+    payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("payload", None)
+        return d
 
 
 # Hard ceiling so a 90k-row export cannot dump the whole archive into Explore.
@@ -53,6 +57,56 @@ class EvidenceHit:
 SMS_RETRIEVE_CAP = 25000
 # SQL page size only — not a semantic evidence limit.
 TELL_DB_PAGE = 500
+
+_retrieve_queries: ContextVar[list[dict[str, Any]] | None] = ContextVar(
+    "mb_retrieve_queries", default=None
+)
+
+
+def begin_retrieve_accounting() -> object:
+    return _retrieve_queries.set([])
+
+
+def reset_retrieve_accounting(token: object) -> None:
+    try:
+        _retrieve_queries.reset(token)  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001
+        return
+
+
+def retrieve_accounting_snapshot() -> dict[str, Any]:
+    queries = list(_retrieve_queries.get() or [])
+    scanned = sum(int(q.get("rows_scanned") or 0) for q in queries)
+    returned = sum(int(q.get("rows_returned") or 0) for q in queries)
+    email_q = [q for q in queries if q.get("channel") == "email"]
+    sms_q = [q for q in queries if q.get("channel") == "sms"]
+    return {
+        "queries_executed": queries,
+        "query_n": len(queries),
+        "rows_scanned": scanned,
+        "rows_returned": returned,
+        "indexes_used": [i for q in queries for i in (q.get("indexes_used") or [])],
+        "provider_paging_reason": (
+            "keyset page of matching Person-scoped evidence; page size is not a consider-cap"
+        ),
+        "email_scanned": sum(int(q.get("rows_scanned") or 0) for q in email_q),
+        "email_returned": sum(int(q.get("rows_returned") or 0) for q in email_q),
+        "email_skipped": any(q.get("skipped") for q in email_q),
+        "sms_scanned": sum(int(q.get("rows_scanned") or 0) for q in sms_q),
+        "sms_returned": sum(int(q.get("rows_returned") or 0) for q in sms_q),
+        "normalization_note": (
+            "retrieve attaches payload_json on hits so warm normalize does not re-fetch evidence"
+        ),
+    }
+
+
+def _note_query(**kwargs: Any) -> None:
+    lst = _retrieve_queries.get()
+    if lst is None:
+        _retrieve_queries.set([])
+        lst = _retrieve_queries.get()
+    if lst is not None:
+        lst.append(dict(kwargs))
 
 
 def _timed_provider(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -552,21 +606,25 @@ def _provider_fetch_n(limit: int | None) -> int:
 def _sql_person_text_hint(
     person_names: list[str],
     person_ids: set[str] | None = None,
+    *,
+    include_body: bool = False,
 ) -> tuple[str, list[Any]]:
     """SQL prefilter so Peggy does not load every communication payload.
 
-    Body match uses a prefix only — full payload_json::text ILIKE on Takeout
-    emails is what left Collecting communications at 20+ minutes with 0 models.
+    Person-scoped retrieve uses identity fields and person_ids (GIN), not
+    body ILIKE over Takeout. Body match remains optional for keyword hunts.
     """
     parts: list[str] = []
     params: list[Any] = []
     ids = [str(p) for p in (person_ids or ()) if str(p).strip()]
     if ids:
+        parts.append("(payload_json->'person_ids') ?| %s::text[]")
+        params.append(ids)
         parts.append(
             "EXISTS ("
-            " SELECT 1 FROM jsonb_array_elements_text("
-            " coalesce(payload_json->'person_ids', '[]'::jsonb)) x"
-            " WHERE x = ANY(%s)"
+            " SELECT 1 FROM jsonb_array_elements("
+            " coalesce(payload_json->'identity_resolution'->'mapped', '[]'::jsonb)) m"
+            " WHERE m->>'person_id' = ANY(%s)"
             ")"
         )
         params.append(ids)
@@ -575,24 +633,94 @@ def _sql_person_text_hint(
         if len(token) < 2:
             continue
         like = f"%{token}%"
-        parts.append(
-            "("
-            " coalesce(summary, '') ILIKE %s"
-            " OR coalesce(payload_json->>'sender_name', '') ILIKE %s"
-            " OR coalesce(payload_json->>'subject', '') ILIKE %s"
-            " OR coalesce(payload_json->>'thread_id', '') ILIKE %s"
-            " OR left(coalesce(payload_json->>'body_text', ''), 4000) ILIKE %s"
-            " OR coalesce(payload_json->>'from', '') ILIKE %s"
-            " OR coalesce(payload_json->>'to', '') ILIKE %s"
-            ")"
-        )
-        params.extend([like] * 7)
+        fields = [
+            "coalesce(summary, '')",
+            "coalesce(payload_json->>'sender_name', '')",
+            "coalesce(payload_json->>'sender_handle', '')",
+            "coalesce(payload_json->>'subject', '')",
+            "coalesce(payload_json->>'thread_id', '')",
+            "coalesce(payload_json->>'title', '')",
+            "coalesce(payload_json->>'from', '')",
+            "coalesce(payload_json->>'to', '')",
+            "coalesce(payload_json->>'participants', '')",
+        ]
+        if include_body:
+            fields.append("left(coalesce(payload_json->>'body_text', ''), 4000)")
+        parts.append("(" + " OR ".join(f"{f} ILIKE %s" for f in fields) + ")")
+        params.extend([like] * len(fields))
     if not parts:
         return "TRUE", []
     return "(" + " OR ".join(parts) + ")", params
 
 
-def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[str, Any] | None = None):
+def _person_scoped_comm_where(
+    *,
+    channel_sql: str,
+    win_sql: str,
+    win_params: list[Any],
+    person_names: list[str],
+    person_ids: set[str],
+) -> tuple[str | None, list[Any], str]:
+    """Prefer person_ids GIN; fall back to header names; skip empty email scans."""
+    base = f"evidence_kind = 'communication' AND {channel_sql} AND {win_sql}"
+    if person_ids:
+        id_sql, id_params = _sql_person_text_hint([], person_ids)
+        where = f"{base} AND {id_sql}"
+        params = list(win_params) + list(id_params)
+        if _exists_evidence(where, params):
+            return where, params, "person_ids"
+        if person_names:
+            name_sql, name_params = _sql_person_text_hint(person_names, None)
+            where = f"{base} AND {name_sql}"
+            params = list(win_params) + list(name_params)
+            if _exists_evidence(where, params):
+                return where, params, "person_name_headers"
+        return None, [], "identity_probe_empty"
+    if person_names:
+        name_sql, name_params = _sql_person_text_hint(person_names, None)
+        where = f"{base} AND {name_sql}"
+        params = list(win_params) + list(name_params)
+        if _exists_evidence(where, params):
+            return where, params, "person_name_headers"
+        return None, [], "identity_probe_empty"
+    return f"{base}", list(win_params), "unscoped"
+
+
+def _exists_evidence(where_sql: str, params: list[Any]) -> bool:
+    with connection() as conn:
+        row = conn.execute(
+            f"SELECT 1 FROM evidence WHERE {where_sql} LIMIT 1",
+            params,
+        ).fetchone()
+    return bool(row)
+
+
+def _explain_indexes(where_sql: str, params: list[Any]) -> list[str]:
+    indexes: list[str] = []
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                f"EXPLAIN (FORMAT JSON) SELECT id FROM evidence WHERE {where_sql} LIMIT 1",
+                params,
+            ).fetchone()
+        raw = row[0] if row else None
+        blob = json.dumps(raw, default=str)
+        for m in re.findall(r"Index(?: Scan| Only Scan|es)?[^\n]*", blob):
+            indexes.append(m[:160])
+        if "Seq Scan" in blob and not indexes:
+            indexes.append("Seq Scan on evidence")
+    except Exception:  # noqa: BLE001
+        return indexes
+    return indexes[:8]
+
+
+def _iter_evidence_rows(
+    where_sql: str,
+    params: list[Any],
+    *,
+    scan_stats: dict[str, Any] | None = None,
+    channel: str | None = None,
+):
     """Page through Evidence by id until the matching set is exhausted.
 
     Page size is not a semantic consider-cap. Wall-clock is not a completeness
@@ -605,6 +733,8 @@ def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[s
     last_id = None
     yielded = 0
     t0 = time.monotonic()
+    pages = 0
+    indexes = _explain_indexes(where_sql, params)
     with connection() as conn:
         while True:
             clause = where_sql
@@ -629,6 +759,7 @@ def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[s
                     qparams + [TELL_DB_PAGE],
                 ).fetchall()
             stage_clock.bump_pages(1)
+            pages += 1
             if not rows:
                 break
             for r in rows:
@@ -642,6 +773,19 @@ def _iter_evidence_rows(where_sql: str, params: list[Any], *, scan_stats: dict[s
         scan_stats["stopped_by_wall_clock"] = False
         scan_stats["rows_scanned"] = yielded
         scan_stats["duration_ms"] = int((time.monotonic() - t0) * 1000)
+        scan_stats["pages"] = pages
+        scan_stats["indexes_used"] = indexes
+        scan_stats["channel"] = channel
+    _note_query(
+        channel=channel,
+        rows_scanned=yielded,
+        rows_returned=yielded,
+        pages=pages,
+        indexes_used=indexes,
+        paging_reason="keyset id > last_id until matching set exhausted",
+        skipped=False,
+        duration_ms=int((time.monotonic() - t0) * 1000),
+    )
 
 
 def _sql_json_day_windows(
@@ -851,6 +995,7 @@ def _sms_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> E
         direction=payload.get("direction"),
         attachments=_sms_attachments(payload) or None,
         identity_mapped=identity or None,
+        payload=payload,
     )
 
 
@@ -979,16 +1124,29 @@ def search_sms_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> li
     ):
         return []
     win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
-    hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
-    where_sql = (
-        "evidence_kind = 'communication' "
-        "AND lower(coalesce(payload_json->>'evidence_channel', '')) "
-        "IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
-        f"AND {win_sql} AND {hint_sql}"
+    channel_sql = (
+        "lower(coalesce(payload_json->>'evidence_channel', '')) "
+        "IN ('sms', 'text', 'imessage', 'mms', 'rcs')"
+    )
+    where_sql, where_params, scope = _person_scoped_comm_where(
+        channel_sql=channel_sql,
+        win_sql=win_sql,
+        win_params=list(win_params),
+        person_names=person_names,
+        person_ids=person_ids,
     )
     scan_stats: dict[str, Any] = {}
+    if where_sql is None:
+        _note_query(
+            channel="sms",
+            rows_scanned=0,
+            rows_returned=0,
+            skipped=True,
+            reason=scope,
+        )
+        return []
     for r in _iter_evidence_rows(
-        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+        where_sql, where_params, scan_stats=scan_stats, channel="sms"
     ):
         payload = _payload_dict(r["payload_json"])
         ch = str(payload.get("evidence_channel") or payload.get("service") or "").lower()
@@ -1263,6 +1421,7 @@ def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) ->
         identity_mapped=identity or None,
         from_header=(str(payload.get("from") or "").strip() or None),
         to_header=_fmt_addr_header(payload.get("to")),
+        payload=payload,
     )
 
 
@@ -1414,16 +1573,30 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     ):
         return []
     win_sql, win_params = _sql_json_day_windows(windows, "sent_at")
-    hint_sql, hint_params = _sql_person_text_hint(person_names, person_ids)
-    where_sql = (
-        "evidence_kind = 'communication' "
-        "AND lower(coalesce(payload_json->>'evidence_channel', 'email')) "
-        "NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs') "
-        f"AND {win_sql} AND {hint_sql}"
+    channel_sql = (
+        "lower(coalesce(payload_json->>'evidence_channel', 'email')) "
+        "NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')"
+    )
+    where_sql, where_params, scope = _person_scoped_comm_where(
+        channel_sql=channel_sql,
+        win_sql=win_sql,
+        win_params=list(win_params),
+        person_names=person_names,
+        person_ids=person_ids,
     )
     scan_stats: dict[str, Any] = {}
+    if where_sql is None:
+        _note_query(
+            channel="email",
+            rows_scanned=0,
+            rows_returned=0,
+            skipped=True,
+            reason=scope,
+            paging_reason="email identity probe empty; skip Takeout scan",
+        )
+        return []
     for r in _iter_evidence_rows(
-        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+        where_sql, where_params, scan_stats=scan_stats, channel="email"
     ):
         payload = _payload_dict(r["payload_json"])
         if str(payload.get("evidence_channel") or "email").lower() != "email":
@@ -1592,7 +1765,7 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
     where_sql = f"evidence_kind = 'calendar_event' AND {win_sql} AND {hint_sql}"
     scan_stats: dict[str, Any] = {}
     for r in _iter_evidence_rows(
-        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats
+        where_sql, list(win_params) + list(hint_params), scan_stats=scan_stats, channel="calendar"
     ):
         payload = _payload_dict(r["payload_json"])
         start = str(payload.get("start") or "")

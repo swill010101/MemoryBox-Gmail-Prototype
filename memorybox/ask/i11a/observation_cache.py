@@ -9,7 +9,10 @@ from typing import Any
 METHOD_VERSION = "i11a_obs_v2"
 EXTRACT_METHOD = "observation_extract"
 # Bump when the extract prompt, normalizer, or episode window rules change.
-EXTRACT_VERSION = "i11a_extract_v3|episode_v1"
+# episode_v2: SMS/email windows split on temporal gap / conversation pause /
+# topic family; max-8 is a safety ceiling only. Fingerprints include the
+# message set, so regrouped windows miss cache once (expected).
+EXTRACT_VERSION = "i11a_extract_v3|episode_v2"
 
 _MEM: dict[tuple[str, str, str, str], dict[str, Any]] = {}
 

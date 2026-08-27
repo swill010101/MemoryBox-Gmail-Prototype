@@ -24,6 +24,7 @@ from memorybox.ask.i11a.reason import (
     reason_payload,
     view_from_model_json,
 )
+from memorybox.ask.i11a.person_ir import higher_order_from_rollups
 from memorybox.ask.i11a.rollup import roll_up_observations
 from memorybox.ask.i11a.support import rank_episodes_for_narrator
 from memorybox.ask.i11a.units import ask_kind_for_plan, compact_units_for_model, units_from_pack
@@ -217,27 +218,37 @@ def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(payload.get("observation_stubs"), list)
         else []
     )
+    hos = payload.get("higher_order") if isinstance(payload.get("higher_order"), list) else []
     rollups = payload.get("rollups") if isinstance(payload.get("rollups"), list) else []
+    ru_stubs = (
+        payload.get("rollup_stubs") if isinstance(payload.get("rollup_stubs"), list) else []
+    )
     obs_sent = len(obs) + len(stubs)
+    ru_sent = len(rollups) + len(ru_stubs)
     return {
         "observation_n": obs_sent,
         "validated_observation_total": payload.get("validated_observation_total")
         or payload.get("validated_observation_count"),
-        "rollup_total": payload.get("rollup_total") or payload.get("rollup_unit_count") or len(rollups),
-        "rollups_sent_to_ask_relative": len(rollups),
+        "rollup_total": payload.get("rollup_total") or payload.get("rollup_unit_count") or 0,
+        "higher_order_unit_total": payload.get("higher_order_unit_total") or len(hos),
+        "higher_order_units_sent": payload.get("higher_order_units_sent") or len(hos),
+        "rollups_sent_to_ask_relative": ru_sent,
         "observations_sent_to_ask_relative": obs_sent,
-        "rollup_n": len(rollups),
+        "lower_level_rollups_expanded": payload.get("lower_level_rollups_expanded") or 0,
+        "rollup_n": ru_sent,
+        "higher_order_n": len(hos),
         "payload_bytes": n,
         "approx_tokens": max(1, n // 4),
         "timeout_seconds": _configured_chat_timeout(),
         "num_ctx": None,
         "num_ctx_note": "Ollama chat options set temperature only; num_ctx is the model default",
         "compact_observations": obs_sent == 0,
-        "compact_rollups": bool(rollups),
+        "compact_rollups": ru_sent == 0,
+        "compact_higher_order": bool(hos),
         "includes_full_evidence_id_arrays": False,
         "includes_excerpts": False,
         "includes_observation_objects": obs_sent > 0,
-        "default_ir": "semantic_rollups",
+        "default_ir": "higher_order_person",
     }
 
 
@@ -622,10 +633,14 @@ def run_inference(
     pack["semantic_observations"] = observations
     with stage_clock.timed("rollup_ms"):
         rolled = roll_up_observations(observations)
+        ho_all = higher_order_from_rollups(rolled)
     pack["semantic_rollups"] = rolled.get("rollups") or []
+    pack["semantic_higher_order"] = ho_all.get("units") or []
     accounting["validated_observations"] = len(observations)
     accounting["rollup_units"] = int(rolled.get("rollup_unit_count") or 0)
     accounting["rollup_provenance_coverage"] = rolled.get("provenance_coverage")
+    accounting["higher_order_unit_total"] = int(ho_all.get("higher_order_unit_total") or 0)
+    accounting["higher_order_provenance_coverage"] = ho_all.get("provenance_coverage")
     oids = sorted(str(o.get("observation_id") or "") for o in observations if o.get("observation_id"))
     accounting["validated_observation_digest"] = source_hash(oids) if oids else ""
     _trace_span(
@@ -702,6 +717,7 @@ def run_inference(
             "observations": observations,
             "semantic_ir": ir,
             "semantic_rollups": rolled,
+            "semantic_higher_order": ho_all,
             "ask_relative_view": None,
             "stage": STAGE_ENRICH,
             "stage_timings": stage_clock.snapshot(),
@@ -712,10 +728,14 @@ def run_inference(
     )
     with stage_clock.timed("rollup_ms"):
         rolled_eligible = roll_up_observations(eligible)
+        ho_eligible = higher_order_from_rollups(rolled_eligible)
     pack["semantic_rollups"] = rolled_eligible.get("rollups") or []
+    pack["semantic_higher_order"] = ho_eligible.get("units") or []
     accounting["validated_observations"] = len(eligible)
     accounting["rollup_units"] = int(rolled_eligible.get("rollup_unit_count") or 0)
     accounting["rollup_provenance_coverage"] = rolled_eligible.get("provenance_coverage")
+    accounting["higher_order_unit_total"] = int(ho_eligible.get("higher_order_unit_total") or 0)
+    accounting["higher_order_provenance_coverage"] = ho_eligible.get("provenance_coverage")
     ask = str(getattr(plan, "original_ask", "") or "")
     with stage_clock.timed("ask_relative_prep_ms"):
         rp = reason_payload(
@@ -725,12 +745,16 @@ def run_inference(
             person_context=slim_person_context_for_model(person_context),
             ask_kind_hint=kind_hint,
             rollups=rolled_eligible.get("rollups") or [],
+            higher_order=ho_eligible,
         )
         stats = _payload_stats(ASK_RELATIVE_SYSTEM, rp)
         accounting["ask_relative_payload"] = stats
         accounting["validated_observation_total"] = stats.get("validated_observation_total")
         accounting["rollup_total"] = stats.get("rollup_total")
-        accounting["rollups_sent_to_ask_relative"] = stats.get("rollups_sent_to_ask_relative")
+        accounting["higher_order_units_sent"] = stats.get("higher_order_units_sent")
+        accounting["rollups_sent_to_ask_relative"] = stats.get(
+            "rollups_sent_to_ask_relative"
+        )
         accounting["observations_sent_to_ask_relative"] = stats.get(
             "observations_sent_to_ask_relative"
         )
@@ -793,7 +817,10 @@ def run_inference(
                 schema_ok, schema_reason = ask_relative_schema_ok(parsed_view)
                 if schema_ok:
                     sem_ok, sem_reason = ask_relative_semantic_ok(
-                        parsed_view, rollups=rolled_eligible, observations=eligible
+                        parsed_view,
+                        rollups=rolled_eligible,
+                        observations=eligible,
+                        higher_order=ho_eligible,
                     )
                 else:
                     sem_ok, sem_reason = False, schema_reason
@@ -924,6 +951,7 @@ def run_inference(
         ask=ask,
         ask_kind_hint=kind_hint,
         rollups=rolled_eligible,
+        higher_order=ho_eligible,
         allow_fallback=False,
     )
     if not view.get("episodes"):
@@ -942,6 +970,9 @@ def run_inference(
         )
     accounting["observations_expanded"] = len(view.get("selected_observation_ids") or [])
     accounting["lower_level_expansion_count"] = accounting["observations_expanded"]
+    accounting["lower_level_rollups_expanded"] = int(
+        view.get("lower_level_rollups_expanded") or 0
+    )
     ir = apply_correlations_to_ir(ir, view)
     pack["semantic_ir"] = ir
     pack["ask_relative_view"] = view
@@ -974,6 +1005,7 @@ def run_inference(
         "semantic_ir": ir,
         "ask_relative_view": view,
         "semantic_rollups": rolled_eligible,
+        "semantic_higher_order": ho_eligible,
         "stage": STAGE_ASK,
         "enrichment_complete": accounting.get("enrichment_complete"),
         "stage_timings": stage_clock.snapshot(),
@@ -1123,6 +1155,10 @@ def apply_inference_to_pack(
         "validated_observations": acc.get("validated_observations"),
         "rollup_units": acc.get("rollup_units"),
         "rollup_provenance_coverage": acc.get("rollup_provenance_coverage"),
+        "higher_order_unit_total": acc.get("higher_order_unit_total"),
+        "higher_order_units_sent": acc.get("higher_order_units_sent"),
+        "higher_order_provenance_coverage": acc.get("higher_order_provenance_coverage"),
+        "lower_level_rollups_expanded": acc.get("lower_level_rollups_expanded"),
         "observations_expanded": acc.get("observations_expanded"),
         "lower_level_expansion_count": acc.get("lower_level_expansion_count"),
         "validated_observation_total": acc.get("validated_observation_total"),
@@ -1163,7 +1199,9 @@ def apply_inference_to_pack(
     }
     pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
     pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
-    pack["semantic_rollups"] = pack.get("semantic_rollups") or inf.get("semantic_rollups")
+    pack["semantic_higher_order"] = pack.get("semantic_higher_order") or inf.get(
+        "semantic_higher_order"
+    )
     pack["ask_relative_view"] = inf.get("ask_relative_view")
     if inf.get("fail_closed"):
         pack["ask_relative_view"] = None
