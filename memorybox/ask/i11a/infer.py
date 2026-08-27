@@ -212,22 +212,32 @@ def _payload_stats(system: str, payload: dict[str, Any]) -> dict[str, Any]:
     raw = json.dumps({"system": system, "user": payload}, default=str)
     n = len(raw)
     obs = payload.get("observations") if isinstance(payload.get("observations"), list) else []
+    stubs = (
+        payload.get("observation_stubs")
+        if isinstance(payload.get("observation_stubs"), list)
+        else []
+    )
     rollups = payload.get("rollups") if isinstance(payload.get("rollups"), list) else []
-    obs_n = len(obs)
-    if not obs_n and rollups:
-        obs_n = sum(int(r.get("observation_n") or 0) for r in rollups if isinstance(r, dict))
+    obs_sent = len(obs) + len(stubs)
     return {
-        "observation_n": obs_n,
+        "observation_n": obs_sent,
+        "validated_observation_total": payload.get("validated_observation_total")
+        or payload.get("validated_observation_count"),
+        "rollup_total": payload.get("rollup_total") or payload.get("rollup_unit_count") or len(rollups),
+        "rollups_sent_to_ask_relative": len(rollups),
+        "observations_sent_to_ask_relative": obs_sent,
         "rollup_n": len(rollups),
         "payload_bytes": n,
         "approx_tokens": max(1, n // 4),
         "timeout_seconds": _configured_chat_timeout(),
         "num_ctx": None,
         "num_ctx_note": "Ollama chat options set temperature only; num_ctx is the model default",
-        "compact_observations": True,
+        "compact_observations": obs_sent == 0,
         "compact_rollups": bool(rollups),
         "includes_full_evidence_id_arrays": False,
         "includes_excerpts": False,
+        "includes_observation_objects": obs_sent > 0,
+        "default_ir": "semantic_rollups",
     }
 
 
@@ -590,19 +600,20 @@ def run_inference(
         accounting["deferred_unit_fingerprints"] = list(accounting["deferred_unit_fingerprints"])[:80]
 
     accounting["observations_b"] = len(model_obs)
-    merged = merge_model_observations(deterministic, model_obs)
-    if not merged:
-        if stage == STAGE_ENRICH and int(accounting.get("extract_timeouts") or 0) > 0:
-            return _fail(
-                reason="observation extract timed out after retry",
-                person_context=person_context,
-                req=req,
-                accounting=accounting,
-                error_class="PROVIDER_TIMEOUT",
-                stage="i11a_inference",
-            )
-        merged = [observation_from_unit(u) for u in (agg.get("units") or units)]
-        merged = [o for o in merged if o]
+    with stage_clock.timed("observation_hydration_ms"):
+        merged = merge_model_observations(deterministic, model_obs)
+        if not merged:
+            if stage == STAGE_ENRICH and int(accounting.get("extract_timeouts") or 0) > 0:
+                return _fail(
+                    reason="observation extract timed out after retry",
+                    person_context=person_context,
+                    req=req,
+                    accounting=accounting,
+                    error_class="PROVIDER_TIMEOUT",
+                    stage="i11a_inference",
+                )
+            merged = [observation_from_unit(u) for u in (agg.get("units") or units)]
+            merged = [o for o in merged if o]
     with stage_clock.timed("provenance_validation_ms"):
         validated_obs = validate_observations(
             merged, pack=pack, person_context=person_context
@@ -706,30 +717,38 @@ def run_inference(
     accounting["rollup_units"] = int(rolled_eligible.get("rollup_unit_count") or 0)
     accounting["rollup_provenance_coverage"] = rolled_eligible.get("provenance_coverage")
     ask = str(getattr(plan, "original_ask", "") or "")
-    rp = reason_payload(
-        plan=plan,
-        observations=eligible,
-        request_context=req,
-        person_context=slim_person_context_for_model(person_context),
-        ask_kind_hint=kind_hint,
-        rollups=rolled_eligible.get("rollups") or [],
-    )
+    with stage_clock.timed("ask_relative_prep_ms"):
+        rp = reason_payload(
+            plan=plan,
+            observations=eligible,
+            request_context=req,
+            person_context=slim_person_context_for_model(person_context),
+            ask_kind_hint=kind_hint,
+            rollups=rolled_eligible.get("rollups") or [],
+        )
+        stats = _payload_stats(ASK_RELATIVE_SYSTEM, rp)
+        accounting["ask_relative_payload"] = stats
+        accounting["validated_observation_total"] = stats.get("validated_observation_total")
+        accounting["rollup_total"] = stats.get("rollup_total")
+        accounting["rollups_sent_to_ask_relative"] = stats.get("rollups_sent_to_ask_relative")
+        accounting["observations_sent_to_ask_relative"] = stats.get(
+            "observations_sent_to_ask_relative"
+        )
+        _trace_span(
+            stage="ask_relative_reasoning",
+            component="i11a",
+            operation="ask_relative_payload",
+            status="ok",
+            assembled_context=stats,
+            parsed=stats,
+        )
     parsed_view = None
-    ask_t0 = time.perf_counter()
-    stats = _payload_stats(ASK_RELATIVE_SYSTEM, rp)
-    accounting["ask_relative_payload"] = stats
-    _trace_span(
-        stage="ask_relative_reasoning",
-        component="i11a",
-        operation="ask_relative_payload",
-        status="ok",
-        assembled_context=stats,
-        parsed=stats,
-    )
+    t_prov = time.perf_counter()
     try:
         accounting["ask_relative_calls"] = 1
         accounting["leaf_calls"] += 1
         raw_view, call_meta = _call_with_retry_meta(llm, ASK_RELATIVE_SYSTEM, rp)
+        stage_clock.add("ask_relative_provider_ms", int((time.perf_counter() - t_prov) * 1000))
         stats = {
             **stats,
             "provider_eval": {
@@ -765,20 +784,20 @@ def run_inference(
         if call_meta.get("num_ctx_note"):
             stats["num_ctx_note"] = call_meta.get("num_ctx_note")
         accounting["ask_relative_payload"] = stats
-        parsed_view = parse_inference_json(raw_view)
-        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
-        stage_clock.add("ask_relative_ms", elapsed_ms)
-        if parsed_view is None:
-            schema_ok, schema_reason = False, "ask-relative output is not valid JSON"
-            sem_ok, sem_reason = False, schema_reason
-        else:
-            schema_ok, schema_reason = ask_relative_schema_ok(parsed_view)
-            if schema_ok:
-                sem_ok, sem_reason = ask_relative_semantic_ok(
-                    parsed_view, rollups=rolled_eligible, observations=eligible
-                )
-            else:
+        with stage_clock.timed("result_validation_ms"):
+            parsed_view = parse_inference_json(raw_view)
+            if parsed_view is None:
+                schema_ok, schema_reason = False, "ask-relative output is not valid JSON"
                 sem_ok, sem_reason = False, schema_reason
+            else:
+                schema_ok, schema_reason = ask_relative_schema_ok(parsed_view)
+                if schema_ok:
+                    sem_ok, sem_reason = ask_relative_semantic_ok(
+                        parsed_view, rollups=rolled_eligible, observations=eligible
+                    )
+                else:
+                    sem_ok, sem_reason = False, schema_reason
+        elapsed_ms = int((time.perf_counter() - t_prov) * 1000)
         valid = bool(schema_ok and sem_ok)
         fail_reason = schema_reason if not schema_ok else sem_reason
         _trace_span(
@@ -822,7 +841,8 @@ def run_inference(
             )
     except ProviderUnavailable as exc:
         klass = classify_llm_error(exc)
-        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
+        elapsed_ms = int((time.perf_counter() - t_prov) * 1000)
+        stage_clock.add("ask_relative_provider_ms", elapsed_ms)
         timeout_s = stats.get("timeout_seconds")
         if klass == "PROVIDER_TIMEOUT":
             reason = (
@@ -853,7 +873,6 @@ def run_inference(
             assembled_context=extra,
             provider_payload={"system": ASK_RELATIVE_SYSTEM, "user": rp},
         )
-        stage_clock.add("ask_relative_ms", elapsed_ms)
         return _fail(
             reason=reason,
             person_context=person_context,
@@ -865,8 +884,8 @@ def run_inference(
         )
     except Exception as exc:  # noqa: BLE001
         klass = classify_llm_error(exc)
-        elapsed_ms = int((time.perf_counter() - ask_t0) * 1000)
-        stage_clock.add("ask_relative_ms", elapsed_ms)
+        elapsed_ms = int((time.perf_counter() - t_prov) * 1000)
+        stage_clock.add("ask_relative_provider_ms", elapsed_ms)
         extra = {
             "stage": "ask-relative reasoning",
             "provider_key": getattr(llm, "provider_key", None),
@@ -922,6 +941,7 @@ def run_inference(
             },
         )
     accounting["observations_expanded"] = len(view.get("selected_observation_ids") or [])
+    accounting["lower_level_expansion_count"] = accounting["observations_expanded"]
     ir = apply_correlations_to_ir(ir, view)
     pack["semantic_ir"] = ir
     pack["ask_relative_view"] = view
@@ -933,7 +953,7 @@ def run_inference(
         parsed=view,
     )
 
-    with stage_clock.timed("provenance_validation_ms"):
+    with stage_clock.timed("result_validation_ms"):
         validated = validate_inference(view, pack=pack, person_context=person_context)
     incomplete = failed_chunks > 0
     fail_closed = not validated.get("ok")
@@ -1104,6 +1124,11 @@ def apply_inference_to_pack(
         "rollup_units": acc.get("rollup_units"),
         "rollup_provenance_coverage": acc.get("rollup_provenance_coverage"),
         "observations_expanded": acc.get("observations_expanded"),
+        "lower_level_expansion_count": acc.get("lower_level_expansion_count"),
+        "validated_observation_total": acc.get("validated_observation_total"),
+        "rollup_total": acc.get("rollup_total"),
+        "rollups_sent_to_ask_relative": acc.get("rollups_sent_to_ask_relative"),
+        "observations_sent_to_ask_relative": acc.get("observations_sent_to_ask_relative"),
         "enrichment_deferred": acc.get("enrichment_deferred"),
         "inference_stage": acc.get("inference_stage") or stage,
         "sms_raw": acc.get("sms_raw") or (pack.get("preaggregation") or {}).get("sms_raw"),

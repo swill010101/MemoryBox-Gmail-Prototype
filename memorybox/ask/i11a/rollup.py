@@ -157,9 +157,11 @@ def _atomic_key(obs: dict[str, Any]) -> tuple[Any, ...]:
         return ("pattern", people, theme)
     if bucket == "relationship":
         return ("relationship", people)
-    ep = _episode_key(obs)
-    if bucket == "communication" and ep:
-        return ("communication", people, "episode", ep)
+    if bucket == "communication":
+        # Extract units/episodes are lower-level. Ask-relative IR groups by
+        # people + year so the model sees derived roll-ups, not every window.
+        year = (_obs_day(obs) or "")[:4] or "undated"
+        return ("communication", people, year)
     month = (_obs_day(obs) or "")[:7] or "undated"
     places = _place_key(obs)
     return (bucket, people, month, places)
@@ -429,15 +431,12 @@ def compact_rollup_for_reason(unit: dict[str, Any]) -> dict[str, Any]:
     """Ask-relative input: compact derived unit, not low-level observation text."""
     return {
         "rollup_id": unit.get("rollup_id"),
-        "label": str(unit.get("label") or "")[:140],
+        "label": str(unit.get("label") or "")[:120],
         "kind": unit.get("kind"),
-        "people": list(unit.get("people") or [])[:8],
-        "places": list(unit.get("places") or [])[:6],
+        "people": list(unit.get("people") or [])[:6],
+        "places": list(unit.get("places") or [])[:4],
         "date_span": unit.get("date_span") or {},
         "observation_n": int(unit.get("observation_n") or 0),
-        "claim_type": CLAIM_TYPE,
-        "not_family_fact": True,
-        "uncertainty": [UNCERTAINTY],
     }
 
 

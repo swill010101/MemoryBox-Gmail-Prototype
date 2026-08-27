@@ -18,9 +18,12 @@ _EXCLUSIVE = (
     "normalization_ms",
     "preaggregation_ms",
     "observation_cache_lookup_ms",
+    "observation_hydration_ms",
     "rollup_ms",
     "provenance_validation_ms",
-    "ask_relative_ms",
+    "ask_relative_prep_ms",
+    "ask_relative_provider_ms",
+    "result_validation_ms",
     "narrator_ms",
     "gallery_pack_assembly_ms",
 )
@@ -102,10 +105,15 @@ def snapshot(*, wall_total_ms: int | None = None) -> dict[str, Any]:
     accounted = sum(exclusive.values())
     other = max(0, total - accounted)
     providers = dict(st.get("providers") or {})
+    ask_rel = int(exclusive.get("ask_relative_prep_ms") or 0) + int(
+        exclusive.get("ask_relative_provider_ms") or 0
+    )
     return {
         **exclusive,
+        "ask_relative_ms": ask_rel,
         "retrieval_providers_ms": providers,
         "paging_ms": int(ms.get("paging_ms") or 0),
+        "provider_paging_ms": int(ms.get("paging_ms") or 0),
         "paging_pages": int(st.get("pages") or 0),
         "other_ms": other,
         "accounted_ms": accounted,

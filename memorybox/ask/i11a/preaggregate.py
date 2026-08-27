@@ -4,7 +4,8 @@ Pre-aggregation is not sampling. Every underlying evidence/asset ID is retained.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+import re
 from typing import Any
 
 from memorybox.ask.i11a.comm_compact import omit_covered_communication_units, unit_evidence_ids
@@ -42,6 +43,8 @@ _MEDIA_KINDS = frozenset(
 
 
 def _parse_dt(raw: Any) -> datetime | None:
+    if isinstance(raw, dict):
+        raw = raw.get("value") or raw.get("start") or raw.get("end") or raw.get("sent_at")
     s = str(raw or "").strip()
     if not s:
         return None
@@ -50,7 +53,7 @@ def _parse_dt(raw: Any) -> datetime | None:
             s = s[:-1] + "+00:00"
         return datetime.fromisoformat(s[:32])
     except ValueError:
-        day = _day(s)
+        day = _day(raw)
         if day:
             return datetime.fromisoformat(day)
         return None
@@ -327,25 +330,89 @@ def _window_chars(group: list[dict[str, Any]]) -> int:
     return sum(len(_format_message_line(x)) + 1 for x in group)
 
 
-def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+def _message_topic_family(unit: dict[str, Any]) -> str:
+    """Coarse topic family for episode boundaries. Not person-specific."""
+    text = " ".join(
+        str(x or "")
+        for x in (
+            unit.get("content"),
+            unit.get("authored_text"),
+            unit.get("excerpt"),
+            unit.get("subject"),
+        )
+    ).lower()
+    if re.search(
+        r"\b(flight|airport|hotel|itinerary|boarding|arrive|arrival|depart|"
+        r"departure|passport|rental car|airbnb)\b",
+        text,
+    ):
+        return "travel"
+    if re.search(
+        r"\b(doctor|hospital|surgery|appointment|prescription|clinic|dentist)\b",
+        text,
+    ):
+        return "health"
+    if re.search(
+        r"\b(christmas|thanksgiving|birthday|easter|hanukkah|holiday|new year)\b",
+        text,
+    ):
+        return "holiday"
+    if re.search(r"\b(funeral|wedding|graduation|memorial)\b", text):
+        return "life_event"
+    return "general"
+
+
+def _split_comm_windows(
+    group: list[dict[str, Any]], *, source_type: str = "sms"
+) -> list[list[dict[str, Any]]]:
     """Split a thread into coherent communication episodes.
 
-    Boundaries: conversation already grouped by caller; then active-gap,
-    calendar span, message continuity (order preserved), and payload safety.
+    Boundaries: conversation already grouped by caller; then temporal gap,
+    active-conversation pause, topic/event family change, and payload safety.
+    Count/chars are safety ceilings for dense bursts, not the primary slicer.
     Messages are never sampled or dropped.
     """
-    ordered = sorted(group, key=lambda x: str(x.get("time") or x.get("timestamp") or ""))
+    ordered = sorted(
+        group,
+        key=lambda x: str(
+            _parse_dt(x.get("time") or x.get("timestamp") or x.get("sent_at"))
+            or _day(x.get("time") or x.get("timestamp") or x.get("sent_at"))
+            or ""
+        ),
+    )
+    pause_days = 3 if str(source_type or "").lower() in {"sms", "imessage", "text", "mms"} else 14
+    hard_gap_days = 14
     segs: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     last_d: datetime | None = None
-    first_d: datetime | None = None
+    last_family = "general"
     for u in ordered:
         dt = _parse_dt(u.get("time") or u.get("timestamp") or u.get("sent_at"))
+        family = _message_topic_family(u)
         split = False
         if current:
-            if last_d and dt and (dt - last_d) > timedelta(days=_SMS_GAP_DAYS):
+            gap_days = None
+            if last_d and dt:
+                try:
+                    a, b = last_d, dt
+                    if a.tzinfo is not None and b.tzinfo is None:
+                        b = b.replace(tzinfo=a.tzinfo)
+                    elif b.tzinfo is not None and a.tzinfo is None:
+                        a = a.replace(tzinfo=b.tzinfo)
+                    gap_days = (b - a).total_seconds() / 86400.0
+                except TypeError:
+                    gap_days = None
+            if gap_days is not None and gap_days > hard_gap_days:
                 split = True
-            elif first_d and dt and (dt - first_d) > timedelta(days=_MAX_WINDOW_SPAN_DAYS):
+            elif gap_days is not None and gap_days > pause_days:
+                split = True
+            elif (
+                family != "general"
+                and last_family != "general"
+                and family != last_family
+                and gap_days is not None
+                and gap_days >= 1
+            ):
                 split = True
             elif len(current) >= _MAX_COMM_MESSAGES:
                 split = True
@@ -354,11 +421,9 @@ def _split_comm_windows(group: list[dict[str, Any]]) -> list[list[dict[str, Any]
         if split:
             segs.append(current)
             current = []
-            first_d = None
         current.append(u)
         last_d = dt or last_d
-        if first_d is None:
-            first_d = dt or last_d
+        last_family = family
     if current:
         segs.append(current)
     return segs
@@ -435,7 +500,7 @@ def _thread_email(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for key, group in buckets.items():
         first = group[0]
         subj = str(first.get("subject") or first.get("content") or "thread")[:80]
-        for seg in _split_comm_windows(group):
+        for seg in _split_comm_windows(group, source_type="email"):
             unit = _comm_window_unit(
                 seg,
                 kind="communication_thread",
@@ -473,7 +538,7 @@ def _sms_segments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         buckets.setdefault(tid, []).append(u)
     out: list[dict[str, Any]] = []
     for tid, group in buckets.items():
-        for seg in _split_comm_windows(group):
+        for seg in _split_comm_windows(group, source_type="sms"):
             out.append(
                 _comm_window_unit(
                     seg,
@@ -717,6 +782,22 @@ def preaggregate_pack(
     provenance_ids = list(eligible_ids)
     sms_ids = sorted(sms_ids)
     email_ids = sorted(email_ids)
+    sms_span_days: list[int] = []
+    for u in sms_units:
+        ds = u.get("date_span") if isinstance(u.get("date_span"), dict) else {}
+        a, b = ds.get("start"), ds.get("end")
+        if a and b:
+            try:
+                sms_span_days.append(
+                    abs(
+                        (
+                            date.fromisoformat(str(b)[:10])
+                            - date.fromisoformat(str(a)[:10])
+                        ).days
+                    )
+                )
+            except ValueError:
+                pass
     compact_trace["provenance_gap_ids"] = sorted(raw_comm_ids - kept_ids)[:40]
     trace = {
         "raw_eligible": raw_n,
@@ -754,6 +835,7 @@ def preaggregate_pack(
             for u in sms_units
             if str(u.get("kind") or "") == "sms_segment"
         ],
+        "max_sms_window_span_days": max(sms_span_days or [0]),
         "max_messages_per_comm_unit": max(
             [
                 int(u.get("message_n") or u.get("occurrence_count") or 0)
