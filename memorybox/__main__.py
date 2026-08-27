@@ -372,6 +372,66 @@ def main(argv: list[str] | None = None) -> int:
         "i11a-enrich",
         help="Ask-independent OBSERVATION_EXTRACT persist for an archive (no Ask-relative)",
     )
+    p_histfix_build = sub.add_parser(
+        "historian-fixture-build",
+        help="Freeze I11A historian prepared input for canonical cases (no Ask-relative/narrator)",
+    )
+    p_histfix_build.add_argument(
+        "--cases",
+        default="peggy,january_2025,vegas,alaska",
+        help="Comma-separated case ids (default: all four canonical I11A regression cases)",
+    )
+    p_histfix_build.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory (default: docs/test-output/historian-fixtures)",
+    )
+    p_histfix_build.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1 for FlightSim archive",
+    )
+    p_histfix_run = sub.add_parser(
+        "historian-fixture-run",
+        help="Replay frozen historian fixture against explicit local Ollama or cloud provider",
+    )
+    p_histfix_run.add_argument("--fixture", default=None, help="Single HISTFIX_*.json fixture file")
+    p_histfix_run.add_argument(
+        "--manifest",
+        default=None,
+        help="HISTFIX_manifest_*.json — run all listed cases sequentially",
+    )
+    p_histfix_run.add_argument(
+        "--provider",
+        default="ollama",
+        choices=["ollama", "cloud"],
+        help="Model provider (default ollama/local; cloud requires explicit choice)",
+    )
+    p_histfix_run.add_argument(
+        "--model",
+        required=True,
+        help="Exact model name (required; verified before LLM call)",
+    )
+    p_histfix_run.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Provider timeout seconds (default 1800)",
+    )
+    p_histfix_run.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory (default: docs/test-output/historian-runs)",
+    )
+    p_prove_histfix = sub.add_parser(
+        "prove-historian-fixture",
+        help="Historian frozen-fixture + model runner acceptance prove",
+    )
+    p_prove_histfix.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
+    )
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -825,6 +885,48 @@ def main(argv: list[str] | None = None) -> int:
             "summary": summary,
         }, indent=2, default=str), flush=True)
         return 0
+
+    if args.cmd == "historian-fixture-build":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.historian_fixture import build_historian_fixtures_cli
+
+        cases_raw = (getattr(args, "cases", "") or "").strip()
+        cases = tuple(c.strip() for c in cases_raw.split(",") if c.strip()) or None
+        out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else None
+        payload = build_historian_fixtures_cli(
+            cases=cases,
+            out_dir=out_dir,
+            flightsim=bool(getattr(args, "flightsim", False)),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0
+
+    if args.cmd == "historian-fixture-run":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.historian_fixture import run_historian_fixture_cli
+
+        out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else None
+        payload = run_historian_fixture_cli(
+            fixture=getattr(args, "fixture", None),
+            manifest=getattr(args, "manifest", None),
+            provider=getattr(args, "provider", "ollama"),
+            model=args.model,
+            timeout=int(getattr(args, "timeout", 1800) or 1800),
+            out_dir=out_dir,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if (payload.get("status") == "ok" or payload.get("runs")) else 1
+
+    if args.cmd == "prove-historian-fixture":
+        from memorybox.ask.historian_fixture_acceptance import run_prove_historian_fixture
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_historian_fixture(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":
         from memorybox.app import get_orchestrator

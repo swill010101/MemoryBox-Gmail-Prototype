@@ -898,6 +898,7 @@ class AskOrchestrator:
         session_id: str | None = None,
         narrate: bool = True,
         inference_stage: str = "ask",
+        stop_before_historian: bool = False,
     ) -> AskResult:
         from memorybox.ai_trace.request import tracing_ask
         from memorybox.ask.progress import note_ask_progress
@@ -913,6 +914,7 @@ class AskOrchestrator:
                     narrate=narrate,
                     trace=tr,
                     inference_stage=inference_stage,
+                    stop_before_historian=stop_before_historian,
                 )
                 plan = result.plan if isinstance(result.plan, dict) else {}
                 tr.note_planner(plan)
@@ -976,6 +978,7 @@ class AskOrchestrator:
         narrate: bool = True,
         trace: Any = None,
         inference_stage: str = "ask",
+        stop_before_historian: bool = False,
     ) -> AskResult:
         from memorybox.ask.progress import note_ask_progress
         from memorybox.ask import stage_clock
@@ -1818,7 +1821,42 @@ class AskOrchestrator:
             return state
 
         enriching = str(inference_stage or "ask").strip().lower() == "enrich"
-        if (
+        if stop_before_historian and needs_semantic_inference(plan):
+            from memorybox.ask.evidence_prep import prepare_narrative_pack
+            from memorybox.ask.i11a.infer import apply_inference_to_pack, rank_photos_by_candidates
+
+            _stage("Assimilating collections")
+            _stage("Refining…")
+            if not self._llm_injected:
+                self.llm = _prefer_live_llm(self.llm)
+            narrative_pack = prepare_narrative_pack(
+                plan,
+                evidence=evidence,
+                photos=photos,
+                videos=videos,
+                stories=stories,
+                journals=journals,
+                artifacts=artifacts,
+                photo_status=photo_status,
+                video_status=video_status,
+            )
+            narrative_pack["modality_state"] = _overlay_modality()
+            narrative_pack = apply_inference_to_pack(
+                plan,
+                narrative_pack,
+                self.llm,
+                modality_state=narrative_pack.get("modality_state"),
+                stage="ask",
+                stop_before_ask_relative=True,
+            )
+            with stage_clock.timed("gallery_pack_assembly_ms"):
+                photos = rank_photos_by_candidates(
+                    photos, list(narrative_pack.get("candidate_visual_ids") or [])
+                )
+            answer_text = "Historian fixture prepared; Ask-relative was not run."
+            person_synth = False
+            narration_unavailable = False
+        elif (
             getattr(plan, "output_mode", "show") == "tell"
             and answer_kind not in {"clarification", "journal_capture"}
         ):

@@ -324,7 +324,7 @@ def _fail(
     return result
 
 
-def run_inference(
+def prepare_historian_input(
     plan: Any,
     pack: dict[str, Any],
     llm: Any,
@@ -332,10 +332,53 @@ def run_inference(
     modality_state: dict[str, Any] | None = None,
     stage: str = STAGE_ASK,
 ) -> dict[str, Any]:
+    """Production pipeline through deterministic prep; stops before ASK_RELATIVE LLM call."""
+    return run_inference(
+        plan,
+        pack,
+        llm,
+        modality_state=modality_state,
+        stage=stage,
+        stop_before_ask_relative=True,
+    )
+
+
+def run_historian_from_prepared_input(
+    prepared: dict[str, Any],
+    llm: Any,
+    *,
+    plan: Any | None = None,
+    pack: dict[str, Any] | None = None,
+    run_narrator: bool = True,
+) -> dict[str, Any]:
+    """ASK_RELATIVE + validation + optional narrator from frozen prepared input."""
+    from memorybox.ask.i11a.historian_prepared import plan_from_snapshot
+
+    plan_obj = plan or plan_from_snapshot(prepared.get("plan_snapshot") or {})
+    pack_obj = dict(pack or prepared.get("pack_minimal") or {})
+    return _run_historian_from_prepared(
+        prepared,
+        llm,
+        plan=plan_obj,
+        pack=pack_obj,
+        run_narrator=run_narrator,
+    )
+
+
+def run_inference(
+    plan: Any,
+    pack: dict[str, Any],
+    llm: Any,
+    *,
+    modality_state: dict[str, Any] | None = None,
+    stage: str = STAGE_ASK,
+    stop_before_ask_relative: bool = False,
+) -> dict[str, Any]:
     """Observations → IR → Ask-relative view. Heuristic episodes are never product truth.
 
     stage=ask never calls OBSERVATION_EXTRACT; it reuses persisted fingerprints.
     stage=enrich runs Ask-independent extract + persist and stops before Ask-relative.
+    stop_before_ask_relative=True returns prepared historian input (fixture-build path).
     """
     t0 = time.perf_counter()
     stage = STAGE_ENRICH if str(stage or "").strip().lower() == STAGE_ENRICH else STAGE_ASK
@@ -766,7 +809,87 @@ def run_inference(
             assembled_context=stats,
             parsed=stats,
         )
+    from memorybox.ask.i11a.historian_prepared import build_prepared_historian_input
+
+    prepared = build_prepared_historian_input(
+        plan=plan,
+        pack=pack,
+        person_context=person_context,
+        request_context=req,
+        ask_kind_hint=kind_hint,
+        observations=observations,
+        eligible_observations=eligible,
+        semantic_rollups=rolled_eligible,
+        semantic_higher_order=ho_eligible,
+        semantic_ir=ir,
+        ask_relative_user_payload=rp,
+        ask_relative_payload_stats=stats,
+        chunk_map=chunk_map,
+        accounting=accounting,
+        validated_obs_rejected=validated_obs.get("rejected") or [],
+        modality_state=modality_state,
+        failed_chunks=failed_chunks,
+    )
+    if stop_before_ask_relative:
+        return {
+            "ok": True,
+            "fail_closed": False,
+            "partial": failed_chunks > 0,
+            "prepared": prepared,
+            "stage": STAGE_ASK,
+            "person_context": person_context,
+            "request_context": req,
+            "accounting": accounting,
+            "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+            "chunk_map": chunk_map,
+            "observations": observations,
+            "semantic_ir": ir,
+            "semantic_rollups": rolled_eligible,
+            "semantic_higher_order": ho_eligible,
+            "enrichment_complete": accounting.get("enrichment_complete"),
+            "stage_timings": stage_clock.snapshot(),
+        }
+    return _run_historian_from_prepared(
+        prepared,
+        llm,
+        plan=plan,
+        pack=pack,
+        t0=t0,
+        failed_chunks=failed_chunks,
+        run_narrator=False,
+    )
+
+
+def _run_historian_from_prepared(
+    prepared: dict[str, Any],
+    llm: Any,
+    *,
+    plan: Any,
+    pack: dict[str, Any],
+    t0: float | None = None,
+    failed_chunks: int = 0,
+    run_narrator: bool = False,
+) -> dict[str, Any]:
+    """Shared tail: ASK_RELATIVE provider call through validate_inference."""
+    from memorybox.ask import stage_clock
+
+    t0 = t0 if t0 is not None else time.perf_counter()
+    person_context = prepared.get("person_context") or {}
+    req = prepared.get("request_context") or {}
+    kind_hint = prepared.get("ask_kind_hint") or ""
+    observations = prepared.get("observations") or []
+    eligible = prepared.get("eligible_observations") or []
+    rolled_eligible = prepared.get("semantic_rollups") or {}
+    ho_eligible = prepared.get("semantic_higher_order") or {}
+    ir = prepared.get("semantic_ir") or {}
+    rp = prepared.get("ask_relative_user_payload") or {}
+    stats = dict(prepared.get("ask_relative_payload_stats") or {})
+    chunk_map = prepared.get("chunk_map") or {}
+    accounting = dict(prepared.get("accounting") or {})
+    validated_obs = {"rejected": prepared.get("validated_obs_rejected") or []}
+    ask = str(prepared.get("ask") or getattr(plan, "original_ask", "") or "")
     parsed_view = None
+    raw_view = ""
     t_prov = time.perf_counter()
     try:
         accounting["ask_relative_calls"] = 1
@@ -1100,12 +1223,51 @@ def apply_inference_to_pack(
     *,
     modality_state: dict[str, Any] | None = None,
     stage: str = STAGE_ASK,
+    stop_before_ask_relative: bool = False,
 ) -> dict[str, Any]:
     if not needs_semantic_inference(plan):
         pack["inference"] = {"ok": False, "bypassed": True}
         pack["i11a_ab_metrics"] = {}
         return pack
-    inf = run_inference(plan, pack, llm, modality_state=modality_state, stage=stage)
+    inf = run_inference(
+        plan,
+        pack,
+        llm,
+        modality_state=modality_state,
+        stage=stage,
+        stop_before_ask_relative=stop_before_ask_relative,
+    )
+    if stop_before_ask_relative and inf.get("prepared"):
+        acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
+        pack["historian_prepared"] = inf["prepared"]
+        pack["person_context"] = inf.get("person_context")
+        pack["request_context"] = inf.get("request_context")
+        pack["semantic_observations"] = inf.get("observations") or pack.get("semantic_observations")
+        pack["semantic_ir"] = inf.get("semantic_ir") or pack.get("semantic_ir")
+        pack["semantic_rollups"] = inf.get("semantic_rollups") or pack.get("semantic_rollups")
+        pack["semantic_higher_order"] = inf.get("semantic_higher_order") or pack.get(
+            "semantic_higher_order"
+        )
+        pack["inference"] = {
+            "ok": True,
+            "fail_closed": False,
+            "partial": inf.get("partial"),
+            "stage": "historian_prepared",
+            "accounting": acc,
+            "request_context": inf.get("request_context"),
+            "enrichment_complete": inf.get("enrichment_complete"),
+            "stage_timings": inf.get("stage_timings"),
+        }
+        pack["i11a_ab_metrics"] = {
+            "observation_extract_calls": acc.get("extract_calls") or 0,
+            "ask_relative_calls": 0,
+            "validated_observations": acc.get("validated_observations"),
+            "rollup_units": acc.get("rollup_units"),
+            "higher_order_unit_total": acc.get("higher_order_unit_total"),
+            "ask_relative_payload": acc.get("ask_relative_payload"),
+            "inference_stage": acc.get("inference_stage") or stage,
+        }
+        return pack
     acc = inf.get("accounting") if isinstance(inf.get("accounting"), dict) else {}
     pack["inference"] = {
         "ok": inf.get("ok"),
