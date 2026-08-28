@@ -969,9 +969,19 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
     discover_src = _inspect.getsource(addr_idx.find_addresses_for_person_forms)
     inventory_src = _inspect.getsource(addr_idx.inventory_email_address)
+    enrich_src = _inspect.getsource(addr_idx._enrich_candidate_from_inventory)
+    resolve_src = _inspect.getsource(addr_idx.resolve_and_attach_addresses_for_person)
     _check(
         "discover_prefers_structured_parsed_before_limit",
         "ORDER BY CASE" in discover_src and "from_parsed" in discover_src,
+        checks,
+        problems,
+    )
+    _check(
+        "discover_pass1_structured_parsed_only",
+        "Pass 1" in discover_src
+        and discover_src.count("jsonb_array_elements") >= 2
+        and "people" in discover_src,
         checks,
         problems,
     )
@@ -980,6 +990,42 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "ORDER BY CASE" in inventory_src and "normalized" in inventory_src,
         checks,
         problems,
+    )
+    _check(
+        "resolve_enriches_candidate_from_inventory",
+        "_enrich_candidate_from_inventory" in resolve_src
+        and "distinct_display_names" in enrich_src,
+        checks,
+        problems,
+    )
+
+    enriched = addr_idx._enrich_candidate_from_inventory(
+        {
+            "address": "peggo417@hotmail.com",
+            "display_names": {},
+            "match_strengths": {},
+            "occurrences": 0,
+            "evidence_ids": [],
+        },
+        {
+            "structured_header": {
+                "occurrence_count": 4,
+                "distinct_display_names": [
+                    {"display_name": "Peg Legg", "count": 4, "normalized_display": "peg legg"}
+                ],
+                "evidence_ids_sample": ["e1"],
+            }
+        },
+        ["peggy george"],
+    )
+    _check(
+        "enrich_pulls_peg_legg_into_empty_candidate",
+        "Peg Legg" in (enriched.get("display_names") or {})
+        and int(enriched.get("occurrences") or 0) >= 4
+        and (enriched.get("match_strengths") or {}).get("Peg Legg") == "nickname_full",
+        checks,
+        problems,
+        detail=enriched,
     )
 
     return {

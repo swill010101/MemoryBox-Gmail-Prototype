@@ -470,6 +470,11 @@ def find_addresses_for_person_forms(
     """Address-first discovery: scan headers for addresses whose display matches Person forms.
 
     Does not require the Person to already have an email contact.
+
+    Two-pass scan on large Takeouts:
+    1. Structured ``*_parsed`` display_name only (high signal; Peg Legg rows).
+    2. Broader From/To/CC/BCC/people[] prefilter, ordered so structured hits
+       still win within the LIMIT window.
     """
     from memorybox.person.comm_identity import (
         _display_matches_person,
@@ -486,12 +491,67 @@ def find_addresses_for_person_forms(
         [f"%{f}%" for f in prefilter] + [f"%{n} %" for n in nicks] + [f"{n} %" for n in nicks]
     ))
     candidates: dict[str, dict[str, Any]] = {}
+
+    def _ingest_rows(rows: list[dict[str, Any]]) -> None:
+        for r in rows:
+            raw = r.get("payload_json")
+            payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            eid = str(r.get("id") or "")
+            for rec in _header_records(payload):
+                strength = _display_matches_person(rec.get("display_name") or "", forms)
+                if not strength:
+                    continue
+                addr = rec.get("address") or ""
+                if not addr or "@" not in addr:
+                    continue
+                slot = candidates.setdefault(
+                    addr,
+                    {
+                        "address": addr,
+                        "display_names": {},
+                        "match_strengths": {},
+                        "evidence_ids": [],
+                        "header_fields": set(),
+                        "occurrences": 0,
+                    },
+                )
+                slot["occurrences"] += 1
+                dn = rec.get("display_name") or ""
+                if dn:
+                    slot["display_names"][dn] = int(slot["display_names"].get(dn) or 0) + 1
+                    slot["match_strengths"][dn] = strength
+                slot["header_fields"].add(rec.get("header_field") or "")
+                if eid and eid not in slot["evidence_ids"]:
+                    slot["evidence_ids"].append(eid)
+
     try:
         with connection() as conn:
-            # Prefer structured *_parsed display_name hits over people[]/raw text
-            # so nickname rows like "Peg Legg <peggo417…>" are not starved by a
-            # broad "%peg %" prefilter LIMIT on large Takeouts.
-            rows = conn.execute(
+            # Pass 1: structured parsed display only — avoids people[] / body noise
+            # starving nickname header rows under LIMIT.
+            pass1 = conn.execute(
+                """
+                SELECT id, payload_json
+                FROM evidence
+                WHERE evidence_kind = 'communication'
+                  AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                      NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                      coalesce(payload_json->'from_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
+                    ) e
+                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                  )
+                LIMIT %s
+                """,
+                (patterns, limit_scan),
+            ).fetchall()
+            _ingest_rows(list(pass1))
+
+            # Pass 2: broader prefilter for archives missing *_parsed arrays.
+            pass2 = conn.execute(
                 """
                 SELECT id, payload_json
                 FROM evidence
@@ -548,39 +608,9 @@ def find_addresses_for_person_forms(
                     limit_scan,
                 ),
             ).fetchall()
+            _ingest_rows(list(pass2))
     except Exception:  # noqa: BLE001
-        rows = []
-
-    for r in rows:
-        raw = r.get("payload_json")
-        payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
-        eid = str(r.get("id") or "")
-        for rec in _header_records(payload):
-            strength = _display_matches_person(rec.get("display_name") or "", forms)
-            if not strength:
-                continue
-            addr = rec.get("address") or ""
-            if not addr or "@" not in addr:
-                continue
-            slot = candidates.setdefault(
-                addr,
-                {
-                    "address": addr,
-                    "display_names": {},
-                    "match_strengths": {},
-                    "evidence_ids": [],
-                    "header_fields": set(),
-                    "occurrences": 0,
-                },
-            )
-            slot["occurrences"] += 1
-            dn = rec.get("display_name") or ""
-            if dn:
-                slot["display_names"][dn] = int(slot["display_names"].get(dn) or 0) + 1
-                slot["match_strengths"][dn] = strength
-            slot["header_fields"].add(rec.get("header_field") or "")
-            if eid and eid not in slot["evidence_ids"]:
-                slot["evidence_ids"].append(eid)
+        pass
 
     out = []
     for addr, slot in candidates.items():
@@ -602,6 +632,53 @@ def find_addresses_for_person_forms(
             }
         )
     out.sort(key=lambda c: (-int(c["occurrences"]), c["address"]))
+    return out
+
+
+def _enrich_candidate_from_inventory(
+    cand: dict[str, Any],
+    inv: dict[str, Any],
+    known_forms: list[str],
+) -> dict[str, Any]:
+    """Merge structured inventory display names into a discover candidate before resolve.
+
+    Inventory is address-keyed and complete for that address; discover prefilters can
+    under-count display names. Enrich so Peg Legg observations survive into corroboration.
+    """
+    from memorybox.person.comm_identity import _display_matches_person
+
+    out = dict(cand)
+    dns = dict(out.get("display_names") or {})
+    strengths = dict(out.get("match_strengths") or {})
+    structured = inv.get("structured_header") or {}
+    for slot in structured.get("distinct_display_names") or []:
+        if not isinstance(slot, dict):
+            continue
+        dn = str(slot.get("display_name") or "").strip()
+        if not dn or dn.startswith("("):
+            continue
+        count = int(slot.get("count") or 0)
+        dns[dn] = max(int(dns.get(dn) or 0), count)
+        strength = _display_matches_person(dn, known_forms)
+        if strength:
+            strengths[dn] = strength
+    out["display_names"] = dns
+    out["match_strengths"] = strengths
+    header_occ = int(structured.get("occurrence_count") or 0)
+    out["occurrences"] = max(int(out.get("occurrences") or 0), header_occ, sum(dns.values()))
+    sample = structured.get("evidence_ids_sample") or []
+    if isinstance(sample, list) and sample:
+        prev = list(out.get("evidence_ids") or [])
+        for eid in sample:
+            if eid and eid not in prev:
+                prev.append(eid)
+        out["evidence_ids"] = prev[:24]
+    if strengths:
+        out["match_strength"] = (
+            "full"
+            if "full" in strengths.values() or "alias_full" in strengths.values()
+            else next(iter(strengths.values()))
+        )
     return out
 
 
@@ -680,6 +757,7 @@ def resolve_and_attach_addresses_for_person(
     for cand in cands:
         addr = str(cand.get("address") or "")
         inv = inventory_email_address(addr, include_quoted_body=True)
+        cand = _enrich_candidate_from_inventory(cand, inv, forms)
         ledger = upsert_communication_identity_from_inventory(
             inv, resolution_status="observed"
         )
