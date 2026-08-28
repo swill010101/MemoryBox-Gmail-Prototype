@@ -7,17 +7,21 @@ REM   tools\flightsim-address-centric-gate.cmd
 REM
 setlocal
 cd /d "%~dp0.."
+set BRANCH=cursor/p2-i11a-address-centric-email-49da
 
 echo ===== address-centric email gate (FlightSim) =====
-echo branch: cursor/p2-i11a-address-centric-email-49da
+echo branch: %BRANCH%
 echo.
 
-git fetch origin
+git fetch origin %BRANCH%
 if errorlevel 1 goto :fail
-git pull origin cursor/p2-i11a-address-centric-email-49da
+git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 goto :fail
-
+git pull --ff-only origin %BRANCH%
+if errorlevel 1 goto :fail
+git rev-parse --short HEAD
 echo.
+
 echo Restart MemoryBox services, then migrate + prove...
 call ".\startmb.cmd" -Restart
 if errorlevel 1 (

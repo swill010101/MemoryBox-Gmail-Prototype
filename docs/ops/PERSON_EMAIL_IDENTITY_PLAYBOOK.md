@@ -24,18 +24,8 @@ cd C:\memorybox
 tools\flightsim-address-centric-gate.cmd
 ```
 
-Or step-by-step:
-
-```bat
-cd C:\memorybox
-git fetch origin
-git pull origin cursor/p2-i11a-address-centric-email-49da
-.\startmb.cmd -Restart
-python -m memorybox migrate
-python -m memorybox prove-address-centric-email-e2e --flightsim
-```
-
-Paste the printed `===== ADDRESS_CENTRIC_GATE (paste this) =====` block
+The script checks out `cursor/p2-i11a-address-centric-email-49da`, restarts, migrates,
+and runs the prove. Paste the printed gate block
 (need `"ok": true` and `"flightsim": true`).
 
 If structured headers show Peg Legg on peggo417 but **no** same-address
