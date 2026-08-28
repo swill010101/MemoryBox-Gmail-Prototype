@@ -17,6 +17,14 @@ identities to retrieve complete Person evidence.
 
 ## FlightSim
 
+If `tools\flightsim-address-centric-gate.cmd` is not on disk yet (first pull):
+
+```bat
+cd C:\memorybox
+git fetch origin cursor/p2-i11a-address-centric-email-49da
+git checkout -B cursor/p2-i11a-address-centric-email-49da origin/cursor/p2-i11a-address-centric-email-49da
+```
+
 Primary gate (Gallery + Full-Evidence email > 0; **no historian**):
 
 ```bat
