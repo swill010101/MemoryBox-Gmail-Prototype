@@ -348,7 +348,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
 
     _check(
         "expand_hook_is_address_centric",
-        "address-centric" in (ci.expand_emails_for_retrieve.__doc__ or "").lower(),
+        "discover" in (ci.expand_emails_for_retrieve.__doc__ or "").lower()
+        and "resolve" in (ci.expand_emails_for_retrieve.__doc__ or "").lower()
+        and "retrieve" in (ci.expand_emails_for_retrieve.__doc__ or "").lower(),
         checks,
         problems,
         detail=ci.expand_emails_for_retrieve.__doc__,

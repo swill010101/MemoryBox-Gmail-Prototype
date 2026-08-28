@@ -847,10 +847,12 @@ def expand_person_communication_identities(
 
 
 def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, Any]:
-    """Ask/Gallery hook: address-centric identity then confirmed email set.
+    """Ask/Gallery hook: discover → resolve → retrieve prep (address-centric).
 
-    Resolves archive addresses from Person name/alias forms first (does not
-    require an existing Person email contact), then returns confirmed emails.
+    Governing order:
+    1. Discover communication identities from the archive
+    2. Resolve those identities to People
+    3. Use resolved identities to retrieve complete Person evidence
     """
     ids = [str(p) for p in person_ids if str(p).strip()]
     address_reports: list[dict[str, Any]] = []
@@ -872,6 +874,7 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
         ids, persist=True, backfill=True, discover=True
     )
     expansion["address_centric_resolve"] = address_reports
+    expansion["pipeline"] = ["discover", "resolve", "retrieve"]
     addrs: set[str] = set()
     for _pid, emails in (expansion.get("emails_by_person") or {}).items():
         for e in emails:

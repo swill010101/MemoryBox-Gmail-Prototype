@@ -432,9 +432,14 @@ def resolve_and_attach_addresses_for_person(
     backfill: bool = True,
     inventory_attached: bool = True,
 ) -> dict[str, Any]:
-    """Person → name/alias forms → archive addresses → corroborate → contacts.
+    """Three-step identity pipeline for one Person (Ask/Gallery).
 
-    Address discovery does not require an existing Person email contact.
+    1. DISCOVER — find archive addresses whose structured display names match
+       this Person's forms; upsert ``communication_identities`` as observed
+       (no Person email contact required).
+    2. RESOLVE — corroborate each identity → Person; write contacts + ledger.
+    3. RETRIEVE prep — backfill ``person_ids`` so all mail for those addresses
+       is Person evidence (including Peg Legg–labeled messages).
     """
     from memorybox.person.comm_identity import (
         backfill_email_person_ids,
@@ -450,6 +455,8 @@ def resolve_and_attach_addresses_for_person(
         "person_id": person_id,
         "display_name": snap.get("display_name"),
         "known_name_forms": forms,
+        "pipeline": ["discover", "resolve", "retrieve_prep"],
+        "discovered": [],
         "candidates": [],
         "accepted": [],
         "rejected": [],
@@ -459,13 +466,17 @@ def resolve_and_attach_addresses_for_person(
         report["reason"] = "no_known_name_forms"
         return report
 
+    # --- 1. DISCOVER (archive → identities; person not yet required on ledger) ---
     cands = find_addresses_for_person_forms(forms)
     for cand in cands:
-        decision = corroborate_email_candidate(person_id, cand, known_forms=forms)
-        entry = {"candidate": cand, "decision": decision}
-        report["candidates"].append(entry)
-        addr = str(decision.get("address") or cand.get("address") or "")
+        addr = str(cand.get("address") or "")
         inv = inventory_email_address(addr, include_quoted_body=True)
+        ledger = upsert_communication_identity_from_inventory(
+            inv, resolution_status="observed"
+        )
+        report["discovered"].append(
+            {"address": addr, "candidate": cand, "ledger": ledger}
+        )
         if inventory_attached:
             report["inventories"].append(
                 {
@@ -488,6 +499,11 @@ def resolve_and_attach_addresses_for_person(
                 }
             )
 
+        # --- 2. RESOLVE (identity → Person) ---
+        decision = corroborate_email_candidate(person_id, cand, known_forms=forms)
+        entry = {"candidate": cand, "decision": decision, "inventory": inv}
+        report["candidates"].append(entry)
+
         if decision.get("accepted") and decision.get("reason") != "already_confirmed_for_person":
             if persist:
                 ensure_confirmed_email_contact(
@@ -500,12 +516,10 @@ def resolve_and_attach_addresses_for_person(
                         "matched_display_name": decision.get("matched_display_name"),
                         "match_strength": decision.get("match_strength"),
                         "address_centric": True,
+                        "pipeline": "discover_then_resolve",
                     },
-                    note="Resolved via archive-wide address identity (structured headers)",
+                    note="Resolved via archive-first communication identity",
                 )
-                # Observed display names stay on communication_identities;
-                # seed Person alias only for multi-token names that are not the
-                # canonical display (optional convenience for Ask forms).
                 _seed_header_display_aliases(
                     person_id,
                     list((cand.get("display_names") or {}).keys()),
@@ -517,6 +531,7 @@ def resolve_and_attach_addresses_for_person(
                     resolved_person_id=person_id,
                     resolution_status="confirmed",
                 )
+                # --- 3. RETRIEVE prep (all messages for this address) ---
                 if backfill:
                     entry["backfill"] = backfill_email_person_ids(person_id, {addr})
             report["accepted"].append(entry)
@@ -530,7 +545,6 @@ def resolve_and_attach_addresses_for_person(
                 entry["backfill"] = backfill_email_person_ids(person_id, {addr})
             report["accepted"].append(entry)
         else:
-            upsert_communication_identity_from_inventory(inv, resolution_status="observed")
             report["rejected"].append(entry)
 
     return report
