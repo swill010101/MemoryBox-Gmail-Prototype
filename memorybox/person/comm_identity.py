@@ -198,9 +198,9 @@ def _address_claimed_by(addr: str) -> list[str]:
 
 
 def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
-    """Extract participant records from From/To/CC only (never body text)."""
+    """Extract participant records from From/To/CC/BCC (never body text)."""
     out: list[dict[str, str]] = []
-    for field in ("from_parsed", "to_parsed", "cc_parsed"):
+    for field in ("from_parsed", "to_parsed", "cc_parsed", "bcc_parsed"):
         for rec in payload.get(field) or []:
             if not isinstance(rec, dict):
                 continue
@@ -216,11 +216,12 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                     "header_field": field.replace("_parsed", ""),
                 }
             )
-    # Fallback: parse raw From/To/CC strings when parsed arrays missing.
+    # Fallback: parse raw From/To/CC/BCC strings when parsed arrays missing.
     for field, raw in (
         ("from", payload.get("from") or payload.get("from_raw")),
         ("to", payload.get("to")),
         ("cc", payload.get("cc")),
+        ("bcc", payload.get("bcc")),
     ):
         texts: list[str] = []
         if isinstance(raw, (list, tuple)):

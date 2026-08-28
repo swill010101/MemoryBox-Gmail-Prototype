@@ -98,6 +98,7 @@ def inventory_email_address(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
                       ) e
                       WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
                     )
@@ -355,19 +356,29 @@ def find_addresses_for_person_forms(
                     lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
                       ) e
                       WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                     )
                   )
                 LIMIT %s
                 """,
-                (patterns, patterns, patterns, patterns, patterns, limit_scan),
+                (
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    limit_scan,
+                ),
             ).fetchall()
     except Exception:  # noqa: BLE001
         rows = []

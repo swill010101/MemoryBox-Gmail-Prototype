@@ -356,6 +356,160 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=ci.expand_emails_for_retrieve.__doc__,
     )
 
+    # End-to-end offline: Peg Legg structured + Peggy George quoted on peggo417
+    # → nickname discover → corroborate → confirmed-email SQL would retrieve.
+    from memorybox.person.comm_address_index import find_addresses_for_person_forms
+    from memorybox.person.comm_identity import _header_records
+
+    archive_payload = {
+        "evidence_channel": "email",
+        "from": "Peg Legg <peggo417@hotmail.com>",
+        "to": ["Tom Will <swill01@gmail.com>"],
+        "cc": [],
+        "from_parsed": [
+            {
+                "display_name": "Peg Legg",
+                "address": "peggo417@hotmail.com",
+                "normalized": "peggo417@hotmail.com",
+            }
+        ],
+        "to_parsed": [
+            {
+                "display_name": "Tom Will",
+                "address": "swill01@gmail.com",
+                "normalized": "swill01@gmail.com",
+            }
+        ],
+        "cc_parsed": [],
+        "people": ["Peg Legg", "Tom Will"],
+        "body_text": (
+            "Thanks\n-----Original Message-----\n"
+            "From: someone\n"
+            "Cc: Peggy George <peggo417@hotmail.com>\n"
+        ),
+    }
+    recs = _header_records(archive_payload)
+    _check(
+        "structured_header_has_peg_legg_not_body",
+        any(
+            r["address"] == "peggo417@hotmail.com"
+            and (r.get("display_name") or "").lower() == "peg legg"
+            for r in recs
+        )
+        and not any(
+            (r.get("display_name") or "").lower() == "peggy george" for r in recs
+        ),
+        checks,
+        problems,
+        detail=recs,
+    )
+    q_only = _quoted_body_address_displays(
+        str(archive_payload["body_text"]), "peggo417@hotmail.com"
+    )
+    _check(
+        "peggy_george_only_in_quoted_body_for_fixture",
+        any(
+            (h.get("display_name") or "").strip().lower() == "peggy george"
+            for h in q_only
+        ),
+        checks,
+        problems,
+        detail=q_only,
+    )
+
+    class _Rows:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            # discover SQL
+            if "LIKE ANY" in str(sql) or "like any" in str(sql).lower():
+                return _Rows([{"id": "ev-peg", "payload_json": archive_payload}])
+            # sibling / uniqueness queries
+            if "split_part" in str(sql):
+                return _Rows(
+                    [
+                        {"id": "person-peggy-stub", "display_name": "Peggy"},
+                        {"id": "person-peggy-george", "display_name": "Peggy George"},
+                    ]
+                )
+            if "lower(display_name)" in str(sql):
+                return _Rows(
+                    [{"id": "person-peggy-george", "display_name": "Peggy George"}]
+                )
+            return _Rows([])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_address_index.connection", return_value=_Conn()
+    ), patch(
+        "memorybox.person.comm_identity.connection", return_value=_Conn()
+    ), patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ):
+        found = find_addresses_for_person_forms(["peggy george"])
+        peg_addrs = [c for c in found if c.get("address") == "peggo417@hotmail.com"]
+        _check(
+            "discover_finds_peggo417_via_peg_legg_structured",
+            bool(peg_addrs),
+            checks,
+            problems,
+            detail=found,
+        )
+        if peg_addrs:
+            dec = corroborate_email_candidate(
+                "person-peggy-george", peg_addrs[0], known_forms=["peggy george"]
+            )
+            _check(
+                "resolve_accepts_peggo417_for_peggy_george",
+                bool(dec.get("accepted")),
+                checks,
+                problems,
+                detail=dec,
+            )
+            sql, _params = _sql_confirmed_email_addrs({"peggo417@hotmail.com"})
+            _check(
+                "retrieve_sql_matches_address_not_display_name",
+                "peggo417" not in sql  # patterns are params
+                and "from" in sql
+                and "bcc" in sql
+                and "body_text" not in sql,
+                checks,
+                problems,
+                detail=sql,
+            )
+            # Closure: Peg Legg–labeled mail is included because address matches
+            keep_addrs = {
+                r["address"]
+                for r in _header_records(archive_payload)
+                if r["address"] == "peggo417@hotmail.com"
+            }
+            _check(
+                "identity_closure_includes_peg_legg_labeled_mail",
+                "peggo417@hotmail.com" in keep_addrs,
+                checks,
+                problems,
+                detail=keep_addrs,
+            )
+
     # Confirmed People emails: reuse + still discover additional header identities
     with patch(
         "memorybox.person.comm_identity.person_identity_snapshot",

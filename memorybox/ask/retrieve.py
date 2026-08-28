@@ -682,11 +682,11 @@ def _sql_person_text_hint(
 
 
 def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[Any]]:
-    """Match confirmed email addresses in From/To/CC headers (not body text).
+    """Match confirmed email addresses in From/To/CC/BCC headers (not body text).
 
-    Ingest stores ``to`` / ``cc`` as JSON arrays. ``payload_json->>'to'`` is NULL
-    for arrays in Postgres — always use ``(payload_json->'to')::text`` or
-    ``from_parsed`` / ``to_parsed`` / ``cc_parsed`` normalized addresses.
+    Ingest stores ``to`` / ``cc`` / ``bcc`` as JSON arrays. ``payload_json->>'to'``
+    is NULL for arrays in Postgres — always use ``(payload_json->'to')::text`` or
+    ``from_parsed`` / ``to_parsed`` / ``cc_parsed`` / ``bcc_parsed`` addresses.
     """
     norms = sorted(
         {
@@ -703,18 +703,20 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
         " OR EXISTS ("
         "   SELECT 1 FROM jsonb_array_elements("
         "     coalesce(payload_json->'from_parsed','[]'::jsonb)"
         "     || coalesce(payload_json->'to_parsed','[]'::jsonb)"
         "     || coalesce(payload_json->'cc_parsed','[]'::jsonb)"
+        "     || coalesce(payload_json->'bcc_parsed','[]'::jsonb)"
         "   ) e"
         "   WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)"
         " )"
         ")"
     )
-    return sql, [patterns, patterns, patterns, patterns, norms]
+    return sql, [patterns, patterns, patterns, patterns, patterns, norms]
 
 
 def _person_scoped_comm_where(
