@@ -104,21 +104,60 @@ def _seed_local_fixture() -> dict[str, Any]:
         "person_ids": [],
     }
     noise_n = 0
+    bare_from_eid = str(uuid.UUID("eeeeeeee-0000-0000-0000-000000000002"))
     with connection() as conn:
-        for i, sent in enumerate(("2019-06-15T12:00:00Z", "2019-07-01T12:00:00Z"), start=1):
-            eid = uuid.UUID(f"eeeeeeee-0000-0000-0000-00000000000{i}")
-            p = dict(payload)
-            p["sent_at"] = sent
-            p["subject"] = f"Hello from Peg {i}"
-            conn.execute(
-                """
-                INSERT INTO evidence (id, evidence_kind, summary, payload_json)
-                VALUES (%s, 'communication', %s, %s::jsonb)
-                ON CONFLICT (id) DO UPDATE
-                  SET payload_json = EXCLUDED.payload_json, updated_at = now()
-                """,
-                (eid, p["subject"], json.dumps(p)),
-            )
+        # Message 1: classic Peg Legg <addr> + quoted Peggy George (nickname corroboration).
+        eid1 = uuid.UUID("eeeeeeee-0000-0000-0000-000000000001")
+        p1 = dict(payload)
+        p1["sent_at"] = "2019-06-15T12:00:00Z"
+        p1["subject"] = "Hello from Peg 1"
+        conn.execute(
+            """
+            INSERT INTO evidence (id, evidence_kind, summary, payload_json)
+            VALUES (%s, 'communication', %s, %s::jsonb)
+            ON CONFLICT (id) DO UPDATE
+              SET payload_json = EXCLUDED.payload_json, updated_at = now()
+            """,
+            (eid1, p1["subject"], json.dumps(p1)),
+        )
+        # Message 2: Hotmail/Takeout bare From + people[]=["Peg Legg"] (no angle display).
+        eid2 = uuid.UUID("eeeeeeee-0000-0000-0000-000000000002")
+        p2 = {
+            "evidence_channel": "email",
+            "from": _PROBE_ADDR,
+            "to": ["Tom Will <swill01@gmail.com>"],
+            "cc": [],
+            "bcc": [],
+            "from_parsed": [
+                {
+                    "display_name": "",
+                    "address": _PROBE_ADDR,
+                    "normalized": _PROBE_ADDR,
+                }
+            ],
+            "to_parsed": [
+                {
+                    "display_name": "Tom Will",
+                    "address": "swill01@gmail.com",
+                    "normalized": "swill01@gmail.com",
+                }
+            ],
+            "cc_parsed": [],
+            "people": ["Peg Legg", "Tom Will"],
+            "subject": "Hello from Peg bare From",
+            "body_text": "Later note from Peg",
+            "sent_at": "2019-07-01T12:00:00Z",
+            "person_ids": [],
+        }
+        conn.execute(
+            """
+            INSERT INTO evidence (id, evidence_kind, summary, payload_json)
+            VALUES (%s, 'communication', %s, %s::jsonb)
+            ON CONFLICT (id) DO UPDATE
+              SET payload_json = EXCLUDED.payload_json, updated_at = now()
+            """,
+            (eid2, p2["subject"], json.dumps(p2)),
+        )
         # Broad "%peg %" noise (no peggo417) — old single-pass LIMIT could starve.
         for i in range(3, 83):
             eid = uuid.UUID(f"eeeeeeee-0000-0000-0000-{i:012d}")
@@ -163,6 +202,7 @@ def _seed_local_fixture() -> dict[str, Any]:
         "person_id": peggy.person_id,
         "display_name": peggy.display_name,
         "seeded": 2,
+        "bare_from_evidence_id": bare_from_eid,
         "noise_emails": noise_n,
         "immich_stub": "Peggy",
     }
@@ -414,12 +454,20 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
 
     if not flightsim:
         seeded = [str(h.evidence_id) for h in hits if str(h.evidence_id).startswith("eeeeeeee")]
+        bare_id = str((seed_info or {}).get("bare_from_evidence_id") or "")
         _check(
             "identity_closure_includes_seeded_peg_legg_mail",
             len(seeded) >= 2,
             checks,
             problems,
             detail=seeded,
+        )
+        _check(
+            "identity_closure_includes_bare_from_people_mail",
+            bool(bare_id) and bare_id in seeded,
+            checks,
+            problems,
+            detail={"bare_from_evidence_id": bare_id, "seeded": seeded},
         )
 
     gate = {
