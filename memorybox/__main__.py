@@ -446,6 +446,42 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Final P1-runtime-host acceptance (set MEMORYBOX_P1_RUNTIME_HOST=1)",
     )
+    p_full_ev = sub.add_parser(
+        "full-evidence-diagnostic",
+        help=(
+            "Export complete eligible Peggy evidence before OBSERVATION_EXTRACT "
+            "(no LLM; measurement only)"
+        ),
+    )
+    p_full_ev.add_argument(
+        "--ask",
+        default="tell me what you know about Peggy",
+        help="Person Ask (default: canonical Peggy historian case)",
+    )
+    p_full_ev.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory (default: docs/test-output/full-evidence)",
+    )
+    p_full_ev.add_argument(
+        "--fixture",
+        default=None,
+        help="Optional HISTFIX_peggy_*.json for downstream obs/rollup/HO comparison metrics",
+    )
+    p_full_ev.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1 for FlightSim archive",
+    )
+    p_prove_full_ev = sub.add_parser(
+        "prove-full-evidence-diagnostic",
+        help="Full-fidelity Peggy evidence diagnostic acceptance (offline synthetic)",
+    )
+    p_prove_full_ev.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Optional FlightSim flag (acceptance itself needs no archive)",
+    )
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -952,6 +988,35 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_historian_fixture(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "full-evidence-diagnostic":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.full_evidence_diagnostic import (
+            run_full_evidence_diagnostic_cli,
+        )
+
+        out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else None
+        fixture = Path(args.fixture) if getattr(args, "fixture", None) else None
+        payload = run_full_evidence_diagnostic_cli(
+            out_dir=out_dir,
+            ask=getattr(args, "ask", None),
+            fixture=fixture,
+            flightsim=bool(getattr(args, "flightsim", False)),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-full-evidence-diagnostic":
+        from memorybox.ask.full_evidence_diagnostic_acceptance import (
+            run_prove_full_evidence_diagnostic,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_full_evidence_diagnostic(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
