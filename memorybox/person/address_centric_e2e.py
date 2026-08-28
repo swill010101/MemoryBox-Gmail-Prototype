@@ -41,6 +41,23 @@ def _seed_local_fixture() -> dict[str, Any]:
             "DELETE FROM communication_identities WHERE address_normalized = %s",
             (_PROBE_ADDR,),
         )
+        # Drop leftover explore-fixture emails so gate addresses stay peggo417-only.
+        conn.execute(
+            "DELETE FROM person_contact_points WHERE value_text ILIKE %s",
+            ("%peggy@example.com%",),
+        )
+        conn.execute(
+            "DELETE FROM communication_identities WHERE address_normalized = %s",
+            ("peggy@example.com",),
+        )
+        conn.execute(
+            """
+            DELETE FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json::text, '')) LIKE %s
+            """,
+            ("%peggy@example.com%",),
+        )
         conn.execute(
             """
             DELETE FROM person_aliases WHERE person_id IN (
