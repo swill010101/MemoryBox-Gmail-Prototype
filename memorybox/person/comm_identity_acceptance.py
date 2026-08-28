@@ -12,6 +12,7 @@ from memorybox.ask.retrieve import (
 from memorybox.person.comm_address_index import _quoted_body_address_displays
 from memorybox.person.comm_identity import (
     _display_matches_person,
+    _header_records,
     attach_known_email_if_corroborated,
     corroborate_email_candidate,
     expand_person_communication_identities,
@@ -461,7 +462,6 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     # End-to-end offline: Peg Legg structured + Peggy George quoted on peggo417
     # → nickname discover → corroborate → confirmed-email SQL would retrieve.
     from memorybox.person.comm_address_index import find_addresses_for_person_forms
-    from memorybox.person.comm_identity import _header_records
 
     archive_payload = {
         "evidence_channel": "email",
