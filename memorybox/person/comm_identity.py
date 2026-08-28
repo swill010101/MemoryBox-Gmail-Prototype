@@ -1108,6 +1108,95 @@ def explain_address_for_person(person_id: str, address: str) -> dict[str, Any]:
     }
 
 
+def diagnose_email_retrieve_gap(
+    person_ids: set[str] | list[str],
+    *,
+    address_hint: str | None = "peggo417@hotmail.com",
+) -> dict[str, Any]:
+    """Explain why Person-scoped email retrieve may be empty (FlightSim diag)."""
+    ids = [str(p) for p in person_ids if str(p).strip()]
+    out: dict[str, Any] = {
+        "person_ids": ids,
+        "address_hint": normalize_handle(address_hint) if address_hint else None,
+        "snapshots": [],
+        "confirmed_emails": [],
+        "expand_preview": None,
+        "address_hint_explanation": None,
+        "likely_blocker": None,
+    }
+    all_emails: set[str] = set()
+    for pid in ids:
+        snap = person_identity_snapshot(pid)
+        emails = [
+            normalize_handle(str(c.get("value_text") or ""))
+            for c in (snap.get("emails") or [])
+        ]
+        emails = [e for e in emails if e and "@" in e]
+        all_emails.update(emails)
+        out["snapshots"].append(
+            {
+                "person_id": pid,
+                "display_name": snap.get("display_name"),
+                "known_name_forms": snap.get("known_name_forms"),
+                "confirmed_emails": emails,
+                "alias_count": len(snap.get("aliases") or []),
+            }
+        )
+    out["confirmed_emails"] = sorted(all_emails)
+
+    if ids:
+        try:
+            expanded = expand_emails_for_retrieve(ids)
+            out["expand_preview"] = {
+                "addresses": sorted(expanded.get("addresses") or []),
+                "expansion_accepted": (expanded.get("expansion") or {}).get("accepted"),
+                "expansion_rejected_sample": (
+                    (expanded.get("expansion") or {}).get("rejected") or []
+                )[:8],
+                "emails_by_person": (expanded.get("expansion") or {}).get(
+                    "emails_by_person"
+                ),
+            }
+            all_emails.update(expanded.get("addresses") or [])
+            out["confirmed_emails"] = sorted(all_emails)
+        except Exception as exc:  # noqa: BLE001
+            out["expand_preview"] = {"error": str(exc)}
+
+    hint = out.get("address_hint")
+    if hint and ids:
+        try:
+            out["address_hint_explanation"] = explain_address_for_person(ids[0], hint)
+        except Exception as exc:  # noqa: BLE001
+            out["address_hint_explanation"] = {"error": str(exc)}
+
+    rows = int(
+        ((out.get("address_hint_explanation") or {}).get("known_address_probe") or {}).get(
+            "rows_with_address"
+        )
+        or 0
+    )
+    if not ids:
+        out["likely_blocker"] = "no_person_ids_on_plan"
+    elif not out["confirmed_emails"] and rows == 0:
+        out["likely_blocker"] = (
+            "address_hint_not_in_ingested_headers — check spelling / mbox ingest"
+        )
+    elif not out["confirmed_emails"] and rows > 0:
+        out["likely_blocker"] = (
+            "address_in_headers_but_not_confirmed — run "
+            f"repair-email-identities --person-id {ids[0]} --address {hint} "
+            "(headers may use Peg Legg while Person is Peggy George)"
+        )
+    elif out["confirmed_emails"]:
+        out["likely_blocker"] = (
+            "contacts_exist_but_retrieve_still_empty — check backfill / "
+            "header SQL match for confirmed addresses"
+        )
+    else:
+        out["likely_blocker"] = "unknown"
+    return out
+
+
 def repair_email_identity_contacts(
     person_id: str | None = None,
     *,

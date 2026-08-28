@@ -562,6 +562,8 @@ def run_historian_full_evidence_benchmark(
     person_context: dict[str, Any] | None = None,
     retrieved: dict[str, Any] | None = None,
     items: list[dict[str, Any]] | None = None,
+    repair_address: str | None = None,
+    address_hint: str | None = "peggo417@hotmail.com",
 ) -> dict[str, Any]:
     """End-to-end: freeze pack + funnel metrics + L1 chunks + proofs."""
     from memorybox.ask.deps import build_photo, build_video
@@ -569,6 +571,8 @@ def run_historian_full_evidence_benchmark(
     out = Path(out_dir) if out_dir else _DEFAULT_BENCH_DIR
     out.mkdir(parents=True, exist_ok=True)
     ask_text = (ask or PEGGY_ASK).strip()
+    identity_diag: dict[str, Any] = {}
+    repair_result: dict[str, Any] | None = None
 
     if items is None and from_dir:
         items, loaded_pc, prior_metrics = _load_items_from_dir(Path(from_dir))
@@ -590,10 +594,28 @@ def run_historian_full_evidence_benchmark(
         video = build_video()
         if plan is None:
             plan = resolve_peggy_plan(photo=photo, ask=ask_text)
+        pids = [str(p) for p in (getattr(plan, "person_ids", ()) or ()) if p]
+        if repair_address and pids:
+            from memorybox.person.comm_identity import repair_email_identity_contacts
+
+            repair_result = repair_email_identity_contacts(
+                pids[0],
+                known_address=repair_address,
+                force_rediscover=False,
+            )
         if person_context is None:
             person_context = build_person_context(plan)
         if retrieved is None:
             retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
+        try:
+            from memorybox.person.comm_identity import diagnose_email_retrieve_gap
+
+            identity_diag = diagnose_email_retrieve_gap(
+                pids,
+                address_hint=address_hint or repair_address,
+            )
+        except Exception as exc:  # noqa: BLE001
+            identity_diag = {"error": str(exc), "person_ids": pids}
         norm = normalize_retrieved(retrieved, person_context=person_context)
         items = list(norm["items"])
     else:
@@ -601,6 +623,11 @@ def run_historian_full_evidence_benchmark(
             person_context = {"focal_subjects": [], "allowed_relationship_labels": []}
 
     # A. Freeze benchmark pack
+    metrics_extra: dict[str, Any] = {
+        "email_identity_diag": identity_diag,
+    }
+    if repair_result is not None:
+        metrics_extra["email_identity_repair"] = repair_result
     freeze = freeze_benchmark_artifacts(
         out,
         items=items,
@@ -608,6 +635,22 @@ def run_historian_full_evidence_benchmark(
         ask=ask_text,
         plan=plan,
         gpt_response_path=gpt_response,
+        metrics_extra=metrics_extra,
+    )
+
+    # Persist a standalone identity diag for FlightSim paste.
+    diag_path = out / "PEGGY_EMAIL_IDENTITY_DIAG.json"
+    diag_path.write_text(
+        json.dumps(
+            {
+                "repair": repair_result,
+                "diag": identity_diag,
+            },
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        ),
+        encoding="utf-8",
     )
 
     # B. Compression funnel
@@ -655,11 +698,14 @@ def run_historian_full_evidence_benchmark(
             "full_evidence": str(out / "PEGGY_FULL_EVIDENCE.txt"),
             "metrics": str(out / "PEGGY_FULL_EVIDENCE_METRICS.json"),
             "paste": str(out / "CLOUDREQ_peggy_full_evidence_paste.txt"),
+            "email_identity_diag": str(diag_path),
             "funnel_json": str(funnel_json_path),
             "funnel_txt": str(funnel_txt_path),
             "l1_chunk_manifest": str(chunk_manifest_path),
             "chunks": [str(out / c["filename"]) for c in l1["chunks"]],
         },
+        "email_identity_diag": identity_diag,
+        "email_identity_repair": repair_result,
         "gpt56sol_response_preserved": freeze.get("gpt_preserved"),
         "llm_calls": 0,
         "production_inference_modified": False,
@@ -685,6 +731,8 @@ def run_historian_full_evidence_benchmark_cli(
     from_dir: Path | str | None = None,
     gpt_response: Path | str | None = None,
     flightsim: bool = False,
+    repair_address: str | None = None,
+    address_hint: str | None = "peggo417@hotmail.com",
 ) -> dict[str, Any]:
     if flightsim:
         import os
@@ -697,4 +745,6 @@ def run_historian_full_evidence_benchmark_cli(
         historian_run_path=historian_run,
         from_dir=from_dir,
         gpt_response=gpt_response,
+        repair_address=repair_address,
+        address_hint=address_hint,
     )

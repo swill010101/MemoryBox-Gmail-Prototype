@@ -557,6 +557,20 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1 for FlightSim archive",
     )
+    p_full_bench.add_argument(
+        "--repair-address",
+        default=None,
+        help=(
+            "Before retrieve: operator-attest this email onto the resolved Person "
+            "(e.g. peggo417@hotmail.com). Required when headers use Peg Legg "
+            "while Person display is Peggy George."
+        ),
+    )
+    p_full_bench.add_argument(
+        "--address-hint",
+        default="peggo417@hotmail.com",
+        help="Address to explain in PEGGY_EMAIL_IDENTITY_DIAG.json when email is 0",
+    )
     p_prove_full_bench = sub.add_parser(
         "prove-historian-full-evidence-benchmark",
         help="Acceptance for full-evidence benchmark + L1 chunker (offline)",
@@ -1164,6 +1178,8 @@ def main(argv: list[str] | None = None) -> int:
             from_dir=from_dir,
             gpt_response=gpt,
             flightsim=bool(getattr(args, "flightsim", False)),
+            repair_address=getattr(args, "repair_address", None),
+            address_hint=getattr(args, "address_hint", None),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
