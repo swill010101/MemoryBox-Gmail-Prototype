@@ -451,7 +451,13 @@ def freeze_benchmark_artifacts(
     evidence_path.write_text(evidence_txt, encoding="utf-8")
     paste_path.write_text(paste, encoding="utf-8")
 
-    rc: dict[str, int] = {}
+    rc: dict[str, int] = {
+        "person": 0,
+        "sms": 0,
+        "email": 0,
+        "photo": 0,
+        "video": 0,
+    }
     for it in items:
         src = str(it.get("source") or "other")
         rc[src] = int(rc.get(src) or 0) + 1

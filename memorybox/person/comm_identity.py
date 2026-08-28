@@ -783,16 +783,26 @@ def attach_known_email_if_corroborated(
     *,
     persist: bool = True,
     backfill: bool = True,
+    operator_attested: bool = False,
 ) -> dict[str, Any]:
     """Attach a known address when headers corroborate Person display-name pairing.
 
     Used when an address is already known (e.g. peggo417@hotmail.com) but not yet
-    on person_contact_points. Still requires header evidence — not body-name alone.
+    on person_contact_points. Requires the address in From/To/CC headers — not body
+    text alone.
+
+    Auto path (operator_attested=False): full display-name corroboration required.
+    Operator path (operator_attested=True, from repair ``--address``): if the address
+    appears in headers and is unclaimed, attach with provenance. Hotmail/Outlook often
+    store first-name-only or bare addresses, so silent auto-expand cannot pair them;
+    an explicit ``--person-id`` + ``--address`` is the disambiguation.
     """
     addr = normalize_handle(address)
     snap = person_identity_snapshot(person_id)
     forms = snap.get("known_name_forms") or []
-    if not addr or "@" not in addr or not forms:
+    if not addr or "@" not in addr:
+        return {"accepted": False, "reason": "missing_address_or_names", "address": addr}
+    if not forms and not operator_attested:
         return {"accepted": False, "reason": "missing_address_or_names", "address": addr}
 
     claimants = _address_claimed_by(addr)
@@ -816,7 +826,9 @@ def attach_known_email_if_corroborated(
         }
 
     like = f"%{addr}%"
-    name_likes = [f"%{f}%" for f in forms if " " in f] or [f"%{forms[0]}%"]
+    name_likes = [f"%{f}%" for f in forms if " " in f] or (
+        [f"%{forms[0]}%"] if forms else []
+    )
     rows = []
     try:
         with connection() as conn:
@@ -831,6 +843,7 @@ def attach_known_email_if_corroborated(
                     lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
@@ -842,7 +855,7 @@ def attach_known_email_if_corroborated(
                   )
                 LIMIT 5000
                 """,
-                (like, like, like, addr),
+                (like, like, like, like, addr),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"accepted": False, "reason": "scan_error", "error": str(exc), "address": addr}
@@ -850,6 +863,7 @@ def attach_known_email_if_corroborated(
     display_names: dict[str, int] = {}
     evidence_ids: list[str] = []
     header_fields: set[str] = set()
+    sample_raw_displays: list[str] = []
     for r in rows:
         raw = r.get("payload_json")
         payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
@@ -858,6 +872,8 @@ def attach_known_email_if_corroborated(
                 continue
             header_fields.add(rec["header_field"])
             dn = rec.get("display_name") or ""
+            if dn and len(sample_raw_displays) < 12:
+                sample_raw_displays.append(dn)
             if _display_matches_person(dn, forms):
                 display_names[dn] = int(display_names.get(dn) or 0) + 1
             for p in payload.get("people") or []:
@@ -884,25 +900,73 @@ def attach_known_email_if_corroborated(
         "occurrences": max(sum(display_names.values()), len(evidence_ids)),
         "evidence_ids": evidence_ids[:24],
         "header_fields": sorted(header_fields),
+        "sample_raw_display_names": sample_raw_displays,
     }
     decision = corroborate_email_candidate(person_id, candidate, known_forms=forms)
+
+    # Explicit repair --address: address present in headers + unclaimed + targeted
+    # Person id is enough. Do not silently attach during Ask auto-expand.
+    if (
+        not decision.get("accepted")
+        and operator_attested
+        and len(rows) > 0
+        and len(evidence_ids) > 0
+    ):
+        decision = {
+            "address": addr,
+            "accepted": True,
+            "reason": "operator_attested_address_in_headers",
+            "corroboration": [
+                "operator_attested",
+                f"rows_with_address:{len(rows)}",
+                f"header_fields:{','.join(sorted(header_fields)) or 'none'}",
+            ],
+            "matched_display_name": next(iter(display_names), None)
+            or (snap.get("display_name") if snap else None),
+            "match_strength": "operator_attested",
+            "prior_auto_reason": decision.get("reason"),
+        }
+
     if decision.get("accepted") and persist and decision.get("reason") != "already_confirmed_for_person":
         ensure_confirmed_email_contact(
             person_id,
             addr,
             provenance={
-                "source": "comm_identity_known_address",
+                "source": (
+                    "comm_identity_operator_attested"
+                    if decision.get("reason") == "operator_attested_address_in_headers"
+                    else "comm_identity_known_address"
+                ),
                 "reason": decision.get("reason"),
                 "corroboration": decision.get("corroboration"),
                 "matched_display_name": decision.get("matched_display_name"),
                 "evidence_ids_sample": evidence_ids[:8],
                 "name_likes_checked": name_likes,
+                "operator_attested": bool(operator_attested),
+                "sample_raw_display_names": sample_raw_displays[:8],
             },
-            note="Known address corroborated via communication headers",
+            note=(
+                "Operator-attested known address present in communication headers"
+                if decision.get("reason") == "operator_attested_address_in_headers"
+                else "Known address corroborated via communication headers"
+            ),
         )
     bf = {}
     if decision.get("accepted") and backfill:
         bf = backfill_email_person_ids(person_id, {addr})
+    hint = None
+    if not decision.get("accepted") and len(rows) > 0:
+        hint = (
+            "Address exists in email headers but auto corroboration failed "
+            f"({decision.get('reason')}). Re-run repair with --person-id and "
+            "--address to operator-attest, or add a full-name alias if headers "
+            f"only show first-name/bare address (samples={sample_raw_displays[:5]!r})."
+        )
+    elif not decision.get("accepted") and len(rows) == 0:
+        hint = (
+            "Address not found in From/To/CC/people headers of ingested email. "
+            "Confirm the spelling and that the mbox containing it was ingested."
+        )
     return {
         "accepted": bool(decision.get("accepted")),
         "address": addr,
@@ -910,7 +974,10 @@ def attach_known_email_if_corroborated(
         "decision": decision,
         "rows_with_address": len(rows),
         "backfill": bf,
+        "operator_attested": bool(operator_attested),
+        "hint": hint,
     }
+
 
 
 def explain_address_for_person(person_id: str, address: str) -> dict[str, Any]:
@@ -921,7 +988,10 @@ def explain_address_for_person(person_id: str, address: str) -> dict[str, Any]:
     candidates = discover_email_candidates_from_archive(person_id, known_forms=forms)
     match = next((c for c in candidates if c.get("address") == addr), None)
     known_attach = attach_known_email_if_corroborated(
-        person_id, addr, persist=False, backfill=False
+        person_id, addr, persist=False, backfill=False, operator_attested=False
+    )
+    operator_probe = attach_known_email_if_corroborated(
+        person_id, addr, persist=False, backfill=False, operator_attested=True
     )
     if match is None:
         match = {
@@ -952,12 +1022,26 @@ def explain_address_for_person(person_id: str, address: str) -> dict[str, Any]:
             decision = known_attach.get("decision") or decision
     else:
         decision = corroborate_email_candidate(person_id, match, known_forms=forms)
+    next_step = None
+    rows_n = int(known_attach.get("rows_with_address") or 0)
+    if rows_n > 0 and not known_attach.get("accepted"):
+        next_step = (
+            "python -m memorybox repair-email-identities "
+            f"--person-id {person_id} --address {addr}"
+        )
+    elif rows_n == 0 and not known_attach.get("accepted"):
+        next_step = (
+            "Address absent from ingested email headers — check spelling / mbox ingest"
+        )
     return {
         "person": snap,
         "address": addr,
         "candidate": match,
         "decision": decision,
         "known_address_probe": known_attach,
+        "operator_attested_probe": operator_probe,
+        "hint": (known_attach.get("hint") or operator_probe.get("hint")),
+        "next_step_if_blocked": next_step,
     }
 
 
@@ -1001,12 +1085,26 @@ def repair_email_identity_contacts(
 
     known_results = []
     if known_address and ids:
-        for pid in ids:
-            known_results.append(
-                attach_known_email_if_corroborated(
-                    pid, known_address, persist=True, backfill=True
-                )
+        if not person_id:
+            return {
+                "ok": False,
+                "error": (
+                    "--address requires --person-id (operator attestation must "
+                    "target one Person; will not attach across the people list)"
+                ),
+                "person_ids": ids,
+            }
+        # Explicit --address + --person-id is operator attestation.
+        # Auto Ask expand never sets operator_attested.
+        known_results.append(
+            attach_known_email_if_corroborated(
+                ids[0],
+                known_address,
+                persist=True,
+                backfill=True,
+                operator_attested=True,
             )
+        )
 
     if force_rediscover:
         reports = []

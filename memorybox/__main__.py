@@ -243,7 +243,11 @@ def main(argv: list[str] | None = None) -> int:
     p_repair_email.add_argument(
         "--address",
         default=None,
-        help="Optional known email (e.g. peggo417@hotmail.com) to corroborate and attach",
+        help=(
+            "Known email to attach for --person-id (operator attestation when "
+            "headers lack full display name; e.g. peggo417@hotmail.com). "
+            "Requires --person-id."
+        ),
     )
     p_email_trace = sub.add_parser(
         "person-email-identity-trace",
