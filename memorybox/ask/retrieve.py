@@ -1382,6 +1382,28 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
+    # Fallback: raw From/To/CC (and people[]) when *_parsed is missing on older rows.
+    for raw in (
+        payload.get("from"),
+        payload.get("from_raw"),
+        payload.get("to"),
+        payload.get("cc"),
+        payload.get("people"),
+    ):
+        texts: list[str]
+        if isinstance(raw, (list, tuple)):
+            texts = [str(x) for x in raw]
+        elif raw:
+            texts = [str(raw)]
+        else:
+            texts = []
+        for text in texts:
+            for m in re.finditer(
+                r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text
+            ):
+                n = normalize_handle(m.group(0))
+                if n and "@" in n:
+                    out.add(n)
     return out
 
 

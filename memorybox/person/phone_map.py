@@ -14,6 +14,14 @@ def normalize_handle(raw: str | None) -> str:
     if not text:
         return ""
     if "@" in text:
+        # People UI / headers may store "Peg Legg <addr@host>" — use bare address.
+        angle = re.search(r"<\s*([^<>@\s]+@[^<>@\s]+)\s*>", text)
+        if angle:
+            return angle.group(1).strip().lower()
+        # Bare address possibly with display junk around it.
+        bare = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text)
+        if bare:
+            return bare.group(0).strip().lower()
         return text.lower()
     digits = re.sub(r"\D", "", text)
     if not digits:

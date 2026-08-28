@@ -256,8 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     p_email_trace.add_argument("--person-id", required=True, help="Canonical Person id")
     p_email_trace.add_argument(
         "--address",
-        default="peggo417@hotmail.com",
-        help="Email address to explain (default peggo417@hotmail.com)",
+        default=None,
+        help=(
+            "Email to explain (default: first confirmed email on the Person, "
+            "if any — no hardcoded address)"
+        ),
     )
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
@@ -561,15 +564,18 @@ def main(argv: list[str] | None = None) -> int:
         "--repair-address",
         default=None,
         help=(
-            "Before retrieve: operator-attest this email onto the resolved Person "
-            "(e.g. peggo417@hotmail.com). Required when headers use Peg Legg "
-            "while Person display is Peggy George."
+            "Optional: before retrieve, operator-attest this email onto the "
+            "resolved Person. Not needed when People Contacts already has the "
+            "confirmed address — retrieve uses person_contact_points."
         ),
     )
     p_full_bench.add_argument(
         "--address-hint",
-        default="peggo417@hotmail.com",
-        help="Address to explain in PEGGY_EMAIL_IDENTITY_DIAG.json when email is 0",
+        default=None,
+        help=(
+            "Optional address to explain in PEGGY_EMAIL_IDENTITY_DIAG.json "
+            "(default: first confirmed People email)"
+        ),
     )
     p_prove_full_bench = sub.add_parser(
         "prove-historian-full-evidence-benchmark",
@@ -941,7 +947,26 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         snap = person_identity_snapshot(args.person_id)
-        explained = explain_address_for_person(args.person_id, args.address)
+        addr = getattr(args, "address", None)
+        if not addr:
+            emails = [
+                str(c.get("value_text") or "")
+                for c in (snap.get("emails") or [])
+                if str(c.get("value_text") or "")
+            ]
+            addr = emails[0] if emails else None
+        if not addr:
+            payload = {
+                "ok": False,
+                "error": (
+                    "No --address and Person has no confirmed email contact. "
+                    "Add the email on People Contacts, or pass --address."
+                ),
+                "snapshot": snap,
+            }
+            print(json.dumps(payload, indent=2, default=str))
+            return 1
+        explained = explain_address_for_person(args.person_id, addr)
         payload = {
             "ok": True,
             "snapshot": snap,

@@ -664,11 +664,15 @@ def expand_person_communication_identities(
                 "accepted_this_round": [],
                 "rejected_this_round": [],
             }
-            # Stable reuse: confirmed emails already persisted — do not rescan archive.
+            # Stable reuse: confirmed emails already on People — do not rediscover,
+            # but still backfill person_ids onto matching header rows so GIN retrieve
+            # and Gallery stay consistent. No address hardcoding required.
             if existing and round_i == 0:
                 report["emails_by_person"][pid] = sorted(existing)
                 round_rec["skipped_discovery"] = True
                 round_rec["reason"] = "confirmed_emails_present"
+                if backfill:
+                    round_rec["backfill"] = backfill_email_person_ids(pid, existing)
                 report["rounds"].append(round_rec)
                 break
 
@@ -1111,9 +1115,13 @@ def explain_address_for_person(person_id: str, address: str) -> dict[str, Any]:
 def diagnose_email_retrieve_gap(
     person_ids: set[str] | list[str],
     *,
-    address_hint: str | None = "peggo417@hotmail.com",
+    address_hint: str | None = None,
 ) -> dict[str, Any]:
-    """Explain why Person-scoped email retrieve may be empty (FlightSim diag)."""
+    """Explain why Person-scoped email retrieve may be empty (FlightSim diag).
+
+    Prefer confirmed contacts already on People — no hardcoded Peggy address.
+    Optional address_hint only when the operator wants to probe a specific spelling.
+    """
     ids = [str(p) for p in person_ids if str(p).strip()]
     out: dict[str, Any] = {
         "person_ids": ids,
@@ -1144,6 +1152,10 @@ def diagnose_email_retrieve_gap(
         )
     out["confirmed_emails"] = sorted(all_emails)
 
+    # If no explicit hint, probe the first confirmed People email (source of truth).
+    hint = out.get("address_hint") or (out["confirmed_emails"][0] if out["confirmed_emails"] else None)
+    out["address_hint"] = hint
+
     if ids:
         try:
             expanded = expand_emails_for_retrieve(ids)
@@ -1156,13 +1168,19 @@ def diagnose_email_retrieve_gap(
                 "emails_by_person": (expanded.get("expansion") or {}).get(
                     "emails_by_person"
                 ),
+                "backfill_sample": [
+                    (r.get("backfill") if isinstance(r, dict) else None)
+                    for r in ((expanded.get("expansion") or {}).get("rounds") or [])[:3]
+                ],
             }
             all_emails.update(expanded.get("addresses") or [])
             out["confirmed_emails"] = sorted(all_emails)
+            if not hint and out["confirmed_emails"]:
+                hint = out["confirmed_emails"][0]
+                out["address_hint"] = hint
         except Exception as exc:  # noqa: BLE001
             out["expand_preview"] = {"error": str(exc)}
 
-    hint = out.get("address_hint")
     if hint and ids:
         try:
             out["address_hint_explanation"] = explain_address_for_person(ids[0], hint)
@@ -1177,20 +1195,20 @@ def diagnose_email_retrieve_gap(
     )
     if not ids:
         out["likely_blocker"] = "no_person_ids_on_plan"
-    elif not out["confirmed_emails"] and rows == 0:
+    elif not out["confirmed_emails"]:
         out["likely_blocker"] = (
-            "address_hint_not_in_ingested_headers — check spelling / mbox ingest"
+            "no_confirmed_email_on_people — add the address on People Contacts "
+            "(or repair --address once); retrieve uses person_contact_points"
         )
-    elif not out["confirmed_emails"] and rows > 0:
+    elif out["confirmed_emails"] and rows == 0 and hint:
         out["likely_blocker"] = (
-            "address_in_headers_but_not_confirmed — run "
-            f"repair-email-identities --person-id {ids[0]} --address {hint} "
-            "(headers may use Peg Legg while Person is Peggy George)"
+            f"people_has_{hint}_but_not_in_ingested_headers — confirm the "
+            "People contact spelling matches From/To/CC in the archive "
+            "(e.g. peggo01417 vs peggo417)"
         )
-    elif out["confirmed_emails"]:
+    elif out["confirmed_emails"] and rows > 0:
         out["likely_blocker"] = (
-            "contacts_exist_but_retrieve_still_empty — check backfill / "
-            "header SQL match for confirmed addresses"
+            "contacts_and_headers_ok_if_retrieve_still_empty_check_backfill_or_python_keep"
         )
     else:
         out["likely_blocker"] = "unknown"
