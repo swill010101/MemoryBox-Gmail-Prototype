@@ -909,7 +909,21 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
     )
     expansion["address_centric_resolve"] = address_reports
     expansion["pipeline"] = ["discover", "resolve", "retrieve"]
+    # Flatten accepted addresses from address-centric resolve for retrieve notes.
+    flat_accepted: list[dict[str, Any]] = []
+    for rep in address_reports:
+        if not isinstance(rep, dict):
+            continue
+        for entry in rep.get("accepted") or []:
+            cand = (entry.get("candidate") if isinstance(entry, dict) else None) or {}
+            addr = normalize_handle(str(cand.get("address") or ""))
+            if addr and "@" in addr:
+                flat_accepted.append({"address": addr, "source": "address_centric"})
+    if flat_accepted:
+        expansion["accepted"] = flat_accepted
     addrs: set[str] = set()
+    for item in flat_accepted:
+        addrs.add(str(item["address"]))
     for _pid, emails in (expansion.get("emails_by_person") or {}).items():
         for e in emails:
             n = normalize_handle(e)
@@ -1359,14 +1373,32 @@ def diagnose_email_retrieve_gap(
             out["expand_preview"] = {"error": str(exc)}
 
     # Inventory every confirmed address (structured vs quoted display names).
+    # Also inventory ledger addresses that match Person forms even before confirm —
+    # so FlightSim diag shows peggo417 after probe when attach has not yet run.
     inventories: list[dict[str, Any]] = []
     try:
-        from memorybox.person.comm_address_index import inventory_email_address
+        from memorybox.person.comm_address_index import (
+            find_ledger_addresses_for_person_forms,
+            inventory_email_address,
+        )
 
         for addr in out["confirmed_emails"][:8]:
             inventories.append(inventory_email_address(addr, include_quoted_body=True))
         if hint and hint not in out["confirmed_emails"]:
             inventories.append(inventory_email_address(hint, include_quoted_body=True))
+        if not out["confirmed_emails"]:
+            forms: list[str] = []
+            for snap in out["snapshots"]:
+                forms.extend(snap.get("known_name_forms") or [])
+            for cand in find_ledger_addresses_for_person_forms(forms)[:4]:
+                addr = str(cand.get("address") or "")
+                if addr and addr not in {normalize_handle(a) for a in out["confirmed_emails"]}:
+                    inventories.append(
+                        inventory_email_address(addr, include_quoted_body=True)
+                    )
+                    if not hint:
+                        hint = addr
+                        out["address_hint"] = addr
     except Exception as exc:  # noqa: BLE001
         inventories = [{"error": str(exc)}]
     out["address_inventories"] = inventories
@@ -1450,6 +1482,22 @@ def repair_email_identity_contacts(
             return {"ok": False, "error": str(exc), "person_ids": []}
 
     known_results = []
+    address_reports: list[dict[str, Any]] = []
+    # Address-centric path first (ledger + archive discover → resolve → backfill).
+    try:
+        from memorybox.person.comm_address_index import (
+            resolve_and_attach_addresses_for_person,
+        )
+
+        for pid in ids:
+            address_reports.append(
+                resolve_and_attach_addresses_for_person(
+                    pid, persist=True, backfill=True, inventory_attached=True
+                )
+            )
+    except Exception as exc:  # noqa: BLE001
+        address_reports.append({"error": str(exc)})
+
     if known_address and ids:
         if not person_id:
             return {
@@ -1459,6 +1507,7 @@ def repair_email_identity_contacts(
                     "target one Person; will not attach across the people list)"
                 ),
                 "person_ids": ids,
+                "address_centric_resolve": address_reports,
             }
         # Explicit --address + --person-id is operator attestation.
         # Auto Ask expand never sets operator_attested.
@@ -1512,6 +1561,7 @@ def repair_email_identity_contacts(
             "mode": "force_rediscover",
             "results": reports,
             "known_address_results": known_results,
+            "address_centric_resolve": address_reports,
         }
 
     expansion = expand_person_communication_identities(
@@ -1523,4 +1573,5 @@ def repair_email_identity_contacts(
         "person_ids": ids,
         "expansion": expansion,
         "known_address_results": known_results,
+        "address_centric_resolve": address_reports,
     }
