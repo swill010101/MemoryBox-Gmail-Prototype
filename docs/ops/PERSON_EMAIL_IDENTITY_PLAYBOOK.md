@@ -39,7 +39,8 @@ Single-command E2E gate (Gallery + Full-Evidence email > 0; no historian):
 python -m memorybox prove-address-centric-email-e2e --flightsim
 ```
 
-Paste probe JSON + V2 `by_source.email` + prove JSON. **Stop** after V2 — no historian summarization.
+Paste prove JSON + V2 `ADDRESS_CENTRIC_GATE.json` (need `"ok": true`) + `by_source.email`.
+**Stop** after V2 — no historian summarization.
 
 ## Ask name forms
 

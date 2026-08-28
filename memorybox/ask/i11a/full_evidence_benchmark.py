@@ -653,6 +653,65 @@ def run_historian_full_evidence_benchmark(
         encoding="utf-8",
     )
 
+    # Address-centric gate: unambiguous FlightSim pass/fail for this goal.
+    metrics_doc: dict[str, Any] = {}
+    metrics_path = out / "PEGGY_FULL_EVIDENCE_METRICS.json"
+    if metrics_path.is_file():
+        try:
+            metrics_doc = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            metrics_doc = {}
+    email_src = (metrics_doc.get("by_source") or {}).get("email") or {}
+    email_n = int(
+        email_src.get("retrieved_item_count")
+        or email_src.get("normalized_item_count")
+        or 0
+    )
+    focals = (person_context or {}).get("focal_subjects") or []
+    focal_names = [str(f.get("display_name") or "") for f in focals if isinstance(f, dict)]
+    confirmed = list((identity_diag or {}).get("confirmed_emails") or [])
+    inventories = list((identity_diag or {}).get("address_inventories") or [])
+    peggo_inv = next(
+        (
+            inv
+            for inv in inventories
+            if str(inv.get("address") or "").lower() == "peggo417@hotmail.com"
+        ),
+        None,
+    )
+    structured = (peggo_inv or {}).get("structured_header") or {}
+    quoted = (peggo_inv or {}).get("quoted_body_headers_only") or {}
+    gate = {
+        "gate": "address_centric_email_identity",
+        "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+        "ok": bool(email_n > 0 and confirmed and any(" " in n for n in focal_names)),
+        "requirements": {
+            "full_evidence_email_gt_0": email_n > 0,
+            "person_has_confirmed_email": bool(confirmed),
+            "person_is_multi_token": any(" " in n for n in focal_names),
+            "identity_closure_ok": bool((identity_diag or {}).get("identity_closure_ok")),
+        },
+        "by_source_email": email_src,
+        "email_retrieved_item_count": email_n,
+        "focal_display_names": focal_names,
+        "confirmed_emails": confirmed,
+        "peggo417_inventory": {
+            "present": peggo_inv is not None,
+            "structured_has_peg_legg": structured.get("has_peg_legg"),
+            "structured_has_peggy_george": structured.get("has_peggy_george"),
+            "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+            "quoted_has_peg_legg": quoted.get("has_peg_legg"),
+            "structured_names": structured.get("distinct_display_names"),
+            "quoted_names": quoted.get("distinct_display_names"),
+        },
+        "likely_blocker": (identity_diag or {}).get("likely_blocker"),
+    }
+    gate_path = out / "ADDRESS_CENTRIC_GATE.json"
+    gate_path.write_text(
+        json.dumps(gate, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+
     # B. Compression funnel
     funnel = build_compression_funnel(
         items,
@@ -699,6 +758,7 @@ def run_historian_full_evidence_benchmark(
             "metrics": str(out / "PEGGY_FULL_EVIDENCE_METRICS.json"),
             "paste": str(out / "CLOUDREQ_peggy_full_evidence_paste.txt"),
             "email_identity_diag": str(diag_path),
+            "address_centric_gate": str(gate_path),
             "funnel_json": str(funnel_json_path),
             "funnel_txt": str(funnel_txt_path),
             "l1_chunk_manifest": str(chunk_manifest_path),
@@ -706,6 +766,7 @@ def run_historian_full_evidence_benchmark(
         },
         "email_identity_diag": identity_diag,
         "email_identity_repair": repair_result,
+        "address_centric_gate": gate,
         "gpt56sol_response_preserved": freeze.get("gpt_preserved"),
         "llm_calls": 0,
         "production_inference_modified": False,
