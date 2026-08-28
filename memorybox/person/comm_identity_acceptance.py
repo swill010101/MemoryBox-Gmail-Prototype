@@ -59,6 +59,21 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=sql,
     )
+    _check(
+        "email_addr_sql_handles_to_json_array",
+        "payload_json->'to')::text" in sql.replace(" ", "")
+        or "(payload_json->'to')::text" in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_not_broken_to_arrow",
+        "payload_json->>'to'" not in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
     where, wparams, scope = _person_scoped_comm_where(
         channel_sql="true",
         win_sql="true",

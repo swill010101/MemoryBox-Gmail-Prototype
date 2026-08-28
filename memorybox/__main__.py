@@ -240,6 +240,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Rescan headers even when confirmed emails already exist",
     )
+    p_repair_email.add_argument(
+        "--address",
+        default=None,
+        help="Optional known email (e.g. peggo417@hotmail.com) to corroborate and attach",
+    )
     p_email_trace = sub.add_parser(
         "person-email-identity-trace",
         help="Trace Person names/contacts and explain an email address candidate",
@@ -906,6 +911,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = repair_email_identity_contacts(
             getattr(args, "person_id", None),
             force_rediscover=bool(getattr(args, "force_rediscover", False)),
+            known_address=getattr(args, "address", None),
         )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1

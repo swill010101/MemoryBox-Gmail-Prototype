@@ -26,28 +26,30 @@ Module: `memorybox/person/comm_identity.py`
 
 Retrieve: `search_email_messages` expands identities then SQL-matches **GIN person_ids OR confirmed email headers** (not body ILIKE).
 
-## FlightSim
+## Why V2 still showed Email: 0
+
+Ingest stores `to` / `cc` as **JSON arrays**. Postgres `payload_json->>'to'` returns **NULL** for arrays, so discovery/backfill/retrieve never matched Peggy as a recipient. Fixed to use `(payload_json->'to')::text` and `to_parsed` / `cc_parsed`.
+
+## FlightSim (after this fix)
 
 ```bat
 cd C:\memorybox
 git fetch origin
-git pull origin cursor/p2-i11a-person-email-identity-49da
+git pull origin cursor/p2-i11a-email-to-json-fix-49da
 .\startmb.cmd -Restart
 
 python -m memorybox prove-person-email-identity
 
-REM Trace Peggy (replace PERSON_ID with Peggy George id from People UI / profile)
-python -m memorybox person-email-identity-trace --person-id PERSON_ID --address peggo417@hotmail.com
+python -m memorybox person-email-identity-trace --person-id <PEGGY_ID> --address peggo417@hotmail.com
 
-python -m memorybox repair-email-identities --person-id PERSON_ID
+python -m memorybox repair-email-identities --person-id <PEGGY_ID> --address peggo417@hotmail.com --force-rediscover
 
-REM Gallery: open Peggy → Email tab should show mail
+REM Confirm contact attached, then Gallery Peggy → Email
 
-REM Preserve V1; rebuild V2 full-evidence
 python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
 ```
 
-Leave V1 outputs under `docs\test-output\full-evidence\` or `historian-full-evidence\peggy\` unchanged.
+Do **not** pass `--from-dir` pointing at V1 — that freezes the old zero-email inventory.
 
 ## V1 vs V2 (fill after FlightSim)
 

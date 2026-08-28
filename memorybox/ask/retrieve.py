@@ -682,7 +682,12 @@ def _sql_person_text_hint(
 
 
 def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[Any]]:
-    """Index-friendly-ish header match for confirmed email addresses (not body ILIKE)."""
+    """Match confirmed email addresses in From/To/CC headers (not body text).
+
+    Ingest stores ``to`` / ``cc`` as JSON arrays. ``payload_json->>'to'`` is NULL
+    for arrays in Postgres — always use ``(payload_json->'to')::text`` or
+    ``from_parsed`` / ``to_parsed`` / ``cc_parsed`` normalized addresses.
+    """
     norms = sorted(
         {
             str(a).strip().lower()
@@ -692,13 +697,13 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     )
     if not norms:
         return "FALSE", []
-    # Match From/To/CC header strings and parsed address fields only.
     patterns = [f"%{a}%" for a in norms]
     sql = (
         "("
         " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
-        " OR lower(coalesce(payload_json->>'to', '')) LIKE ANY(%s)"
-        " OR lower(coalesce(payload_json->>'cc', '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
         " OR EXISTS ("
         "   SELECT 1 FROM jsonb_array_elements("
         "     coalesce(payload_json->'from_parsed','[]'::jsonb)"
@@ -709,7 +714,7 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " )"
         ")"
     )
-    return sql, [patterns, patterns, patterns, norms]
+    return sql, [patterns, patterns, patterns, patterns, norms]
 
 
 def _person_scoped_comm_where(
@@ -1527,7 +1532,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             expanded = expand_emails_for_retrieve(person_ids)
             identity_expand = expanded.get("expansion") or {}
             confirmed_addrs = set(expanded.get("addresses") or [])
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            identity_expand = {"error": str(exc)}
             confirmed_addrs = _confirmed_emails_for_people(person_ids)
     else:
         confirmed_addrs = set()
