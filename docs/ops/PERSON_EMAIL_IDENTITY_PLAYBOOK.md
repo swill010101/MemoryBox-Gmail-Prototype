@@ -30,3 +30,9 @@ python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs
 ```
 
 Paste probe JSON + V2 `by_source.email`. **Stop** after V2 — no historian summarization.
+
+## Ask name forms
+
+Ask resolves `Peggy`, `Peggy George`, and `Peg Legg` (confirmed alias or unique
+nickname-family multi-token Person). Display names remain observations on the
+address; the address is the retrieve key once resolved.
