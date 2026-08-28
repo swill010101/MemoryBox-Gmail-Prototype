@@ -681,6 +681,37 @@ def _sql_person_text_hint(
     return "(" + " OR ".join(parts) + ")", params
 
 
+def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[Any]]:
+    """Index-friendly-ish header match for confirmed email addresses (not body ILIKE)."""
+    norms = sorted(
+        {
+            str(a).strip().lower()
+            for a in (addrs or [])
+            if str(a).strip() and "@" in str(a)
+        }
+    )
+    if not norms:
+        return "FALSE", []
+    # Match From/To/CC header strings and parsed address fields only.
+    patterns = [f"%{a}%" for a in norms]
+    sql = (
+        "("
+        " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
+        " OR lower(coalesce(payload_json->>'to', '')) LIKE ANY(%s)"
+        " OR lower(coalesce(payload_json->>'cc', '')) LIKE ANY(%s)"
+        " OR EXISTS ("
+        "   SELECT 1 FROM jsonb_array_elements("
+        "     coalesce(payload_json->'from_parsed','[]'::jsonb)"
+        "     || coalesce(payload_json->'to_parsed','[]'::jsonb)"
+        "     || coalesce(payload_json->'cc_parsed','[]'::jsonb)"
+        "   ) e"
+        "   WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)"
+        " )"
+        ")"
+    )
+    return sql, [patterns, patterns, patterns, norms]
+
+
 def _person_scoped_comm_where(
     *,
     channel_sql: str,
@@ -689,11 +720,12 @@ def _person_scoped_comm_where(
     person_names: list[str],
     person_ids: set[str],
     header_fallback: bool = True,
+    confirmed_emails: set[str] | list[str] | None = None,
 ) -> tuple[str | None, list[Any], str]:
     """Indexable Person filter. Never probe-scan the archive with jsonb unnest or %name%.
 
     SMS: GIN person_ids, optionally BitmapOr indexed sender_name prefix.
-    Email: GIN person_ids only so Takeout is not ILIKE-scanned when Peggy has no mail.
+    Email: GIN person_ids and/or confirmed email header addresses (not body ILIKE).
     Empty pages are cheap; do not SELECT 1 LIMIT 1 as a separate existence scan.
     """
     base = f"evidence_kind = 'communication' AND {channel_sql} AND {win_sql}"
@@ -705,6 +737,12 @@ def _person_scoped_comm_where(
         clauses.append(gin_sql)
         params.extend(gin_params)
         scopes.append("person_ids_gin")
+    if confirmed_emails:
+        addr_sql, addr_params = _sql_confirmed_email_addrs(confirmed_emails)
+        if addr_sql != "FALSE":
+            clauses.append(addr_sql)
+            params.extend(addr_params)
+            scopes.append("confirmed_email_headers")
     if header_fallback and person_names:
         name_sql, name_params = _sql_sender_prefix(person_names)
         if name_sql != "FALSE":
@@ -712,7 +750,7 @@ def _person_scoped_comm_where(
             params.extend(name_params)
             scopes.append("sender_name_prefix")
     if not clauses:
-        if person_ids or person_names:
+        if person_ids or person_names or confirmed_emails:
             return None, [], "identity_probe_empty"
         return f"{base}", list(win_params), "unscoped"
     return f"{base} AND ({' OR '.join(clauses)})", params, "+".join(scopes)
@@ -1481,7 +1519,18 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
 
     owner_addrs = owner_emails()
     asked_owner = _asked_person_is_owner(plan)
-    confirmed_addrs = _confirmed_emails_for_people(person_ids)
+    identity_expand: dict[str, Any] = {}
+    if person_ids:
+        try:
+            from memorybox.person.comm_identity import expand_emails_for_retrieve
+
+            expanded = expand_emails_for_retrieve(person_ids)
+            identity_expand = expanded.get("expansion") or {}
+            confirmed_addrs = set(expanded.get("addresses") or [])
+        except Exception:  # noqa: BLE001
+            confirmed_addrs = _confirmed_emails_for_people(person_ids)
+    else:
+        confirmed_addrs = set()
     person_names = [
         n.strip().lower()
         for n in (plan.person_names or ())
@@ -1596,6 +1645,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         person_names=person_names,
         person_ids=person_ids,
         header_fallback=False,
+        confirmed_emails=confirmed_addrs if person_ids else None,
     )
     scan_stats: dict[str, Any] = {}
     if where_sql is None:
@@ -1705,10 +1755,23 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     )
     if _complete_comm_retrieve(plan):
         total = len(hits)
+        expand_note = ""
+        if identity_expand.get("accepted"):
+            expand_note = (
+                "; identity_expand_accepted="
+                + ",".join(
+                    str(a.get("address"))
+                    for a in identity_expand.get("accepted") or []
+                    if a.get("address")
+                )
+            )
         for h in hits:
             h.match_total = total
             h.truncated = False
-            h.count_scope = f"complete_email; processed={total}; eligible={total}; {scan_note}"
+            h.count_scope = (
+                f"complete_email; processed={total}; eligible={total}; "
+                f"{scan_note}; scope={scope}{expand_note}"
+            )
         return hits
     scope_bits = [
         "ingested email export",
