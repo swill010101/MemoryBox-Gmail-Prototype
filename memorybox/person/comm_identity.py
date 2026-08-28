@@ -1291,6 +1291,7 @@ def diagnose_email_retrieve_gap(
     # If no explicit hint, probe the first confirmed People email (source of truth).
     hint = out.get("address_hint") or (out["confirmed_emails"][0] if out["confirmed_emails"] else None)
     out["address_hint"] = hint
+    out["pipeline"] = ["discover", "resolve", "retrieve"]
 
     if ids:
         try:
@@ -1303,6 +1304,9 @@ def diagnose_email_retrieve_gap(
                 )[:8],
                 "emails_by_person": (expanded.get("expansion") or {}).get(
                     "emails_by_person"
+                ),
+                "address_centric_resolve": (expanded.get("expansion") or {}).get(
+                    "address_centric_resolve"
                 ),
                 "backfill_sample": [
                     (r.get("backfill") if isinstance(r, dict) else None)
@@ -1317,6 +1321,19 @@ def diagnose_email_retrieve_gap(
         except Exception as exc:  # noqa: BLE001
             out["expand_preview"] = {"error": str(exc)}
 
+    # Inventory every confirmed address (structured vs quoted display names).
+    inventories: list[dict[str, Any]] = []
+    try:
+        from memorybox.person.comm_address_index import inventory_email_address
+
+        for addr in out["confirmed_emails"][:8]:
+            inventories.append(inventory_email_address(addr, include_quoted_body=True))
+        if hint and hint not in out["confirmed_emails"]:
+            inventories.append(inventory_email_address(hint, include_quoted_body=True))
+    except Exception as exc:  # noqa: BLE001
+        inventories = [{"error": str(exc)}]
+    out["address_inventories"] = inventories
+
     if hint and ids:
         try:
             out["address_hint_explanation"] = explain_address_for_person(ids[0], hint)
@@ -1329,23 +1346,29 @@ def diagnose_email_retrieve_gap(
         )
         or 0
     )
+    # Prefer structured inventory occurrence count when available
+    for inv in inventories:
+        if inv.get("address") == hint:
+            rows = max(
+                rows,
+                int((inv.get("structured_header") or {}).get("occurrence_count") or 0),
+            )
     if not ids:
         out["likely_blocker"] = "no_person_ids_on_plan"
     elif not out["confirmed_emails"]:
         out["likely_blocker"] = (
-            "no_confirmed_email_on_people — add the address on People Contacts "
-            "(or repair --address once); retrieve uses person_contact_points"
+            "no_confirmed_email_on_people — address discovery/resolve did not attach; "
+            "run probe-email-address --address <addr> and check structured display names"
         )
     elif out["confirmed_emails"] and rows == 0 and hint:
         out["likely_blocker"] = (
             f"people_has_{hint}_but_not_in_ingested_headers — confirm the "
             "People contact spelling matches From/To/CC in the archive "
-            "(e.g. peggo01417 vs peggo417)"
+            "(e.g. peggo417 vs peggo01417)"
         )
     elif out["confirmed_emails"] and rows > 0:
-        out["likely_blocker"] = (
-            "contacts_and_headers_ok_if_retrieve_still_empty_check_backfill_or_python_keep"
-        )
+        out["likely_blocker"] = None
+        out["identity_closure_ok"] = True
     else:
         out["likely_blocker"] = "unknown"
     return out

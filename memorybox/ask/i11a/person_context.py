@@ -1,6 +1,7 @@
 """Structured PersonContext for I11A inference input."""
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any
 
@@ -129,6 +130,75 @@ def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
         contacts = [c.to_dict() if hasattr(c, "to_dict") else dict(c) for c in list_contacts(person_id)]
     except Exception:  # noqa: BLE001
         contacts = []
+    # Merge archive-wide communication_identities (address ledger) onto the card
+    # so Gallery/Ask see observed display names (Peg Legg / Peggy George), not
+    # only person_contact_points rows.
+    comm_ids: list[dict[str, Any]] = []
+    seen_addrs: set[str] = set()
+    try:
+        from memorybox.db import connection
+        from memorybox.person.phone_map import normalize_handle
+
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT address_normalized, observed_display_names,
+                       header_occurrence_count, quoted_body_occurrence_count,
+                       resolution_status, resolved_person_id
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND resolved_person_id::text = %s
+                """,
+                (str(person_id),),
+            ).fetchall()
+            for r in rows:
+                addr = normalize_handle(str(r.get("address_normalized") or ""))
+                if not addr:
+                    continue
+                seen_addrs.add(addr)
+                obs = r.get("observed_display_names") or {}
+                if isinstance(obs, str):
+                    try:
+                        obs = json.loads(obs)
+                    except Exception:  # noqa: BLE001
+                        obs = {}
+                comm_ids.append(
+                    {
+                        "contact_kind": "email",
+                        "value_text": addr,
+                        "status": str(r.get("resolution_status") or "observed"),
+                        "source": "communication_identities",
+                        "observed_display_names": obs,
+                        "header_occurrence_count": int(r.get("header_occurrence_count") or 0),
+                        "quoted_body_occurrence_count": int(
+                            r.get("quoted_body_occurrence_count") or 0
+                        ),
+                    }
+                )
+    except Exception:  # noqa: BLE001
+        pass
+    for c in contacts:
+        addr = str(c.get("value_text") or "")
+        try:
+            from memorybox.person.phone_map import normalize_handle
+
+            n = normalize_handle(addr)
+        except Exception:  # noqa: BLE001
+            n = addr.strip().lower()
+        if n and n not in seen_addrs:
+            row = dict(c)
+            row.setdefault("source", "person_contact_points")
+            comm_ids.append(row)
+            seen_addrs.add(n)
+        elif n and n in seen_addrs:
+            # Prefer ledger row; mark contact confirmed on matching ledger entry
+            for row in comm_ids:
+                if str(row.get("value_text") or "").lower() == n:
+                    row["person_contact_status"] = c.get("status")
+                    row["person_contact_id"] = c.get("id")
+                    break
+    if not comm_ids:
+        comm_ids = contacts
     known: list[dict[str, Any]] = []
     allowed: set[str] = set()
     try:
@@ -180,7 +250,7 @@ def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
         "death_date": death_day.isoformat() if death_day else None,
         "age_at_period": age,
         "aliases": aliases,
-        "communication_identities": contacts,
+        "communication_identities": comm_ids,
         "known_relationships": known,
         "inferred_relationships": inferred,
         "allowed_relationship_labels": sorted(_REL_LABELS & allowed) or sorted(allowed),
