@@ -200,7 +200,14 @@ def _address_claimed_by(addr: str) -> list[str]:
 def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
     """Extract participant records from From/To/CC/BCC (never body text)."""
     out: list[dict[str, str]] = []
+    parsed_addrs_by_field: dict[str, set[str]] = {
+        "from": set(),
+        "to": set(),
+        "cc": set(),
+        "bcc": set(),
+    }
     for field in ("from_parsed", "to_parsed", "cc_parsed", "bcc_parsed"):
+        base = field.replace("_parsed", "")
         for rec in payload.get(field) or []:
             if not isinstance(rec, dict):
                 continue
@@ -209,14 +216,15 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
             )
             if not addr or "@" not in addr:
                 continue
+            parsed_addrs_by_field[base].add(addr)
             out.append(
                 {
                     "address": addr,
                     "display_name": str(rec.get("display_name") or "").strip(),
-                    "header_field": field.replace("_parsed", ""),
+                    "header_field": base,
                 }
             )
-    # Fallback: parse raw From/To/CC/BCC strings when parsed arrays missing.
+    # Fallback: parse raw From/To/CC/BCC only for addresses missing from *_parsed.
     for field, raw in (
         ("from", payload.get("from") or payload.get("from_raw")),
         ("to", payload.get("to")),
@@ -232,6 +240,8 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
             for m in _EMAIL_RE.finditer(text):
                 addr = normalize_handle(m.group(0))
                 if not addr:
+                    continue
+                if addr in parsed_addrs_by_field.get(field, set()):
                     continue
                 # Display name before <addr>
                 dn = ""
@@ -263,8 +273,6 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                 continue
             if (rec.get("display_name") or "").strip():
                 continue
-            # Prefer a people[] name that isn't obviously another participant's
-            # already-known display on this message.
             other_dns = {
                 _norm_name(r.get("display_name"))
                 for r in out
@@ -276,16 +284,23 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                 rec["display_name"] = pname
                 rec["header_field"] = "from_people"
                 break
-    # Dedupe
-    seen: set[tuple[str, str, str]] = set()
-    uniq: list[dict[str, str]] = []
+    # Dedupe: prefer non-empty display for the same address+field family.
+    best: dict[tuple[str, str], dict[str, str]] = {}
     for rec in out:
-        key = (rec["address"], _norm_name(rec["display_name"]), rec["header_field"])
-        if key in seen:
+        addr = rec["address"]
+        field_family = "from" if str(rec.get("header_field") or "").startswith("from") else str(
+            rec.get("header_field") or ""
+        )
+        key = (addr, field_family)
+        prev = best.get(key)
+        if prev is None:
+            best[key] = rec
             continue
-        seen.add(key)
-        uniq.append(rec)
-    return uniq
+        prev_dn = (prev.get("display_name") or "").strip()
+        cur_dn = (rec.get("display_name") or "").strip()
+        if not prev_dn and cur_dn:
+            best[key] = rec
+    return list(best.values())
 
 
 def _display_matches_person(display_name: str, known_forms: list[str]) -> str | None:
