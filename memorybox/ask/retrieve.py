@@ -1624,6 +1624,11 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         # Dated tell is a window, not a hunt for "narrative" — exclusive place
         # keywords wait until trip discovery has a resolved window.
         keywords = _exclusive_place_trip_keywords(plan)
+    # Person-complete email retrieve is identity-closed (confirmed addresses /
+    # person_ids). Narrative Ask verbs ("tell me what you know about Peggy")
+    # must not filter out Peg Legg–labeled mail that lacks those words.
+    if _complete_comm_retrieve(plan) and person_ids:
+        keywords = []
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"

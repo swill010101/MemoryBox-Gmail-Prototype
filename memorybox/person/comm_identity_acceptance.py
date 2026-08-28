@@ -945,13 +945,27 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             detail=getattr(resolved, "display_name", None),
         )
         alias_hits = list_people_by_alias("Peg Legg")
-        _check(
-            "ask_alias_lookup_finds_person",
-            any(p.display_name == "Peggy George" for p in alias_hits),
-            checks,
-            problems,
-            detail=[p.display_name for p in alias_hits],
-        )
+    _check(
+        "ask_alias_lookup_finds_person",
+        any(p.display_name == "Peggy George" for p in alias_hits),
+        checks,
+        problems,
+        detail=[p.display_name for p in alias_hits],
+    )
+
+    # Person-complete email retrieve must not keyword-filter narrative Ask verbs.
+    import inspect as _inspect
+
+    from memorybox.ask import retrieve as retrieve_mod
+
+    email_src = _inspect.getsource(retrieve_mod.search_email_messages)
+    _check(
+        "complete_person_email_clears_narrative_keywords",
+        "_complete_comm_retrieve(plan) and person_ids" in email_src
+        and "keywords = []" in email_src,
+        checks,
+        problems,
+    )
 
     return {
         "ok": not problems,
