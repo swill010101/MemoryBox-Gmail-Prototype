@@ -1281,6 +1281,16 @@ def main(argv: list[str] | None = None) -> int:
             address_hint=getattr(args, "address_hint", None),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        # Always print the address-centric gate last for easy FlightSim paste.
+        gate = payload.get("address_centric_gate")
+        gate_path = (payload.get("paths") or {}).get("address_centric_gate")
+        if gate is not None:
+            print("\n===== ADDRESS_CENTRIC_GATE (paste this) =====", flush=True)
+            print(json.dumps(gate, indent=2, default=str), flush=True)
+            if gate_path:
+                print(f"===== written: {gate_path} =====", flush=True)
+            if not gate.get("ok"):
+                return 1
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-historian-full-evidence-benchmark":
@@ -1314,6 +1324,12 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_address_centric_email_e2e(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        gate = payload.get("address_centric_gate")
+        if gate is not None:
+            print("\n===== ADDRESS_CENTRIC_GATE (paste this) =====", flush=True)
+            print(json.dumps(gate, indent=2, default=str), flush=True)
+            if gate.get("path"):
+                print(f"===== written: {gate.get('path')} =====", flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

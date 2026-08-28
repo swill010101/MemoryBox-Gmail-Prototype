@@ -40,6 +40,8 @@ python -m memorybox prove-address-centric-email-e2e --flightsim
 ```
 
 Paste prove JSON + V2 `ADDRESS_CENTRIC_GATE.json` (need `"ok": true`) + `by_source.email`.
+Both `prove-address-centric-email-e2e` and `historian-full-evidence-benchmark` print
+`===== ADDRESS_CENTRIC_GATE (paste this) =====` at the end — paste that block.
 **Stop** after V2 — no historian summarization.
 
 ## Ask name forms

@@ -330,12 +330,60 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             detail=seeded,
         )
 
+    gate = {
+        "gate": "address_centric_email_identity",
+        "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+        "ok": not problems
+        and len(hits) > 0
+        and _PROBE_ADDR in addrs
+        and " " in (ask_peggy.display_name or ""),
+        "requirements": {
+            "full_evidence_email_gt_0": len(email_items) > 0 or len(evidence) > 0,
+            "retrieve_email_hits_gt_0": len(hits) > 0,
+            "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
+            "person_is_multi_token": " " in (ask_peggy.display_name or ""),
+            "peggo417_confirmed": _PROBE_ADDR in addrs,
+            "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+        },
+        "person": {
+            "id": ask_peggy.id,
+            "display_name": ask_peggy.display_name,
+            "addresses": sorted(addrs),
+        },
+        "inventory": {
+            "structured_has_peg_legg": structured.get("has_peg_legg"),
+            "structured_has_peggy_george": structured.get("has_peggy_george"),
+            "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+            "quoted_has_peg_legg": quoted.get("has_peg_legg"),
+        },
+        "counts": {
+            "retrieve_hits": len(hits),
+            "full_evidence_email_items": len(email_items),
+            "gallery_email_n": int(email_n),
+        },
+        "problems": problems,
+        "flightsim": bool(flightsim),
+    }
+
+    # Write gate beside default V2 out dir for FlightSim paste.
+    try:
+        from pathlib import Path
+
+        out = Path("docs/test-output/historian-full-evidence/peggy-v2")
+        out.mkdir(parents=True, exist_ok=True)
+        gate_path = out / "ADDRESS_CENTRIC_GATE.json"
+        gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")
+        gate["path"] = str(gate_path)
+    except Exception as exc:  # noqa: BLE001
+        gate["path_error"] = str(exc)
+
     return {
         "ok": not problems,
         "prove": "address_centric_email_e2e",
         "flightsim": bool(flightsim),
         "checks": checks,
         "problems": problems,
+        "address_centric_gate": gate,
         "inventory": {
             "address": inv.get("address"),
             "structured_header": {
