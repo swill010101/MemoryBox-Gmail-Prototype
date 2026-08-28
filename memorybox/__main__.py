@@ -1330,6 +1330,16 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(gate, indent=2, default=str), flush=True)
             if gate.get("path"):
                 print(f"===== written: {gate.get('path')} =====", flush=True)
+            print(
+                f"===== VERDICT ok={bool(gate.get('ok'))} "
+                f"flightsim={bool(gate.get('flightsim'))} =====",
+                flush=True,
+            )
+            if gate.get("failure_diag_path"):
+                print(
+                    f"===== FAILURE_DIAG written: {gate.get('failure_diag_path')} =====",
+                    flush=True,
+                )
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

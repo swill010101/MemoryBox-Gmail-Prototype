@@ -254,6 +254,24 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     upsert_communication_identity_from_inventory(inv)
     structured = inv.get("structured_header") or {}
     quoted = inv.get("quoted_body_headers_only") or {}
+    print(
+        "ADDRESS_CENTRIC_PROBE "
+        + json.dumps(
+            {
+                "address": inv.get("address"),
+                "structured_has_peg_legg": structured.get("has_peg_legg"),
+                "structured_has_peggy_george": structured.get("has_peggy_george"),
+                "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+                "structured_occurrence_count": structured.get("occurrence_count"),
+                "quoted_occurrence_count": quoted.get("occurrence_count"),
+                "structured_names": structured.get("distinct_display_names"),
+                "quoted_names": quoted.get("distinct_display_names"),
+                "flightsim": bool(flightsim),
+            },
+            default=str,
+        ),
+        flush=True,
+    )
     _check("probe_ok", bool(inv.get("ok")), checks, problems, detail=inv.get("error"))
     _check(
         "probe_structured_has_peg_legg",

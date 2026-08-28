@@ -21,6 +21,13 @@ Primary gate (Gallery + Full-Evidence email > 0; **no historian**):
 
 ```bat
 cd C:\memorybox
+tools\flightsim-address-centric-gate.cmd
+```
+
+Or step-by-step:
+
+```bat
+cd C:\memorybox
 git fetch origin
 git pull origin cursor/p2-i11a-address-centric-email-49da
 .\startmb.cmd -Restart
