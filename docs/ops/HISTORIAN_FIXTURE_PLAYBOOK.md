@@ -110,6 +110,8 @@ dir C:\memorybox\docs\test-output\historian-fixtures\HISTFIX_*
 
 **Stop if:** build printed errors, any case missing, or `ask_relative_calls > 0`.
 
+**Stop if:** `historian-fixture-run` reports `fixture input SHA mismatch` — pull the latest branch (SHA contract fix) and rebuild fixtures; v1 files from before the fix cannot replay.
+
 ---
 
 ## Phase 3 — Model run: Gemma (all four cases, sequential)
