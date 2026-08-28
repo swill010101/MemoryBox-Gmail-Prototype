@@ -16,7 +16,15 @@ echo.
 git fetch origin %BRANCH%
 if errorlevel 1 goto :fail
 git checkout -B %BRANCH% origin/%BRANCH%
-if errorlevel 1 goto :fail
+if errorlevel 1 (
+  echo.
+  echo CHECKOUT FAILED — working tree may be dirty. Either commit/stash local
+  echo changes on FlightSim, or run:
+  echo   git status
+  echo   git stash push -m address-centric-gate-temp
+  echo then re-run this script.
+  goto :fail
+)
 git pull --ff-only origin %BRANCH%
 if errorlevel 1 goto :fail
 git rev-parse --short HEAD

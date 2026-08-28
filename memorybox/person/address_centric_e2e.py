@@ -16,6 +16,31 @@ _PROBE_ADDR = "peggo417@hotmail.com"
 _ASK = "tell me what you know about Peggy"
 
 
+def _git_head() -> str | None:
+    try:
+        import subprocess
+
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            or None
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _hostname() -> str | None:
+    try:
+        import socket
+
+        return socket.gethostname() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
     checks.append(name)
     if not ok:
@@ -521,6 +546,11 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         },
         "problems": problems,
         "flightsim": bool(flightsim),
+        "runtime": {
+            "git_head": _git_head(),
+            "hostname": _hostname(),
+            "p1_runtime_host": bool(os.environ.get("MEMORYBOX_P1_RUNTIME_HOST")),
+        },
     }
 
     # Write gate beside default V2 out dir for FlightSim paste.
