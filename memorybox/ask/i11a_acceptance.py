@@ -88,10 +88,12 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         and "AND id > %s" in retrieve_py
         and "stopped_by_wall_clock=false" in retrieve_py
         and "EVIDENCE_SCAN_SEC" not in retrieve_py
-        and "paging evidence stopped after" not in retrieve_py,
+        and "paging evidence stopped after" not in retrieve_py
+        and "_sql_confirmed_email_addrs" in retrieve_py
+        and "(payload_json->'from_parsed')::text" in retrieve_py.replace(" ", ""),
         checks,
         problems,
-        detail="Unwindowed Peggy keyset-pages the matching set to completion; wall-clock is not a cutoff",
+        detail="Unwindowed Peggy keyset-pages the matching set to completion; wall-clock is not a cutoff. Confirmed emails match parsed JSON as text, not per-row unnest.",
     )
     js = (root / "ai_trace" / "static" / "ai-trace.js").read_text(encoding="utf-8")
     html = (root / "ai_trace" / "static" / "ai-trace.html").read_text(encoding="utf-8")
