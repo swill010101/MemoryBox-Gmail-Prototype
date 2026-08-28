@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from memorybox.ask.i11a.historian_cloud_export import export_cloud_request
 from memorybox.ask.i11a.historian_fixture import (
     CASE_ORDER,
     HISTORIAN_CASES,
@@ -16,6 +17,7 @@ from memorybox.ask.i11a.historian_fixture import (
     verify_fixture_sha_roundtrip,
 )
 from memorybox.ask.i11a.historian_prepared import (
+    ask_relative_request_from_prepared,
     build_prepared_historian_input,
     historian_input_sha256,
 )
@@ -239,7 +241,7 @@ def run_prove_historian_fixture(*, flightsim: bool = False) -> dict[str, Any]:
         raw, usage, wall = historian_chat_json(
             _Wrapped(),
             system=ASK_RELATIVE_SYSTEM,
-            user_payload=prepared["ask_relative_user_payload"],
+            user_message=ask_relative_request_from_prepared(prepared)["user_message"],
             requested_model="gemma4:26b",
         )
         _check(
@@ -254,7 +256,7 @@ def run_prove_historian_fixture(*, flightsim: bool = False) -> dict[str, Any]:
             historian_chat_json(
                 _Wrapped(),
                 system=ASK_RELATIVE_SYSTEM,
-                user_payload=prepared["ask_relative_user_payload"],
+                user_message=ask_relative_request_from_prepared(prepared)["user_message"],
                 requested_model="llama3.2",
             )
         except HistorianModelMismatch:
@@ -302,6 +304,40 @@ def run_prove_historian_fixture(*, flightsim: bool = False) -> dict[str, Any]:
             problems,
         )
         _GuardOrchestrator().ask  # noqa: B018 — guard exists
+
+        # Cloud export uses the same request construction as fixture-run.
+        for case_id in CASE_ORDER:
+            body = _build_fixture_document(case_id=case_id)
+            fpath = Path(tmp) / f"HISTFIX_{case_id}_export.json"
+            fpath.write_text(serialize_fixture_document(body), encoding="utf-8")
+            exported = export_cloud_request(fpath, out_dir=Path(tmp) / "cloud-benchmark")
+            req = ask_relative_request_from_prepared(body["prepared"])
+            sys_file = Path(exported["files"]["system"]["path"])
+            user_file = Path(exported["files"]["user"]["path"])
+            paste_file = Path(exported["files"]["paste"]["path"])
+            _check(
+                f"cloud_export_bytes_{case_id}",
+                sys_file.read_bytes() == req["system"].encode("utf-8")
+                and user_file.read_bytes() == req["user_message"].encode("utf-8")
+                and exported["manifest"]["system_bytes"] == req["system_bytes"]
+                and exported["manifest"]["user_bytes"] == req["user_bytes"]
+                and exported["manifest"]["fixture_sha256"] == body["input_sha256"],
+                checks,
+                problems,
+                detail=exported.get("manifest"),
+            )
+            paste_text = paste_file.read_text(encoding="utf-8")
+            _check(
+                f"cloud_export_paste_{case_id}",
+                paste_text.startswith("===== SYSTEM MESSAGE =====\n")
+                and "===== USER MESSAGE =====\n" in paste_text
+                and paste_text.endswith(req["user_message"])
+                and "Gemma" not in paste_text
+                and "MemoryBox" not in paste_text
+                and "ChatGPT" not in paste_text,
+                checks,
+                problems,
+            )
 
     _check("four_cases_defined", len(HISTORIAN_CASES) == 4, checks, problems)
     for cid in ("peggy", "january_2025", "vegas", "alaska"):

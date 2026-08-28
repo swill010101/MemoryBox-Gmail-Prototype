@@ -423,6 +423,20 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output directory (default: docs/test-output/historian-runs)",
     )
+    p_hist_cloud_export = sub.add_parser(
+        "historian-cloud-export",
+        help="Export exact ASK_RELATIVE system/user bytes from a frozen HISTFIX for cloud benchmarks",
+    )
+    p_hist_cloud_export.add_argument(
+        "--fixture",
+        required=True,
+        help="HISTFIX_*.json fixture path",
+    )
+    p_hist_cloud_export.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory (default: docs/test-output/cloud-benchmark)",
+    )
     p_prove_histfix = sub.add_parser(
         "prove-historian-fixture",
         help="Historian frozen-fixture + model runner acceptance prove",
@@ -918,6 +932,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if (payload.get("status") == "ok" or payload.get("runs")) else 1
+
+    if args.cmd == "historian-cloud-export":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.historian_cloud_export import export_cloud_request_cli
+
+        out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else None
+        payload = export_cloud_request_cli(
+            fixture=args.fixture,
+            out_dir=out_dir,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-historian-fixture":
         from memorybox.ask.historian_fixture_acceptance import run_prove_historian_fixture

@@ -237,6 +237,36 @@ MODEL RESPONSE
 
 ---
 
+## Phase 6 — Export Peggy ASK_RELATIVE for clean GPT / cloud paste (optional)
+
+Uses the **same** request construction as `historian-fixture-run` (frozen system + user bytes). No model call. No answers.
+
+```bat
+cd C:\memorybox
+python -m memorybox historian-cloud-export ^
+  --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json ^
+  --out-dir docs\test-output\cloud-benchmark
+```
+
+**Output:** `docs\test-output\cloud-benchmark\`
+
+```
+CLOUDREQ_peggy_system.txt
+CLOUDREQ_peggy_user.txt
+CLOUDREQ_peggy_paste.txt
+CLOUDREQ_peggy_manifest.json
+```
+
+Open `CLOUDREQ_peggy_paste.txt` and paste into a **fresh** ChatGPT / API request (no MemoryBox history). Compare to Gemma/llama runs that used the same fixture SHA.
+
+Same command works for other cases — only `--fixture` changes:
+
+```bat
+python -m memorybox historian-cloud-export --fixture docs\test-output\historian-fixtures\HISTFIX_vegas_<UTC>_<sha8>.json --out-dir docs\test-output\cloud-benchmark
+```
+
+---
+
 ## File layout cheat sheet
 
 ```

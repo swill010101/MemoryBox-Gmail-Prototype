@@ -183,15 +183,22 @@ def historian_chat_json(
     provider: Any,
     *,
     system: str,
-    user_payload: dict[str, Any],
+    user_payload: dict[str, Any] | None = None,
+    user_message: str | None = None,
     json_mode: bool = True,
     requested_model: str,
 ) -> tuple[str, dict[str, Any], int]:
-    """Stateless chat: system + user JSON only. Returns (raw, usage, wall_ms)."""
+    """Stateless chat: system + user JSON only. Returns (raw, usage, wall_ms).
+
+    Prefer user_message when provided (exact frozen request bytes). Otherwise
+    dump user_payload with the same sort_keys=True contract as fixture prepare.
+    """
     assert_model_matches(provider, requested_model)
+    if user_message is None:
+        user_message = json.dumps(user_payload or {}, default=str, sort_keys=True)
     messages = [
         ChatMessage(role="system", content=system),
-        ChatMessage(role="user", content=json.dumps(user_payload, default=str)),
+        ChatMessage(role="user", content=user_message),
     ]
     t0 = time.perf_counter()
     result = provider.chat(messages, json_mode=json_mode)

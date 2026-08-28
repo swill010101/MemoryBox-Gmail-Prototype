@@ -212,6 +212,37 @@ def build_prepared_historian_input(
     }
 
 
+def ask_relative_request_from_prepared(prepared: dict[str, Any]) -> dict[str, Any]:
+    """Exact ASK_RELATIVE system + user text as sent by the fixture runner.
+
+    Prefer frozen ask_relative_user_message (byte-stable). Fall back to the same
+    dump used when preparing the fixture (sort_keys=True, default=str).
+    """
+    system = str(prepared.get("ask_relative_system") or ASK_RELATIVE_SYSTEM)
+    user_payload = prepared.get("ask_relative_user_payload")
+    if not isinstance(user_payload, dict):
+        user_payload = {}
+    frozen = prepared.get("ask_relative_user_message")
+    if isinstance(frozen, str) and frozen:
+        user_message = frozen
+    else:
+        user_message = json.dumps(user_payload, default=str, sort_keys=True)
+    system_bytes = len(system.encode("utf-8"))
+    user_bytes = len(user_message.encode("utf-8"))
+    return {
+        "system": system,
+        "user_message": user_message,
+        "user_payload": user_payload,
+        "json_mode": bool(prepared.get("json_mode", True)),
+        "temperature": prepared.get("temperature"),
+        "provider_options": prepared.get("provider_options") or {"temperature": 0.1},
+        "system_bytes": system_bytes,
+        "user_bytes": user_bytes,
+        "request_bytes": system_bytes + user_bytes,
+        "estimated_input_tokens": max(1, (system_bytes + user_bytes) // 4),
+    }
+
+
 def duplicate_higher_order_count(ho: dict[str, Any] | None) -> int:
     if not isinstance(ho, dict):
         return 0

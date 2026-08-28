@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from memorybox.ask.i11a.historian_prepared import (
     FIXTURE_VERSION,
+    ask_relative_request_from_prepared,
     canonical_json_normalize,
     count_ho_units,
     count_rollups,
@@ -317,14 +318,12 @@ def run_fixture(
     run_at = _utc_stamp()
     commit = source_commit or _git_commit()
 
-    system = str(prepared.get("ask_relative_system") or ASK_RELATIVE_SYSTEM)
-    user_payload = prepared.get("ask_relative_user_payload") or {}
-    user_message = prepared.get("ask_relative_user_message") or json.dumps(
-        user_payload, default=str
-    )
+    req = ask_relative_request_from_prepared(prepared)
+    system = req["system"]
+    user_message = req["user_message"]
     sys_chars = len(system)
     user_chars = len(user_message)
-    request_bytes = len(system.encode("utf-8")) + len(user_message.encode("utf-8"))
+    request_bytes = int(req["request_bytes"])
 
     result: dict[str, Any] = {
         "case_id": case_id,
@@ -336,15 +335,15 @@ def run_fixture(
         "requested_model": model,
         "actual_model": model,
         "timeout_seconds": int(timeout_seconds),
-        "json_mode": bool(prepared.get("json_mode", True)),
-        "temperature": prepared.get("temperature"),
-        "provider_options": prepared.get("provider_options"),
+        "json_mode": bool(req.get("json_mode", True)),
+        "temperature": req.get("temperature"),
+        "provider_options": req.get("provider_options"),
         "system_chars": sys_chars,
-        "system_bytes": len(system.encode("utf-8")),
+        "system_bytes": int(req["system_bytes"]),
         "user_chars": user_chars,
-        "user_bytes": len(user_message.encode("utf-8")),
+        "user_bytes": int(req["user_bytes"]),
         "request_bytes": request_bytes,
-        "estimated_input_tokens": _estimate_tokens(system + user_message),
+        "estimated_input_tokens": int(req["estimated_input_tokens"]),
         "ask_relative_schema_valid": False,
         "downstream_validation_valid": False,
         "narrator_called": False,
@@ -372,8 +371,8 @@ def run_fixture(
         raw_view, ask_usage, ask_wall_ms = historian_chat_json(
             llm,
             system=system,
-            user_payload=user_payload,
-            json_mode=bool(prepared.get("json_mode", True)),
+            user_message=user_message,
+            json_mode=bool(req.get("json_mode", True)),
             requested_model=model,
         )
         result["actual_model"] = ask_usage.get("model") or model
