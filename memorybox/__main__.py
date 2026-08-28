@@ -226,6 +226,30 @@ def main(argv: list[str] | None = None) -> int:
         "repair-sms-identities",
         help="Backfill People confirmed phones from ingested unique SMS auto-maps",
     )
+    p_repair_email = sub.add_parser(
+        "repair-email-identities",
+        help="Discover/persist corroborated Person email contacts from communication headers",
+    )
+    p_repair_email.add_argument(
+        "--person-id",
+        default=None,
+        help="Limit to one Person id (default: People with no confirmed email)",
+    )
+    p_repair_email.add_argument(
+        "--force-rediscover",
+        action="store_true",
+        help="Rescan headers even when confirmed emails already exist",
+    )
+    p_email_trace = sub.add_parser(
+        "person-email-identity-trace",
+        help="Trace Person names/contacts and explain an email address candidate",
+    )
+    p_email_trace.add_argument("--person-id", required=True, help="Canonical Person id")
+    p_email_trace.add_argument(
+        "--address",
+        default="peggo417@hotmail.com",
+        help="Email address to explain (default peggo417@hotmail.com)",
+    )
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
     p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
@@ -529,6 +553,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Acceptance for full-evidence benchmark + L1 chunker (offline)",
     )
     p_prove_full_bench.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Optional FlightSim flag",
+    )
+    p_prove_email_id = sub.add_parser(
+        "prove-person-email-identity",
+        help="Person communication-identity expansion acceptance (email)",
+    )
+    p_prove_email_id.add_argument(
         "--flightsim",
         action="store_true",
         help="Optional FlightSim flag",
@@ -865,6 +898,34 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
+    if args.cmd == "repair-email-identities":
+        from memorybox.person.comm_identity import repair_email_identity_contacts
+
+        if getattr(args, "flightsim", False):
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = repair_email_identity_contacts(
+            getattr(args, "person_id", None),
+            force_rediscover=bool(getattr(args, "force_rediscover", False)),
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "person-email-identity-trace":
+        from memorybox.person.comm_identity import (
+            explain_address_for_person,
+            person_identity_snapshot,
+        )
+
+        snap = person_identity_snapshot(args.person_id)
+        explained = explain_address_for_person(args.person_id, args.address)
+        payload = {
+            "ok": True,
+            "snapshot": snap,
+            "address_explanation": explained,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
+
     if args.cmd == "rebuild-comms-index":
         from memorybox.ingest.rebuild_index import rebuild_comms_index
 
@@ -1105,6 +1166,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_full_evidence_benchmark(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-person-email-identity":
+        from memorybox.person.comm_identity_acceptance import (
+            run_prove_person_email_identity,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_person_email_identity(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
