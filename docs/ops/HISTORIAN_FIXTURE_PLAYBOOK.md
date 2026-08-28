@@ -45,7 +45,7 @@ Open **cmd** as usual on FlightSim:
 cd C:\memorybox
 git fetch origin
 git pull origin cursor/p2-i11a-historian-fixture-49da
-startmb.cmd -Restart
+.\startmb.cmd -Restart
 ```
 
 Optional sanity check:
@@ -261,7 +261,7 @@ REM === SETUP (once) ===
 cd C:\memorybox
 git fetch origin
 git pull origin cursor/p2-i11a-historian-fixture-49da
-startmb.cmd -Restart
+.\startmb.cmd -Restart
 
 REM === BUILD FIXTURES (once per frozen snapshot) ===
 python -m memorybox historian-fixture-build --flightsim --cases peggy,january_2025,vegas,alaska
