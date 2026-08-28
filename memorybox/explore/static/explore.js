@@ -2987,9 +2987,22 @@
         .concat(it.from ? [it.from] : []);
       bag.forEach((n) => {
         const s = String(n || "").trim();
+        if (!s) return;
+        // Prefer "Name <email>" over bare "Name" when both appear (ingest
+        // people[] is display_name-only; from is often Name <addr>).
+        const angle = s.match(/^([^<>]+?)\s*<\s*[^>]+>\s*$/);
+        const bareKey = angle ? angle[1].trim().toLowerCase() : s.toLowerCase();
         const k = s.toLowerCase();
-        if (!s || seen[k]) return;
-        seen[k] = 1;
+        if (angle && seen[bareKey] && !String(seen[bareKey]).includes("<")) {
+          const idx = names.findIndex((x) => x.toLowerCase() === bareKey);
+          if (idx >= 0) names[idx] = s;
+          seen[bareKey] = s;
+          seen[k] = s;
+          return;
+        }
+        if (seen[bareKey] || seen[k]) return;
+        seen[k] = s;
+        seen[bareKey] = s;
         names.push(s);
       });
     });

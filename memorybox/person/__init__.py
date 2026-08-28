@@ -1090,24 +1090,56 @@ def find_ask_person_by_name(
     Never returns AI/inferred as confirmed. May lazily seed from Immich when needed.
     Short single-token names (e.g. \"Peggy\") resolve when exactly one MB Person
     shares that first display-name token (e.g. \"Peggy George\").
+
+    Prefer a unique multi-token Person (\"Peggy George\") over an exact single-token
+    stub (\"Peggy\") that Immich lazy-seed often creates — otherwise Ask attaches the
+    stub with no contacts while the real Person holds phones/emails.
     """
     name = (display_name or "").strip()
     if len(name) < 2:
         return None
+
+    def _prefer_multi_token(candidate: PersonView | None) -> PersonView | None:
+        if candidate is None:
+            return None
+        if " " in name:
+            return candidate
+        cand_name = (candidate.display_name or "").strip()
+        if " " in cand_name:
+            return candidate
+        # Exact single-token hit (e.g. Person \"Peggy\") — upgrade when a unique
+        # multi-token sibling shares the first token (\"Peggy George\").
+        token_hits = list_people_by_first_token(name)
+        multi = [
+            p
+            for p in token_hits
+            if " " in (p.display_name or "").strip() and p.id != candidate.id
+        ]
+        if not multi:
+            # Include candidate itself only if somehow multi; else try all multi
+            multi = [p for p in token_hits if " " in (p.display_name or "").strip()]
+        upgraded = _pick_unique_ask_person(multi) if multi else None
+        return upgraded or candidate
+
     confirmed = find_confirmed_person_by_name(name)
     if confirmed:
-        return confirmed
+        return _prefer_multi_token(confirmed)
 
     # Unresolved / provider-seeded MB Person with exact name
     exact = list_people_by_exact_name(name)
     picked = _pick_unique_ask_person(exact) if exact else None
     if picked:
-        return picked
+        return _prefer_multi_token(picked)
 
     # Unique first-token match (Peggy → Peggy George) when query is a single token
     if " " not in name:
         token_hits = list_people_by_first_token(name)
-        # Exclude already-considered exact (none) — pick unique among token hits
+        # Prefer multi-token among token hits when unique
+        multi = [p for p in token_hits if " " in (p.display_name or "").strip()]
+        if multi:
+            picked = _pick_unique_ask_person(multi)
+            if picked:
+                return picked
         picked = _pick_unique_ask_person(token_hits) if token_hits else None
         if picked:
             return picked
@@ -1115,7 +1147,8 @@ def find_ask_person_by_name(
     if not lazy_seed:
         return None
     try:
-        return resolve_or_seed_trusted_provider_person(name, photo=photo)
+        seeded = resolve_or_seed_trusted_provider_person(name, photo=photo)
+        return _prefer_multi_token(seeded) if seeded else None
     except AmbiguousIdentityError:
         # Ask must disclose ambiguity rather than pick silently
         raise
