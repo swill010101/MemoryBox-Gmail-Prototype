@@ -586,6 +586,10 @@ def corroborate_email_candidate(
                 if same_addr_full:
                     break
         alias_forms = {
+            _norm_name(str(a.get("alias_text") or ""))
+            for a in (snap.get("aliases") or [])
+            if isinstance(a, dict) and a.get("alias_text")
+        } | {
             _norm_name(a)
             for a in (snap.get("aliases") or [])
             if isinstance(a, str)

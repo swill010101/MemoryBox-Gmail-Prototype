@@ -287,6 +287,28 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "repair": repair_info,
         },
     )
+    _check(
+        "noise_peg_mailboxes_not_attached",
+        not any(a.endswith("@example.com") and a.startswith("noise") for a in addrs),
+        checks,
+        problems,
+        detail=sorted(addrs),
+    )
+    # After Peg Legg ↔ peggo417 resolve, header display should be seeded as alias
+    # so later nickname attach does not need quoted full-name every time.
+    try:
+        from memorybox.person import list_people_by_alias
+
+        alias_hits = list_people_by_alias("Peg Legg")
+        _check(
+            "peg_legg_alias_seeded_after_attach",
+            any(getattr(p, "id", None) == ask_peggy.id for p in alias_hits),
+            checks,
+            problems,
+            detail=[getattr(p, "display_name", None) for p in alias_hits],
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check("peg_legg_alias_seeded_after_attach", False, checks, problems, detail=str(exc))
 
     plan = resolve_peggy_plan(photo=None, ask=PEGGY_ASK)
     _check(
