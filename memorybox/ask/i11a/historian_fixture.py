@@ -18,12 +18,12 @@ from uuid import uuid4
 
 from memorybox.ask.i11a.historian_prepared import (
     FIXTURE_VERSION,
+    canonical_json_normalize,
     count_ho_units,
     count_rollups,
     duplicate_higher_order_count,
-    input_hash_payload,
+    historian_input_sha256,
     plan_from_snapshot,
-    sha256_input,
 )
 from memorybox.ask.i11a.historian_provider import (
     HistorianProviderSpec,
@@ -81,13 +81,13 @@ def _git_commit() -> str:
 
 
 def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
-    return str(value)
+    return canonical_json_normalize(value)
+
+
+def serialize_fixture_document(body: dict[str, Any]) -> str:
+    """Write format: pretty JSON with stable key order; values are JSON-native."""
+    normalized = canonical_json_normalize(body)
+    return json.dumps(normalized, indent=2, ensure_ascii=False, sort_keys=True)
 
 
 def _fixture_body_from_prepared(
@@ -98,7 +98,7 @@ def _fixture_body_from_prepared(
     source_commit: str,
     built_at: str,
 ) -> dict[str, Any]:
-    body = {
+    body: dict[str, Any] = {
         "fixture_version": FIXTURE_VERSION,
         "case_id": case_id,
         "ask": ask,
@@ -115,8 +115,7 @@ def _fixture_body_from_prepared(
             ),
         },
     }
-    inp_sha = sha256_input(body)
-    body["input_sha256"] = inp_sha
+    body["input_sha256"] = historian_input_sha256(body)
     body["source_commit"] = source_commit
     body["built_at"] = built_at
     return body
@@ -176,7 +175,7 @@ def build_fixture_for_case(
     out_dir.mkdir(parents=True, exist_ok=True)
     fname = fixture_filename(case_id, stamp, body["input_sha256"])
     path = out_dir / fname
-    path.write_text(json.dumps(body, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    path.write_text(serialize_fixture_document(body), encoding="utf-8")
     stats = prepared.get("ask_relative_payload_stats") or {}
     ho = prepared.get("semantic_higher_order") or {}
     ru = prepared.get("semantic_rollups") or {}
@@ -237,14 +236,23 @@ def build_all_fixtures(
 
 def load_fixture(path: Path | str) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    check_body = {k: v for k, v in data.items() if k != "input_sha256"}
-    recomputed = sha256_input(check_body)
     stored = data.get("input_sha256")
+    recomputed = historian_input_sha256(data)
     if stored and stored != recomputed:
         raise ValueError(
             f"fixture input SHA mismatch: file={stored} recomputed={recomputed}"
         )
     return data
+
+
+def verify_fixture_sha_roundtrip(body: dict[str, Any]) -> bool:
+    """True when write→read preserves input_sha256 (builder/loader contract)."""
+    text = serialize_fixture_document(body)
+    loaded = json.loads(text)
+    stored = loaded.get("input_sha256")
+    if not stored:
+        return False
+    return stored == historian_input_sha256(loaded)
 
 
 def load_manifest(path: Path | str) -> dict[str, Any]:

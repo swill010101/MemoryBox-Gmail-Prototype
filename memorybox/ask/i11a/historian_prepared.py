@@ -9,6 +9,22 @@ from memorybox.ask.i11a.reason import ASK_RELATIVE_SYSTEM
 
 FIXTURE_VERSION = 1
 
+# Top-level fixture fields excluded from input_sha256 (metadata / derived / self-ref).
+FIXTURE_HASH_EXCLUDE_TOP: frozenset[str] = frozenset(
+    {"input_sha256", "source_commit", "built_at", "digests"}
+)
+
+# Prepared fields excluded from hash — runtime diagnostics or derived from hashed fields.
+PREPARED_HASH_EXCLUDE: frozenset[str] = frozenset(
+    {
+        "accounting",
+        "chunk_map",
+        "ask_relative_payload_stats",
+        "ask_relative_user_message",
+        "narrator_system",
+    }
+)
+
 _TUPLE_PLAN_KEYS = (
     "person_names",
     "person_ids",
@@ -22,6 +38,52 @@ _TUPLE_PLAN_KEYS = (
     "theme_labels",
     "semantic_constraints",
 )
+
+
+def canonical_json_normalize(value: Any) -> Any:
+    """Recursively normalize to JSON-native types (tuples → lists, stable dict keys)."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): canonical_json_normalize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [canonical_json_normalize(v) for v in value]
+    return str(value)
+
+
+def canonical_json_dumps(value: Any) -> str:
+    """Deterministic JSON bytes for hashing: sorted keys, compact separators, UTF-8."""
+    normalized = canonical_json_normalize(value)
+    return json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def fixture_document_for_hash(fixture_doc: dict[str, Any]) -> dict[str, Any]:
+    """Model-independent historian input identity — excludes metadata and volatile fields."""
+    prepared_raw = fixture_doc.get("prepared")
+    prepared: dict[str, Any] = {}
+    if isinstance(prepared_raw, dict):
+        prepared = {
+            k: v for k, v in prepared_raw.items() if k not in PREPARED_HASH_EXCLUDE
+        }
+    return {
+        "fixture_version": fixture_doc.get("fixture_version"),
+        "case_id": fixture_doc.get("case_id"),
+        "ask": fixture_doc.get("ask"),
+        "prepared": prepared,
+    }
+
+
+def historian_input_sha256(fixture_doc: dict[str, Any]) -> str:
+    """Single canonical input_sha256 for builder, manifest, loader, and replay runner.
+
+    Hashes only model-independent prepared historian input. Never includes
+    input_sha256, source_commit, built_at, digests, or volatile prepared diagnostics.
+    Applies JSON round-trip normalization so on-disk fixtures match in-memory hash.
+    """
+    payload = fixture_document_for_hash(fixture_doc)
+    roundtripped = json.loads(canonical_json_dumps(payload))
+    digest_input = canonical_json_dumps(roundtripped)
+    return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
 
 
 def plan_to_snapshot(plan: Any) -> dict[str, Any]:
@@ -146,65 +208,8 @@ def build_prepared_historian_input(
         "provider_options": {"temperature": 0.1},
         "modality_state": modality_state or {},
         "failed_chunks": failed_chunks,
-        "narrator_system": None,  # filled at run time from narrative.SYSTEM_PROMPT constant
+        "narrator_system": None,
     }
-
-
-def input_hash_payload(fixture_body: dict[str, Any]) -> dict[str, Any]:
-    """Fields included in model-independent input SHA (excludes commit/timestamp/filename)."""
-    return {
-        "fixture_version": fixture_body.get("fixture_version"),
-        "case_id": fixture_body.get("case_id"),
-        "ask": fixture_body.get("ask"),
-        "request_context": fixture_body.get("request_context"),
-        "person_context": fixture_body.get("prepared", fixture_body).get("person_context")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("person_context"),
-        "plan_snapshot": fixture_body.get("prepared", fixture_body).get("plan_snapshot")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("plan_snapshot"),
-        "ask_relative_system": fixture_body.get("prepared", fixture_body).get("ask_relative_system")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("ask_relative_system"),
-        "ask_relative_user_payload": fixture_body.get("prepared", fixture_body).get(
-            "ask_relative_user_payload"
-        )
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("ask_relative_user_payload"),
-        "eligible_observations": fixture_body.get("prepared", fixture_body).get(
-            "eligible_observations"
-        )
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("eligible_observations"),
-        "semantic_rollups": fixture_body.get("prepared", fixture_body).get("semantic_rollups")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("semantic_rollups"),
-        "semantic_higher_order": fixture_body.get("prepared", fixture_body).get(
-            "semantic_higher_order"
-        )
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("semantic_higher_order"),
-        "semantic_ir": fixture_body.get("prepared", fixture_body).get("semantic_ir")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("semantic_ir"),
-        "pack_minimal": fixture_body.get("prepared", fixture_body).get("pack_minimal")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("pack_minimal"),
-        "json_mode": fixture_body.get("prepared", fixture_body).get("json_mode")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("json_mode"),
-        "temperature": fixture_body.get("prepared", fixture_body).get("temperature")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("temperature"),
-        "provider_options": fixture_body.get("prepared", fixture_body).get("provider_options")
-        if isinstance(fixture_body.get("prepared"), dict)
-        else fixture_body.get("provider_options"),
-    }
-
-
-def sha256_input(payload: dict[str, Any]) -> str:
-    raw = json.dumps(payload, default=str, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def duplicate_higher_order_count(ho: dict[str, Any] | None) -> int:
@@ -226,3 +231,12 @@ def count_ho_units(ho: dict[str, Any] | None) -> int:
     if not isinstance(ho, dict):
         return 0
     return int(ho.get("higher_order_unit_total") or len(ho.get("units") or []))
+
+
+# Back-compat aliases (deprecated — use historian_input_sha256).
+def input_hash_payload(fixture_body: dict[str, Any]) -> dict[str, Any]:
+    return fixture_document_for_hash(fixture_body)
+
+
+def sha256_input(payload: dict[str, Any]) -> str:
+    return historian_input_sha256(payload)

@@ -7,14 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from memorybox.ask.i11a.historian_fixture import (
+    CASE_ORDER,
     HISTORIAN_CASES,
+    _fixture_body_from_prepared,
     load_fixture,
     run_filename,
+    serialize_fixture_document,
+    verify_fixture_sha_roundtrip,
 )
 from memorybox.ask.i11a.historian_prepared import (
     build_prepared_historian_input,
-    input_hash_payload,
-    sha256_input,
+    historian_input_sha256,
 )
 from memorybox.ask.i11a.historian_provider import (
     HistorianCloudNotAvailable,
@@ -166,6 +169,17 @@ def _synthetic_prepared(*, case_id: str = "peggy") -> dict[str, Any]:
     )
 
 
+def _build_fixture_document(*, case_id: str) -> dict[str, Any]:
+    prepared = _synthetic_prepared(case_id=case_id)
+    return _fixture_body_from_prepared(
+        case_id=case_id,
+        ask=HISTORIAN_CASES[case_id],
+        prepared=prepared,
+        source_commit="test-commit",
+        built_at="2026-08-28T00:00:00Z",
+    )
+
+
 def run_prove_historian_fixture(*, flightsim: bool = False) -> dict[str, Any]:
     checks: list[str] = []
     problems: list[str] = []
@@ -173,30 +187,42 @@ def run_prove_historian_fixture(*, flightsim: bool = False) -> dict[str, Any]:
     prepared = _synthetic_prepared()
     llm = _CountingLlm()
 
-    body_v1 = {
-        "fixture_version": 1,
-        "case_id": "peggy",
-        "ask": HISTORIAN_CASES["peggy"],
-        "prepared": prepared,
-        "digests": {},
-    }
-    sha1 = sha256_input(body_v1)
-    sha2 = sha256_input(body_v1)
+    doc = _build_fixture_document(case_id="peggy")
+    sha1 = historian_input_sha256(doc)
+    sha2 = historian_input_sha256(doc)
     _check("input_sha_stable", sha1 == sha2 and len(sha1) == 64, checks, problems)
+    _check(
+        "metadata_excluded_from_hash",
+        historian_input_sha256({**doc, "source_commit": "other", "built_at": "other"}) == sha1,
+        checks,
+        problems,
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
+        for case_id in CASE_ORDER:
+            body = _build_fixture_document(case_id=case_id)
+            path = Path(tmp) / f"HISTFIX_{case_id}_test.json"
+            path.write_text(serialize_fixture_document(body), encoding="utf-8")
+            _check(
+                f"fixture_roundtrip_{case_id}",
+                verify_fixture_sha_roundtrip(body),
+                checks,
+                problems,
+                detail=f"stored={body.get('input_sha256')}",
+            )
+            loaded = load_fixture(path)
+            _check(
+                f"fixture_load_{case_id}",
+                loaded.get("input_sha256") == body.get("input_sha256"),
+                checks,
+                problems,
+            )
+
         path = Path(tmp) / "HISTFIX_peggy_test.json"
-        fixture_doc = {
-            **body_v1,
-            "source_commit": "test",
-            "built_at": "2026-08-27T00:00:00Z",
-        }
-        roundtrip = json.loads(json.dumps(fixture_doc, default=str))
-        sha1 = sha256_input(roundtrip)
-        roundtrip["input_sha256"] = sha1
-        path.write_text(json.dumps(roundtrip), encoding="utf-8")
+        body = _build_fixture_document(case_id="peggy")
+        path.write_text(serialize_fixture_document(body), encoding="utf-8")
         loaded = load_fixture(path)
-        _check("fixture_loads", loaded["input_sha256"] == sha1, checks, problems)
+        sha1 = loaded["input_sha256"]
 
         class _FixedAskLlm(_CountingLlm):
             chat_model = "gemma4:26b"
