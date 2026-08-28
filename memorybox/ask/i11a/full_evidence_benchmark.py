@@ -563,7 +563,7 @@ def run_historian_full_evidence_benchmark(
     retrieved: dict[str, Any] | None = None,
     items: list[dict[str, Any]] | None = None,
     repair_address: str | None = None,
-    address_hint: str | None = "peggo417@hotmail.com",
+    address_hint: str | None = None,
 ) -> dict[str, Any]:
     """End-to-end: freeze pack + funnel metrics + L1 chunks + proofs."""
     from memorybox.ask.deps import build_photo, build_video
@@ -732,7 +732,7 @@ def run_historian_full_evidence_benchmark_cli(
     gpt_response: Path | str | None = None,
     flightsim: bool = False,
     repair_address: str | None = None,
-    address_hint: str | None = "peggo417@hotmail.com",
+    address_hint: str | None = None,
 ) -> dict[str, Any]:
     if flightsim:
         import os

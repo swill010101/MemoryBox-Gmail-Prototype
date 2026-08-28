@@ -4,13 +4,18 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from memorybox.ask.retrieve import _person_scoped_comm_where, _sql_confirmed_email_addrs
+from memorybox.ask.retrieve import (
+    _payload_email_addresses,
+    _person_scoped_comm_where,
+    _sql_confirmed_email_addrs,
+)
 from memorybox.person.comm_identity import (
     _display_matches_person,
     attach_known_email_if_corroborated,
     corroborate_email_candidate,
     expand_person_communication_identities,
 )
+from memorybox.person.phone_map import normalize_handle
 
 
 def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
@@ -25,6 +30,18 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
 
     # Display-name matching policy
     forms = ["peggy george", "margaret george"]
+    _check(
+        "normalize_extracts_angle_addr",
+        normalize_handle("Peg Legg <peggo01417@hotmail.com>") == "peggo01417@hotmail.com",
+        checks,
+        problems,
+    )
+    _check(
+        "normalize_bare_email",
+        normalize_handle("peggo01417@hotmail.com") == "peggo01417@hotmail.com",
+        checks,
+        problems,
+    )
     _check(
         "full_name_matches",
         _display_matches_person("Peggy George", forms) in {"full", "alias_full"},
@@ -63,7 +80,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
 
     # SQL scope includes confirmed emails (common retrieve path)
-    sql, params = _sql_confirmed_email_addrs({"peggo417@hotmail.com"})
+    sql, params = _sql_confirmed_email_addrs({"peggo01417@hotmail.com"})
     _check("email_addr_sql_not_false", sql != "FALSE", checks, problems, detail=sql)
     _check(
         "email_addr_sql_header_only",
@@ -94,7 +111,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         person_names=[],
         person_ids={"person-peggy"},
         header_fallback=False,
-        confirmed_emails={"peggo417@hotmail.com"},
+        confirmed_emails={"peggo01417@hotmail.com"},
     )
     _check("where_not_none_with_email", where is not None, checks, problems, detail=scope)
     _check(
@@ -110,6 +127,22 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=scope,
+    )
+    raw_only = _payload_email_addresses(
+        {
+            "from": "Peg Legg <peggo01417@hotmail.com>",
+            "to": ["owner@example.com"],
+            "from_parsed": [],
+            "to_parsed": [],
+            "cc_parsed": [],
+        }
+    )
+    _check(
+        "payload_addrs_from_raw_headers",
+        "peggo01417@hotmail.com" in raw_only,
+        checks,
+        problems,
+        detail=raw_only,
     )
 
     # Empty identity probe still fail-closed without ids/emails
@@ -228,7 +261,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=weak_dec,
     )
 
-    # Stable reuse: when confirmed emails exist, no archive rediscovery
+    # Stable reuse: when confirmed emails exist, no archive rediscovery — but backfill runs
     with patch(
         "memorybox.person.comm_identity.person_identity_snapshot",
         return_value={
@@ -238,7 +271,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             "emails": [
                 {
                     "contact_kind": "email",
-                    "value_text": "peggo417@hotmail.com",
+                    "value_text": "peggo01417@hotmail.com",
                     "status": "confirmed",
                 }
             ],
@@ -246,9 +279,12 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         },
     ), patch(
         "memorybox.person.comm_identity.discover_email_candidates_from_archive"
-    ) as discover:
+    ) as discover, patch(
+        "memorybox.person.comm_identity.backfill_email_person_ids",
+        return_value={"updated": 12, "scanned": 12},
+    ) as backfill:
         report = expand_person_communication_identities(
-            ["person-peggy"], persist=False, backfill=False, discover=True
+            ["person-peggy"], persist=False, backfill=True, discover=True
         )
         _check(
             "no_rediscovery_when_confirmed_present",
@@ -258,13 +294,20 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             detail=report.get("rounds"),
         )
         _check(
-            "emails_returned_from_confirmed",
-            "peggo417@hotmail.com" in (report.get("emails_by_person") or {}).get(
+            "emails_returned_from_people_contacts",
+            "peggo01417@hotmail.com" in (report.get("emails_by_person") or {}).get(
                 "person-peggy", []
             ),
             checks,
             problems,
             detail=report.get("emails_by_person"),
+        )
+        _check(
+            "backfill_runs_when_confirmed_present",
+            backfill.call_count == 1,
+            checks,
+            problems,
+            detail=report.get("rounds"),
         )
 
     # Body-name matching must not be the retrieve mechanism (header SQL only)
@@ -379,10 +422,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "problems": problems,
         "peggo417_decision_fixture": decision,
         "root_cause": (
-            "Email Person retrieve was GIN person_ids-only; Peggy had no confirmed "
-            "email contact so payloads never stamped and SQL returned zero. SMS "
-            "succeeds via phone contacts + sender_name fallback. After To/CC JSON "
-            "fix, auto expand can still miss Hotmail bare/first-name headers — "
-            "use repair --person-id --address for operator attestation."
+            "Email Person retrieve uses confirmed People contacts + header SQL. "
+            "People contact spelling must match archive headers (e.g. peggo01417). "
+            "When contacts exist, expand skips rediscovery but still backfills "
+            "person_ids. No Peggy-specific address hardcoding."
         ),
     }
