@@ -636,6 +636,61 @@ def list_people_by_exact_name(display_name: str) -> list[PersonView]:
         return [_view(conn, r) for r in rows]
 
 
+def list_people_by_alias(alias_text: str) -> list[PersonView]:
+    """People with a confirmed alias matching alias_text (case-insensitive)."""
+    text = (alias_text or "").strip()
+    if len(text) < 2:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*
+            FROM people p
+            JOIN person_aliases a ON a.person_id = p.id
+            WHERE p.status IN ('unresolved', 'confirmed')
+              AND a.status = 'confirmed'
+              AND lower(a.alias_text) = lower(%s)
+            ORDER BY
+              CASE p.status WHEN 'confirmed' THEN 0 ELSE 1 END,
+              p.created_at ASC
+            """,
+            (text,),
+        ).fetchall()
+        return [_view(conn, r) for r in rows]
+
+
+def list_people_by_nickname_family(display_name: str) -> list[PersonView]:
+    """Match People whose first display token is in the Ask name's nickname family.
+
+    Example: Ask ``Peg Legg`` → first token ``peg`` ↔ ``peggy`` → ``Peggy George``.
+    Multi-token queries only; single-token Ask uses ``list_people_by_first_token``.
+    """
+    name = (display_name or "").strip()
+    if len(name) < 2 or " " not in name:
+        return []
+    first = name.split()[0].lower()
+    try:
+        from memorybox.person.comm_identity import _FIRST_NAME_NICKNAMES
+    except Exception:  # noqa: BLE001
+        return []
+    nicks = sorted(_FIRST_NAME_NICKNAMES.get(first) or {first})
+    if not nicks:
+        return []
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM people
+            WHERE status IN ('unresolved', 'confirmed')
+              AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
+            ORDER BY
+              CASE status WHEN 'confirmed' THEN 0 ELSE 1 END,
+              created_at ASC
+            """,
+            (nicks,),
+        ).fetchall()
+        return [_view(conn, r) for r in rows]
+
+
 def list_people_by_first_token(display_name: str) -> list[PersonView]:
     """Match people whose first display-name token equals the query (case-insensitive).
 
@@ -1094,6 +1149,9 @@ def find_ask_person_by_name(
     Prefer a unique multi-token Person (\"Peggy George\") over an exact single-token
     stub (\"Peggy\") that Immich lazy-seed often creates — otherwise Ask attaches the
     stub with no contacts while the real Person holds phones/emails.
+
+    Also resolves confirmed aliases and multi-token nickname Ask forms
+    (\"Peg Legg\" → unique \"Peggy George\" in the first-name nickname family).
     """
     name = (display_name or "").strip()
     if len(name) < 2:
@@ -1131,6 +1189,14 @@ def find_ask_person_by_name(
     if picked:
         return _prefer_multi_token(picked)
 
+    # Confirmed aliases (e.g. Peg Legg → Peggy George after header alias seed)
+    alias_hits = list_people_by_alias(name)
+    if alias_hits:
+        multi = [p for p in alias_hits if " " in (p.display_name or "").strip()]
+        picked = _pick_unique_ask_person(multi or alias_hits)
+        if picked:
+            return _prefer_multi_token(picked)
+
     # Unique first-token match (Peggy → Peggy George) when query is a single token
     if " " not in name:
         token_hits = list_people_by_first_token(name)
@@ -1143,6 +1209,14 @@ def find_ask_person_by_name(
         picked = _pick_unique_ask_person(token_hits) if token_hits else None
         if picked:
             return picked
+    else:
+        # Multi-token nickname Ask (Peg Legg → Peggy George) when unique multi-token
+        family = list_people_by_nickname_family(name)
+        multi = [p for p in family if " " in (p.display_name or "").strip()]
+        if multi:
+            picked = _pick_unique_ask_person(multi)
+            if picked:
+                return picked
 
     if not lazy_seed:
         return None

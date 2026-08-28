@@ -664,6 +664,136 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=op.get("rows_with_address"),
     )
 
+    # People status filter must use domain statuses (not stories' 'active').
+    import inspect
+
+    from memorybox.person import (
+        find_ask_person_by_name,
+        list_people_by_alias,
+        list_people_by_nickname_family,
+    )
+    from memorybox.person import comm_identity as ci_mod
+    from memorybox.person import comm_address_index as cai
+
+    src_ci = inspect.getsource(ci_mod)
+    _check(
+        "people_status_filter_not_active",
+        "status = 'active'" not in src_ci
+        and "status IN ('confirmed', 'unresolved')" in src_ci,
+        checks,
+        problems,
+    )
+    upsert_src = inspect.getsource(cai.upsert_communication_identity_from_inventory)
+    _check(
+        "ledger_upsert_never_downgrades_confirmed",
+        "resolution_status = 'confirmed'" in upsert_src
+        and "IS DISTINCT FROM 'confirmed'" in upsert_src,
+        checks,
+        problems,
+    )
+
+    class _PersonRow:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+    class _PersonConn:
+        def execute(self, sql, params=None):
+            s = str(sql).lower()
+            if "person_aliases" in s:
+                return _PersonRow(
+                    [
+                        {
+                            "id": "person-peggy-george",
+                            "display_name": "Peggy George",
+                            "status": "confirmed",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    ]
+                )
+            if "split_part" in s:
+                return _PersonRow(
+                    [
+                        {
+                            "id": "person-peggy-stub",
+                            "display_name": "Peggy",
+                            "status": "unresolved",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        },
+                        {
+                            "id": "person-peggy-george",
+                            "display_name": "Peggy George",
+                            "status": "confirmed",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        },
+                    ]
+                )
+            return _PersonRow([])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    def _fake_view(_conn, row):
+        from memorybox.person import PersonView
+
+        return PersonView(
+            id=str(row["id"]),
+            display_name=row.get("display_name"),
+            status=row.get("status") or "unresolved",
+            merged_into_id=None,
+            created_at=None,
+            updated_at=None,
+            provider_mappings=[],
+            identity_authority=None,
+        )
+
+    with patch("memorybox.person.connection", return_value=_PersonConn()), patch(
+        "memorybox.person._view", side_effect=_fake_view
+    ), patch(
+        "memorybox.person.find_confirmed_person_by_name", return_value=None
+    ), patch(
+        "memorybox.person.list_people_by_exact_name", return_value=[]
+    ):
+        nick_hits = list_people_by_nickname_family("Peg Legg")
+        multi = [p for p in nick_hits if " " in (p.display_name or "")]
+        _check(
+            "ask_nickname_family_finds_peggy_george",
+            any(p.display_name == "Peggy George" for p in multi),
+            checks,
+            problems,
+            detail=[p.display_name for p in nick_hits],
+        )
+        resolved = find_ask_person_by_name("Peg Legg", photo=None, lazy_seed=False)
+        _check(
+            "ask_resolves_peg_legg_to_peggy_george",
+            resolved is not None and resolved.display_name == "Peggy George",
+            checks,
+            problems,
+            detail=getattr(resolved, "display_name", None),
+        )
+        alias_hits = list_people_by_alias("Peg Legg")
+        _check(
+            "ask_alias_lookup_finds_person",
+            any(p.display_name == "Peggy George" for p in alias_hits),
+            checks,
+            problems,
+            detail=[p.display_name for p in alias_hits],
+        )
+
     return {
         "ok": not problems,
         "prove": "person_email_identity",
@@ -673,8 +803,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "peggo417_decision_fixture": decision,
         "root_cause": (
             "Email Person retrieve uses confirmed People contacts + header SQL. "
-            "People contact spelling must match archive headers (e.g. peggo01417). "
-            "When contacts exist, expand skips rediscovery but still backfills "
-            "person_ids. No Peggy-specific address hardcoding."
+            "Archive-first address ledger (discover→resolve→retrieve). "
+            "Ask resolves aliases and nickname forms (Peg Legg → Peggy George). "
+            "No Peggy-specific address hardcoding."
         ),
     }

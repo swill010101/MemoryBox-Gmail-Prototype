@@ -151,7 +151,7 @@ def _people_sharing_first_name(first: str) -> list[str]:
             rows = conn.execute(
                 """
                 SELECT id, display_name FROM people
-                WHERE status = 'active'
+                WHERE status IN ('confirmed', 'unresolved')
                   AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
                 """,
                 (nicks,),
@@ -355,19 +355,29 @@ def discover_email_candidates_from_archive(
                     lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
                       ) e
                       WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                     )
                   )
                 LIMIT %s
                 """,
-                (patterns, patterns, patterns, patterns, patterns, limit_scan),
+                (
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    limit_scan,
+                ),
             ).fetchall()
     except Exception:  # noqa: BLE001
         rows = []
@@ -393,6 +403,7 @@ def discover_email_candidates_from_archive(
                             str(payload.get("from") or ""),
                             str((payload.get("to") or "")),
                             str((payload.get("cc") or "")),
+                            str((payload.get("bcc") or "")),
                             rec.get("display_name") or "",
                         ]
                     ).lower()
@@ -508,7 +519,7 @@ def corroborate_email_candidate(
                 conn.execute(
                     """
                     SELECT id, display_name FROM people
-                    WHERE status = 'active'
+                    WHERE status IN ('confirmed', 'unresolved')
                       AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
                     """,
                     (nicks,),
@@ -540,14 +551,15 @@ def corroborate_email_candidate(
         result["reason"] = "ambiguous_first_name_among_people"
         result["ambiguous_person_ids"] = siblings
         return result
-    # Even with full match, if another active Person has the exact same full display name → ambiguous.
+    # Even with full match, if another live Person has the exact same full display name → ambiguous.
     full_matches = []
     try:
         with connection() as conn:
             rows = conn.execute(
                 """
                 SELECT id, display_name FROM people
-                WHERE status = 'active' AND lower(display_name) = %s
+                WHERE status IN ('confirmed', 'unresolved')
+                  AND lower(display_name) = %s
                 """,
                 (_norm_name(best_dn),),
             ).fetchall()
@@ -650,19 +662,29 @@ def backfill_email_person_ids(
                     lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
                       ) e
                       WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)
                     )
                   )
                 LIMIT %s
                 """,
-                (patterns, patterns, patterns, patterns, sorted(addrs), limit),
+                (
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    sorted(addrs),
+                    limit,
+                ),
             ).fetchall()
             for r in rows:
                 scanned += 1
@@ -1036,19 +1058,21 @@ def attach_known_email_if_corroborated(
                     lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
                       ) e
                       WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
                     )
                   )
                 LIMIT 5000
                 """,
-                (like, like, like, like, addr),
+                (like, like, like, like, like, addr),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"accepted": False, "reason": "scan_error", "error": str(exc), "address": addr}
@@ -1078,6 +1102,7 @@ def attach_known_email_if_corroborated(
                     str(payload.get("from") or ""),
                     str(payload.get("to") or ""),
                     str(payload.get("cc") or ""),
+                    str(payload.get("bcc") or ""),
                 ]
             ).lower()
             for form in forms:
@@ -1383,7 +1408,7 @@ def repair_email_identity_contacts(
 ) -> dict[str, Any]:
     """Discover/persist corroborated email contacts for People missing them.
 
-    When person_id is set, expand that Person only. Otherwise expand active People
+    When person_id is set, expand that Person only. Otherwise expand live People
     that have a multi-token display name and zero confirmed emails.
     Optional known_address (e.g. peggo417@hotmail.com) is corroborated via headers.
     """
@@ -1397,7 +1422,7 @@ def repair_email_identity_contacts(
                     """
                     SELECT p.id, p.display_name
                     FROM people p
-                    WHERE p.status = 'active'
+                    WHERE p.status IN ('confirmed', 'unresolved')
                       AND position(' ' in trim(p.display_name)) > 0
                       AND NOT EXISTS (
                         SELECT 1 FROM person_contact_points c

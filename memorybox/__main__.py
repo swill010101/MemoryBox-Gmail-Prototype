@@ -1017,15 +1017,16 @@ def main(argv: list[str] | None = None) -> int:
             attach = resolve_and_attach_addresses_for_person(
                 args.person_id, persist=True, backfill=True
             )
-            # Also operator-style: if inventory found address and person given,
-            # ensure ledger points at person when structured headers exist.
+            # After successful resolve, keep ledger confirmed for this Person.
+            # Never downgrade an existing confirmed row to candidate.
+            accepted = bool(attach and (attach.get("accepted") or []))
             if inv.get("ok") and int(
                 (inv.get("structured_header") or {}).get("occurrence_count") or 0
             ) > 0:
                 upsert = upsert_communication_identity_from_inventory(
                     inv,
                     resolved_person_id=args.person_id,
-                    resolution_status="candidate",
+                    resolution_status="confirmed" if accepted else "candidate",
                 )
         payload = {
             "ok": bool(inv.get("ok")),

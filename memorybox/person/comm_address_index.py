@@ -289,7 +289,11 @@ def upsert_communication_identity_from_inventory(
                         communication_identities.resolved_person_id
                     ),
                     resolution_status = CASE
-                        WHEN EXCLUDED.resolved_person_id IS NOT NULL THEN EXCLUDED.resolution_status
+                        WHEN communication_identities.resolution_status = 'confirmed'
+                             AND EXCLUDED.resolution_status IS DISTINCT FROM 'confirmed'
+                          THEN communication_identities.resolution_status
+                        WHEN EXCLUDED.resolved_person_id IS NOT NULL
+                          THEN EXCLUDED.resolution_status
                         ELSE communication_identities.resolution_status
                     END,
                     provenance_json = EXCLUDED.provenance_json,
