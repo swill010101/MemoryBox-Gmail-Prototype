@@ -17,31 +17,29 @@ identities to retrieve complete Person evidence.
 
 ## FlightSim
 
+Primary gate (Gallery + Full-Evidence email > 0; **no historian**):
+
 ```bat
 cd C:\memorybox
 git fetch origin
 git pull origin cursor/p2-i11a-address-centric-email-49da
 .\startmb.cmd -Restart
-
 python -m memorybox migrate
-python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
-
-python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json --repair-address peggo417@hotmail.com
-```
-
-`probe-email-address` fills the address ledger (Peg Legg / Peggy George observations).
-Full-evidence then resolves ledger → Person → all mail. `--repair-address` is
-operator attestation if auto-resolve is still empty.
-
-Single-command E2E gate (Gallery + Full-Evidence email > 0; no historian):
-
-```bat
 python -m memorybox prove-address-centric-email-e2e --flightsim
 ```
 
-Paste prove JSON + V2 `ADDRESS_CENTRIC_GATE.json` (need `"ok": true`) + `by_source.email`.
-Both `prove-address-centric-email-e2e` and `historian-full-evidence-benchmark` print
-`===== ADDRESS_CENTRIC_GATE (paste this) =====` at the end — paste that block.
+Paste the printed `===== ADDRESS_CENTRIC_GATE (paste this) =====` block
+(need `"ok": true` and `"flightsim": true`).
+
+Optional deeper path (probe ledger + Full-Evidence V2; fixture optional if present):
+
+```bat
+python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
+python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --repair-address peggo417@hotmail.com
+```
+
+`--repair-address` is operator attestation if auto-resolve is still empty.
+`--fixture …\HISTFIX_peggy_*.json` is optional (funnel metrics only; omit if missing).
 **Stop** after V2 — no historian summarization.
 
 ## Ask name forms

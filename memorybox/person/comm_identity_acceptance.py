@@ -957,12 +957,27 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     import inspect as _inspect
 
     from memorybox.ask import retrieve as retrieve_mod
+    from memorybox.person import comm_address_index as addr_idx
 
     email_src = _inspect.getsource(retrieve_mod.search_email_messages)
     _check(
         "complete_person_email_clears_narrative_keywords",
         "_complete_comm_retrieve(plan) and person_ids" in email_src
         and "keywords = []" in email_src,
+        checks,
+        problems,
+    )
+    discover_src = _inspect.getsource(addr_idx.find_addresses_for_person_forms)
+    inventory_src = _inspect.getsource(addr_idx.inventory_email_address)
+    _check(
+        "discover_prefers_structured_parsed_before_limit",
+        "ORDER BY CASE" in discover_src and "from_parsed" in discover_src,
+        checks,
+        problems,
+    )
+    _check(
+        "inventory_prefers_structured_address_before_limit",
+        "ORDER BY CASE" in inventory_src and "normalized" in inventory_src,
         checks,
         problems,
     )

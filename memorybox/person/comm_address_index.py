@@ -79,6 +79,8 @@ def inventory_email_address(
 
     try:
         with connection() as conn:
+            # Prefer structured address hits over body-only so LIMIT does not
+            # starve header inventory with quoted-body noise on large archives.
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -103,9 +105,40 @@ def inventory_email_address(
                       WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
                     )
                   )
+                ORDER BY CASE
+                  WHEN EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                      coalesce(payload_json->'from_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
+                    ) e
+                    WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
+                  ) THEN 0
+                  WHEN lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
+                  THEN 1
+                  ELSE 2
+                END
                 LIMIT %s
                 """,
-                (like, like, like, like, like, like, addr, limit_scan),
+                (
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    addr,
+                    addr,
+                    like,
+                    like,
+                    like,
+                    like,
+                    limit_scan,
+                ),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "address": addr}
@@ -455,6 +488,9 @@ def find_addresses_for_person_forms(
     candidates: dict[str, dict[str, Any]] = {}
     try:
         with connection() as conn:
+            # Prefer structured *_parsed display_name hits over people[]/raw text
+            # so nickname rows like "Peg Legg <peggo417…>" are not starved by a
+            # broad "%peg %" prefilter LIMIT on large Takeouts.
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -478,9 +514,31 @@ def find_addresses_for_person_forms(
                       WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                     )
                   )
+                ORDER BY CASE
+                  WHEN EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                      coalesce(payload_json->'from_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
+                    ) e
+                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                  ) THEN 0
+                  WHEN lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
+                  THEN 1
+                  ELSE 2
+                END
                 LIMIT %s
                 """,
                 (
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
                     patterns,
                     patterns,
                     patterns,
