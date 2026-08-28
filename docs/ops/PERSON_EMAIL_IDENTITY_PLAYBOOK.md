@@ -31,14 +31,16 @@ python -m memorybox prove-address-centric-email-e2e --flightsim
 Paste the printed `===== ADDRESS_CENTRIC_GATE (paste this) =====` block
 (need `"ok": true` and `"flightsim": true`).
 
-Optional deeper path (probe ledger + Full-Evidence V2; fixture optional if present):
+If structured headers show Peg Legg on peggo417 but **no** same-address
+Peggy George observation (quoted or structured), auto nickname attach stays
+fail-closed (so unrelated `Peg *` mailboxes are not claimed). In that case
+`prove-address-centric-email-e2e --flightsim` auto-runs operator repair for
+`peggo417@hotmail.com` when structured hits exist; or run:
 
 ```bat
-python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
 python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --repair-address peggo417@hotmail.com
 ```
 
-`--repair-address` is operator attestation if auto-resolve is still empty.
 `--fixture …\HISTFIX_peggy_*.json` is optional (funnel metrics only; omit if missing).
 **Stop** after V2 — no historian summarization.
 
