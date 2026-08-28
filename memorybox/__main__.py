@@ -617,6 +617,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Optional FlightSim flag",
     )
+    p_prove_addr_e2e = sub.add_parser(
+        "prove-address-centric-email-e2e",
+        help=(
+            "E2E: probe peggo417 → resolve Peggy George → Gallery + Full-Evidence "
+            "email > 0 (seeds locally; --flightsim uses live archive)"
+        ),
+    )
+    p_prove_addr_e2e.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Use FlightSim archive (no local seed)",
+    )
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1290,6 +1302,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_person_email_identity(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-address-centric-email-e2e":
+        from memorybox.person.address_centric_e2e import (
+            run_prove_address_centric_email_e2e,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_address_centric_email_e2e(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

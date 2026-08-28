@@ -33,7 +33,13 @@ python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs
 Full-evidence then resolves ledger → Person → all mail. `--repair-address` is
 operator attestation if auto-resolve is still empty.
 
-Paste probe JSON + V2 `by_source.email`. **Stop** after V2 — no historian summarization.
+Single-command E2E gate (Gallery + Full-Evidence email > 0; no historian):
+
+```bat
+python -m memorybox prove-address-centric-email-e2e --flightsim
+```
+
+Paste probe JSON + V2 `by_source.email` + prove JSON. **Stop** after V2 — no historian summarization.
 
 ## Ask name forms
 
