@@ -5,7 +5,7 @@ first, resolves those identities to People second, and then uses the resolved
 identities to retrieve complete Person evidence.
 
 **PRD:** `docs/ops/PRD_ADDRESS_CENTRIC_EMAIL_IDENTITY.md`  
-**Branch:** `cursor/p2-i11a-address-centric-email-49da`
+**Branch:** `cursor/p2-i11a-stabilize-a3b9`
 
 ## Pipeline
 
@@ -20,7 +20,7 @@ identities to retrieve complete Person evidence.
 ```bat
 cd C:\memorybox
 git fetch origin
-git pull origin cursor/p2-i11a-address-centric-email-49da
+git pull origin cursor/p2-i11a-stabilize-a3b9
 .\startmb.cmd -Restart
 
 python -m memorybox migrate

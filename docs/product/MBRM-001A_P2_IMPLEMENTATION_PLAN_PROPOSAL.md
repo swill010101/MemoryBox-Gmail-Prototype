@@ -5,8 +5,8 @@
 **Supporting catalogs (ingested 2026-08-13; do not silently resequence this plan):** [MBUX-001 v0.4](MBUX-001_v0.4.md) · [MBCAP-001 v0.2](MBCAP-001_P2_CAPABILITY_CATALOG_v0.2.md) · [planning delta](MBBS_P2_MBCAP_MBUX_v0.4_PLANNING_DELTA.md)  
 **Supersedes sequencing in:** [MBRM-001_P2_ROADMAP.md](MBRM-001_P2_ROADMAP.md)  
 **P2-I1 definition (locked):** [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
-**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B Artifacts ACCEPTED** 2026-08-23. **I10A.1 Person Profile ACCEPTED** 2026-08-24. **I10A.2 speech input ACCEPTED** 2026-08-24. **I10C Journal ACCEPTED** 2026-08-24. **I11 definition LOCKED** 2026-08-24; prep/LLM **not authorized** until Tom says approved to build). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Face-SoT later.  
-**Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. **I9** authorized 2026-08-20 (FlightSim ACCEPTED pending). **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B ACCEPTED** 2026-08-23. **I10A.1 ACCEPTED** 2026-08-24. **I10A.2 ACCEPTED** 2026-08-24. **I10C Journal ACCEPTED** 2026-08-24. **I11** definition locked (prep/LLM waits). Face-SoT later. Do not reopen I4, I8, I8A, I10, I10A, I10A.1, I10A.2, I10B, or I10C for aesthetic polish.  
+**Gate:** Increment builds require explicit definition + build authorization (I1–I8A **ACCEPTED**. **I9 BUILD AUTHORIZED** 2026-08-20. **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B Artifacts ACCEPTED** 2026-08-23. **I10A.1 Person Profile ACCEPTED** 2026-08-24. **I10A.2 speech input ACCEPTED** 2026-08-24. **I10C Journal ACCEPTED** 2026-08-24. **I11 BUILD AUTHORIZED** 2026-08-24. **I11A BUILD AUTHORIZED** 2026-08-25 · FlightSim not ACCEPTED. **I11B planning only** · **BUILD NOT AUTHORIZED**). SMS attachment bytes = **P2-BL-I7-01**. I8 email attachment files = **P2-BL-I8-01** (absorbed). Explore visual polish = **P2-BL-I4-01** (does not reopen I4). Face-SoT later.  
+**Owner-pass order:** **P2-I4 ACCEPTED** 2026-08-18. **MBQL-001 ACCEPTED** 2026-08-18. **P2-I8 ACCEPTED** 2026-08-18. **P2-I8A ACCEPTED** 2026-08-19. **I9** authorized 2026-08-20 (FlightSim ACCEPTED pending). **I10 ACCEPTED** 2026-08-21. **I10A Stories ACCEPTED** 2026-08-22. **I10B ACCEPTED** 2026-08-23. **I10A.1 ACCEPTED** 2026-08-24. **I10A.2 ACCEPTED** 2026-08-24. **I10C Journal ACCEPTED** 2026-08-24. **I11** BUILD AUTHORIZED 2026-08-24. **I11A** BUILD AUTHORIZED 2026-08-25 (stabilization in flight). **I11B** planning/UX locked v0.3 — do not build until Tom authorizes after I11A items 1–3. Face-SoT later. Do not reopen I4, I8, I8A, I10, I10A, I10A.1, I10A.2, I10B, or I10C for aesthetic polish.  
 **I7A insertion (2026-08-15):** [MBRM-001 v0.2](MBRM-001_v0.2_AI_TRACE_INSERTION.md) · [I7A definition](MBBS-P2_INCREMENT_7A_DEFINITION.md) · [MBPRD-P2-I7A](MBPRD-P2-I7A_AI_MODEL_TRACE_AND_OBSERVABILITY.md). **MBQL-001** is [ACCEPTED](MBBS-P2_INCREMENT_MBQL_001_DEFINITION.md) 2026-08-18.
 
 ## 0. First-increment verdict (confirmed)
@@ -102,7 +102,9 @@ Archive gap → Review task → owner correction → propagate → preserve prov
 | **P2-I10A.2** | Reusable Speech Input | U+F | **ACCEPTED** 2026-08-24 (Tom: “i10A.2 is accepted”) — [PRD](MBPRD-P2-I10A2_SPEECH_INPUT.md) · [contract](MBSC-P2-I10A2_SPEECH_SCREEN_CONTRACT.md) · [acceptance](MBAT-P2-I10A2_ACCEPTANCE.md). Shared editor. Authored-memory vs convenience. `prove-i10a2`. Do not reopen. |
 | **P2-I10B** | Artifacts | U+F | **ACCEPTED** 2026-08-23 — [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md) · [PRD](MBPRD-P2-I10B_ARTIFACTS.md). Tell its story uses shared Story editor; recorder is I10A.2. |
 | **P2-I10C** | Journal | U+F | **ACCEPTED** 2026-08-24 (Tom: “i10C - journal is accepted”) — [I10C definition](MBBS-P2_INCREMENT_10C_DEFINITION.md) · [PRD](MBPRD-P2-I10C_JOURNAL.md) · [acceptance](MBAT-P2-I10C_ACCEPTANCE.md). Drafts IN; one Entry date + optional time; All entries only; HVRT ingest OUT. `prove-i10c`. Do not reopen. |
-| **P2-I11** | Narrative & Summaries | E+A | Definition **LOCKED** 2026-08-24 (final evidence-prep) · **do not build** until authorization — [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). Pack then model; claim-specific trust; hierarchical volume IN; fail closed if model down. Save View UI is **I13**. |
+| **P2-I11** | Narrative & Summaries | E+A | **BUILD AUTHORIZED** 2026-08-24 — [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md). Pack then model; claim-specific trust; hierarchical volume IN; fail closed if model down. Save View UI is **I13**. |
+| **P2-I11A** | Generalized Evidence Inference | A | **BUILD AUTHORIZED** 2026-08-25 · not FlightSim ACCEPTED — [PRD](MBPRD-P2-I11A_INFERENCE.md) · [acceptance](MBAT-P2-I11A_ACCEPTANCE.md). Gate for I11B: (1) compaction/extract (2) Peggy/Person retrieve (3) Ask-relative quality. |
+| **P2-I11B** | Historian Learning / Curator Feedback | U+A | Planning **only** · UX **locked v0.3** · **BUILD NOT AUTHORIZED** — [PRD](MBPRD-P2-I11B_HISTORIAN_LEARNING.md) · [definition](MBBS-P2_INCREMENT_11B_DEFINITION.md). After I11A items 1–3. |
 | **P2-I12** | External Historical Context | E | EVS-254–256 only |
 | **P2-I13** | Dynamic Views | U | |
 | **P2-I14** | Settings & Processing Controls | U | No confidence dials |
@@ -118,7 +120,7 @@ I1 Show me Peggy
  → I2 Shell → I3 Archive Health (+004) → I4 Timeline explore
  → I5 Universal Person → I6 Kinship
  → I7 SMS → I7A Model Trace → MBQL-001 → I8 Email → I8A Unified Comms Gallery & Timeline → I9 Spoken → I10 Correlate
- → I11 Narrative → I12 External history → I13 Views
+ → I11 Narrative → I11A Inference → I11B Historian learning (not authorized) → I12 External history → I13 Views
  → I14 Settings → I15 Campaigns → I16 Trust → I17 Portability
  → Face-SoT (I8.5) later, after recognition/correction/merge/relearn are solid
  → Late multi-user / tone
@@ -218,6 +220,14 @@ HVRT→MB Artifacts conversion. [definition](MBBS-P2_INCREMENT_10B_DEFINITION.md
 ### P2-I11 — Narrative & Summaries · E+A
 
 P2-NAR-01..03. Narrative Evidence Preparation then LLM `tell`. **BUILD AUTHORIZED** 2026-08-24. Travel = original `communication` **and** derived `travel` when extraction is reliable (never replace). Relative language = generalized semantic resolver. Hierarchical volume IN. Fail closed if model down. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md) · [PRD](MBPRD-P2-I11_NARRATION.md).
+
+### P2-I11A — Generalized Evidence Inference · A
+
+Step A inference + Observation IR + Ask-relative. **BUILD AUTHORIZED** 2026-08-25. Not founder ACCEPTED. Stabilization items before I11B: communication compaction/extract, Peggy/Person cross-source retrieve (address-centric email in flight), Ask-relative selection. [PRD](MBPRD-P2-I11A_INFERENCE.md) · [acceptance](MBAT-P2-I11A_ACCEPTANCE.md). Prove: `python -m memorybox prove-i11a`.
+
+### P2-I11B — Historian Learning Layer & Curator Feedback · U+A
+
+UX locked v0.3. **BUILD NOT AUTHORIZED.** Compact Curator 4–5 lines; overlays for full response / needs work / approve. Feedback never mutates evidence. [PRD](MBPRD-P2-I11B_HISTORIAN_LEARNING.md) · [definition](MBBS-P2_INCREMENT_11B_DEFINITION.md). Do not implement until Tom authorizes after I11A items 1–3, or explicitly parallelizes UI-only.
 
 ### P2-I12 — External Historical Context · E
 

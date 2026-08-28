@@ -1,6 +1,6 @@
 # PRD — Address-centric communication identity (Peggy / peggo417)
 
-**Branch:** `cursor/p2-i11a-address-centric-email-49da`  
+**Branch:** `cursor/p2-i11a-stabilize-a3b9`  
 **Stop:** Gallery + Full-Evidence V2 with Peggy emails via address identity. No historian summarization.
 
 ## Governing rule
