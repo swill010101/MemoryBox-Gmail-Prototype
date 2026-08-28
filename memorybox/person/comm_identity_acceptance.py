@@ -364,6 +364,53 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=noise_dec,
     )
 
+    # Bare From + people[]=["Peg Legg"] (Hotmail/Takeout shape)
+    bare_payload = {
+        "from": "peggo417@hotmail.com",
+        "from_parsed": [
+            {"display_name": "", "address": "peggo417@hotmail.com", "normalized": "peggo417@hotmail.com"}
+        ],
+        "to": ["Tom Will <swill01@gmail.com>"],
+        "to_parsed": [
+            {
+                "display_name": "Tom Will",
+                "address": "swill01@gmail.com",
+                "normalized": "swill01@gmail.com",
+            }
+        ],
+        "cc": [],
+        "bcc": [],
+        "people": ["Peg Legg", "Tom Will"],
+        "body_text": "hi",
+    }
+    bare_recs = _header_records(bare_payload)
+    peg_from = [
+        r
+        for r in bare_recs
+        if r.get("address") == "peggo417@hotmail.com"
+        and (r.get("display_name") or "").lower() == "peg legg"
+    ]
+    tom_not_legg = [
+        r
+        for r in bare_recs
+        if r.get("address") == "swill01@gmail.com"
+        and (r.get("display_name") or "").lower() == "peg legg"
+    ]
+    _check(
+        "bare_from_people_fills_peg_legg_display",
+        bool(peg_from),
+        checks,
+        problems,
+        detail=bare_recs,
+    )
+    _check(
+        "bare_from_people_does_not_paint_to_address",
+        not tom_not_legg,
+        checks,
+        problems,
+        detail=bare_recs,
+    )
+
     # Quoted-body header extraction (lower confidence; not identity alone)
     body = (
         "Thanks!\n\n"

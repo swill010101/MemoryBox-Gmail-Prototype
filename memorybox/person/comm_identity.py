@@ -249,6 +249,33 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                         "header_field": field,
                     }
                 )
+    # Hotmail/Takeout often stores bare From + people[]=["Peg Legg", ...].
+    # Fill empty From display_name from multi-token people[] only (never To/CC/BCC)
+    # so we do not paint Peg Legg onto other participants on the same message.
+    people_names = [
+        str(p).strip()
+        for p in (payload.get("people") or [])
+        if isinstance(p, str) and " " in str(p).strip()
+    ]
+    if people_names:
+        for rec in out:
+            if rec.get("header_field") != "from":
+                continue
+            if (rec.get("display_name") or "").strip():
+                continue
+            # Prefer a people[] name that isn't obviously another participant's
+            # already-known display on this message.
+            other_dns = {
+                _norm_name(r.get("display_name"))
+                for r in out
+                if r is not rec and (r.get("display_name") or "").strip()
+            }
+            for pname in people_names:
+                if _norm_name(pname) in other_dns:
+                    continue
+                rec["display_name"] = pname
+                rec["header_field"] = "from_people"
+                break
     # Dedupe
     seen: set[tuple[str, str, str]] = set()
     uniq: list[dict[str, str]] = []
@@ -1470,10 +1497,28 @@ def diagnose_email_retrieve_gap(
     if not ids:
         out["likely_blocker"] = "no_person_ids_on_plan"
     elif not out["confirmed_emails"]:
-        out["likely_blocker"] = (
-            "no_confirmed_email_on_people — address discovery/resolve did not attach; "
-            "run probe-email-address --address <addr> and check structured display names"
-        )
+        # Surface nickname fail-closed reasons from address-centric resolve when present.
+        nick_rejects: list[str] = []
+        for rep in ((out.get("expand_preview") or {}).get("address_centric_resolve") or []):
+            if not isinstance(rep, dict):
+                continue
+            for entry in rep.get("rejected") or []:
+                dec = (entry.get("decision") if isinstance(entry, dict) else None) or {}
+                reason = str(dec.get("reason") or "")
+                if "nickname" in reason:
+                    nick_rejects.append(reason)
+        if nick_rejects:
+            out["likely_blocker"] = (
+                "nickname_attach_fail_closed — "
+                + nick_rejects[0]
+                + "; need same-address full/alias observation, seeded Peg Legg alias, "
+                "or --repair-address <addr>"
+            )
+        else:
+            out["likely_blocker"] = (
+                "no_confirmed_email_on_people — address discovery/resolve did not attach; "
+                "run probe-email-address --address <addr> and check structured display names"
+            )
     elif out["confirmed_emails"] and rows == 0 and hint:
         out["likely_blocker"] = (
             f"people_has_{hint}_but_not_in_ingested_headers — confirm the "

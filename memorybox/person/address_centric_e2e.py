@@ -466,6 +466,29 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         gate_path = out / "ADDRESS_CENTRIC_GATE.json"
         gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")
         gate["path"] = str(gate_path)
+        if problems:
+            fail_path = out / "ADDRESS_CENTRIC_FAILURE_DIAG.json"
+            fail_doc = {
+                "ok": False,
+                "problems": problems,
+                "inventory": inv,
+                "resolve": resolve,
+                "repair": repair_info,
+                "person": {
+                    "id": getattr(ask_peggy, "id", None),
+                    "display_name": getattr(ask_peggy, "display_name", None),
+                    "addresses": sorted(addrs),
+                },
+                "counts": gate.get("counts"),
+                "flightsim": bool(flightsim),
+                "hint": (
+                    "If nickname_needs_same_address_full_name_or_alias: run "
+                    "historian-full-evidence-benchmark --repair-address peggo417@hotmail.com "
+                    "or rely on e2e auto-repair when structured headers exist."
+                ),
+            }
+            fail_path.write_text(json.dumps(fail_doc, indent=2, default=str), encoding="utf-8")
+            gate["failure_diag_path"] = str(fail_path)
     except Exception as exc:  # noqa: BLE001
         gate["path_error"] = str(exc)
 
