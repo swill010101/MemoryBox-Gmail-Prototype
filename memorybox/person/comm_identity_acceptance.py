@@ -263,12 +263,20 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
 
     # Nickname header Peg Legg + peggo417 → Peggy George when unique multi-token Person
+    # AND same-address full-name observation (quoted Peggy George on FlightSim).
     nick_cand = {
         "address": "peggo417@hotmail.com",
         "display_names": {"Peg Legg": 4},
         "occurrences": 4,
         "evidence_ids": ["e10", "e11"],
         "header_fields": ["from"],
+        "inventory": {
+            "quoted_body_headers_only": {
+                "distinct_display_names": [
+                    {"display_name": "Peggy George", "count": 2}
+                ]
+            }
+        },
     }
     with patch(
         "memorybox.person.comm_identity._address_claimed_by", return_value=[]
@@ -307,6 +315,53 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=nick_dec,
+    )
+
+    # Unrelated "Peg *" mailbox must NOT attach via nickname_full alone.
+    noise_cand = {
+        "address": "noise99@example.com",
+        "display_names": {"Peg Noise99": 12},
+        "occurrences": 12,
+        "evidence_ids": ["n1"],
+        "header_fields": ["from"],
+        "inventory": {
+            "structured_header": {
+                "distinct_display_names": [
+                    {"display_name": "Peg Noise99", "count": 12}
+                ]
+            }
+        },
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity.connection"
+    ) as conn_ctx:
+        conn = conn_ctx.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.side_effect = [
+            [
+                {"id": "person-peggy-stub", "display_name": "Peggy"},
+                {"id": "person-peggy-george", "display_name": "Peggy George"},
+            ],
+            [{"id": "person-peggy-george", "display_name": "Peg Noise99"}],
+        ]
+        noise_dec = corroborate_email_candidate("person-peggy-george", noise_cand)
+    _check(
+        "unrelated_peg_noise_mailbox_rejected",
+        not noise_dec.get("accepted")
+        and noise_dec.get("reason") == "nickname_needs_same_address_full_name_or_alias",
+        checks,
+        problems,
+        detail=noise_dec,
     )
 
     # Quoted-body header extraction (lower confidence; not identity alone)
@@ -475,8 +530,16 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             detail=found,
         )
         if peg_addrs:
+            peg_cand = dict(peg_addrs[0])
+            peg_cand["inventory"] = {
+                "quoted_body_headers_only": {
+                    "distinct_display_names": [
+                        {"display_name": "Peggy George", "count": 1}
+                    ]
+                }
+            }
             dec = corroborate_email_candidate(
-                "person-peggy-george", peg_addrs[0], known_forms=["peggy george"]
+                "person-peggy-george", peg_cand, known_forms=["peggy george"]
             )
             _check(
                 "resolve_accepts_peggo417_for_peggy_george",
@@ -628,7 +691,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
                 "occurrence_count": 2,
                 "has_peggy_george": True,
                 "has_peg_legg": False,
-                "distinct_display_names": [],
+                "distinct_display_names": [
+                    {
+                        "normalized_display": "peggy george",
+                        "display_name": "Peggy George",
+                        "count": 2,
+                    }
+                ],
             },
         },
     ), patch(

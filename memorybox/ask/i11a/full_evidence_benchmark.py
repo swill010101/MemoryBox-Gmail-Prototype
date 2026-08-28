@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from collections import defaultdict
@@ -681,18 +682,64 @@ def run_historian_full_evidence_benchmark(
     )
     structured = (peggo_inv or {}).get("structured_header") or {}
     quoted = (peggo_inv or {}).get("quoted_body_headers_only") or {}
+
+    # Gallery uses the same search_email_messages path as Ask — assert email > 0
+    # so the gate covers the full objective (Gallery + Full-Evidence V2).
+    gallery_email_n = 0
+    gallery_match_total = 0
+    gallery_error: str | None = None
+    try:
+        from memorybox.explore.find import _attach_visible_email
+
+        gallery_plan = {
+            "person_names": list(getattr(plan, "person_names", ()) or ()) if plan else focal_names,
+            "person_ids": list(getattr(plan, "person_ids", ()) or ()) if plan else [
+                str(f.get("person_id") or "")
+                for f in focals
+                if isinstance(f, dict) and f.get("person_id")
+            ],
+            "original_ask": ask_text,
+            "effective_ask": ask_text,
+            "notes": list(getattr(plan, "notes", ()) or ()) if plan else ["complete_comm_retrieve"],
+            "gallery_show_email": True,
+        }
+        _items, gallery_email_n, gallery_match_total = _attach_visible_email(
+            [],
+            {"plan": gallery_plan, "evidence_hits": []},
+            ask_text=ask_text,
+            show_email=True,
+        )
+        gallery_email_n = int(gallery_email_n or 0)
+        gallery_match_total = int(gallery_match_total or 0)
+    except Exception as exc:  # noqa: BLE001
+        gallery_error = str(exc)
+
+    gallery_ok = gallery_email_n > 0 or gallery_match_total > 0
+    # When replaying --from-dir without a live plan, Gallery may be unavailable;
+    # require Gallery only on live retrieve paths (plan present).
+    require_gallery = plan is not None and from_dir is None
     gate = {
         "gate": "address_centric_email_identity",
         "stop": "gallery_and_full_evidence_v2 — no historian summarization",
-        "ok": bool(email_n > 0 and confirmed and any(" " in n for n in focal_names)),
+        "ok": bool(
+            email_n > 0
+            and confirmed
+            and any(" " in n for n in focal_names)
+            and (gallery_ok if require_gallery else True)
+        ),
         "requirements": {
             "full_evidence_email_gt_0": email_n > 0,
+            "gallery_email_gt_0": gallery_ok if require_gallery else None,
             "person_has_confirmed_email": bool(confirmed),
             "person_is_multi_token": any(" " in n for n in focal_names),
             "identity_closure_ok": bool((identity_diag or {}).get("identity_closure_ok")),
+            "peggo417_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
         },
         "by_source_email": email_src,
         "email_retrieved_item_count": email_n,
+        "gallery_email_n": gallery_email_n,
+        "gallery_match_total": gallery_match_total,
+        "gallery_error": gallery_error,
         "focal_display_names": focal_names,
         "confirmed_emails": confirmed,
         "peggo417_inventory": {
@@ -705,6 +752,7 @@ def run_historian_full_evidence_benchmark(
             "quoted_names": quoted.get("distinct_display_names"),
         },
         "likely_blocker": (identity_diag or {}).get("likely_blocker"),
+        "flightsim": bool(os.environ.get("MEMORYBOX_P1_RUNTIME_HOST")),
     }
     gate_path = out / "ADDRESS_CENTRIC_GATE.json"
     gate_path.write_text(

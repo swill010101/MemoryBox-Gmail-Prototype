@@ -758,6 +758,7 @@ def resolve_and_attach_addresses_for_person(
         addr = str(cand.get("address") or "")
         inv = inventory_email_address(addr, include_quoted_body=True)
         cand = _enrich_candidate_from_inventory(cand, inv, forms)
+        cand["inventory"] = inv
         ledger = upsert_communication_identity_from_inventory(
             inv, resolution_status="observed"
         )

@@ -23,6 +23,11 @@ def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detai
 
 
 def _seed_local_fixture() -> dict[str, Any]:
+    """FlightSim-shaped local archive: Immich stub + Peg Legg mail + %peg% noise.
+
+    No confirmed email contacts beforehand. Noise rows match the broad nickname
+    prefilter so Pass-1 structured discover must still find peggo417.
+    """
     from memorybox.db import connection
     from memorybox.person import resolve_person_by_name
 
@@ -47,6 +52,7 @@ def _seed_local_fixture() -> dict[str, Any]:
             "DELETE FROM people WHERE display_name IN ('Peggy George','Peggy','Peg Legg')"
         )
 
+    # Immich-style single-token stub (must not win Ask over Peggy George).
     resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
     peggy = resolve_person_by_name("Peggy George", create_if_missing=True, confirm=True)
 
@@ -80,6 +86,7 @@ def _seed_local_fixture() -> dict[str, Any]:
         "sent_at": "2019-06-15T12:00:00Z",
         "person_ids": [],
     }
+    noise_n = 0
     with connection() as conn:
         for i, sent in enumerate(("2019-06-15T12:00:00Z", "2019-07-01T12:00:00Z"), start=1):
             eid = uuid.UUID(f"eeeeeeee-0000-0000-0000-00000000000{i}")
@@ -95,7 +102,53 @@ def _seed_local_fixture() -> dict[str, Any]:
                 """,
                 (eid, p["subject"], json.dumps(p)),
             )
-    return {"person_id": peggy.person_id, "display_name": peggy.display_name, "seeded": 2}
+        # Broad "%peg %" noise (no peggo417) — old single-pass LIMIT could starve.
+        for i in range(3, 83):
+            eid = uuid.UUID(f"eeeeeeee-0000-0000-0000-{i:012d}")
+            noise = {
+                "evidence_channel": "email",
+                "from": f"Peg Noise{i} <noise{i}@example.com>",
+                "to": ["Tom Will <swill01@gmail.com>"],
+                "cc": [],
+                "bcc": [],
+                "from_parsed": [
+                    {
+                        "display_name": f"Peg Noise{i}",
+                        "address": f"noise{i}@example.com",
+                        "normalized": f"noise{i}@example.com",
+                    }
+                ],
+                "to_parsed": [
+                    {
+                        "display_name": "Tom Will",
+                        "address": "swill01@gmail.com",
+                        "normalized": "swill01@gmail.com",
+                    }
+                ],
+                "cc_parsed": [],
+                "people": [f"Peg Noise{i}", "Tom Will"],
+                "subject": f"Noise peg {i}",
+                "body_text": f"unrelated peg mention {i}",
+                "sent_at": "2018-01-01T12:00:00Z",
+                "person_ids": [],
+            }
+            conn.execute(
+                """
+                INSERT INTO evidence (id, evidence_kind, summary, payload_json)
+                VALUES (%s, 'communication', %s, %s::jsonb)
+                ON CONFLICT (id) DO UPDATE
+                  SET payload_json = EXCLUDED.payload_json, updated_at = now()
+                """,
+                (eid, noise["subject"], json.dumps(noise)),
+            )
+            noise_n += 1
+    return {
+        "person_id": peggy.person_id,
+        "display_name": peggy.display_name,
+        "seeded": 2,
+        "noise_emails": noise_n,
+        "immich_stub": "Peggy",
+    }
 
 
 def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str, Any]:

@@ -558,6 +558,47 @@ def corroborate_email_candidate(
         if not any(" " in f for f in forms):
             result["reason"] = "person_lacks_multi_token_name_for_nickname"
             return result
+        # Fail closed: nickname first-token alone must not attach every
+        # "Peg *" mailbox. Require same-address full/alias observation
+        # (structured or quoted), or the nickname already seeded as alias.
+        same_addr_full = False
+        for dn, _n in display_names.items():
+            s = _display_matches_person(str(dn), forms)
+            if s in {"full", "alias_full"}:
+                same_addr_full = True
+                result["corroboration"].append(f"same_address_full:{dn}")
+                break
+        inv = candidate.get("inventory") if isinstance(candidate.get("inventory"), dict) else {}
+        if not same_addr_full and inv:
+            for section in ("structured_header", "quoted_body_headers_only"):
+                block = inv.get(section) or {}
+                for slot in block.get("distinct_display_names") or []:
+                    if not isinstance(slot, dict):
+                        continue
+                    dn = str(slot.get("display_name") or "")
+                    s = _display_matches_person(dn, forms)
+                    if s in {"full", "alias_full"}:
+                        same_addr_full = True
+                        result["corroboration"].append(
+                            f"same_address_{section}_full:{dn}"
+                        )
+                        break
+                if same_addr_full:
+                    break
+        alias_forms = {
+            _norm_name(a)
+            for a in (snap.get("aliases") or [])
+            if isinstance(a, str)
+        }
+        # known_name_forms may already include seeded Peg Legg alias
+        nick_is_known_alias = _norm_name(best_dn or "") in {
+            f for f in forms if f != _norm_name(snap.get("display_name") or "")
+        } or _norm_name(best_dn or "") in alias_forms
+        if nick_is_known_alias:
+            result["corroboration"].append(f"nickname_is_known_alias:{best_dn}")
+        if not same_addr_full and not nick_is_known_alias:
+            result["reason"] = "nickname_needs_same_address_full_name_or_alias"
+            return result
     elif len(siblings) > 1 and best_strength not in {"full", "alias_full"}:
         result["reason"] = "ambiguous_first_name_among_people"
         result["ambiguous_person_ids"] = siblings
