@@ -262,6 +262,28 @@ def main(argv: list[str] | None = None) -> int:
             "if any — no hardcoded address)"
         ),
     )
+    p_probe_addr = sub.add_parser(
+        "probe-email-address",
+        help=(
+            "Archive-wide inventory of display names for one email address "
+            "(structured headers vs quoted-body headers)"
+        ),
+    )
+    p_probe_addr.add_argument(
+        "--address",
+        required=True,
+        help="Email address to inventory (e.g. peggo417@hotmail.com)",
+    )
+    p_probe_addr.add_argument(
+        "--person-id",
+        default=None,
+        help="Optional: resolve/attach this address onto the Person after inventory",
+    )
+    p_probe_addr.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
     p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
@@ -945,6 +967,7 @@ def main(argv: list[str] | None = None) -> int:
             explain_address_for_person,
             person_identity_snapshot,
         )
+        from memorybox.person.comm_address_index import inventory_email_address
 
         snap = person_identity_snapshot(args.person_id)
         addr = getattr(args, "address", None)
@@ -960,20 +983,58 @@ def main(argv: list[str] | None = None) -> int:
                 "ok": False,
                 "error": (
                     "No --address and Person has no confirmed email contact. "
-                    "Add the email on People Contacts, or pass --address."
+                    "Add the email on People Contacts, or pass --address "
+                    "(e.g. peggo417@hotmail.com)."
                 ),
                 "snapshot": snap,
             }
             print(json.dumps(payload, indent=2, default=str))
             return 1
         explained = explain_address_for_person(args.person_id, addr)
+        inventory = inventory_email_address(addr, include_quoted_body=True)
         payload = {
             "ok": True,
             "snapshot": snap,
             "address_explanation": explained,
+            "address_inventory": inventory,
         }
         print(json.dumps(payload, indent=2, default=str))
         return 0
+
+    if args.cmd == "probe-email-address":
+        from memorybox.person.comm_address_index import (
+            inventory_email_address,
+            resolve_and_attach_addresses_for_person,
+            upsert_communication_identity_from_inventory,
+        )
+
+        if getattr(args, "flightsim", False):
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        inv = inventory_email_address(args.address, include_quoted_body=True)
+        upsert = upsert_communication_identity_from_inventory(inv)
+        attach = None
+        if getattr(args, "person_id", None):
+            attach = resolve_and_attach_addresses_for_person(
+                args.person_id, persist=True, backfill=True
+            )
+            # Also operator-style: if inventory found address and person given,
+            # ensure ledger points at person when structured headers exist.
+            if inv.get("ok") and int(
+                (inv.get("structured_header") or {}).get("occurrence_count") or 0
+            ) > 0:
+                upsert = upsert_communication_identity_from_inventory(
+                    inv,
+                    resolved_person_id=args.person_id,
+                    resolution_status="candidate",
+                )
+        payload = {
+            "ok": bool(inv.get("ok")),
+            "inventory": inv,
+            "ledger_upsert": upsert,
+            "person_resolve": attach,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "rebuild-comms-index":
         from memorybox.ingest.rebuild_index import rebuild_comms_index

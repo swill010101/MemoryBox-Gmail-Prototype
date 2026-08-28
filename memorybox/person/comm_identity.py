@@ -847,11 +847,31 @@ def expand_person_communication_identities(
 
 
 def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, Any]:
-    """Ask/Gallery hook: expand identities then return confirmed email set."""
+    """Ask/Gallery hook: address-centric identity then confirmed email set.
+
+    Resolves archive addresses from Person name/alias forms first (does not
+    require an existing Person email contact), then returns confirmed emails.
+    """
     ids = [str(p) for p in person_ids if str(p).strip()]
+    address_reports: list[dict[str, Any]] = []
+    for pid in ids:
+        try:
+            from memorybox.person.comm_address_index import (
+                resolve_and_attach_addresses_for_person,
+            )
+
+            address_reports.append(
+                resolve_and_attach_addresses_for_person(
+                    pid, persist=True, backfill=True, inventory_attached=True
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            address_reports.append({"person_id": pid, "error": str(exc)})
+
     expansion = expand_person_communication_identities(
         ids, persist=True, backfill=True, discover=True
     )
+    expansion["address_centric_resolve"] = address_reports
     addrs: set[str] = set()
     for _pid, emails in (expansion.get("emails_by_person") or {}).items():
         for e in emails:
@@ -873,6 +893,25 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
             ).fetchall()
             for r in rows:
                 n = normalize_handle(str(r.get("value_text") or ""))
+                if n and "@" in n:
+                    addrs.add(n)
+    except Exception:  # noqa: BLE001
+        pass
+    # Also pull confirmed communication_identities for these people.
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT address_normalized
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND resolution_status = 'confirmed'
+                  AND resolved_person_id::text = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+            for r in rows:
+                n = normalize_handle(str(r.get("address_normalized") or ""))
                 if n and "@" in n:
                     addrs.add(n)
     except Exception:  # noqa: BLE001

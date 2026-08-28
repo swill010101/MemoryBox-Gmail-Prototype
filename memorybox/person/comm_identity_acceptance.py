@@ -9,6 +9,7 @@ from memorybox.ask.retrieve import (
     _person_scoped_comm_where,
     _sql_confirmed_email_addrs,
 )
+from memorybox.person.comm_address_index import _quoted_body_address_displays
 from memorybox.person.comm_identity import (
     _display_matches_person,
     attach_known_email_if_corroborated,
@@ -306,6 +307,51 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=nick_dec,
+    )
+
+    # Quoted-body header extraction (lower confidence; not identity alone)
+    body = (
+        "Thanks!\n\n"
+        "-----Original Message-----\n"
+        "From: Peg Legg <peggo417@hotmail.com>\n"
+        "Cc: Peggy George <peggo417@hotmail.com>\n"
+        "Subject: hi\n"
+    )
+    qhits = _quoted_body_address_displays(body, "peggo417@hotmail.com")
+    q_names = {_norm for _norm in (
+        (h.get("display_name") or "").strip().lower() for h in qhits
+    )}
+    _check(
+        "quoted_body_finds_peg_legg",
+        any("peg legg" == (h.get("display_name") or "").strip().lower() for h in qhits),
+        checks,
+        problems,
+        detail=qhits,
+    )
+    _check(
+        "quoted_body_finds_peggy_george",
+        any(
+            "peggy george" == (h.get("display_name") or "").strip().lower() for h in qhits
+        ),
+        checks,
+        problems,
+        detail=qhits,
+    )
+    retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
+    _check(
+        "retrieve_has_no_peggo_hardcode",
+        "peggo417" not in retrieve_src and "peggo01417" not in retrieve_src,
+        checks,
+        problems,
+    )
+    from memorybox.person import comm_identity as ci
+
+    _check(
+        "expand_hook_is_address_centric",
+        "address-centric" in (ci.expand_emails_for_retrieve.__doc__ or "").lower(),
+        checks,
+        problems,
+        detail=ci.expand_emails_for_retrieve.__doc__,
     )
 
     # Confirmed People emails: reuse + still discover additional header identities
