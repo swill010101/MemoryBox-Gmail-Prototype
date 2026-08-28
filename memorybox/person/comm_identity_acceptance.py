@@ -510,6 +510,165 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
                 detail=keep_addrs,
             )
 
+    # Ledger-first discover: probe inventory already stored peggo417 + Peg Legg
+    from memorybox.person.comm_address_index import (
+        find_ledger_addresses_for_person_forms,
+        resolve_and_attach_addresses_for_person,
+    )
+
+    class _LedgerConn:
+        def execute(self, sql, params=None):
+            s = str(sql).lower()
+            if "from communication_identities" in s and "observed_display_names" in s:
+
+                class _R:
+                    def fetchall(self_inner):
+                        return [
+                            {
+                                "address_normalized": "peggo417@hotmail.com",
+                                "observed_display_names": {
+                                    "peg legg": {
+                                        "display_name": "Peg Legg",
+                                        "header_count": 5,
+                                        "quoted_body_count": 0,
+                                        "header_fields": ["from"],
+                                    },
+                                    "peggy george": {
+                                        "display_name": "Peggy George",
+                                        "header_count": 0,
+                                        "quoted_body_count": 2,
+                                        "header_fields": ["quoted_cc"],
+                                    },
+                                },
+                                "header_occurrence_count": 5,
+                                "quoted_body_occurrence_count": 2,
+                                "evidence_ids_sample": ["ev-1"],
+                                "resolution_status": "observed",
+                                "resolved_person_id": None,
+                            }
+                        ]
+
+                return _R()
+            if "like any" in s:
+                class _Empty:
+                    def fetchall(self_inner):
+                        return []
+
+                return _Empty()
+            if "split_part" in s:
+                class _Sib:
+                    def fetchall(self_inner):
+                        return [
+                            {"id": "person-peggy-stub", "display_name": "Peggy"},
+                            {
+                                "id": "person-peggy-george",
+                                "display_name": "Peggy George",
+                            },
+                        ]
+
+                return _Sib()
+            if "lower(display_name)" in s:
+                class _Full:
+                    def fetchall(self_inner):
+                        return [
+                            {
+                                "id": "person-peggy-george",
+                                "display_name": "Peggy George",
+                            }
+                        ]
+
+                return _Full()
+
+            class _Empty2:
+                def fetchall(self_inner):
+                    return []
+
+                def fetchone(self_inner):
+                    return None
+
+            return _Empty2()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_address_index.connection", return_value=_LedgerConn()
+    ), patch(
+        "memorybox.person.comm_identity.connection", return_value=_LedgerConn()
+    ), patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_address_index.inventory_email_address",
+        return_value={
+            "ok": True,
+            "address": "peggo417@hotmail.com",
+            "rows_scanned": 5,
+            "structured_header": {
+                "occurrence_count": 5,
+                "has_peggy_george": False,
+                "has_peg_legg": True,
+                "distinct_display_names": [
+                    {"normalized_display": "peg legg", "display_name": "Peg Legg", "count": 5}
+                ],
+                "evidence_ids_sample": ["ev-1"],
+            },
+            "quoted_body_headers_only": {
+                "occurrence_count": 2,
+                "has_peggy_george": True,
+                "has_peg_legg": False,
+                "distinct_display_names": [],
+            },
+        },
+    ), patch(
+        "memorybox.person.comm_address_index.upsert_communication_identity_from_inventory",
+        return_value={"upserted": True, "address": "peggo417@hotmail.com"},
+    ), patch(
+        "memorybox.person.comm_identity.ensure_confirmed_email_contact",
+        return_value={"upserted": True},
+    ), patch(
+        "memorybox.person.comm_identity._seed_header_display_aliases",
+        return_value=[],
+    ), patch(
+        "memorybox.person.comm_identity.backfill_email_person_ids",
+        return_value={"updated": 5},
+    ), patch(
+        "memorybox.person.comm_address_index.find_addresses_for_person_forms",
+        return_value=[],
+    ):
+        ledger_hits = find_ledger_addresses_for_person_forms(["peggy george"])
+        _check(
+            "ledger_discover_finds_peggo417_via_peg_legg",
+            any(c.get("address") == "peggo417@hotmail.com" for c in ledger_hits),
+            checks,
+            problems,
+            detail=ledger_hits,
+        )
+        resolve_report = resolve_and_attach_addresses_for_person(
+            "person-peggy-george", persist=True, backfill=True
+        )
+        _check(
+            "ledger_resolve_attaches_peggo417_to_peggy_george",
+            any(
+                (e.get("candidate") or {}).get("address") == "peggo417@hotmail.com"
+                for e in (resolve_report.get("accepted") or [])
+            ),
+            checks,
+            problems,
+            detail=resolve_report,
+        )
+
     # Confirmed People emails: reuse + still discover additional header identities
     with patch(
         "memorybox.person.comm_identity.person_identity_snapshot",

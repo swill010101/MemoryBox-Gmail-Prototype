@@ -26,8 +26,12 @@ git pull origin cursor/p2-i11a-address-centric-email-49da
 python -m memorybox migrate
 python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
 
-python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
+python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json --repair-address peggo417@hotmail.com
 ```
+
+`probe-email-address` fills the address ledger (Peg Legg / Peggy George observations).
+Full-evidence then resolves ledger → Person → all mail. `--repair-address` is
+operator attestation if auto-resolve is still empty.
 
 Paste probe JSON + V2 `by_source.email`. **Stop** after V2 — no historian summarization.
 

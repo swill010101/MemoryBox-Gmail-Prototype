@@ -390,14 +390,21 @@ def discover_email_candidates_from_archive(
         for rec in _header_records(payload):
             strength = _display_matches_person(rec["display_name"], forms)
             if not strength:
-                # Same-message people[] may carry the full display name while the
+                # Same-message people[] may carry Peg Legg / Peggy George while the
                 # address row itself only has a short/empty display_name.
-                people_blob = " ".join(str(p) for p in (payload.get("people") or []))
-                if _display_matches_person(people_blob, forms) or any(
-                    _display_matches_person(str(p), forms) for p in (payload.get("people") or [])
-                ):
-                    # Only accept if this address's raw header text also mentions
-                    # a known full name form (avoid body/people bleed onto others).
+                people_vals = [str(p) for p in (payload.get("people") or [])]
+                people_strength = None
+                for p in people_vals:
+                    s = _display_matches_person(p, forms)
+                    if s in {"full", "alias_full", "nickname_full"}:
+                        people_strength = s
+                        break
+                if people_strength:
+                    # Accept people[] nickname/full when this address appears in
+                    # the same message headers (already true: we are iterating
+                    # this address's header record). Prefer raw-header corroboration
+                    # when present, but do not discard nickname_full solely because
+                    # "peggy george" is absent from raw From/To/CC.
                     raw_bits = " ".join(
                         [
                             str(payload.get("from") or ""),
@@ -405,10 +412,14 @@ def discover_email_candidates_from_archive(
                             str((payload.get("cc") or "")),
                             str((payload.get("bcc") or "")),
                             rec.get("display_name") or "",
+                            " ".join(people_vals),
                         ]
                     ).lower()
-                    if any(f in raw_bits for f in forms if " " in f):
-                        strength = "full"
+                    if any(f in raw_bits for f in forms if " " in f) or any(
+                        " " in (p or "") and _display_matches_person(p, forms)
+                        for p in people_vals
+                    ):
+                        strength = people_strength
                     else:
                         strength = None
             if not strength:

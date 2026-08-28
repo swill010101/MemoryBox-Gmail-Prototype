@@ -323,6 +323,112 @@ def upsert_communication_identity_from_inventory(
     }
 
 
+def find_ledger_addresses_for_person_forms(
+    known_forms: list[str],
+) -> list[dict[str, Any]]:
+    """Discover addresses already on the communication_identities ledger.
+
+    After ``probe-email-address``, the ledger holds address → observed display
+    names without requiring a Person contact. Matching those observations to
+    Person forms (including nickname Peg Legg ↔ Peggy George) closes the
+    discover→resolve loop without depending on a name-prefilter LIMIT scan.
+    """
+    from memorybox.person.comm_identity import _display_matches_person
+
+    forms = [f for f in (known_forms or []) if f]
+    if not forms:
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        with connection() as conn:
+            rows = list(
+                conn.execute(
+                    """
+                    SELECT address_normalized, observed_display_names,
+                           header_occurrence_count, quoted_body_occurrence_count,
+                           evidence_ids_sample, resolution_status, resolved_person_id
+                    FROM communication_identities
+                    WHERE identity_kind = 'email'
+                      AND header_occurrence_count > 0
+                    ORDER BY header_occurrence_count DESC
+                    LIMIT 5000
+                    """
+                ).fetchall()
+            )
+    except Exception:  # noqa: BLE001
+        return []
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        addr = normalize_handle(str(r.get("address_normalized") or ""))
+        if not addr or "@" not in addr:
+            continue
+        raw_obs = r.get("observed_display_names") or {}
+        if isinstance(raw_obs, str):
+            try:
+                raw_obs = json.loads(raw_obs)
+            except Exception:  # noqa: BLE001
+                raw_obs = {}
+        if not isinstance(raw_obs, dict):
+            continue
+        display_names: dict[str, int] = {}
+        match_strengths: dict[str, str] = {}
+        header_fields: set[str] = set()
+        for _key, slot in raw_obs.items():
+            if not isinstance(slot, dict):
+                continue
+            dn = str(slot.get("display_name") or _key or "").strip()
+            if not dn or dn.startswith("("):
+                continue
+            strength = _display_matches_person(dn, forms)
+            if not strength:
+                continue
+            # Prefer structured header observations over quoted-body-only.
+            header_n = int(slot.get("header_count") or 0)
+            quoted_n = int(slot.get("quoted_body_count") or 0)
+            if header_n <= 0 and quoted_n > 0:
+                # Quoted-only: keep as weak observation for inventory, not auto-attach.
+                continue
+            if header_n <= 0:
+                continue
+            display_names[dn] = display_names.get(dn, 0) + header_n
+            match_strengths[dn] = strength
+            for f in slot.get("header_fields") or []:
+                if f and not str(f).startswith("quoted_"):
+                    header_fields.add(str(f))
+        if not display_names:
+            continue
+        evidence = r.get("evidence_ids_sample") or []
+        if isinstance(evidence, str):
+            try:
+                evidence = json.loads(evidence)
+            except Exception:  # noqa: BLE001
+                evidence = []
+        out.append(
+            {
+                "address": addr,
+                "display_names": display_names,
+                "match_strengths": match_strengths,
+                "evidence_ids": list(evidence)[:24] if isinstance(evidence, list) else [],
+                "header_fields": sorted(header_fields),
+                "occurrences": max(
+                    int(r.get("header_occurrence_count") or 0),
+                    sum(display_names.values()),
+                ),
+                "match_strength": (
+                    "full"
+                    if "full" in match_strengths.values()
+                    or "alias_full" in match_strengths.values()
+                    else next(iter(match_strengths.values()), None)
+                ),
+                "source": "communication_identities_ledger",
+                "ledger_status": r.get("resolution_status"),
+            }
+        )
+    out.sort(key=lambda c: (-int(c["occurrences"]), c["address"]))
+    return out
+
+
 def find_addresses_for_person_forms(
     known_forms: list[str],
     *,
@@ -434,6 +540,7 @@ def find_addresses_for_person_forms(
                     or "alias_full" in slot["match_strengths"].values()
                     else next(iter(slot["match_strengths"].values()), None)
                 ),
+                "source": "archive_headers",
             }
         )
     out.sort(key=lambda c: (-int(c["occurrences"]), c["address"]))
@@ -481,8 +588,37 @@ def resolve_and_attach_addresses_for_person(
         report["reason"] = "no_known_name_forms"
         return report
 
-    # --- 1. DISCOVER (archive → identities; person not yet required on ledger) ---
-    cands = find_addresses_for_person_forms(forms)
+    # --- 1. DISCOVER (archive + ledger → identities; person email not required) ---
+    # Ledger-first: probe-email-address may have already inventoried peggo417 with
+    # Peg Legg / Peggy George observations. Name-prefilter archive scans can miss
+    # under LIMIT on large Takeouts; the ledger is address-keyed and complete.
+    ledger_cands = find_ledger_addresses_for_person_forms(forms)
+    archive_cands = find_addresses_for_person_forms(forms)
+    by_addr: dict[str, dict[str, Any]] = {}
+    for cand in ledger_cands + archive_cands:
+        addr = str(cand.get("address") or "")
+        if not addr:
+            continue
+        prev = by_addr.get(addr)
+        if prev is None or int(cand.get("occurrences") or 0) > int(
+            prev.get("occurrences") or 0
+        ):
+            by_addr[addr] = cand
+        else:
+            # Merge display names / strengths from both sources
+            dns = dict(prev.get("display_names") or {})
+            for dn, n in (cand.get("display_names") or {}).items():
+                dns[dn] = max(int(dns.get(dn) or 0), int(n or 0))
+            prev["display_names"] = dns
+            strengths = dict(prev.get("match_strengths") or {})
+            strengths.update(cand.get("match_strengths") or {})
+            prev["match_strengths"] = strengths
+    cands = sorted(
+        by_addr.values(),
+        key=lambda c: (-int(c.get("occurrences") or 0), str(c.get("address") or "")),
+    )
+    report["ledger_discovered"] = [c.get("address") for c in ledger_cands]
+    report["archive_discovered"] = [c.get("address") for c in archive_cands]
     for cand in cands:
         addr = str(cand.get("address") or "")
         inv = inventory_email_address(addr, include_quoted_body=True)
