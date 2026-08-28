@@ -1,38 +1,42 @@
-# Person Email Identity — People Contacts Are Enough
+# Peggy resolve + Peg Legg nickname (email)
 
-**Branch:** `cursor/p2-i11a-email-confirmed-retrieve-49da`  
-**Stop point:** Peggy email in Gallery + Full-Evidence V2 from **People confirmed contacts**. No hardcoded address.
+**Branch:** `cursor/p2-i11a-peggy-resolve-nickname-49da`
 
-## Confirmed
+## What the diag proved
 
-If Peggy George’s People screen already shows a confirmed email contact (e.g. `peggo01417@hotmail.com`), that **is** enough for Ask/Gallery/full-evidence retrieve. No bake-in, no `--repair-address`, no Peggy-specific constant.
+Ask `"tell me what you know about Peggy"` resolved Person **`Peggy`** (`549b…`) with:
+- `known_name_forms: ["peggy"]` only
+- **no confirmed emails**
 
-Path: `person_contact_points` (confirmed) → `expand_emails_for_retrieve` → SQL match on From/To/CC / `*_parsed` → optional `person_ids` backfill.
+That is an Immich lazy-seed **stub**, not **Peggy George**. Full-evidence therefore never saw `peggo417@hotmail.com`.
 
-## Why V2 was still Email: 0
+Explore `"show peggy george"` hits the real Person / name filter — which is why the UI showed 27 email threads while the benchmark stayed at Email: 0.
 
-1. Earlier probes used **`peggo417@hotmail.com`** — People shows **`peggo01417@hotmail.com`** (different local-part). Hardcoding the wrong spelling cannot help.
-2. When a confirmed contact already existed, expand **skipped backfill** of `person_ids` onto matching rows (fixed: still backfill).
-3. Python keep-filter only read `*_parsed`; raw header fallback added for older rows.
-4. `normalize_handle` now extracts bare address from `Peg Legg <addr@host>`.
+## Archive truth (screenshots)
 
-## FlightSim (no repair flag)
+- From: **`Peg Legg <peggo417@hotmail.com>`** (real hotmail local-part is `peggo417`, not `peggo01417`)
+- Some thread titles show **names only** (`Peggy George`) because ingest `people[]` stores `display_name or address` (name preferred). Raw `from` often has `Name <email>`. Explore was concatenating both → duplicate “Peg Legg” + “Peg Legg \<addr\>”. Not a load error — metadata + UI. Title builder now prefers the angle-bracket form when both exist.
+
+## Fixes
+
+1. **Ask resolve:** single-token `"Peggy"` prefers unique multi-token **`Peggy George`** over exact stub `"Peggy"`.
+2. **Nickname identity:** header `Peg Legg` + address corroborates to Peggy George when she is the unique multi-token Person in the Peg/Peggy family; seeds alias **Peg Legg**; attaches `peggo417@hotmail.com`.
+3. Discovery still runs even when some People email already exists (find additional addresses).
+
+## FlightSim
 
 ```bat
 cd C:\memorybox
 git fetch origin
-git pull origin cursor/p2-i11a-email-confirmed-retrieve-49da
+git pull origin cursor/p2-i11a-peggy-resolve-nickname-49da
 .\startmb.cmd -Restart
 
-REM Trace uses People contact automatically (no --address needed)
-python -m memorybox person-email-identity-trace --person-id <PEGGY_ID>
+python -m memorybox person-email-identity-trace --person-id <PEGGY_GEORGE_ID>
+REM or omit --person-id after asking; diag on next bench should show Peggy George
 
 python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
 ```
 
-Check `PEGGY_EMAIL_IDENTITY_DIAG.json`:
-- `confirmed_emails` should list `peggo01417@hotmail.com`
-- `rows_with_address` > 0 if archive headers match that spelling
-- If `rows_with_address` is 0, the People contact spelling does not appear in ingested From/To/CC — fix the contact or the archive, don’t hardcode
+Expect metrics `email` > 0, diag `display_name: Peggy George`, `confirmed_emails` includes `peggo417@hotmail.com`, People card gains alias **Peg Legg**.
 
-`--repair-address` remains optional only when People has **no** email yet.
+Optional cleanup: merge stub Person `"Peggy"` (`549b…`) into Peggy George in People UI so it cannot win again.

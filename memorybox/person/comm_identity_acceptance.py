@@ -67,8 +67,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
-        "peg_legg_not_matched_without_alias",
-        _display_matches_person("Peg Legg", forms) is None,
+        "peg_legg_nickname_matches_peggy_george",
+        _display_matches_person("Peg Legg", forms) == "nickname_full",
         checks,
         problems,
     )
@@ -261,7 +261,54 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=weak_dec,
     )
 
-    # Stable reuse: when confirmed emails exist, no archive rediscovery — but backfill runs
+    # Nickname header Peg Legg + peggo417 → Peggy George when unique multi-token Person
+    nick_cand = {
+        "address": "peggo417@hotmail.com",
+        "display_names": {"Peg Legg": 4},
+        "occurrences": 4,
+        "evidence_ids": ["e10", "e11"],
+        "header_fields": ["from"],
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity.connection"
+    ) as conn_ctx:
+        conn = conn_ctx.return_value.__enter__.return_value
+        # first call: sibling rows for nickname family; later: full display unique
+        conn.execute.return_value.fetchall.side_effect = [
+            [
+                {"id": "person-peggy-stub", "display_name": "Peggy"},
+                {"id": "person-peggy-george", "display_name": "Peggy George"},
+            ],
+            [{"id": "person-peggy-george", "display_name": "Peg Legg"}],
+        ]
+        nick_dec = corroborate_email_candidate("person-peggy-george", nick_cand)
+    _check(
+        "peg_legg_nickname_accepted_for_peggy_george",
+        bool(nick_dec.get("accepted")),
+        checks,
+        problems,
+        detail=nick_dec,
+    )
+    _check(
+        "peg_legg_match_strength_nickname",
+        nick_dec.get("match_strength") == "nickname_full",
+        checks,
+        problems,
+        detail=nick_dec,
+    )
+
+    # Confirmed People emails: reuse + still discover additional header identities
     with patch(
         "memorybox.person.comm_identity.person_identity_snapshot",
         return_value={
@@ -278,7 +325,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             "aliases": [],
         },
     ), patch(
-        "memorybox.person.comm_identity.discover_email_candidates_from_archive"
+        "memorybox.person.comm_identity.discover_email_candidates_from_archive",
+        return_value=[],
     ) as discover, patch(
         "memorybox.person.comm_identity.backfill_email_person_ids",
         return_value={"updated": 12, "scanned": 12},
@@ -287,8 +335,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             ["person-peggy"], persist=False, backfill=True, discover=True
         )
         _check(
-            "no_rediscovery_when_confirmed_present",
-            discover.call_count == 0,
+            "discovery_still_runs_with_confirmed_present",
+            discover.call_count >= 1,
             checks,
             problems,
             detail=report.get("rounds"),
@@ -304,7 +352,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         )
         _check(
             "backfill_runs_when_confirmed_present",
-            backfill.call_count == 1,
+            backfill.call_count >= 1,
             checks,
             problems,
             detail=report.get("rounds"),

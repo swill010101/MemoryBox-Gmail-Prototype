@@ -23,6 +23,39 @@ _MAX_EXPAND_ROUNDS = 3
 _MIN_PAIR_OCCURRENCES = 1  # unique full-name Person + unique unclaimed address is enough
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
+# First-token nicknames for header discovery (Peg Legg ↔ Peggy George).
+_FIRST_NAME_NICKNAMES: dict[str, frozenset[str]] = {
+    "peggy": frozenset({"peg", "peggy"}),
+    "peg": frozenset({"peg", "peggy"}),
+    "margaret": frozenset({"margaret", "meg", "maggie", "peg", "peggy"}),
+    "william": frozenset({"william", "will", "bill", "billy"}),
+    "will": frozenset({"william", "will", "bill", "billy"}),
+    "robert": frozenset({"robert", "rob", "bob", "bobby"}),
+    "richard": frozenset({"richard", "rick", "dick"}),
+    "rick": frozenset({"richard", "rick"}),
+    "james": frozenset({"james", "jim", "jimmy"}),
+    "thomas": frozenset({"thomas", "tom", "tommy"}),
+    "tom": frozenset({"thomas", "tom", "tommy"}),
+    "elizabeth": frozenset({"elizabeth", "liz", "beth", "betty"}),
+    "jennifer": frozenset({"jennifer", "jen", "jenny"}),
+    "michael": frozenset({"michael", "mike"}),
+    "andrew": frozenset({"andrew", "andy", "drew"}),
+    "daniel": frozenset({"daniel", "dan", "danny"}),
+    "dan": frozenset({"daniel", "dan", "danny"}),
+}
+
+
+def _nickname_tokens_for_person(forms: list[str]) -> set[str]:
+    out: set[str] = set()
+    for form in forms:
+        toks = _name_tokens(form)
+        if not toks:
+            continue
+        first = toks[0]
+        out.add(first)
+        out |= set(_FIRST_NAME_NICKNAMES.get(first) or ())
+    return {t for t in out if len(t) >= 2}
+
 
 def _norm_name(raw: str | None) -> str:
     return re.sub(r"\s+", " ", (raw or "").strip().lower())
@@ -112,15 +145,16 @@ def _people_sharing_first_name(first: str) -> list[str]:
     first = (first or "").strip().lower()
     if len(first) < 2:
         return []
+    nicks = sorted(_FIRST_NAME_NICKNAMES.get(first) or {first})
     try:
         with connection() as conn:
             rows = conn.execute(
                 """
                 SELECT id, display_name FROM people
                 WHERE status = 'active'
-                  AND lower(split_part(display_name, ' ', 1)) = %s
+                  AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
                 """,
-                (first,),
+                (nicks,),
             ).fetchall()
     except Exception:  # noqa: BLE001
         return []
@@ -227,7 +261,11 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _display_matches_person(display_name: str, known_forms: list[str]) -> str | None:
-    """Return match strength: 'full' | 'alias_full' | None. First-name-only is never enough."""
+    """Return match strength: 'full' | 'alias_full' | 'nickname_full' | None.
+
+    First-name-only display (\"Peggy\") is never enough. Multi-token nickname
+    headers (\"Peg Legg\") may match Person \"Peggy George\" as nickname_full.
+    """
     dn = _norm_name(display_name)
     if not dn or not known_forms:
         return None
@@ -242,6 +280,16 @@ def _display_matches_person(display_name: str, known_forms: list[str]) -> str | 
         form_toks = _name_tokens(form)
         if len(form_toks) >= 2 and set(tokens) == set(form_toks):
             return "full"
+    # Nickname first-token + multi-token surname (Peg Legg ↔ Peggy George)
+    for form in known_forms:
+        form_toks = _name_tokens(form)
+        if not form_toks:
+            continue
+        person_first = form_toks[0]
+        nicks = _FIRST_NAME_NICKNAMES.get(person_first) or {person_first}
+        dn_nicks = _FIRST_NAME_NICKNAMES.get(tokens[0]) or {tokens[0]}
+        if tokens[0] in nicks or person_first in dn_nicks:
+            return "nickname_full"
     return None
 
 
@@ -282,7 +330,13 @@ def discover_email_candidates_from_archive(
     # Prefer multi-token forms for header prefilter; fall back to longest single token.
     multi = [f for f in forms if " " in f.strip()]
     prefilter_forms = multi or [sorted(forms, key=len, reverse=True)[0]]
+    nicks = sorted(_nickname_tokens_for_person(forms))
     patterns = [f"%{f}%" for f in prefilter_forms]
+    # Peg Legg / Peg <addr> when Person is Peggy George
+    for n in nicks:
+        patterns.append(f"%{n} %")
+        patterns.append(f"{n} %")
+    patterns = list(dict.fromkeys(patterns))
     candidates: dict[str, dict[str, Any]] = {}
     scanned = 0
     try:
@@ -445,8 +499,43 @@ def corroborate_email_candidate(
 
     # First-name ambiguity: multiple People share first name and display is weak.
     first = (_name_tokens(best_dn or "") or [""])[0]
-    siblings = _people_sharing_first_name(first)
-    if len(siblings) > 1 and best_strength != "full" and best_strength != "alias_full":
+    sibling_rows: list[dict[str, Any]] = []
+    try:
+        nicks = sorted(_FIRST_NAME_NICKNAMES.get(first) or {first})
+        with connection() as conn:
+            sibling_rows = list(
+                conn.execute(
+                    """
+                    SELECT id, display_name FROM people
+                    WHERE status = 'active'
+                      AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
+                    """,
+                    (nicks,),
+                ).fetchall()
+            )
+    except Exception:  # noqa: BLE001
+        sibling_rows = [{"id": sid} for sid in _people_sharing_first_name(first)]
+    siblings = [str(r["id"]) for r in sibling_rows]
+    multi_sibs = [
+        str(r["id"])
+        for r in sibling_rows
+        if " " in str(r.get("display_name") or "").strip()
+    ]
+    if best_strength == "nickname_full":
+        # Peg Legg → Peggy George: require unique multi-token Person in the
+        # first-name family (ignore Immich single-token stubs like \"Peggy\").
+        if len(multi_sibs) > 1:
+            result["reason"] = "ambiguous_nickname_among_people"
+            result["ambiguous_person_ids"] = multi_sibs
+            return result
+        if multi_sibs and person_id not in multi_sibs:
+            result["reason"] = "nickname_belongs_to_other_person"
+            result["ambiguous_person_ids"] = multi_sibs
+            return result
+        if not any(" " in f for f in forms):
+            result["reason"] = "person_lacks_multi_token_name_for_nickname"
+            return result
+    elif len(siblings) > 1 and best_strength not in {"full", "alias_full"}:
         result["reason"] = "ambiguous_first_name_among_people"
         result["ambiguous_person_ids"] = siblings
         return result
@@ -664,17 +753,14 @@ def expand_person_communication_identities(
                 "accepted_this_round": [],
                 "rejected_this_round": [],
             }
-            # Stable reuse: confirmed emails already on People — do not rediscover,
-            # but still backfill person_ids onto matching header rows so GIN retrieve
-            # and Gallery stay consistent. No address hardcoding required.
+            # Confirmed People emails: always backfill person_ids. Still run one
+            # discovery pass for additional header identities (e.g. Peg Legg /
+            # peggo417@hotmail.com) that are not yet on the contact card.
             if existing and round_i == 0:
                 report["emails_by_person"][pid] = sorted(existing)
-                round_rec["skipped_discovery"] = True
-                round_rec["reason"] = "confirmed_emails_present"
+                round_rec["confirmed_reuse"] = True
                 if backfill:
                     round_rec["backfill"] = backfill_email_person_ids(pid, existing)
-                report["rounds"].append(round_rec)
-                break
 
             new_this_round: list[str] = []
             if discover and forms:
@@ -683,7 +769,7 @@ def expand_person_communication_identities(
                 )
                 for cand in candidates:
                     addr = normalize_handle(str(cand.get("address") or ""))
-                    if not addr or addr in seen_addrs:
+                    if not addr or addr in seen_addrs or addr in existing:
                         continue
                     seen_addrs.add(addr)
                     decision = corroborate_email_candidate(
@@ -716,6 +802,14 @@ def expand_person_communication_identities(
                                     "corroborated display-name/address pair"
                                 ),
                             )
+                            seeded = _seed_header_display_aliases(
+                                pid,
+                                list((cand.get("display_names") or {}).keys()),
+                                known_forms=forms,
+                                address=addr,
+                            )
+                            if seeded:
+                                round_rec.setdefault("seeded_aliases", []).extend(seeded)
                         new_this_round.append(addr)
                         round_rec["accepted_this_round"].append(decision)
                         report["accepted"].append(
