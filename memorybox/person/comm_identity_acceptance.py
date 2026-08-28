@@ -7,6 +7,7 @@ from unittest.mock import patch
 from memorybox.ask.retrieve import _person_scoped_comm_where, _sql_confirmed_email_addrs
 from memorybox.person.comm_identity import (
     _display_matches_person,
+    attach_known_email_if_corroborated,
     corroborate_email_candidate,
     expand_person_communication_identities,
 )
@@ -39,6 +40,18 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     _check(
         "first_name_only_rejected",
         _display_matches_person("Peggy", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "peg_legg_alias_matches",
+        _display_matches_person("Peg Legg", forms + ["peg legg"]) == "alias_full",
+        checks,
+        problems,
+    )
+    _check(
+        "peg_legg_not_matched_without_alias",
+        _display_matches_person("Peg Legg", forms) is None,
         checks,
         problems,
     )
@@ -262,6 +275,102 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
 
+    # Operator-attested attach: bare/first-name headers still attach when --address
+    # is explicit; auto path remains fail-closed.
+    bare_payload = {
+        "evidence_channel": "email",
+        "from": "peggo417@hotmail.com",
+        "to": ["owner@example.com"],
+        "cc": [],
+        "from_parsed": [
+            {
+                "display_name": "Peggy",
+                "address": "peggo417@hotmail.com",
+                "normalized": "peggo417@hotmail.com",
+            }
+        ],
+        "to_parsed": [
+            {
+                "display_name": "",
+                "address": "owner@example.com",
+                "normalized": "owner@example.com",
+            }
+        ],
+        "cc_parsed": [],
+        "people": ["Peggy", "owner@example.com"],
+    }
+    snap_peggy = {
+        "person_id": "person-peggy",
+        "display_name": "Peggy George",
+        "known_name_forms": ["peggy george"],
+        "emails": [],
+        "aliases": [],
+    }
+
+    class _FakeConn:
+        def execute(self, *_a, **_k):
+            class _R:
+                def fetchall(self_inner):
+                    return [{"id": "ev-1", "payload_json": bare_payload}]
+
+            return _R()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value=snap_peggy,
+    ), patch(
+        "memorybox.person.comm_identity.connection",
+        return_value=_FakeConn(),
+    ), patch(
+        "memorybox.person.comm_identity.corroborate_email_candidate",
+        wraps=corroborate_email_candidate,
+    ):
+        auto = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=False,
+        )
+        op = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=True,
+        )
+    _check(
+        "auto_rejects_bare_or_first_name_headers",
+        not auto.get("accepted"),
+        checks,
+        problems,
+        detail=auto,
+    )
+    _check(
+        "operator_attested_accepts_address_in_headers",
+        bool(op.get("accepted"))
+        and (op.get("decision") or {}).get("reason")
+        == "operator_attested_address_in_headers",
+        checks,
+        problems,
+        detail=op,
+    )
+    _check(
+        "operator_attested_reports_rows",
+        int(op.get("rows_with_address") or 0) >= 1,
+        checks,
+        problems,
+        detail=op.get("rows_with_address"),
+    )
+
     return {
         "ok": not problems,
         "prove": "person_email_identity",
@@ -272,6 +381,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "root_cause": (
             "Email Person retrieve was GIN person_ids-only; Peggy had no confirmed "
             "email contact so payloads never stamped and SQL returned zero. SMS "
-            "succeeds via phone contacts + sender_name fallback."
+            "succeeds via phone contacts + sender_name fallback. After To/CC JSON "
+            "fix, auto expand can still miss Hotmail bare/first-name headers — "
+            "use repair --person-id --address for operator attestation."
         ),
     }

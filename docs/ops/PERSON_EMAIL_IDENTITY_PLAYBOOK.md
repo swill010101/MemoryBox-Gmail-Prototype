@@ -1,55 +1,50 @@
 # Person Email Identity Expansion — Trace + Fix
 
-**Branch:** `cursor/p2-i11a-person-email-identity-49da`  
+**Branch:** `cursor/p2-i11a-email-operator-attach-49da`  
 **Stop point:** Peggy email in Gallery/common Person retrieve + Full-Evidence V2. No historian semantic redesign.
 
-## Root cause
+## Root cause (stacked)
 
-| Path | Behavior |
+| Layer | Behavior |
 |------|----------|
-| **Email** | Person retrieve SQL is GIN `person_ids` only (`header_fallback=False`). Confirmed email addresses were consulted only *after* SQL, so empty GIN pages never reached Python filters. |
-| **Peggy state** | No confirmed email on `person_contact_points`. Ingest never stamped `person_ids` on her mail (`resolve_handles` needs prior contacts). Chicken-and-egg. |
-| **SMS** | Phone contacts + auto-map/repair + **sender_name SQL fallback** → ~2298 hits. |
+| **Email retrieve** | Person SQL is GIN `person_ids` + confirmed header addresses (`header_fallback=False`). No confirmed email → empty GIN pages → Email: 0. |
+| **Peggy state** | No confirmed email on `person_contact_points`. Ingest never stamped `person_ids` (chicken-and-egg). |
+| **To/CC JSON** | Ingest stores `to`/`cc` as arrays; `->>'to'` is NULL — fixed to `(payload_json->'to')::text` + `*_parsed`. |
+| **Header display name** | Archive uses **`Peg Legg <peggo417@hotmail.com>`**, while Person display is **`Peggy George`**. Discovery previously prefiltered only the longest form (`peggy george`) and never saw `Peg Legg`. Auto corroboration requires a full-name form/alias match. |
+| **SMS** | Phone contacts + sender_name SQL fallback → ~2298 hits. |
 
-Gallery uses the same `search_email_messages` path → zero email is expected given the above.
+## Fix
 
-## Fix (common capability)
+1. Discover with **all** multi-token known forms (display + aliases) via `LIKE ANY`, not only the longest.
+2. Corroborate + persist + backfill `person_ids`.
+3. Retrieve: GIN **or** confirmed header addresses.
+4. **Operator attestation:** `repair-email-identities --person-id <ID> --address peggo417@hotmail.com` attaches when the address is in headers and unclaimed (even if display is `Peg Legg` / bare). Seeds `Peg Legg` as an `alternate_name` alias when seen on headers so later auto-discovery works. Ask auto-expand never operator-attests.
 
-Module: `memorybox/person/comm_identity.py`
-
-1. Snapshot Person names/aliases/phones/emails/provider ids  
-2. Discover candidates from **From/To/CC headers only** (full display-name match; first-name-only rejected)  
-3. Corroborate conservatively (unclaimed address, unique full-name Person, provenance)  
-4. Persist to `person_contact_points` with provenance `comm_identity_expand`  
-5. Backfill `person_ids` on matching email evidence payloads  
-6. Bounded rounds until identity set stable; skip archive rediscovery when confirmed emails already exist  
-
-Retrieve: `search_email_messages` expands identities then SQL-matches **GIN person_ids OR confirmed email headers** (not body ILIKE).
-
-## Why V2 still showed Email: 0
-
-Ingest stores `to` / `cc` as **JSON arrays**. Postgres `payload_json->>'to'` returns **NULL** for arrays, so discovery/backfill/retrieve never matched Peggy as a recipient. Fixed to use `(payload_json->'to')::text` and `to_parsed` / `cc_parsed`.
-
-## FlightSim (after this fix)
+## FlightSim (one command — repair then rebuild V2)
 
 ```bat
 cd C:\memorybox
 git fetch origin
-git pull origin cursor/p2-i11a-email-to-json-fix-49da
+git pull origin cursor/p2-i11a-email-operator-attach-49da
 .\startmb.cmd -Restart
 
-python -m memorybox prove-person-email-identity
-
-python -m memorybox person-email-identity-trace --person-id <PEGGY_ID> --address peggo417@hotmail.com
-
-python -m memorybox repair-email-identities --person-id <PEGGY_ID> --address peggo417@hotmail.com --force-rediscover
-
-REM Confirm contact attached, then Gallery Peggy → Email
-
-python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
+python -m memorybox historian-full-evidence-benchmark --flightsim --repair-address peggo417@hotmail.com --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
 ```
 
-Do **not** pass `--from-dir` pointing at V1 — that freezes the old zero-email inventory.
+Then open:
+- `PEGGY_FULL_EVIDENCE_METRICS.json` → `by_source.email` and `email_identity_diag` / `email_identity_repair`
+- `PEGGY_EMAIL_IDENTITY_DIAG.json` → `likely_blocker`, `rows_with_address`, `seeded_aliases`
+
+If email is still 0, paste `PEGGY_EMAIL_IDENTITY_DIAG.json` (not just metrics).
+
+### Manual repair (optional)
+
+```bat
+python -m memorybox person-email-identity-trace --person-id <PEGGY_ID> --address peggo417@hotmail.com
+python -m memorybox repair-email-identities --person-id <PEGGY_ID> --address peggo417@hotmail.com
+```
+
+Do **not** pass `--from-dir` pointing at V1.
 
 ## V1 vs V2 (fill after FlightSim)
 
@@ -62,4 +57,4 @@ Do **not** pass `--from-dir` pointing at V1 — that freezes the old zero-email 
 | Total items | 2820 | ? |
 | Est. tokens | 225804 | ? |
 
-Also record: addresses used, email message/thread counts, earliest/latest, email bytes/tokens.
+Also record: addresses (`peggo417@hotmail.com`), header name (`Peg Legg`), provenance, email message/thread counts, dates, tokens.
