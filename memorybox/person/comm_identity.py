@@ -269,15 +269,20 @@ def discover_email_candidates_from_archive(
     known_forms: list[str] | None = None,
     limit_scan: int = 50_000,
 ) -> list[dict[str, Any]]:
-    """Scan email headers for display-name/address pairs matching the Person."""
+    """Scan email headers for display-name/address pairs matching the Person.
+
+    SQL prefilter ORs **all** multi-token known forms (display + aliases). Using only
+    the longest form misses cases like display ``Peggy George`` with header/alias
+    ``Peg Legg``.
+    """
     snap = person_identity_snapshot(person_id) if known_forms is None else None
     forms = list(known_forms or (snap or {}).get("known_name_forms") or [])
     if not forms:
         return []
-    # Prefer longest full name for SQL prefilter.
-    forms_sorted = sorted(forms, key=len, reverse=True)
-    primary = forms_sorted[0]
-    like = f"%{primary}%"
+    # Prefer multi-token forms for header prefilter; fall back to longest single token.
+    multi = [f for f in forms if " " in f.strip()]
+    prefilter_forms = multi or [sorted(forms, key=len, reverse=True)[0]]
+    patterns = [f"%{f}%" for f in prefilter_forms]
     candidates: dict[str, dict[str, Any]] = {}
     scanned = 0
     try:
@@ -292,22 +297,22 @@ def discover_email_candidates_from_archive(
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
                   AND (
-                    lower(coalesce(payload_json->>'from', '')) LIKE %s
-                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
+                    lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR EXISTS (
                       SELECT 1 FROM jsonb_array_elements(
                         coalesce(payload_json->'from_parsed','[]'::jsonb)
                         || coalesce(payload_json->'to_parsed','[]'::jsonb)
                         || coalesce(payload_json->'cc_parsed','[]'::jsonb)
                       ) e
-                      WHERE lower(coalesce(e->>'display_name', '')) LIKE %s
+                      WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                     )
                   )
                 LIMIT %s
                 """,
-                (like, like, like, like, like, limit_scan),
+                (patterns, patterns, patterns, patterns, patterns, limit_scan),
             ).fetchall()
     except Exception:  # noqa: BLE001
         rows = []
@@ -777,6 +782,53 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
     return {"addresses": addrs, "expansion": expansion}
 
 
+def _seed_header_display_aliases(
+    person_id: str,
+    display_names: list[str],
+    *,
+    known_forms: list[str] | None = None,
+    address: str | None = None,
+) -> list[dict[str, Any]]:
+    """Persist multi-token header display names as alternate_name aliases when new.
+
+    Example: Person ``Peggy George`` with hotmail header ``Peg Legg`` — after
+    operator-attested address attach, seed ``Peg Legg`` so later discovery ORs it.
+    """
+    forms = {_norm_name(f) for f in (known_forms or []) if f}
+    seeded: list[dict[str, Any]] = []
+    seen: set[str] = set(forms)
+    try:
+        from memorybox.profile.facts import add_alias
+    except Exception:  # noqa: BLE001
+        return seeded
+    for raw in display_names:
+        text = str(raw or "").strip()
+        n = _norm_name(text)
+        if not n or n in seen or " " not in n:
+            continue
+        if len(_name_tokens(text)) < 2:
+            continue
+        seen.add(n)
+        try:
+            add_alias(
+                person_id,
+                alias_kind="alternate_name",
+                alias_text=text,
+                actor_key="comm_identity_expand",
+                note="Seeded from email header display name paired with known address",
+                provenance={
+                    "source": "comm_identity_header_alias",
+                    "address": address,
+                    "normalized_alias": n,
+                },
+            )
+            seeded.append({"alias_text": text, "normalized": n})
+        except Exception:  # noqa: BLE001
+            # Duplicate or profile rule — skip; identity attach still succeeded.
+            continue
+    return seeded
+
+
 def attach_known_email_if_corroborated(
     person_id: str,
     address: str,
@@ -954,13 +1006,23 @@ def attach_known_email_if_corroborated(
     bf = {}
     if decision.get("accepted") and backfill:
         bf = backfill_email_person_ids(person_id, {addr})
+    seeded_aliases: list[dict[str, Any]] = []
+    if decision.get("accepted") and persist:
+        # Seed header names like "Peg Legg" so future discovery ORs the alias.
+        seeded_aliases = _seed_header_display_aliases(
+            person_id,
+            sample_raw_displays,
+            known_forms=forms,
+            address=addr,
+        )
     hint = None
     if not decision.get("accepted") and len(rows) > 0:
         hint = (
             "Address exists in email headers but auto corroboration failed "
-            f"({decision.get('reason')}). Re-run repair with --person-id and "
-            "--address to operator-attest, or add a full-name alias if headers "
-            f"only show first-name/bare address (samples={sample_raw_displays[:5]!r})."
+            f"({decision.get('reason')}). Headers may use a different full name "
+            f"(e.g. Peg Legg vs Peggy George); samples={sample_raw_displays[:5]!r}. "
+            "Teach that name as an alias on the Person, or re-run "
+            "repair-email-identities --person-id <ID> --address <addr>."
         )
     elif not decision.get("accepted") and len(rows) == 0:
         hint = (
@@ -975,6 +1037,7 @@ def attach_known_email_if_corroborated(
         "rows_with_address": len(rows),
         "backfill": bf,
         "operator_attested": bool(operator_attested),
+        "seeded_aliases": seeded_aliases,
         "hint": hint,
     }
 

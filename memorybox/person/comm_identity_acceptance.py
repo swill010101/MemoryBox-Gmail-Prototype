@@ -44,6 +44,18 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "peg_legg_alias_matches",
+        _display_matches_person("Peg Legg", forms + ["peg legg"]) == "alias_full",
+        checks,
+        problems,
+    )
+    _check(
+        "peg_legg_not_matched_without_alias",
+        _display_matches_person("Peg Legg", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
         "unrelated_name_rejected",
         _display_matches_person("Tom Will", forms) is None,
         checks,
