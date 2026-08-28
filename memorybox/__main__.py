@@ -482,6 +482,57 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Optional FlightSim flag (acceptance itself needs no archive)",
     )
+    p_full_bench = sub.add_parser(
+        "historian-full-evidence-benchmark",
+        help=(
+            "Freeze Peggy full-evidence benchmark, compression funnel, and "
+            "Level-1 complete-coverage chunks (no LLM)"
+        ),
+    )
+    p_full_bench.add_argument(
+        "--ask",
+        default="tell me what you know about Peggy",
+        help="Person Ask (default: canonical Peggy)",
+    )
+    p_full_bench.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output dir (default: docs/test-output/historian-full-evidence/peggy)",
+    )
+    p_full_bench.add_argument(
+        "--fixture",
+        default=None,
+        help="HISTFIX_peggy_*.json for funnel obs/rollup/HO/Ask-relative sizes",
+    )
+    p_full_bench.add_argument(
+        "--historian-run",
+        default=None,
+        help="Optional HISTRUN_*.json for narrator-input size",
+    )
+    p_full_bench.add_argument(
+        "--from-dir",
+        default=None,
+        help="Reuse prior full-evidence export dir (PEGGY_FULL_EVIDENCE_ITEMS.json)",
+    )
+    p_full_bench.add_argument(
+        "--gpt-response",
+        default=None,
+        help="Optional GPT-5.6 Sol response file to freeze as benchmark artifact",
+    )
+    p_full_bench.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1 for FlightSim archive",
+    )
+    p_prove_full_bench = sub.add_parser(
+        "prove-historian-full-evidence-benchmark",
+        help="Acceptance for full-evidence benchmark + L1 chunker (offline)",
+    )
+    p_prove_full_bench.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Optional FlightSim flag",
+    )
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1017,6 +1068,43 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_full_evidence_diagnostic(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "historian-full-evidence-benchmark":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.full_evidence_benchmark import (
+            run_historian_full_evidence_benchmark_cli,
+        )
+
+        out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else None
+        fixture = Path(args.fixture) if getattr(args, "fixture", None) else None
+        hist_run = (
+            Path(args.historian_run) if getattr(args, "historian_run", None) else None
+        )
+        from_dir = Path(args.from_dir) if getattr(args, "from_dir", None) else None
+        gpt = Path(args.gpt_response) if getattr(args, "gpt_response", None) else None
+        payload = run_historian_full_evidence_benchmark_cli(
+            out_dir=out_dir,
+            ask=getattr(args, "ask", None),
+            fixture=fixture,
+            historian_run=hist_run,
+            from_dir=from_dir,
+            gpt_response=gpt,
+            flightsim=bool(getattr(args, "flightsim", False)),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-historian-full-evidence-benchmark":
+        from memorybox.ask.full_evidence_benchmark_acceptance import (
+            run_prove_full_evidence_benchmark,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_full_evidence_benchmark(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
