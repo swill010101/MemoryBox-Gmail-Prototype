@@ -487,9 +487,11 @@ def find_addresses_for_person_forms(
     multi = [f for f in forms if " " in f.strip()]
     prefilter = multi or forms
     nicks = sorted(_nickname_tokens_for_person(forms))
-    patterns = list(dict.fromkeys(
-        [f"%{f}%" for f in prefilter] + [f"%{n} %" for n in nicks] + [f"{n} %" for n in nicks]
+    multi_patterns = list(dict.fromkeys([f"%{f}%" for f in (multi or prefilter)]))
+    nick_patterns = list(dict.fromkeys(
+        [f"%{n} %" for n in nicks] + [f"{n} %" for n in nicks]
     ))
+    patterns = list(dict.fromkeys(multi_patterns + nick_patterns + [f"%{f}%" for f in prefilter]))
     candidates: dict[str, dict[str, Any]] = {}
 
     def _ingest_rows(rows: list[dict[str, Any]]) -> None:
@@ -526,9 +528,33 @@ def find_addresses_for_person_forms(
 
     try:
         with connection() as conn:
-            # Pass 1: structured parsed display only — avoids people[] / body noise
-            # starving nickname header rows under LIMIT.
-            pass1 = conn.execute(
+            # Pass 1a: multi-token Person forms on structured parsed display
+            # (Peggy George) — highest signal, tiny result set.
+            if multi_patterns:
+                pass1a = conn.execute(
+                    """
+                    SELECT id, payload_json
+                    FROM evidence
+                    WHERE evidence_kind = 'communication'
+                      AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                          NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                      AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(
+                          coalesce(payload_json->'from_parsed','[]'::jsonb)
+                          || coalesce(payload_json->'to_parsed','[]'::jsonb)
+                          || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                          || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
+                        ) e
+                        WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                      )
+                    LIMIT %s
+                    """,
+                    (multi_patterns, min(limit_scan, 10_000)),
+                ).fetchall()
+                _ingest_rows(list(pass1a))
+
+            # Pass 1b: nickname first-token on structured parsed display (Peg Legg).
+            pass1b = conn.execute(
                 """
                 SELECT id, payload_json
                 FROM evidence
@@ -548,9 +574,11 @@ def find_addresses_for_person_forms(
                 """,
                 (patterns, limit_scan),
             ).fetchall()
-            _ingest_rows(list(pass1))
+            _ingest_rows(list(pass1b))
 
             # Pass 2: broader prefilter for archives missing *_parsed arrays.
+            # Prefer multi-token form hits over bare nickname %peg% noise.
+            order_patterns = multi_patterns or patterns
             pass2 = conn.execute(
                 """
                 SELECT id, payload_json
@@ -588,8 +616,18 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                   THEN 1
-                  ELSE 2
+                  WHEN EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                      coalesce(payload_json->'from_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
+                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
+                    ) e
+                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                  ) THEN 2
+                  ELSE 3
                 END
                 LIMIT %s
                 """,
@@ -600,10 +638,12 @@ def find_addresses_for_person_forms(
                     patterns,
                     patterns,
                     patterns,
-                    patterns,
-                    patterns,
-                    patterns,
-                    patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
                     patterns,
                     limit_scan,
                 ),
@@ -631,7 +671,17 @@ def find_addresses_for_person_forms(
                 "source": "archive_headers",
             }
         )
-    out.sort(key=lambda c: (-int(c["occurrences"]), c["address"]))
+    out.sort(
+        key=lambda c: (
+            0
+            if c.get("match_strength") in {"full", "alias_full"}
+            else 1
+            if c.get("match_strength") == "nickname_full"
+            else 2,
+            -int(c["occurrences"]),
+            c["address"],
+        )
+    )
     return out
 
 
@@ -750,10 +800,40 @@ def resolve_and_attach_addresses_for_person(
             prev["match_strengths"] = strengths
     cands = sorted(
         by_addr.values(),
-        key=lambda c: (-int(c.get("occurrences") or 0), str(c.get("address") or "")),
+        key=lambda c: (
+            0
+            if c.get("match_strength") in {"full", "alias_full"}
+            else 1
+            if c.get("match_strength") == "nickname_full"
+            else 2,
+            -int(c.get("occurrences") or 0),
+            str(c.get("address") or ""),
+        ),
     )
     report["ledger_discovered"] = [c.get("address") for c in ledger_cands]
     report["archive_discovered"] = [c.get("address") for c in archive_cands]
+    # Cap nickname-only inventorie/resolve work on large Takeouts full of Peg*
+    # noise. Always keep ledger hits and full/alias matches.
+    ledger_addrs = {
+        normalize_handle(str(a)) for a in (report["ledger_discovered"] or []) if a
+    }
+    full_alias = [
+        c for c in cands if c.get("match_strength") in {"full", "alias_full"}
+    ]
+    nick = [c for c in cands if c.get("match_strength") == "nickname_full"]
+    other = [
+        c
+        for c in cands
+        if c.get("match_strength") not in {"full", "alias_full", "nickname_full"}
+    ]
+    nick_kept: list[dict[str, Any]] = []
+    for c in nick:
+        addr = normalize_handle(str(c.get("address") or ""))
+        if addr in ledger_addrs or len(nick_kept) < 48:
+            nick_kept.append(c)
+    cands = full_alias + nick_kept + other[:16]
+    report["nickname_candidates_total"] = len(nick)
+    report["nickname_candidates_kept"] = len(nick_kept)
     for cand in cands:
         addr = str(cand.get("address") or "")
         inv = inventory_email_address(addr, include_quoted_body=True)

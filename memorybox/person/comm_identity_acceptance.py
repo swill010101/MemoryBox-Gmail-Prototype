@@ -1095,9 +1095,15 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
     _check(
         "discover_pass1_structured_parsed_only",
-        "Pass 1" in discover_src
+        ("Pass 1a" in discover_src or "Pass 1:" in discover_src or "Pass 1b" in discover_src)
         and discover_src.count("jsonb_array_elements") >= 2
         and "people" in discover_src,
+        checks,
+        problems,
+    )
+    _check(
+        "resolve_caps_nickname_only_candidates",
+        "nickname_candidates_kept" in resolve_src and "48" in resolve_src,
         checks,
         problems,
     )
