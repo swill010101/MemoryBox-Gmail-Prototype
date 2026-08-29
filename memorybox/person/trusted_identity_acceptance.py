@@ -492,6 +492,71 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=ids,
     )
+    parsed_only = select_single_pass_items(
+        [
+            {
+                "source": "email",
+                "item_id": "e-parsed",
+                "from": "",
+                "from_parsed": [
+                    {"display_name": "", "address": "peggo417@hotmail.com"}
+                ],
+            }
+        ],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=50_000,
+    )
+    _check(
+        "single_pass_keeps_hotmail_from_parsed",
+        any(i.get("item_id") == "e-parsed" for i in parsed_only),
+        checks,
+        problems,
+        detail=parsed_only,
+    )
+    from memorybox.ask.i11a.full_evidence_diagnostic import (
+        _structured_email_fields,
+        format_item_block,
+    )
+
+    structured = _structured_email_fields(
+        {
+            "from_parsed": [
+                {"display_name": "", "address": "peggo417@hotmail.com"}
+            ],
+            "people": ["Peg Legg", "Random"],
+        },
+        {},
+    )
+    _check(
+        "fev2_email_fields_omit_people_array",
+        "peggo417@hotmail.com" in (structured.get("addresses") or [])
+        and "Peg Legg" not in (structured.get("participants") or [])
+        and "Random" not in (structured.get("participants") or []),
+        checks,
+        problems,
+        detail=structured,
+    )
+    paste = format_item_block(
+        {
+            "source": "email",
+            "item_id": "email-1",
+            "evidence_id": "ev-1",
+            "from": "peggo417@hotmail.com",
+            "people": ["Peg Legg"],
+            "participants": ["Peg Legg"],
+            "addresses": ["peggo417@hotmail.com"],
+        }
+    )
+    _check(
+        "fev2_paste_omits_email_people_array",
+        "people:" not in paste.lower()
+        and "participants:" not in paste.lower()
+        and "evidence_id: ev-1" in paste
+        and "peggo417@hotmail.com" in paste,
+        checks,
+        problems,
+        detail=paste,
+    )
     empty_trusted = select_single_pass_items(
         items, trusted_addrs=set(), token_budget=50_000
     )

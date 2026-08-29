@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -87,7 +88,7 @@ def fev2_input_sha256(body: dict[str, Any]) -> str:
 
 def item_evidence_ids(item: dict[str, Any]) -> list[str]:
     ids: list[str] = []
-    for key in ("evidence_id", "item_id", "id"):
+    for key in ("evidence_id", "item_id", "id", "native_id"):
         raw = item.get(key)
         if raw:
             ids.append(str(raw))
@@ -98,20 +99,38 @@ def item_evidence_ids(item: dict[str, Any]) -> list[str]:
 
 
 def item_is_trusted_email(item: dict[str, Any], trusted: set[str]) -> bool:
+    """Structured From/To/CC/BCC (incl. Hotmail from_parsed). Never people[]."""
     if str(item.get("source") or item.get("channel") or "").lower() != "email":
         return False
+    trusted_n = {normalize_handle(a) for a in trusted if a}
+    if not trusted_n:
+        return False
+    found: set[str] = set()
+    for rec in (
+        list(item.get("from_parsed") or [])
+        + list(item.get("to_parsed") or [])
+        + list(item.get("cc_parsed") or [])
+        + list(item.get("bcc_parsed") or [])
+    ):
+        if isinstance(rec, dict):
+            n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
+            if n and "@" in n:
+                found.add(n)
+    for raw in list(item.get("addresses") or []):
+        n = normalize_handle(str(raw))
+        if n and "@" in n:
+            found.add(n)
     blob = " ".join(
-        [
-            str(item.get("from") or ""),
-            str(item.get("to") or ""),
-            str(item.get("cc") or ""),
-            str(item.get("bcc") or ""),
-            json.dumps(item.get("addresses") or [], default=str),
-            json.dumps(item.get("from_parsed") or [], default=str),
-            json.dumps(item.get("to_parsed") or [], default=str),
-        ]
-    ).lower()
-    return any(a in blob for a in trusted if a)
+        str(item.get(k) or "")
+        for k in ("from", "to", "cc", "bcc", "from_header", "to_header")
+    )
+    for m in re.finditer(
+        r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", blob
+    ):
+        n = normalize_handle(m.group(0))
+        if n and "@" in n:
+            found.add(n)
+    return bool(found & trusted_n)
 
 
 def select_single_pass_items(

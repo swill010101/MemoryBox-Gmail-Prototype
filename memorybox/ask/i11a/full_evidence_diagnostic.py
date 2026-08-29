@@ -151,6 +151,50 @@ def _fmt_addrs(val: Any) -> str | None:
     return s or None
 
 
+def _structured_email_fields(payload: dict[str, Any], hit: dict[str, Any]) -> dict[str, Any]:
+    """From/To/CC/BCC + parsed addresses only. Never people[]."""
+    from_parsed = [
+        r
+        for r in list((payload or {}).get("from_parsed") or [])
+        if isinstance(r, dict)
+    ]
+    to_parsed = [
+        r for r in list((payload or {}).get("to_parsed") or []) if isinstance(r, dict)
+    ]
+    cc_parsed = [
+        r for r in list((payload or {}).get("cc_parsed") or []) if isinstance(r, dict)
+    ]
+    bcc_parsed = [
+        r for r in list((payload or {}).get("bcc_parsed") or []) if isinstance(r, dict)
+    ]
+    addrs: list[str] = []
+    names: list[str] = []
+    for rec in from_parsed + to_parsed + cc_parsed + bcc_parsed:
+        addr = str(rec.get("normalized") or rec.get("address") or "").strip().lower()
+        if addr and "@" in addr and addr not in addrs:
+            addrs.append(addr)
+        dn = str(rec.get("display_name") or "").strip()
+        if dn and dn not in names:
+            names.append(dn)
+    from_h = hit.get("from_header") or (payload or {}).get("from")
+    if not from_h and from_parsed:
+        rec = from_parsed[0]
+        addr = str(rec.get("address") or rec.get("normalized") or "").strip()
+        dn = str(rec.get("display_name") or "").strip()
+        from_h = f"{dn} <{addr}>".strip() if dn and addr else addr
+    return {
+        "from": from_h,
+        "to": hit.get("to_header") or _fmt_addrs((payload or {}).get("to")),
+        "cc": _fmt_addrs((payload or {}).get("cc")),
+        "bcc": _fmt_addrs((payload or {}).get("bcc")),
+        "from_parsed": from_parsed,
+        "to_parsed": to_parsed,
+        "cc_parsed": cc_parsed,
+        "addresses": addrs,
+        "participants": names,
+    }
+
+
 def _mailbox_skip(payload: dict[str, Any]) -> str | None:
     skip = str(payload.get("mailbox_skip") or payload.get("skip_reason") or "").strip().lower()
     if skip in {"spam", "trash"}:
@@ -628,22 +672,28 @@ def _normalize_comm_hit(hit: Any, *, retrieved_index: int) -> tuple[dict[str, An
     # email (default for remaining communication)
     subject = str((payload or {}).get("subject") or d.get("summary") or "")
     body, flags = _complete_email_body(raw_body)
-    from_h = d.get("from_header") or (payload or {}).get("from")
-    to_h = d.get("to_header") or _fmt_addrs((payload or {}).get("to"))
-    cc_h = _fmt_addrs((payload or {}).get("cc"))
+    structured = _structured_email_fields(payload or {}, d)
+    from_h = structured["from"]
+    to_h = structured["to"]
+    cc_h = structured["cc"]
     item = {
         "item_id": _stable_item_id("email", eid),
         "source": "email",
         "native_id": eid,
+        "evidence_id": eid,
         "timestamp": when,
         "from": from_h,
         "to": to_h,
         "cc": cc_h,
+        "bcc": structured["bcc"],
+        "from_parsed": structured["from_parsed"],
+        "to_parsed": structured["to_parsed"],
+        "addresses": structured["addresses"],
         "subject": subject,
         "body": body,
         "raw_body_chars": len(raw_body),
         "thread_id": thread_id,
-        "participants": people,
+        "participants": structured["participants"],
         "direction": d.get("direction") or (payload or {}).get("direction"),
         "attachments": d.get("attachments") or (payload or {}).get("attachments") or [],
         "normalization": {
@@ -1114,6 +1164,8 @@ def _item_text_blob(item: dict[str, Any]) -> str:
 def format_item_block(item: dict[str, Any]) -> str:
     src = str(item.get("source") or "other").upper()
     lines = [f"### [{src}] {item.get('item_id')}"]
+    if item.get("evidence_id") or item.get("native_id"):
+        lines.append(f"evidence_id: {item.get('evidence_id') or item.get('native_id')}")
     if item.get("timestamp"):
         lines.append(f"timestamp: {item.get('timestamp')}")
     if item.get("title"):
@@ -1126,10 +1178,12 @@ def format_item_block(item: dict[str, Any]) -> str:
         lines.append(f"to: {item.get('to')}")
     if item.get("cc"):
         lines.append(f"cc: {item.get('cc')}")
-    if item.get("participants"):
+    if item.get("participants") and src != "EMAIL":
         lines.append(f"participants: {', '.join(str(p) for p in item['participants'])}")
-    if item.get("people"):
+    if item.get("people") and src != "EMAIL":
         lines.append(f"people: {', '.join(str(p) for p in item['people'])}")
+    if src == "EMAIL" and item.get("addresses"):
+        lines.append("addresses: " + ", ".join(str(a) for a in item["addresses"]))
     if item.get("location") or item.get("place"):
         lines.append(f"location: {item.get('location') or item.get('place')}")
     if item.get("thread_id"):
