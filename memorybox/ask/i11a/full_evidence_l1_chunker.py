@@ -289,6 +289,35 @@ def _norm_email_subject(raw: Any) -> str:
         s = nxt
 
 
+def _thread_structured_addresses(item: dict[str, Any]) -> list[str]:
+    """From/To/CC/BCC + parsed addresses. Never people[]."""
+    found: set[str] = set()
+    for raw in item.get("addresses") or []:
+        s = str(raw).strip().lower()
+        if s and "@" in s:
+            found.add(s)
+    for rec in (
+        list(item.get("from_parsed") or [])
+        + list(item.get("to_parsed") or [])
+        + list(item.get("cc_parsed") or [])
+        + list(item.get("bcc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        s = str(rec.get("normalized") or rec.get("address") or "").strip().lower()
+        if s and "@" in s:
+            found.add(s)
+    blob = " ".join(
+        str(item.get(k) or "")
+        for k in ("from", "to", "cc", "bcc", "from_header", "to_header")
+    )
+    for m in re.finditer(
+        r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", blob
+    ):
+        found.add(m.group(0).strip().lower())
+    return sorted(found)
+
+
 def _email_thread_key(item: dict[str, Any]) -> str:
     """Prefer RFC thread_id; else same normalized subject + structured addresses.
 
@@ -299,13 +328,7 @@ def _email_thread_key(item: dict[str, Any]) -> str:
     if tid and tid != iid:
         return f"tid:{tid}"
     subj = _norm_email_subject(item.get("subject") or item.get("title"))
-    addrs = sorted(
-        {
-            str(a).strip().lower()
-            for a in (item.get("addresses") or [])
-            if str(a).strip() and "@" in str(a)
-        }
-    )
+    addrs = _thread_structured_addresses(item)
     if subj and addrs:
         return f"subj:{subj}|{','.join(addrs)}"
     return f"item:{iid or id(item)}"

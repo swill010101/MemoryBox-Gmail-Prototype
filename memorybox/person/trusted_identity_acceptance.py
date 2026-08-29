@@ -1278,6 +1278,42 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=[{"ids": u.get("item_ids"), "tid": u.get("thread_id")} for u in threaded],
     )
+    hotmail_threaded = group_email_threads(
+        [
+            {
+                "item_id": "h1",
+                "subject": "Re: Sunday",
+                "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": ""}],
+                "people": ["Random Cooccur"],
+                "timestamp": "2020-02-01",
+            },
+            {
+                "item_id": "h2",
+                "subject": "Sunday",
+                "from": "peggo417@hotmail.com",
+                "people": ["Someone Else"],
+                "timestamp": "2020-02-02",
+            },
+            {
+                "item_id": "h3",
+                "subject": "Sunday",
+                "from_parsed": [{"address": "other@example.test"}],
+                "people": ["Peg Legg"],
+                "timestamp": "2020-02-03",
+            },
+        ]
+    )
+    _check(
+        "email_threads_group_hotmail_from_parsed_without_people_array",
+        len(hotmail_threaded) == 2
+        and {frozenset(u.get("item_ids") or []) for u in hotmail_threaded}
+        == {frozenset({"h1", "h2"}), frozenset({"h3"})},
+        checks,
+        problems,
+        detail=[
+            {"ids": u.get("item_ids"), "tid": u.get("thread_id")} for u in hotmail_threaded
+        ],
+    )
     _check(
         "chunk_merge_dedupes_claims",
         merged.get("ok") and len((merged.get("document") or {}).get("claims") or []) == 1,
