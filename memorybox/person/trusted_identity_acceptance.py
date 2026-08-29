@@ -342,6 +342,26 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=merged,
     )
 
+    try:
+        from memorybox.person.trusted_identity_e2e import run_trusted_identity_db_e2e
+
+        db_e2e = run_trusted_identity_db_e2e()
+        _check(
+            "local_db_trusted_retrieve_scope",
+            bool(db_e2e.get("ok")),
+            checks,
+            problems,
+            detail=db_e2e.get("problems") or db_e2e,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _check(
+            "local_db_trusted_retrieve_scope",
+            False,
+            checks,
+            problems,
+            detail=f"{type(exc).__name__}:{exc}",
+        )
+
     return {
         "ok": not problems,
         "prove": "trusted_identity_retrieval",
