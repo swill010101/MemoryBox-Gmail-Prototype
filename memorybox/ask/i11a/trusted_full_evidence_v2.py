@@ -136,8 +136,23 @@ def select_single_pass_items(
         else:
             non_email.append(it)
     email.sort(key=lambda i: str(i.get("sent_at") or i.get("start") or ""), reverse=True)
-    selected = list(person) + list(non_email)
-    used = _estimate_tokens("\n".join(format_item_block(i) for i in selected))
+    non_email.sort(
+        key=lambda i: str(i.get("sent_at") or i.get("start") or i.get("timestamp") or ""),
+        reverse=True,
+    )
+    # Reserve budget so a large photo/SMS library cannot crowd out trusted email.
+    email_reserve = max(token_budget // 3, 8_000) if email else 0
+    selected = list(person)
+    used = _estimate_tokens("\n".join(format_item_block(i) for i in selected)) if selected else 0
+    non_email_room = max(0, token_budget - email_reserve - used)
+    non_used = 0
+    for it in non_email:
+        block_tok = _estimate_tokens(format_item_block(it))
+        if non_used + block_tok > non_email_room:
+            break
+        selected.append(it)
+        non_used += block_tok
+        used += block_tok
     for it in email:
         block_tok = _estimate_tokens(format_item_block(it))
         if selected and used + block_tok > token_budget:

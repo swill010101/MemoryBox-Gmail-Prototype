@@ -127,21 +127,11 @@ def run_trusted_evidence_pipeline(
 
     fixture_path = str(freeze["fixture_path"])
     fixture_hash = freeze.get("input_sha256")
-    complete = freeze_trusted_full_evidence_v2(
-        person_id=pid, ask=ask, out_dir=out, complete_trusted=True
-    )
     result["larger_trusted_set"] = {
-        "ok": complete.get("ok"),
-        "fixture_path": complete.get("fixture_path"),
-        "input_sha256": complete.get("input_sha256"),
-        "item_count": complete.get("item_count"),
-        "evidence_type_counts": complete.get("evidence_type_counts"),
-        "email_evidence_ids": complete.get("email_evidence_ids"),
+        "ok": False,
+        "deferred": True,
+        "reason": "after_both_single_pass_reports_only",
     }
-    if complete.get("fixture_path"):
-        result["larger_trusted_set"]["chunk_structure"] = compare_chunked_vs_unchunked(
-            complete["fixture_path"]
-        )
     gemma: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
     sol: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
     if run_models:
@@ -232,6 +222,22 @@ def run_trusted_evidence_pipeline(
                 out_dir=out,
             )
             result["phase3_model_per_chunk"] = chunked_models
+            complete = freeze_trusted_full_evidence_v2(
+                person_id=pid, ask=ask, out_dir=out, complete_trusted=True
+            )
+            result["larger_trusted_set"] = {
+                "ok": complete.get("ok"),
+                "deferred": False,
+                "fixture_path": complete.get("fixture_path"),
+                "input_sha256": complete.get("input_sha256"),
+                "item_count": complete.get("item_count"),
+                "evidence_type_counts": complete.get("evidence_type_counts"),
+                "email_evidence_ids": complete.get("email_evidence_ids"),
+            }
+            if complete.get("fixture_path"):
+                result["larger_trusted_set"]["chunk_structure"] = (
+                    compare_chunked_vs_unchunked(complete["fixture_path"])
+                )
             result["ok"] = bool(chunk.get("ok")) and bool(chunked_models.get("ok"))
             result["stop"] = (
                 "phase_3_complete"

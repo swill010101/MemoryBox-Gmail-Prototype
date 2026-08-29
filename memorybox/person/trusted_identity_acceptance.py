@@ -295,6 +295,28 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=empty_ids,
     )
+    crowded = select_single_pass_items(
+        [
+            {
+                "source": "sms",
+                "item_id": f"sms{i}",
+                "body": "n" * 8000,
+                "text": "n" * 8000,
+            }
+            for i in range(40)
+        ]
+        + [x for x in items if x.get("source") == "email"],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=20_000,
+    )
+    crowded_ids = {str(i.get("item_id")) for i in crowded}
+    _check(
+        "single_pass_reserves_budget_for_trusted_email",
+        "e-trust" in crowded_ids and "e-other" not in crowded_ids,
+        checks,
+        problems,
+        detail=crowded_ids,
+    )
     freeze_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.trusted_full_evidence_v2",
@@ -382,6 +404,14 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "pipeline_blocks_chunk_models_until_both_single_pass",
         "blocked_until_both_single_pass" in pipe_src,
+        checks,
+        problems,
+    )
+    _check(
+        "pipeline_defers_larger_set_until_both_single_pass",
+        "after_both_single_pass_reports_only" in pipe_src
+        and pipe_src.find("after_both_single_pass_reports_only")
+        < pipe_src.find("complete_trusted=True"),
         checks,
         problems,
     )
