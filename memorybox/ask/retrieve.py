@@ -734,14 +734,13 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
-        " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 8
+    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 7
 
 
 def _person_scoped_comm_where(
@@ -764,7 +763,9 @@ def _person_scoped_comm_where(
     clauses: list[str] = []
     params: list[Any] = list(win_params)
     scopes: list[str] = []
-    if person_ids:
+    # Stale person_ids stamps from auto-expand must not widen email retrieve.
+    # When trusted addresses exist, scan headers only.
+    if person_ids and not confirmed_emails:
         gin_sql, gin_params = _sql_person_ids_gin(person_ids)
         clauses.append(gin_sql)
         params.extend(gin_params)
@@ -1410,14 +1411,13 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
-    # Fallback: raw From/To/CC/BCC (and people[]) when *_parsed is missing on older rows.
+    # Fallback: raw From/To/CC/BCC when *_parsed is missing. Never people[].
     for raw in (
         payload.get("from"),
         payload.get("from_raw"),
         payload.get("to"),
         payload.get("cc"),
         payload.get("bcc"),
-        payload.get("people"),
     ):
         texts: list[str]
         if isinstance(raw, (list, tuple)):
@@ -1437,31 +1437,9 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
 
 
 def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
-    from memorybox.person.phone_map import normalize_handle
+    from memorybox.person.trusted_identity import trusted_emails_for_people
 
-    ids = [str(p) for p in person_ids if str(p).strip()]
-    if not ids:
-        return set()
-    try:
-        with connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT value_text
-                FROM person_contact_points
-                WHERE contact_kind = 'email'
-                  AND status = 'confirmed'
-                  AND person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-    except Exception:  # noqa: BLE001
-        return set()
-    out: set[str] = set()
-    for r in rows:
-        n = normalize_handle(str(r.get("value_text") or ""))
-        if n and "@" in n:
-            out.add(n)
-    return out
+    return trusted_emails_for_people(person_ids)
 
 
 def _asked_person_is_owner(plan: QueryPlan) -> bool:
@@ -1760,37 +1738,29 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             day = sent[:10]
             if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
                 return False
-        if person_ids or person_names:
-            have = {str(x) for x in (payload.get("person_ids") or [])}
+        if person_ids:
             addrs = _payload_email_addresses(payload)
-            mapped_ids = {
-                str(m.get("person_id"))
-                for m in ((payload.get("identity_resolution") or {}).get("mapped") or [])
-                if isinstance(m, dict) and m.get("person_id")
-            }
-            if person_ids and (have & person_ids or mapped_ids & person_ids):
-                pass
-            elif confirmed_addrs and (addrs & confirmed_addrs):
+            if confirmed_addrs and (addrs & confirmed_addrs):
                 pass
             elif asked_owner and (
                 payload.get("from_owner")
                 or (owner_addrs and (addrs & owner_addrs))
-                or (asked_owner and not owner_addrs and not confirmed_addrs)
             ):
-                # Owner Person + personal Takeout: mailbox is theirs even when
-                # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
                 pass
-            elif (
-                person_names
-                and _sms_name_match(
-                    _email_person_blob(payload),
-                    person_names,
-                    allow_first_token=False,
-                )
+            else:
+                return False
+        elif person_names:
+            have = {str(x) for x in (payload.get("person_ids") or [])}
+            addrs = _payload_email_addresses(payload)
+            if confirmed_addrs and (addrs & confirmed_addrs):
+                pass
+            elif _sms_name_match(
+                _email_person_blob(payload),
+                person_names,
+                allow_first_token=False,
             ):
-                # Full display-name match even when Person ids are set.
-                # Ingest often leaves person_ids empty on email rows; unique
-                # Person lock still supplies person_names (P2-BL-I8-02).
+                pass
+            elif have:
                 pass
             else:
                 return False

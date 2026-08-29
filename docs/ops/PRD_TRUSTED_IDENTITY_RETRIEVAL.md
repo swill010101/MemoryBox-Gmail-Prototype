@@ -1,0 +1,68 @@
+# PRD — Trusted-identity retrieval (Phase 1)
+
+**Branch:** `cursor/p2-i11a-trusted-identity-retrieve-49da`  
+**Parent:** `cursor/p2-i11a-address-centric-email-49da` (PR #74 — do not merge)  
+**Do not merge:** PR #76 (gate artifacts)
+
+**Stop this slice at Phase 1.** Phase 2 (Gemma/Sol fixture) and Phase 3 (chunking)
+start only after Phase 1 product acceptance.
+
+## Problem
+
+Address-centric prove showed `peggo417@hotmail.com` on Peggy George (~5,716
+structured messages) but Explore/Gallery retrieved ~42,554 messages because
+~700 auto-confirmed addresses were treated as retrieve keys. That scope is
+not acceptable for the I11A model benchmark.
+
+## Governing rules (general — no Peggy hardcode)
+
+1. An address is trusted for retrieval only when it is an explicit canonical
+   Person-profile contact, a direct owner/operator confirmation, or another
+   already-approved deterministic trusted source.
+2. `people[]` must never establish identity ownership or supply a display name
+   used to confirm ownership.
+3. Quoted/body headers may be diagnostic or candidate-discovery only — never
+   independently promote an address to confirmed or trusted.
+4. Structured From/To/CC/BCC proves participation, not Person ownership.
+5. Fuzzy name / nickname / display-name matching may create a **candidate** only.
+6. Preserve all observed identity evidence and provenance. Demote unsupported
+   auto-confirmed identities to candidate/observed — do not delete.
+7. Gallery and Ask/Full-Evidence V2 use the same trusted-identity resolver.
+
+## Success (Phase 1)
+
+- Retrieve/Gallery/Ask use **only** `retrieval_trust = trusted` emails.
+- Unsupported addresses in Person retrieval = **0**.
+- Report: every trusted identity + why; counts by observed/candidate/confirmed/
+  trusted-for-retrieval; unique emails via each trusted address; Gallery count.
+- Product: Peggy Explore/Gallery shows Peg Legg / Peggy George mail through
+  trusted `peggo417` without unrelated mail.
+
+## Out of scope (this slice)
+
+- Historian / I11B expansion
+- Gemma/Sol benchmark (Phase 2)
+- Chunking (Phase 3)
+- Merging PR #74 / #76
+
+## FlightSim (after pull)
+
+```
+cd C:\memorybox
+git fetch origin cursor/p2-i11a-trusted-identity-retrieve-49da
+git checkout cursor/p2-i11a-trusted-identity-retrieve-49da
+git pull origin cursor/p2-i11a-trusted-identity-retrieve-49da
+python -m memorybox migrate
+tools\flightsim-trusted-identity-gate.cmd
+```
+
+If `peggo417@hotmail.com` is on the Person profile but classify is untrusted
+(auto-expand actor), attest then re-run:
+
+```
+python -m memorybox attest-trusted-identity --person "Peggy George" --email peggo417@hotmail.com
+python -m memorybox prove-trusted-identity-retrieval --flightsim
+```
+
+Phase 2/3 do not start until this prove is green and Gallery only shows
+trusted-address mail.

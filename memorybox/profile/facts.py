@@ -386,16 +386,33 @@ def add_contact(
     if len(text) < 2:
         raise ProfileServiceError("value_text required")
     cid = uuid4()
+    prov_json = json.dumps(provenance or {"source": "owner"})
+    trust = (
+        "trusted"
+        if (actor_key or "owner") in {"owner", "operator", "owner_confirmed"}
+        else "untrusted"
+    )
     with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO person_contact_points (
-                id, person_id, contact_kind, value_text, status,
-                actor_key, note, provenance_json
-            ) VALUES (%s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
-            """,
-            (cid, pid, kind, text, actor_key, note, json.dumps(provenance or {"source": "owner"})),
-        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json, retrieval_trust
+                ) VALUES (%s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb, %s)
+                """,
+                (cid, pid, kind, text, actor_key, note, prov_json, trust),
+            )
+        except Exception:  # noqa: BLE001
+            conn.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json
+                ) VALUES (%s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
+                """,
+                (cid, pid, kind, text, actor_key, note, prov_json),
+            )
         row = conn.execute("SELECT * FROM person_contact_points WHERE id = %s", (cid,)).fetchone()
     return _contact_view(row)
 
@@ -472,7 +489,8 @@ def list_contacts(person_id: str, *, include_withdrawn: bool = False) -> list[Co
             rows = conn.execute(
                 """
                 SELECT * FROM person_contact_points
-                WHERE person_id = %s AND status = 'confirmed'
+                WHERE person_id = %s
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 ORDER BY created_at ASC
                 """,
                 (pid,),

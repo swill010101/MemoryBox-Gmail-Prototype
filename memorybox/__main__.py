@@ -634,6 +634,31 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use FlightSim archive (no local seed)",
     )
+    p_prove_trust = sub.add_parser(
+        "prove-trusted-identity-retrieval",
+        help="Trusted-for-retrieval identity boundary (Phase 1)",
+    )
+    p_prove_trust.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Reclassify and report the named Person on the live archive",
+    )
+    p_report_trust = sub.add_parser(
+        "report-trusted-identities",
+        help="Reclassify and report trusted-for-retrieval emails for a Person",
+    )
+    p_report_trust.add_argument("--person", required=True, help="Person display name")
+    p_reclass_trust = sub.add_parser(
+        "reclassify-trusted-identities",
+        help="Demote unsupported auto-confirmed emails; keep evidence rows",
+    )
+    p_reclass_trust.add_argument("--person", required=True, help="Person display name")
+    p_attest_trust = sub.add_parser(
+        "attest-trusted-identity",
+        help="Owner/operator attest an email as trusted for retrieve",
+    )
+    p_attest_trust.add_argument("--person", required=True, help="Person display name")
+    p_attest_trust.add_argument("--email", required=True, help="Email address")
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1361,6 +1386,42 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 )
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-trusted-identity-retrieval":
+        from memorybox.person.trusted_identity_acceptance import (
+            run_prove_trusted_identity_retrieval,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_trusted_identity_retrieval(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "report-trusted-identities":
+        from memorybox.person.trusted_identity import report_named_person_identity_trust
+
+        payload = report_named_person_identity_trust(args.person)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "reclassify-trusted-identities":
+        from memorybox.person.trusted_identity import report_named_person_identity_trust
+
+        payload = report_named_person_identity_trust(args.person)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "attest-trusted-identity":
+        from memorybox.person import resolve_person_by_name
+        from memorybox.person.trusted_identity import attest_trusted_email
+
+        resolved = resolve_person_by_name(
+            args.person, create_if_missing=False, confirm=False
+        )
+        payload = attest_trusted_email(resolved.person_id, args.email)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("upserted") or payload.get("address") else 1
 
     if args.cmd == "i11a-enrich":
         from memorybox.app import get_orchestrator

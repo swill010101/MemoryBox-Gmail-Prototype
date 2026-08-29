@@ -1091,24 +1091,14 @@ def resolve_person_for_identity_teach(
 
 
 def _person_has_confirmed_email(person_id: str) -> bool:
-    """True when person_contact_points has a confirmed email for this Person."""
+    """True when this Person has a trusted-for-retrieval email."""
     pid = str(person_id or "").strip()
     if not pid:
         return False
     try:
-        with connection() as conn:
-            row = conn.execute(
-                """
-                SELECT 1
-                FROM person_contact_points
-                WHERE person_id = %s
-                  AND contact_kind = 'email'
-                  AND status = 'confirmed'
-                LIMIT 1
-                """,
-                (pid,),
-            ).fetchone()
-            return bool(row)
+        from memorybox.person.trusted_identity import trusted_emails_for_people
+
+        return bool(trusted_emails_for_people({pid}))
     except Exception:  # noqa: BLE001
         return False
 
