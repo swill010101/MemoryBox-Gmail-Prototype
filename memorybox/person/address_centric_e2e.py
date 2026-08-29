@@ -993,21 +993,12 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 }
 
     if _PROBE_ADDR not in addrs:
-        resolve = resolve_and_attach_addresses_for_person(
-            ask_peggy.id, persist=True, backfill=True, inventory_attached=True
-        )
-        accepted_addrs = [
-            normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
-            for e in (resolve.get("accepted") or [])
-        ]
-        expanded = expand_emails_for_retrieve({ask_peggy.id})
-        addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
-
-        # Belt-and-suspenders: if ledger/auto resolve missed but structured
-        # headers exist for the probe address, operator-attest (same as --repair-address).
+        # Bootstrap + structured hits: after operator-attest (+ retry), never fall
+        # into archive-wide Peg* nickname discover. Takeout Peg* scans can hang
+        # tens of thousands of rows and never deliver ADDRESS_CENTRIC_GATE.
+        # Fail closed with a clear repair trail instead (same as --repair-address).
         if (
             bootstrap
-            and _PROBE_ADDR not in addrs
             and struct_n > 0
             and ask_peggy is not None
             and (ask_peggy.display_name or "").strip().lower() == "peggy george"
@@ -1023,9 +1014,34 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             )
             expanded = expand_emails_for_retrieve({ask_peggy.id})
             addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
-            if bool((repair_info or {}).get("accepted")):
+            if bool((repair_info or {}).get("accepted")) or _PROBE_ADDR in addrs:
                 addrs.add(_PROBE_ADDR)
                 accepted_addrs = [_PROBE_ADDR]
+                resolve = {
+                    "accepted": [{"candidate": {"address": _PROBE_ADDR}}],
+                    "mode": "bootstrap_operator_attested_probe_final",
+                    "repair": repair_info,
+                }
+            else:
+                resolve = {
+                    "accepted": [],
+                    "mode": "bootstrap_fail_closed_skip_peg_star_scan",
+                    "repair": repair_info,
+                    "reason": (
+                        "operator_attest_failed_after_retry; "
+                        "skipped archive-wide Peg* discover"
+                    ),
+                }
+        else:
+            resolve = resolve_and_attach_addresses_for_person(
+                ask_peggy.id, persist=True, backfill=True, inventory_attached=True
+            )
+            accepted_addrs = [
+                normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
+                for e in (resolve.get("accepted") or [])
+            ]
+            expanded = expand_emails_for_retrieve({ask_peggy.id})
+            addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
 
     _check(
         "resolve_or_expand_has_peggo417",

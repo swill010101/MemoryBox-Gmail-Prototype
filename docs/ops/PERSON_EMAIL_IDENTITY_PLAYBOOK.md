@@ -57,8 +57,9 @@ writes `error=gate_cmd_pre_prove_fail`. Watchdogs via
 `STARTMB_WATCHDOG_SEC` (default 600) / `PROVE_WATCHDOG_SEC` (default 2700);
 timeouts `taskkill /F /T` the process tree then emit a failure gate.
 
-Bootstrap skips archive-wide Peg* nickname discover when operator-attest of
-`peggo417` is accepted (or retries attest once) — avoids Takeout hang.
+Bootstrap never falls into archive-wide Peg* nickname discover when structured
+`peggo417` hits exist: operator-attest (+ retry + final), then fail closed with
+a clear repair trail — avoids Takeout hang that never delivers a gate.
 
 **Completion audit** (after FlightSim overwrites the results branch):
 
