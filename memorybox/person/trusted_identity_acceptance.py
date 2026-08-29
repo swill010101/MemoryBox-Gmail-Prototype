@@ -755,6 +755,28 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=loss_audit.get("problems"),
     )
+    _env_export = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "export-memorybox-app-env.py"
+    )
+    _espec = importlib.util.spec_from_file_location("export_memorybox_app_env", _env_export)
+    _emod = importlib.util.module_from_spec(_espec)  # type: ignore[arg-type]
+    assert _espec and _espec.loader
+    _espec.loader.exec_module(_emod)
+    tmp_env = __import__("tempfile").NamedTemporaryFile(
+        "w", suffix=".env", delete=False, encoding="utf-8"
+    )
+    tmp_env.write('MEMORYBOX_CLOUD_LLM_MODEL="sol-quoted"\r\n')
+    tmp_env.close()
+    parsed_env = _emod.parse_env_file(__import__("pathlib").Path(tmp_env.name))
+    _check(
+        "app_env_loader_strips_quotes_and_cr",
+        parsed_env.get("MEMORYBOX_CLOUD_LLM_MODEL") == "sol-quoted",
+        checks,
+        problems,
+        detail=parsed_env,
+    )
     _check(
         "flightsim_gate_clears_allow_dev_before_prove",
         "set MEMORYBOX_P1_RUNTIME_HOST=1" in gate_txt
@@ -764,8 +786,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("prove-trusted-identity-retrieval --flightsim")
         and gate_txt.find("MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333")
         < gate_txt.find("python -m memorybox migrate")
-        and "MEMORYBOX_CLOUD_LLM_BASE_URL=" in gate_txt
-        and "MEMORYBOX_CLOUD_LLM_MODEL=" in gate_txt
+        and "export-memorybox-app-env.py" in gate_txt
         and "MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434" in gate_txt,
         checks,
         problems,

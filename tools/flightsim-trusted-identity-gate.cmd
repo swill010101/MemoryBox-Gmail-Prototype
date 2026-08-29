@@ -10,13 +10,9 @@ REM can stamp flightsim=true. Clearing ALLOW_DEV drops the :memory: Qdrant
 REM default — set the startmb localhost URL when app.env did not export it.
 set MEMORYBOX_P1_RUNTIME_HOST=1
 set MEMORYBOX_ALLOW_DEV_DEFAULTS=
-if exist config\memorybox_app.env (
-  if not defined MEMORYBOX_DATABASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_DATABASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_DATABASE_URL=%%B"
-  if not defined MEMORYBOX_QDRANT_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_QDRANT_URL=" config\memorybox_app.env`) do set "MEMORYBOX_QDRANT_URL=%%B"
-  if not defined MEMORYBOX_OLLAMA_BASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_OLLAMA_BASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_OLLAMA_BASE_URL=%%B"
-  if not defined MEMORYBOX_CLOUD_LLM_BASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_BASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_BASE_URL=%%B"
-  if not defined MEMORYBOX_CLOUD_LLM_API_KEY for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_API_KEY=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_API_KEY=%%B"
-  if not defined MEMORYBOX_CLOUD_LLM_MODEL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_MODEL=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_MODEL=%%B"
+REM startmb loads app.env only in PowerShell. findstr leaves quotes/CR on keys.
+if exist tools\export-memorybox-app-env.py (
+  for /f "usebackq delims=" %%L in (`python tools\export-memorybox-app-env.py`) do %%L
 )
 if not defined MEMORYBOX_DATABASE_URL set MEMORYBOX_DATABASE_URL=postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
 if not defined MEMORYBOX_QDRANT_URL set MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333
