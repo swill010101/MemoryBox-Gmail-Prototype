@@ -197,6 +197,42 @@ def _address_claimed_by(addr: str) -> list[str]:
     return out
 
 
+def _revoke_confirmed_email_contact(person_id: str, address: str) -> dict[str, Any]:
+    """Drop a confirmed email contact (operator reclaim / merge cleanup)."""
+    norm = normalize_handle(address)
+    pid = str(person_id or "").strip()
+    if not norm or "@" not in norm or not pid:
+        return {"revoked": False, "reason": "invalid"}
+    try:
+        with connection() as conn:
+            conn.execute(
+                """
+                DELETE FROM person_contact_points
+                WHERE person_id = %s::uuid
+                  AND contact_kind = 'email'
+                  AND status = 'confirmed'
+                  AND lower(value_text) = %s
+                """,
+                (pid, norm),
+            )
+            # Clear stale ledger resolution pointing at the revoked Person.
+            conn.execute(
+                """
+                UPDATE communication_identities
+                SET resolved_person_id = NULL,
+                    resolution_status = 'observed',
+                    updated_at = now()
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                  AND resolved_person_id = %s::uuid
+                """,
+                (norm, pid),
+            )
+        return {"revoked": True, "person_id": pid, "address": norm}
+    except Exception as exc:  # noqa: BLE001
+        return {"revoked": False, "error": str(exc), "person_id": pid, "address": norm}
+
+
 def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
     """Extract participant records from From/To/CC/BCC (never body text)."""
     out: list[dict[str, str]] = []
@@ -1250,13 +1286,29 @@ def attach_known_email_if_corroborated(
         return {"accepted": False, "reason": "missing_address_or_names", "address": addr}
 
     claimants = _address_claimed_by(addr)
+    reclaimed_from: list[str] = []
     if claimants and person_id not in claimants:
-        return {
-            "accepted": False,
-            "reason": "address_claimed_by_other_person",
-            "claimed_by": claimants,
-            "address": addr,
-        }
+        if not operator_attested:
+            return {
+                "accepted": False,
+                "reason": "address_claimed_by_other_person",
+                "claimed_by": claimants,
+                "address": addr,
+            }
+        # Explicit repair --person-id + --address: reclaim from prior wrong Person.
+        for other in claimants:
+            rev = _revoke_confirmed_email_contact(other, addr)
+            if rev.get("revoked"):
+                reclaimed_from.append(other)
+        claimants = _address_claimed_by(addr)
+        if claimants and person_id not in claimants:
+            return {
+                "accepted": False,
+                "reason": "address_claimed_by_other_person",
+                "claimed_by": claimants,
+                "address": addr,
+                "reclaim_attempted": reclaimed_from,
+            }
     if person_id in claimants:
         if backfill:
             bf = backfill_email_person_ids(person_id, {addr})
@@ -1428,6 +1480,7 @@ def attach_known_email_if_corroborated(
         "backfill": bf,
         "operator_attested": bool(operator_attested),
         "seeded_aliases": seeded_aliases,
+        "reclaimed_from": reclaimed_from,
         "hint": hint,
     }
 

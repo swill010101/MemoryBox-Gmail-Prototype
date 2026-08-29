@@ -998,6 +998,73 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=op.get("rows_with_address"),
     )
 
+    # Operator repair may reclaim an address wrongly confirmed on another Person.
+    claim_calls = {"n": 0}
+
+    def _claim_side_effect(_addr: str) -> list[str]:
+        claim_calls["n"] += 1
+        # First check: claimed by other; after revoke: unclaimed.
+        return ["person-wrong"] if claim_calls["n"] == 1 else []
+
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by",
+        side_effect=_claim_side_effect,
+    ), patch(
+        "memorybox.person.comm_identity._revoke_confirmed_email_contact",
+        return_value={"revoked": True, "person_id": "person-wrong"},
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value=snap_peggy,
+    ), patch(
+        "memorybox.person.comm_identity.connection",
+        return_value=_FakeConn(),
+    ):
+        reclaim = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=True,
+        )
+        auto_blocked = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=False,
+        )
+    _check(
+        "operator_attested_reclaims_from_other_person",
+        bool(reclaim.get("accepted"))
+        and "person-wrong" in (reclaim.get("reclaimed_from") or []),
+        checks,
+        problems,
+        detail=reclaim,
+    )
+    # Reset claim counter path: auto must still fail-closed when claimed.
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by",
+        return_value=["person-wrong"],
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value=snap_peggy,
+    ):
+        auto_blocked = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=False,
+        )
+    _check(
+        "auto_still_fail_closed_when_claimed",
+        not auto_blocked.get("accepted")
+        and auto_blocked.get("reason") == "address_claimed_by_other_person",
+        checks,
+        problems,
+        detail=auto_blocked,
+    )
+
     # People status filter must use domain statuses (not stories' 'active').
     import inspect
 
