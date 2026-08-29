@@ -43,14 +43,52 @@ if errorlevel 1 (
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0flightsim-address-centric-prove.ps1"
 set PROVE_EXIT=%errorlevel%
 
+set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
+set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
+
+REM Auto-deliver to PR #74 when gh is authenticated — wakes the cloud agent
+REM subscription so Tom does not have to manually paste into chat.
+where gh >nul 2>&1
+if not errorlevel 1 if exist "%GATE_JSON%" (
+  echo.
+  echo ===== posting gate to PR #74 via gh (optional auto-deliver) =====
+  set COMMENT_FILE=%TEMP%\mb_address_centric_gate_pr_comment.md
+  (
+    echo ## FlightSim ADDRESS_CENTRIC_GATE
+    echo.
+    echo Branch: `%BRANCH%`
+    echo.
+    if exist "%GATE_VERDICT%" type "%GATE_VERDICT%"
+    echo.
+    echo ```json
+    type "%GATE_JSON%"
+    echo ```
+    if exist "%GATE_FAIL%" if not "%PROVE_EXIT%"=="0" (
+      echo.
+      echo ### FAILURE_DIAG
+      echo.
+      echo ```json
+      type "%GATE_FAIL%"
+      echo ```
+    )
+  ) > "%COMMENT_FILE%"
+  gh pr comment 74 --repo swill010101/MemoryBox-Gmail-Prototype --body-file "%COMMENT_FILE%"
+  if errorlevel 1 (
+    echo WARNING: gh pr comment failed — paste the gate manually into the agent chat.
+  ) else (
+    echo Posted. Cloud agent subscribed to PR #74 will pick this up.
+  )
+)
+
 echo.
 echo ===== paste the ADDRESS_CENTRIC_GATE block above into the agent chat =====
 echo need: "ok": true  and  "flightsim": true
-echo file: docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
-echo verdict: docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
-if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" (
+echo file: %GATE_JSON%
+echo verdict: %GATE_VERDICT%
+if exist "%GATE_VERDICT%" (
   echo.
-  type "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt"
+  type "%GATE_VERDICT%"
 )
 echo if prove failed, also paste ADDRESS_CENTRIC_FAILURE_DIAG.json when present
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
