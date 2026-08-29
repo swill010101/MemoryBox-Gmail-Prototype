@@ -1500,6 +1500,15 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    # Structured bootstrap: after attest/retry/final, fail closed — never Peg* scan.
+    _check(
+        "bootstrap_fail_closed_skips_peg_star_after_attest",
+        "bootstrap_fail_closed_skip_peg_star_scan" in ace_src
+        and "bootstrap_operator_attested_probe_final" in ace_src
+        and "skipped archive-wide Peg* discover" in ace_src,
+        checks,
+        problems,
+    )
     _check(
         "e2e_ledger_promote_retry_when_observed",
         "address_centric_e2e_ledger_retry" in ace_src
