@@ -992,6 +992,54 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=cleaned,
     )
+    sms_hit = EvidenceHit(
+        evidence_id="ev-sms-comm",
+        evidence_kind="communication",
+        summary="text",
+        score=1.0,
+        excerpt="",
+        source="qdrant",
+        channel="",
+        payload={
+            "evidence_channel": "sms",
+            "sender_name": "Peggy",
+            "body_text": "hi",
+        },
+    )
+    with patch.object(
+        retrieve_mod,
+        "_resolve_person_ids_from_names",
+        return_value={"person-peggy"},
+    ), patch.object(
+        retrieve_mod,
+        "_confirmed_emails_for_people",
+        return_value={"peggo417@hotmail.com"},
+    ):
+        kept_sms = filter_email_hits_to_trusted(
+            QueryPlan(
+                original_ask="tell me about Peggy",
+                effective_ask="tell me about Peggy",
+                is_followup=False,
+                want_photo=False,
+                want_communication=True,
+                want_calendar=False,
+                person_names=("Peggy George",),
+                person_ids=(),
+                place_names=(),
+                time_start=None,
+                time_end=None,
+                temporal_windows=(),
+            ),
+            [sms_hit],
+        )
+    _check(
+        "trusted_email_filter_keeps_sms_when_channel_missing",
+        [h.evidence_id for h in kept_sms] == ["ev-sms-comm"]
+        and "evidence_channel" in filt_src,
+        checks,
+        problems,
+        detail=kept_sms,
+    )
     elig_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.full_evidence_diagnostic",

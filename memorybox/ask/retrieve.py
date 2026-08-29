@@ -1480,14 +1480,12 @@ def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> li
         kind = str(h.evidence_kind or "").lower()
         ch = str(h.channel or "").lower()
         is_sms = ch in sms_ch or "sms" in kind or kind == "text"
-        is_email = (
+        maybe_email = (
             (kind in {"communication", "email", "comms"} and not is_sms)
             or ch == "email"
         )
-        if not is_email:
+        if not maybe_email:
             out.append(h)
-            continue
-        if not trusted:
             continue
         payload = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
         if not payload:
@@ -1497,7 +1495,20 @@ def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> li
                 row = get_evidence(UUID(str(h.evidence_id)))
                 payload = _payload_dict((row or {}).get("payload_json"))
             except Exception:  # noqa: BLE001
-                continue
+                payload = {}
+        # Qdrant/keyword hits often omit channel. SMS must not be treated as email.
+        pch = str(
+            (payload or {}).get("evidence_channel")
+            or (payload or {}).get("channel")
+            or ch
+        ).lower()
+        if pch in sms_ch or "sms" in str((payload or {}).get("evidence_kind") or ""):
+            out.append(h)
+            continue
+        if not trusted:
+            continue
+        if not payload:
+            continue
         from memorybox.person.trusted_identity import email_payload_trusted
 
         if email_payload_trusted(payload, trusted):
