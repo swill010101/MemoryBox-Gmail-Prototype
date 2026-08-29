@@ -1448,6 +1448,14 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "bootstrap_operator_attests_probe_before_peg_star_discover",
+        "bootstrap_operator_attested_probe" in ace_src
+        and "attach_known_email_if_corroborated" in ace_src
+        and "operator_attested=True" in ace_src,
+        checks,
+        problems,
+    )
 
     # Full-Evidence AmbiguousIdentity recovery prefers exact George/Legg from
     # the candidate list before another Ask round-trip.
