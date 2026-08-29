@@ -547,8 +547,22 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "flightsim_gate_clears_allow_dev_before_prove",
         "set MEMORYBOX_P1_RUNTIME_HOST=1" in gate_txt
         and "set MEMORYBOX_ALLOW_DEV_DEFAULTS=" in gate_txt
+        and "MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333" in gate_txt
         and gate_txt.find("set MEMORYBOX_ALLOW_DEV_DEFAULTS=")
-        < gate_txt.find("prove-trusted-identity-retrieval --flightsim"),
+        < gate_txt.find("prove-trusted-identity-retrieval --flightsim")
+        and gate_txt.find("MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333")
+        < gate_txt.find("python -m memorybox migrate"),
+        checks,
+        problems,
+    )
+    config_src = open(
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "config.py",
+        encoding="utf-8",
+    ).read()
+    _check(
+        "p1_runtime_defaults_localhost_qdrant_without_allow_dev",
+        'qdrant_default = "http://127.0.0.1:6333"' in config_src
+        and "MEMORYBOX_P1_RUNTIME_HOST" in config_src,
         checks,
         problems,
     )

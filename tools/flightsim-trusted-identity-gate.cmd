@@ -6,14 +6,20 @@ if not exist python.exe if not exist .git (
   cd /d C:\MemoryBox 2>nul
 )
 REM Same as address-centric prove.ps1: P1=1 and no ALLOW_DEV so --flightsim
-REM can stamp flightsim=true. Product retrieve can be green while the
-REM verifier rejects an ALLOW_DEV leftover from app.env / desktop session.
+REM can stamp flightsim=true. Clearing ALLOW_DEV drops the :memory: Qdrant
+REM default — set the startmb localhost URL when app.env did not export it.
 set MEMORYBOX_P1_RUNTIME_HOST=1
 set MEMORYBOX_ALLOW_DEV_DEFAULTS=
+if exist config\memorybox_app.env (
+  if not defined MEMORYBOX_DATABASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_DATABASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_DATABASE_URL=%%B"
+  if not defined MEMORYBOX_QDRANT_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_QDRANT_URL=" config\memorybox_app.env`) do set "MEMORYBOX_QDRANT_URL=%%B"
+)
 if not defined MEMORYBOX_DATABASE_URL set MEMORYBOX_DATABASE_URL=postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
+if not defined MEMORYBOX_QDRANT_URL set MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333
 echo hostname=%COMPUTERNAME%
 echo MEMORYBOX_P1_RUNTIME_HOST=%MEMORYBOX_P1_RUNTIME_HOST%
 echo ALLOW_DEV_DEFAULTS=%MEMORYBOX_ALLOW_DEV_DEFAULTS%
+echo MEMORYBOX_QDRANT_URL=%MEMORYBOX_QDRANT_URL%
 echo.
 echo === migrate ===
 python -m memorybox migrate
@@ -23,6 +29,8 @@ python -m memorybox prove-trusted-identity-retrieval --flightsim
 if errorlevel 1 (
   echo.
   echo PHASE 1 FAILED — do not widen matching.
+  echo If migrate/prove died on MEMORYBOX_QDRANT_URL, pull and re-run this gate.
+  echo Do not re-attest for an env/Qdrant miss — product trust was already green.
   echo If peggo417 is on the profile but untrusted, re-add it on the People card
   echo or attest, then re-run prove only:
   echo python -m memorybox attest-trusted-identity --person "Peggy George" --email peggo417@hotmail.com

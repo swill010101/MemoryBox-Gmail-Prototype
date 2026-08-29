@@ -75,6 +75,10 @@ class Settings:
                 "(or set MEMORYBOX_ALLOW_DEV_DEFAULTS=1 for local desktop defaults only)"
             )
         qdrant_default = ":memory:" if allow_dev else None
+        # FlightSim/P1 serve uses localhost Qdrant. After the gate clears
+        # ALLOW_DEV, Settings must not require a missing MEMORYBOX_QDRANT_URL.
+        if not qdrant_default and _truthy("MEMORYBOX_P1_RUNTIME_HOST"):
+            qdrant_default = "http://127.0.0.1:6333"
         qdrant_url = _env("MEMORYBOX_QDRANT_URL", qdrant_default)
         if not qdrant_url:
             raise RuntimeError(

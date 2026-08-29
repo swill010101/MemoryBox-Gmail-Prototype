@@ -56,15 +56,20 @@ python -m memorybox migrate
 tools\flightsim-trusted-identity-gate.cmd
 ```
 
-The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1` and clears
-`MEMORYBOX_ALLOW_DEV_DEFAULTS` (same as address-centric prove.ps1), then runs
-Phase 1 prove, `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV /
-cloud hostname fakes), then `run-trusted-evidence-pipeline`.
+The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
+`MEMORYBOX_ALLOW_DEV_DEFAULTS`, and defaults `MEMORYBOX_QDRANT_URL` to
+`http://127.0.0.1:6333` (same as address-centric prove.ps1). Clearing ALLOW_DEV
+drops the `:memory:` Qdrant fallback; without the URL, migrate/prove crash
+before the trusted report. Then: Phase 1 prove,
+`tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
+fakes), then `run-trusted-evidence-pipeline`.
 It stops on Phase 1 failure and does not widen matching.
 
 A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)
 with `C2`/`C2a` fail is a false fail: ALLOW_DEV leftover demoted the FlightSim
-stamp. Re-run the gate after pull — do not re-attest or widen matching.
+stamp. A later `MEMORYBOX_QDRANT_URL is required` fail is the same gate
+missing the startmb Qdrant default. Re-run the gate after pull — do not
+re-attest or widen matching.
 
 If `peggo417@hotmail.com` is on the Person profile but classify is untrusted
 (auto-expand actor), the owner profile add was overwritten or never stamped.
