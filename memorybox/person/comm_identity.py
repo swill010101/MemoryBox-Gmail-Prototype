@@ -1348,12 +1348,17 @@ def attach_known_email_if_corroborated(
         }
 
     like = f"%{addr}%"
+    angle = f"%<{addr}>%"
+    mailto = f"%[mailto:{addr}]%"
     name_likes = [f"%{f}%" for f in forms if " " in f] or (
         [f"%{forms[0]}%"] if forms else []
     )
     rows = []
     try:
         with connection() as conn:
+            # Same structured-first + spam/trash skip as inventory — operator
+            # attest must agree with probe on messy Takeout (LIMIT without
+            # ORDER BY used to sample random body-adjacent / spam rows).
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -1361,8 +1366,14 @@ def attach_known_email_if_corroborated(
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                  AND lower(coalesce(payload_json->>'mailbox_skip',
+                                     payload_json->>'skip_reason', ''))
+                      NOT IN ('spam', 'trash')
                   AND (
-                    lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    lower(coalesce(payload_json->>'from', '')) = %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
@@ -1372,9 +1383,47 @@ def attach_known_email_if_corroborated(
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
+                ORDER BY CASE
+                  WHEN lower(coalesce(payload_json->>'from', '')) = %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
+                  THEN 0
+                  ELSE 1
+                END,
+                id
                 LIMIT 5000
                 """,
-                (like, like, like, like, like, like, like, like, like),
+                (
+                    addr,
+                    angle,
+                    mailto,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    addr,
+                    angle,
+                    mailto,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                ),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"accepted": False, "reason": "scan_error", "error": str(exc), "address": addr}

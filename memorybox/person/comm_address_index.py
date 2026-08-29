@@ -105,6 +105,9 @@ def inventory_email_address(
             # Scalar From: exact bare first (index-friendlier), then shaped /
             # broad LIKE — same pattern as confirmed-email retrieve.
             # Match *_parsed as text LIKE (no per-row JSON unnest — Takeout scale).
+            # NEVER prefilter on body_text LIKE — that forces a Takeout-scale
+            # seq-scan (retrieve deliberately avoids it). Quoted-body display
+            # names are parsed in Python only from header-matched rows.
             angle = f"%<{addr}>%"
             mailto = f"%[mailto:{addr}]%"
             rows = conn.execute(
@@ -126,7 +129,6 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
-                    OR lower(coalesce(payload_json->>'body_text', '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
@@ -153,7 +155,6 @@ def inventory_email_address(
                     addr,
                     angle,
                     mailto,
-                    like,
                     like,
                     like,
                     like,
@@ -273,7 +274,8 @@ def inventory_email_address(
             "has_peg_legg": has_peg_legg_quoted,
             "note": (
                 "Lower confidence — From/To/Cc/Bcc lines embedded in body_text "
-                "(quoted/forwarded). Do not establish identity alone."
+                "(quoted/forwarded) of header-matched messages only. Inventory "
+                "SQL never seq-scans body_text. Do not establish identity alone."
             ),
         },
     }

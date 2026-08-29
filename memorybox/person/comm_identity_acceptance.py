@@ -1395,6 +1395,16 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "inventory_sql_avoids_body_text_prefilter",
+        "body_text" not in inventory_src
+        or (
+            "NEVER prefilter on body_text" in inventory_src
+            and "payload_json->>'body_text'" not in inventory_src
+        ),
+        checks,
+        problems,
+    )
+    _check(
         "inventory_from_exact_before_broad_like",
         "->>'from', '')) = %s" in inventory_src.replace(" ", "")
         or ("->>'from'" in inventory_src and "= %s" in inventory_src),
@@ -1415,6 +1425,16 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "comm_identity_no_jsonb_array_elements",
         "jsonb_array_elements" not in identity_mod_src
         and "(payload_json->'from_parsed')::text" in identity_mod_src.replace(" ", ""),
+        checks,
+        problems,
+    )
+    attach_src = _inspect.getsource(ci.attach_known_email_if_corroborated)
+    _check(
+        "attest_scan_skips_spam_trash_and_orders_structured",
+        "mailbox_skip" in attach_src
+        and "spam" in attach_src
+        and "ORDER BY CASE" in attach_src
+        and "payload_json->>'body_text'" not in attach_src,
         checks,
         problems,
     )
@@ -1582,6 +1602,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "e2e_demotes_flightsim_claim_under_allow_dev",
         "claim_flightsim_archive" in ace_claim_src
         and "flightsim_claim_demoted_allow_dev_defaults" in ace_claim_src,
+        checks,
+        problems,
+    )
+    _check(
+        "e2e_soft_ok_distinct_immich_peg_legg",
+        "ask_peg_legg_distinct_immich_soft_ok" in ace_claim_src
+        and "legg_holds_peggo417" in ace_claim_src,
         checks,
         problems,
     )

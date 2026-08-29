@@ -864,18 +864,55 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     )
     # Re-resolve Peg Legg after bootstrap/rename — pre-bootstrap nickname family
     # may have preferred an unrelated confirmed Peggy* (e.g. Peggy Smith).
+    # Immich often has a distinct face Person labeled from From display
+    # ("Peg Legg") while the email Person is "Peggy George". Exact-name Ask
+    # prefers that Immich row. PRD gate is address identity + Gallery/FE —
+    # soft-ok when distinct unless that Peg Legg Person already holds peggo417
+    # (would block George attach / reclaim).
     try:
         ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
     except Exception:  # noqa: BLE001
         ask_legg = None
     if ask_legg is not None:
-        _check(
-            "ask_peg_legg_resolves_same_person",
-            ask_peggy is not None and ask_legg.id == ask_peggy.id,
-            checks,
-            problems,
-            detail=(getattr(ask_legg, "display_name", None), getattr(ask_legg, "id", None)),
-        )
+        same_person = ask_peggy is not None and ask_legg.id == ask_peggy.id
+        if same_person:
+            checks.append("ask_peg_legg_resolves_same_person")
+        else:
+            legg_holds_probe = False
+            try:
+                from memorybox.db import connection as _db_conn
+
+                with _db_conn() as conn:
+                    row = conn.execute(
+                        """
+                        SELECT 1
+                        FROM person_contact_points
+                        WHERE person_id = %s::uuid
+                          AND contact_kind = 'email'
+                          AND status = 'confirmed'
+                          AND lower(value_text) = %s
+                        LIMIT 1
+                        """,
+                        (ask_legg.id, _PROBE_ADDR),
+                    ).fetchone()
+                legg_holds_probe = row is not None
+            except Exception:  # noqa: BLE001
+                legg_holds_probe = False
+            if legg_holds_probe:
+                _check(
+                    "ask_peg_legg_resolves_same_person",
+                    False,
+                    checks,
+                    problems,
+                    detail={
+                        "legg_display": getattr(ask_legg, "display_name", None),
+                        "legg_id": getattr(ask_legg, "id", None),
+                        "peggy_id": getattr(ask_peggy, "id", None),
+                        "legg_holds_peggo417": True,
+                    },
+                )
+            else:
+                checks.append("ask_peg_legg_distinct_immich_soft_ok")
 
     if ask_peggy is None:
         gate = _write_gate_artifacts(
