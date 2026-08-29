@@ -17,7 +17,7 @@ identities to retrieve complete Person evidence.
 
 ## FlightSim
 
-If `tools\flightsim-address-centric-gate.cmd` is not on disk yet (first pull):
+Pull the latest tip first (cold-create / Immich rename / delivery order live here):
 
 ```bat
 cd C:\memorybox
@@ -40,9 +40,10 @@ silent ALLOW_DEV localhost). Paste the printed gate block
 `database_url_set`, and `git_head`.
 
 Delivery (any one wakes the cloud agent):
-1. If `gh` is authenticated: posts the gate JSON as a comment on PR #74
-2. Always force-pushes gate artifacts to `cursor/flightsim-address-centric-result-49da`
-3. Console paste block (need `"ok": true` and `"flightsim": true`)
+1. **Always** force-pushes gate artifacts to `cursor/flightsim-address-centric-result-49da` **first**
+2. If `gh` is already authenticated: posts the gate JSON as a comment on PR #74
+   (skips comment when gh is missing/unauthed — never hangs on auth)
+3. Desktop + notepad VERDICT + console paste block
 
 If structured headers show Peg Legg on peggo417 but **no** same-address
 Peggy George observation (quoted or structured), auto nickname attach stays
@@ -63,10 +64,10 @@ Ask resolves `Peggy`, `Peggy George`, and `Peg Legg` (confirmed alias or unique
 nickname-family multi-token Person). Display names remain observations on the
 address; the address is the retrieve key once resolved.
 
-**FlightSim prerequisite:** prefer an existing multi-token Person \"Peggy George\".
-If only Immich single-token \"Peggy\" exists **and** inventory shows Peg Legg
-(structured) + Peggy George (quoted/structured) on peggo417, the gate prove
-operator-renames that unique Immich Person to \"Peggy George\" before attach.
-If **no** Peggy Person exists at all under the same corroboration, the gate
-operator-creates \"Peggy George\". Full-Evidence on P1 does **not** Immich-lazy-seed
-a new \"Peggy\" stub.
+**FlightSim Person bootstrap (operator gate only):**
+1. Prefer existing exact \"Peggy George\".
+2. Else rename unique Immich single-token \"Peggy\" → \"Peggy George\" when
+   structured Peg Legg exists on peggo417 (quoted Peggy George optional).
+3. Else cold-create \"Peggy George\" from structured Peg Legg alone when no
+   usable Peggy Person exists (thin Takeout / Immich-absent).
+4. Full-Evidence on P1 does **not** Immich-lazy-seed a new \"Peggy\" stub.
