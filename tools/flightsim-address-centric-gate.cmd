@@ -123,49 +123,8 @@ if exist "%GATE_JSON%" (
   )
 )
 
-REM Auto-deliver to PR #74 when gh is authenticated — wakes the cloud agent.
-where gh >nul 2>&1
-if not errorlevel 1 (
-  if exist "%GATE_JSON%" (
-    echo ===== posting gate to PR #74 via gh =====
-    (
-      echo ## FlightSim ADDRESS_CENTRIC_GATE
-      echo.
-      echo Branch: `%BRANCH%`
-      echo Host: `%COMPUTERNAME%`
-      echo.
-      if exist "%GATE_VERDICT%" type "%GATE_VERDICT%"
-      echo.
-      echo ```json
-      type "%GATE_JSON%"
-      echo ```
-      if exist "%GATE_FAIL%" if not "%PROVE_EXIT%"=="0" (
-        echo.
-        echo ### FAILURE_DIAG
-        echo.
-        echo ```json
-        type "%GATE_FAIL%"
-        echo ```
-      )
-    ) > "%TEMP%\mb_address_centric_gate_pr_comment.md"
-    set GH_POSTED=0
-    gh pr comment 74 --repo swill010101/MemoryBox-Gmail-Prototype --body-file "%TEMP%\mb_address_centric_gate_pr_comment.md"
-    if not errorlevel 1 set GH_POSTED=1
-    if "%GH_POSTED%"=="0" (
-      echo WARNING: gh pr comment failed — trying issues API...
-      gh api repos/swill010101/MemoryBox-Gmail-Prototype/issues/74/comments -F body=@"%TEMP%\mb_address_centric_gate_pr_comment.md"
-      if not errorlevel 1 set GH_POSTED=1
-    )
-    if "%GH_POSTED%"=="1" (
-      echo Posted to PR #74.
-    ) else (
-      echo WARNING: gh PR comment failed — results-branch push still attempted.
-    )
-  )
-)
-
-REM Always force-push gate artifacts to results branch (disposable delivery branch;
-REM re-runs reset history from feature tip so non-FF push would otherwise fail).
+REM Force-push results branch FIRST (before gh). A hung gh auth prompt must not
+REM block the cloud agent from fetching cursor/flightsim-address-centric-result-49da.
 if exist "%GATE_JSON%" (
   echo.
   echo ===== force-pushing gate to %RESULT_BRANCH% =====
@@ -182,7 +141,7 @@ if exist "%GATE_JSON%" (
     if errorlevel 1 (
       git commit -m "flightsim: ADDRESS_CENTRIC_GATE from archive prove"
     ) else (
-      echo No staged changes vs index — amending empty tip with --allow-empty so push refreshes.
+      echo No staged changes vs index — empty tip so push refreshes tip timestamp.
       git commit --allow-empty -m "flightsim: ADDRESS_CENTRIC_GATE refresh"
     )
     git push -u origin %RESULT_BRANCH% --force
@@ -198,9 +157,59 @@ if exist "%GATE_JSON%" (
   )
 )
 
+REM Auto-deliver to PR #74 when gh is already authenticated — wakes the cloud agent.
+REM Skip entirely when gh is missing or not logged in (avoids interactive hang).
+set GH_PROMPT_DISABLED=1
+set GIT_TERMINAL_PROMPT=0
+where gh >nul 2>&1
+if not errorlevel 1 (
+  if exist "%GATE_JSON%" (
+    gh auth status >nul 2>&1
+    if errorlevel 1 (
+      echo WARNING: gh not authenticated — skip PR comment ^(results branch already pushed^).
+    ) else (
+      echo ===== posting gate to PR #74 via gh =====
+      (
+        echo ## FlightSim ADDRESS_CENTRIC_GATE
+        echo.
+        echo Branch: `%BRANCH%`
+        echo Host: `%COMPUTERNAME%`
+        echo.
+        if exist "%GATE_VERDICT%" type "%GATE_VERDICT%"
+        echo.
+        echo ```json
+        type "%GATE_JSON%"
+        echo ```
+        if exist "%GATE_FAIL%" if not "%PROVE_EXIT%"=="0" (
+          echo.
+          echo ### FAILURE_DIAG
+          echo.
+          echo ```json
+          type "%GATE_FAIL%"
+          echo ```
+        )
+      ) > "%TEMP%\mb_address_centric_gate_pr_comment.md"
+      set GH_POSTED=0
+      gh pr comment 74 --repo swill010101/MemoryBox-Gmail-Prototype --body-file "%TEMP%\mb_address_centric_gate_pr_comment.md"
+      if not errorlevel 1 set GH_POSTED=1
+      if "%GH_POSTED%"=="0" (
+        echo WARNING: gh pr comment failed — trying issues API...
+        gh api repos/swill010101/MemoryBox-Gmail-Prototype/issues/74/comments -F body=@"%TEMP%\mb_address_centric_gate_pr_comment.md"
+        if not errorlevel 1 set GH_POSTED=1
+      )
+      if "%GH_POSTED%"=="1" (
+        echo Posted to PR #74.
+      ) else (
+        echo WARNING: gh PR comment failed — use results branch or Desktop paste.
+      )
+    )
+  )
+)
+
 echo.
 echo need: "ok": true  and  "flightsim": true
 echo file: %GATE_JSON%
+echo results: origin/%RESULT_BRANCH%
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.
 popd
