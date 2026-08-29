@@ -1613,6 +1613,14 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "e2e_rename_fallback_respects_immich_uniqueness",
+        "immich_peggy_not_unique" in ace_claim_src
+        and "_unsafe_skip" in ace_claim_src
+        and "not _unsafe_skip" in ace_claim_src,
+        checks,
+        problems,
+    )
+    _check(
         "gate_cmd_pushes_audit_json",
         "ADDRESS_CENTRIC_AUDIT.json" in gate_cmd,
         checks,

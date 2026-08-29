@@ -767,12 +767,21 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             )
             # Immich stub + Peg Legg on peggo417: rename even if Peggy George
             # observation is still missing (mailto forms / thin quoted inventory).
+            # Do NOT override uniqueness skips from _flightsim_upgrade_immich_peggy
+            # (multiple Immich "Peggy" singles / ambiguous stub) — that would
+            # attach peggo417 onto a random face Person.
+            _skip_reason = str((upgrade_info or {}).get("reason") or "")
+            _unsafe_skip = _skip_reason in {
+                "immich_peggy_not_unique",
+                "archive_lacks_peg_legg_structured",
+            }
             if (
                 ask_peggy is not None
                 and (ask_peggy.display_name or "").strip().lower() != "peggy george"
                 and _archive_has_legg()
                 and struct_n > 0
                 and (upgrade_info or {}).get("skipped")
+                and not _unsafe_skip
             ):
                 from memorybox.db import connection as _db_conn
                 from memorybox.person import rename_person
