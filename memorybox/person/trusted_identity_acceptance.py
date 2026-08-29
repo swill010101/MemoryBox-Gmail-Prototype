@@ -77,7 +77,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "apply_trust_keeps_prior_trusted_rows",
         "kept_prior_trust" in apply_src
         and "_trusted_verdict_from_rows" in apply_src
-        and "LIMIT 1" not in apply_src,
+        and "LIMIT 1" not in apply_src
+        and "Never rewrite owner/operator provenance" in apply_src,
         checks,
         problems,
     )

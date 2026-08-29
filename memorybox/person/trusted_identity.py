@@ -187,6 +187,7 @@ def apply_email_contact_trust(
                     (actor_key, json.dumps(provenance or {}), person_id, norm),
                 )
             else:
+                # Demote status/trust only. Never rewrite owner/operator provenance.
                 conn.execute(
                     """
                     UPDATE person_contact_points
@@ -195,15 +196,13 @@ def apply_email_contact_trust(
                             WHEN status = 'confirmed' THEN 'candidate'
                             ELSE status
                         END,
-                        actor_key = %s,
-                        provenance_json = %s::jsonb,
                         updated_at = now()
                     WHERE person_id = %s::uuid
                       AND contact_kind = 'email'
                       AND lower(value_text) = %s
                       AND status IN ('confirmed', 'candidate', 'observed')
                     """,
-                    (actor_key, json.dumps(provenance or {}), person_id, norm),
+                    (person_id, norm),
                 )
     except Exception:  # noqa: BLE001
         try:
