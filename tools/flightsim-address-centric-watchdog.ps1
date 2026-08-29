@@ -58,28 +58,28 @@ if ($Target -eq "startmb") {
   exit $p.ExitCode
 }
 
-# prove — always launch System32 Windows PowerShell. PATH "powershell.exe"
-# can be a WindowsApps stub that exits 0 immediately (FlightSim then delivered
-# gate_cmd_stub_missing_prove_artifacts / prove_exit=0 with no PROVE.log).
+# prove — invoke IN-PROCESS. A nested Start-Process powershell -File still
+# returned 0 on FlightSim (233fbba) without creating PROVE_STARTED.
 $provePs1 = Join-Path $PSScriptRoot "flightsim-address-centric-prove.ps1"
 if (-not (Test-Path -LiteralPath $provePs1)) {
   Write-Host "ERROR: missing $provePs1" -ForegroundColor Red
   exit 1
 }
-$psReal = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-if (-not (Test-Path -LiteralPath $psReal)) { $psReal = "powershell.exe" }
-Write-Host "watchdog prove timeout=${TimeoutSec}s file=$provePs1 ps=$psReal"
-$p = Start-Process -FilePath $psReal `
-  -ArgumentList @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $provePs1
-  ) `
-  -WorkingDirectory $RepoRoot `
-  -NoNewWindow -PassThru
-if (-not $p.WaitForExit([int]$timeoutMs)) {
-  Write-Host "ERROR: prove watchdog timeout" -ForegroundColor Red
-  Stop-ProcessTree $p
-  exit 99
+Write-Host "WATCHDOG_PROVE_ENTER in-process timeout=${TimeoutSec}s file=$provePs1 pid=$PID"
+$killer = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" `
+  -ArgumentList @("/c", "timeout /t $TimeoutSec /nobreak >nul && taskkill /F /T /PID $PID") `
+  -WindowStyle Hidden -PassThru
+try {
+  # prove.ps1 uses `exit N` which ends this process (gate.cmd sees N).
+  & $provePs1
+  $code = 0
+  if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
+} catch {
+  Write-Host ("ERROR: prove.ps1 threw: " + $_.Exception.Message) -ForegroundColor Red
+  $code = 1
+} finally {
+  if ($killer -and -not $killer.HasExited) {
+    try { & cmd.exe /c "taskkill /F /PID $($killer.Id)" 2>$null | Out-Null } catch {}
+  }
 }
-exit $p.ExitCode
+exit $code

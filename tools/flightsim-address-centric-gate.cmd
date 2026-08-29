@@ -133,8 +133,14 @@ if not "%STARTMB_EXIT%"=="0" (
 echo Prove under watchdog %PROVE_WATCHDOG_SEC%s...
 if not defined PS_REAL set PS_REAL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
 if not exist "%PS_REAL%" set PS_REAL=powershell.exe
+REM Watchdog invokes prove.ps1 in-process (nested Start-Process -File was a no-op).
 "%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target prove -TimeoutSec %PROVE_WATCHDOG_SEC% -RepoRoot "%CD%"
 set PROVE_EXIT=%errorlevel%
+if not exist "%GATE_PROVE_STARTED%" (
+  echo WARNING: sentinel missing after watchdog — invoking prove.ps1 directly
+  "%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-prove.ps1"
+  set PROVE_EXIT=%errorlevel%
+)
 if "%PROVE_EXIT%"=="99" (
   echo ERROR: prove exceeded %PROVE_WATCHDOG_SEC%s — writing timeout gate
   if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"

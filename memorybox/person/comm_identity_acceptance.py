@@ -1636,8 +1636,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     ).read()
     _check(
         "watchdog_prove_uses_system32_powershell",
-        "System32\\WindowsPowerShell\\v1.0\\powershell.exe" in wd_src
-        or "System32/WindowsPowerShell/v1.0/powershell.exe" in wd_src.replace("\\", "/"),
+        "WATCHDOG_PROVE_ENTER" in wd_src
+        and "& $provePs1" in wd_src
+        and "in-process" in wd_src,
         checks,
         problems,
     )
