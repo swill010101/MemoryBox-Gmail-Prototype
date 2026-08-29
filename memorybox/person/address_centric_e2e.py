@@ -1007,6 +1007,36 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     )
     hits = search_email_messages(mail_plan, limit=5000)
     _check("retrieve_email_hits_gt_0", len(hits) > 0, checks, problems, detail=len(hits))
+
+    def _hit_has_peg_legg(h: Any) -> bool:
+        bits = [
+            str(getattr(h, "from_header", None) or ""),
+            " ".join(getattr(h, "people", None) or []),
+        ]
+        payload = getattr(h, "payload", None) or {}
+        if isinstance(payload, dict):
+            bits.append(str(payload.get("from") or ""))
+            bits.extend(str(p) for p in (payload.get("people") or []))
+            for rec in list(payload.get("from_parsed") or []) + list(
+                payload.get("to_parsed") or []
+            ):
+                if isinstance(rec, dict):
+                    bits.append(str(rec.get("display_name") or ""))
+        return "peg legg" in " ".join(bits).lower()
+
+    legg_labeled = [h for h in hits if _hit_has_peg_legg(h)]
+    _check(
+        "retrieve_includes_peg_legg_labeled_mail",
+        len(legg_labeled) > 0,
+        checks,
+        problems,
+        detail={
+            "legg_labeled_n": len(legg_labeled),
+            "hit_n": len(hits),
+            "sample_from": [getattr(h, "from_header", None) for h in hits[:5]],
+            "sample_people": [getattr(h, "people", None) for h in hits[:5]],
+        },
+    )
     spam_trash_diag: dict[str, Any] | None = None
     if len(hits) == 0 and _PROBE_ADDR in addrs:
         # Confirmed address but zero eligible hits — often all rows are spam/trash skipped.
@@ -1111,6 +1141,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "stop": "gallery_and_full_evidence_v2 — no historian summarization",
             "ok": not problems
             and len(hits) > 0
+            and len(legg_labeled) > 0
             and (len(email_items) > 0 or len(evidence) > 0)
             and (int(email_n) > 0 or int(match_total) > 0)
             and (
@@ -1121,6 +1152,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "requirements": {
                 "full_evidence_email_gt_0": len(email_items) > 0 or len(evidence) > 0,
                 "retrieve_email_hits_gt_0": len(hits) > 0,
+                "retrieve_peg_legg_labeled_gt_0": len(legg_labeled) > 0,
                 "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
                 "person_is_multi_token": " " in (ask_peggy.display_name or ""),
                 "person_is_peggy_george": (ask_peggy.display_name or "").strip().lower()
@@ -1147,6 +1179,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             },
             "counts": {
                 "retrieve_hits": len(hits),
+                "retrieve_peg_legg_labeled": len(legg_labeled),
                 "full_evidence_email_items": len(email_items),
                 "gallery_email_n": int(email_n),
             },

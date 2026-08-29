@@ -132,6 +132,7 @@ if not errorlevel 1 (
       echo ## FlightSim ADDRESS_CENTRIC_GATE
       echo.
       echo Branch: `%BRANCH%`
+      echo Host: `%COMPUTERNAME%`
       echo.
       if exist "%GATE_VERDICT%" type "%GATE_VERDICT%"
       echo.
@@ -147,11 +148,18 @@ if not errorlevel 1 (
         echo ```
       )
     ) > "%TEMP%\mb_address_centric_gate_pr_comment.md"
+    set GH_POSTED=0
     gh pr comment 74 --repo swill010101/MemoryBox-Gmail-Prototype --body-file "%TEMP%\mb_address_centric_gate_pr_comment.md"
-    if errorlevel 1 (
-      echo WARNING: gh pr comment failed — results-branch push still attempted.
-    ) else (
+    if not errorlevel 1 set GH_POSTED=1
+    if "%GH_POSTED%"=="0" (
+      echo WARNING: gh pr comment failed — trying issues API...
+      gh api repos/swill010101/MemoryBox-Gmail-Prototype/issues/74/comments -F body=@"%TEMP%\mb_address_centric_gate_pr_comment.md"
+      if not errorlevel 1 set GH_POSTED=1
+    )
+    if "%GH_POSTED%"=="1" (
       echo Posted to PR #74.
+    ) else (
+      echo WARNING: gh PR comment failed — results-branch push still attempted.
     )
   )
 )
