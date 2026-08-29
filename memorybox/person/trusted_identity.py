@@ -587,7 +587,45 @@ def report_named_person_identity_trust(display_name: str) -> dict[str, Any]:
         and int(retrieve_n) > 0
     )
     rec["display_name"] = name
+    rec["phase1_summary"] = format_phase1_human_report(rec)
     return rec
+
+
+def format_phase1_human_report(rec: dict[str, Any]) -> str:
+    """Short FlightSim paste: trusted + why, counts, unique-only, Gallery."""
+    lines = [
+        "TRUSTED-IDENTITY PHASE 1 REPORT",
+        f"person: {rec.get('display_name') or rec.get('person_id')}",
+        f"ok: {rec.get('ok')}",
+        f"counts: {json.dumps(rec.get('counts') or {}, default=str)}",
+        "trusted identities:",
+    ]
+    per = rec.get("per_trusted_address") or []
+    if not per:
+        for addr in rec.get("trusted_addresses") or []:
+            per.append({"address": addr})
+    only_via = rec.get("unique_only_via_trusted_address") or {}
+    by_addr = rec.get("unique_emails_by_trusted_address") or {}
+    for row in per:
+        addr = str(row.get("address") or "")
+        lines.append(
+            f"  - {addr} why={row.get('why_trusted') or row.get('reason')} "
+            f"actor={row.get('actor_key')} source={row.get('provenance_source')} "
+            f"structured={row.get('unique_structured_messages')} "
+            f"retrieve_hits={by_addr.get(addr)} unique_only={only_via.get(addr)}"
+        )
+    lines.extend(
+        [
+            f"shared_across_trusted: {rec.get('shared_across_trusted_addresses')}",
+            f"retrieve_hit_count: {rec.get('retrieve_hit_count')}",
+            f"gallery_email_count: {rec.get('gallery_email_count')}",
+            f"unsupported_retrieve_addresses: {rec.get('unsupported_retrieve_addresses')}",
+            f"unsupported_retrieve_hit_count: {rec.get('unsupported_retrieve_hit_count')}",
+        ]
+    )
+    if rec.get("error"):
+        lines.append(f"error: {rec.get('error')}")
+    return "\n".join(lines)
 
 
 def attest_trusted_email(

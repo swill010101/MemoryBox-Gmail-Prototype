@@ -9,6 +9,7 @@ from memorybox.person.trusted_identity import (
     _trusted_verdict_from_rows,
     apply_email_contact_trust,
     classify_contact_trust,
+    format_phase1_human_report,
     reclassify_person_email_trust,
 )
 from memorybox.profile.facts import add_contact
@@ -80,6 +81,39 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "addr not in trusted_addrs" in reclass_src,
         checks,
         problems,
+    )
+    summary = format_phase1_human_report(
+        {
+            "display_name": "Example Person",
+            "ok": True,
+            "counts": {"trusted_for_retrieval": 1, "candidate": 2},
+            "per_trusted_address": [
+                {
+                    "address": "a@example.test",
+                    "why_trusted": "canonical_or_owner:owner",
+                    "actor_key": "owner",
+                    "provenance_source": "person_profile",
+                    "unique_structured_messages": 3,
+                }
+            ],
+            "unique_emails_by_trusted_address": {"a@example.test": 3},
+            "unique_only_via_trusted_address": {"a@example.test": 3},
+            "shared_across_trusted_addresses": 0,
+            "retrieve_hit_count": 3,
+            "gallery_email_count": 3,
+            "unsupported_retrieve_addresses": [],
+            "unsupported_retrieve_hit_count": 0,
+        }
+    )
+    _check(
+        "phase1_summary_lists_why_counts_gallery",
+        "why=canonical_or_owner:owner" in summary
+        and "unique_only=3" in summary
+        and "gallery_email_count: 3" in summary
+        and "unsupported_retrieve_hit_count: 0" in summary,
+        checks,
+        problems,
+        detail=summary,
     )
     _check(
         "apply_trust_keeps_prior_trusted_rows",
@@ -217,6 +251,14 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "people" not in keep_src.split("def _keep")[1][:900],
         checks,
         problems,
+    )
+    _check(
+        "thread_extras_still_require_trusted_keep",
+        "if tid in thread_ids and str(r[\"id\"]) not in have and _keep(payload, r):"
+        in keep_src,
+        checks,
+        problems,
+        detail="thread extras must re-apply trusted _keep",
     )
     _check(
         "email_person_blob_omits_people_array",
@@ -501,6 +543,12 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "pipeline_stops_on_phase1_failure",
         "phase_1_failed" in pipe_src and "do not widen" in pipe_src.lower(),
+        checks,
+        problems,
+    )
+    _check(
+        "pipeline_writes_phase1_human_summary",
+        "PHASE1_SUMMARY_" in pipe_src and "phase1_summary" in pipe_src,
         checks,
         problems,
     )

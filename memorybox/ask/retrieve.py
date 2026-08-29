@@ -1779,7 +1779,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             have = {h.evidence_id for h in matched}
             for r, payload in rows_payload:
                 tid = payload.get("thread_id")
-                if tid in thread_ids and str(r["id"]) not in have:
+                if tid in thread_ids and str(r["id"]) not in have and _keep(payload, r):
                     extra.append(_email_hit(r, payload, score=0.8))
             matched.extend(extra)
     hits = matched

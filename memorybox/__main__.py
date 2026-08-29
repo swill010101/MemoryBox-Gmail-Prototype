@@ -1457,6 +1457,10 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_trusted_identity_retrieval(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        summary = (payload.get("flightsim_report") or {}).get("phase1_summary")
+        if summary:
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(summary, flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "report-trusted-identities":
@@ -1464,6 +1468,9 @@ def main(argv: list[str] | None = None) -> int:
 
         payload = report_named_person_identity_trust(args.person)
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        if payload.get("phase1_summary"):
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(payload["phase1_summary"], flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "reclassify-trusted-identities":
@@ -1568,6 +1575,10 @@ def main(argv: list[str] | None = None) -> int:
             ask=args.ask,
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        summary = ((payload.get("phase1") or {}).get("phase1_summary"))
+        if summary:
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(summary, flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

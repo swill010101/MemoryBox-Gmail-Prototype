@@ -99,8 +99,16 @@ def run_trusted_evidence_pipeline(
             "unsupported_retrieve_hit_count": phase1.get("unsupported_retrieve_hit_count"),
             "retrieve_hit_count": phase1.get("retrieve_hit_count"),
             "gallery_email_count": phase1.get("gallery_email_count"),
+            "phase1_summary": phase1.get("phase1_summary"),
         },
     }
+    try:
+        (out / f"PHASE1_SUMMARY_{stamp}.txt").write_text(
+            str(phase1.get("phase1_summary") or ""),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001
+        pass
     if not phase1.get("ok") or not phase1.get("trusted_addresses"):
         result["stop"] = "phase_1_failed — do not widen matching; attest or fix provenance"
         result["error"] = phase1.get("error") or "phase_1_not_ok"
