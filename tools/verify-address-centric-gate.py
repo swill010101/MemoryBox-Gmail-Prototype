@@ -60,6 +60,25 @@ def audit_gate(gate: dict[str, Any]) -> dict[str, Any]:
         },
     )
     check(
+        "C2a",
+        "not ALLOW_DEV defaults (rejects cloud/local fake flightsim stamps)",
+        runtime.get("allow_dev_defaults") is not True,
+        {"allow_dev_defaults": runtime.get("allow_dev_defaults")},
+    )
+    check(
+        "C2b",
+        "P1 runtime host stamped",
+        runtime.get("p1_runtime_host") is True,
+        {"p1_runtime_host": runtime.get("p1_runtime_host")},
+    )
+    _hn = str(runtime.get("hostname") or "").strip().lower()
+    check(
+        "C2c",
+        "hostname is not cloud agent sandbox",
+        _hn not in {"", "cursor", "cursor-cloud"} and not _hn.startswith("sandbox"),
+        {"hostname": runtime.get("hostname")},
+    )
+    check(
         "C3",
         "ok=true",
         gate.get("ok") is True,
@@ -206,13 +225,16 @@ def main(argv: list[str] | None = None) -> int:
     gate = json.loads(path.read_text(encoding="utf-8-sig"))
     report = audit_gate(gate)
     if args.allow_local and gate.get("flightsim") is not True:
-        # Local dry-run: drop C2 from hard fail for ok flag, but never goal_complete.
+        # Local dry-run: drop FlightSim host checks, but never goal_complete.
         report["goal_complete"] = False
         report["local_dry_run"] = True
-        report["problems"] = [p for p in report["problems"] if not p.startswith("C2:")]
-        report["ok"] = not report["problems"]
-        # Recompute ok without C2 only.
-        non_c2 = [c for c in report["checks"] if c["id"] != "C2"]
+        report["problems"] = [
+            p
+            for p in report["problems"]
+            if not (p.startswith("C2:") or p.startswith("C2a:") or p.startswith("C2b:") or p.startswith("C2c:"))
+        ]
+        # Recompute ok without C2* host checks.
+        non_c2 = [c for c in report["checks"] if not str(c["id"]).startswith("C2")]
         report["ok"] = all(c["ok"] for c in non_c2) and gate.get("waiting") is not True
     print(json.dumps(report, indent=2, default=str))
     if report.get("goal_complete"):

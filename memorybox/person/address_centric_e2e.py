@@ -41,16 +41,31 @@ def _hostname() -> str | None:
         return None
 
 
+def _env_truthy(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def claim_flightsim_archive(*, requested: bool) -> bool:
+    """Stamp flightsim=true only for a real Takeout archive prove.
+
+    ``--flightsim`` against ALLOW_DEV local Postgres must not claim archive proof
+    (cloud/local agents could otherwise force-push a fake goal_complete gate).
+    """
+    if not requested:
+        return False
+    if _env_truthy("MEMORYBOX_ALLOW_DEV_DEFAULTS"):
+        return False
+    return True
+
+
 def _runtime_stamp(*, flightsim: bool) -> dict[str, Any]:
     """Host/DB provenance for FlightSim paste (detect wrong-DB / env-not-loaded)."""
     stamp: dict[str, Any] = {
         "git_head": _git_head(),
         "hostname": _hostname(),
-        "p1_runtime_host": (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip()
-        in {"1", "true", "yes"},
+        "p1_runtime_host": _env_truthy("MEMORYBOX_P1_RUNTIME_HOST"),
         "database_url_set": bool((os.environ.get("MEMORYBOX_DATABASE_URL") or "").strip()),
-        "allow_dev_defaults": (os.environ.get("MEMORYBOX_ALLOW_DEV_DEFAULTS") or "").strip()
-        in {"1", "true", "yes", "on"},
+        "allow_dev_defaults": _env_truthy("MEMORYBOX_ALLOW_DEV_DEFAULTS"),
         "flightsim": bool(flightsim),
     }
     try:
@@ -455,7 +470,6 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     seed_info: dict[str, Any] | None = None
     repair_info: dict[str, Any] | None = None
     resolve: dict[str, Any] | None = None
-    runtime = _runtime_stamp(flightsim=flightsim)
 
     if flightsim:
         os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
@@ -497,7 +511,11 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "address_centric_gate": gate,
             }
 
-    runtime = _runtime_stamp(flightsim=flightsim)
+    # Gate JSON flightsim claim (distinct from bootstrap behavior flag).
+    flightsim_claim = claim_flightsim_archive(requested=bool(flightsim))
+    runtime = _runtime_stamp(flightsim=flightsim_claim)
+    if bool(flightsim) and not flightsim_claim:
+        checks.append("flightsim_claim_demoted_allow_dev_defaults")
 
     from memorybox.ask.i11a.full_evidence_diagnostic import (
         PEGGY_ASK,
@@ -533,7 +551,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "quoted_occurrence_count": quoted.get("occurrence_count"),
                 "structured_names": structured.get("distinct_display_names"),
                 "quoted_names": quoted.get("distinct_display_names"),
-                "flightsim": bool(flightsim),
+                "flightsim": flightsim_claim,
                 "runtime": runtime,
             },
             default=str,
@@ -571,7 +589,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     "quoted_has_peggy_george": quoted.get("has_peggy_george"),
                     "structured_occurrence_count": struct_n,
                 },
-                "flightsim": True,
+                "flightsim": flightsim_claim,
                 "runtime": runtime,
                 "error": "flightsim_archive_missing_peggo417_structured",
             },
@@ -580,7 +598,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         return {
             "ok": False,
             "prove": "address_centric_email_e2e",
-            "flightsim": True,
+            "flightsim": flightsim_claim,
             "checks": checks,
             "problems": problems,
             "inventory": inv,
@@ -655,7 +673,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     "quoted_has_peggy_george": quoted.get("has_peggy_george"),
                     "structured_occurrence_count": struct_n,
                 },
-                "flightsim": bool(flightsim),
+                "flightsim": flightsim_claim,
                 "runtime": runtime,
             },
             inv=inv,
@@ -663,7 +681,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         return {
             "ok": False,
             "prove": "address_centric_email_e2e",
-            "flightsim": bool(flightsim),
+            "flightsim": flightsim_claim,
             "checks": checks,
             "problems": problems,
             "inventory": inv,
@@ -871,7 +889,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     "quoted_has_peggy_george": quoted.get("has_peggy_george"),
                     "structured_occurrence_count": struct_n,
                 },
-                "flightsim": bool(flightsim),
+                "flightsim": flightsim_claim,
                 "runtime": runtime,
             },
             inv=inv,
@@ -879,7 +897,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         return {
             "ok": False,
             "prove": "address_centric_email_e2e",
-            "flightsim": bool(flightsim),
+            "flightsim": flightsim_claim,
             "checks": checks,
             "problems": problems,
             "inventory": inv,
@@ -1626,7 +1644,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             },
             "spam_trash_diag": spam_trash_diag,
             "problems": problems,
-            "flightsim": bool(flightsim),
+            "flightsim": flightsim_claim,
             "runtime": runtime,
             "immich_peggy_upgrade": upgrade_info,
         },
@@ -1638,7 +1656,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     return {
         "ok": not problems,
         "prove": "address_centric_email_e2e",
-        "flightsim": bool(flightsim),
+        "flightsim": flightsim_claim,
         "checks": checks,
         "problems": problems,
         "address_centric_gate": gate,

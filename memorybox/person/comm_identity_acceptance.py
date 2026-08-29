@@ -1568,6 +1568,23 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    verify_src = open("tools/verify-address-centric-gate.py", encoding="utf-8").read()
+    _check(
+        "verifier_rejects_allow_dev_fake_flightsim",
+        "C2a" in verify_src
+        and "allow_dev_defaults" in verify_src
+        and "C2c" in verify_src,
+        checks,
+        problems,
+    )
+    ace_claim_src = open("memorybox/person/address_centric_e2e.py", encoding="utf-8").read()
+    _check(
+        "e2e_demotes_flightsim_claim_under_allow_dev",
+        "claim_flightsim_archive" in ace_claim_src
+        and "flightsim_claim_demoted_allow_dev_defaults" in ace_claim_src,
+        checks,
+        problems,
+    )
     _check(
         "gate_cmd_pushes_audit_json",
         "ADDRESS_CENTRIC_AUDIT.json" in gate_cmd,
