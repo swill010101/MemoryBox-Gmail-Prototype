@@ -14,9 +14,10 @@ python -m memorybox prove-trusted-identity-retrieval --flightsim
 if errorlevel 1 (
   echo.
   echo PHASE 1 FAILED — do not widen matching.
-  echo If peggo417 is on the profile but untrusted:
+  echo If peggo417 is on the profile but untrusted, re-add it on the People card
+  echo or attest, then re-run prove only:
   echo python -m memorybox attest-trusted-identity --person "Peggy George" --email peggo417@hotmail.com
-  echo Then re-run this script.
+  echo python -m memorybox prove-trusted-identity-retrieval --flightsim
   exit /b 1
 )
 echo.

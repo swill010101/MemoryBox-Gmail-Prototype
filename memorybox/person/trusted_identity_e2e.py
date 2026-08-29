@@ -80,6 +80,7 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
     display = f"Trusted Probe {uuid4().hex[:8]}"
     trusted_addr = f"trusted.{uuid4().hex[:8]}@example.test"
     noise_addr = f"noise.{uuid4().hex[:8]}@example.test"
+    promote_addr = f"promote.{uuid4().hex[:8]}@example.test"
     person_id = None
     problems: list[str] = []
     checks: list[str] = []
@@ -109,6 +110,41 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
         trusted = {str(x.get("address")) for x in rec.get("trusted") or []}
         _ok("owner_profile_trusted", trusted_addr in trusted, trusted)
         _ok("auto_expand_not_trusted", noise_addr not in trusted, rec.get("demoted"))
+
+        ensure_confirmed_email_contact(
+            person_id,
+            trusted_addr,
+            provenance={"source": "comm_identity_expand"},
+            note="auto-expand must not clobber owner profile contact",
+        )
+        rec_keep = reclassify_person_email_trust(person_id)
+        trusted_keep = {str(x.get("address")) for x in rec_keep.get("trusted") or []}
+        _ok(
+            "owner_profile_survives_auto_expand_stamp",
+            trusted_addr in trusted_keep,
+            rec_keep.get("demoted"),
+        )
+
+        ensure_confirmed_email_contact(
+            person_id,
+            promote_addr,
+            provenance={"source": "comm_identity_expand"},
+            note="auto-expand first",
+        )
+        add_contact(
+            person_id,
+            contact_kind="email",
+            value_text=promote_addr,
+            actor_key="owner",
+            provenance={"source": "person_profile"},
+        )
+        rec_promote = reclassify_person_email_trust(person_id)
+        trusted_promote = {str(x.get("address")) for x in rec_promote.get("trusted") or []}
+        _ok(
+            "owner_add_promotes_existing_auto_expand",
+            promote_addr in trusted_promote,
+            rec_promote,
+        )
 
         with connection() as conn:
             for i, (addr, dn) in enumerate(
@@ -251,7 +287,7 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"e2e_exception: {type(exc).__name__}:{exc}")
     finally:
-        _cleanup(person_id, [trusted_addr, noise_addr])
+        _cleanup(person_id, [trusted_addr, noise_addr, promote_addr])
 
     return {
         "ok": not problems,

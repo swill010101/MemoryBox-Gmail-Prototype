@@ -113,6 +113,15 @@ def classify_contact_trust(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _trusted_verdict_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """If any live row is already trusted, return that verdict (do not clobber)."""
+    for prior in rows:
+        prior_v = classify_contact_trust(dict(prior))
+        if prior_v.get("retrieval_trust") == "trusted":
+            return prior_v
+    return None
+
+
 def apply_email_contact_trust(
     person_id: str,
     address: str,
@@ -120,7 +129,11 @@ def apply_email_contact_trust(
     actor_key: str,
     provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Stamp retrieval_trust / status from provenance. Keep the row."""
+    """Stamp retrieval_trust / status from provenance. Never clobber a trusted row.
+
+    Auto-expand may create a candidate. It must not overwrite owner/operator
+    profile provenance on the same address (including a later duplicate row).
+    """
     norm = normalize_handle(address)
     verdict = classify_contact_trust(
         {"actor_key": actor_key, "provenance_json": provenance or {}}
@@ -131,52 +144,67 @@ def apply_email_contact_trust(
         return {**verdict, "status": status, "updated": False}
     try:
         with connection() as conn:
-            prior = conn.execute(
-                """
-                SELECT actor_key, provenance_json, status
-                FROM person_contact_points
-                WHERE person_id = %s::uuid
-                  AND contact_kind = 'email'
-                  AND lower(value_text) = %s
-                LIMIT 1
-                """,
-                (person_id, norm),
-            ).fetchone()
-        if prior and trust != "trusted":
-            prior_v = classify_contact_trust(dict(prior))
-            if prior_v.get("retrieval_trust") == "trusted":
-                return {
-                    **prior_v,
-                    "status": "confirmed",
-                    "updated": False,
-                    "address": norm,
-                    "kept_prior_trust": True,
-                }
+            priors = list(
+                conn.execute(
+                    """
+                    SELECT id, actor_key, provenance_json, status
+                    FROM person_contact_points
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND lower(value_text) = %s
+                      AND status IN ('confirmed', 'candidate', 'observed')
+                    """,
+                    (person_id, norm),
+                ).fetchall()
+            )
+        kept = _trusted_verdict_from_rows([dict(r) for r in priors])
+        if kept is not None and trust != "trusted":
+            return {
+                **kept,
+                "status": "confirmed",
+                "updated": False,
+                "address": norm,
+                "kept_prior_trust": True,
+            }
     except Exception:  # noqa: BLE001
-        pass
+        priors = []
     try:
         with connection() as conn:
-            conn.execute(
-                """
-                UPDATE person_contact_points
-                SET retrieval_trust = %s,
-                    status = %s,
-                    actor_key = %s,
-                    provenance_json = %s::jsonb,
-                    updated_at = now()
-                WHERE person_id = %s::uuid
-                  AND contact_kind = 'email'
-                  AND lower(value_text) = %s
-                """,
-                (
-                    trust,
-                    status,
-                    actor_key,
-                    json.dumps(provenance or {}),
-                    person_id,
-                    norm,
-                ),
-            )
+            if trust == "trusted":
+                conn.execute(
+                    """
+                    UPDATE person_contact_points
+                    SET retrieval_trust = 'trusted',
+                        status = 'confirmed',
+                        actor_key = %s,
+                        provenance_json = %s::jsonb,
+                        updated_at = now()
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND lower(value_text) = %s
+                      AND status IN ('confirmed', 'candidate', 'observed')
+                    """,
+                    (actor_key, json.dumps(provenance or {}), person_id, norm),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE person_contact_points
+                    SET retrieval_trust = 'untrusted',
+                        status = CASE
+                            WHEN status = 'confirmed' THEN 'candidate'
+                            ELSE status
+                        END,
+                        actor_key = %s,
+                        provenance_json = %s::jsonb,
+                        updated_at = now()
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND lower(value_text) = %s
+                      AND status IN ('confirmed', 'candidate', 'observed')
+                    """,
+                    (actor_key, json.dumps(provenance or {}), person_id, norm),
+                )
     except Exception:  # noqa: BLE001
         try:
             with connection() as conn:

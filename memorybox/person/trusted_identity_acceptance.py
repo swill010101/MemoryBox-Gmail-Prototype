@@ -1,10 +1,16 @@
 """Acceptance for trusted-for-retrieval identity (Phase 1)."""
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from memorybox.person.comm_identity import _header_records, corroborate_email_candidate
-from memorybox.person.trusted_identity import classify_contact_trust
+from memorybox.person.trusted_identity import (
+    _trusted_verdict_from_rows,
+    apply_email_contact_trust,
+    classify_contact_trust,
+)
+from memorybox.profile.facts import add_contact
 
 
 def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
@@ -65,6 +71,43 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=unknown,
+    )
+    apply_src = inspect.getsource(apply_email_contact_trust)
+    _check(
+        "apply_trust_keeps_prior_trusted_rows",
+        "kept_prior_trust" in apply_src
+        and "_trusted_verdict_from_rows" in apply_src
+        and "LIMIT 1" not in apply_src,
+        checks,
+        problems,
+    )
+    mixed = _trusted_verdict_from_rows(
+        [
+            {
+                "actor_key": "comm_identity_expand",
+                "provenance_json": {"source": "comm_identity_expand"},
+            },
+            {
+                "actor_key": "owner",
+                "provenance_json": {"source": "person_profile"},
+            },
+        ]
+    )
+    _check(
+        "mixed_rows_keep_owner_profile_trust",
+        mixed is not None and mixed.get("retrieval_trust") == "trusted",
+        checks,
+        problems,
+        detail=mixed,
+    )
+    add_src = inspect.getsource(add_contact)
+    _check(
+        "add_contact_promotes_existing_profile_email",
+        "person_profile" in add_src
+        and "owner_confirmed" in add_src
+        and "retrieval_trust" in add_src,
+        checks,
+        problems,
     )
 
     bare = _header_records(
@@ -145,8 +188,6 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=dec,
     )
-
-    import inspect
 
     from memorybox.ask import retrieve as retrieve_mod
     from memorybox.person import comm_identity as ci

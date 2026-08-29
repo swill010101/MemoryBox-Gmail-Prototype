@@ -60,12 +60,18 @@ The gate runs `run-trusted-evidence-pipeline` (Phase 1 report → freeze → Gem
 It stops on Phase 1 failure and does not widen matching.
 
 If `peggo417@hotmail.com` is on the Person profile but classify is untrusted
-(auto-expand actor), attest then re-run:
+(auto-expand actor), the owner profile add was overwritten or never stamped.
+Re-add the address on the People card (now promotes the existing row to
+`person_profile` / trusted) **or** attest, then re-run prove — not the pipeline
+— until Phase 1 is green:
 
 ```
 python -m memorybox attest-trusted-identity --person "Peggy George" --email peggo417@hotmail.com
-python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
+python -m memorybox prove-trusted-identity-retrieval --flightsim
 ```
+
+Auto-expand must not clobber an owner/operator profile contact. People UI
+`add_contact` upserts and promotes an existing auto-expand row.
 
 Phase 2 is included in the pipeline when Ollama / cloud Sol env is present.
 Manual equivalent after Phase 1 is green:
