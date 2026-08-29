@@ -1554,6 +1554,25 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "gate_cmd_aborts_mid_merge_before_checkout",
+        "git merge --abort" in gate_cmd
+        and "MERGE_HEAD" in gate_cmd
+        and "git reset --hard origin/%BRANCH%" in gate_cmd,
+        checks,
+        problems,
+    )
+    reset_cmd = open(
+        "tools/flightsim-address-centric-reset.cmd", encoding="utf-8"
+    ).read()
+    _check(
+        "reset_cmd_hard_resets_feature_tip",
+        "git reset --hard origin/%BRANCH%" in reset_cmd
+        and "git merge --abort" in reset_cmd
+        and "cursor/p2-i11a-address-centric-email-49da" in reset_cmd,
+        checks,
+        problems,
+    )
+    _check(
         "gate_cmd_watchdog_timeout_gates",
         "gate_cmd_startmb_watchdog_timeout" in gate_cmd
         and "gate_cmd_prove_watchdog_timeout" in gate_cmd

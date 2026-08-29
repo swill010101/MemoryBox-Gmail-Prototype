@@ -39,6 +39,33 @@ echo branch: %BRANCH%
 echo cwd: %CD%
 echo.
 
+REM Abort mid-merge / rebase / cherry-pick BEFORE fetch/stash/checkout.
+REM A plain "git pull origin %BRANCH%" into the wrong local branch leaves
+REM CONFLICT markers and blocks checkout -B; stash also fails mid-merge.
+if exist ".git\MERGE_HEAD" (
+  echo ===== aborting in-progress merge =====
+  git merge --abort
+  if errorlevel 1 (
+    echo WARNING: git merge --abort failed — trying hard reset path after fetch
+  )
+)
+if exist ".git\REBASE_HEAD" (
+  echo ===== aborting in-progress rebase =====
+  git rebase --abort
+)
+if exist ".git\CHERRY_PICK_HEAD" (
+  echo ===== aborting in-progress cherry-pick =====
+  git cherry-pick --abort
+)
+if exist ".git\rebase-merge" (
+  echo ===== aborting rebase-merge state =====
+  git rebase --abort
+)
+if exist ".git\rebase-apply" (
+  echo ===== aborting rebase-apply state =====
+  git rebase --abort
+)
+
 git fetch origin %BRANCH%
 if errorlevel 1 goto :fail
 
@@ -65,14 +92,19 @@ if not "%TRACKED_DIRTY%"=="0" (
   )
 )
 
+REM Hard reset onto origin tip — never merge foreign local history into the gate branch.
 git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (
   echo.
-  echo CHECKOUT FAILED — working tree still blocked. Inspect:
-  echo   git status
-  echo then re-run this script.
+  echo CHECKOUT FAILED — working tree still blocked ^(mid-merge^?). Try:
+  echo   git merge --abort
+  echo   git rebase --abort
+  echo   tools\flightsim-address-centric-reset.cmd
+  echo then re-run this script. Inspect: git status
   goto :fail
 )
+git reset --hard origin/%BRANCH%
+if errorlevel 1 goto :fail
 git pull --ff-only origin %BRANCH%
 if errorlevel 1 goto :fail
 git rev-parse --short HEAD

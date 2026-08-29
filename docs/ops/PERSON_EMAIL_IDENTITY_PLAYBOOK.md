@@ -17,12 +17,24 @@ identities to retrieve complete Person evidence.
 
 ## FlightSim
 
-Pull the latest tip first (cold-create / Immich rename / delivery order live here):
+**Do not** `git pull origin cursor/p2-i11a-address-centric-email-49da` into some
+other local branch — that merges and often leaves `CONFLICT` markers. Always
+hard-reset onto the tip (or use the reset helper):
 
 ```bat
 cd C:\memorybox
+git merge --abort
+git rebase --abort
 git fetch origin cursor/p2-i11a-address-centric-email-49da
 git checkout -B cursor/p2-i11a-address-centric-email-49da origin/cursor/p2-i11a-address-centric-email-49da
+git reset --hard origin/cursor/p2-i11a-address-centric-email-49da
+```
+
+Or, after the tip is fetched once:
+
+```bat
+cd C:\memorybox
+tools\flightsim-address-centric-reset.cmd
 ```
 
 Primary gate (Gallery + Full-Evidence email > 0; **no historian**):
@@ -32,8 +44,9 @@ cd C:\memorybox
 tools\flightsim-address-centric-gate.cmd
 ```
 
-The script checks out `cursor/p2-i11a-address-centric-email-49da`, restarts, then
-runs `tools\flightsim-address-centric-prove.ps1` (loads `config\memorybox_app.env`
+The gate aborts any mid-merge/rebase, hard-resets onto
+`origin/cursor/p2-i11a-address-centric-email-49da`, restarts, then runs
+`tools\flightsim-address-centric-prove.ps1` (loads `config\memorybox_app.env`
 the same way `startmb` does — so migrate/prove hit the Takeout archive DB, not a
 silent ALLOW_DEV localhost). Paste the printed gate block
 (need `"ok": true` and `"flightsim": true`). Gate `runtime` stamps `database`,
