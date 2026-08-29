@@ -60,6 +60,18 @@ def _blob(*parts: Any) -> str:
     return " ".join(str(p or "") for p in parts).lower()
 
 
+def _hit_who_blob(h: EvidenceHit) -> str:
+    """Email: structured From/To. Never people[] (Takeout co-occurrence)."""
+    kind = str(h.evidence_kind or "").lower()
+    ch = str(h.channel or "").lower()
+    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
+    is_sms = ch in sms_ch or "sms" in kind or kind == "text"
+    is_email = (kind in {"communication", "email", "comms"} and not is_sms) or ch == "email"
+    if is_email:
+        return " ".join(x for x in (h.from_header, h.to_header) if x)
+    return " ".join(h.people or [])
+
+
 def _place_tokens(plan: QueryPlan) -> list[str]:
     return _place_trip_keywords(plan)
 
@@ -470,7 +482,7 @@ def resolve_trip(
     matched_ev = []
     comm_pipeline: list[dict[str, Any]] = []
     for h in evidence:
-        blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
+        blob = _blob(h.summary, h.excerpt, _hit_who_blob(h), h.channel, h.evidence_kind)
         channel = str(h.channel or h.evidence_kind or "").lower()
         match_reason = None if tokens else "no_place_tokens"
         if tokens:
@@ -875,7 +887,7 @@ def apply_plan_windows(
         if channel in {"calendar", "calendar_event"}:
             kept_ev.append(h)
             continue
-        blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
+        blob = _blob(h.summary, h.excerpt, _hit_who_blob(h), h.channel, h.evidence_kind)
         if (not tokens) or _place_match_reason(blob, tokens):
             kept_ev.append(h)
             continue

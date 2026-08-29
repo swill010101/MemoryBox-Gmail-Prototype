@@ -1011,6 +1011,20 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    trip_src = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "memorybox"
+        / "ask"
+        / "trip_discovery.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "trip_discovery_email_omits_people_array",
+        "def _hit_who_blob" in trip_src
+        and trip_src.count("_hit_who_blob(h)") >= 2
+        and '" ".join(h.people or [])' not in trip_src.replace("return \" \".join(h.people or [])", ""),
+        checks,
+        problems,
+    )
 
     flightsim_report: dict[str, Any] = {}
     if flightsim:
