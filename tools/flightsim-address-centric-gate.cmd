@@ -195,8 +195,10 @@ echo need: "ok": true  and  "flightsim": true
 echo file: %GATE_JSON%
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.
+popd
 exit /b %PROVE_EXIT%
 
 :fail
 echo FAILED — fix git/migrate errors above, then re-run.
+popd 2>nul
 exit /b 1

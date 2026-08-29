@@ -407,19 +407,17 @@ def discover_email_candidates_from_archive(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 LIMIT %s
                 """,
                 (
+                    patterns,
+                    patterns,
+                    patterns,
                     patterns,
                     patterns,
                     patterns,
@@ -770,15 +768,10 @@ def backfill_email_person_ids(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 LIMIT %s
                 """,
@@ -788,7 +781,10 @@ def backfill_email_person_ids(
                     patterns,
                     patterns,
                     patterns,
-                    sorted(addrs),
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
                     limit,
                 ),
             ).fetchall()
@@ -1245,19 +1241,14 @@ def attach_known_email_if_corroborated(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
                 LIMIT 5000
                 """,
-                (like, like, like, like, like, addr),
+                (like, like, like, like, like, like, like, like, like),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"accepted": False, "reason": "scan_error", "error": str(exc), "address": addr}
