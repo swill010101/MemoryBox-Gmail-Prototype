@@ -504,6 +504,34 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    mig027 = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "memorybox"
+        / "migrations"
+        / "027_demote_untrusted_email_status.sql"
+    ).read_text(encoding="utf-8")
+    _check(
+        "migrate_demotes_untrusted_confirmed_status",
+        "retrieval_trust = 'untrusted'" in mig027
+        and "status = 'candidate'" in mig027
+        and "resolution_status = 'observed'" in mig027
+        and "Keep the rows" in mig027,
+        checks,
+        problems,
+    )
+    fed_claim = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.full_evidence_diagnostic",
+            fromlist=["_pick_exact_peggy_george"],
+        )._pick_exact_peggy_george
+    )
+    _check(
+        "peggy_claimant_requires_trusted_email",
+        "retrieval_trust = 'trusted'" in fed_claim
+        and "status = 'confirmed'" not in fed_claim,
+        checks,
+        problems,
+    )
     _check(
         "flightsim_gate_runs_phase1_prove_before_pipeline",
         "prove-trusted-identity-retrieval --flightsim" in gate_txt

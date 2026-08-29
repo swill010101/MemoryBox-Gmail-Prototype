@@ -64,7 +64,7 @@ def _pick_exact_peggy_george(people: list[Any]) -> Any | None:
                     FROM person_contact_points
                     WHERE person_id = %s::uuid
                       AND contact_kind = 'email'
-                      AND status = 'confirmed'
+                      AND retrieval_trust = 'trusted'
                       AND lower(value_text) = %s
                     LIMIT 1
                     """,

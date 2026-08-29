@@ -1711,7 +1711,7 @@ def repair_email_identity_contacts(
                         SELECT 1 FROM person_contact_points c
                         WHERE c.person_id = p.id
                           AND c.contact_kind = 'email'
-                          AND c.status = 'confirmed'
+                          AND c.retrieval_trust = 'trusted'
                       )
                     ORDER BY p.display_name
                     LIMIT 500
