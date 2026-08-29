@@ -140,6 +140,7 @@ def _complete_email_body(raw: str) -> tuple[str, dict[str, bool]]:
 
 def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
     """Same Peggy ask + Person resolution as the historian fixture, without LLM planning."""
+    import os
     from dataclasses import replace
 
     from memorybox.person import AmbiguousIdentityError, find_ask_person_by_name
@@ -149,6 +150,14 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
     ctx = AskContext(session_id=f"full-evidence-{uuid4()}")
     plan = plan_ask(ask_text, ctx)
     rel = resolve_relational_ask(ask_text)
+    # FlightSim / P1: never Immich-lazy-seed a single-token \"Peggy\" stub during
+    # Full-Evidence — that Person has no email contacts and blocks address-centric
+    # retrieve. Prefer existing multi-token People only.
+    lazy_seed = (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
     if (
         rel.intent == "none"
         and plan.person_names
@@ -167,7 +176,7 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
             if any(nl == lab.lower() or nl in lab.lower() or lab.lower() in nl for lab in labels):
                 continue
             try:
-                view = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
+                view = find_ask_person_by_name(name, photo=photo, lazy_seed=lazy_seed)
             except AmbiguousIdentityError:
                 view = None
             except Exception:  # noqa: BLE001

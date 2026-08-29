@@ -420,7 +420,10 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     ask_peggy = None
     ask_legg = None
     try:
-        ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not flightsim)
+        # Prefer multi-token Peggy George when present (Immich often seeds \"Peggy\").
+        ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=not flightsim)
+        if ask_peggy is None or " " not in ((ask_peggy.display_name or "").strip()):
+            ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not flightsim)
         ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
     except Exception as exc:  # noqa: BLE001 — AmbiguousIdentityError or DB errors
         _check(
