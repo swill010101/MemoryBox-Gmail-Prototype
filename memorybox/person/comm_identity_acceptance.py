@@ -106,6 +106,15 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=sql,
     )
+    _check(
+        "email_addr_sql_parsed_as_text_not_unnest",
+        "from_parsed" in sql
+        and "jsonb_array_elements" not in sql
+        and "(payload_json->'from_parsed')::text" in sql.replace(" ", ""),
+        checks,
+        problems,
+        detail=sql,
+    )
     where, wparams, scope = _person_scoped_comm_where(
         channel_sql="true",
         win_sql="true",

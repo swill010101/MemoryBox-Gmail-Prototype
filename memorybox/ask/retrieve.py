@@ -692,8 +692,9 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     """Match confirmed email addresses in From/To/CC/BCC headers (not body text).
 
     Ingest stores ``to`` / ``cc`` / ``bcc`` as JSON arrays. ``payload_json->>'to'``
-    is NULL for arrays in Postgres — always use ``(payload_json->'to')::text`` or
-    ``from_parsed`` / ``to_parsed`` / ``cc_parsed`` / ``bcc_parsed`` addresses.
+    is NULL for arrays in Postgres — always use ``(payload_json->'to')::text``.
+    Cast ``*_parsed`` JSON to text and LIKE — do not unnest JSON per Evidence row
+    (seq scan; trips prove-i11a full-export guard).
     """
     norms = sorted(
         {
@@ -705,6 +706,7 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     if not norms:
         return "FALSE", []
     patterns = [f"%{a}%" for a in norms]
+    # Cast JSON arrays to text and LIKE. Do not unnest JSON per row (seq scan).
     sql = (
         "("
         " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
@@ -712,18 +714,13 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
-        " OR EXISTS ("
-        "   SELECT 1 FROM jsonb_array_elements("
-        "     coalesce(payload_json->'from_parsed','[]'::jsonb)"
-        "     || coalesce(payload_json->'to_parsed','[]'::jsonb)"
-        "     || coalesce(payload_json->'cc_parsed','[]'::jsonb)"
-        "     || coalesce(payload_json->'bcc_parsed','[]'::jsonb)"
-        "   ) e"
-        "   WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)"
-        " )"
+        " OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [patterns, patterns, patterns, patterns, patterns, norms]
+    return sql, [patterns] * 9
 
 
 def _person_scoped_comm_where(
