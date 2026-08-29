@@ -210,15 +210,39 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "WARNING: probe-email-address failed or structured occurrence_count=0 — continuing to prove for gate artifacts." -ForegroundColor Yellow
 }
 
-& $Python -m memorybox prove-address-centric-email-e2e --flightsim
-$proveExit = $LASTEXITCODE
-$gateJson = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json"
-$verdictPath = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt"
-$auditPath = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_AUDIT.json"
-if ($proveExit -ne 0) {
-  if (-not (Test-Path -LiteralPath $gateJson)) {
-    Write-AddressCentricGateFailure "prove_exited_without_gate" "exit=$proveExit"
-  }
+$outDir = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$gateJson = Join-Path $outDir "ADDRESS_CENTRIC_GATE.json"
+$verdictPath = Join-Path $outDir "ADDRESS_CENTRIC_VERDICT.txt"
+$auditPath = Join-Path $outDir "ADDRESS_CENTRIC_AUDIT.json"
+$proveLog = Join-Path $outDir "ADDRESS_CENTRIC_PROVE.log"
+$proveErr = Join-Path $outDir "ADDRESS_CENTRIC_PROVE.err.log"
+$env:MEMORYBOX_ADDRESS_CENTRIC_OUT = $outDir
+
+# Start-Process ExitCode is reliable on Windows PS 5.1. Native "& python; $LASTEXITCODE"
+# can stay 0 from migrate/probe when the prove process never updates it, and Tee-Object
+# also clobbers LASTEXITCODE — that produced gate.cmd stub
+# gate_cmd_stub_missing_prove_artifacts / prove_exit=0.
+Write-Host "==> prove-address-centric-email-e2e --flightsim (cwd=$Root)"
+if (Test-Path -LiteralPath $proveLog) { Remove-Item -LiteralPath $proveLog -Force }
+if (Test-Path -LiteralPath $proveErr) { Remove-Item -LiteralPath $proveErr -Force }
+$proveProc = Start-Process -FilePath $Python `
+  -ArgumentList @("-u", "-m", "memorybox", "prove-address-centric-email-e2e", "--flightsim") `
+  -WorkingDirectory $Root `
+  -Wait -PassThru -NoNewWindow `
+  -RedirectStandardOutput $proveLog `
+  -RedirectStandardError $proveErr
+$proveExit = $proveProc.ExitCode
+Write-Host ("prove python ExitCode=" + $proveExit + " log=" + $proveLog)
+if (Test-Path -LiteralPath $proveErr) {
+  $errTail = Get-Content -LiteralPath $proveErr -Tail 40 -ErrorAction SilentlyContinue
+  if ($errTail) { Write-Host ($errTail -join "`n") -ForegroundColor Yellow }
+}
+
+if (-not (Test-Path -LiteralPath $gateJson)) {
+  $detail = "exit=$proveExit cwd=$Root python=$Python gate_missing_after_e2e"
+  Write-AddressCentricGateFailure "prove_exit_ok_but_gate_missing" $detail
+  if ($proveExit -eq 0) { $proveExit = 2 }
 }
 
 # Requirement audit — stamps goal_complete for the cloud agent / results branch.

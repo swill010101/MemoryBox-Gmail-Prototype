@@ -1615,6 +1615,23 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "prove_ps1_writes_gate_even_when_python_exit_0",
+        "prove_exit_ok_but_gate_missing" in prove_ps1
+        and "Start-Process -FilePath $Python" in prove_ps1
+        and "MEMORYBOX_ADDRESS_CENTRIC_OUT" in prove_ps1,
+        checks,
+        problems,
+    )
+    ace_write = open("memorybox/person/address_centric_e2e.py", encoding="utf-8").read()
+    _check(
+        "e2e_gate_out_dir_is_repo_absolute",
+        "def _gate_out_dir" in ace_write
+        and "parents[2]" in ace_write
+        and 'Path("docs/test-output/historian-full-evidence/peggy-v2")' not in ace_write,
+        checks,
+        problems,
+    )
     verify_src = open("tools/verify-address-centric-gate.py", encoding="utf-8").read()
     _check(
         "verifier_rejects_allow_dev_fake_flightsim",

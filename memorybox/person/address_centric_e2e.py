@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 from memorybox.person.phone_map import normalize_handle
@@ -77,6 +78,15 @@ def _runtime_stamp(*, flightsim: bool) -> dict[str, Any]:
     return stamp
 
 
+def _gate_out_dir() -> Path:
+    """Repo-absolute peggy-v2 dir — never depend on process cwd (FlightSim cwd drift)."""
+    override = (os.environ.get("MEMORYBOX_ADDRESS_CENTRIC_OUT") or "").strip()
+    if override:
+        return Path(override)
+    # memorybox/person/address_centric_e2e.py → repo root is parents[2]
+    return Path(__file__).resolve().parents[2] / "docs/test-output/historian-full-evidence/peggy-v2"
+
+
 def _write_gate_artifacts(
     gate: dict[str, Any],
     *,
@@ -90,7 +100,7 @@ def _write_gate_artifacts(
 
         # Real FlightSim (or local) emit clears the results-branch waiting placeholder.
         gate.setdefault("waiting", False)
-        out = Path("docs/test-output/historian-full-evidence/peggy-v2")
+        out = _gate_out_dir()
         out.mkdir(parents=True, exist_ok=True)
         gate_path = out / "ADDRESS_CENTRIC_GATE.json"
         gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")

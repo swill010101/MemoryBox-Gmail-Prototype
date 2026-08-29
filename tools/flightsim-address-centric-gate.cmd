@@ -22,6 +22,8 @@ set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_
 set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
 set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
 set GATE_AUDIT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_AUDIT.json
+set GATE_PROVE_LOG=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_PROVE.log
+set GATE_PROVE_ERR=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_PROVE.err.log
 REM Wall-clock budgets so hung startmb/prove still deliver a gate (not waiting:true).
 if not defined STARTMB_WATCHDOG_SEC set STARTMB_WATCHDOG_SEC=600
 if not defined PROVE_WATCHDOG_SEC set PROVE_WATCHDOG_SEC=2700
@@ -321,6 +323,8 @@ git add --force "%GATE_JSON%"
 if exist "%GATE_VERDICT%" git add --force "%GATE_VERDICT%"
 if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
 if exist "%GATE_AUDIT%" git add --force "%GATE_AUDIT%"
+if exist "%GATE_PROVE_LOG%" git add --force "%GATE_PROVE_LOG%"
+if exist "%GATE_PROVE_ERR%" git add --force "%GATE_PROVE_ERR%"
 git status --short
 git diff --cached --quiet
 if errorlevel 1 (
