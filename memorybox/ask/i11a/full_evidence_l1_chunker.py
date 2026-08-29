@@ -277,11 +277,44 @@ def segment_sms_episodes(
     return episodes
 
 
+_REPLY_SUBJ = re.compile(r"^(?:(?:re|fw|fwd)\s*:\s*)+", re.I)
+
+
+def _norm_email_subject(raw: Any) -> str:
+    s = re.sub(r"\s+", " ", str(raw or "").strip().lower())
+    while True:
+        nxt = _REPLY_SUBJ.sub("", s).strip()
+        if nxt == s:
+            return s
+        s = nxt
+
+
+def _email_thread_key(item: dict[str, Any]) -> str:
+    """Prefer RFC thread_id; else same normalized subject + structured addresses.
+
+    Takeout often omits thread_id. people[] is never part of the key.
+    """
+    tid = str(item.get("thread_id") or "").strip()
+    iid = str(item.get("item_id") or "")
+    if tid and tid != iid:
+        return f"tid:{tid}"
+    subj = _norm_email_subject(item.get("subject") or item.get("title"))
+    addrs = sorted(
+        {
+            str(a).strip().lower()
+            for a in (item.get("addresses") or [])
+            if str(a).strip() and "@" in str(a)
+        }
+    )
+    if subj and addrs:
+        return f"subj:{subj}|{','.join(addrs)}"
+    return f"item:{iid or id(item)}"
+
+
 def group_email_threads(email_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_thread: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for it in email_items:
-        tid = str(it.get("thread_id") or it.get("item_id") or "")
-        by_thread[tid].append(it)
+        by_thread[_email_thread_key(it)].append(it)
     units: list[dict[str, Any]] = []
     for tid, msgs in sorted(by_thread.items(), key=lambda kv: kv[0]):
         msgs_sorted = sorted(

@@ -1085,6 +1085,39 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         allowed_ids={"ev-trust"},
         email_evidence_ids={"ev-trust"},
     )
+    from memorybox.ask.i11a.full_evidence_l1_chunker import group_email_threads
+
+    threaded = group_email_threads(
+        [
+            {
+                "item_id": "e1",
+                "subject": "Re: Harbor dinner",
+                "addresses": ["peggo417@hotmail.com", "swill01@gmail.com"],
+                "timestamp": "2020-01-01",
+            },
+            {
+                "item_id": "e2",
+                "subject": "Harbor dinner",
+                "addresses": ["swill01@gmail.com", "peggo417@hotmail.com"],
+                "timestamp": "2020-01-02",
+            },
+            {
+                "item_id": "e3",
+                "subject": "Harbor dinner",
+                "addresses": ["other@example.test"],
+                "timestamp": "2020-01-03",
+            },
+        ]
+    )
+    _check(
+        "email_threads_group_by_subject_and_addresses_without_thread_id",
+        len(threaded) == 2
+        and {frozenset(u.get("item_ids") or []) for u in threaded}
+        == {frozenset({"e1", "e2"}), frozenset({"e3"})},
+        checks,
+        problems,
+        detail=[{"ids": u.get("item_ids"), "tid": u.get("thread_id")} for u in threaded],
+    )
     _check(
         "chunk_merge_dedupes_claims",
         merged.get("ok") and len((merged.get("document") or {}).get("claims") or []) == 1,
