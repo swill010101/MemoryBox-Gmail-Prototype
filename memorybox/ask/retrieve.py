@@ -1466,6 +1466,48 @@ def _structured_comm_search_blob(payload: dict[str, Any], summary: str = "") -> 
     ).lower()
 
 
+_SMS_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+
+
+def _stamp_hit_payload(h: EvidenceHit, payload: dict[str, Any]) -> None:
+    """Keep loaded payload on the hit so later filters see evidence_channel."""
+    if not payload:
+        return
+    h.payload = payload
+    if not h.channel:
+        raw = str(payload.get("evidence_channel") or payload.get("channel") or "").strip()
+        if raw:
+            h.channel = raw
+
+
+def hit_comm_channel(h: EvidenceHit) -> str:
+    ch = str(h.channel or "").lower()
+    p = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
+    return str((p or {}).get("evidence_channel") or (p or {}).get("channel") or ch).lower()
+
+
+def hit_is_sms(h: EvidenceHit) -> bool:
+    kind = str(h.evidence_kind or "").lower()
+    ch = hit_comm_channel(h)
+    return ch in _SMS_CHANNELS or "sms" in kind or kind == "text"
+
+
+def hit_is_email(h: EvidenceHit) -> bool:
+    """True only for mail. Qdrant SMS (kind=communication, empty channel) is false."""
+    if hit_is_sms(h):
+        return False
+    kind = str(h.evidence_kind or "").lower()
+    ch = hit_comm_channel(h)
+    return kind in {"communication", "email", "comms"} or ch == "email" or "mail" in kind
+
+
+def hit_who_blob(h: EvidenceHit) -> str:
+    """Email: structured From/To. Never people[] (Takeout co-occurrence)."""
+    if hit_is_email(h):
+        return " ".join(x for x in (h.from_header, h.to_header) if x)
+    return " ".join(h.people or [])
+
+
 def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> list[EvidenceHit]:
     """Person-scoped Ask: drop communication email that is not a trusted retrieve key."""
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
@@ -1474,17 +1516,12 @@ def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> li
     if not person_ids:
         return hits
     trusted = _confirmed_emails_for_people(person_ids)
-    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
     out: list[EvidenceHit] = []
     for h in hits:
         kind = str(h.evidence_kind or "").lower()
         ch = str(h.channel or "").lower()
-        is_sms = ch in sms_ch or "sms" in kind or kind == "text"
-        maybe_email = (
-            (kind in {"communication", "email", "comms"} and not is_sms)
-            or ch == "email"
-        )
-        if not maybe_email:
+        maybe_comm = kind in {"communication", "email", "comms"} or ch == "email" or "mail" in kind
+        if not maybe_comm:
             out.append(h)
             continue
         payload = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
@@ -1496,18 +1533,11 @@ def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> li
                 payload = _payload_dict((row or {}).get("payload_json"))
             except Exception:  # noqa: BLE001
                 payload = {}
-        # Qdrant/keyword hits often omit channel. SMS must not be treated as email.
-        pch = str(
-            (payload or {}).get("evidence_channel")
-            or (payload or {}).get("channel")
-            or ch
-        ).lower()
-        if pch in sms_ch or "sms" in str((payload or {}).get("evidence_kind") or ""):
+        _stamp_hit_payload(h, payload)
+        if hit_is_sms(h) or not hit_is_email(h):
             out.append(h)
             continue
-        if not trusted:
-            continue
-        if not payload:
+        if not trusted or not payload:
             continue
         from memorybox.person.trusted_identity import email_payload_trusted
 
@@ -2354,20 +2384,9 @@ def filter_hits_by_constraints(
     year_cons = {c for c in cons if re.fullmatch(r"(?:19|20)\d{2}", c)}
     other_cons = [c for c in cons if c not in year_cons]
     kept: list[EvidenceHit] = []
-    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
     for h in hits:
-        kind = str(h.evidence_kind or "").lower()
-        ch = str(h.channel or "").lower()
-        is_sms = ch in sms_ch or "sms" in kind or kind == "text"
-        is_email = (
-            (kind in {"communication", "email", "comms"} and not is_sms) or ch == "email"
-        )
         # Email: structured From/To only. Never people[] (Takeout co-occurrence).
-        who = (
-            " ".join(x for x in (h.from_header, h.to_header) if x)
-            if is_email
-            else " ".join(h.people or [])
-        )
+        who = hit_who_blob(h)
         blob = " ".join(
             [
                 h.summary or "",

@@ -1035,7 +1035,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "trusted_email_filter_keeps_sms_when_channel_missing",
         [h.evidence_id for h in kept_sms] == ["ev-sms-comm"]
-        and "evidence_channel" in filt_src,
+        and "evidence_channel" in inspect.getsource(retrieve_mod.hit_comm_channel),
         checks,
         problems,
         detail=kept_sms,
@@ -1053,11 +1053,13 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
     )
     cons_src = inspect.getsource(retrieve_mod.filter_hits_by_constraints)
+    who_src = inspect.getsource(retrieve_mod.hit_who_blob)
     _check(
         "constraint_filter_email_omits_people_array",
-        "from_header" in cons_src
-        and "Never people[]" in cons_src
-        and 'h.people or []' in cons_src,
+        "hit_who_blob" in cons_src
+        and "Never people[]" in who_src
+        and "from_header" in who_src
+        and 'h.people or []' in who_src,
         checks,
         problems,
     )

@@ -19,6 +19,7 @@ from memorybox.ask.retrieve import (
     StoryHit,
     VideoHit,
     _place_trip_keywords,
+    hit_who_blob,
     trip_discovery_pending,
 )
 from memorybox.planner import QueryPlan
@@ -62,14 +63,7 @@ def _blob(*parts: Any) -> str:
 
 def _hit_who_blob(h: EvidenceHit) -> str:
     """Email: structured From/To. Never people[] (Takeout co-occurrence)."""
-    kind = str(h.evidence_kind or "").lower()
-    ch = str(h.channel or "").lower()
-    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
-    is_sms = ch in sms_ch or "sms" in kind or kind == "text"
-    is_email = (kind in {"communication", "email", "comms"} and not is_sms) or ch == "email"
-    if is_email:
-        return " ".join(x for x in (h.from_header, h.to_header) if x)
-    return " ".join(h.people or [])
+    return hit_who_blob(h)
 
 
 def _place_tokens(plan: QueryPlan) -> list[str]:
