@@ -696,9 +696,9 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     Cast ``*_parsed`` JSON to text and LIKE — do not unnest JSON per Evidence row
     (seq scan; trips prove-i11a full-export guard).
 
-    For the scalar ``from`` header, prefer exact / angle-bracket / mailto shapes
-    before a broad leading-wildcard LIKE (cheaper when an expression index exists;
-    still correct for ``Name <addr>`` and bare addr).
+    For the scalar ``from`` header, prefer exact bare + angle-bracket + mailto
+    shapes as separate OR arms (index-friendlier) before a broad ``%addr%``
+    fallback for odd encodings.
     """
     norms = sorted(
         {
@@ -709,23 +709,28 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     )
     if not norms:
         return "FALSE", []
-    # Scalar From: exact bare + <addr> + mailto forms (avoid sole reliance on %addr%).
-    from_patterns: list[str] = []
+    # Exact bare From (uses evidence_comm_from_lower when present).
+    exact_from = list(norms)
+    # Angle-bracket / mailto forms — leading wildcard only where needed for
+    # ``Display <addr>`` / ``[mailto:addr]`` prefixes.
+    shaped_from: list[str] = []
     for a in norms:
-        from_patterns.extend(
+        shaped_from.extend(
             [
-                a,
                 f"%<{a}>%",
                 f"%<{a}>",
                 f"%[mailto:{a}]%",
-                f"%{a}%",  # fallback: display-only / odd encodings
             ]
         )
+    # Broad fallback last (odd encodings / display-only).
+    broad_from = [f"%{a}%" for a in norms]
     # JSON array / *_parsed text still needs substring match.
     json_patterns = [f"%{a}%" for a in norms]
     sql = (
         "("
-        " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
+        " lower(coalesce(payload_json->>'from', '')) = ANY(%s)"
+        " OR lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
+        " OR lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
@@ -736,7 +741,7 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [from_patterns] + [json_patterns] * 8
+    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 8
 
 
 def _person_scoped_comm_where(

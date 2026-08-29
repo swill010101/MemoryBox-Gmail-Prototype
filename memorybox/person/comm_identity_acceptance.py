@@ -92,6 +92,24 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=sql,
     )
     _check(
+        "email_addr_sql_from_exact_before_broad_like",
+        "->>'from'" in sql and "= ANY(%s)" in sql and sql.find("= ANY(%s)") < sql.find("LIKE ANY(%s)"),
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_from_params_exact_then_shaped_then_broad",
+        isinstance(params, list)
+        and len(params) >= 3
+        and params[0] == ["peggo01417@hotmail.com"]
+        and any("%<peggo01417@hotmail.com>%" in str(p) for p in params[1])
+        and any(str(p).startswith("%peggo01417") for p in params[2]),
+        checks,
+        problems,
+        detail=params[:3] if isinstance(params, list) else params,
+    )
+    _check(
         "email_addr_sql_handles_to_json_array",
         "payload_json->'to')::text" in sql.replace(" ", "")
         or "(payload_json->'to')::text" in sql,
