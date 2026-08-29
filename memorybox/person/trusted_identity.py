@@ -298,6 +298,12 @@ def reclassify_person_email_trust(person_id: str) -> dict[str, Any]:
                 (pid,),
             ).fetchall()
         )
+        trusted_addrs: set[str] = set()
+        for r in rows:
+            verdict = classify_contact_trust(dict(r))
+            addr = normalize_handle(str(r.get("value_text") or ""))
+            if verdict.get("retrieval_trust") == "trusted" and addr:
+                trusted_addrs.add(addr)
         for r in rows:
             verdict = classify_contact_trust(dict(r))
             trust = str(verdict.get("retrieval_trust") or "untrusted")
@@ -337,7 +343,7 @@ def reclassify_person_email_trust(person_id: str) -> dict[str, Any]:
                     """,
                     (new_status, r.get("id")),
                 )
-                if addr:
+                if addr and addr not in trusted_addrs:
                     conn.execute(
                         """
                         UPDATE communication_identities
@@ -352,6 +358,18 @@ def reclassify_person_email_trust(person_id: str) -> dict[str, Any]:
                     )
                 entry["new_status"] = new_status
                 report["demoted"].append(entry)
+        for addr in trusted_addrs:
+            conn.execute(
+                """
+                UPDATE communication_identities
+                SET resolution_status = 'confirmed',
+                    resolved_person_id = %s::uuid,
+                    updated_at = now()
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                """,
+                (pid, addr),
+            )
         tally = list(
             conn.execute(
                 """

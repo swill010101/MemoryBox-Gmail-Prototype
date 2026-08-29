@@ -124,6 +124,22 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
             trusted_addr in trusted_keep,
             rec_keep.get("demoted"),
         )
+        with connection() as conn:
+            led = conn.execute(
+                """
+                SELECT resolution_status
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                LIMIT 1
+                """,
+                (trusted_addr,),
+            ).fetchone()
+        _ok(
+            "ledger_stays_confirmed_when_sibling_row_trusted",
+            led is None or str(led.get("resolution_status") or "") == "confirmed",
+            dict(led) if led else None,
+        )
 
         with connection() as conn:
             for i, (addr, dn) in enumerate(

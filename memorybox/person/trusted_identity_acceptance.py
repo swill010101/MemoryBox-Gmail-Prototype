@@ -9,6 +9,7 @@ from memorybox.person.trusted_identity import (
     _trusted_verdict_from_rows,
     apply_email_contact_trust,
     classify_contact_trust,
+    reclassify_person_email_trust,
 )
 from memorybox.profile.facts import add_contact
 
@@ -73,6 +74,13 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=unknown,
     )
     apply_src = inspect.getsource(apply_email_contact_trust)
+    reclass_src = inspect.getsource(reclassify_person_email_trust)
+    _check(
+        "reclassify_keeps_ledger_when_sibling_trusted",
+        "addr not in trusted_addrs" in reclass_src,
+        checks,
+        problems,
+    )
     _check(
         "apply_trust_keeps_prior_trusted_rows",
         "kept_prior_trust" in apply_src
