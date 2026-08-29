@@ -249,7 +249,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     index_src = inspect.getsource(pm._index_confirmed_handles)
     _check(
         "sms_handle_index_emails_require_trusted",
-        "classify_contact_trust" in index_src and "retrieval_trust" in index_src,
+        "classify_contact_trust" in index_src
+        and "retrieval_trust" in index_src
+        and "apple_id', 'email'" not in index_src
+        and "'email')" not in index_src.split("provider_identities")[-1][:400],
         checks,
         problems,
     )

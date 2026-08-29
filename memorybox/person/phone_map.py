@@ -73,7 +73,7 @@ def _index_confirmed_handles(conn: Any | None = None) -> dict[str, list[str]]:
                 """
                 SELECT person_id, external_id
                 FROM provider_identities
-                WHERE lower(identity_kind) IN ('phone', 'handle', 'apple_id', 'email')
+                WHERE lower(identity_kind) IN ('phone', 'handle', 'apple_id')
                 """
             ).fetchall()
         except Exception:  # noqa: BLE001
