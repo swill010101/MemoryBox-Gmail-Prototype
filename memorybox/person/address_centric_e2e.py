@@ -312,10 +312,9 @@ def _seed_local_fixture() -> dict[str, Any]:
         "people": ["Peg Legg", "Tom Will"],
         "subject": "Hello from Peg",
         "body_text": (
-            "Hi Tom\n-----Original Message-----\n"
-            # Angle-bracket + Outlook mailto forms (FlightSim Takeout shapes).
-            f"From: someone\nCc: Peggy George <{_PROBE_ADDR}>\n"
-            f"From: Peggy George [mailto:{_PROBE_ADDR}]\n"
+            # Thin Takeout shape: Peg Legg structured only — no quoted Peggy George.
+            # FlightSim Immich rename + operator repair must still close the gate.
+            "Hi Tom — note from Peg\n"
         ),
         "sent_at": "2019-06-15T12:00:00Z",
         "person_ids": [],
@@ -323,7 +322,7 @@ def _seed_local_fixture() -> dict[str, Any]:
     noise_n = 0
     bare_from_eid = str(uuid.UUID("eeeeeeee-0000-0000-0000-000000000002"))
     with connection() as conn:
-        # Message 1: classic Peg Legg <addr> + quoted Peggy George (nickname corroboration).
+        # Message 1: classic Peg Legg <addr> only (no quoted Peggy George).
         eid1 = uuid.UUID("eeeeeeee-0000-0000-0000-000000000001")
         p1 = dict(payload)
         p1["sent_at"] = "2019-06-15T12:00:00Z"
@@ -442,6 +441,7 @@ def _seed_local_fixture() -> dict[str, Any]:
         "immich_stub_only": True,
         "spam_trash_peggo417_seeded": True,
         "ambiguous_peggy_smith_seeded": True,
+        "thin_quoted_no_peggy_george": True,
     }
 
 
