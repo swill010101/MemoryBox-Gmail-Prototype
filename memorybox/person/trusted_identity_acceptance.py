@@ -329,6 +329,12 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    _check(
+        "single_pass_freeze_skips_unbounded_immich",
+        "visual = bool(complete_trusted)" in freeze_src and "want_still=visual" in freeze_src,
+        checks,
+        problems,
+    )
     ground = score_email_grounding(
         {
             "claims": [

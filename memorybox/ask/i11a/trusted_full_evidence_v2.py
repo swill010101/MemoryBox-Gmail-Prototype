@@ -385,20 +385,24 @@ def freeze_trusted_full_evidence_v2(
     photo = build_photo()
     video = build_video()
     if plan is None:
+        # Single-pass: trusted email + established text (calendar/story/journal).
+        # Do not pull the unbounded Immich library — that hangs FlightSim
+        # before Gemma/Sol. Visuals wait for the complete trusted freeze.
+        visual = bool(complete_trusted)
         plan = QueryPlan(
             original_ask=ask,
             effective_ask=ask,
             is_followup=False,
-            want_photo=True,
+            want_photo=visual,
             want_communication=True,
             want_calendar=True,
             want_story=True,
             want_journal=True,
             want_artifact=True,
-            want_visual=True,
-            want_still=True,
-            want_video=True,
-            want_spoken=True,
+            want_visual=visual,
+            want_still=visual,
+            want_video=visual,
+            want_spoken=visual,
             person_names=(),
             person_ids=(str(person_id),),
             place_names=(),
