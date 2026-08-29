@@ -23,6 +23,18 @@ $Root = if ($PSScriptRoot) {
 }
 Set-Location $Root
 
+# Sentinel so gate.cmd can tell prove.ps1 actually started (vs watchdog stub exit 0).
+$outDirEarly = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2"
+New-Item -ItemType Directory -Force -Path $outDirEarly | Out-Null
+$startedPath = Join-Path $outDirEarly "ADDRESS_CENTRIC_PROVE_STARTED.txt"
+$utf8s = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText(
+  $startedPath,
+  ("started={0} pid={1} root={2}`n" -f (Get-Date).ToUniversalTime().ToString("o"), $PID, $Root),
+  $utf8s
+)
+Write-Host "PROVE_PS1_STARTED $startedPath"
+
 function Import-DotEnvFile([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return }
   Write-Host "  loading $Path"
@@ -168,14 +180,15 @@ if (-not (Test-TcpPort $DbEp.Host $DbEp.Port)) {
 }
 
 function Resolve-Python {
-  $cmd = Get-Command python -ErrorAction SilentlyContinue
-  if (-not $cmd) { $cmd = Get-Command py -ErrorAction SilentlyContinue }
-  if (-not $cmd) {
-    Write-Host "ERROR: python/py not found on PATH" -ForegroundColor Red
-    Write-AddressCentricGateFailure "python_not_found" "PATH missing python/py"
-    exit 1
+  foreach ($name in @("py", "python")) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and ($cmd.Source -notmatch "WindowsApps")) {
+      return $cmd.Source
+    }
   }
-  return $cmd.Source
+  Write-Host "ERROR: python/py not found on PATH (or only WindowsApps stub)" -ForegroundColor Red
+  Write-AddressCentricGateFailure "python_not_found" "PATH missing real python/py"
+  exit 1
 }
 
 $Python = Resolve-Python

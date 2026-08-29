@@ -24,6 +24,7 @@ set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_
 set GATE_AUDIT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_AUDIT.json
 set GATE_PROVE_LOG=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_PROVE.log
 set GATE_PROVE_ERR=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_PROVE.err.log
+set GATE_PROVE_STARTED=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_PROVE_STARTED.txt
 REM Wall-clock budgets so hung startmb/prove still deliver a gate (not waiting:true).
 if not defined STARTMB_WATCHDOG_SEC set STARTMB_WATCHDOG_SEC=600
 if not defined PROVE_WATCHDOG_SEC set PROVE_WATCHDOG_SEC=2700
@@ -103,7 +104,10 @@ git rev-parse --short HEAD
 echo.
 
 echo Restart MemoryBox services (watchdog %STARTMB_WATCHDOG_SEC%s)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target startmb -TimeoutSec %STARTMB_WATCHDOG_SEC% -RepoRoot "%CD%"
+REM Use System32 powershell — PATH powershell.exe can be a WindowsApps stub (exit 0, no work).
+set PS_REAL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
+if not exist "%PS_REAL%" set PS_REAL=powershell.exe
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target startmb -TimeoutSec %STARTMB_WATCHDOG_SEC% -RepoRoot "%CD%"
 set STARTMB_EXIT=%errorlevel%
 if "%STARTMB_EXIT%"=="98" (
   echo ERROR: startmb -Restart exceeded %STARTMB_WATCHDOG_SEC%s — writing timeout gate
@@ -127,7 +131,9 @@ if not "%STARTMB_EXIT%"=="0" (
 )
 
 echo Prove under watchdog %PROVE_WATCHDOG_SEC%s...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target prove -TimeoutSec %PROVE_WATCHDOG_SEC% -RepoRoot "%CD%"
+if not defined PS_REAL set PS_REAL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
+if not exist "%PS_REAL%" set PS_REAL=powershell.exe
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target prove -TimeoutSec %PROVE_WATCHDOG_SEC% -RepoRoot "%CD%"
 set PROVE_EXIT=%errorlevel%
 if "%PROVE_EXIT%"=="99" (
   echo ERROR: prove exceeded %PROVE_WATCHDOG_SEC%s — writing timeout gate
@@ -148,6 +154,26 @@ if "%PROVE_EXIT%"=="99" (
 )
 
 :after_prove
+
+REM Watchdog/PATH powershell stub: prove.ps1 never even created its sentinel.
+if not exist "%GATE_PROVE_STARTED%" (
+  echo ERROR: prove.ps1 never started — writing prove_ps1_never_started gate
+  if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
+  if not exist "%GATE_JSON%" (
+    (
+      echo {
+      echo   "gate": "address_centric_email_identity",
+      echo   "ok": false,
+      echo   "flightsim": true,
+      echo   "waiting": false,
+      echo   "error": "prove_ps1_never_started",
+      echo   "problems": ["watchdog returned %PROVE_EXIT% but ADDRESS_CENTRIC_PROVE_STARTED.txt missing"],
+      echo   "prove_exit": %PROVE_EXIT%
+      echo }
+    ) > "%GATE_JSON%"
+    echo VERDICT ok=False flightsim=True error=prove_ps1_never_started prove_exit=%PROVE_EXIT%> "%GATE_VERDICT%"
+  )
+)
 
 REM Last-resort stub so results-branch push still wakes the cloud agent when
 REM prove.ps1 died before writing gate artifacts (e.g. powershell crash).
@@ -325,6 +351,7 @@ if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
 if exist "%GATE_AUDIT%" git add --force "%GATE_AUDIT%"
 if exist "%GATE_PROVE_LOG%" git add --force "%GATE_PROVE_LOG%"
 if exist "%GATE_PROVE_ERR%" git add --force "%GATE_PROVE_ERR%"
+if exist "%GATE_PROVE_STARTED%" git add --force "%GATE_PROVE_STARTED%"
 git status --short
 git diff --cached --quiet
 if errorlevel 1 (

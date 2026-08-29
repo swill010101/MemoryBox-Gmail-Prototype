@@ -58,14 +58,18 @@ if ($Target -eq "startmb") {
   exit $p.ExitCode
 }
 
-# prove
+# prove — always launch System32 Windows PowerShell. PATH "powershell.exe"
+# can be a WindowsApps stub that exits 0 immediately (FlightSim then delivered
+# gate_cmd_stub_missing_prove_artifacts / prove_exit=0 with no PROVE.log).
 $provePs1 = Join-Path $PSScriptRoot "flightsim-address-centric-prove.ps1"
 if (-not (Test-Path -LiteralPath $provePs1)) {
   Write-Host "ERROR: missing $provePs1" -ForegroundColor Red
   exit 1
 }
-Write-Host "watchdog prove timeout=${TimeoutSec}s file=$provePs1"
-$p = Start-Process -FilePath "powershell.exe" `
+$psReal = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+if (-not (Test-Path -LiteralPath $psReal)) { $psReal = "powershell.exe" }
+Write-Host "watchdog prove timeout=${TimeoutSec}s file=$provePs1 ps=$psReal"
+$p = Start-Process -FilePath $psReal `
   -ArgumentList @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",

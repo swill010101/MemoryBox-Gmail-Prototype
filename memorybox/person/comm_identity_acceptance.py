@@ -1623,6 +1623,32 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "prove_ps1_writes_started_sentinel",
+        "ADDRESS_CENTRIC_PROVE_STARTED.txt" in prove_ps1
+        and "PROVE_PS1_STARTED" in prove_ps1
+        and "WindowsApps" in prove_ps1,
+        checks,
+        problems,
+    )
+    wd_src = open(
+        "tools/flightsim-address-centric-watchdog.ps1", encoding="utf-8"
+    ).read()
+    _check(
+        "watchdog_prove_uses_system32_powershell",
+        "System32\\WindowsPowerShell\\v1.0\\powershell.exe" in wd_src
+        or "System32/WindowsPowerShell/v1.0/powershell.exe" in wd_src.replace("\\", "/"),
+        checks,
+        problems,
+    )
+    _check(
+        "gate_cmd_detects_prove_ps1_never_started",
+        "prove_ps1_never_started" in gate_cmd
+        and "ADDRESS_CENTRIC_PROVE_STARTED.txt" in gate_cmd
+        and "WindowsPowerShell\\v1.0\\powershell.exe" in gate_cmd,
+        checks,
+        problems,
+    )
     ace_write = open("memorybox/person/address_centric_e2e.py", encoding="utf-8").read()
     _check(
         "e2e_gate_out_dir_is_repo_absolute",
