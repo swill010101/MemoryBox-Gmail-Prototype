@@ -41,6 +41,70 @@ def _hostname() -> str | None:
         return None
 
 
+def _runtime_stamp(*, flightsim: bool) -> dict[str, Any]:
+    """Host/DB provenance for FlightSim paste (detect wrong-DB / env-not-loaded)."""
+    stamp: dict[str, Any] = {
+        "git_head": _git_head(),
+        "hostname": _hostname(),
+        "p1_runtime_host": (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip()
+        in {"1", "true", "yes"},
+        "database_url_set": bool((os.environ.get("MEMORYBOX_DATABASE_URL") or "").strip()),
+        "allow_dev_defaults": (os.environ.get("MEMORYBOX_ALLOW_DEV_DEFAULTS") or "").strip()
+        in {"1", "true", "yes", "on"},
+        "flightsim": bool(flightsim),
+    }
+    try:
+        from memorybox.db import ping
+
+        stamp["database"] = ping().get("database")
+    except Exception as exc:  # noqa: BLE001
+        stamp["database_error"] = str(exc)
+    return stamp
+
+
+def _write_gate_artifacts(
+    gate: dict[str, Any],
+    *,
+    inv: dict[str, Any] | None = None,
+    resolve: dict[str, Any] | None = None,
+    repair: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Always write ADDRESS_CENTRIC_GATE.json (and failure diag) for FlightSim paste."""
+    try:
+        from pathlib import Path
+
+        out = Path("docs/test-output/historian-full-evidence/peggy-v2")
+        out.mkdir(parents=True, exist_ok=True)
+        gate_path = out / "ADDRESS_CENTRIC_GATE.json"
+        gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")
+        gate["path"] = str(gate_path)
+        if gate.get("problems") or not gate.get("ok"):
+            fail_path = out / "ADDRESS_CENTRIC_FAILURE_DIAG.json"
+            fail_doc = {
+                "ok": False,
+                "problems": gate.get("problems") or [],
+                "inventory": inv,
+                "resolve": resolve,
+                "repair": repair,
+                "person": gate.get("person"),
+                "counts": gate.get("counts"),
+                "runtime": gate.get("runtime"),
+                "flightsim": gate.get("flightsim"),
+                "hint": (
+                    "If peggo417 structured occurrence_count is 0: prove likely hit the wrong "
+                    "DB — re-run tools\\flightsim-address-centric-gate.cmd (loads "
+                    "config\\memorybox_app.env). If nickname_needs_same_address_full_name_or_alias: "
+                    "historian-full-evidence-benchmark --repair-address peggo417@hotmail.com "
+                    "or rely on e2e auto-repair when structured headers exist."
+                ),
+            }
+            fail_path.write_text(json.dumps(fail_doc, indent=2, default=str), encoding="utf-8")
+            gate["failure_diag_path"] = str(fail_path)
+    except Exception as exc:  # noqa: BLE001
+        gate["path_error"] = str(exc)
+    return gate
+
+
 def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
     checks.append(name)
     if not ok:
@@ -238,9 +302,14 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     checks: list[str] = []
     problems: list[str] = []
     seed_info: dict[str, Any] | None = None
+    repair_info: dict[str, Any] | None = None
+    resolve: dict[str, Any] | None = None
+    runtime = _runtime_stamp(flightsim=flightsim)
 
     if flightsim:
         os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        # Prefer explicit FlightSim archive DSN; do not invent ALLOW_DEV here.
+        # (CLI may still set ALLOW_DEV when DATABASE_URL unset — runtime stamp reports it.)
     else:
         os.environ.setdefault("MEMORYBOX_ALLOW_DEV_DEFAULTS", "1")
         try:
@@ -248,14 +317,28 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             _check("local_seed_ok", bool(seed_info.get("person_id")), checks, problems, detail=seed_info)
         except Exception as exc:  # noqa: BLE001
             _check("local_seed_ok", False, checks, problems, detail=str(exc))
+            gate = _write_gate_artifacts(
+                {
+                    "gate": "address_centric_email_identity",
+                    "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+                    "ok": False,
+                    "problems": problems,
+                    "error": f"seed_failed:{exc}",
+                    "flightsim": False,
+                    "runtime": _runtime_stamp(flightsim=False),
+                }
+            )
             return {
                 "ok": False,
                 "prove": "address_centric_email_e2e",
-                "flightsim": bool(flightsim),
+                "flightsim": False,
                 "checks": checks,
                 "problems": problems,
                 "error": f"seed_failed:{exc}",
+                "address_centric_gate": gate,
             }
+
+    runtime = _runtime_stamp(flightsim=flightsim)
 
     from memorybox.ask.i11a.full_evidence_diagnostic import (
         PEGGY_ASK,
@@ -292,12 +375,29 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "structured_names": structured.get("distinct_display_names"),
                 "quoted_names": quoted.get("distinct_display_names"),
                 "flightsim": bool(flightsim),
+                "runtime": runtime,
             },
             default=str,
         ),
         flush=True,
     )
     _check("probe_ok", bool(inv.get("ok")), checks, problems, detail=inv.get("error"))
+    struct_n = int(structured.get("occurrence_count") or 0)
+    if flightsim and struct_n <= 0:
+        _check(
+            "flightsim_archive_has_peggo417",
+            False,
+            checks,
+            problems,
+            detail={
+                "hint": (
+                    "peggo417 structured occurrence_count=0 — wrong DATABASE_URL / "
+                    "env not loaded, or address absent from Takeout archive. "
+                    "Re-run tools\\flightsim-address-centric-gate.cmd"
+                ),
+                "runtime": runtime,
+            },
+        )
     _check(
         "probe_structured_has_peg_legg",
         bool(structured.get("has_peg_legg"))
@@ -336,6 +436,22 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         )
 
     if ask_peggy is None:
+        gate = _write_gate_artifacts(
+            {
+                "gate": "address_centric_email_identity",
+                "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+                "ok": False,
+                "problems": problems,
+                "inventory": {
+                    "structured_has_peg_legg": structured.get("has_peg_legg"),
+                    "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+                    "structured_occurrence_count": struct_n,
+                },
+                "flightsim": bool(flightsim),
+                "runtime": runtime,
+            },
+            inv=inv,
+        )
         return {
             "ok": False,
             "prove": "address_centric_email_e2e",
@@ -344,6 +460,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "problems": problems,
             "inventory": inv,
             "seed": seed_info,
+            "address_centric_gate": gate,
         }
 
     resolve = resolve_and_attach_addresses_for_person(
@@ -358,11 +475,10 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
 
     # FlightSim belt-and-suspenders: if ledger/auto resolve missed but structured
     # headers exist for the probe address, operator-attest (same as --repair-address).
-    repair_info: dict[str, Any] | None = None
     if (
         flightsim
         and _PROBE_ADDR not in addrs
-        and int((structured.get("occurrence_count") or 0)) > 0
+        and struct_n > 0
         and " " in (ask_peggy.display_name or "")
     ):
         from memorybox.person.comm_identity import repair_email_identity_contacts
@@ -513,80 +629,47 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             detail={"bare_from_evidence_id": bare_id, "seeded": seeded},
         )
 
-    gate = {
-        "gate": "address_centric_email_identity",
-        "stop": "gallery_and_full_evidence_v2 — no historian summarization",
-        "ok": not problems
-        and len(hits) > 0
-        and _PROBE_ADDR in addrs
-        and " " in (ask_peggy.display_name or ""),
-        "requirements": {
-            "full_evidence_email_gt_0": len(email_items) > 0 or len(evidence) > 0,
-            "retrieve_email_hits_gt_0": len(hits) > 0,
-            "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
-            "person_is_multi_token": " " in (ask_peggy.display_name or ""),
-            "peggo417_confirmed": _PROBE_ADDR in addrs,
-            "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+    gate = _write_gate_artifacts(
+        {
+            "gate": "address_centric_email_identity",
+            "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+            "ok": not problems
+            and len(hits) > 0
+            and _PROBE_ADDR in addrs
+            and " " in (ask_peggy.display_name or ""),
+            "requirements": {
+                "full_evidence_email_gt_0": len(email_items) > 0 or len(evidence) > 0,
+                "retrieve_email_hits_gt_0": len(hits) > 0,
+                "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
+                "person_is_multi_token": " " in (ask_peggy.display_name or ""),
+                "peggo417_confirmed": _PROBE_ADDR in addrs,
+                "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+            },
+            "person": {
+                "id": ask_peggy.id,
+                "display_name": ask_peggy.display_name,
+                "addresses": sorted(addrs),
+            },
+            "inventory": {
+                "structured_has_peg_legg": structured.get("has_peg_legg"),
+                "structured_has_peggy_george": structured.get("has_peggy_george"),
+                "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+                "quoted_has_peg_legg": quoted.get("has_peg_legg"),
+                "structured_occurrence_count": struct_n,
+            },
+            "counts": {
+                "retrieve_hits": len(hits),
+                "full_evidence_email_items": len(email_items),
+                "gallery_email_n": int(email_n),
+            },
+            "problems": problems,
+            "flightsim": bool(flightsim),
+            "runtime": runtime,
         },
-        "person": {
-            "id": ask_peggy.id,
-            "display_name": ask_peggy.display_name,
-            "addresses": sorted(addrs),
-        },
-        "inventory": {
-            "structured_has_peg_legg": structured.get("has_peg_legg"),
-            "structured_has_peggy_george": structured.get("has_peggy_george"),
-            "quoted_has_peggy_george": quoted.get("has_peggy_george"),
-            "quoted_has_peg_legg": quoted.get("has_peg_legg"),
-        },
-        "counts": {
-            "retrieve_hits": len(hits),
-            "full_evidence_email_items": len(email_items),
-            "gallery_email_n": int(email_n),
-        },
-        "problems": problems,
-        "flightsim": bool(flightsim),
-        "runtime": {
-            "git_head": _git_head(),
-            "hostname": _hostname(),
-            "p1_runtime_host": bool(os.environ.get("MEMORYBOX_P1_RUNTIME_HOST")),
-        },
-    }
-
-    # Write gate beside default V2 out dir for FlightSim paste.
-    try:
-        from pathlib import Path
-
-        out = Path("docs/test-output/historian-full-evidence/peggy-v2")
-        out.mkdir(parents=True, exist_ok=True)
-        gate_path = out / "ADDRESS_CENTRIC_GATE.json"
-        gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")
-        gate["path"] = str(gate_path)
-        if problems:
-            fail_path = out / "ADDRESS_CENTRIC_FAILURE_DIAG.json"
-            fail_doc = {
-                "ok": False,
-                "problems": problems,
-                "inventory": inv,
-                "resolve": resolve,
-                "repair": repair_info,
-                "person": {
-                    "id": getattr(ask_peggy, "id", None),
-                    "display_name": getattr(ask_peggy, "display_name", None),
-                    "addresses": sorted(addrs),
-                },
-                "counts": gate.get("counts"),
-                "flightsim": bool(flightsim),
-                "hint": (
-                    "If nickname_needs_same_address_full_name_or_alias: run "
-                    "historian-full-evidence-benchmark --repair-address peggo417@hotmail.com "
-                    "or rely on e2e auto-repair when structured headers exist."
-                ),
-            }
-            fail_path.write_text(json.dumps(fail_doc, indent=2, default=str), encoding="utf-8")
-            gate["failure_diag_path"] = str(fail_path)
-    except Exception as exc:  # noqa: BLE001
-        gate["path_error"] = str(exc)
+        inv=inv,
+        resolve=resolve,
+        repair=repair_info,
+    )
 
     return {
         "ok": not problems,
@@ -624,5 +707,6 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         },
         "seed": seed_info,
         "repair": repair_info,
+        "runtime": runtime,
         "stop": "gallery_and_full_evidence_v2 — no historian summarization",
     }

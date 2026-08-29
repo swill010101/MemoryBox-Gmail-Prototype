@@ -5,6 +5,10 @@ REM
 REM Usage (from C:\memorybox or \\flightsim\memorybox):
 REM   tools\flightsim-address-centric-gate.cmd
 REM
+REM Env: startmb loads config\memorybox_app.env only inside PowerShell. This
+REM script calls tools\flightsim-address-centric-prove.ps1 so migrate/prove use
+REM the same DATABASE_URL as serve (Takeout archive), not silent ALLOW_DEV defaults.
+REM
 setlocal
 cd /d "%~dp0.."
 set BRANCH=cursor/p2-i11a-address-centric-email-49da
@@ -36,10 +40,7 @@ if errorlevel 1 (
   echo WARNING: startmb -Restart returned %errorlevel% — continuing
 )
 
-python -m memorybox migrate
-if errorlevel 1 goto :fail
-
-python -m memorybox prove-address-centric-email-e2e --flightsim
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0flightsim-address-centric-prove.ps1"
 set PROVE_EXIT=%errorlevel%
 
 echo.

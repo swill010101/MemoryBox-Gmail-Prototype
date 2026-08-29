@@ -32,9 +32,12 @@ cd C:\memorybox
 tools\flightsim-address-centric-gate.cmd
 ```
 
-The script checks out `cursor/p2-i11a-address-centric-email-49da`, restarts, migrates,
-and runs the prove. Paste the printed gate block
-(need `"ok": true` and `"flightsim": true`).
+The script checks out `cursor/p2-i11a-address-centric-email-49da`, restarts, then
+runs `tools\flightsim-address-centric-prove.ps1` (loads `config\memorybox_app.env`
+the same way `startmb` does — so migrate/prove hit the Takeout archive DB, not a
+silent ALLOW_DEV localhost). Paste the printed gate block
+(need `"ok": true` and `"flightsim": true`). Gate `runtime` stamps `database`,
+`database_url_set`, and `git_head`.
 
 If structured headers show Peg Legg on peggo417 but **no** same-address
 Peggy George observation (quoted or structured), auto nickname attach stays
