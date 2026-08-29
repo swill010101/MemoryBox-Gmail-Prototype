@@ -36,6 +36,7 @@ from memorybox.ask.i11a.historian_prepared import (
     plan_to_snapshot,
 )
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
+from memorybox.person.phone_map import normalize_handle
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_BENCH_DIR = _REPO_ROOT / "docs" / "test-output" / "historian-full-evidence" / "peggy"
@@ -672,14 +673,26 @@ def run_historian_full_evidence_benchmark(
     focal_names = [str(f.get("display_name") or "") for f in focals if isinstance(f, dict)]
     confirmed = list((identity_diag or {}).get("confirmed_emails") or [])
     inventories = list((identity_diag or {}).get("address_inventories") or [])
-    peggo_inv = next(
-        (
-            inv
-            for inv in inventories
-            if str(inv.get("address") or "").lower() == "peggo417@hotmail.com"
-        ),
-        None,
-    )
+    # Prefer inventory for a confirmed address that shows Peg Legg structured;
+    # fall back to first inventory (no address hardcode in the gate path).
+    peggo_inv = None
+    for inv in inventories:
+        structured_try = (inv or {}).get("structured_header") or {}
+        if bool(structured_try.get("has_peg_legg")):
+            peggo_inv = inv
+            break
+    if peggo_inv is None and confirmed:
+        want = {normalize_handle(str(a)) for a in confirmed if a}
+        peggo_inv = next(
+            (
+                inv
+                for inv in inventories
+                if normalize_handle(str(inv.get("address") or "")) in want
+            ),
+            None,
+        )
+    if peggo_inv is None and inventories:
+        peggo_inv = inventories[0]
     structured = (peggo_inv or {}).get("structured_header") or {}
     quoted = (peggo_inv or {}).get("quoted_body_headers_only") or {}
 
@@ -738,6 +751,7 @@ def run_historian_full_evidence_benchmark(
             "person_has_confirmed_email": bool(confirmed),
             "person_is_multi_token": any(" " in n for n in focal_names),
             "identity_closure_ok": bool((identity_diag or {}).get("identity_closure_ok")),
+            "structured_has_peg_legg": bool(structured.get("has_peg_legg")),
             "peggo417_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
         },
         "by_source_email": email_src,
@@ -747,6 +761,7 @@ def run_historian_full_evidence_benchmark(
         "gallery_error": gallery_error,
         "focal_display_names": focal_names,
         "confirmed_emails": confirmed,
+        "probe_address": (peggo_inv or {}).get("address"),
         "peggo417_inventory": {
             "present": peggo_inv is not None,
             "structured_has_peg_legg": structured.get("has_peg_legg"),

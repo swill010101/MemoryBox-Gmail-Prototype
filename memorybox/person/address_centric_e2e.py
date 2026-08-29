@@ -777,12 +777,33 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         _check("peg_legg_alias_seeded_after_attach", False, checks, problems, detail=str(exc))
 
     plan = resolve_peggy_plan(photo=None, ask=PEGGY_ASK)
+    # After Immich upgrade/attach, real Ask must resolve Peggy George without the
+    # e2e plan bind (that bind is only a cold-start safety net).
+    plan_pids = {str(p) for p in (getattr(plan, "person_ids", ()) or ())}
+    plan_names = [
+        str(n).strip().lower() for n in (getattr(plan, "person_names", ()) or ())
+    ]
+    _check(
+        "ask_resolves_peggy_george_after_attach",
+        ask_peggy is not None
+        and (
+            ask_peggy.id in plan_pids
+            or "peggy george" in plan_names
+        ),
+        checks,
+        problems,
+        detail={
+            "person_ids": list(getattr(plan, "person_ids", ()) or ()),
+            "person_names": list(getattr(plan, "person_names", ()) or ()),
+            "expected_id": getattr(ask_peggy, "id", None),
+        },
+    )
     # Bind Full-Evidence / Gallery to the Person we just resolved+attached.
     # resolve_peggy_plan can return empty person_ids on P1 (no lazy seed) right after
     # a cold create/upgrade, which would zero email even with peggo417 confirmed.
-    plan_pids = tuple(getattr(plan, "person_ids", ()) or ())
+    plan_pids_t = tuple(getattr(plan, "person_ids", ()) or ())
     if ask_peggy is not None and (
-        not plan_pids or ask_peggy.id not in {str(p) for p in plan_pids}
+        not plan_pids_t or ask_peggy.id not in {str(p) for p in plan_pids_t}
     ):
         from dataclasses import replace
 
