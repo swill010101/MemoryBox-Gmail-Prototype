@@ -121,19 +121,16 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
   Write-Host "Wrote failure gate: $gatePath" -ForegroundColor Yellow
 }
 
+# Same Load-MbEnv as startmb.ps1: env files are optional. FlightSim takeout
+# is the default local Postgres (startmb already reported DATABASE_URL set
+# and /health 200 without config\memorybox_app.env).
 $appEnv = Join-Path $Root "config\memorybox_app.env"
-if (-not (Test-Path -LiteralPath $appEnv)) {
-  Write-Host "ERROR: missing $appEnv - FlightSim prove needs the Takeout archive DSN." -ForegroundColor Red
-  Write-Host "Create it from config\memorybox_app.env.example (do not commit secrets)."
-  Write-AddressCentricGateFailure "missing_memorybox_app_env" $appEnv
-  exit 1
-}
 Import-DotEnvFile $appEnv
+Import-DotEnvFile (Join-Path $Root "config\video_worker.env")
 Import-DotEnvFile (Join-Path $Root "config\memorybox_sources.env")
 if (-not $env:MEMORYBOX_DATABASE_URL) {
-  Write-Host "ERROR: MEMORYBOX_DATABASE_URL unset after loading $appEnv" -ForegroundColor Red
-  Write-AddressCentricGateFailure "memorybox_database_url_unset" $appEnv
-  exit 1
+  $env:MEMORYBOX_DATABASE_URL = "postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox"
+  Write-Host "MEMORYBOX_DATABASE_URL defaulted (startmb same) file_present=$([bool](Test-Path -LiteralPath $appEnv))"
 }
 if (-not $env:MEMORYBOX_QDRANT_URL) {
   $env:MEMORYBOX_QDRANT_URL = "http://127.0.0.1:6333"

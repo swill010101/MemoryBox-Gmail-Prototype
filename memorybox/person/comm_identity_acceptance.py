@@ -1621,6 +1621,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "prove_ps1_matches_startmb_default_dsn",
+        "postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox" in prove_ps1
+        and "missing_memorybox_app_env" not in prove_ps1,
+        checks,
+        problems,
+    )
+    _check(
         "prove_ps1_runs_goal_complete_verifier",
         "verify-address-centric-gate.py" in prove_ps1
         and "GOAL_COMPLETE=" in prove_ps1,
