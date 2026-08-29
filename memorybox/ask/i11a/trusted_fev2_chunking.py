@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from memorybox.ask.i11a.full_evidence_diagnostic import estimate_tokens
 from memorybox.ask.i11a.full_evidence_l1_chunker import run_l1_chunker
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     all_fixture_evidence_ids,
@@ -51,14 +52,58 @@ def compare_chunked_vs_unchunked(fixture_path: Path | str) -> dict[str, Any]:
     extra = sorted(chunk_item_ids - (item_ids | original_ids))
     units = list(chunked.get("units") or [])
     kinds = Counter(str(u.get("unit_kind") or "other") for u in units)
+    seen_in_units: list[str] = []
+    dupes: list[str] = []
+    for u in units:
+        for iid in u.get("item_ids") or []:
+            s = str(iid)
+            if s in seen_in_units:
+                dupes.append(s)
+            else:
+                seen_in_units.append(s)
+    chrono_ok = True
+    for u in units:
+        item_times = [
+            str(it.get("timestamp") or it.get("sent_at") or it.get("start") or "")
+            for it in (u.get("items") or [])
+        ]
+        if item_times != sorted(item_times):
+            chrono_ok = False
+            break
+    unchunked_tokens = int(data.get("estimated_tokens") or 0)
+    if not unchunked_tokens:
+        unchunked_tokens = estimate_tokens(str(data.get("user_message") or ""))
+    chunk_tokens = []
+    for ch in chunked.get("chunks") or []:
+        text = "\n".join(str(it.get("body") or it.get("text") or "") for it in (ch.get("items") or []))
+        chunk_tokens.append(estimate_tokens(text))
+    sources = {str(it.get("source") or "") for it in items}
+    expected_kinds = []
+    if "email" in sources:
+        expected_kinds.append("email_thread")
+    if "sms" in sources:
+        expected_kinds.append("sms_episode")
+    if "calendar" in sources:
+        expected_kinds.append("calendar_event")
+    if "travel" in sources:
+        expected_kinds.append("travel")
+    missing_kinds = [k for k in expected_kinds if k not in kinds]
     return {
-        "ok": bool(proof.get("ok")) and not lost,
+        "ok": bool(proof.get("ok")) and not lost and not dupes and not missing_kinds,
         "input_sha256": stored,
         "unchunked_item_count": len(items),
         "chunk_count": len(chunked.get("chunks") or []),
         "l1_unit_kinds": dict(kinds),
         "evidence_lost": lost,
+        "duplicate_item_ids": dupes,
         "unsupported_additions": extra,
+        "chronological_units": chrono_ok,
+        "tokens": {
+            "unchunked_estimated": unchunked_tokens,
+            "chunk_estimated": chunk_tokens,
+            "chunk_estimated_sum": sum(chunk_tokens),
+        },
+        "missing_semantic_unit_kinds": missing_kinds,
         "completeness_proof": proof,
         "chunking": True,
         "model_calls": 0,

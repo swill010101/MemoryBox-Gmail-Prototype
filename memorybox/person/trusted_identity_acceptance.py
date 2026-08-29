@@ -203,6 +203,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         from memorybox.person.trusted_identity import report_named_person_identity_trust
 
         flightsim_report = report_named_person_identity_trust("Peggy George")
+        try:
+            from pathlib import Path as _P
+
+            out = _P("docs") / "test-output" / "trusted-full-evidence-v2"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "PHASE1_prove.json").write_text(
+                __import__("json").dumps(flightsim_report, indent=2, default=str),
+                encoding="utf-8",
+            )
+            flightsim_report["phase1_report_path"] = str(out / "PHASE1_prove.json")
+        except Exception:  # noqa: BLE001
+            pass
         _check(
             "flightsim_unsupported_retrieve_addresses_zero",
             flightsim_report.get("ok") is True
@@ -221,9 +233,12 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         )
 
     from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        PHASE2_REPORT_KEYS,
+        build_phase2_model_report,
         fev2_input_sha256,
         score_email_grounding,
         select_single_pass_items,
+        validate_fev2_document,
     )
 
     items = [
@@ -317,7 +332,45 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     h2 = fev2_input_sha256(body)
     _check("fev2_hash_stable", h1 == h2 and len(h1) == 64, checks, problems, detail=h1)
 
-    from memorybox.ask.i11a.trusted_full_evidence_v2 import validate_fev2_document
+    p2 = build_phase2_model_report(
+        fixture=body,
+        document={
+            "episodes": [{"title": "mail", "when": "2020", "evidence_ids": ["ev-trust"]}],
+            "claims": [{"text": "Peggy emailed", "evidence_ids": ["ev-trust"]}],
+            "relationships": [],
+            "narrator": "grounded",
+        },
+        provider="ollama",
+        model="gemma4:26b",
+        grounding=ground,
+        timing_ms=12,
+        usage={"total_tokens": 9},
+    )
+    _check(
+        "phase2_report_has_required_fields",
+        all(k in p2 for k in PHASE2_REPORT_KEYS) and bool(p2.get("ok")),
+        checks,
+        problems,
+        detail={k: k in p2 for k in PHASE2_REPORT_KEYS},
+    )
+    pipe_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_evidence_pipeline",
+            fromlist=["run_trusted_evidence_pipeline"],
+        ).run_trusted_evidence_pipeline
+    )
+    _check(
+        "pipeline_stops_on_phase1_failure",
+        "phase_1_failed" in pipe_src and "do not widen" in pipe_src.lower(),
+        checks,
+        problems,
+    )
+    _check(
+        "pipeline_blocks_chunk_models_until_both_single_pass",
+        "blocked_until_both_single_pass" in pipe_src,
+        checks,
+        problems,
+    )
 
     invented = validate_fev2_document(
         {

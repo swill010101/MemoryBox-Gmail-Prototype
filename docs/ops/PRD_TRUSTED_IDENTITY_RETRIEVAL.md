@@ -56,19 +56,23 @@ python -m memorybox migrate
 tools\flightsim-trusted-identity-gate.cmd
 ```
 
+The gate runs `run-trusted-evidence-pipeline` (Phase 1 report → freeze → Gemma → Sol).
+It stops on Phase 1 failure and does not widen matching.
+
 If `peggo417@hotmail.com` is on the Person profile but classify is untrusted
 (auto-expand actor), attest then re-run:
 
 ```
 python -m memorybox attest-trusted-identity --person "Peggy George" --email peggo417@hotmail.com
-python -m memorybox prove-trusted-identity-retrieval --flightsim
+python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
 ```
 
-Phase 2 freeze (after Phase 1 FlightSim report is green):
+Phase 2 is included in the pipeline when Ollama / cloud Sol env is present.
+Manual equivalent after Phase 1 is green:
 
 ```
 python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs/test-output/trusted-full-evidence-v2
-python -m memorybox run-trusted-full-evidence-v2 --fixture <FEV2PREP.json> --provider ollama --model gemma4:26b
+python -m memorybox run-trusted-full-evidence-v2 --fixture <FEV2.json> --provider ollama --model gemma4:26b
 python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provider cloud --model <sol-model>
 ```
 

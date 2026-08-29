@@ -684,6 +684,26 @@ def main(argv: list[str] | None = None) -> int:
         help="Phase 3: semantic chunk vs unchunked frozen FEV2 (structure only)",
     )
     p_fev2_chunks.add_argument("--fixture", required=True)
+    p_fev2_pipe = sub.add_parser(
+        "run-trusted-evidence-pipeline",
+        help="Phase 1 report → freeze FEV2 → Gemma/Sol → chunk structure",
+    )
+    p_fev2_pipe.add_argument("--person", required=True, help="Person display name")
+    p_fev2_pipe.add_argument("--ask", default="tell me what you know about this person")
+    p_fev2_pipe.add_argument("--out-dir", default=None)
+    p_fev2_pipe.add_argument(
+        "--skip-models",
+        action="store_true",
+        help="Freeze only; do not call Gemma or Sol",
+    )
+    p_fev2_pipe.add_argument("--gemma-model", default=None)
+    p_fev2_pipe.add_argument("--sol-model", default=None)
+    p_fev2_pipe.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_pipe.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1488,6 +1508,28 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
 
         payload = compare_chunked_vs_unchunked(args.fixture)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-evidence-pipeline":
+        from pathlib import Path as _P
+
+        from memorybox.ask.i11a.trusted_evidence_pipeline import (
+            run_trusted_evidence_pipeline,
+        )
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_trusted_evidence_pipeline(
+            person_name=args.person,
+            out_dir=_P(args.out_dir) if args.out_dir else None,
+            run_models=not bool(args.skip_models),
+            gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+            sol_model=args.sol_model,
+            timeout_seconds=int(args.timeout_seconds),
+            ask=args.ask,
+        )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

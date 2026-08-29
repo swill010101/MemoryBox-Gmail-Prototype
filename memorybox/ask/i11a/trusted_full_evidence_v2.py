@@ -196,6 +196,120 @@ def all_fixture_evidence_ids(items: list[dict[str, Any]]) -> set[str]:
     return out
 
 
+PHASE2_REPORT_KEYS = (
+    "model",
+    "provider",
+    "config",
+    "input_sha256",
+    "evidence_type_counts",
+    "schema_ok",
+    "validation",
+    "episodes",
+    "claims",
+    "relationships",
+    "narrator",
+    "email_evidence_that_affected_output",
+    "accepted_claim_evidence_ids",
+    "invented_or_unsupported_claims",
+    "relationship_errors",
+    "gallery",
+    "timing_ms",
+    "tokens",
+    "chunking",
+    "email_reached_model_and_grounded_output",
+)
+
+
+def relationship_errors(
+    document: dict[str, Any],
+    *,
+    allowed_ids: set[str],
+    allowed_roles: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    roles = {str(x).lower() for x in (allowed_roles or ()) if str(x).strip()}
+    for row in document.get("relationships") or []:
+        if not isinstance(row, dict):
+            errors.append({"reason": "not_an_object", "row": row})
+            continue
+        ids = [str(x) for x in (row.get("evidence_ids") or []) if x]
+        if not ids:
+            errors.append({"reason": "missing_evidence_ids", "row": row})
+        for i in ids:
+            if i not in allowed_ids:
+                errors.append({"reason": "invented_evidence_id", "id": i, "row": row})
+        role = str(row.get("role") or row.get("role_kind") or "").strip().lower()
+        if roles and role and role not in roles:
+            errors.append({"reason": "relationship_role_not_in_person_context", "role": role})
+    return errors
+
+
+def build_phase2_model_report(
+    *,
+    fixture: dict[str, Any],
+    document: dict[str, Any],
+    provider: str,
+    model: str,
+    grounding: dict[str, Any],
+    timing_ms: int | None = None,
+    usage: dict[str, Any] | None = None,
+    gallery: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Per-model Phase 2 report. Pass only if email reached the model and grounded output."""
+    allowed = all_fixture_evidence_ids(list(fixture.get("items") or []))
+    claims = [c for c in (document.get("claims") or []) if isinstance(c, dict)]
+    episodes = [e for e in (document.get("episodes") or []) if isinstance(e, dict)]
+    rels = [r for r in (document.get("relationships") or []) if isinstance(r, dict)]
+    accepted_ids: list[str] = []
+    for claim in claims:
+        accepted_ids.extend(str(x) for x in (claim.get("evidence_ids") or []) if x)
+    ctx = fixture.get("person_context") or {}
+    allowed_roles = set(ctx.get("allowed_relationship_labels") or [])
+    rel_err = relationship_errors(
+        document, allowed_ids=allowed, allowed_roles=allowed_roles
+    )
+    email_ids = {str(x) for x in (fixture.get("email_evidence_ids") or []) if x}
+    tokens = {
+        "prompt": (usage or {}).get("prompt_tokens") or (usage or {}).get("prompt"),
+        "completion": (usage or {}).get("completion_tokens")
+        or (usage or {}).get("completion"),
+        "total": (usage or {}).get("total_tokens") or (usage or {}).get("total"),
+        "fixture_estimated": fixture.get("estimated_tokens"),
+    }
+    grounded = bool(grounding.get("ok")) and bool(grounding.get("email_affected_output"))
+    report = {
+        "model": model,
+        "provider": provider,
+        "config": config
+        or {
+            "chunking": False,
+            "stateless": True,
+            "established_gemma": ESTABLISHED_GEMMA_MODEL,
+        },
+        "input_sha256": fixture.get("input_sha256"),
+        "evidence_type_counts": fixture.get("evidence_type_counts") or {},
+        "schema_ok": bool(grounding.get("schema_ok")),
+        "validation": grounding,
+        "episodes": episodes,
+        "claims": claims,
+        "relationships": rels,
+        "narrator": document.get("narrator") or "",
+        "email_evidence_that_affected_output": grounding.get("email_evidence_cited") or [],
+        "accepted_claim_evidence_ids": list(dict.fromkeys(accepted_ids)),
+        "invented_or_unsupported_claims": list(grounding.get("unsupported_claims") or [])
+        + [{"id": i, "reason": "invented_evidence_id"} for i in (grounding.get("invented_evidence_ids") or [])],
+        "relationship_errors": rel_err,
+        "gallery": gallery or {},
+        "timing_ms": timing_ms,
+        "tokens": tokens,
+        "chunking": False,
+        "email_reached_model_and_grounded_output": grounded,
+        "ok": grounded and not rel_err and not (grounding.get("invented_evidence_ids") or []),
+    }
+    return report
+
+
 def validate_fev2_document(
     document: dict[str, Any],
     *,
@@ -371,10 +485,20 @@ def run_trusted_full_evidence_v2(
         grounding = validate_fev2_document(
             doc, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
         )
+        phase2 = build_phase2_model_report(
+            fixture=data,
+            document=doc,
+            provider=str(result.get("provider") or provider),
+            model=model,
+            grounding=grounding,
+            timing_ms=result.get("timing_ms"),
+            usage=result.get("usage") if isinstance(result.get("usage"), dict) else {},
+        )
         result["email_grounding"] = grounding
+        result["phase2_report"] = phase2
         result["input_sha256"] = stored
         result["chunking"] = False
-        result["ok"] = bool(result.get("ok")) and bool(grounding.get("ok"))
+        result["ok"] = bool(result.get("ok")) and bool(phase2.get("ok"))
         return result
     user_message = str(data.get("user_message") or "")
     system = str(data.get("system") or FEV2_SYSTEM)
@@ -414,8 +538,17 @@ def run_trusted_full_evidence_v2(
     grounding = validate_fev2_document(
         parsed, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
     )
+    phase2 = build_phase2_model_report(
+        fixture=data,
+        document=parsed,
+        provider=spec.provider,
+        model=model,
+        grounding=grounding,
+        timing_ms=wall_ms,
+        usage=usage,
+    )
     result = {
-        "ok": bool(grounding.get("ok")),
+        "ok": bool(phase2.get("ok")),
         "input_sha256": stored,
         "provider": spec.provider,
         "model": model,
@@ -425,6 +558,7 @@ def run_trusted_full_evidence_v2(
         "document": parsed,
         "raw": (raw or "")[:4000],
         "email_grounding": grounding,
+        "phase2_report": phase2,
         "evidence_type_counts": data.get("evidence_type_counts"),
         "trusted_addresses": data.get("trusted_addresses"),
     }
@@ -435,7 +569,13 @@ def run_trusted_full_evidence_v2(
         json.dumps(result, indent=2, default=str, ensure_ascii=False),
         encoding="utf-8",
     )
+    report_name = f"FEV2REPORT_{spec.provider}_{model.replace(':', '-')}_{stored[:8]}.json"
+    (out / report_name).write_text(
+        json.dumps(phase2, indent=2, default=str, ensure_ascii=False),
+        encoding="utf-8",
+    )
     result["run_path"] = str(out / run_name)
+    result["report_path"] = str(out / report_name)
     return result
 
 
