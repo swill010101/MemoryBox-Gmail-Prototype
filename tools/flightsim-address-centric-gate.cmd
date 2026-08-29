@@ -47,6 +47,11 @@ echo.
 echo ===== paste the ADDRESS_CENTRIC_GATE block above into the agent chat =====
 echo need: "ok": true  and  "flightsim": true
 echo file: docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+echo verdict: docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
+if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" (
+  echo.
+  type "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt"
+)
 echo if prove failed, also paste ADDRESS_CENTRIC_FAILURE_DIAG.json when present
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.

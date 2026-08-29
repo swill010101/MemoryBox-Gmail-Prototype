@@ -1330,6 +1330,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(gate, indent=2, default=str), flush=True)
             if gate.get("path"):
                 print(f"===== written: {gate.get('path')} =====", flush=True)
+            if gate.get("verdict_path"):
+                print(f"===== VERDICT file: {gate.get('verdict_path')} =====", flush=True)
             print(
                 f"===== VERDICT ok={bool(gate.get('ok'))} "
                 f"flightsim={bool(gate.get('flightsim'))} =====",

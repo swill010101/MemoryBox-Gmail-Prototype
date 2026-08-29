@@ -78,6 +78,14 @@ def _write_gate_artifacts(
         gate_path = out / "ADDRESS_CENTRIC_GATE.json"
         gate_path.write_text(json.dumps(gate, indent=2, default=str), encoding="utf-8")
         gate["path"] = str(gate_path)
+        verdict_path = out / "ADDRESS_CENTRIC_VERDICT.txt"
+        verdict_path.write_text(
+            f"VERDICT ok={bool(gate.get('ok'))} flightsim={bool(gate.get('flightsim'))} "
+            f"git_head={((gate.get('runtime') or {}).get('git_head'))} "
+            f"hostname={((gate.get('runtime') or {}).get('hostname'))}\n",
+            encoding="utf-8",
+        )
+        gate["verdict_path"] = str(verdict_path)
         if gate.get("problems") or not gate.get("ok"):
             fail_path = out / "ADDRESS_CENTRIC_FAILURE_DIAG.json"
             fail_doc = {
