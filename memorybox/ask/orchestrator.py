@@ -1432,6 +1432,7 @@ class AskOrchestrator:
                 else:
                     qd_hits, qdrant_status = R.search_evidence_qdrant(plan)
                     evidence = R.merge_evidence_hits(pg_hits, qd_hits)
+                evidence = R.filter_email_hits_to_trusted(plan, evidence)
                 if plan.retrieval_constraints:
                     evidence = R.filter_hits_by_constraints(
                         evidence, plan.retrieval_constraints
@@ -1567,7 +1568,9 @@ class AskOrchestrator:
                             plan, self.photo, limit=photo_limit
                         )
                     if plan.want_communication or plan.want_calendar:
-                        evidence = R.search_evidence_pg(plan)
+                        evidence = R.filter_email_hits_to_trusted(
+                            plan, R.search_evidence_pg(plan)
+                        )
                         if plan.retrieval_constraints:
                             evidence = R.filter_hits_by_constraints(
                                 evidence, plan.retrieval_constraints

@@ -920,6 +920,76 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=comm_kw[:400],
     )
+    qdrant_src = inspect.getsource(retrieve_mod.search_evidence_qdrant)
+    filt_src = inspect.getsource(retrieve_mod.filter_email_hits_to_trusted)
+    orch_path = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "memorybox"
+        / "ask"
+        / "orchestrator.py"
+    )
+    orch_src = orch_path.read_text(encoding="utf-8")
+    _check(
+        "qdrant_comm_blob_omits_people_array",
+        "_structured_comm_search_blob" in qdrant_src
+        and "json.dumps(_payload_dict" not in qdrant_src,
+        checks,
+        problems,
+    )
+    _check(
+        "ask_filters_email_hits_to_trusted",
+        "email_payload_trusted" in filt_src
+        and orch_src.count("filter_email_hits_to_trusted") >= 2,
+        checks,
+        problems,
+    )
+    from memorybox.ask.retrieve import EvidenceHit, filter_email_hits_to_trusted
+    from memorybox.planner import QueryPlan
+    from unittest.mock import patch
+
+    dirty = EvidenceHit(
+        evidence_id="ev-people-only",
+        evidence_kind="communication",
+        summary="cooccur",
+        score=1.0,
+        excerpt="",
+        source="qdrant",
+        channel="email",
+        payload={"people": ["Peggy George"], "from": "noise@example.test"},
+    )
+    with patch.object(
+        retrieve_mod,
+        "_resolve_person_ids_from_names",
+        return_value={"person-peggy"},
+    ), patch.object(
+        retrieve_mod,
+        "_confirmed_emails_for_people",
+        return_value={"peggo417@hotmail.com"},
+    ):
+        cleaned = filter_email_hits_to_trusted(
+            QueryPlan(
+                original_ask="tell me about Peggy",
+                effective_ask="tell me about Peggy",
+                is_followup=False,
+                want_photo=False,
+                want_communication=True,
+                want_calendar=False,
+                person_names=("Peggy George",),
+                person_ids=(),
+                place_names=(),
+                time_start=None,
+                time_end=None,
+                temporal_windows=(),
+            ),
+            [dirty],
+        )
+    _check(
+        "qdrant_people_array_email_dropped_without_trusted_header",
+        cleaned == [],
+        checks,
+        problems,
+        detail=cleaned,
+    )
 
     flightsim_report: dict[str, Any] = {}
     if flightsim:

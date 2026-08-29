@@ -1447,6 +1447,64 @@ def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
     return trusted_emails_for_people(person_ids)
 
 
+def _structured_comm_search_blob(payload: dict[str, Any], summary: str = "") -> str:
+    """Token blob for keyword/Qdrant filters. Never includes people[]."""
+    return " ".join(
+        [
+            str(summary or ""),
+            str(payload.get("subject") or ""),
+            str(payload.get("from") or ""),
+            str(payload.get("to") or ""),
+            str(payload.get("cc") or ""),
+            str(payload.get("bcc") or ""),
+            str(payload.get("body_text") or ""),
+            json.dumps(payload.get("from_parsed") or []),
+            json.dumps(payload.get("to_parsed") or []),
+            json.dumps(payload.get("cc_parsed") or []),
+            json.dumps(payload.get("bcc_parsed") or []),
+        ]
+    ).lower()
+
+
+def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> list[EvidenceHit]:
+    """Person-scoped Ask: drop communication email that is not a trusted retrieve key."""
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    if not person_ids and plan.person_names:
+        person_ids = _resolve_person_ids_from_names(plan.person_names)
+    if not person_ids:
+        return hits
+    trusted = _confirmed_emails_for_people(person_ids)
+    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
+    out: list[EvidenceHit] = []
+    for h in hits:
+        kind = str(h.evidence_kind or "").lower()
+        ch = str(h.channel or "").lower()
+        is_sms = ch in sms_ch or "sms" in kind or kind == "text"
+        is_email = (
+            (kind in {"communication", "email", "comms"} and not is_sms)
+            or ch == "email"
+        )
+        if not is_email:
+            out.append(h)
+            continue
+        if not trusted:
+            continue
+        payload = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
+        if not payload:
+            try:
+                from memorybox.ingest.store import get_evidence
+
+                row = get_evidence(UUID(str(h.evidence_id)))
+                payload = _payload_dict((row or {}).get("payload_json"))
+            except Exception:  # noqa: BLE001
+                continue
+        from memorybox.person.trusted_identity import email_payload_trusted
+
+        if email_payload_trusted(payload, trusted):
+            out.append(h)
+    return out
+
+
 def _resolve_person_ids_from_names(names: list[str] | tuple[str, ...]) -> set[str]:
     """Name → Person id. Not a retrieve key. Do not create People. Fail closed."""
     out: set[str] = set()
@@ -2246,21 +2304,7 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         for r in rows:
             payload = _payload_dict(r["payload_json"])
             if str(r["evidence_kind"] or "") == "communication":
-                blob = " ".join(
-                    [
-                        str(r.get("summary") or ""),
-                        str(payload.get("subject") or ""),
-                        str(payload.get("from") or ""),
-                        str(payload.get("to") or ""),
-                        str(payload.get("cc") or ""),
-                        str(payload.get("bcc") or ""),
-                        str(payload.get("body_text") or ""),
-                        json.dumps(payload.get("from_parsed") or []),
-                        json.dumps(payload.get("to_parsed") or []),
-                        json.dumps(payload.get("cc_parsed") or []),
-                        json.dumps(payload.get("bcc_parsed") or []),
-                    ]
-                ).lower()
+                blob = _structured_comm_search_blob(payload, str(r.get("summary") or ""))
             else:
                 blob = f"{r['summary'] or ''} {json.dumps(payload)}".lower()
             if required and not any(t.lower() in blob for t in required):
@@ -2426,8 +2470,12 @@ def search_evidence_qdrant(
             excerpt = ""
             blob = str(summary).lower()
             if row:
-                excerpt = _excerpt(_payload_dict(row.get("payload_json")), kind)
-                blob = f"{summary} {excerpt} {json.dumps(_payload_dict(row.get('payload_json')))}".lower()
+                row_payload = _payload_dict(row.get("payload_json"))
+                excerpt = _excerpt(row_payload, kind)
+                if kind == "communication":
+                    blob = _structured_comm_search_blob(row_payload, str(summary or ""))
+                else:
+                    blob = f"{summary} {excerpt} {json.dumps(row_payload)}".lower()
             if required and not any(t.lower() in blob for t in required):
                 continue
             if distinctive and not any(t.lower() in blob for t in distinctive):
