@@ -112,10 +112,23 @@ if (-not (Test-TcpPort $DbEp.Host $DbEp.Port)) {
   exit 1
 }
 
+function Resolve-Python {
+  $cmd = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $cmd) { $cmd = Get-Command py -ErrorAction SilentlyContinue }
+  if (-not $cmd) {
+    Write-Host "ERROR: python/py not found on PATH" -ForegroundColor Red
+    exit 1
+  }
+  return $cmd.Source
+}
+
+$Python = Resolve-Python
+Write-Host "python=$Python"
+
 $healthOk = $false
 $healthDeadline = (Get-Date).AddSeconds([Math]::Min(60, $DbWaitSec))
 while ((Get-Date) -lt $healthDeadline) {
-  python -m memorybox health 1>$null 2>$null
+  & $Python -m memorybox health 1>$null 2>$null
   if ($LASTEXITCODE -eq 0) {
     $healthOk = $true
     break
@@ -126,15 +139,15 @@ if (-not $healthOk) {
   Write-Host "WARNING: memorybox health not green yet — continuing to migrate" -ForegroundColor Yellow
 }
 
-python -m memorybox migrate
+& $Python -m memorybox migrate
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "==> preflight probe peggo417@hotmail.com (structured count must be > 0)"
-python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
+& $Python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
 if ($LASTEXITCODE -ne 0) {
   Write-Host "ERROR: probe-email-address failed or structured occurrence_count=0 — wrong DB / empty archive." -ForegroundColor Red
   exit $LASTEXITCODE
 }
 
-python -m memorybox prove-address-centric-email-e2e --flightsim
+& $Python -m memorybox prove-address-centric-email-e2e --flightsim
 exit $LASTEXITCODE
