@@ -49,6 +49,7 @@ if errorlevel 1 (
   echo PHASE 1 VERIFIER FAILED — do not run Gemma/Sol.
   exit /b 1
 )
+call :deliver_evidence "evidence(flightsim): trusted-identity Phase 1 gate"
 echo.
 echo === Phase 2/3 pipeline (single-pass freeze, Gemma, Sol) ===
 python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
@@ -58,13 +59,16 @@ if errorlevel 1 (
   echo If gemma error is ollama_model_missing: ollama pull gemma4:26b
   echo If sol error is cloud_sol_not_configured / no_sol_model: set MEMORYBOX_CLOUD_LLM_* in config\memorybox_app.env
   echo Phase 3 chunking stays refused until both single-pass reports share the freeze hash.
+  call :deliver_evidence "evidence(flightsim): pipeline stop (Phase 2 incomplete)"
   exit /b 1
 )
 python tools\verify-trusted-fev2-reports.py
 if errorlevel 1 (
   echo TRUSTED FEV2 REPORTS FAILED
+  call :deliver_evidence "evidence(flightsim): trusted FEV2 reports (verifier failed)"
   exit /b 1
 )
+call :deliver_evidence "evidence(flightsim): trusted FEV2 Gemma+Sol reports"
 echo.
 echo === Phase 3 chunk models (after Phase 2 verifier) ===
 python -m memorybox run-trusted-fev2-chunked-models --from-dir docs\test-output\trusted-full-evidence-v2
@@ -73,5 +77,33 @@ if errorlevel 1 (
   echo Phase 2 reports above still stand. Re-run only chunk models, not Phase 1.
   exit /b 1
 )
+call :deliver_evidence "evidence(flightsim): trusted FEV2 + L1 chunk models"
 echo Cloud Sol needs MEMORYBOX_CLOUD_LLM_BASE_URL + MEMORYBOX_CLOUD_LLM_API_KEY + MEMORYBOX_CLOUD_LLM_MODEL
 echo Reports: docs\test-output\trusted-full-evidence-v2\
+goto :eof
+
+:deliver_evidence
+REM Commit verifier artifacts on this branch (no force-push) so PR #77 can see them.
+set "EVIDENCE_MSG=%~1"
+set "EVIDENCE_DIR=docs\test-output\trusted-full-evidence-v2"
+if not exist "%EVIDENCE_DIR%" goto :eof
+if exist "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json" git add -- "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json"
+if exist "%EVIDENCE_DIR%\PHASE1_prove.json" git add -- "%EVIDENCE_DIR%\PHASE1_prove.json"
+if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+for %%F in ("%EVIDENCE_DIR%\FEV2REPORT_*.json") do if exist "%%F" git add -- "%%F"
+for %%F in ("%EVIDENCE_DIR%\PIPELINE_*.json") do if exist "%%F" git add -- "%%F"
+for %%F in ("%EVIDENCE_DIR%\FEV2_*.json") do if exist "%%F" git add -- "%%F"
+for %%F in ("%EVIDENCE_DIR%\FEV2CHUNK_*.json") do if exist "%%F" git add -- "%%F"
+git diff --cached --quiet
+if not errorlevel 1 goto :eof
+git commit -m "%EVIDENCE_MSG%"
+if errorlevel 1 goto :eof
+git push -u origin HEAD
+if errorlevel 1 (
+  echo WARNING: evidence commit not pushed. Paste PHASE1_SUMMARY / PHASE2_SUMMARY on PR 77.
+)
+where gh >nul 2>nul
+if not errorlevel 1 (
+  if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" gh pr comment 77 --body-file "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+)
+goto :eof

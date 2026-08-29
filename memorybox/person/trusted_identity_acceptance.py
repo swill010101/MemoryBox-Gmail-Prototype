@@ -674,7 +674,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("verify-trusted-identity-gate.py")
         < gate_txt.find("run-trusted-evidence-pipeline")
         < gate_txt.find("verify-trusted-fev2-reports.py")
-        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir"),
+        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir")
+        and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
+        and "TRUSTED_IDENTITY_GATE.json" in gate_txt,
         checks,
         problems,
     )
