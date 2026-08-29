@@ -125,31 +125,82 @@ class _TimeoutOllamaChat:
         return ChatResultDto(model=self.chat_model, content=content, usage=usage)
 
 
-class _CloudHistorianStub:
-    """Placeholder — cloud benchmark requires explicit --provider cloud."""
+class _CloudOpenAICompatChat:
+    """Explicit opt-in cloud control (Sol). Stateless single request only.
+
+    Requires MEMORYBOX_CLOUD_LLM_BASE_URL and MEMORYBOX_CLOUD_LLM_API_KEY.
+    Never selected unless --provider cloud.
+    """
 
     provider_key = "cloud"
 
     def __init__(self, *, chat_model: str, timeout_seconds: int) -> None:
+        import os
+
         self.chat_model = chat_model
         self.timeout_seconds = int(timeout_seconds)
+        self.base_url = (os.environ.get("MEMORYBOX_CLOUD_LLM_BASE_URL") or "").rstrip("/")
+        self.api_key = (os.environ.get("MEMORYBOX_CLOUD_LLM_API_KEY") or "").strip()
 
     def health(self) -> Any:
         from memorybox.providers.base import ProviderHealth
 
+        ok = bool(self.base_url and self.api_key)
         return ProviderHealth(
             provider_key=self.provider_key,
-            ok=False,
-            detail="cloud historian provider not implemented",
+            ok=ok,
+            detail=(
+                "cloud OpenAI-compatible endpoint configured"
+                if ok
+                else "set MEMORYBOX_CLOUD_LLM_BASE_URL and MEMORYBOX_CLOUD_LLM_API_KEY"
+            ),
         )
 
     def chat(self, messages: list[ChatMessage], *, json_mode: bool = False) -> ChatResultDto:
-        raise HistorianCloudNotAvailable(
-            "Cloud historian provider is not implemented yet. "
-            "Use --provider ollama for local Ollama runs. "
-            "When implemented, cloud calls will be stateless single-request only "
-            "(no ChatGPT history, MemoryBox memory, or profile context)."
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        if not self.base_url or not self.api_key:
+            raise HistorianCloudNotAvailable(
+                "Cloud provider requires MEMORYBOX_CLOUD_LLM_BASE_URL and "
+                "MEMORYBOX_CLOUD_LLM_API_KEY. Stateless single-request only "
+                "(no ChatGPT history, MemoryBox memory, or profile context)."
+            )
+        url = self.base_url
+        if not url.endswith("/chat/completions"):
+            url = f"{url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": self.chat_model,
+            "temperature": 0,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        req = urllib.request.Request(
+            url,
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+            method="POST",
         )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                body = _json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+        choices = body.get("choices") or []
+        content = ""
+        if choices:
+            content = str(((choices[0] or {}).get("message") or {}).get("content") or "")
+        usage = dict(body.get("usage") or {})
+        usage["timeout_seconds"] = self.timeout_seconds
+        usage["model"] = self.chat_model
+        usage["provider_key"] = self.provider_key
+        usage["stateless"] = True
+        return ChatResultDto(model=self.chat_model, content=content, usage=usage)
 
 
 def build_historian_provider(spec: HistorianProviderSpec) -> Any:
@@ -158,7 +209,7 @@ def build_historian_provider(spec: HistorianProviderSpec) -> Any:
     if not model:
         raise HistorianProviderError("--model is required for historian-fixture-run")
     if spec.provider == "cloud":
-        return _CloudHistorianStub(chat_model=model, timeout_seconds=spec.timeout_seconds)
+        return _CloudOpenAICompatChat(chat_model=model, timeout_seconds=spec.timeout_seconds)
     from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
     from memorybox.providers.llm._ollama_http import ollama_reachable
 

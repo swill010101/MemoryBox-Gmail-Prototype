@@ -394,7 +394,99 @@ def report_person_identity_and_retrieve(person_id: str) -> dict[str, Any]:
         "trusted_only": (expanded.get("expansion") or {}).get("trusted_only"),
         "cache_hit": (expanded.get("expansion") or {}).get("cache_hit"),
     }
+    rec.update(_live_retrieve_and_gallery_scope(person_id, trusted_set))
     return rec
+
+
+def email_payload_trusted(payload: dict[str, Any], trusted_addrs: set[str]) -> bool:
+    """True when structured From/To/CC/BCC intersects trusted retrieve keys."""
+    from memorybox.ask.retrieve import _payload_email_addresses
+
+    addrs = _payload_email_addresses(payload if isinstance(payload, dict) else {})
+    return bool(addrs & {normalize_handle(a) for a in trusted_addrs if a})
+
+
+def _live_retrieve_and_gallery_scope(person_id: str, trusted: set[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "retrieve_hit_count": None,
+        "gallery_email_count": None,
+        "unique_emails_by_trusted_address": {},
+        "unsupported_retrieve_hits": [],
+    }
+    if not person_id:
+        return out
+    try:
+        from memorybox.ask.retrieve import (
+            _payload_email_addresses,
+            search_email_messages,
+        )
+        from memorybox.planner import QueryPlan
+
+        plan = QueryPlan(
+            original_ask="tell me about this person",
+            effective_ask="tell me about this person",
+            is_followup=False,
+            want_photo=False,
+            want_communication=True,
+            want_calendar=False,
+            person_names=(),
+            person_ids=(person_id,),
+            place_names=(),
+            time_start=None,
+            time_end=None,
+            temporal_windows=(),
+            notes=("complete_comm_retrieve",),
+        )
+        hits = search_email_messages(plan, limit=500_000)
+        out["retrieve_hit_count"] = len(hits)
+        by_addr: dict[str, int] = {a: 0 for a in sorted(trusted)}
+        unsupported: list[str] = []
+        for h in hits:
+            payload = getattr(h, "payload", None) or {}
+            if not isinstance(payload, dict):
+                payload = {}
+            addrs = _payload_email_addresses(payload)
+            hit_trusted = addrs & trusted
+            if hit_trusted:
+                for a in hit_trusted:
+                    by_addr[a] = int(by_addr.get(a) or 0) + 1
+            else:
+                eid = str(getattr(h, "evidence_id", "") or "")
+                if eid:
+                    unsupported.append(eid)
+        out["unique_emails_by_trusted_address"] = by_addr
+        out["unsupported_retrieve_hits"] = unsupported[:48]
+        out["unsupported_retrieve_hit_count"] = len(unsupported)
+    except Exception as exc:  # noqa: BLE001
+        out["retrieve_scope_error"] = str(exc)
+    try:
+        from memorybox.explore.find import _attach_visible_email
+
+        _items, email_n, match_total = _attach_visible_email(
+            [],
+            {
+                "plan": {
+                    "person_ids": [person_id],
+                    "person_names": [],
+                    "original_ask": "tell me about this person",
+                    "effective_ask": "tell me about this person",
+                    "gallery_show_email": True,
+                },
+                "evidence_hits": [],
+            },
+            ask_text="tell me about this person",
+            show_email=True,
+        )
+        out["gallery_email_count"] = int(email_n or 0)
+        out["gallery_match_total"] = int(match_total or 0)
+    except Exception as exc:  # noqa: BLE001
+        out["gallery_scope_error"] = str(exc)
+    if out.get("unsupported_retrieve_hit_count"):
+        rec_ok = False
+    else:
+        rec_ok = True
+    out["retrieve_scope_ok"] = rec_ok and not out.get("unsupported_retrieve_hits")
+    return out
 
 
 def report_named_person_identity_trust(display_name: str) -> dict[str, Any]:
@@ -412,7 +504,10 @@ def report_named_person_identity_trust(display_name: str) -> dict[str, Any]:
     if not pid:
         return {"ok": False, "error": "person_not_found", "display_name": name}
     rec = report_person_identity_and_retrieve(pid)
-    rec["ok"] = not rec.get("unsupported_retrieve_addresses")
+    rec["ok"] = (
+        not rec.get("unsupported_retrieve_addresses")
+        and not rec.get("unsupported_retrieve_hit_count")
+    )
     rec["display_name"] = name
     return rec
 

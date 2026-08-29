@@ -189,7 +189,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         _check(
             "flightsim_unsupported_retrieve_addresses_zero",
             flightsim_report.get("ok") is True
-            and not flightsim_report.get("unsupported_retrieve_addresses"),
+            and not flightsim_report.get("unsupported_retrieve_addresses")
+            and not flightsim_report.get("unsupported_retrieve_hit_count"),
             checks,
             problems,
             detail=flightsim_report.get("unsupported_retrieve_addresses"),
@@ -201,6 +202,80 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             problems,
             detail=flightsim_report.get("trusted"),
         )
+
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        fev2_input_sha256,
+        score_email_grounding,
+        select_single_pass_items,
+    )
+
+    items = [
+        {"source": "person", "item_id": "p1", "text": "card"},
+        {"source": "sms", "item_id": "s1", "text": "hi"},
+        {
+            "source": "email",
+            "item_id": "e-trust",
+            "evidence_id": "ev-trust",
+            "from": "peggo417@hotmail.com",
+            "sent_at": "2020-01-02",
+        },
+        {
+            "source": "email",
+            "item_id": "e-other",
+            "evidence_id": "ev-other",
+            "from": "noise@example.com",
+            "sent_at": "2020-01-03",
+        },
+    ]
+    picked = select_single_pass_items(
+        items, trusted_addrs={"peggo417@hotmail.com"}, token_budget=50_000
+    )
+    ids = {str(i.get("item_id")) for i in picked}
+    _check(
+        "single_pass_keeps_trusted_email_drops_untrusted",
+        "e-trust" in ids and "e-other" not in ids and "p1" in ids and "s1" in ids,
+        checks,
+        problems,
+        detail=ids,
+    )
+    ground = score_email_grounding(
+        {
+            "claims": [
+                {"text": "Peggy emailed", "evidence_ids": ["ev-trust"]},
+            ],
+            "episodes": [],
+        },
+        email_evidence_ids={"ev-trust"},
+    )
+    _check(
+        "grounding_requires_email_citation",
+        bool(ground.get("ok")) and ground.get("claims_citing_email") == 1,
+        checks,
+        problems,
+        detail=ground,
+    )
+    miss = score_email_grounding(
+        {"claims": [{"text": "invented", "evidence_ids": []}], "episodes": []},
+        email_evidence_ids={"ev-trust"},
+    )
+    _check(
+        "grounding_fails_when_email_unused",
+        not miss.get("ok"),
+        checks,
+        problems,
+        detail=miss,
+    )
+    body = {
+        "ask": "tell me about Peggy",
+        "trusted_addresses": ["peggo417@hotmail.com"],
+        "person_context": {"focal_subjects": []},
+        "items": picked,
+        "email_evidence_ids": ["ev-trust"],
+        "chunking": False,
+    }
+    h1 = fev2_input_sha256(body)
+    h2 = fev2_input_sha256(body)
+    _check("fev2_hash_stable", h1 == h2 and len(h1) == 64, checks, problems, detail=h1)
 
     return {
         "ok": not problems,

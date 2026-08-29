@@ -1516,20 +1516,24 @@ def diagnose_email_retrieve_gap(
 ) -> dict[str, Any]:
     """Explain why Person-scoped email retrieve may be empty (FlightSim diag).
 
-    Prefer confirmed contacts already on People — no hardcoded Peggy address.
+    Prefer trusted-for-retrieval contacts — no hardcoded person address.
     Optional address_hint only when the operator wants to probe a specific spelling.
     """
+    from memorybox.person.trusted_identity import trusted_emails_for_people
+
     ids = [str(p) for p in person_ids if str(p).strip()]
+    trusted = trusted_emails_for_people(ids)
     out: dict[str, Any] = {
         "person_ids": ids,
         "address_hint": normalize_handle(address_hint) if address_hint else None,
         "snapshots": [],
         "confirmed_emails": [],
+        "trusted_emails": sorted(trusted),
         "expand_preview": None,
         "address_hint_explanation": None,
         "likely_blocker": None,
     }
-    all_emails: set[str] = set()
+    observed_emails: set[str] = set()
     for pid in ids:
         snap = person_identity_snapshot(pid)
         emails = [
@@ -1537,17 +1541,19 @@ def diagnose_email_retrieve_gap(
             for c in (snap.get("emails") or [])
         ]
         emails = [e for e in emails if e and "@" in e]
-        all_emails.update(emails)
+        observed_emails.update(emails)
         out["snapshots"].append(
             {
                 "person_id": pid,
                 "display_name": snap.get("display_name"),
                 "known_name_forms": snap.get("known_name_forms"),
-                "confirmed_emails": emails,
+                "contact_emails": emails,
+                "trusted_emails": sorted(trusted_emails_for_people({pid})),
                 "alias_count": len(snap.get("aliases") or []),
             }
         )
-    out["confirmed_emails"] = sorted(all_emails)
+    out["observed_contact_emails"] = sorted(observed_emails)
+    out["confirmed_emails"] = sorted(trusted)
 
     # If no explicit hint, probe the first confirmed People email (source of truth).
     hint = out.get("address_hint") or (out["confirmed_emails"][0] if out["confirmed_emails"] else None)
@@ -1574,8 +1580,9 @@ def diagnose_email_retrieve_gap(
                     for r in ((expanded.get("expansion") or {}).get("rounds") or [])[:3]
                 ],
             }
-            all_emails.update(expanded.get("addresses") or [])
-            out["confirmed_emails"] = sorted(all_emails)
+            trusted.update(expanded.get("addresses") or [])
+            out["trusted_emails"] = sorted(trusted)
+            out["confirmed_emails"] = sorted(trusted)
             if not hint and out["confirmed_emails"]:
                 hint = out["confirmed_emails"][0]
                 out["address_hint"] = hint

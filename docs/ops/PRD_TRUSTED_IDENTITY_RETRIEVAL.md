@@ -64,5 +64,13 @@ python -m memorybox attest-trusted-identity --person "Peggy George" --email pegg
 python -m memorybox prove-trusted-identity-retrieval --flightsim
 ```
 
-Phase 2/3 do not start until this prove is green and Gallery only shows
-trusted-address mail.
+Phase 2 freeze (after Phase 1 FlightSim report is green):
+
+```
+python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs/test-output/trusted-full-evidence-v2
+python -m memorybox run-trusted-full-evidence-v2 --fixture <FEV2PREP.json> --provider ollama --model gemma4:26b
+python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provider cloud --model <sol-model>
+```
+
+Cloud Sol is opt-in and stateless: `MEMORYBOX_CLOUD_LLM_BASE_URL` + `MEMORYBOX_CLOUD_LLM_API_KEY`.
+No chunking on these two runs. Phase 3 starts only after both reports are comparable.

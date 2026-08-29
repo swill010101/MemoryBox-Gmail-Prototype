@@ -659,6 +659,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_attest_trust.add_argument("--person", required=True, help="Person display name")
     p_attest_trust.add_argument("--email", required=True, help="Email address")
+    p_fev2_freeze = sub.add_parser(
+        "freeze-trusted-full-evidence-v2",
+        help="Phase 2: freeze trusted Full-Evidence V2 fixture (no model, no chunking)",
+    )
+    p_fev2_freeze.add_argument("--person", required=True, help="Person display name")
+    p_fev2_freeze.add_argument(
+        "--ask",
+        default="tell me what you know about Peggy",
+        help="Ask used to retrieve eligible evidence",
+    )
+    p_fev2_freeze.add_argument("--out-dir", default=None)
+    p_fev2_run = sub.add_parser(
+        "run-trusted-full-evidence-v2",
+        help="Phase 2: replay frozen FEV2 through ollama (Gemma) or cloud (Sol)",
+    )
+    p_fev2_run.add_argument("--fixture", required=True)
+    p_fev2_run.add_argument("--provider", required=True, help="ollama or cloud")
+    p_fev2_run.add_argument("--model", required=True)
+    p_fev2_run.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_run.add_argument("--out-dir", default=None)
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1422,6 +1442,42 @@ def main(argv: list[str] | None = None) -> int:
         payload = attest_trusted_email(resolved.person_id, args.email)
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("upserted") or payload.get("address") else 1
+
+    if args.cmd == "freeze-trusted-full-evidence-v2":
+        from pathlib import Path
+
+        from memorybox.person import resolve_person_by_name
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+            freeze_trusted_full_evidence_v2,
+        )
+
+        resolved = resolve_person_by_name(
+            args.person, create_if_missing=False, confirm=False
+        )
+        out = Path(args.out_dir) if args.out_dir else None
+        payload = freeze_trusted_full_evidence_v2(
+            person_id=resolved.person_id,
+            ask=args.ask,
+            out_dir=out,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-full-evidence-v2":
+        from pathlib import Path as _Path
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+            run_trusted_full_evidence_v2,
+        )
+
+        payload = run_trusted_full_evidence_v2(
+            args.fixture,
+            provider=args.provider,
+            model=args.model,
+            timeout_seconds=int(args.timeout_seconds),
+            out_dir=_Path(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":
         from memorybox.app import get_orchestrator
