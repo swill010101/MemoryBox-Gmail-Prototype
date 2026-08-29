@@ -103,7 +103,7 @@ if not "%STARTMB_EXIT%"=="0" (
 
 echo Prove under watchdog %PROVE_WATCHDOG_SEC%s...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%~dp0flightsim-address-centric-prove.ps1' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%PROVE_WATCHDOG_SEC%000)) { Write-Host 'ERROR: prove watchdog timeout'; try { $p.Kill() } catch {}; exit 99 }; exit $p.ExitCode"
+  "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%CD%\tools\flightsim-address-centric-prove.ps1' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%PROVE_WATCHDOG_SEC%000)) { Write-Host 'ERROR: prove watchdog timeout'; try { $p.Kill() } catch {}; exit 99 }; exit $p.ExitCode"
 set PROVE_EXIT=%errorlevel%
 if "%PROVE_EXIT%"=="99" (
   echo ERROR: prove exceeded %PROVE_WATCHDOG_SEC%s — writing timeout gate

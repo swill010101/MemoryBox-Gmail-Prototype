@@ -1489,6 +1489,58 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    # Attest success must force peggo417 into addrs so we never fall through to
+    # archive-wide resolve_and_attach (Peg* nickname scan / Takeout hang).
+    _check(
+        "bootstrap_attest_forces_probe_addr_before_peg_star",
+        "addrs.add(_PROBE_ADDR)" in ace_src
+        and "bootstrap_operator_attested_probe_retry" in ace_src
+        and ace_src.find("addrs.add(_PROBE_ADDR)")
+        < ace_src.find("resolve_and_attach_addresses_for_person("),
+        checks,
+        problems,
+    )
+    _check(
+        "e2e_ledger_promote_retry_when_observed",
+        "address_centric_e2e_ledger_retry" in ace_src
+        and "ensure_confirmed_email_contact" in ace_src,
+        checks,
+        problems,
+    )
+    _check(
+        "e2e_multi_exact_george_prefers_peggo_claimant",
+        "Multiple exact \"Peggy George\"" in ace_src
+        or "Multiple exact 'Peggy George'" in ace_src
+        or "unique peggo417 contact claimant" in ace_src,
+        checks,
+        problems,
+    )
+
+    gate_cmd = open("tools/flightsim-address-centric-gate.cmd", encoding="utf-8").read()
+    _check(
+        "gate_cmd_sets_result_branch_before_pushd",
+        gate_cmd.find("set RESULT_BRANCH=")
+        < gate_cmd.find('pushd "%REPO_ROOT%"'),
+        checks,
+        problems,
+    )
+    _check(
+        "gate_cmd_watchdog_timeout_gates",
+        "gate_cmd_startmb_watchdog_timeout" in gate_cmd
+        and "gate_cmd_prove_watchdog_timeout" in gate_cmd
+        and '"waiting": false' in gate_cmd,
+        checks,
+        problems,
+    )
+    prove_ps1 = open(
+        "tools/flightsim-address-centric-prove.ps1", encoding="utf-8"
+    ).read()
+    _check(
+        "prove_ps1_failure_gate_utf8_no_bom",
+        "UTF8Encoding $false" in prove_ps1 and "waiting = $false" in prove_ps1,
+        checks,
+        problems,
+    )
 
     # Full-Evidence AmbiguousIdentity recovery prefers exact George/Legg from
     # the candidate list before another Ask round-trip.
