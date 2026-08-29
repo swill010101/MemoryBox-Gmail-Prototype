@@ -294,7 +294,24 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "claimed_by_requires_trusted_not_any_confirmed",
-        "classify_contact_trust" in claim_src,
+        "classify_contact_trust" in claim_src
+        and "identity_kind) = 'email'" not in claim_src
+        and "Provider email rows are not trusted-for-retrieval" in claim_src,
+        checks,
+        problems,
+    )
+    find_src = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "memorybox"
+        / "explore"
+        / "find.py"
+    ).read_text(encoding="utf-8", errors="replace")
+    attach_src = find_src.split("def _attach_visible_email")[-1].split("def _attach_calendar")[0]
+    _check(
+        "gallery_reresolves_trusted_retrieve",
+        "search_email_messages" in attach_src
+        and "Do not keep pre-attached emails" in attach_src
+        and "if already:" not in attach_src,
         checks,
         problems,
     )
@@ -308,6 +325,56 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    verify_path = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "verify-trusted-identity-gate.py"
+    )
+    _check(
+        "flightsim_verifier_rejects_allow_dev_and_empty_gallery",
+        verify_path.is_file()
+        and "allow_dev_defaults" in verify_path.read_text(encoding="utf-8")
+        and "gallery_email_count" in verify_path.read_text(encoding="utf-8")
+        and "cursor-cloud" in verify_path.read_text(encoding="utf-8"),
+        checks,
+        problems,
+    )
+    import importlib.util
+
+    _vspec = importlib.util.spec_from_file_location(
+        "verify_trusted_identity_gate", verify_path
+    )
+    _vmod = importlib.util.module_from_spec(_vspec)  # type: ignore[arg-type]
+    assert _vspec and _vspec.loader
+    _vspec.loader.exec_module(_vmod)
+    fake = _vmod.audit_gate(
+        {
+            "ok": True,
+            "flightsim": True,
+            "waiting": False,
+            "runtime": {
+                "hostname": "cursor",
+                "p1_runtime_host": True,
+                "allow_dev_defaults": False,
+            },
+            "phase1": {
+                "trusted_addresses": ["a@example.test"],
+                "per_trusted_address": [{"address": "a@example.test", "why_trusted": "owner"}],
+                "unsupported_retrieve_addresses": [],
+                "unsupported_retrieve_hit_count": 0,
+                "retrieve_hit_count": 3,
+                "gallery_email_count": 3,
+                "unique_only_via_trusted_address": {"a@example.test": 3},
+            },
+        }
+    )
+    _check(
+        "verifier_rejects_cursor_hostname",
+        not fake.get("ok") and any("C2c" in p for p in (fake.get("problems") or [])),
+        checks,
+        problems,
+        detail=fake.get("problems"),
+    )
     gate_txt = (
         __import__("pathlib").Path(__file__).resolve().parents[2]
         / "tools"
@@ -317,7 +384,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "flightsim_gate_runs_phase1_prove_before_pipeline",
         "prove-trusted-identity-retrieval --flightsim" in gate_txt
         and "errorlevel 1" in gate_txt
+        and "verify-trusted-identity-gate.py" in gate_txt
         and gate_txt.find("prove-trusted-identity-retrieval")
+        < gate_txt.find("verify-trusted-identity-gate.py")
         < gate_txt.find("run-trusted-evidence-pipeline"),
         checks,
         problems,
@@ -666,13 +735,78 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             detail=f"{type(exc).__name__}:{exc}",
         )
 
-    return {
+    runtime = _trusted_identity_runtime(flightsim_requested=bool(flightsim))
+    payload = {
         "ok": not problems,
         "prove": "trusted_identity_retrieval",
-        "flightsim": bool(flightsim),
+        "flightsim": bool(runtime.get("flightsim")),
+        "waiting": False,
+        "runtime": runtime,
         "checks": checks,
         "problems": problems,
         "flightsim_report": flightsim_report,
         "phase": 1,
         "stop": "phase_1_trusted_identity — no Gemma/Sol/chunking",
+    }
+    if flightsim_report:
+        payload["phase1"] = {
+            "ok": flightsim_report.get("ok"),
+            "trusted_addresses": flightsim_report.get("trusted_addresses"),
+            "counts": flightsim_report.get("counts"),
+            "per_trusted_address": flightsim_report.get("per_trusted_address"),
+            "unique_emails_by_trusted_address": flightsim_report.get(
+                "unique_emails_by_trusted_address"
+            ),
+            "unique_only_via_trusted_address": flightsim_report.get(
+                "unique_only_via_trusted_address"
+            ),
+            "shared_across_trusted_addresses": flightsim_report.get(
+                "shared_across_trusted_addresses"
+            ),
+            "unsupported_retrieve_addresses": flightsim_report.get(
+                "unsupported_retrieve_addresses"
+            ),
+            "unsupported_retrieve_hit_count": flightsim_report.get(
+                "unsupported_retrieve_hit_count"
+            ),
+            "retrieve_hit_count": flightsim_report.get("retrieve_hit_count"),
+            "gallery_email_count": flightsim_report.get("gallery_email_count"),
+            "phase1_summary": flightsim_report.get("phase1_summary"),
+        }
+    if flightsim:
+        try:
+            from pathlib import Path as _GateP
+
+            gate_path = (
+                _GateP("docs")
+                / "test-output"
+                / "trusted-full-evidence-v2"
+                / "TRUSTED_IDENTITY_GATE.json"
+            )
+            gate_path.parent.mkdir(parents=True, exist_ok=True)
+            gate_path.write_text(
+                __import__("json").dumps(payload, indent=2, default=str),
+                encoding="utf-8",
+            )
+            payload["gate_path"] = str(gate_path)
+        except Exception:  # noqa: BLE001
+            pass
+    return payload
+
+
+def _trusted_identity_runtime(*, flightsim_requested: bool) -> dict[str, Any]:
+    import os
+    import socket
+
+    def _truthy(name: str) -> bool:
+        return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    allow_dev = _truthy("MEMORYBOX_ALLOW_DEV_DEFAULTS")
+    p1 = _truthy("MEMORYBOX_P1_RUNTIME_HOST")
+    return {
+        "hostname": socket.gethostname(),
+        "p1_runtime_host": p1,
+        "allow_dev_defaults": allow_dev,
+        "database_url_set": bool((os.environ.get("MEMORYBOX_DATABASE_URL") or "").strip()),
+        "flightsim": bool(flightsim_requested) and p1 and not allow_dev,
     }

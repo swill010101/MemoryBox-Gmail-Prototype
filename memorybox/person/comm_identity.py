@@ -195,18 +195,8 @@ def _address_claimed_by(addr: str) -> list[str]:
                 pid = str(r["person_id"])
                 if pid not in out:
                     out.append(pid)
-            rows2 = conn.execute(
-                """
-                SELECT person_id, external_id
-                FROM provider_identities
-                WHERE lower(identity_kind) = 'email'
-                """
-            ).fetchall()
-            for r in rows2:
-                if normalize_handle(str(r.get("external_id") or "")) == norm:
-                    pid = str(r["person_id"])
-                    if pid not in out:
-                        out.append(pid)
+            # Provider email rows are not trusted-for-retrieval (same as
+            # phone_map). They must not claim Person ownership.
     except Exception:  # noqa: BLE001
         return out
     return out

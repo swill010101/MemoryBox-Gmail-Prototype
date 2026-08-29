@@ -21,6 +21,13 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
+echo === Phase 1 FlightSim verifier (reject ALLOW_DEV / empty Gallery) ===
+python tools\verify-trusted-identity-gate.py
+if errorlevel 1 (
+  echo PHASE 1 VERIFIER FAILED — do not run Gemma/Sol.
+  exit /b 1
+)
+echo.
 echo === Phase 2/3 pipeline (single-pass freeze, Gemma, Sol) ===
 python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
 echo.

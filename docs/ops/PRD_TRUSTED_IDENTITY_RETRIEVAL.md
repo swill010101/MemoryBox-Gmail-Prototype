@@ -56,7 +56,8 @@ python -m memorybox migrate
 tools\flightsim-trusted-identity-gate.cmd
 ```
 
-The gate runs `run-trusted-evidence-pipeline` (Phase 1 report → freeze → Gemma → Sol).
+The gate runs Phase 1 prove, then `tools/verify-trusted-identity-gate.py`
+(rejects ALLOW_DEV / cloud hostname fakes), then `run-trusted-evidence-pipeline`.
 It stops on Phase 1 failure and does not widen matching.
 
 If `peggo417@hotmail.com` is on the Person profile but classify is untrusted

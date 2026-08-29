@@ -954,19 +954,13 @@ def _attach_visible_email(
     show_email: bool,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Person-scoped Find keeps emails eligible. Q3: hidden unless presentation on."""
+    # Re-resolve Gallery email through the same trusted retrieve as Ask.
+    # Do not keep pre-attached emails (people[] / person_ids GIN leftovers).
+    items = [i for i in items if not _is_email_type(i.get("type"))]
     existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
-    already = [i for i in items if _is_email_type(i.get("type"))]
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
     pids = list(plan.get("person_ids") or [])
-    if already:
-        for i in already:
-            i["gallery_default_hidden"] = not show_email
-        match_total = 0
-        for e in result.get("evidence_hits") or []:
-            if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
-                match_total = max(match_total, int(e.get("match_total") or 0))
-        return items, match_total or len(already), match_total
     if not show_email:
         return items, 0, 0
     if not people and not pids:
