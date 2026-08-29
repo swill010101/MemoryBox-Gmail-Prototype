@@ -7,15 +7,27 @@ identities to retrieve complete Person evidence.
 **PRD:** `docs/ops/PRD_ADDRESS_CENTRIC_EMAIL_IDENTITY.md`  
 **Branch:** `cursor/p2-i11a-stabilize-a3b9`
 
+## Do not use historian-full-evidence-benchmark for email identity
+
+That command **re-retrieves the whole Peggy pack** (photos + SMS + email). `--fixture`
+only feeds the compression funnel; it does **not** skip retrieve.
+
+A previous Ask path inventoried `peggo417` with `body_text LIKE` + JSON unnest on
+every mail row. That is why it ran overnight. Ask retrieve now uses **contacts +
+ledger only**. Probe inventory is header-only and times out at 60s.
+
+If a python still sitting on `inventory_email_address`: Ctrl+C is enough. Do not
+re-run the historian benchmark until identity e2e is green.
+
 ## Pipeline
 
 ```
-1. DISCOVER  archive → communication_identities (address + Peg Legg / Peggy George …)
-2. RESOLVE   identity → Person (corroborate; fail closed if shared)
-3. RETRIEVE  Person → trusted addresses → all mail for those addresses
+1. DISCOVER  probe-email-address → communication_identities (once)
+2. RESOLVE   ledger → Person contacts (cheap)
+3. RETRIEVE  Person → trusted addresses → mail (no archive inventory)
 ```
 
-## FlightSim
+## FlightSim — identity gate (this is the email extraction check)
 
 ```bat
 cd C:\memorybox
@@ -24,23 +36,27 @@ git pull origin cursor/p2-i11a-stabilize-a3b9
 .\startmb.cmd -Restart
 
 python -m memorybox migrate
-python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
-
-python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json --repair-address peggo417@hotmail.com
-```
-
-`probe-email-address` fills the address ledger (Peg Legg / Peggy George observations).
-Full-evidence then resolves ledger → Person → all mail. `--repair-address` is
-operator attestation if auto-resolve is still empty.
-
-Single-command E2E gate (Gallery + Full-Evidence email > 0; no historian):
-
-```bat
 python -m memorybox prove-address-centric-email-e2e --flightsim
 ```
 
-Paste prove JSON + V2 `ADDRESS_CENTRIC_GATE.json` (need `"ok": true`) + `by_source.email`.
-**Stop** after V2 — no historian summarization.
+Expect finish in minutes, not hours. Paste the prove JSON (`"ok": true`).
+
+Optional one-address probe (header scan, 60s cap):
+
+```bat
+python -m memorybox probe-email-address --flightsim --address peggo417@hotmail.com
+```
+
+## Historian / L1 chunks (only after identity e2e is green)
+
+`--from-dir` reuses a frozen pack. `--fixture` does **not** skip retrieve.
+
+```bat
+python -m memorybox historian-full-evidence-benchmark --flightsim --from-dir docs\test-output\full-evidence --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
+```
+
+If `docs\test-output\full-evidence` is missing, identity e2e already proved email.
+Do not start a fresh full-archive retrieve just to extract mail.
 
 ## Ask name forms
 
