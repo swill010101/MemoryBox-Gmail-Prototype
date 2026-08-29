@@ -371,6 +371,45 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    from memorybox.ask.i11a.trusted_fev2_chunking import ready_for_chunk_models
+    import tempfile
+    from pathlib import Path as _Tmp
+
+    tmp_fx = _Tmp(tempfile.mkdtemp()) / "fx.json"
+    fx_body = dict(body)
+    fx_body["system"] = "sys"
+    fx_body["user_message"] = "msg"
+    fx_hash = fev2_input_sha256(fx_body)
+    fx_body["input_sha256"] = fx_hash
+    tmp_fx.write_text(__import__("json").dumps(fx_body), encoding="utf-8")
+    blocked = ready_for_chunk_models(tmp_fx, {}, {})
+    _check(
+        "chunk_models_blocked_without_both_reports",
+        not blocked.get("ok") and "blocked_until_both" in str(blocked.get("error") or ""),
+        checks,
+        problems,
+        detail=blocked,
+    )
+    ready = ready_for_chunk_models(
+        tmp_fx,
+        {
+            "ok": True,
+            "input_sha256": fx_hash,
+            "email_reached_model_and_grounded_output": True,
+        },
+        {
+            "ok": True,
+            "input_sha256": fx_hash,
+            "email_reached_model_and_grounded_output": True,
+        },
+    )
+    _check(
+        "chunk_models_ready_when_both_single_pass_match_hash",
+        bool(ready.get("ok")) and ready.get("input_sha256") == fx_hash,
+        checks,
+        problems,
+        detail=ready,
+    )
 
     invented = validate_fev2_document(
         {

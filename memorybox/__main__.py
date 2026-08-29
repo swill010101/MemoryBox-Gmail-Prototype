@@ -684,6 +684,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Phase 3: semantic chunk vs unchunked frozen FEV2 (structure only)",
     )
     p_fev2_chunks.add_argument("--fixture", required=True)
+    p_fev2_chunk_models = sub.add_parser(
+        "run-trusted-fev2-chunked-models",
+        help="Phase 3: model-per-chunk after both single-pass reports exist",
+    )
+    p_fev2_chunk_models.add_argument("--fixture", required=True)
+    p_fev2_chunk_models.add_argument("--gemma-report", required=True)
+    p_fev2_chunk_models.add_argument("--sol-report", required=True)
+    p_fev2_chunk_models.add_argument("--gemma-model", default=None)
+    p_fev2_chunk_models.add_argument("--sol-model", required=True)
+    p_fev2_chunk_models.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_chunk_models.add_argument("--out-dir", default=None)
     p_fev2_pipe = sub.add_parser(
         "run-trusted-evidence-pipeline",
         help="Phase 1 report → freeze FEV2 → Gemma/Sol → chunk structure",
@@ -1508,6 +1519,26 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
 
         payload = compare_chunked_vs_unchunked(args.fixture)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-fev2-chunked-models":
+        from pathlib import Path as _PC
+
+        from memorybox.ask.i11a.trusted_fev2_chunking import (
+            run_chunked_models_after_single_pass,
+        )
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+        payload = run_chunked_models_after_single_pass(
+            args.fixture,
+            gemma_report_path=args.gemma_report,
+            sol_report_path=args.sol_report,
+            gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+            sol_model=args.sol_model,
+            timeout_seconds=int(args.timeout_seconds),
+            out_dir=_PC(args.out_dir) if args.out_dir else None,
+        )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
