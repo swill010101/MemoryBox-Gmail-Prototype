@@ -58,7 +58,8 @@ Ask resolves `Peggy`, `Peggy George`, and `Peg Legg` (confirmed alias or unique
 nickname-family multi-token Person). Display names remain observations on the
 address; the address is the retrieve key once resolved.
 
-**FlightSim prerequisite:** a multi-token Person \"Peggy George\" must already
-exist (Immich/People). Full-Evidence on P1 does **not** Immich-lazy-seed a
-single-token \"Peggy\" stub (that Person has no email contacts). If Ask only
-finds \"Peggy\", create/confirm \"Peggy George\" in People, then re-run the gate.
+**FlightSim prerequisite:** prefer an existing multi-token Person \"Peggy George\".
+If only Immich single-token \"Peggy\" exists **and** inventory shows Peg Legg
+(structured) + Peggy George (quoted/structured) on peggo417, the gate prove
+operator-renames that unique Immich Person to \"Peggy George\" before attach.
+Full-Evidence on P1 does **not** Immich-lazy-seed a new \"Peggy\" stub.
