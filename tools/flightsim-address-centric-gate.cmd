@@ -9,7 +9,7 @@ REM Env: startmb loads config\memorybox_app.env only inside PowerShell. This
 REM script calls tools\flightsim-address-centric-prove.ps1 so migrate/prove use
 REM the same DATABASE_URL as serve (Takeout archive), not silent ALLOW_DEV defaults.
 REM
-REM Auto-deliver: posts gate to PR #74 via gh when available, and always pushes
+REM Auto-deliver: posts gate to PR #74 via gh when available, and always force-pushes
 REM gate artifacts to cursor/flightsim-address-centric-result-49da for the cloud agent.
 REM
 setlocal
@@ -23,13 +23,25 @@ echo.
 
 git fetch origin %BRANCH%
 if errorlevel 1 goto :fail
+
+REM Untracked gate artifacts from prior runs can block checkout; remove only those paths.
+if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json" (
+  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json" 2>nul
+)
+if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" (
+  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" 2>nul
+)
+if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json" (
+  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json" 2>nul
+)
+
 git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (
   echo.
   echo CHECKOUT FAILED — working tree may be dirty. Either commit/stash local
   echo changes on FlightSim, or run:
   echo   git status
-  echo   git stash push -m address-centric-gate-temp
+  echo   git stash push -u -m address-centric-gate-temp
   echo then re-run this script.
   goto :fail
 )
@@ -51,13 +63,32 @@ set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_
 set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
 set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
 
+echo.
+echo ===== ADDRESS_CENTRIC_GATE (paste into agent if auto-deliver fails) =====
+if exist "%GATE_VERDICT%" (
+  type "%GATE_VERDICT%"
+  echo.
+)
+if exist "%GATE_JSON%" (
+  echo ```json
+  type "%GATE_JSON%"
+  echo ```
+) else (
+  echo ERROR: gate JSON missing at %GATE_JSON%
+)
+if exist "%GATE_FAIL%" if not "%PROVE_EXIT%"=="0" (
+  echo.
+  echo === FAILURE_DIAG ===
+  type "%GATE_FAIL%"
+)
+echo ===== end gate paste block =====
+echo.
+
 REM Auto-deliver to PR #74 when gh is authenticated — wakes the cloud agent.
 where gh >nul 2>&1
 if not errorlevel 1 (
   if exist "%GATE_JSON%" (
-    echo.
     echo ===== posting gate to PR #74 via gh =====
-    set COMMENT_FILE=%TEMP%\mb_address_centric_gate_pr_comment.md
     (
       echo ## FlightSim ADDRESS_CENTRIC_GATE
       echo.
@@ -86,40 +117,43 @@ if not errorlevel 1 (
   )
 )
 
-REM Always push gate artifacts to results branch (cloud agent fetches this).
+REM Always force-push gate artifacts to results branch (disposable delivery branch;
+REM re-runs reset history from feature tip so non-FF push would otherwise fail).
 if exist "%GATE_JSON%" (
   echo.
-  echo ===== pushing gate to %RESULT_BRANCH% =====
+  echo ===== force-pushing gate to %RESULT_BRANCH% =====
   git fetch origin %RESULT_BRANCH% 2>nul
   git checkout -B %RESULT_BRANCH%
   if errorlevel 1 (
-    echo WARNING: could not checkout results branch — paste gate manually.
+    echo WARNING: could not checkout results branch — paste gate manually from above.
   ) else (
     git add --force "%GATE_JSON%"
     if exist "%GATE_VERDICT%" git add --force "%GATE_VERDICT%"
     if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
     git status --short
-    git commit -m "flightsim: ADDRESS_CENTRIC_GATE from archive prove"
-    git push -u origin %RESULT_BRANCH%
+    git diff --cached --quiet
     if errorlevel 1 (
-      echo WARNING: results-branch push failed — paste the gate manually.
+      git commit -m "flightsim: ADDRESS_CENTRIC_GATE from archive prove"
     ) else (
-      echo Pushed %RESULT_BRANCH%.
+      echo No staged changes vs index — amending empty tip with --allow-empty so push refreshes.
+      git commit --allow-empty -m "flightsim: ADDRESS_CENTRIC_GATE refresh"
+    )
+    git push -u origin %RESULT_BRANCH% --force
+    if errorlevel 1 (
+      echo WARNING: results-branch force-push failed — paste the gate manually from above.
+    ) else (
+      echo Pushed %RESULT_BRANCH% (force).
     )
     git checkout -B %BRANCH% origin/%BRANCH%
+    if errorlevel 1 (
+      echo WARNING: could not return to %BRANCH% — check git status on FlightSim.
+    )
   )
 )
 
 echo.
-echo ===== paste the ADDRESS_CENTRIC_GATE block above into the agent chat =====
 echo need: "ok": true  and  "flightsim": true
 echo file: %GATE_JSON%
-echo verdict: %GATE_VERDICT%
-if exist "%GATE_VERDICT%" (
-  echo.
-  type "%GATE_VERDICT%"
-)
-echo if prove failed, also paste ADDRESS_CENTRIC_FAILURE_DIAG.json when present
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.
 exit /b %PROVE_EXIT%
