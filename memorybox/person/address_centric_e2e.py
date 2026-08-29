@@ -256,21 +256,24 @@ def _seed_local_fixture() -> dict[str, Any]:
             """
             DELETE FROM person_aliases WHERE person_id IN (
               SELECT id FROM people
-              WHERE display_name IN ('Peggy George','Peggy','Peg Legg','Peggy Smith')
+              WHERE display_name IN (
+                'Peggy George','Peggy','Peg Legg','Peggy Smith','Peggy Jones'
+              )
             )
             """
         )
         conn.execute(
             "DELETE FROM people WHERE display_name IN "
-            "('Peggy George','Peggy','Peg Legg','Peggy Smith')"
+            "('Peggy George','Peggy','Peg Legg','Peggy Smith','Peggy Jones')"
         )
 
     # Immich-style single-token stub only — e2e must upgrade/create Peggy George
     # the same way FlightSim does (no pre-seeded multi-token Person).
     immich = resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
-    # Second multi-token Peggy* without email — Ask \"Peggy\" must prefer the
-    # address-bearing Peggy George after attach (FlightSim AmbiguousIdentity shape).
+    # Two multi-token Peggy* without email — Ask \"Peggy\" is AmbiguousIdentity
+    # until address attach; bootstrap must not abort on that.
     resolve_person_by_name("Peggy Smith", create_if_missing=True, confirm=True)
+    resolve_person_by_name("Peggy Jones", create_if_missing=True, confirm=True)
 
     payload = {
         "evidence_channel": "email",
@@ -584,13 +587,32 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     upgrade_info: dict[str, Any] | None = None
     # Local Immich-stub-only seed exercises the same Person bootstrap as FlightSim.
     bootstrap = bool(flightsim) or bool((seed_info or {}).get("immich_stub_only"))
+    ask_resolve_exc: str | None = None
     try:
+        from memorybox.person import AmbiguousIdentityError
+
         # Prefer multi-token Peggy George when present (Immich often seeds \"Peggy\").
-        ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=not bootstrap)
+        try:
+            ask_peggy = find_ask_person_by_name(
+                "Peggy George", lazy_seed=not bootstrap
+            )
+        except AmbiguousIdentityError as exc:
+            ask_resolve_exc = f"Peggy George:{exc}"
+            ask_peggy = None
         if ask_peggy is None or " " not in ((ask_peggy.display_name or "").strip()):
-            ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not bootstrap)
-        ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
-    except Exception as exc:  # noqa: BLE001 — AmbiguousIdentityError or DB errors
+            try:
+                ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not bootstrap)
+            except AmbiguousIdentityError as exc:
+                # Multiple Peggy* on FlightSim — continue into bootstrap which
+                # picks exact Peggy George / Immich stub rather than aborting.
+                ask_resolve_exc = (ask_resolve_exc or "") + f"; Peggy:{exc}"
+                ask_peggy = None
+        try:
+            ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
+        except AmbiguousIdentityError as exc:
+            ask_resolve_exc = (ask_resolve_exc or "") + f"; Peg Legg:{exc}"
+            ask_legg = None
+    except Exception as exc:  # noqa: BLE001 — unexpected DB errors only
         _check(
             "ask_peggy_resolve_raises",
             False,
@@ -624,6 +646,9 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "seed": seed_info,
             "address_centric_gate": gate,
         }
+    if ask_resolve_exc and bootstrap:
+        # Record ambiguity without failing — bootstrap selects Peggy George.
+        checks.append("ask_peggy_ambiguous_deferred_to_bootstrap")
     if bootstrap:
         def _archive_has_legg() -> bool:
             return bool(structured.get("has_peg_legg")) or any(
