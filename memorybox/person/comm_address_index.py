@@ -122,7 +122,8 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                   THEN 1
                   ELSE 2
-                END
+                END,
+                id
                 LIMIT %s
                 """,
                 (
@@ -548,6 +549,7 @@ def find_addresses_for_person_forms(
                         ) e
                         WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                       )
+                    ORDER BY id
                     LIMIT %s
                     """,
                     (multi_patterns, min(limit_scan, 10_000)),
@@ -571,6 +573,7 @@ def find_addresses_for_person_forms(
                     ) e
                     WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                   )
+                ORDER BY id
                 LIMIT %s
                 """,
                 (patterns, limit_scan),
@@ -629,7 +632,8 @@ def find_addresses_for_person_forms(
                     WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
                   ) THEN 2
                   ELSE 3
-                END
+                END,
+                id
                 LIMIT %s
                 """,
                 (
