@@ -128,7 +128,6 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
@@ -516,8 +515,8 @@ def find_addresses_for_person_forms(
 
     Two-pass scan on large Takeouts:
     1. Structured ``*_parsed`` display_name only (high signal; Peg Legg rows).
-    2. Broader From/To/CC/BCC/people[] prefilter, ordered so structured hits
-       still win within the LIMIT window.
+    2. Broader From/To/CC/BCC prefilter (never people[]), ordered so structured
+       hits still win within the LIMIT window.
     """
     from memorybox.person.comm_identity import (
         _display_matches_person,
@@ -674,7 +673,6 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
@@ -690,7 +688,6 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                   THEN 1
                   ELSE 2
                 END,
@@ -706,8 +703,6 @@ def find_addresses_for_person_forms(
                     patterns,
                     patterns,
                     patterns,
-                    patterns,
-                    order_patterns,
                     order_patterns,
                     order_patterns,
                     order_patterns,

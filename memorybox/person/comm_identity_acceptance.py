@@ -1455,7 +1455,7 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         ("Pass 1a" in discover_src or "Pass 1:" in discover_src or "Pass 1b" in discover_src)
         and "from_parsed" in discover_src
         and "jsonb_array_elements" not in discover_src
-        and "people" in discover_src,
+        and "payload_json->'people'" not in discover_src,
         checks,
         problems,
     )

@@ -326,6 +326,25 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    discover_ci = inspect.getsource(
+        __import__(
+            "memorybox.person.comm_identity",
+            fromlist=["discover_email_candidates_from_archive"],
+        ).discover_email_candidates_from_archive
+    )
+    discover_idx = inspect.getsource(
+        __import__(
+            "memorybox.person.comm_address_index",
+            fromlist=["find_addresses_for_person_forms"],
+        ).find_addresses_for_person_forms
+    )
+    _check(
+        "discover_sql_omits_people_array",
+        "payload_json->'people'" not in discover_ci
+        and "payload_json->'people'" not in discover_idx,
+        checks,
+        problems,
+    )
     _check(
         "expand_retrieve_is_trusted_only",
         "trusted_emails_for_people" in expand_src and "trusted_only" in expand_src,
