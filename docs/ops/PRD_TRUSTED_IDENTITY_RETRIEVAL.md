@@ -62,7 +62,10 @@ The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
 drops the `:memory:` Qdrant fallback; without the URL, migrate/prove crash
 before the trusted report. Then: Phase 1 prove,
 `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
-fakes), then `run-trusted-evidence-pipeline`.
+fakes), then `run-trusted-evidence-pipeline`. Pipeline skip/fail is
+`errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py` requires both
+Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email grounded,
+chunking still off.
 It stops on Phase 1 failure and does not widen matching.
 
 A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)

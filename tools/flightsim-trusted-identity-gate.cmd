@@ -47,6 +47,18 @@ if errorlevel 1 (
 echo.
 echo === Phase 2/3 pipeline (single-pass freeze, Gemma, Sol) ===
 python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
-echo.
+if errorlevel 1 (
+  echo TRUSTED EVIDENCE PIPELINE FAILED OR SKIPPED
+  echo Pull gemma4:26b locally if ollama_model_missing: ollama pull gemma4:26b
+  echo Set MEMORYBOX_CLOUD_LLM_* if cloud Sol is unset
+  echo Phase 3 chunking stays refused until both single-pass reports share the freeze hash.
+  exit /b 1
+)
+python tools\verify-trusted-fev2-reports.py
+if errorlevel 1 (
+  echo TRUSTED FEV2 REPORTS FAILED
+  exit /b 1
+)
+echo Phase 3 chunking stays refused until both single-pass reports share the freeze hash.
 echo Cloud Sol needs MEMORYBOX_CLOUD_LLM_BASE_URL + MEMORYBOX_CLOUD_LLM_API_KEY + MEMORYBOX_CLOUD_LLM_MODEL
 echo Reports: docs\test-output\trusted-full-evidence-v2\

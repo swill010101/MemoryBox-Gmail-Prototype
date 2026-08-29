@@ -544,6 +544,67 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
     )
     _check(
+        "flightsim_gate_fails_closed_on_pipeline_skip",
+        "verify-trusted-fev2-reports.py" in gate_txt
+        and "if errorlevel 1" in gate_txt[gate_txt.find("run-trusted-evidence-pipeline") :]
+        and gate_txt.find("run-trusted-evidence-pipeline")
+        < gate_txt.find("verify-trusted-fev2-reports.py"),
+        checks,
+        problems,
+    )
+    fev2_verify_path = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "verify-trusted-fev2-reports.py"
+    )
+    _check(
+        "fev2_report_verifier_exists",
+        fev2_verify_path.is_file()
+        and "email_reached_model_and_grounded_output" in fev2_verify_path.read_text(encoding="utf-8")
+        and "gemma4:26b" in fev2_verify_path.read_text(encoding="utf-8"),
+        checks,
+        problems,
+    )
+    _fspec = importlib.util.spec_from_file_location(
+        "verify_trusted_fev2_reports", fev2_verify_path
+    )
+    _fmod = importlib.util.module_from_spec(_fspec)  # type: ignore[arg-type]
+    assert _fspec and _fspec.loader
+    _fspec.loader.exec_module(_fmod)
+    skip_audit = _fmod.audit_fev2_reports(
+        {"ok": False, "skipped": True, "error": "ollama_model_missing:gemma4:26b"},
+        None,
+    )
+    _check(
+        "fev2_verifier_rejects_missing_or_skipped_reports",
+        skip_audit.get("ok") is False,
+        checks,
+        problems,
+        detail=skip_audit.get("problems"),
+    )
+    good_hash = "abc123"
+    good_rep = {
+        "ok": True,
+        "model": "gemma4:26b",
+        "input_sha256": good_hash,
+        "chunking": False,
+        "email_reached_model_and_grounded_output": True,
+        "invented_or_unsupported_claims": [],
+    }
+    sol_rep = {
+        **good_rep,
+        "model": "sol-test",
+        "provider": "cloud",
+    }
+    pass_audit = _fmod.audit_fev2_reports(good_rep, sol_rep, fixture_hash=good_hash)
+    _check(
+        "fev2_verifier_accepts_paired_grounded_reports",
+        pass_audit.get("ok") is True,
+        checks,
+        problems,
+        detail=pass_audit.get("problems"),
+    )
+    _check(
         "flightsim_gate_clears_allow_dev_before_prove",
         "set MEMORYBOX_P1_RUNTIME_HOST=1" in gate_txt
         and "set MEMORYBOX_ALLOW_DEV_DEFAULTS=" in gate_txt
