@@ -1395,6 +1395,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "inventory_from_exact_before_broad_like",
+        "->>'from', '')) = %s" in inventory_src.replace(" ", "")
+        or ("->>'from'" in inventory_src and "= %s" in inventory_src),
+        checks,
+        problems,
+    )
+    _check(
         "inventory_and_discover_skip_spam_trash",
         "mailbox_skip" in inventory_src
         and "spam" in inventory_src

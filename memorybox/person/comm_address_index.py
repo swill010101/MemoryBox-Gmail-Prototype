@@ -102,7 +102,11 @@ def inventory_email_address(
         with connection() as conn:
             # Prefer structured address hits over body-only so LIMIT does not
             # starve header inventory with quoted-body noise on large archives.
+            # Scalar From: exact bare first (index-friendlier), then shaped /
+            # broad LIKE — same pattern as confirmed-email retrieve.
             # Match *_parsed as text LIKE (no per-row JSON unnest — Takeout scale).
+            angle = f"%<{addr}>%"
+            mailto = f"%[mailto:{addr}]%"
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -114,7 +118,10 @@ def inventory_email_address(
                                      payload_json->>'skip_reason', ''))
                       NOT IN ('spam', 'trash')
                   AND (
-                    lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    lower(coalesce(payload_json->>'from', '')) = %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
@@ -126,7 +133,9 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
                 ORDER BY CASE
-                  WHEN lower(coalesce(payload_json->>'from', '')) LIKE %s
+                  WHEN lower(coalesce(payload_json->>'from', '')) = %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
@@ -141,6 +150,9 @@ def inventory_email_address(
                 LIMIT %s
                 """,
                 (
+                    addr,
+                    angle,
+                    mailto,
                     like,
                     like,
                     like,
@@ -151,7 +163,9 @@ def inventory_email_address(
                     like,
                     like,
                     like,
-                    like,
+                    addr,
+                    angle,
+                    mailto,
                     like,
                     like,
                     like,
