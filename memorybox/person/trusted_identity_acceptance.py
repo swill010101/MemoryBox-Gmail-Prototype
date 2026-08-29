@@ -903,6 +903,23 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=sql_src,
     )
+    pg_src = inspect.getsource(retrieve_mod.search_evidence_pg)
+    comm_kw = (
+        pg_src.split("evidence_kind = 'communication'")[1].split("evidence_kind <>")[0]
+        if "evidence_kind = 'communication'" in pg_src
+        else ""
+    )
+    _check(
+        "keyword_comm_search_omits_people_array",
+        "evidence_kind = 'communication'" in pg_src
+        and "payload_json->>'from'" in pg_src
+        and "from_parsed" in pg_src
+        and "people" not in comm_kw
+        and "payload_json::text" not in comm_kw,
+        checks,
+        problems,
+        detail=comm_kw[:400],
+    )
 
     flightsim_report: dict[str, Any] = {}
     if flightsim:

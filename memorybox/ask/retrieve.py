@@ -2178,8 +2178,28 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         params: list[Any] = []
         for t in uniq[:12]:
             like = f"%{t}%"
-            clauses.append("(summary ILIKE %s OR payload_json::text ILIKE %s)")
-            params.extend([like, like])
+            # Communication: structured headers + body only. Never payload_json::text
+            # (that matches people[] co-occurrence and quoted-only identity noise).
+            clauses.append(
+                "("
+                "(evidence_kind = 'communication' AND ("
+                "summary ILIKE %s"
+                " OR coalesce(payload_json->>'subject','') ILIKE %s"
+                " OR coalesce(payload_json->>'from','') ILIKE %s"
+                " OR coalesce(payload_json->>'to','') ILIKE %s"
+                " OR coalesce(payload_json->>'cc','') ILIKE %s"
+                " OR coalesce(payload_json->>'bcc','') ILIKE %s"
+                " OR coalesce(payload_json->>'body_text','') ILIKE %s"
+                " OR coalesce((payload_json->'from_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'to_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'cc_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'bcc_parsed')::text,'') ILIKE %s"
+                ")) OR (evidence_kind <> 'communication' AND ("
+                "summary ILIKE %s OR payload_json::text ILIKE %s"
+                "))"
+                ")"
+            )
+            params.extend([like] * 13)
         where_terms = " OR ".join(clauses) if clauses else "TRUE"
         kind_ph = ",".join(["%s"] * len(kinds))
         sql = f"""
@@ -2225,7 +2245,24 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         ]
         for r in rows:
             payload = _payload_dict(r["payload_json"])
-            blob = f"{r['summary'] or ''} {json.dumps(payload)}".lower()
+            if str(r["evidence_kind"] or "") == "communication":
+                blob = " ".join(
+                    [
+                        str(r.get("summary") or ""),
+                        str(payload.get("subject") or ""),
+                        str(payload.get("from") or ""),
+                        str(payload.get("to") or ""),
+                        str(payload.get("cc") or ""),
+                        str(payload.get("bcc") or ""),
+                        str(payload.get("body_text") or ""),
+                        json.dumps(payload.get("from_parsed") or []),
+                        json.dumps(payload.get("to_parsed") or []),
+                        json.dumps(payload.get("cc_parsed") or []),
+                        json.dumps(payload.get("bcc_parsed") or []),
+                    ]
+                ).lower()
+            else:
+                blob = f"{r['summary'] or ''} {json.dumps(payload)}".lower()
             if required and not any(t.lower() in blob for t in required):
                 continue
             match_n = sum(1 for t in distinctive if t.lower() in blob)
