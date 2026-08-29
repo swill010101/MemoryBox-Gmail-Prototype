@@ -110,6 +110,19 @@ def audit_gate(gate: dict[str, Any]) -> dict[str, Any]:
             "unique_emails_by_trusted_address": phase1.get("unique_emails_by_trusted_address"),
         },
     )
+    # PR #74 FlightSim gate: 700 keys → 42,554 hits. That scope is the bug.
+    check(
+        "R8",
+        "not the address-centric 700-key / 42554-hit dump",
+        not (
+            len(trusted) >= 100
+            and int(phase1.get("retrieve_hit_count") or 0) >= 20_000
+        ),
+        {
+            "trusted_n": len(trusted),
+            "retrieve_hit_count": phase1.get("retrieve_hit_count"),
+        },
+    )
 
     return {
         "ok": not problems,

@@ -238,6 +238,52 @@ def apply_email_contact_trust(
     return {**verdict, "status": status, "updated": True, "address": norm}
 
 
+# FlightSim address-centric gate (PR #74 result, hostname FlightSim, git e0d8446):
+# 700 Person addresses → 42,554 retrieve/Gallery hits. Those keys were
+# auto-expand / corroboration, not People-card trust. This module must not
+# treat that dump as retrieve keys. Counts are diagnostic, not production caps.
+ADDRESS_CENTRIC_FLIGHTSIM_LEGACY = {
+    "hostname": "FlightSim",
+    "address_count": 700,
+    "retrieve_hits": 42_554,
+    "gallery_email_n": 42_554,
+    "peggo417": "peggo417@hotmail.com",
+}
+
+
+def retrieve_keys_from_contact_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Classify in-memory contact rows the same way retrieve does (no DB)."""
+    trusted: list[str] = []
+    untrusted: list[str] = []
+    why: list[dict[str, Any]] = []
+    for row in rows:
+        verdict = classify_contact_trust(row)
+        addr = normalize_handle(
+            str(row.get("value_text") or row.get("address") or "")
+        )
+        entry = {
+            "address": addr,
+            "retrieval_trust": verdict.get("retrieval_trust"),
+            "reason": verdict.get("reason"),
+            "actor_key": verdict.get("actor_key"),
+            "provenance_source": verdict.get("provenance_source"),
+        }
+        why.append(entry)
+        if verdict.get("retrieval_trust") == "trusted" and addr and "@" in addr:
+            if addr not in trusted:
+                trusted.append(addr)
+        elif addr and "@" in addr and addr not in untrusted:
+            untrusted.append(addr)
+    return {
+        "trusted_addresses": trusted,
+        "untrusted_addresses": untrusted,
+        "rows": why,
+        "unsupported_if_used_as_retrieve_keys": [
+            a for a in untrusted if a not in trusted
+        ],
+    }
+
+
 def trusted_emails_for_people(person_ids: set[str] | list[str]) -> set[str]:
     """Ask/Gallery retrieve keys: emails with retrieval_trust = trusted only."""
     ids = [str(p) for p in person_ids if str(p).strip()]

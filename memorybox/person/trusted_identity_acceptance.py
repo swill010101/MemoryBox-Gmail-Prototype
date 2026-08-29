@@ -6,11 +6,13 @@ from typing import Any
 
 from memorybox.person.comm_identity import _header_records, corroborate_email_candidate
 from memorybox.person.trusted_identity import (
+    ADDRESS_CENTRIC_FLIGHTSIM_LEGACY,
     _trusted_verdict_from_rows,
     apply_email_contact_trust,
     classify_contact_trust,
     format_phase1_human_report,
     reclassify_person_email_trust,
+    retrieve_keys_from_contact_rows,
 )
 from memorybox.profile.facts import add_contact
 
@@ -66,6 +68,37 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     unknown = classify_contact_trust(
         {"actor_key": "mystery", "provenance_json": {}}
+    )
+    legacy_n = int(ADDRESS_CENTRIC_FLIGHTSIM_LEGACY["address_count"])
+    legacy_rows = [
+        {
+            "address": f"auto{i}@example.test",
+            "actor_key": "comm_identity_expand",
+            "provenance_json": {"source": "comm_identity_expand"},
+        }
+        for i in range(legacy_n)
+    ]
+    legacy_rows.append(
+        {
+            "address": ADDRESS_CENTRIC_FLIGHTSIM_LEGACY["peggo417"],
+            "actor_key": "owner",
+            "provenance_json": {"source": "person_profile"},
+        }
+    )
+    legacy_keys = retrieve_keys_from_contact_rows(legacy_rows)
+    _check(
+        "flightsim_700_expand_rows_are_not_retrieve_keys",
+        legacy_keys.get("trusted_addresses")
+        == [ADDRESS_CENTRIC_FLIGHTSIM_LEGACY["peggo417"]]
+        and len(legacy_keys.get("unsupported_if_used_as_retrieve_keys") or [])
+        == legacy_n
+        and int(ADDRESS_CENTRIC_FLIGHTSIM_LEGACY["retrieve_hits"]) == 42_554,
+        checks,
+        problems,
+        detail={
+            "trusted": legacy_keys.get("trusted_addresses"),
+            "untrusted_n": len(legacy_keys.get("untrusted_addresses") or []),
+        },
     )
     _check(
         "unknown_provenance_fail_closed",
@@ -346,7 +379,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         verify_path.is_file()
         and "allow_dev_defaults" in verify_path.read_text(encoding="utf-8")
         and "gallery_email_count" in verify_path.read_text(encoding="utf-8")
-        and "cursor-cloud" in verify_path.read_text(encoding="utf-8"),
+        and "cursor-cloud" in verify_path.read_text(encoding="utf-8")
+        and "42554" in verify_path.read_text(encoding="utf-8"),
         checks,
         problems,
     )
