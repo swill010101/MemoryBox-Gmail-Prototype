@@ -666,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fev2_freeze.add_argument("--person", required=True, help="Person display name")
     p_fev2_freeze.add_argument(
         "--ask",
-        default="tell me what you know about Peggy",
+        default="tell me what you know about this person",
         help="Ask used to retrieve eligible evidence",
     )
     p_fev2_freeze.add_argument("--out-dir", default=None)

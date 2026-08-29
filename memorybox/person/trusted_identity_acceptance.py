@@ -238,6 +238,29 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=ids,
     )
+    empty_trusted = select_single_pass_items(
+        items, trusted_addrs=set(), token_budget=50_000
+    )
+    empty_ids = {str(i.get("item_id")) for i in empty_trusted}
+    _check(
+        "single_pass_empty_trusted_drops_all_email",
+        "e-trust" not in empty_ids and "e-other" not in empty_ids and "p1" in empty_ids,
+        checks,
+        problems,
+        detail=empty_ids,
+    )
+    freeze_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_full_evidence_v2",
+            fromlist=["freeze_trusted_full_evidence_v2"],
+        ).freeze_trusted_full_evidence_v2
+    )
+    _check(
+        "freeze_pins_person_id_not_peggy_resolver",
+        "resolve_peggy_plan" not in freeze_src and "person_ids=(str(person_id),)" in freeze_src,
+        checks,
+        problems,
+    )
     ground = score_email_grounding(
         {
             "claims": [

@@ -117,7 +117,8 @@ def select_single_pass_items(
         if src == "person":
             person.append(it)
         elif src == "email":
-            if item_is_trusted_email(it, trusted) or not trusted:
+            # Fail closed: no trusted keys means no email evidence.
+            if trusted and item_is_trusted_email(it, trusted):
                 email.append(it)
         else:
             non_email.append(it)
@@ -183,15 +184,43 @@ def freeze_trusted_full_evidence_v2(
 ) -> dict[str, Any]:
     """Build a hash-stable Full-Evidence V2 fixture from trusted retrieve."""
     from memorybox.ask.deps import build_photo, build_video
-    from memorybox.ask.i11a.full_evidence_diagnostic import resolve_peggy_plan
+    from memorybox.planner import QueryPlan
 
     out = Path(out_dir) if out_dir else _DEFAULT_OUT
     out.mkdir(parents=True, exist_ok=True)
     trusted = trusted_emails_for_people({person_id})
+    if not trusted:
+        return {
+            "ok": False,
+            "error": "no_trusted_retrieve_addresses",
+            "person_id": person_id,
+            "chunking": False,
+        }
     photo = build_photo()
     video = build_video()
     if plan is None:
-        plan = resolve_peggy_plan(photo=photo, ask=ask)
+        plan = QueryPlan(
+            original_ask=ask,
+            effective_ask=ask,
+            is_followup=False,
+            want_photo=True,
+            want_communication=True,
+            want_calendar=True,
+            want_story=True,
+            want_journal=True,
+            want_artifact=True,
+            want_visual=True,
+            want_still=True,
+            want_video=True,
+            want_spoken=True,
+            person_names=(),
+            person_ids=(str(person_id),),
+            place_names=(),
+            time_start=None,
+            time_end=None,
+            temporal_windows=(),
+            notes=("complete_comm_retrieve", "trusted_full_evidence_v2"),
+        )
     person_context = build_person_context(plan)
     retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
     norm = normalize_retrieved(retrieved, person_context=person_context)
