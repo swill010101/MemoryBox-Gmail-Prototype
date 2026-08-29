@@ -554,7 +554,14 @@ def _bounded_period_tell(plan: QueryPlan) -> bool:
 
 
 def _complete_comm_retrieve(plan: QueryPlan) -> bool:
-    """Person/tell packs return the full matching communication set (no year-fair sample)."""
+    """Person/tell packs return the full matching communication set (no year-fair sample).
+
+    Gallery email attach uses note ``gallery_email_eligible`` and must stay bounded
+    (``limit`` / year-fair slice). Full-Evidence / Ask person packs remain complete.
+    """
+    notes = getattr(plan, "notes", ()) or ()
+    if "gallery_email_eligible" in notes:
+        return False
     if _bounded_period_tell(plan) or _tell_pack_comms(plan):
         return True
     if plan.want_communication and (plan.person_ids or plan.person_names):
@@ -1627,7 +1634,11 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     # Person-complete email retrieve is identity-closed (confirmed addresses /
     # person_ids). Narrative Ask verbs ("tell me what you know about Peggy")
     # must not filter out Peg Legg–labeled mail that lacks those words.
-    if _complete_comm_retrieve(plan) and person_ids:
+    # Gallery person-email attach is also identity-closed (bounded, not complete).
+    if person_ids and (
+        _complete_comm_retrieve(plan)
+        or "gallery_email_eligible" in (plan.notes or ())
+    ):
         keywords = []
     holiday_ask = bool(
         re.search(

@@ -1076,10 +1076,29 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     from memorybox.person import comm_address_index as addr_idx
 
     email_src = _inspect.getsource(retrieve_mod.search_email_messages)
+    complete_src = _inspect.getsource(retrieve_mod._complete_comm_retrieve)
+    expand_src = _inspect.getsource(ci.expand_emails_for_retrieve)
     _check(
         "complete_person_email_clears_narrative_keywords",
-        "_complete_comm_retrieve(plan) and person_ids" in email_src
-        and "keywords = []" in email_src,
+        "keywords = []" in email_src
+        and (
+            "gallery_email_eligible" in email_src
+            or "_complete_comm_retrieve(plan)" in email_src
+        ),
+        checks,
+        problems,
+    )
+    _check(
+        "gallery_email_attach_is_bounded_not_complete",
+        "gallery_email_eligible" in complete_src and "return False" in complete_src,
+        checks,
+        problems,
+    )
+    _check(
+        "expand_retrieve_skips_archive_when_confirmed_cached",
+        "skipped_archive_discover" in expand_src
+        and "cache_hit" in expand_src
+        and "force_rediscover" in expand_src,
         checks,
         problems,
     )

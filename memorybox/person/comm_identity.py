@@ -967,15 +967,84 @@ def expand_person_communication_identities(
     return report
 
 
-def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, Any]:
+def expand_emails_for_retrieve(
+    person_ids: set[str] | list[str],
+    *,
+    force_rediscover: bool = False,
+) -> dict[str, Any]:
     """Ask/Gallery hook: discover → resolve → retrieve prep (address-centric).
 
     Governing order:
     1. Discover communication identities from the archive
     2. Resolve those identities to People
     3. Use resolved identities to retrieve complete Person evidence
+
+    Cache: when the Person already has confirmed email contacts and/or confirmed
+    ``communication_identities`` rows, skip archive-wide rediscovery unless
+    ``force_rediscover`` is set. Full-Evidence / Gallery / Ask each call this hook;
+    re-scanning Peg* noise on every retrieve is a FlightSim timeout footgun.
     """
     ids = [str(p) for p in person_ids if str(p).strip()]
+    cached_addrs: set[str] = set()
+    emails_by_person: dict[str, list[str]] = {pid: [] for pid in ids}
+    # Direct contact + confirmed ledger read first (cache).
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT person_id::text AS person_id, value_text
+                FROM person_contact_points
+                WHERE contact_kind = 'email'
+                  AND status = 'confirmed'
+                  AND person_id::text = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+            for r in rows:
+                n = normalize_handle(str(r.get("value_text") or ""))
+                pid = str(r.get("person_id") or "")
+                if n and "@" in n:
+                    cached_addrs.add(n)
+                    if pid in emails_by_person and n not in emails_by_person[pid]:
+                        emails_by_person[pid].append(n)
+            rows = conn.execute(
+                """
+                SELECT resolved_person_id::text AS person_id, address_normalized
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND resolution_status = 'confirmed'
+                  AND resolved_person_id::text = ANY(%s)
+                """,
+                (ids,),
+            ).fetchall()
+            for r in rows:
+                n = normalize_handle(str(r.get("address_normalized") or ""))
+                pid = str(r.get("person_id") or "")
+                if n and "@" in n:
+                    cached_addrs.add(n)
+                    if pid in emails_by_person and n not in emails_by_person[pid]:
+                        emails_by_person[pid].append(n)
+    except Exception:  # noqa: BLE001
+        pass
+
+    if cached_addrs and not force_rediscover:
+        return {
+            "addresses": cached_addrs,
+            "expansion": {
+                "person_ids": ids,
+                "emails_by_person": {k: sorted(v) for k, v in emails_by_person.items()},
+                "pipeline": ["retrieve"],
+                "cache_hit": True,
+                "skipped_archive_discover": True,
+                "accepted": [
+                    {"address": a, "source": "confirmed_cache"} for a in sorted(cached_addrs)
+                ],
+                "llm_calls": 0,
+                "rounds": [],
+                "rejected": [],
+            },
+        }
+
     address_reports: list[dict[str, Any]] = []
     for pid in ids:
         try:
@@ -996,6 +1065,7 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
     )
     expansion["address_centric_resolve"] = address_reports
     expansion["pipeline"] = ["discover", "resolve", "retrieve"]
+    expansion["cache_hit"] = False
     # Flatten accepted addresses from address-centric resolve for retrieve notes.
     flat_accepted: list[dict[str, Any]] = []
     for rep in address_reports:
@@ -1016,7 +1086,7 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
             n = normalize_handle(e)
             if n and "@" in n:
                 addrs.add(n)
-    # Direct contact read (avoid circular import with ask.retrieve).
+    # Re-read contacts after discover/resolve (may have attached this call).
     try:
         with connection() as conn:
             rows = conn.execute(
@@ -1033,11 +1103,6 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
                 n = normalize_handle(str(r.get("value_text") or ""))
                 if n and "@" in n:
                     addrs.add(n)
-    except Exception:  # noqa: BLE001
-        pass
-    # Also pull confirmed communication_identities for these people.
-    try:
-        with connection() as conn:
             rows = conn.execute(
                 """
                 SELECT address_normalized

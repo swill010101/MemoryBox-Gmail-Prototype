@@ -417,8 +417,45 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         problems,
     )
 
-    ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not flightsim)
-    ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
+    ask_peggy = None
+    ask_legg = None
+    try:
+        ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not flightsim)
+        ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
+    except Exception as exc:  # noqa: BLE001 — AmbiguousIdentityError or DB errors
+        _check(
+            "ask_peggy_resolve_raises",
+            False,
+            checks,
+            problems,
+            detail=f"{type(exc).__name__}:{exc}",
+        )
+        gate = _write_gate_artifacts(
+            {
+                "gate": "address_centric_email_identity",
+                "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+                "ok": False,
+                "problems": problems,
+                "inventory": {
+                    "structured_has_peg_legg": structured.get("has_peg_legg"),
+                    "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+                    "structured_occurrence_count": struct_n,
+                },
+                "flightsim": bool(flightsim),
+                "runtime": runtime,
+            },
+            inv=inv,
+        )
+        return {
+            "ok": False,
+            "prove": "address_centric_email_e2e",
+            "flightsim": bool(flightsim),
+            "checks": checks,
+            "problems": problems,
+            "inventory": inv,
+            "seed": seed_info,
+            "address_centric_gate": gate,
+        }
     _check(
         "ask_peggy_is_peggy_george",
         ask_peggy is not None and " " in (ask_peggy.display_name or ""),
