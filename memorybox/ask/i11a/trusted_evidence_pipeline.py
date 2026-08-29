@@ -96,6 +96,8 @@ def run_trusted_evidence_pipeline(
             "unsupported_retrieve_hit_count": phase1.get("unsupported_retrieve_hit_count"),
             "retrieve_hit_count": phase1.get("retrieve_hit_count"),
             "gallery_email_count": phase1.get("gallery_email_count"),
+            "untrusted_n": phase1.get("untrusted_n"),
+            "untrusted_by_reason": phase1.get("untrusted_by_reason"),
             "phase1_summary": phase1.get("phase1_summary"),
         },
     }

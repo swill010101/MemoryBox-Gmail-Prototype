@@ -61,6 +61,9 @@ def _phase1_gate_envelope(
             "unsupported_retrieve_hit_count": flightsim_report.get(
                 "unsupported_retrieve_hit_count"
             ),
+            "untrusted_n": flightsim_report.get("untrusted_n"),
+            "untrusted_by_reason": flightsim_report.get("untrusted_by_reason"),
+            "untrusted_sample": flightsim_report.get("untrusted_sample"),
             "retrieve_hit_count": flightsim_report.get("retrieve_hit_count"),
             "gallery_email_count": flightsim_report.get("gallery_email_count"),
             "phase1_summary": flightsim_report.get("phase1_summary"),
@@ -197,6 +200,16 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "gallery_email_count": 3,
             "unsupported_retrieve_addresses": [],
             "unsupported_retrieve_hit_count": 0,
+            "untrusted_n": 2,
+            "untrusted_by_reason": {"auto_expand:comm_identity_expand": 2},
+            "untrusted_sample": [
+                {
+                    "address": "noise@example.test",
+                    "why_untrusted": "auto_expand:comm_identity_expand",
+                    "actor_key": "comm_identity_expand",
+                    "provenance_source": "comm_identity_expand",
+                }
+            ],
         }
     )
     _check(
@@ -204,7 +217,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "why=canonical_or_owner:owner" in summary
         and "unique_only=3" in summary
         and "gallery_email_count: 3" in summary
-        and "unsupported_retrieve_hit_count: 0" in summary,
+        and "unsupported_retrieve_hit_count: 0" in summary
+        and "untrusted_n: 2" in summary
+        and "noise@example.test" in summary
+        and "do not widen" in summary,
         checks,
         problems,
         detail=summary,

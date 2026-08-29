@@ -437,12 +437,42 @@ def reclassify_person_email_trust(person_id: str) -> dict[str, Any]:
     return report
 
 
+def _untrusted_identity_audit(rec: dict[str, Any]) -> dict[str, Any]:
+    """Explain demoted contacts. They stay out of retrieve keys."""
+    by_reason: dict[str, int] = {}
+    sample: list[dict[str, Any]] = []
+    for row in rec.get("demoted") or []:
+        if not isinstance(row, dict):
+            continue
+        addr = str(row.get("address") or "").strip()
+        if not addr:
+            continue
+        reason = str(row.get("reason") or "untrusted")
+        by_reason[reason] = int(by_reason.get(reason) or 0) + 1
+        if len(sample) < 16:
+            sample.append(
+                {
+                    "address": addr,
+                    "why_untrusted": reason,
+                    "actor_key": row.get("actor_key"),
+                    "provenance_source": row.get("provenance_source"),
+                    "prior_status": row.get("prior_status"),
+                }
+            )
+    return {
+        "untrusted_n": sum(by_reason.values()),
+        "untrusted_by_reason": by_reason,
+        "untrusted_sample": sample,
+    }
+
+
 def report_person_identity_trust(person_id: str) -> dict[str, Any]:
     """Audit snapshot: trusted identities + status counts (no retrieve)."""
     rec = reclassify_person_email_trust(person_id)
     rec["trusted_addresses"] = sorted(
         {str(x.get("address") or "") for x in rec.get("trusted") or [] if x.get("address")}
     )
+    rec.update(_untrusted_identity_audit(rec))
     return rec
 
 
@@ -669,8 +699,20 @@ def format_phase1_human_report(rec: dict[str, Any]) -> str:
             f"gallery_email_count: {rec.get('gallery_email_count')}",
             f"unsupported_retrieve_addresses: {rec.get('unsupported_retrieve_addresses')}",
             f"unsupported_retrieve_hit_count: {rec.get('unsupported_retrieve_hit_count')}",
+            f"untrusted_n: {rec.get('untrusted_n')}",
+            f"untrusted_by_reason: {json.dumps(rec.get('untrusted_by_reason') or {}, default=str)}",
         ]
     )
+    sample = rec.get("untrusted_sample") or []
+    if sample:
+        lines.append("untrusted_sample (not retrieve keys — attest/re-add profile, do not widen):")
+        for row in sample[:16]:
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                f"  - {row.get('address')} why={row.get('why_untrusted') or row.get('reason')} "
+                f"actor={row.get('actor_key')} source={row.get('provenance_source')}"
+            )
     if rec.get("error"):
         lines.append(f"error: {rec.get('error')}")
     return "\n".join(lines)
