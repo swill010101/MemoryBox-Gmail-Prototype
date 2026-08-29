@@ -696,7 +696,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "fev2_report_verifier_exists",
         fev2_verify_path.is_file()
         and "email_reached_model_and_grounded_output" in fev2_verify_path.read_text(encoding="utf-8")
-        and "gemma4:26b" in fev2_verify_path.read_text(encoding="utf-8"),
+        and "gemma4:26b" in fev2_verify_path.read_text(encoding="utf-8")
+        and "P3-0" in fev2_verify_path.read_text(encoding="utf-8")
+        and "evidence_lost" in fev2_verify_path.read_text(encoding="utf-8"),
         checks,
         problems,
     )
@@ -738,6 +740,20 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=pass_audit.get("problems"),
+    )
+    loss_audit = _fmod.audit_fev2_reports(
+        good_rep,
+        sol_rep,
+        fixture_hash=good_hash,
+        chunk_structure={"ok": False, "evidence_lost": ["email:1"]},
+    )
+    _check(
+        "fev2_verifier_rejects_lossy_chunk_structure",
+        loss_audit.get("ok") is False
+        and any("P3-0" in str(p) for p in (loss_audit.get("problems") or [])),
+        checks,
+        problems,
+        detail=loss_audit.get("problems"),
     )
     _check(
         "flightsim_gate_clears_allow_dev_before_prove",

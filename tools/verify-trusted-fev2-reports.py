@@ -36,10 +36,20 @@ def discover_reports(out_dir: Path) -> dict[str, Any]:
         + list(out_dir.glob("FEV2REPORT_openai_*.json"))
     )
     pipeline_paths = sorted(out_dir.glob("PIPELINE_*.json"))
+    fixtures = [
+        p
+        for p in out_dir.glob("FEV2_*.json")
+        if not p.name.startswith("FEV2REPORT_")
+        and not p.name.startswith("FEV2CHUNK_")
+        and not p.name.startswith("FEV2COMPLETE_")
+        and not p.name.startswith("FEV2_paste_")
+        and not p.name.startswith("FEV2_manifest_")
+    ]
     return {
         "gemma_path": _latest(gemma_paths),
         "sol_path": _latest(sol_paths),
         "pipeline_path": _latest(pipeline_paths),
+        "fixture_path": _latest(fixtures),
     }
 
 
@@ -49,6 +59,7 @@ def audit_fev2_reports(
     *,
     pipeline: dict[str, Any] | None = None,
     fixture_hash: str | None = None,
+    chunk_structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     problems: list[str] = []
@@ -145,6 +156,20 @@ def audit_fev2_reports(
                 p_hash == freeze == g_hash == s_hash,
                 {"pipeline": p_hash, "reports": freeze},
             )
+    if chunk_structure is not None:
+        check(
+            "P3-0",
+            "L1 chunk structure covers frozen items with no loss",
+            chunk_structure.get("ok") is True
+            and not (chunk_structure.get("evidence_lost") or []),
+            {
+                "ok": chunk_structure.get("ok"),
+                "evidence_lost": chunk_structure.get("evidence_lost"),
+                "missing_semantic_unit_kinds": chunk_structure.get(
+                    "missing_semantic_unit_kinds"
+                ),
+            },
+        )
 
     return {
         "ok": not problems,
@@ -167,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     sol: dict[str, Any] | None = None
     pipeline: dict[str, Any] | None = None
     fixture_hash: str | None = None
+    chunk_structure: dict[str, Any] | None = None
     if args.gemma and args.sol:
         gemma = json.loads(Path(args.gemma).read_text(encoding="utf-8"))
         sol = json.loads(Path(args.sol).read_text(encoding="utf-8"))
@@ -193,8 +219,23 @@ def main(argv: list[str] | None = None) -> int:
         if found["pipeline_path"]:
             pipeline = json.loads(found["pipeline_path"].read_text(encoding="utf-8"))
             fixture_hash = str(pipeline.get("input_sha256") or "") or None
+        if found.get("fixture_path"):
+            from memorybox.ask.i11a.trusted_fev2_chunking import (
+                compare_chunked_vs_unchunked,
+            )
+
+            chunk_structure = compare_chunked_vs_unchunked(found["fixture_path"])
+        else:
+            chunk_structure = {
+                "ok": False,
+                "evidence_lost": ["missing_frozen_fev2_fixture"],
+            }
     audit = audit_fev2_reports(
-        gemma, sol, pipeline=pipeline, fixture_hash=fixture_hash
+        gemma,
+        sol,
+        pipeline=pipeline,
+        fixture_hash=fixture_hash,
+        chunk_structure=chunk_structure,
     )
     print(json.dumps(audit, indent=2, default=str))
     if not audit.get("ok"):
