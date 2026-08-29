@@ -177,8 +177,42 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
                 continue
             try:
                 view = find_ask_person_by_name(name, photo=photo, lazy_seed=lazy_seed)
-            except AmbiguousIdentityError:
+            except AmbiguousIdentityError as amb:
+                # Prefer the unique candidate with a confirmed email (address-centric),
+                # else exact Peggy George / Peg Legg when present among candidates.
                 view = None
+                cands = list(getattr(amb, "candidates", None) or [])
+                email_hits: list[Any] = []
+                try:
+                    from memorybox.person import (
+                        _person_has_confirmed_email,
+                        get_person,
+                    )
+
+                    for c in cands:
+                        pid = str(
+                            (c or {}).get("person_id")
+                            or (c or {}).get("id")
+                            or ""
+                        )
+                        if pid and _person_has_confirmed_email(pid):
+                            email_hits.append(pid)
+                    if len(set(email_hits)) == 1:
+                        view = get_person(email_hits[0])
+                except Exception:  # noqa: BLE001
+                    view = None
+                if view is None:
+                    for prefer in ("Peggy George", "Peg Legg"):
+                        try:
+                            view = find_ask_person_by_name(
+                                prefer, photo=photo, lazy_seed=False
+                            )
+                        except AmbiguousIdentityError:
+                            view = None
+                        except Exception:  # noqa: BLE001
+                            view = None
+                        if view is not None:
+                            break
             except Exception:  # noqa: BLE001
                 view = None
             if not view:
