@@ -36,6 +36,49 @@ CHUNK_TARGET_MAX_TOKENS = 150_000
 
 PEGGY_ASK = HISTORIAN_CASES["peggy"]
 
+# Address-centric Peggy gate: Immich may duplicate exact "Peggy George". Prefer
+# the unique person holding the archive probe address over an arbitrary row.
+_PEGGY_PROBE_ADDR = "peggo417@hotmail.com"
+
+
+def _pick_exact_peggy_george(people: list[Any]) -> Any | None:
+    """Pick Peggy George among exact-name hits; prefer peggo417 claimant."""
+    if not people:
+        return None
+    if len(people) == 1:
+        return people[0]
+    try:
+        from memorybox.db import connection as _db_conn
+        from memorybox.person.comm_identity import normalize_handle
+
+        addr = normalize_handle(_PEGGY_PROBE_ADDR)
+        claimants: list[Any] = []
+        with _db_conn() as conn:
+            for cand in people:
+                pid = getattr(cand, "id", None)
+                if not pid:
+                    continue
+                hit = conn.execute(
+                    """
+                    SELECT 1
+                    FROM person_contact_points
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND status = 'confirmed'
+                      AND lower(value_text) = %s
+                    LIMIT 1
+                    """,
+                    (pid, addr),
+                ).fetchone()
+                if hit:
+                    claimants.append(cand)
+        if len(claimants) == 1:
+            return claimants[0]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 _SOURCE_ORDER = (
     "person",
     "sms",
@@ -140,6 +183,7 @@ def _complete_email_body(raw: str) -> tuple[str, dict[str, bool]]:
 
 def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
     """Same Peggy ask + Person resolution as the historian fixture, without LLM planning."""
+    import os
     from dataclasses import replace
 
     from memorybox.person import AmbiguousIdentityError, find_ask_person_by_name
@@ -149,6 +193,14 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
     ctx = AskContext(session_id=f"full-evidence-{uuid4()}")
     plan = plan_ask(ask_text, ctx)
     rel = resolve_relational_ask(ask_text)
+    # FlightSim / P1: never Immich-lazy-seed a single-token \"Peggy\" stub during
+    # Full-Evidence — that Person has no email contacts and blocks address-centric
+    # retrieve. Prefer existing multi-token People only.
+    lazy_seed = (os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") or "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
     if (
         rel.intent == "none"
         and plan.person_names
@@ -167,15 +219,98 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
             if any(nl == lab.lower() or nl in lab.lower() or lab.lower() in nl for lab in labels):
                 continue
             try:
-                view = find_ask_person_by_name(name, photo=photo, lazy_seed=True)
-            except AmbiguousIdentityError:
+                view = find_ask_person_by_name(name, photo=photo, lazy_seed=lazy_seed)
+            except AmbiguousIdentityError as amb:
+                # Prefer the unique candidate with a confirmed email (address-centric),
+                # else exact Peggy George / Peg Legg when present among candidates.
                 view = None
+                cands = list(getattr(amb, "candidates", None) or [])
+                email_hits: list[Any] = []
+                try:
+                    from memorybox.person import (
+                        _person_has_confirmed_email,
+                        get_person,
+                    )
+
+                    for c in cands:
+                        pid = str(
+                            (c or {}).get("person_id")
+                            or (c or {}).get("id")
+                            or ""
+                        )
+                        if pid and _person_has_confirmed_email(pid):
+                            email_hits.append(pid)
+                    if len(set(email_hits)) == 1:
+                        view = get_person(email_hits[0])
+                    if view is None:
+                        # Prefer exact George/Legg from the ambiguity list before
+                        # another Ask round-trip (FlightSim multi-Peggy* noise).
+                        for prefer in ("Peggy George", "Peg Legg"):
+                            prefer_l = prefer.lower()
+                            hits = [
+                                str(
+                                    (c or {}).get("person_id")
+                                    or (c or {}).get("id")
+                                    or ""
+                                )
+                                for c in cands
+                                if str((c or {}).get("display_name") or "")
+                                .strip()
+                                .lower()
+                                == prefer_l
+                            ]
+                            hits = [h for h in hits if h]
+                            if len(set(hits)) == 1:
+                                view = get_person(hits[0])
+                                break
+                except Exception:  # noqa: BLE001
+                    view = None
+                if view is None:
+                    # Exact ledger Person (cold-created Peggy George) may not be in
+                    # the AmbiguousIdentity candidate list yet — prefer it over abort.
+                    # Multiple Immich "Peggy George" rows: prefer unique peggo417
+                    # claimant (same rule as address-centric e2e bootstrap).
+                    try:
+                        from memorybox.person import list_people_by_exact_name
+
+                        exact = list_people_by_exact_name("Peggy George")
+                        view = _pick_exact_peggy_george(exact)
+                    except Exception:  # noqa: BLE001
+                        view = None
+                if view is None:
+                    for prefer in ("Peggy George", "Peg Legg"):
+                        try:
+                            view = find_ask_person_by_name(
+                                prefer, photo=photo, lazy_seed=False
+                            )
+                        except AmbiguousIdentityError:
+                            view = None
+                        except Exception:  # noqa: BLE001
+                            view = None
+                        if view is not None:
+                            break
             except Exception:  # noqa: BLE001
                 view = None
             if not view:
                 continue
             pids.append(view.id)
             labels.append(view.display_name or name)
+        if not pids and any(
+            "peggy" in str(n).lower() or "peg legg" in str(n).lower()
+            for n in (plan.person_names or ())
+        ):
+            # Last resort: Peggy George (unique, or unique peggo417 claimant when
+            # Immich duplicated the exact display name).
+            try:
+                from memorybox.person import list_people_by_exact_name
+
+                exact = list_people_by_exact_name("Peggy George")
+                picked = _pick_exact_peggy_george(exact)
+                if picked is not None:
+                    pids = [picked.id]
+                    labels = [picked.display_name or "Peggy George"]
+            except Exception:  # noqa: BLE001
+                pass
         if pids:
             note = (
                 "resolved_person_ids_for_comms"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from collections import defaultdict
@@ -35,6 +36,7 @@ from memorybox.ask.i11a.historian_prepared import (
     plan_to_snapshot,
 )
 from memorybox.ask.i11a.person_context import build_person_context, slim_person_context_for_model
+from memorybox.person.phone_map import normalize_handle
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_BENCH_DIR = _REPO_ROOT / "docs" / "test-output" / "historian-full-evidence" / "peggy"
@@ -653,6 +655,131 @@ def run_historian_full_evidence_benchmark(
         encoding="utf-8",
     )
 
+    # Address-centric gate: unambiguous FlightSim pass/fail for this goal.
+    metrics_doc: dict[str, Any] = {}
+    metrics_path = out / "PEGGY_FULL_EVIDENCE_METRICS.json"
+    if metrics_path.is_file():
+        try:
+            metrics_doc = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            metrics_doc = {}
+    email_src = (metrics_doc.get("by_source") or {}).get("email") or {}
+    email_n = int(
+        email_src.get("retrieved_item_count")
+        or email_src.get("normalized_item_count")
+        or 0
+    )
+    focals = (person_context or {}).get("focal_subjects") or []
+    focal_names = [str(f.get("display_name") or "") for f in focals if isinstance(f, dict)]
+    confirmed = list((identity_diag or {}).get("confirmed_emails") or [])
+    inventories = list((identity_diag or {}).get("address_inventories") or [])
+    # Prefer inventory for a confirmed address that shows Peg Legg structured;
+    # fall back to first inventory (no address hardcode in the gate path).
+    peggo_inv = None
+    for inv in inventories:
+        structured_try = (inv or {}).get("structured_header") or {}
+        if bool(structured_try.get("has_peg_legg")):
+            peggo_inv = inv
+            break
+    if peggo_inv is None and confirmed:
+        want = {normalize_handle(str(a)) for a in confirmed if a}
+        peggo_inv = next(
+            (
+                inv
+                for inv in inventories
+                if normalize_handle(str(inv.get("address") or "")) in want
+            ),
+            None,
+        )
+    if peggo_inv is None and inventories:
+        peggo_inv = inventories[0]
+    structured = (peggo_inv or {}).get("structured_header") or {}
+    quoted = (peggo_inv or {}).get("quoted_body_headers_only") or {}
+
+    # Gallery uses the same search_email_messages path as Ask — assert email > 0
+    # so the gate covers the full objective (Gallery + Full-Evidence V2).
+    gallery_email_n = 0
+    gallery_match_total = 0
+    gallery_error: str | None = None
+    try:
+        from memorybox.explore.find import _attach_visible_email
+
+        gallery_plan = {
+            "person_names": list(getattr(plan, "person_names", ()) or ()) if plan else focal_names,
+            "person_ids": list(getattr(plan, "person_ids", ()) or ()) if plan else [
+                str(f.get("person_id") or "")
+                for f in focals
+                if isinstance(f, dict) and f.get("person_id")
+            ],
+            "original_ask": ask_text,
+            "effective_ask": ask_text,
+            "notes": list(getattr(plan, "notes", ()) or ()) if plan else ["complete_comm_retrieve"],
+            "gallery_show_email": True,
+        }
+        _items, gallery_email_n, gallery_match_total = _attach_visible_email(
+            [],
+            {"plan": gallery_plan, "evidence_hits": []},
+            ask_text=ask_text,
+            show_email=True,
+        )
+        gallery_email_n = int(gallery_email_n or 0)
+        gallery_match_total = int(gallery_match_total or 0)
+    except Exception as exc:  # noqa: BLE001
+        gallery_error = str(exc)
+
+    gallery_ok = gallery_email_n > 0 or gallery_match_total > 0
+    # When replaying --from-dir without a live plan, Gallery may be unavailable;
+    # require Gallery only on live retrieve paths (plan present).
+    require_gallery = plan is not None and from_dir is None
+    gate = {
+        "gate": "address_centric_email_identity",
+        "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+        "ok": bool(
+            email_n > 0
+            and confirmed
+            and any(" " in n for n in focal_names)
+            and (gallery_ok if require_gallery else True)
+            and bool((identity_diag or {}).get("identity_closure_ok"))
+            and (
+                peggo_inv is None
+                or bool(structured.get("has_peg_legg"))
+            )
+        ),
+        "requirements": {
+            "full_evidence_email_gt_0": email_n > 0,
+            "gallery_email_gt_0": gallery_ok if require_gallery else None,
+            "person_has_confirmed_email": bool(confirmed),
+            "person_is_multi_token": any(" " in n for n in focal_names),
+            "identity_closure_ok": bool((identity_diag or {}).get("identity_closure_ok")),
+            "structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+            "peggo417_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+        },
+        "by_source_email": email_src,
+        "email_retrieved_item_count": email_n,
+        "gallery_email_n": gallery_email_n,
+        "gallery_match_total": gallery_match_total,
+        "gallery_error": gallery_error,
+        "focal_display_names": focal_names,
+        "confirmed_emails": confirmed,
+        "probe_address": (peggo_inv or {}).get("address"),
+        "peggo417_inventory": {
+            "present": peggo_inv is not None,
+            "structured_has_peg_legg": structured.get("has_peg_legg"),
+            "structured_has_peggy_george": structured.get("has_peggy_george"),
+            "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+            "quoted_has_peg_legg": quoted.get("has_peg_legg"),
+            "structured_names": structured.get("distinct_display_names"),
+            "quoted_names": quoted.get("distinct_display_names"),
+        },
+        "likely_blocker": (identity_diag or {}).get("likely_blocker"),
+        "flightsim": bool(os.environ.get("MEMORYBOX_P1_RUNTIME_HOST")),
+    }
+    gate_path = out / "ADDRESS_CENTRIC_GATE.json"
+    gate_path.write_text(
+        json.dumps(gate, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+
     # B. Compression funnel
     funnel = build_compression_funnel(
         items,
@@ -699,6 +826,7 @@ def run_historian_full_evidence_benchmark(
             "metrics": str(out / "PEGGY_FULL_EVIDENCE_METRICS.json"),
             "paste": str(out / "CLOUDREQ_peggy_full_evidence_paste.txt"),
             "email_identity_diag": str(diag_path),
+            "address_centric_gate": str(gate_path),
             "funnel_json": str(funnel_json_path),
             "funnel_txt": str(funnel_txt_path),
             "l1_chunk_manifest": str(chunk_manifest_path),
@@ -706,6 +834,7 @@ def run_historian_full_evidence_benchmark(
         },
         "email_identity_diag": identity_diag,
         "email_identity_repair": repair_result,
+        "address_centric_gate": gate,
         "gpt56sol_response_preserved": freeze.get("gpt_preserved"),
         "llm_calls": 0,
         "production_inference_modified": False,

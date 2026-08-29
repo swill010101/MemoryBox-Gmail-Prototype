@@ -262,6 +262,33 @@ def main(argv: list[str] | None = None) -> int:
             "if any — no hardcoded address)"
         ),
     )
+    p_probe_addr = sub.add_parser(
+        "probe-email-address",
+        help=(
+            "Archive-wide inventory of display names for one email address "
+            "(structured headers vs quoted-body headers)"
+        ),
+    )
+    p_probe_addr.add_argument(
+        "--address",
+        required=True,
+        help="Email address to inventory (e.g. peggo417@hotmail.com)",
+    )
+    p_probe_addr.add_argument(
+        "--person-id",
+        default=None,
+        help="Optional: resolve/attach this address onto the Person after inventory",
+    )
+    p_probe_addr.add_argument(
+        "--require-structured-hits",
+        action="store_true",
+        help="Exit non-zero when structured_header.occurrence_count is 0 (FlightSim preflight)",
+    )
+    p_probe_addr.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
     sub.add_parser("rebuild-comms-index", help="Rebuild derived Qdrant from PG")
     sub.add_parser("prove-ingest", help="Increment 3 acceptance prove")
     p_ask = sub.add_parser("ask", help="One-shot Ask (JSON)")
@@ -594,6 +621,18 @@ def main(argv: list[str] | None = None) -> int:
         "--flightsim",
         action="store_true",
         help="Optional FlightSim flag",
+    )
+    p_prove_addr_e2e = sub.add_parser(
+        "prove-address-centric-email-e2e",
+        help=(
+            "E2E: probe peggo417 → resolve Peggy George → Gallery + Full-Evidence "
+            "email > 0 (seeds locally; --flightsim uses live archive)"
+        ),
+    )
+    p_prove_addr_e2e.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Use FlightSim archive (no local seed)",
     )
     p_i11a_enrich.add_argument(
         "--ask",
@@ -945,6 +984,7 @@ def main(argv: list[str] | None = None) -> int:
             explain_address_for_person,
             person_identity_snapshot,
         )
+        from memorybox.person.comm_address_index import inventory_email_address
 
         snap = person_identity_snapshot(args.person_id)
         addr = getattr(args, "address", None)
@@ -960,19 +1000,71 @@ def main(argv: list[str] | None = None) -> int:
                 "ok": False,
                 "error": (
                     "No --address and Person has no confirmed email contact. "
-                    "Add the email on People Contacts, or pass --address."
+                    "Add the email on People Contacts, or pass --address "
+                    "(e.g. peggo417@hotmail.com)."
                 ),
                 "snapshot": snap,
             }
             print(json.dumps(payload, indent=2, default=str))
             return 1
         explained = explain_address_for_person(args.person_id, addr)
+        inventory = inventory_email_address(addr, include_quoted_body=True)
         payload = {
             "ok": True,
             "snapshot": snap,
             "address_explanation": explained,
+            "address_inventory": inventory,
         }
         print(json.dumps(payload, indent=2, default=str))
+        return 0
+
+    if args.cmd == "probe-email-address":
+        from memorybox.person.comm_address_index import (
+            inventory_email_address,
+            resolve_and_attach_addresses_for_person,
+            upsert_communication_identity_from_inventory,
+        )
+
+        if getattr(args, "flightsim", False):
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        inv = inventory_email_address(args.address, include_quoted_body=True)
+        upsert = upsert_communication_identity_from_inventory(inv)
+        attach = None
+        if getattr(args, "person_id", None):
+            attach = resolve_and_attach_addresses_for_person(
+                args.person_id, persist=True, backfill=True
+            )
+            # After successful resolve, keep ledger confirmed for this Person.
+            # Never downgrade an existing confirmed row to candidate.
+            accepted = bool(attach and (attach.get("accepted") or []))
+            if inv.get("ok") and int(
+                (inv.get("structured_header") or {}).get("occurrence_count") or 0
+            ) > 0:
+                upsert = upsert_communication_identity_from_inventory(
+                    inv,
+                    resolved_person_id=args.person_id,
+                    resolution_status="confirmed" if accepted else "candidate",
+                )
+        payload = {
+            "ok": bool(inv.get("ok")),
+            "inventory": inv,
+            "ledger_upsert": upsert,
+            "person_resolve": attach,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        if not payload.get("ok"):
+            return 1
+        if getattr(args, "require_structured_hits", False):
+            struct_n = int(
+                (inv.get("structured_header") or {}).get("occurrence_count") or 0
+            )
+            if struct_n <= 0:
+                print(
+                    "ERROR: --require-structured-hits but structured occurrence_count=0 "
+                    "(wrong DATABASE_URL / empty archive)",
+                    file=sys.stderr,
+                )
+                return 2
         return 0
 
     if args.cmd == "rebuild-comms-index":
@@ -1207,6 +1299,16 @@ def main(argv: list[str] | None = None) -> int:
             address_hint=getattr(args, "address_hint", None),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        # Always print the address-centric gate last for easy FlightSim paste.
+        gate = payload.get("address_centric_gate")
+        gate_path = (payload.get("paths") or {}).get("address_centric_gate")
+        if gate is not None:
+            print("\n===== ADDRESS_CENTRIC_GATE (paste this) =====", flush=True)
+            print(json.dumps(gate, indent=2, default=str), flush=True)
+            if gate_path:
+                print(f"===== written: {gate_path} =====", flush=True)
+            if not gate.get("ok"):
+                return 1
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-historian-full-evidence-benchmark":
@@ -1229,6 +1331,35 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_person_email_identity(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-address-centric-email-e2e":
+        from memorybox.person.address_centric_e2e import (
+            run_prove_address_centric_email_e2e,
+        )
+
+        if args.flightsim:
+            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+        payload = run_prove_address_centric_email_e2e(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        gate = payload.get("address_centric_gate")
+        if gate is not None:
+            print("\n===== ADDRESS_CENTRIC_GATE (paste this) =====", flush=True)
+            print(json.dumps(gate, indent=2, default=str), flush=True)
+            if gate.get("path"):
+                print(f"===== written: {gate.get('path')} =====", flush=True)
+            if gate.get("verdict_path"):
+                print(f"===== VERDICT file: {gate.get('verdict_path')} =====", flush=True)
+            print(
+                f"===== VERDICT ok={bool(gate.get('ok'))} "
+                f"flightsim={bool(gate.get('flightsim'))} =====",
+                flush=True,
+            )
+            if gate.get("failure_diag_path"):
+                print(
+                    f"===== FAILURE_DIAG written: {gate.get('failure_diag_path')} =====",
+                    flush=True,
+                )
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

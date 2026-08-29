@@ -1,42 +1,111 @@
-# Peggy resolve + Peg Legg nickname (email)
+# Address-centric email identity (Peggy / peggo417)
 
-**Branch:** `cursor/p2-i11a-peggy-resolve-nickname-49da`
+**Governing rule:** MemoryBox discovers communication identities from the archive
+first, resolves those identities to People second, and then uses the resolved
+identities to retrieve complete Person evidence.
 
-## What the diag proved
+**PRD:** `docs/ops/PRD_ADDRESS_CENTRIC_EMAIL_IDENTITY.md`  
+**Branch:** `cursor/p2-i11a-address-centric-email-49da`
 
-Ask `"tell me what you know about Peggy"` resolved Person **`Peggy`** (`549b…`) with:
-- `known_name_forms: ["peggy"]` only
-- **no confirmed emails**
+## Pipeline
 
-That is an Immich lazy-seed **stub**, not **Peggy George**. Full-evidence therefore never saw `peggo417@hotmail.com`.
-
-Explore `"show peggy george"` hits the real Person / name filter — which is why the UI showed 27 email threads while the benchmark stayed at Email: 0.
-
-## Archive truth (screenshots)
-
-- From: **`Peg Legg <peggo417@hotmail.com>`** (real hotmail local-part is `peggo417`, not `peggo01417`)
-- Some thread titles show **names only** (`Peggy George`) because ingest `people[]` stores `display_name or address` (name preferred). Raw `from` often has `Name <email>`. Explore was concatenating both → duplicate “Peg Legg” + “Peg Legg \<addr\>”. Not a load error — metadata + UI. Title builder now prefers the angle-bracket form when both exist.
-
-## Fixes
-
-1. **Ask resolve:** single-token `"Peggy"` prefers unique multi-token **`Peggy George`** over exact stub `"Peggy"`.
-2. **Nickname identity:** header `Peg Legg` + address corroborates to Peggy George when she is the unique multi-token Person in the Peg/Peggy family; seeds alias **Peg Legg**; attaches `peggo417@hotmail.com`.
-3. Discovery still runs even when some People email already exists (find additional addresses).
+```
+1. DISCOVER  archive → communication_identities (address + Peg Legg / Peggy George …)
+2. RESOLVE   identity → Person (corroborate; fail closed if shared)
+3. RETRIEVE  Person → trusted addresses → all mail for those addresses
+```
 
 ## FlightSim
 
+**Do not** `git pull origin cursor/p2-i11a-address-centric-email-49da` into some
+other local branch — that merges and often leaves `CONFLICT` markers. Always
+hard-reset onto the tip (or use the reset helper):
+
 ```bat
 cd C:\memorybox
-git fetch origin
-git pull origin cursor/p2-i11a-peggy-resolve-nickname-49da
-.\startmb.cmd -Restart
-
-python -m memorybox person-email-identity-trace --person-id <PEGGY_GEORGE_ID>
-REM or omit --person-id after asking; diag on next bench should show Peggy George
-
-python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --fixture docs\test-output\historian-fixtures\HISTFIX_peggy_20260828T034329Z_d7f1713c.json
+git merge --abort
+git rebase --abort
+git fetch origin cursor/p2-i11a-address-centric-email-49da
+git checkout -B cursor/p2-i11a-address-centric-email-49da origin/cursor/p2-i11a-address-centric-email-49da
+git reset --hard origin/cursor/p2-i11a-address-centric-email-49da
 ```
 
-Expect metrics `email` > 0, diag `display_name: Peggy George`, `confirmed_emails` includes `peggo417@hotmail.com`, People card gains alias **Peg Legg**.
+Or, after the tip is fetched once:
 
-Optional cleanup: merge stub Person `"Peggy"` (`549b…`) into Peggy George in People UI so it cannot win again.
+```bat
+cd C:\memorybox
+tools\flightsim-address-centric-reset.cmd
+```
+
+Primary gate (Gallery + Full-Evidence email > 0; **no historian**):
+
+```bat
+cd C:\memorybox
+tools\flightsim-address-centric-gate.cmd
+```
+
+The gate aborts any mid-merge/rebase, hard-resets onto
+`origin/cursor/p2-i11a-address-centric-email-49da`, restarts, then runs
+`tools\flightsim-address-centric-prove.ps1` (loads `config\memorybox_app.env`
+the same way `startmb` does — so migrate/prove hit the Takeout archive DB, not a
+silent ALLOW_DEV localhost). Paste the printed gate block
+(need `"ok": true` and `"flightsim": true`). Gate `runtime` stamps `database`,
+`database_url_set`, and `git_head`.
+
+Delivery (any one wakes the cloud agent):
+1. **Always** force-pushes gate artifacts to `cursor/flightsim-address-centric-result-49da` **first**
+   (including failure gates — env/DB/preflight stubs, early `gate.cmd`
+   git fetch/checkout/pull/`pushd` failures, and startmb/prove **watchdog
+   timeouts** — so the agent never stays on `waiting: true` after a real
+   FlightSim attempt). Every real gate emits `"waiting": false`.
+2. If `gh` is already authenticated: posts the gate JSON as a comment on PR #74
+   (skips comment when gh is missing/unauthed — never hangs on auth)
+3. Desktop + notepad VERDICT + console paste block
+
+Probe is **advisory** before prove; prove always owns `ADDRESS_CENTRIC_GATE.json`.
+Env/DB failures in `flightsim-address-centric-prove.ps1` still write a failure gate
+(UTF-8 without BOM) so the results branch updates. Early `gate.cmd` `:fail`
+writes `error=gate_cmd_pre_prove_fail`. Watchdogs via
+`tools/flightsim-address-centric-watchdog.ps1`:
+`STARTMB_WATCHDOG_SEC` (default 600) / `PROVE_WATCHDOG_SEC` (default 2700);
+timeouts `taskkill /F /T` the process tree then emit a failure gate.
+
+Bootstrap never falls into archive-wide Peg* nickname discover when structured
+`peggo417` hits exist: operator-attest (+ retry + final), then fail closed with
+a clear repair trail — avoids Takeout hang that never delivers a gate.
+
+**Completion audit** (after FlightSim overwrites the results branch):
+
+```bat
+python tools\verify-address-centric-gate.py docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+```
+
+Need `"goal_complete": true` (`ok` + `flightsim`, not `waiting`). Local dry-run:
+`python tools/verify-address-centric-gate.py --allow-local …` (never goal_complete).
+
+If structured headers show Peg Legg on peggo417 but **no** same-address
+Peggy George observation (quoted or structured), auto nickname attach stays
+fail-closed (so unrelated `Peg *` mailboxes are not claimed). In that case
+`prove-address-centric-email-e2e --flightsim` auto-runs operator repair for
+`peggo417@hotmail.com` when structured hits exist; or run:
+
+```bat
+python -m memorybox historian-full-evidence-benchmark --flightsim --out-dir docs\test-output\historian-full-evidence\peggy-v2 --repair-address peggo417@hotmail.com
+```
+
+`--fixture …\HISTFIX_peggy_*.json` is optional (funnel metrics only; omit if missing).
+**Stop** after V2 — no historian summarization.
+
+## Ask name forms
+
+Ask resolves `Peggy`, `Peggy George`, and `Peg Legg` (confirmed alias or unique
+nickname-family multi-token Person). Display names remain observations on the
+address; the address is the retrieve key once resolved.
+
+**FlightSim Person bootstrap (operator gate only):**
+1. Prefer existing exact \"Peggy George\".
+2. Else rename unique Immich single-token \"Peggy\" → \"Peggy George\" when
+   structured Peg Legg exists on peggo417 (quoted Peggy George optional).
+3. Else cold-create \"Peggy George\" from structured Peg Legg alone when no
+   usable Peggy Person exists (thin Takeout / Immich-absent).
+4. Full-Evidence on P1 does **not** Immich-lazy-seed a new \"Peggy\" stub.

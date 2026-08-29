@@ -554,7 +554,14 @@ def _bounded_period_tell(plan: QueryPlan) -> bool:
 
 
 def _complete_comm_retrieve(plan: QueryPlan) -> bool:
-    """Person/tell packs return the full matching communication set (no year-fair sample)."""
+    """Person/tell packs return the full matching communication set (no year-fair sample).
+
+    Gallery email attach uses note ``gallery_email_eligible`` and must stay bounded
+    (``limit`` / year-fair slice). Full-Evidence / Ask person packs remain complete.
+    """
+    notes = getattr(plan, "notes", ()) or ()
+    if "gallery_email_eligible" in notes:
+        return False
     if _bounded_period_tell(plan) or _tell_pack_comms(plan):
         return True
     if plan.want_communication and (plan.person_ids or plan.person_names):
@@ -682,11 +689,16 @@ def _sql_person_text_hint(
 
 
 def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[Any]]:
-    """Match confirmed email addresses in From/To/CC headers (not body text).
+    """Match confirmed email addresses in From/To/CC/BCC headers (not body text).
 
-    Ingest stores ``to`` / ``cc`` as JSON arrays. ``payload_json->>'to'`` is NULL
-    for arrays in Postgres — always use ``(payload_json->'to')::text`` or
-    ``from_parsed`` / ``to_parsed`` / ``cc_parsed`` normalized addresses.
+    Ingest stores ``to`` / ``cc`` / ``bcc`` as JSON arrays. ``payload_json->>'to'``
+    is NULL for arrays in Postgres — always use ``(payload_json->'to')::text``.
+    Cast ``*_parsed`` JSON to text and LIKE — do not unnest JSON per Evidence row
+    (seq scan; trips prove-i11a full-export guard).
+
+    For the scalar ``from`` header, prefer exact bare + angle-bracket + mailto
+    shapes as separate OR arms (index-friendlier) before a broad ``%addr%``
+    fallback for odd encodings.
     """
     norms = sorted(
         {
@@ -697,24 +709,39 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
     )
     if not norms:
         return "FALSE", []
-    patterns = [f"%{a}%" for a in norms]
+    # Exact bare From (uses evidence_comm_from_lower when present).
+    exact_from = list(norms)
+    # Angle-bracket / mailto forms — leading wildcard only where needed for
+    # ``Display <addr>`` / ``[mailto:addr]`` prefixes.
+    shaped_from: list[str] = []
+    for a in norms:
+        shaped_from.extend(
+            [
+                f"%<{a}>%",
+                f"%<{a}>",
+                f"%[mailto:{a}]%",
+            ]
+        )
+    # Broad fallback last (odd encodings / display-only).
+    broad_from = [f"%{a}%" for a in norms]
+    # JSON array / *_parsed text still needs substring match.
+    json_patterns = [f"%{a}%" for a in norms]
     sql = (
         "("
-        " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
+        " lower(coalesce(payload_json->>'from', '')) = ANY(%s)"
+        " OR lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
+        " OR lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
-        " OR EXISTS ("
-        "   SELECT 1 FROM jsonb_array_elements("
-        "     coalesce(payload_json->'from_parsed','[]'::jsonb)"
-        "     || coalesce(payload_json->'to_parsed','[]'::jsonb)"
-        "     || coalesce(payload_json->'cc_parsed','[]'::jsonb)"
-        "   ) e"
-        "   WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)"
-        " )"
+        " OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)"
+        " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [patterns, patterns, patterns, patterns, norms]
+    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 8
 
 
 def _person_scoped_comm_where(
@@ -1376,18 +1403,20 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         list(payload.get("from_parsed") or [])
         + list(payload.get("to_parsed") or [])
         + list(payload.get("cc_parsed") or [])
+        + list(payload.get("bcc_parsed") or [])
     ):
         if not isinstance(rec, dict):
             continue
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
-    # Fallback: raw From/To/CC (and people[]) when *_parsed is missing on older rows.
+    # Fallback: raw From/To/CC/BCC (and people[]) when *_parsed is missing on older rows.
     for raw in (
         payload.get("from"),
         payload.get("from_raw"),
         payload.get("to"),
         payload.get("cc"),
+        payload.get("bcc"),
         payload.get("people"),
     ):
         texts: list[str]
@@ -1554,8 +1583,16 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             expanded = expand_emails_for_retrieve(person_ids)
             identity_expand = expanded.get("expansion") or {}
             confirmed_addrs = set(expanded.get("addresses") or [])
+            # Surface per-person resolve errors that previously looked like email=0.
+            resolve_errs = [
+                f"{r.get('person_id')}:{r.get('error')}"
+                for r in (identity_expand.get("address_centric_resolve") or [])
+                if isinstance(r, dict) and r.get("error")
+            ]
+            if resolve_errs:
+                identity_expand["resolve_errors"] = resolve_errs
         except Exception as exc:  # noqa: BLE001
-            identity_expand = {"error": str(exc)}
+            identity_expand = {"error": f"{type(exc).__name__}:{exc}"}
             confirmed_addrs = _confirmed_emails_for_people(person_ids)
     else:
         confirmed_addrs = set()
@@ -1622,6 +1659,15 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         # Dated tell is a window, not a hunt for "narrative" — exclusive place
         # keywords wait until trip discovery has a resolved window.
         keywords = _exclusive_place_trip_keywords(plan)
+    # Person-complete email retrieve is identity-closed (confirmed addresses /
+    # person_ids). Narrative Ask verbs ("tell me what you know about Peggy")
+    # must not filter out Peg Legg–labeled mail that lacks those words.
+    # Gallery person-email attach is also identity-closed (bounded, not complete).
+    if person_ids and (
+        _complete_comm_retrieve(plan)
+        or "gallery_email_eligible" in (plan.notes or ())
+    ):
+        keywords = []
     holiday_ask = bool(
         re.search(
             r"(?i)\b(christmas|xmas|thanksgiving|easter|halloween|"
@@ -1792,6 +1838,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                     for a in identity_expand.get("accepted") or []
                     if a.get("address")
                 )
+            )
+        if identity_expand.get("error"):
+            expand_note += f"; identity_expand_error={identity_expand.get('error')}"
+        if identity_expand.get("resolve_errors"):
+            expand_note += (
+                "; identity_resolve_errors="
+                + ",".join(str(x) for x in identity_expand.get("resolve_errors") or [])
             )
         for h in hits:
             h.match_total = total
