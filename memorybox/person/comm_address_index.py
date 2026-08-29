@@ -654,8 +654,10 @@ def find_addresses_for_person_forms(
                 ),
             ).fetchall()
             _ingest_rows(list(pass2))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        _discover_err = f"{type(exc).__name__}:{exc}"
+    else:
+        _discover_err = None
 
     out = []
     for addr, slot in candidates.items():
@@ -676,6 +678,24 @@ def find_addresses_for_person_forms(
                 "source": "archive_headers",
             }
         )
+    if _discover_err:
+        for item in out:
+            item.setdefault("discover_warnings", []).append(_discover_err)
+        if not out:
+            out.append(
+                {
+                    "address": "",
+                    "display_names": {},
+                    "match_strengths": {},
+                    "evidence_ids": [],
+                    "header_fields": [],
+                    "occurrences": 0,
+                    "match_strength": None,
+                    "source": "archive_headers",
+                    "error": _discover_err,
+                    "discover_error": _discover_err,
+                }
+            )
     out.sort(
         key=lambda c: (
             0
@@ -683,8 +703,8 @@ def find_addresses_for_person_forms(
             else 1
             if c.get("match_strength") == "nickname_full"
             else 2,
-            -int(c["occurrences"]),
-            c["address"],
+            -int(c.get("occurrences") or 0),
+            str(c.get("address") or ""),
         )
     )
     return out

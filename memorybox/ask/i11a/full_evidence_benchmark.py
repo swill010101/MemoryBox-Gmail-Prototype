@@ -726,6 +726,11 @@ def run_historian_full_evidence_benchmark(
             and confirmed
             and any(" " in n for n in focal_names)
             and (gallery_ok if require_gallery else True)
+            and bool((identity_diag or {}).get("identity_closure_ok"))
+            and (
+                peggo_inv is None
+                or bool(structured.get("has_peg_legg"))
+            )
         ),
         "requirements": {
             "full_evidence_email_gt_0": email_n > 0,

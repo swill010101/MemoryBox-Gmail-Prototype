@@ -1565,8 +1565,16 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             expanded = expand_emails_for_retrieve(person_ids)
             identity_expand = expanded.get("expansion") or {}
             confirmed_addrs = set(expanded.get("addresses") or [])
+            # Surface per-person resolve errors that previously looked like email=0.
+            resolve_errs = [
+                f"{r.get('person_id')}:{r.get('error')}"
+                for r in (identity_expand.get("address_centric_resolve") or [])
+                if isinstance(r, dict) and r.get("error")
+            ]
+            if resolve_errs:
+                identity_expand["resolve_errors"] = resolve_errs
         except Exception as exc:  # noqa: BLE001
-            identity_expand = {"error": str(exc)}
+            identity_expand = {"error": f"{type(exc).__name__}:{exc}"}
             confirmed_addrs = _confirmed_emails_for_people(person_ids)
     else:
         confirmed_addrs = set()
@@ -1812,6 +1820,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                     for a in identity_expand.get("accepted") or []
                     if a.get("address")
                 )
+            )
+        if identity_expand.get("error"):
+            expand_note += f"; identity_expand_error={identity_expand.get('error')}"
+        if identity_expand.get("resolve_errors"):
+            expand_note += (
+                "; identity_resolve_errors="
+                + ",".join(str(x) for x in identity_expand.get("resolve_errors") or [])
             )
         for h in hits:
             h.match_total = total
