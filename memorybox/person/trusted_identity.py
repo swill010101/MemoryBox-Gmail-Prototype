@@ -207,19 +207,32 @@ def apply_email_contact_trust(
     except Exception:  # noqa: BLE001
         try:
             with connection() as conn:
-                conn.execute(
-                    """
-                    UPDATE person_contact_points
-                    SET status = %s,
-                        actor_key = %s,
-                        provenance_json = %s::jsonb,
-                        updated_at = now()
-                    WHERE person_id = %s::uuid
-                      AND contact_kind = 'email'
-                      AND lower(value_text) = %s
-                    """,
-                    (status, actor_key, json.dumps(provenance or {}), person_id, norm),
-                )
+                if trust == "trusted":
+                    conn.execute(
+                        """
+                        UPDATE person_contact_points
+                        SET status = %s,
+                            actor_key = %s,
+                            provenance_json = %s::jsonb,
+                            updated_at = now()
+                        WHERE person_id = %s::uuid
+                          AND contact_kind = 'email'
+                          AND lower(value_text) = %s
+                        """,
+                        (status, actor_key, json.dumps(provenance or {}), person_id, norm),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE person_contact_points
+                        SET status = %s,
+                            updated_at = now()
+                        WHERE person_id = %s::uuid
+                          AND contact_kind = 'email'
+                          AND lower(value_text) = %s
+                        """,
+                        (status, person_id, norm),
+                    )
         except Exception:  # noqa: BLE001
             return {**verdict, "status": status, "updated": False}
     return {**verdict, "status": status, "updated": True, "address": norm}
