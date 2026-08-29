@@ -2343,12 +2343,25 @@ def filter_hits_by_constraints(
     year_cons = {c for c in cons if re.fullmatch(r"(?:19|20)\d{2}", c)}
     other_cons = [c for c in cons if c not in year_cons]
     kept: list[EvidenceHit] = []
+    sms_ch = {"sms", "text", "imessage", "mms", "rcs"}
     for h in hits:
+        kind = str(h.evidence_kind or "").lower()
+        ch = str(h.channel or "").lower()
+        is_sms = ch in sms_ch or "sms" in kind or kind == "text"
+        is_email = (
+            (kind in {"communication", "email", "comms"} and not is_sms) or ch == "email"
+        )
+        # Email: structured From/To only. Never people[] (Takeout co-occurrence).
+        who = (
+            " ".join(x for x in (h.from_header, h.to_header) if x)
+            if is_email
+            else " ".join(h.people or [])
+        )
         blob = " ".join(
             [
                 h.summary or "",
                 h.excerpt or "",
-                " ".join(h.people or []),
+                who,
                 h.thread_id or "",
                 h.channel or "",
                 h.sent_at or "",

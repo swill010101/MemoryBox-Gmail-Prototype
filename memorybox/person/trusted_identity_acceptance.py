@@ -1002,6 +1002,15 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    cons_src = inspect.getsource(retrieve_mod.filter_hits_by_constraints)
+    _check(
+        "constraint_filter_email_omits_people_array",
+        "from_header" in cons_src
+        and "Never people[]" in cons_src
+        and 'h.people or []' in cons_src,
+        checks,
+        problems,
+    )
 
     flightsim_report: dict[str, Any] = {}
     if flightsim:
