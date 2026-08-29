@@ -793,6 +793,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    run_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_full_evidence_v2",
+            fromlist=["run_trusted_full_evidence_v2"],
+        ).run_trusted_full_evidence_v2
+    )
+    _check(
+        "phase2_preflights_established_gemma_model",
+        "ollama_has_model" in run_src and "ollama_model_missing" in run_src,
+        checks,
+        problems,
+    )
     ground = score_email_grounding(
         {
             "claims": [

@@ -137,3 +137,21 @@ def ollama_reachable(base_url: str, timeout: float = 1.5) -> bool:
 def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
         return json.load(resp)
+
+
+def ollama_has_model(base_url: str, model: str, *, timeout: float = 2.5) -> bool:
+    """True when /api/tags lists this exact model (e.g. gemma4:26b)."""
+    want = (model or "").strip()
+    if not want or not ollama_reachable(base_url, timeout=timeout):
+        return False
+    try:
+        data = ollama_tags(base_url, timeout=int(max(timeout, 2)))
+    except Exception:
+        return False
+    names: list[str] = []
+    for row in data.get("models") or []:
+        if isinstance(row, dict):
+            names.append(str(row.get("name") or row.get("model") or "").strip())
+        else:
+            names.append(str(row).strip())
+    return want in names

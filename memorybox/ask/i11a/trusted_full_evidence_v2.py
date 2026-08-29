@@ -570,6 +570,26 @@ def run_trusted_full_evidence_v2(
         model=model,
         timeout_seconds=int(timeout_seconds),
     )
+    if spec.provider == "ollama":
+        from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
+        from memorybox.providers.llm._ollama_http import ollama_has_model, ollama_reachable
+
+        base = (settings.ollama_base_url or "").strip()
+        if not base:
+            for url in OLLAMA_AUTODETECT_URLS:
+                if ollama_reachable(url):
+                    base = url
+                    break
+        if not base or not ollama_has_model(base, model):
+            return {
+                "ok": False,
+                "skipped": True,
+                "error": f"ollama_model_missing:{model}",
+                "input_sha256": stored,
+                "provider": spec.provider,
+                "model": model,
+                "chunking": False,
+            }
     llm = build_historian_provider(spec)
     raw, usage, wall_ms = historian_chat_json(
         llm,
