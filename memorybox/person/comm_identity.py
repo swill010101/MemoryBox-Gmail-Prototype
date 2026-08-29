@@ -737,6 +737,54 @@ def ensure_confirmed_email_contact(
                 )
         except Exception:  # noqa: BLE001
             pass
+    # Keep address-centric ledger in sync with confirmed Person contacts.
+    # Probe upsert leaves rows as observed; repair/attach must promote them.
+    # Direct SQL — do not re-inventory the archive on every contact ensure.
+    try:
+        with connection() as conn:
+            updated = conn.execute(
+                """
+                UPDATE communication_identities
+                SET resolved_person_id = %s::uuid,
+                    resolution_status = 'confirmed',
+                    updated_at = now()
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                """,
+                (person_id, norm),
+            )
+            # rowcount may be 0 when probe never ran — insert a confirmed stub.
+            if getattr(updated, "rowcount", None) == 0:
+                conn.execute(
+                    """
+                    INSERT INTO communication_identities (
+                        address_normalized, identity_kind, observed_display_names,
+                        evidence_ids_sample, header_occurrence_count,
+                        quoted_body_occurrence_count, resolved_person_id,
+                        resolution_status, provenance_json, updated_at
+                    ) VALUES (
+                        %s, 'email', '{}'::jsonb, '[]'::jsonb, 0, 0,
+                        %s::uuid, 'confirmed',
+                        %s::jsonb, now()
+                    )
+                    ON CONFLICT (identity_kind, address_normalized) DO UPDATE SET
+                        resolved_person_id = EXCLUDED.resolved_person_id,
+                        resolution_status = 'confirmed',
+                        updated_at = now()
+                    """,
+                    (
+                        norm,
+                        person_id,
+                        json.dumps(
+                            {
+                                "source": "ensure_confirmed_email_contact",
+                                "person_id": person_id,
+                            }
+                        ),
+                    ),
+                )
+    except Exception:  # noqa: BLE001
+        pass
     return {"upserted": bool(upserted), "address": norm, "person_id": person_id}
 
 
@@ -1321,7 +1369,7 @@ def attach_known_email_if_corroborated(
             "prior_auto_reason": decision.get("reason"),
         }
 
-    if decision.get("accepted") and persist and decision.get("reason") != "already_confirmed_for_person":
+    if decision.get("accepted") and persist:
         ensure_confirmed_email_contact(
             person_id,
             addr,

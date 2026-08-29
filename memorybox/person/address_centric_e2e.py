@@ -777,6 +777,33 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "address_centric_gate": gate,
         }
 
+    # PRD #4: discovery must not require the Person to already hold the email.
+    def _confirmed_emails_for(pid: str) -> set[str]:
+        try:
+            from memorybox.db import connection as _db_conn
+
+            with _db_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT value_text
+                    FROM person_contact_points
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND status = 'confirmed'
+                    """,
+                    (pid,),
+                ).fetchall()
+            return {
+                normalize_handle(str(r.get("value_text") or ""))
+                for r in rows
+                if normalize_handle(str(r.get("value_text") or ""))
+            }
+        except Exception:  # noqa: BLE001
+            return set()
+
+    emails_before = _confirmed_emails_for(ask_peggy.id)
+    had_peggo_before = _PROBE_ADDR in emails_before
+
     resolve = resolve_and_attach_addresses_for_person(
         ask_peggy.id, persist=True, backfill=True, inventory_attached=True
     )
@@ -817,6 +844,49 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "resolve": resolve,
             "repair": repair_info,
         },
+    )
+    # PRD #4: cold path attached without prior contact; re-runs still expand.
+    _check(
+        "discover_attach_without_requiring_prior_email",
+        (_PROBE_ADDR in addrs or _PROBE_ADDR in accepted_addrs)
+        and (not had_peggo_before or bool(resolve.get("accepted") or repair_info)),
+        checks,
+        problems,
+        detail={
+            "had_peggo_before": had_peggo_before,
+            "emails_before": sorted(emails_before),
+            "expand": sorted(addrs),
+        },
+    )
+    # PRD #3: archive-wide ledger stores address → displays → resolved person.
+    ledger_row: dict[str, Any] | None = None
+    try:
+        from memorybox.db import connection as _db_conn
+
+        with _db_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT address_normalized, resolution_status, resolved_person_id::text AS pid,
+                       observed_display_names, header_occurrence_count
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                LIMIT 1
+                """,
+                (_PROBE_ADDR,),
+            ).fetchone()
+            ledger_row = dict(row) if row else None
+    except Exception as exc:  # noqa: BLE001
+        ledger_row = {"error": str(exc)}
+    _check(
+        "ledger_has_peggo417_with_resolved_person",
+        bool(ledger_row)
+        and not ledger_row.get("error")
+        and str(ledger_row.get("pid") or "") == str(ask_peggy.id)
+        and str(ledger_row.get("resolution_status") or "") == "confirmed",
+        checks,
+        problems,
+        detail=ledger_row,
     )
     _check(
         "noise_peg_mailboxes_not_attached",
@@ -1164,11 +1234,22 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     (d.get("normalized_display") or "") == "peg legg"
                     for d in (structured.get("distinct_display_names") or [])
                 ),
+                "ledger_resolved_to_person": bool(ledger_row)
+                and str((ledger_row or {}).get("pid") or "") == str(ask_peggy.id),
+                "discover_without_prior_email": (not had_peggo_before)
+                or bool(resolve.get("accepted") or repair_info),
             },
             "person": {
                 "id": ask_peggy.id,
                 "display_name": ask_peggy.display_name,
                 "addresses": sorted(addrs) if addrs else sorted(accepted_addrs),
+            },
+            "ledger": {
+                "address": (ledger_row or {}).get("address_normalized"),
+                "resolution_status": (ledger_row or {}).get("resolution_status"),
+                "resolved_person_id": (ledger_row or {}).get("pid"),
+                "header_occurrence_count": (ledger_row or {}).get("header_occurrence_count"),
+                "had_peggo_contact_before_resolve": had_peggo_before,
             },
             "inventory": {
                 "structured_has_peg_legg": structured.get("has_peg_legg"),
