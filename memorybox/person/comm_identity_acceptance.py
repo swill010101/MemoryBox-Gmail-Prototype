@@ -1561,6 +1561,14 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "gate_cmd_checkout_fail_avoids_echo_dot_in_parens",
+        "goto :checkout_failed" in gate_cmd
+        and ":checkout_failed" in gate_cmd
+        and "echo.\n  echo CHECKOUT FAILED" not in gate_cmd.replace("\r\n", "\n"),
+        checks,
+        problems,
+    )
     reset_cmd = open(
         "tools/flightsim-address-centric-reset.cmd", encoding="utf-8"
     ).read()

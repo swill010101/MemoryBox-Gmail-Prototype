@@ -85,24 +85,14 @@ if errorlevel 1 set TRACKED_DIRTY=1
 if not "%TRACKED_DIRTY%"=="0" (
   echo ===== stashing tracked local changes (address-centric-gate-temp) =====
   git stash push -m "address-centric-gate-temp"
-  if errorlevel 1 (
-    echo WARNING: stash failed — trying checkout anyway
-  ) else (
-    echo Stashed. Restore later with: git stash list ^& git stash pop
-  )
+  if errorlevel 1 echo WARNING: stash failed - trying checkout anyway
 )
 
 REM Hard reset onto origin tip — never merge foreign local history into the gate branch.
+REM Do NOT use "echo." inside a parenthesized IF: cmd.exe parses it as a lone
+REM "." command when the IF is skipped → ". was unexpected at this time."
 git checkout -B %BRANCH% origin/%BRANCH%
-if errorlevel 1 (
-  echo.
-  echo CHECKOUT FAILED — working tree still blocked ^(mid-merge^?). Try:
-  echo   git merge --abort
-  echo   git rebase --abort
-  echo   tools\flightsim-address-centric-reset.cmd
-  echo then re-run this script. Inspect: git status
-  goto :fail
-)
+if errorlevel 1 goto :checkout_failed
 git reset --hard origin/%BRANCH%
 if errorlevel 1 goto :fail
 git pull --ff-only origin %BRANCH%
@@ -280,6 +270,12 @@ echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.
 popd
 exit /b %PROVE_EXIT%
+
+:checkout_failed
+echo CHECKOUT FAILED - working tree still blocked. Try:
+echo   tools\flightsim-address-centric-reset.cmd
+echo then re-run this script. Inspect: git status
+goto :fail
 
 :fail
 echo FAILED — fix git/migrate errors above, then re-run.
