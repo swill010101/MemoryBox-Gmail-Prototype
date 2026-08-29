@@ -549,6 +549,7 @@ def find_addresses_for_person_forms(
         with connection() as conn:
             # Pass 1a: multi-token Person forms on structured parsed display
             # (Peggy George) — highest signal, tiny result set.
+            # Match *_parsed as text LIKE (no per-row JSON unnest — Takeout scale).
             if multi_patterns:
                 pass1a = conn.execute(
                     """
@@ -557,19 +558,22 @@ def find_addresses_for_person_forms(
                     WHERE evidence_kind = 'communication'
                       AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                           NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-                      AND EXISTS (
-                        SELECT 1 FROM jsonb_array_elements(
-                          coalesce(payload_json->'from_parsed','[]'::jsonb)
-                          || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                          || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                          || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                        ) e
-                        WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                      AND (
+                        lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                        OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                        OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                        OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                       )
                     ORDER BY id
                     LIMIT %s
                     """,
-                    (multi_patterns, min(limit_scan, 10_000)),
+                    (
+                        multi_patterns,
+                        multi_patterns,
+                        multi_patterns,
+                        multi_patterns,
+                        min(limit_scan, 10_000),
+                    ),
                 ).fetchall()
                 _ingest_rows(list(pass1a))
 
@@ -581,19 +585,16 @@ def find_addresses_for_person_forms(
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-                  AND EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(
-                      coalesce(payload_json->'from_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                    ) e
-                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
+                  AND (
+                    lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 ORDER BY id
                 LIMIT %s
                 """,
-                (patterns, limit_scan),
+                (patterns, patterns, patterns, patterns, limit_scan),
             ).fetchall()
             _ingest_rows(list(pass1b))
 
@@ -613,42 +614,24 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 ORDER BY CASE
-                  WHEN EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(
-                      coalesce(payload_json->'from_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                    ) e
-                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                  ) THEN 0
+                  WHEN lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
+                  THEN 0
                   WHEN lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                   THEN 1
-                  WHEN EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(
-                      coalesce(payload_json->'from_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                    ) e
-                    WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                  ) THEN 2
-                  ELSE 3
+                  ELSE 2
                 END,
                 id
                 LIMIT %s
@@ -660,13 +643,18 @@ def find_addresses_for_person_forms(
                     patterns,
                     patterns,
                     patterns,
-                    order_patterns,
-                    order_patterns,
-                    order_patterns,
-                    order_patterns,
-                    order_patterns,
-                    order_patterns,
                     patterns,
+                    patterns,
+                    patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
+                    order_patterns,
                     limit_scan,
                 ),
             ).fetchall()
