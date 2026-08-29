@@ -1517,7 +1517,25 @@ def _email_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
-    people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
+    # Structured header displays only. Never payload.people[] (Takeout co-occurrence).
+    people: list[str] = []
+    seen_people: set[str] = set()
+    for rec in (
+        list(payload.get("from_parsed") or [])
+        + list(payload.get("to_parsed") or [])
+        + list(payload.get("cc_parsed") or [])
+        + list(payload.get("bcc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        label = str(rec.get("display_name") or "").strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen_people:
+            continue
+        seen_people.add(key)
+        people.append(label)
     mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
     identity = [
         {

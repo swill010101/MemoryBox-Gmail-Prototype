@@ -300,6 +300,21 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=blob_src,
     )
+    hit_src = inspect.getsource(retrieve_mod._email_hit)
+    _check(
+        "email_hit_does_not_copy_people_array",
+        'payload.get("people")' not in hit_src
+        and "from_parsed" in hit_src,
+        checks,
+        problems,
+    )
+    backfill_src = inspect.getsource(ci.backfill_email_person_ids)
+    _check(
+        "backfill_sql_omits_people_array",
+        "payload_json->'people'" not in backfill_src,
+        checks,
+        problems,
+    )
     _check(
         "email_sql_empty_trusted_skips_person_ids_gin",
         "no_trusted_retrieve_addresses" in where_src

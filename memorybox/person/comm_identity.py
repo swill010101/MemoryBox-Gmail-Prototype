@@ -828,7 +828,6 @@ def backfill_email_person_ids(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
@@ -837,7 +836,6 @@ def backfill_email_person_ids(
                 LIMIT %s
                 """,
                 (
-                    patterns,
                     patterns,
                     patterns,
                     patterns,
