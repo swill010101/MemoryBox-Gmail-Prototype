@@ -1187,7 +1187,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
     _check(
         "inventory_prefers_structured_address_before_limit",
-        "ORDER BY CASE" in inventory_src and "normalized" in inventory_src,
+        "ORDER BY CASE" in inventory_src
+        and "from_parsed" in inventory_src
+        and "jsonb_array_elements" not in inventory_src,
         checks,
         problems,
     )

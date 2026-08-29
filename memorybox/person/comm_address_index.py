@@ -102,6 +102,7 @@ def inventory_email_address(
         with connection() as conn:
             # Prefer structured address hits over body-only so LIMIT does not
             # starve header inventory with quoted-body noise on large archives.
+            # Match *_parsed as text LIKE (no per-row JSON unnest — Takeout scale).
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -116,32 +117,22 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR lower(coalesce(payload_json->>'body_text', '')) LIKE %s
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
                 ORDER BY CASE
-                  WHEN EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(
-                      coalesce(payload_json->'from_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                      || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                    ) e
-                    WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
-                  ) THEN 0
                   WHEN lower(coalesce(payload_json->>'from', '')) LIKE %s
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                  THEN 1
-                  ELSE 2
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
+                  THEN 0
+                  ELSE 1
                 END,
                 id
                 LIMIT %s
@@ -153,8 +144,14 @@ def inventory_email_address(
                     like,
                     like,
                     like,
-                    addr,
-                    addr,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
                     like,
                     like,
                     like,
