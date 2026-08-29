@@ -110,6 +110,9 @@ def inventory_email_address(
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                  AND lower(coalesce(payload_json->>'mailbox_skip',
+                                     payload_json->>'skip_reason', ''))
+                      NOT IN ('spam', 'trash')
                   AND (
                     lower(coalesce(payload_json->>'from', '')) LIKE %s
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
@@ -167,6 +170,11 @@ def inventory_email_address(
         eid = str(r.get("id") or "")
         raw = r.get("payload_json")
         payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+        skip = str(
+            payload.get("mailbox_skip") or payload.get("skip_reason") or ""
+        ).strip().lower()
+        if skip in {"spam", "trash"}:
+            continue
         structured_hit = False
         for rec in _header_records(payload):
             if rec.get("address") != addr:
@@ -517,6 +525,12 @@ def find_addresses_for_person_forms(
         for r in rows:
             raw = r.get("payload_json")
             payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            # Align with retrieve: spam/trash rows are not eligible Person mail.
+            skip = str(
+                payload.get("mailbox_skip") or payload.get("skip_reason") or ""
+            ).strip().lower()
+            if skip in {"spam", "trash"}:
+                continue
             eid = str(r.get("id") or "")
             for rec in _header_records(payload):
                 strength = _display_matches_person(rec.get("display_name") or "", forms)
@@ -558,6 +572,9 @@ def find_addresses_for_person_forms(
                     WHERE evidence_kind = 'communication'
                       AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                           NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                          AND lower(coalesce(payload_json->>'mailbox_skip',
+                                             payload_json->>'skip_reason', ''))
+                              NOT IN ('spam', 'trash')
                       AND (
                         lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                         OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
@@ -585,6 +602,9 @@ def find_addresses_for_person_forms(
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                      AND lower(coalesce(payload_json->>'mailbox_skip',
+                                         payload_json->>'skip_reason', ''))
+                          NOT IN ('spam', 'trash')
                   AND (
                     lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
@@ -608,6 +628,9 @@ def find_addresses_for_person_forms(
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                      AND lower(coalesce(payload_json->>'mailbox_skip',
+                                         payload_json->>'skip_reason', ''))
+                          NOT IN ('spam', 'trash')
                   AND (
                     lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
@@ -939,6 +962,22 @@ def resolve_and_attach_addresses_for_person(
                 resolved_person_id=person_id,
                 resolution_status="confirmed",
             )
+            # Re-seed header displays (e.g. Peg Legg) even when contact already
+            # confirmed — earlier attach may have missed alias persistence.
+            if persist:
+                _seed_header_display_aliases(
+                    person_id,
+                    list((cand.get("display_names") or {}).keys())
+                    or [
+                        str(d.get("display_name") or "")
+                        for d in (
+                            (inv.get("structured_header") or {}).get("distinct_display_names")
+                            or []
+                        )
+                    ],
+                    known_forms=forms,
+                    address=addr,
+                )
             if backfill:
                 entry["backfill"] = backfill_email_person_ids(person_id, {addr})
             report["accepted"].append(entry)

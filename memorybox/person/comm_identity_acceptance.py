@@ -1194,6 +1194,15 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "inventory_and_discover_skip_spam_trash",
+        "mailbox_skip" in inventory_src
+        and "spam" in inventory_src
+        and "mailbox_skip" in discover_src
+        and "spam" in discover_src,
+        checks,
+        problems,
+    )
     identity_mod_src = open(ci.__file__, encoding="utf-8").read()
     _check(
         "comm_identity_no_jsonb_array_elements",
