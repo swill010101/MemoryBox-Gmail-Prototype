@@ -1528,7 +1528,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "gate_cmd_watchdog_timeout_gates",
         "gate_cmd_startmb_watchdog_timeout" in gate_cmd
         and "gate_cmd_prove_watchdog_timeout" in gate_cmd
-        and '"waiting": false' in gate_cmd,
+        and '"waiting": false' in gate_cmd
+        and "taskkill /F /T /PID" in gate_cmd,
         checks,
         problems,
     )
