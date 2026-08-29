@@ -152,12 +152,29 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     from memorybox.person import comm_identity as ci
 
     keep_src = inspect.getsource(retrieve_mod.search_email_messages)
+    blob_src = inspect.getsource(retrieve_mod._email_person_blob)
+    where_src = inspect.getsource(retrieve_mod._person_scoped_comm_where)
     header_src = inspect.getsource(ci._header_records)
     expand_src = inspect.getsource(ci.expand_emails_for_retrieve)
     sql_src = inspect.getsource(retrieve_mod._sql_confirmed_email_addrs)
     _check(
-        "retrieve_keep_does_not_use_name_blob_when_person_ids",
-        "if person_ids:" in keep_src and "_email_person_blob" not in keep_src.split("if person_ids:")[1][:800],
+        "retrieve_keep_does_not_use_name_blob",
+        "_email_person_blob" not in keep_src
+        and "people" not in keep_src.split("def _keep")[1][:900],
+        checks,
+        problems,
+    )
+    _check(
+        "email_person_blob_omits_people_array",
+        "people" not in blob_src,
+        checks,
+        problems,
+        detail=blob_src,
+    )
+    _check(
+        "email_sql_empty_trusted_skips_person_ids_gin",
+        "no_trusted_retrieve_addresses" in where_src
+        and "confirmed_emails is not None" in where_src,
         checks,
         problems,
     )

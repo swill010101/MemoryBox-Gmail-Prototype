@@ -479,6 +479,12 @@ def _live_retrieve_and_gallery_scope(person_id: str, trusted: set[str]) -> dict[
         )
         out["gallery_email_count"] = int(email_n or 0)
         out["gallery_match_total"] = int(match_total or 0)
+        retrieve_n = out.get("retrieve_hit_count")
+        if retrieve_n is not None and int(email_n or 0) and int(retrieve_n) >= 0:
+            out["gallery_vs_retrieve"] = {
+                "gallery_email_count": int(email_n or 0),
+                "retrieve_hit_count": int(retrieve_n),
+            }
     except Exception as exc:  # noqa: BLE001
         out["gallery_scope_error"] = str(exc)
     if out.get("unsupported_retrieve_hit_count"):

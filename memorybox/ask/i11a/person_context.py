@@ -334,10 +334,21 @@ def slim_person_context_for_model(ctx: dict[str, Any] | None) -> dict[str, Any]:
                     "role_kind": row.get("role_kind"),
                 }
             )
+        comm = []
+        for row in (card.get("communication_identities") or [])[:16]:
+            if not isinstance(row, dict):
+                continue
+            comm.append(
+                {
+                    "contact_kind": row.get("contact_kind") or row.get("identity_kind"),
+                    "value_text": row.get("value_text") or row.get("address_normalized"),
+                }
+            )
         return {
             "person_id": card.get("person_id"),
             "display_name": card.get("display_name"),
             "age_at_period": card.get("age_at_period"),
+            "communication_identities": comm,
             "known_relationships": known,
             "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],
         }

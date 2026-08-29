@@ -756,27 +756,32 @@ def _person_scoped_comm_where(
     """Indexable Person filter. Never probe-scan the archive with jsonb unnest or %name%.
 
     SMS: GIN person_ids, optionally BitmapOr indexed sender_name prefix.
-    Email: GIN person_ids and/or confirmed email header addresses (not body ILIKE).
+    Email: trusted header addresses only (pass confirmed_emails; empty = skip scan).
     Empty pages are cheap; do not SELECT 1 LIMIT 1 as a separate existence scan.
     """
     base = f"evidence_kind = 'communication' AND {channel_sql} AND {win_sql}"
     clauses: list[str] = []
     params: list[Any] = list(win_params)
     scopes: list[str] = []
-    # Stale person_ids stamps from auto-expand must not widen email retrieve.
-    # When trusted addresses exist, scan headers only.
-    if person_ids and not confirmed_emails:
+    # Email identity-closed: confirmed_emails is a set (possibly empty).
+    # Never fall back to stale person_ids GIN stamps from auto-expand.
+    if confirmed_emails is not None:
+        if confirmed_emails:
+            addr_sql, addr_params = _sql_confirmed_email_addrs(confirmed_emails)
+            if addr_sql != "FALSE":
+                clauses.append(addr_sql)
+                params.extend(addr_params)
+                scopes.append("confirmed_email_headers")
+            else:
+                return None, [], "no_trusted_retrieve_addresses"
+        else:
+            return None, [], "no_trusted_retrieve_addresses"
+    elif person_ids:
         gin_sql, gin_params = _sql_person_ids_gin(person_ids)
         clauses.append(gin_sql)
         params.extend(gin_params)
         scopes.append("person_ids_gin")
-    if confirmed_emails:
-        addr_sql, addr_params = _sql_confirmed_email_addrs(confirmed_emails)
-        if addr_sql != "FALSE":
-            clauses.append(addr_sql)
-            params.extend(addr_params)
-            scopes.append("confirmed_email_headers")
-    if header_fallback and person_names:
+    if confirmed_emails is None and header_fallback and person_names:
         name_sql, name_params = _sql_sender_prefix(person_names)
         if name_sql != "FALSE":
             clauses.append(name_sql)
@@ -1524,7 +1529,6 @@ def _email_person_blob(payload: dict[str, Any]) -> str:
         str(payload.get("from") or ""),
         str(payload.get("from_raw") or ""),
         " ".join(str(t) for t in (payload.get("to") or [])),
-        " ".join(str(p) for p in (payload.get("people") or [])),
     ]
     for rec in list(payload.get("from_parsed") or []) + list(payload.get("to_parsed") or []):
         if isinstance(rec, dict):
@@ -1561,6 +1565,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             expanded = expand_emails_for_retrieve(person_ids)
             identity_expand = expanded.get("expansion") or {}
             confirmed_addrs = set(expanded.get("addresses") or [])
+            if asked_owner:
+                confirmed_addrs |= set(owner_addrs or ())
             # Surface per-person resolve errors that previously looked like email=0.
             resolve_errs = [
                 f"{r.get('person_id')}:{r.get('error')}"
@@ -1572,6 +1578,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         except Exception as exc:  # noqa: BLE001
             identity_expand = {"error": f"{type(exc).__name__}:{exc}"}
             confirmed_addrs = _confirmed_emails_for_people(person_ids)
+            if asked_owner:
+                confirmed_addrs |= set(owner_addrs or ())
     else:
         confirmed_addrs = set()
     person_names = [
@@ -1738,7 +1746,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             day = sent[:10]
             if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
                 return False
-        if person_ids:
+        if person_ids or person_names:
             addrs = _payload_email_addresses(payload)
             if confirmed_addrs and (addrs & confirmed_addrs):
                 pass
@@ -1746,21 +1754,6 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                 payload.get("from_owner")
                 or (owner_addrs and (addrs & owner_addrs))
             ):
-                pass
-            else:
-                return False
-        elif person_names:
-            have = {str(x) for x in (payload.get("person_ids") or [])}
-            addrs = _payload_email_addresses(payload)
-            if confirmed_addrs and (addrs & confirmed_addrs):
-                pass
-            elif _sms_name_match(
-                _email_person_blob(payload),
-                person_names,
-                allow_first_token=False,
-            ):
-                pass
-            elif have:
                 pass
             else:
                 return False

@@ -191,6 +191,22 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=scope_empty,
     )
+    where_no_trust, _, scope_no_trust = _person_scoped_comm_where(
+        channel_sql="true",
+        win_sql="true",
+        win_params=[],
+        person_names=[],
+        person_ids={"person-peggy"},
+        header_fallback=False,
+        confirmed_emails=set(),
+    )
+    _check(
+        "empty_trusted_set_skips_person_ids_gin",
+        where_no_trust is None and scope_no_trust == "no_trusted_retrieve_addresses",
+        checks,
+        problems,
+        detail=scope_no_trust,
+    )
 
     # Corroboration: peggo417 with full display name, unclaimed
     cand = {

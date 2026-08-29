@@ -179,6 +179,50 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
             bool(freeze.get("email_evidence_ids")),
             freeze.get("email_evidence_ids"),
         )
+        ctx = (freeze.get("fixture") or {}).get("person_context") or {}
+        focals = list(ctx.get("focal_subjects") or [])
+        card0 = focals[0] if focals else {}
+        slim_addrs = " ".join(
+            str(r.get("value_text") or "")
+            for r in (card0.get("communication_identities") or [])
+            if isinstance(r, dict)
+        )
+        _ok(
+            "freeze_slim_includes_trusted_email",
+            trusted_addr in slim_addrs,
+            slim_addrs,
+        )
+        paste = str((freeze.get("fixture") or {}).get("user_message") or "")
+        _ok("freeze_paste_includes_trusted_email", trusted_addr in paste, paste[:240])
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import validate_fev2_document
+
+        email_ids = {str(x) for x in (freeze.get("email_evidence_ids") or []) if x}
+        allowed = set(email_ids)
+        for it in (freeze.get("fixture") or {}).get("items") or []:
+            for key in ("evidence_id", "item_id", "id"):
+                if it.get(key):
+                    allowed.add(str(it.get(key)))
+        grounded = {
+            "episodes": [
+                {
+                    "title": "Trusted mail",
+                    "when": "2021-01",
+                    "summary": "mail",
+                    "evidence_ids": sorted(email_ids)[:1],
+                }
+            ],
+            "claims": [
+                {
+                    "text": "Person used the trusted address",
+                    "evidence_ids": sorted(email_ids)[:1],
+                }
+            ],
+            "relationships": [],
+        }
+        ground = validate_fev2_document(
+            grounded, allowed_ids=allowed, email_evidence_ids=email_ids
+        )
+        _ok("synthetic_grounding_requires_email_ids", bool(ground.get("ok")), ground)
         if freeze.get("fixture_path"):
             chunk = compare_chunked_vs_unchunked(freeze["fixture_path"])
             _ok("chunk_structure_ok", bool(chunk.get("ok")), chunk)
