@@ -62,4 +62,6 @@ address; the address is the retrieve key once resolved.
 If only Immich single-token \"Peggy\" exists **and** inventory shows Peg Legg
 (structured) + Peggy George (quoted/structured) on peggo417, the gate prove
 operator-renames that unique Immich Person to \"Peggy George\" before attach.
-Full-Evidence on P1 does **not** Immich-lazy-seed a new \"Peggy\" stub.
+If **no** Peggy Person exists at all under the same corroboration, the gate
+operator-creates \"Peggy George\". Full-Evidence on P1 does **not** Immich-lazy-seed
+a new \"Peggy\" stub.

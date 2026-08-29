@@ -543,7 +543,6 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "seed": seed_info,
             "address_centric_gate": gate,
         }
-    upgrade_info: dict[str, Any] | None = None
     if flightsim:
         if ask_peggy is None or " " not in ((ask_peggy.display_name or "").strip()):
             if ask_peggy is None:
@@ -556,6 +555,34 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 ask_peggy, upgrade_info = _flightsim_upgrade_immich_peggy(
                     ask_peggy, structured=structured, quoted=quoted
                 )
+        # Cold FlightSim: no Peggy Person at all, but archive corroborates both
+        # Peg Legg (structured) and Peggy George on peggo417 — operator-create.
+        if ask_peggy is None:
+            has_legg = bool(structured.get("has_peg_legg")) or any(
+                (d.get("normalized_display") or "") == "peg legg"
+                for d in (structured.get("distinct_display_names") or [])
+            )
+            has_george = bool(structured.get("has_peggy_george")) or bool(
+                quoted.get("has_peggy_george")
+            ) or any(
+                (d.get("normalized_display") or "") == "peggy george"
+                for d in (structured.get("distinct_display_names") or [])
+                    + (quoted.get("distinct_display_names") or [])
+            )
+            if has_legg and has_george and struct_n > 0:
+                from memorybox.person import resolve_person_by_name
+
+                created = resolve_person_by_name(
+                    "Peggy George", create_if_missing=True, confirm=True
+                )
+                ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=False)
+                upgrade_info = {
+                    "created": True,
+                    "person_id": getattr(ask_peggy, "id", None) or created.person_id,
+                    "display_name": getattr(ask_peggy, "display_name", None)
+                    or created.display_name,
+                    "reason": "flightsim_archive_corroborated_peg_legg_and_peggy_george",
+                }
     _check(
         "ask_peggy_is_peggy_george",
         ask_peggy is not None and " " in (ask_peggy.display_name or ""),
