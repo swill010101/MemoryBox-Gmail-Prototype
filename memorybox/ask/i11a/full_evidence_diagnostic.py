@@ -223,6 +223,17 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
                 except Exception:  # noqa: BLE001
                     view = None
                 if view is None:
+                    # Exact ledger Person (cold-created Peggy George) may not be in
+                    # the AmbiguousIdentity candidate list yet — prefer it over abort.
+                    try:
+                        from memorybox.person import list_people_by_exact_name
+
+                        exact = list_people_by_exact_name("Peggy George")
+                        if len(exact) == 1:
+                            view = exact[0]
+                    except Exception:  # noqa: BLE001
+                        view = None
+                if view is None:
                     for prefer in ("Peggy George", "Peg Legg"):
                         try:
                             view = find_ask_person_by_name(
@@ -240,6 +251,21 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
                 continue
             pids.append(view.id)
             labels.append(view.display_name or name)
+        if not pids and any(
+            "peggy" in str(n).lower() or "peg legg" in str(n).lower()
+            for n in (plan.person_names or ())
+        ):
+            # Last resort: unique exact Peggy George even when every name token
+            # raised AmbiguousIdentity with an empty/unhelpful candidate set.
+            try:
+                from memorybox.person import list_people_by_exact_name
+
+                exact = list_people_by_exact_name("Peggy George")
+                if len(exact) == 1:
+                    pids = [exact[0].id]
+                    labels = [exact[0].display_name or "Peggy George"]
+            except Exception:  # noqa: BLE001
+                pass
         if pids:
             note = (
                 "resolved_person_ids_for_comms"

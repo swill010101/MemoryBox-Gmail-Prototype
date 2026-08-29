@@ -233,6 +233,11 @@ goto push_retry_loop
 :push_retry_done
 if "%PUSH_OK%"=="0" (
   echo WARNING: results-branch force-push failed after retries — paste gate manually from above.
+  echo WARNING: cloud agent will NOT see this run until Desktop paste or successful push.
+  if exist "%GATE_VERDICT%" (
+    echo.>> "%GATE_VERDICT%"
+    echo DELIVERY_FAILED: results-branch push failed — paste ADDRESS_CENTRIC_GATE into PR #74>> "%GATE_VERDICT%"
+  )
 )
 git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (

@@ -1468,6 +1468,25 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "full_evidence_ambig_exact_name_last_resort",
+        "list_people_by_exact_name" in fed_src
+        and "Last resort: unique exact Peggy George" in fed_src,
+        checks,
+        problems,
+    )
+
+    e2e_src = open(
+        __import__("memorybox.person.address_centric_e2e", fromlist=["x"]).__file__,
+        encoding="utf-8",
+    ).read()
+    _check(
+        "e2e_alias_seed_soft_when_ask_resolves",
+        "peg_legg_alias_seed_soft_ok_ask_resolves" in e2e_src
+        and "plan_or_ask_ok" in e2e_src,
+        checks,
+        problems,
+    )
 
     return {
         "ok": not problems,
