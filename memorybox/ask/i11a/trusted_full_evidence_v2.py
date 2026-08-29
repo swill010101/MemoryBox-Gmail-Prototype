@@ -405,8 +405,8 @@ def freeze_trusted_full_evidence_v2(
     video = build_video()
     if plan is None:
         # Single-pass: trusted email + established text (calendar/story/journal).
-        # Do not pull the unbounded Immich library — that hangs FlightSim
-        # before Gemma/Sol. Visuals wait for the complete trusted freeze.
+        # Do not pull unbounded Immich or complete SMS — those hang FlightSim
+        # before Gemma/Sol. Visuals and SMS wait for the complete trusted freeze.
         visual = bool(complete_trusted)
         plan = QueryPlan(
             original_ask=ask,
@@ -431,7 +431,30 @@ def freeze_trusted_full_evidence_v2(
             notes=("complete_comm_retrieve", "trusted_full_evidence_v2"),
         )
     person_context = build_person_context(plan)
-    retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
+    if complete_trusted:
+        retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
+    else:
+        from memorybox.ask import retrieve as R
+
+        mail = list(R.search_email_messages(plan) or [])
+        cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
+        stories = list(R.search_stories(plan, limit=0) or []) if plan.want_story else []
+        journals = list(R.search_journals(plan, limit=0) or []) if plan.want_journal else []
+        artifacts = (
+            list(R.search_artifacts(plan, limit=0) or []) if plan.want_artifact else []
+        )
+        retrieved = {
+            "evidence": mail + cal,
+            "photos": [],
+            "videos": [],
+            "stories": stories,
+            "journals": journals,
+            "artifacts": artifacts,
+            "guided_capture": [],
+            "photo_status": {"skipped": "single_pass_no_unbounded_immich"},
+            "video_status": {"skipped": "single_pass_no_unbounded_immich"},
+            "sms_status": {"skipped": "single_pass_no_unbounded_sms"},
+        }
     norm = normalize_retrieved(retrieved, person_context=person_context)
     budget = 1_000_000_000 if complete_trusted else token_budget
     items = select_single_pass_items(

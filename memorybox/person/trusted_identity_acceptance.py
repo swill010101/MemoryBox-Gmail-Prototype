@@ -901,6 +901,14 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    _check(
+        "single_pass_freeze_skips_unbounded_sms",
+        "search_email_messages" in freeze_src
+        and "search_sms_messages" not in freeze_src
+        and "single_pass_no_unbounded_sms" in freeze_src,
+        checks,
+        problems,
+    )
     run_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.trusted_full_evidence_v2",
