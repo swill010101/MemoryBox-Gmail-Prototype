@@ -18,6 +18,24 @@ _QUOTED_HDR_RE = re.compile(
     r"(?im)^(from|to|cc|bcc)\s*:\s*(.+)$",
 )
 _MAX_EVIDENCE_SAMPLE = 48
+# Probe/repair only. Ask retrieve must never run this scan.
+_INVENTORY_STATEMENT_TIMEOUT = "60s"
+
+
+def _sql_email_headers_like(placeholder: str = "%s") -> str:
+    """Header/participant JSON as text. Never body_text. Never jsonb unnest."""
+    fields = (
+        "lower(coalesce(payload_json->>'from', ''))",
+        "lower(coalesce((payload_json->'to')::text, ''))",
+        "lower(coalesce((payload_json->'cc')::text, ''))",
+        "lower(coalesce((payload_json->'bcc')::text, ''))",
+        "lower(coalesce((payload_json->'people')::text, ''))",
+        "lower(coalesce((payload_json->'from_parsed')::text, ''))",
+        "lower(coalesce((payload_json->'to_parsed')::text, ''))",
+        "lower(coalesce((payload_json->'cc_parsed')::text, ''))",
+        "lower(coalesce((payload_json->'bcc_parsed')::text, ''))",
+    )
+    return "(" + " OR ".join(f"{f} LIKE {placeholder}" for f in fields) + ")"
 
 
 def _norm_display(raw: str | None) -> str:
@@ -59,9 +77,11 @@ def inventory_email_address(
     limit_scan: int = 100_000,
     include_quoted_body: bool = True,
 ) -> dict[str, Any]:
-    """Report distinct display names for one address across the archive.
+    """Report distinct display names for one address (probe/repair only).
 
-    Separates structured From/To/CC participant headers from quoted-body headers.
+    Header/participant JSON only. Quoted-body names are read from those same
+    rows — never ``body_text LIKE`` across the mailbox. Ask retrieve must not
+    call this; it runs up to 60s then times out.
     """
     addr = normalize_handle(address)
     if not addr or "@" not in addr:
@@ -79,36 +99,29 @@ def inventory_email_address(
 
     try:
         with connection() as conn:
+            conn.execute(f"SET LOCAL statement_timeout = '{_INVENTORY_STATEMENT_TIMEOUT}'")
+            header_sql = _sql_email_headers_like("%s")
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, payload_json
                 FROM evidence
                 WHERE evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-                  AND (
-                    lower(coalesce(payload_json->>'from', '')) LIKE %s
-                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
-                    OR lower(coalesce(payload_json->>'body_text', '')) LIKE %s
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
-                    )
-                  )
+                  AND {header_sql}
                 LIMIT %s
                 """,
-                (like, like, like, like, like, like, addr, limit_scan),
+                (like, like, like, like, like, like, like, like, like, limit_scan),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc), "address": addr}
+        msg = str(exc)
+        low = msg.lower()
+        kind = (
+            "statement_timeout"
+            if "timeout" in low or "canceling statement" in low
+            else msg
+        )
+        return {"ok": False, "error": kind, "address": addr}
 
     for r in rows:
         rows_scanned += 1
@@ -199,9 +212,76 @@ def inventory_email_address(
             "has_peg_legg": has_peg_legg_quoted,
             "note": (
                 "Lower confidence — From/To/Cc/Bcc lines embedded in body_text "
-                "(quoted/forwarded). Do not establish identity alone."
+                "of messages that already matched this address in headers. "
+                "This is not an archive-wide body scan."
             ),
         },
+    }
+
+
+def ledger_identity_view(address: str) -> dict[str, Any] | None:
+    """Cheap diagnose view from communication_identities — no Evidence scan."""
+    addr = normalize_handle(address)
+    if not addr or "@" not in addr:
+        return None
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                """
+                SELECT address_normalized, observed_display_names,
+                       header_occurrence_count, quoted_body_occurrence_count,
+                       resolution_status, resolved_person_id
+                FROM communication_identities
+                WHERE identity_kind = 'email'
+                  AND address_normalized = %s
+                """,
+                (addr,),
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+    if not row:
+        return None
+    raw_obs = row.get("observed_display_names") or {}
+    if isinstance(raw_obs, str):
+        try:
+            raw_obs = json.loads(raw_obs)
+        except Exception:  # noqa: BLE001
+            raw_obs = {}
+    header_list: list[dict[str, Any]] = []
+    quoted_list: list[dict[str, Any]] = []
+    if isinstance(raw_obs, dict):
+        for key, slot in raw_obs.items():
+            if not isinstance(slot, dict):
+                continue
+            dn = str(slot.get("display_name") or key or "").strip()
+            nd = _norm_display(dn)
+            item = {
+                "normalized_display": nd,
+                "display_name": dn,
+                "count": int(slot.get("header_count") or slot.get("quoted_body_count") or 0),
+            }
+            if int(slot.get("header_count") or 0) > 0:
+                header_list.append(item)
+            if int(slot.get("quoted_body_count") or 0) > 0:
+                quoted_list.append(item)
+    return {
+        "ok": True,
+        "address": addr,
+        "source": "communication_identities_ledger",
+        "structured_header": {
+            "occurrence_count": int(row.get("header_occurrence_count") or 0),
+            "distinct_display_names": header_list,
+            "has_peggy_george": any(x["normalized_display"] == "peggy george" for x in header_list),
+            "has_peg_legg": any(x["normalized_display"] == "peg legg" for x in header_list),
+        },
+        "quoted_body_headers_only": {
+            "occurrence_count": int(row.get("quoted_body_occurrence_count") or 0),
+            "distinct_display_names": quoted_list,
+            "has_peggy_george": any(x["normalized_display"] == "peggy george" for x in quoted_list),
+            "has_peg_legg": any(x["normalized_display"] == "peg legg" for x in quoted_list),
+        },
+        "resolution_status": row.get("resolution_status"),
+        "resolved_person_id": row.get("resolved_person_id"),
     }
 
 
@@ -455,6 +535,7 @@ def find_addresses_for_person_forms(
     candidates: dict[str, dict[str, Any]] = {}
     try:
         with connection() as conn:
+            conn.execute(f"SET LOCAL statement_timeout = '{_INVENTORY_STATEMENT_TIMEOUT}'")
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -468,19 +549,17 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 LIMIT %s
                 """,
                 (
+                    patterns,
+                    patterns,
+                    patterns,
                     patterns,
                     patterns,
                     patterns,
@@ -551,17 +630,14 @@ def resolve_and_attach_addresses_for_person(
     person_id: str,
     *,
     persist: bool = True,
-    backfill: bool = True,
-    inventory_attached: bool = True,
+    backfill: bool = False,
+    inventory_attached: bool = False,
+    scan_archive: bool = False,
 ) -> dict[str, Any]:
-    """Three-step identity pipeline for one Person (Ask/Gallery).
+    """Resolve ledger identities to a Person. Default: no Evidence scan.
 
-    1. DISCOVER — find archive addresses whose structured display names match
-       this Person's forms; upsert ``communication_identities`` as observed
-       (no Person email contact required).
-    2. RESOLVE — corroborate each identity → Person; write contacts + ledger.
-    3. RETRIEVE prep — backfill ``person_ids`` so all mail for those addresses
-       is Person evidence (including Peg Legg–labeled messages).
+    Ask retrieve must keep ``scan_archive=False``. Archive inventory belongs on
+    ``probe-email-address`` / ``repair-email-identities``.
     """
     from memorybox.person.comm_identity import (
         backfill_email_person_ids,
@@ -578,6 +654,7 @@ def resolve_and_attach_addresses_for_person(
         "display_name": snap.get("display_name"),
         "known_name_forms": forms,
         "pipeline": ["discover", "resolve", "retrieve_prep"],
+        "discover_mode": "archive" if scan_archive else "ledger",
         "discovered": [],
         "candidates": [],
         "accepted": [],
@@ -588,12 +665,10 @@ def resolve_and_attach_addresses_for_person(
         report["reason"] = "no_known_name_forms"
         return report
 
-    # --- 1. DISCOVER (archive + ledger → identities; person email not required) ---
-    # Ledger-first: probe-email-address may have already inventoried peggo417 with
-    # Peg Legg / Peggy George observations. Name-prefilter archive scans can miss
-    # under LIMIT on large Takeouts; the ledger is address-keyed and complete.
     ledger_cands = find_ledger_addresses_for_person_forms(forms)
-    archive_cands = find_addresses_for_person_forms(forms)
+    archive_cands: list[dict[str, Any]] = []
+    if scan_archive:
+        archive_cands = find_addresses_for_person_forms(forms)
     by_addr: dict[str, dict[str, Any]] = {}
     for cand in ledger_cands + archive_cands:
         addr = str(cand.get("address") or "")
@@ -605,7 +680,6 @@ def resolve_and_attach_addresses_for_person(
         ):
             by_addr[addr] = cand
         else:
-            # Merge display names / strengths from both sources
             dns = dict(prev.get("display_names") or {})
             for dn, n in (cand.get("display_names") or {}).items():
                 dns[dn] = max(int(dns.get(dn) or 0), int(n or 0))
@@ -619,40 +693,22 @@ def resolve_and_attach_addresses_for_person(
     )
     report["ledger_discovered"] = [c.get("address") for c in ledger_cands]
     report["archive_discovered"] = [c.get("address") for c in archive_cands]
+    _ = inventory_attached  # ignored: never re-inventory each candidate
     for cand in cands:
         addr = str(cand.get("address") or "")
-        inv = inventory_email_address(addr, include_quoted_body=True)
-        ledger = upsert_communication_identity_from_inventory(
-            inv, resolution_status="observed"
-        )
-        report["discovered"].append(
-            {"address": addr, "candidate": cand, "ledger": ledger}
-        )
+        report["discovered"].append({"address": addr, "candidate": cand})
         if inventory_attached:
             report["inventories"].append(
                 {
                     "address": addr,
-                    "structured_has_peggy_george": (inv.get("structured_header") or {}).get(
-                        "has_peggy_george"
-                    ),
-                    "structured_has_peg_legg": (inv.get("structured_header") or {}).get(
-                        "has_peg_legg"
-                    ),
-                    "quoted_has_peggy_george": (inv.get("quoted_body_headers_only") or {}).get(
-                        "has_peggy_george"
-                    ),
-                    "quoted_has_peg_legg": (inv.get("quoted_body_headers_only") or {}).get(
-                        "has_peg_legg"
-                    ),
-                    "structured_names": (inv.get("structured_header") or {}).get(
-                        "distinct_display_names"
-                    ),
+                    "skipped": True,
+                    "reason": "retrieve_must_not_inventory_evidence",
                 }
             )
 
         # --- 2. RESOLVE (identity → Person) ---
         decision = corroborate_email_candidate(person_id, cand, known_forms=forms)
-        entry = {"candidate": cand, "decision": decision, "inventory": inv}
+        entry = {"candidate": cand, "decision": decision}
         report["candidates"].append(entry)
 
         if decision.get("accepted") and decision.get("reason") != "already_confirmed_for_person":
@@ -661,15 +717,19 @@ def resolve_and_attach_addresses_for_person(
                     person_id,
                     addr,
                     provenance={
-                        "source": "comm_address_index_resolve",
+                        "source": "address_centric_resolve",
                         "reason": decision.get("reason"),
                         "corroboration": decision.get("corroboration"),
                         "matched_display_name": decision.get("matched_display_name"),
                         "match_strength": decision.get("match_strength"),
-                        "address_centric": True,
-                        "pipeline": "discover_then_resolve",
+                        "evidence_ids_sample": (cand.get("evidence_ids") or [])[:8],
+                        "occurrences": cand.get("occurrences"),
+                        "header_fields": cand.get("header_fields"),
                     },
-                    note="Resolved via archive-first communication identity",
+                    note=(
+                        "Address-centric: archive identity resolved to Person "
+                        "from structured display-name observations"
+                    ),
                 )
                 _seed_header_display_aliases(
                     person_id,
@@ -677,25 +737,18 @@ def resolve_and_attach_addresses_for_person(
                     known_forms=forms,
                     address=addr,
                 )
-                upsert_communication_identity_from_inventory(
-                    inv,
-                    resolved_person_id=person_id,
-                    resolution_status="confirmed",
-                )
-                # --- 3. RETRIEVE prep (all messages for this address) ---
-                if backfill:
-                    entry["backfill"] = backfill_email_person_ids(person_id, {addr})
             report["accepted"].append(entry)
         elif decision.get("reason") == "already_confirmed_for_person":
-            upsert_communication_identity_from_inventory(
-                inv,
-                resolved_person_id=person_id,
-                resolution_status="confirmed",
-            )
-            if backfill:
-                entry["backfill"] = backfill_email_person_ids(person_id, {addr})
             report["accepted"].append(entry)
         else:
             report["rejected"].append(entry)
 
+    accepted_addrs = {
+        normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
+        for e in report["accepted"]
+        if isinstance(e, dict)
+    }
+    accepted_addrs = {a for a in accepted_addrs if a and "@" in a}
+    if backfill and persist and accepted_addrs:
+        report["backfill"] = backfill_email_person_ids(person_id, accepted_addrs)
     return report

@@ -347,6 +347,21 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=qhits,
     )
     retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
+    inv_src = open("memorybox/person/comm_address_index.py", encoding="utf-8").read()
+    inv_fn = inv_src[
+        inv_src.find("def inventory_email_address") : inv_src.find(
+            "\ndef ledger_identity_view"
+        )
+    ]
+    _check(
+        "inventory_sql_is_headers_only",
+        "payload_json->>'body_text'" not in inv_fn.split("for r in rows", 1)[0]
+        and "jsonb_array_elements" not in inv_fn
+        and "SET LOCAL statement_timeout" in inv_fn,
+        checks,
+        problems,
+        detail="probe inventory must not LIKE body_text or unnest JSON",
+    )
     _check(
         "retrieve_has_no_peggo_hardcode",
         "peggo417" not in retrieve_src and "peggo01417" not in retrieve_src,
@@ -355,6 +370,10 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     )
     from memorybox.person import comm_identity as ci
 
+    expand_src = open("memorybox/person/comm_identity.py", encoding="utf-8").read()
+    idx = expand_src.find("def expand_emails_for_retrieve")
+    nxt = expand_src.find("\ndef ", idx + 10)
+    hook = expand_src[idx:nxt]
     _check(
         "expand_hook_is_address_centric",
         "discover" in (ci.expand_emails_for_retrieve.__doc__ or "").lower()
@@ -363,6 +382,18 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=ci.expand_emails_for_retrieve.__doc__,
+    )
+    _check(
+        "expand_retrieve_does_not_scan_evidence",
+        "inventory_email_address" not in hook
+        and "find_addresses_for_person_forms" not in hook
+        and "discover_email_candidates_from_archive" not in hook
+        and "scan_archive=False" in hook
+        and "discover=False" in hook
+        and "backfill=False" in hook,
+        checks,
+        problems,
+        detail=hook[:800],
     )
 
     # End-to-end offline: Peg Legg structured + Peggy George quoted on peggo417

@@ -74,6 +74,19 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         detail="Peggy person library must not walk up to 720 Immich MONTH buckets",
     )
     retrieve_py = (root / "ask" / "retrieve.py").read_text(encoding="utf-8")
+    ident_py = (root / "person" / "comm_identity.py").read_text(encoding="utf-8")
+    idx = ident_py.find("def expand_emails_for_retrieve")
+    nxt = ident_py.find("\ndef ", idx + 10)
+    hook = ident_py[idx:nxt]
+    _check(
+        "a_person_email_retrieve_does_not_inventory_archive",
+        "inventory_email_address" not in hook
+        and "scan_archive=False" in hook
+        and "discover=False" in hook,
+        checks,
+        problems,
+        detail="Ask/benchmark email retrieve must not run probe inventory",
+    )
     _check(
         "a_person_comm_retrieve_not_full_export_scan",
         "_sql_person_text_hint" in retrieve_py

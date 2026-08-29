@@ -342,8 +342,8 @@ def discover_email_candidates_from_archive(
     scanned = 0
     try:
         with connection() as conn:
-            # Header-oriented prefilter — never body_text.
-            # ``to``/``cc`` are JSON arrays: use (payload_json->'to')::text, not ->>.
+            # Header-oriented prefilter — never body_text, never jsonb unnest.
+            conn.execute("SET LOCAL statement_timeout = '60s'")
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -357,19 +357,17 @@ def discover_email_candidates_from_archive(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'display_name', '')) LIKE ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 LIMIT %s
                 """,
                 (
+                    patterns,
+                    patterns,
+                    patterns,
                     patterns,
                     patterns,
                     patterns,
@@ -662,6 +660,7 @@ def backfill_email_person_ids(
     patterns = [f"%{a}%" for a in sorted(addrs)]
     try:
         with connection() as conn:
+            conn.execute("SET LOCAL statement_timeout = '60s'")
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -675,15 +674,10 @@ def backfill_email_person_ids(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = ANY(%s)
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
                 LIMIT %s
                 """,
@@ -693,7 +687,10 @@ def backfill_email_person_ids(
                     patterns,
                     patterns,
                     patterns,
-                    sorted(addrs),
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
                     limit,
                 ),
             ).fetchall()
@@ -881,12 +878,14 @@ def expand_person_communication_identities(
 
 
 def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, Any]:
-    """Ask/Gallery hook: discover → resolve → retrieve prep (address-centric).
+    """Ask/Gallery retrieve prep: contacts + ledger only.
 
-    Governing order:
-    1. Discover communication identities from the archive
-    2. Resolve those identities to People
-    3. Use resolved identities to retrieve complete Person evidence
+    Governing pipeline (discover/resolve are probe/repair, not this hook):
+    1. Discover communication identities from the archive (probe-email-address)
+    2. Resolve those identities to People (ledger → contacts)
+    3. Retrieve complete Person evidence using confirmed addresses (this function)
+
+    Does not scan Evidence, inventory bodies, or backfill person_ids.
     """
     ids = [str(p) for p in person_ids if str(p).strip()]
     address_reports: list[dict[str, Any]] = []
@@ -898,17 +897,22 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
 
             address_reports.append(
                 resolve_and_attach_addresses_for_person(
-                    pid, persist=True, backfill=True, inventory_attached=True
+                    pid,
+                    persist=True,
+                    backfill=False,
+                    inventory_attached=False,
+                    scan_archive=False,
                 )
             )
         except Exception as exc:  # noqa: BLE001
             address_reports.append({"person_id": pid, "error": str(exc)})
 
     expansion = expand_person_communication_identities(
-        ids, persist=True, backfill=True, discover=True
+        ids, persist=True, backfill=False, discover=False
     )
     expansion["address_centric_resolve"] = address_reports
     expansion["pipeline"] = ["discover", "resolve", "retrieve"]
+    expansion["retrieve_scan"] = "contacts_and_ledger_only"
     # Flatten accepted addresses from address-centric resolve for retrieve notes.
     flat_accepted: list[dict[str, Any]] = []
     for rep in address_reports:
@@ -1072,6 +1076,7 @@ def attach_known_email_if_corroborated(
     rows = []
     try:
         with connection() as conn:
+            conn.execute("SET LOCAL statement_timeout = '60s'")
             rows = conn.execute(
                 """
                 SELECT id, payload_json
@@ -1085,19 +1090,14 @@ def attach_known_email_if_corroborated(
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
-                    OR EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(
-                        coalesce(payload_json->'from_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'to_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'cc_parsed','[]'::jsonb)
-                        || coalesce(payload_json->'bcc_parsed','[]'::jsonb)
-                      ) e
-                      WHERE lower(coalesce(e->>'normalized', e->>'address', '')) = %s
-                    )
+                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
                 LIMIT 5000
                 """,
-                (like, like, like, like, like, addr),
+                (like, like, like, like, like, like, like, like, like),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"accepted": False, "reason": "scan_error", "error": str(exc), "address": addr}
@@ -1372,30 +1372,36 @@ def diagnose_email_retrieve_gap(
         except Exception as exc:  # noqa: BLE001
             out["expand_preview"] = {"error": str(exc)}
 
-    # Inventory every confirmed address (structured vs quoted display names).
-    # Also inventory ledger addresses that match Person forms even before confirm —
-    # so FlightSim diag shows peggo417 after probe when attach has not yet run.
+    # Ledger views only — never inventory Evidence during diagnose/Ask.
     inventories: list[dict[str, Any]] = []
     try:
         from memorybox.person.comm_address_index import (
             find_ledger_addresses_for_person_forms,
-            inventory_email_address,
+            ledger_identity_view,
         )
 
+        seen: set[str] = set()
         for addr in out["confirmed_emails"][:8]:
-            inventories.append(inventory_email_address(addr, include_quoted_body=True))
-        if hint and hint not in out["confirmed_emails"]:
-            inventories.append(inventory_email_address(hint, include_quoted_body=True))
+            view = ledger_identity_view(addr)
+            if view:
+                inventories.append(view)
+                seen.add(addr)
+        if hint and hint not in seen:
+            view = ledger_identity_view(hint)
+            if view:
+                inventories.append(view)
+                seen.add(hint)
         if not out["confirmed_emails"]:
             forms: list[str] = []
             for snap in out["snapshots"]:
                 forms.extend(snap.get("known_name_forms") or [])
             for cand in find_ledger_addresses_for_person_forms(forms)[:4]:
                 addr = str(cand.get("address") or "")
-                if addr and addr not in {normalize_handle(a) for a in out["confirmed_emails"]}:
-                    inventories.append(
-                        inventory_email_address(addr, include_quoted_body=True)
-                    )
+                if addr and addr not in seen:
+                    view = ledger_identity_view(addr)
+                    if view:
+                        inventories.append(view)
+                        seen.add(addr)
                     if not hint:
                         hint = addr
                         out["address_hint"] = addr
@@ -1492,7 +1498,7 @@ def repair_email_identity_contacts(
         for pid in ids:
             address_reports.append(
                 resolve_and_attach_addresses_for_person(
-                    pid, persist=True, backfill=True, inventory_attached=True
+                    pid, persist=True, backfill=False, scan_archive=False
                 )
             )
     except Exception as exc:  # noqa: BLE001

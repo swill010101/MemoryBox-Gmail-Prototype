@@ -194,7 +194,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         }
 
     resolve = resolve_and_attach_addresses_for_person(
-        ask_peggy.id, persist=True, backfill=True, inventory_attached=True
+        ask_peggy.id, persist=True, backfill=False, scan_archive=False
     )
     accepted_addrs = [
         normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
