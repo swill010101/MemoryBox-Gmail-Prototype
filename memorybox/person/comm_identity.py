@@ -629,13 +629,27 @@ def corroborate_email_candidate(
         if " " in str(r.get("display_name") or "").strip()
     ]
     if best_strength == "nickname_full":
-        # Peg Legg → Peggy George: require unique multi-token Person in the
+        # Peg Legg → Peggy George: prefer a unique multi-token Person in the
         # first-name family (ignore Immich single-token stubs like \"Peggy\").
+        # When several Peggy* exist (Smith/Jones/George), still accept if this
+        # Person is the unique full/alias form match among those siblings —
+        # otherwise Ask auto-resolve cannot attach peggo417 without operator repair.
         if len(multi_sibs) > 1:
-            result["reason"] = "ambiguous_nickname_among_people"
-            result["ambiguous_person_ids"] = multi_sibs
-            return result
-        if multi_sibs and person_id not in multi_sibs:
+            form_matches = [
+                str(r["id"])
+                for r in sibling_rows
+                if str(r["id"]) in multi_sibs
+                and _display_matches_person(str(r.get("display_name") or ""), forms)
+                in {"full", "alias_full"}
+            ]
+            if person_id not in form_matches or len(set(form_matches)) != 1:
+                result["reason"] = "ambiguous_nickname_among_people"
+                result["ambiguous_person_ids"] = multi_sibs
+                return result
+            result["corroboration"].append(
+                f"nickname_unique_form_match_among_{len(multi_sibs)}_siblings"
+            )
+        elif multi_sibs and person_id not in multi_sibs:
             result["reason"] = "nickname_belongs_to_other_person"
             result["ambiguous_person_ids"] = multi_sibs
             return result

@@ -327,6 +327,55 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=nick_dec,
     )
 
+    # Multiple Peggy* siblings: still accept when target is the unique form match.
+    multi_sib_rows = [
+        {"id": "person-peggy-george", "display_name": "Peggy George"},
+        {"id": "person-peggy-smith", "display_name": "Peggy Smith"},
+        {"id": "person-peggy-jones", "display_name": "Peggy Jones"},
+    ]
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity.connection"
+    ) as conn_ctx:
+        conn = conn_ctx.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.side_effect = [
+            list(multi_sib_rows),
+            [{"id": "person-peggy-george", "display_name": "Peg Legg"}],
+            list(multi_sib_rows),
+            [{"id": "person-peggy-smith", "display_name": "Peg Legg"}],
+        ]
+        multi_ok = corroborate_email_candidate("person-peggy-george", nick_cand)
+        multi_wrong = corroborate_email_candidate("person-peggy-smith", nick_cand)
+    _check(
+        "peg_legg_accepted_when_george_unique_among_peggy_siblings",
+        bool(multi_ok.get("accepted"))
+        and any(
+            "nickname_unique_form_match" in str(c)
+            for c in (multi_ok.get("corroboration") or [])
+        ),
+        checks,
+        problems,
+        detail=multi_ok,
+    )
+    _check(
+        "peg_legg_rejected_for_unrelated_peggy_sibling",
+        not multi_wrong.get("accepted")
+        and multi_wrong.get("reason") == "ambiguous_nickname_among_people",
+        checks,
+        problems,
+        detail=multi_wrong,
+    )
+
     # Unrelated "Peg *" mailbox must NOT attach via nickname_full alone.
     noise_cand = {
         "address": "noise99@example.com",
