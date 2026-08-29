@@ -99,6 +99,23 @@ if exist "%GATE_FAIL%" if not "%PROVE_EXIT%"=="0" (
 echo ===== end gate paste block =====
 echo.
 
+REM Always drop latest gate at repo root + Desktop for easy paste/upload.
+if exist "%GATE_JSON%" (
+  copy /Y "%GATE_JSON%" "ADDRESS_CENTRIC_GATE_LATEST.json" >nul
+  if exist "%GATE_VERDICT%" copy /Y "%GATE_VERDICT%" "ADDRESS_CENTRIC_VERDICT_LATEST.txt" >nul
+  if defined USERPROFILE (
+    if exist "%USERPROFILE%\Desktop" (
+      copy /Y "%GATE_JSON%" "%USERPROFILE%\Desktop\ADDRESS_CENTRIC_GATE.json" >nul 2>nul
+      if exist "%GATE_VERDICT%" copy /Y "%GATE_VERDICT%" "%USERPROFILE%\Desktop\ADDRESS_CENTRIC_VERDICT.txt" >nul 2>nul
+      echo Copied gate to Desktop and ADDRESS_CENTRIC_GATE_LATEST.json
+    )
+  )
+  if exist "%GATE_VERDICT%" (
+    echo Opening VERDICT in notepad for paste...
+    start "" notepad.exe "%CD%\ADDRESS_CENTRIC_VERDICT_LATEST.txt"
+  )
+)
+
 REM Auto-deliver to PR #74 when gh is authenticated — wakes the cloud agent.
 where gh >nul 2>&1
 if not errorlevel 1 (
