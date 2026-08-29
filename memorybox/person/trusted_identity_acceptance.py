@@ -23,6 +23,67 @@ def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detai
         problems.append(f"{name}: {detail}")
 
 
+def _phase1_gate_envelope(
+    *,
+    flightsim_requested: bool,
+    flightsim_report: dict[str, Any],
+    checks: list[str],
+    problems: list[str],
+) -> dict[str, Any]:
+    """Verifier-shaped Phase 1 file. Raw report-only JSON fails C2/C2b/C2c."""
+    runtime = _trusted_identity_runtime(flightsim_requested=flightsim_requested)
+    return {
+        "ok": not problems and bool(flightsim_report.get("ok")),
+        "prove": "trusted_identity_retrieval",
+        "flightsim": runtime.get("flightsim"),
+        "waiting": False,
+        "runtime": runtime,
+        "checks": list(checks),
+        "problems": list(problems),
+        "flightsim_report": flightsim_report,
+        "phase1": {
+            "ok": flightsim_report.get("ok"),
+            "trusted_addresses": flightsim_report.get("trusted_addresses"),
+            "counts": flightsim_report.get("counts"),
+            "per_trusted_address": flightsim_report.get("per_trusted_address"),
+            "unique_emails_by_trusted_address": flightsim_report.get(
+                "unique_emails_by_trusted_address"
+            ),
+            "unique_only_via_trusted_address": flightsim_report.get(
+                "unique_only_via_trusted_address"
+            ),
+            "shared_across_trusted_addresses": flightsim_report.get(
+                "shared_across_trusted_addresses"
+            ),
+            "unsupported_retrieve_addresses": flightsim_report.get(
+                "unsupported_retrieve_addresses"
+            ),
+            "unsupported_retrieve_hit_count": flightsim_report.get(
+                "unsupported_retrieve_hit_count"
+            ),
+            "retrieve_hit_count": flightsim_report.get("retrieve_hit_count"),
+            "gallery_email_count": flightsim_report.get("gallery_email_count"),
+            "phase1_summary": flightsim_report.get("phase1_summary"),
+        },
+        "phase": 1,
+        "stop": "phase_1_trusted_identity — no Gemma/Sol/chunking",
+    }
+
+
+def _write_phase1_gate_files(envelope: dict[str, Any]) -> str:
+    from pathlib import Path as _P
+
+    out = _P("docs") / "test-output" / "trusted-full-evidence-v2"
+    out.mkdir(parents=True, exist_ok=True)
+    text = __import__("json").dumps(envelope, indent=2, default=str)
+    (out / "TRUSTED_IDENTITY_GATE.json").write_text(text, encoding="utf-8")
+    (out / "PHASE1_prove.json").write_text(text, encoding="utf-8")
+    summary = (envelope.get("phase1") or {}).get("phase1_summary") or ""
+    if summary:
+        (out / "PHASE1_SUMMARY.txt").write_text(str(summary), encoding="utf-8")
+    return str(out / "TRUSTED_IDENTITY_GATE.json")
+
+
 def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str, Any]:
     checks: list[str] = []
     problems: list[str] = []
@@ -684,6 +745,32 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    envelope_shape = _phase1_gate_envelope(
+        flightsim_requested=False,
+        flightsim_report={
+            "ok": True,
+            "trusted_addresses": ["a@example.com"],
+            "retrieve_hit_count": 1,
+            "gallery_email_count": 1,
+        },
+        checks=["shape"],
+        problems=[],
+    )
+    _check(
+        "phase1_prove_json_is_verifier_envelope",
+        isinstance(envelope_shape.get("runtime"), dict)
+        and "hostname" in envelope_shape["runtime"]
+        and "p1_runtime_host" in envelope_shape["runtime"]
+        and "allow_dev_defaults" in envelope_shape["runtime"]
+        and isinstance(envelope_shape.get("phase1"), dict)
+        and envelope_shape.get("waiting") is False
+        and envelope_shape.get("prove") == "trusted_identity_retrieval"
+        and "_write_phase1_gate_files" in runtime_src
+        and ("PHASE1_prove.json" in runtime_src and runtime_src.count("_write_phase1_gate_files") >= 2),
+        checks,
+        problems,
+        detail={k: envelope_shape.get(k) for k in ("runtime", "waiting", "prove")},
+    )
     _check(
         "retrieve_sql_omits_people_array",
         "people" not in sql_src,
@@ -697,18 +784,6 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         from memorybox.person.trusted_identity import report_named_person_identity_trust
 
         flightsim_report = report_named_person_identity_trust("Peggy George")
-        try:
-            from pathlib import Path as _P
-
-            out = _P("docs") / "test-output" / "trusted-full-evidence-v2"
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "PHASE1_prove.json").write_text(
-                __import__("json").dumps(flightsim_report, indent=2, default=str),
-                encoding="utf-8",
-            )
-            flightsim_report["phase1_report_path"] = str(out / "PHASE1_prove.json")
-        except Exception:  # noqa: BLE001
-            pass
         _check(
             "flightsim_unsupported_retrieve_addresses_zero",
             flightsim_report.get("ok") is True
@@ -746,6 +821,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                 "error": flightsim_report.get("gallery_scope_error"),
             },
         )
+        try:
+            envelope = _phase1_gate_envelope(
+                flightsim_requested=True,
+                flightsim_report=flightsim_report,
+                checks=checks,
+                problems=problems,
+            )
+            _write_phase1_gate_files(envelope)
+            flightsim_report["phase1_report_path"] = (
+                "docs/test-output/trusted-full-evidence-v2/PHASE1_prove.json"
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     from memorybox.ask.i11a.trusted_full_evidence_v2 import (
         PHASE2_REPORT_KEYS,
@@ -1149,60 +1237,16 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             detail=f"{type(exc).__name__}:{exc}",
         )
 
-    runtime = _trusted_identity_runtime(flightsim_requested=bool(flightsim))
-    payload = {
-        "ok": not problems,
-        "prove": "trusted_identity_retrieval",
-        "flightsim": bool(runtime.get("flightsim")),
-        "waiting": False,
-        "runtime": runtime,
-        "checks": checks,
-        "problems": problems,
-        "flightsim_report": flightsim_report,
-        "phase": 1,
-        "stop": "phase_1_trusted_identity — no Gemma/Sol/chunking",
-    }
-    if flightsim_report:
-        payload["phase1"] = {
-            "ok": flightsim_report.get("ok"),
-            "trusted_addresses": flightsim_report.get("trusted_addresses"),
-            "counts": flightsim_report.get("counts"),
-            "per_trusted_address": flightsim_report.get("per_trusted_address"),
-            "unique_emails_by_trusted_address": flightsim_report.get(
-                "unique_emails_by_trusted_address"
-            ),
-            "unique_only_via_trusted_address": flightsim_report.get(
-                "unique_only_via_trusted_address"
-            ),
-            "shared_across_trusted_addresses": flightsim_report.get(
-                "shared_across_trusted_addresses"
-            ),
-            "unsupported_retrieve_addresses": flightsim_report.get(
-                "unsupported_retrieve_addresses"
-            ),
-            "unsupported_retrieve_hit_count": flightsim_report.get(
-                "unsupported_retrieve_hit_count"
-            ),
-            "retrieve_hit_count": flightsim_report.get("retrieve_hit_count"),
-            "gallery_email_count": flightsim_report.get("gallery_email_count"),
-            "phase1_summary": flightsim_report.get("phase1_summary"),
-        }
+    payload = _phase1_gate_envelope(
+        flightsim_requested=bool(flightsim),
+        flightsim_report=flightsim_report,
+        checks=checks,
+        problems=problems,
+    )
+    payload["ok"] = not problems
     if flightsim:
         try:
-            from pathlib import Path as _GateP
-
-            gate_path = (
-                _GateP("docs")
-                / "test-output"
-                / "trusted-full-evidence-v2"
-                / "TRUSTED_IDENTITY_GATE.json"
-            )
-            gate_path.parent.mkdir(parents=True, exist_ok=True)
-            gate_path.write_text(
-                __import__("json").dumps(payload, indent=2, default=str),
-                encoding="utf-8",
-            )
-            payload["gate_path"] = str(gate_path)
+            payload["gate_path"] = _write_phase1_gate_files(payload)
         except Exception:  # noqa: BLE001
             pass
     return payload
