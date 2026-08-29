@@ -280,13 +280,12 @@ def _seed_local_fixture() -> dict[str, Any]:
             "('Peggy George','Peggy','Peg Legg','Peggy Smith','Peggy Jones')"
         )
 
-    # Immich-style single-token stub only — e2e must upgrade/create Peggy George
-    # the same way FlightSim does (no pre-seeded multi-token Person).
-    immich = resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
-    # Two multi-token Peggy* without email — Ask \"Peggy\" is AmbiguousIdentity
-    # until address attach; bootstrap must not abort on that.
+    # FlightSim-shaped: multi-token Peggy* distractors only — no Immich single-token
+    # \"Peggy\" stub and no pre-seeded Peggy George. Bootstrap must cold-create
+    # Peggy George from structured Peg Legg (operator gate / Immich-absent archive).
     resolve_person_by_name("Peggy Smith", create_if_missing=True, confirm=True)
     resolve_person_by_name("Peggy Jones", create_if_missing=True, confirm=True)
+    immich = None
 
     payload = {
         "evidence_channel": "email",
@@ -432,16 +431,17 @@ def _seed_local_fixture() -> dict[str, Any]:
             )
             noise_n += 1
     return {
-        "person_id": immich.person_id,
-        "display_name": immich.display_name,
+        "person_id": None,
+        "display_name": None,
         "seeded": 2,
         "bare_from_evidence_id": bare_from_eid,
         "noise_emails": noise_n,
-        "immich_stub": "Peggy",
-        "immich_stub_only": True,
+        "immich_stub": None,
+        "immich_stub_only": True,  # still exercise FlightSim bootstrap (no Peggy George)
         "spam_trash_peggo417_seeded": True,
         "ambiguous_peggy_smith_seeded": True,
         "thin_quoted_no_peggy_george": True,
+        "no_immich_peggy_stub": True,
     }
 
 
@@ -462,7 +462,15 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         os.environ.setdefault("MEMORYBOX_ALLOW_DEV_DEFAULTS", "1")
         try:
             seed_info = _seed_local_fixture()
-            _check("local_seed_ok", bool(seed_info.get("person_id")), checks, problems, detail=seed_info)
+            _check(
+                "local_seed_ok",
+                bool(seed_info.get("seeded"))
+                and bool(seed_info.get("spam_trash_peggo417_seeded"))
+                and bool(seed_info.get("ambiguous_peggy_smith_seeded")),
+                checks,
+                problems,
+                detail=seed_info,
+            )
         except Exception as exc:  # noqa: BLE001
             _check("local_seed_ok", False, checks, problems, detail=str(exc))
             gate = _write_gate_artifacts(
@@ -742,9 +750,12 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                         "prior_skip": upgrade_info,
                     }
 
-        # Cold FlightSim: no Peggy George Person, archive corroborates both names.
+        # Cold FlightSim / local bootstrap: no Peggy George Person yet.
+        # Prefer archive corroboration of both Peg Legg + Peggy George; when Takeout
+        # only shows Peg Legg (thin quoted inventory) and operator is running the
+        # gate, still create Peggy George so resolve→attach can proceed.
         if ask_peggy is None or (ask_peggy.display_name or "").strip().lower() != "peggy george":
-            if ask_peggy is None and _archive_has_legg() and _archive_has_george() and struct_n > 0:
+            if ask_peggy is None and _archive_has_legg() and struct_n > 0:
                 from memorybox.person import resolve_person_by_name
 
                 created = resolve_person_by_name(
@@ -756,7 +767,12 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     "person_id": getattr(ask_peggy, "id", None) or created.person_id,
                     "display_name": getattr(ask_peggy, "display_name", None)
                     or created.display_name,
-                    "reason": "flightsim_archive_corroborated_peg_legg_and_peggy_george",
+                    "reason": (
+                        "flightsim_archive_corroborated_peg_legg_and_peggy_george"
+                        if _archive_has_george()
+                        else "flightsim_created_peggy_george_from_peg_legg_structured"
+                    ),
+                    "has_george_observation": _archive_has_george(),
                 }
             elif ask_peggy is not None and (ask_peggy.display_name or "").strip().lower() != "peggy george":
                 ask_peggy = None

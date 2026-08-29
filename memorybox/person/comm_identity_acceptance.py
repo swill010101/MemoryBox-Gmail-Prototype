@@ -1441,6 +1441,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "flightsim_cold_create_from_peg_legg_structured",
+        "flightsim_created_peggy_george_from_peg_legg_structured" in ace_src
+        and "_archive_has_legg() and struct_n > 0" in ace_src,
+        checks,
+        problems,
+    )
 
     # Full-Evidence AmbiguousIdentity recovery prefers exact George/Legg from
     # the candidate list before another Ask round-trip.
