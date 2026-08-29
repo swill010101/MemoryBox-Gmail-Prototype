@@ -56,9 +56,15 @@ python -m memorybox migrate
 tools\flightsim-trusted-identity-gate.cmd
 ```
 
-The gate runs Phase 1 prove, then `tools/verify-trusted-identity-gate.py`
-(rejects ALLOW_DEV / cloud hostname fakes), then `run-trusted-evidence-pipeline`.
+The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1` and clears
+`MEMORYBOX_ALLOW_DEV_DEFAULTS` (same as address-centric prove.ps1), then runs
+Phase 1 prove, `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV /
+cloud hostname fakes), then `run-trusted-evidence-pipeline`.
 It stops on Phase 1 failure and does not widen matching.
+
+A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)
+with `C2`/`C2a` fail is a false fail: ALLOW_DEV leftover demoted the FlightSim
+stamp. Re-run the gate after pull — do not re-attest or widen matching.
 
 If `peggo417@hotmail.com` is on the Person profile but classify is untrusted
 (auto-expand actor), the owner profile add was overwritten or never stamped.

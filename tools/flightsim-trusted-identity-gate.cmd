@@ -5,6 +5,15 @@ cd /d C:\memorybox 2>nul
 if not exist python.exe if not exist .git (
   cd /d C:\MemoryBox 2>nul
 )
+REM Same as address-centric prove.ps1: P1=1 and no ALLOW_DEV so --flightsim
+REM can stamp flightsim=true. Product retrieve can be green while the
+REM verifier rejects an ALLOW_DEV leftover from app.env / desktop session.
+set MEMORYBOX_P1_RUNTIME_HOST=1
+set MEMORYBOX_ALLOW_DEV_DEFAULTS=
+if not defined MEMORYBOX_DATABASE_URL set MEMORYBOX_DATABASE_URL=postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
+echo hostname=%COMPUTERNAME%
+echo MEMORYBOX_P1_RUNTIME_HOST=%MEMORYBOX_P1_RUNTIME_HOST%
+echo ALLOW_DEV_DEFAULTS=%MEMORYBOX_ALLOW_DEV_DEFAULTS%
 echo.
 echo === migrate ===
 python -m memorybox migrate

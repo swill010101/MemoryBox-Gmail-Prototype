@@ -420,6 +420,69 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=fake.get("problems"),
     )
+    allow_dev_leftover = _vmod.audit_gate(
+        {
+            "ok": True,
+            "flightsim": False,
+            "waiting": False,
+            "runtime": {
+                "hostname": "FlightSim",
+                "p1_runtime_host": True,
+                "allow_dev_defaults": True,
+                "flightsim": False,
+            },
+            "phase1": {
+                "trusted_addresses": ["peggo417@hotmail.com"],
+                "per_trusted_address": [
+                    {"address": "peggo417@hotmail.com", "why_trusted": "owner_or_operator_attested"}
+                ],
+                "unsupported_retrieve_addresses": [],
+                "unsupported_retrieve_hit_count": 0,
+                "retrieve_hit_count": 5716,
+                "gallery_email_count": 5716,
+                "unique_only_via_trusted_address": {"peggo417@hotmail.com": 5716},
+            },
+        }
+    )
+    _check(
+        "verifier_rejects_allow_dev_on_flightsim_host",
+        not allow_dev_leftover.get("ok")
+        and any("C2a" in p for p in (allow_dev_leftover.get("problems") or [])),
+        checks,
+        problems,
+        detail=allow_dev_leftover.get("problems"),
+    )
+    flightsim_pass = _vmod.audit_gate(
+        {
+            "ok": True,
+            "flightsim": True,
+            "waiting": False,
+            "runtime": {
+                "hostname": "FlightSim",
+                "p1_runtime_host": True,
+                "allow_dev_defaults": False,
+                "flightsim": True,
+            },
+            "phase1": {
+                "trusted_addresses": ["peggo417@hotmail.com"],
+                "per_trusted_address": [
+                    {"address": "peggo417@hotmail.com", "why_trusted": "owner_or_operator_attested"}
+                ],
+                "unsupported_retrieve_addresses": [],
+                "unsupported_retrieve_hit_count": 0,
+                "retrieve_hit_count": 5716,
+                "gallery_email_count": 5716,
+                "unique_only_via_trusted_address": {"peggo417@hotmail.com": 5716},
+            },
+        }
+    )
+    _check(
+        "verifier_accepts_flightsim_host_without_allow_dev",
+        flightsim_pass.get("ok") is True and flightsim_pass.get("goal_complete") is True,
+        checks,
+        problems,
+        detail=flightsim_pass.get("problems"),
+    )
     gate_txt = (
         __import__("pathlib").Path(__file__).resolve().parents[2]
         / "tools"
@@ -433,6 +496,25 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and gate_txt.find("prove-trusted-identity-retrieval")
         < gate_txt.find("verify-trusted-identity-gate.py")
         < gate_txt.find("run-trusted-evidence-pipeline"),
+        checks,
+        problems,
+    )
+    _check(
+        "flightsim_gate_clears_allow_dev_before_prove",
+        "set MEMORYBOX_P1_RUNTIME_HOST=1" in gate_txt
+        and "set MEMORYBOX_ALLOW_DEV_DEFAULTS=" in gate_txt
+        and gate_txt.find("set MEMORYBOX_ALLOW_DEV_DEFAULTS=")
+        < gate_txt.find("prove-trusted-identity-retrieval --flightsim"),
+        checks,
+        problems,
+    )
+    runtime_src = open(
+        __import__("pathlib").Path(__file__).resolve().parent / "trusted_identity_acceptance.py",
+        encoding="utf-8",
+    ).read()
+    _check(
+        "runtime_stamp_demotes_allow_dev_flightsim_claim",
+        '"flightsim": bool(flightsim_requested) and p1 and not allow_dev' in runtime_src,
         checks,
         problems,
     )
