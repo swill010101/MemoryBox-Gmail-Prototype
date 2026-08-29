@@ -1079,6 +1079,79 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=op.get("rows_with_address"),
     )
 
+    # Hotmail/Takeout: people[]=["Peg Legg"] must not corroborate a bare From.
+    people_only_payload = {
+        "evidence_channel": "email",
+        "from": "peggo417@hotmail.com",
+        "to": ["owner@example.com"],
+        "cc": [],
+        "from_parsed": [
+            {
+                "display_name": "",
+                "address": "peggo417@hotmail.com",
+                "normalized": "peggo417@hotmail.com",
+            }
+        ],
+        "to_parsed": [
+            {
+                "display_name": "Tom Will",
+                "address": "owner@example.com",
+                "normalized": "owner@example.com",
+            }
+        ],
+        "cc_parsed": [],
+        "people": ["Peg Legg", "Tom Will"],
+    }
+    captured_cand: dict[str, Any] = {}
+
+    class _PeopleOnlyConn:
+        def execute(self, *_a, **_k):
+            class _R:
+                def fetchall(self_inner):
+                    return [{"id": "ev-people", "payload_json": people_only_payload}]
+
+            return _R()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    def _capture_corroborate(pid, cand, **kw):
+        captured_cand.update(cand)
+        return corroborate_email_candidate(pid, cand, **kw)
+
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value=snap_peggy,
+    ), patch(
+        "memorybox.person.comm_identity.connection",
+        return_value=_PeopleOnlyConn(),
+    ), patch(
+        "memorybox.person.comm_identity.corroborate_email_candidate",
+        side_effect=_capture_corroborate,
+    ):
+        people_auto = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=False,
+        )
+    _check(
+        "people_array_does_not_corroborate_bare_from",
+        not people_auto.get("accepted")
+        and "peg legg" not in {
+            str(k).strip().lower() for k in (captured_cand.get("display_names") or {})
+        },
+        checks,
+        problems,
+        detail={"decision": people_auto, "candidate": captured_cand},
+    )
+
     # Operator repair may reclaim an address wrongly confirmed on another Person.
     claim_calls = {"n": 0}
 
@@ -1449,6 +1522,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         and "spam" in attach_src
         and "ORDER BY CASE" in attach_src
         and "payload_json->>'body_text'" not in attach_src,
+        checks,
+        problems,
+    )
+    _check(
+        "attach_known_does_not_scan_or_count_people_array",
+        "payload_json->'people'" not in attach_src
+        and 'payload.get("people")' not in attach_src,
         checks,
         problems,
     )

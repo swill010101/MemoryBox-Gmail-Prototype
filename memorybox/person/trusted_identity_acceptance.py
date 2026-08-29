@@ -313,6 +313,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    attach_src = inspect.getsource(
+        __import__(
+            "memorybox.person.comm_identity",
+            fromlist=["attach_known_email_if_corroborated"],
+        ).attach_known_email_if_corroborated
+    )
+    _check(
+        "attach_known_does_not_confirm_via_people_array",
+        "payload_json->'people'" not in attach_src
+        and 'payload.get("people")' not in attach_src,
+        checks,
+        problems,
+    )
     _check(
         "expand_retrieve_is_trusted_only",
         "trusted_emails_for_people" in expand_src and "trusted_only" in expand_src,

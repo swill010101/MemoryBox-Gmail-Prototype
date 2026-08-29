@@ -1265,7 +1265,6 @@ def attach_known_email_if_corroborated(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
@@ -1292,7 +1291,6 @@ def attach_known_email_if_corroborated(
                     addr,
                     angle,
                     mailto,
-                    like,
                     like,
                     like,
                     like,
@@ -1332,9 +1330,7 @@ def attach_known_email_if_corroborated(
                 sample_raw_displays.append(dn)
             if _display_matches_person(dn, forms):
                 display_names[dn] = int(display_names.get(dn) or 0) + 1
-            for p in payload.get("people") or []:
-                if _display_matches_person(str(p), forms):
-                    display_names[str(p)] = int(display_names.get(str(p)) or 0) + 1
+            # people[] is co-occurrence only — never a display used to confirm.
             # Header raw text may include "Peggy George <addr>"
             blob = " ".join(
                 [
@@ -1431,7 +1427,7 @@ def attach_known_email_if_corroborated(
         )
     elif not decision.get("accepted") and len(rows) == 0:
         hint = (
-            "Address not found in From/To/CC/people headers of ingested email. "
+            "Address not found in From/To/CC headers of ingested email. "
             "Confirm the spelling and that the mbox containing it was ingested."
         )
     return {
