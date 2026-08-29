@@ -990,6 +990,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=cleaned,
     )
+    elig_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.full_evidence_diagnostic",
+            fromlist=["retrieve_eligible_hits"],
+        ).retrieve_eligible_hits
+    )
+    _check(
+        "complete_retrieve_filters_email_to_trusted",
+        "filter_email_hits_to_trusted" in elig_src,
+        checks,
+        problems,
+    )
 
     flightsim_report: dict[str, Any] = {}
     if flightsim:

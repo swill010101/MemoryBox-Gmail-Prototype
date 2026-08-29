@@ -484,7 +484,9 @@ def retrieve_eligible_hits(
 
     try:
         if plan.want_communication or plan.want_calendar:
-            evidence = list(R.search_evidence_pg(plan) or [])
+            evidence = R.filter_email_hits_to_trusted(
+                plan, list(R.search_evidence_pg(plan) or [])
+            )
         if plan.want_still or plan.want_photo:
             # limit=0 → unbounded person library (no year-fair sample for tell).
             photos, photo_status = R.search_photos(plan, photo, limit=0)
