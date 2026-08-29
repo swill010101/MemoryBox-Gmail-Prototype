@@ -1,0 +1,2 @@
+VERDICT ok=True flightsim=True git_head=e0d8446 hostname=FlightSim
+GOAL_COMPLETE=True

@@ -1,0 +1,1 @@
+started=2026-08-29T19:48:46.2572473Z pid=655440 root=C:\MemoryBox
