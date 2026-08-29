@@ -755,6 +755,60 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     )
     hits = search_email_messages(mail_plan, limit=5000)
     _check("retrieve_email_hits_gt_0", len(hits) > 0, checks, problems, detail=len(hits))
+    spam_trash_diag: dict[str, Any] | None = None
+    if len(hits) == 0 and _PROBE_ADDR in addrs:
+        # Confirmed address but zero eligible hits — often all rows are spam/trash skipped.
+        try:
+            from memorybox.db import connection as _db_conn
+
+            like = f"%{_PROBE_ADDR}%"
+            with _db_conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT
+                      count(*)::int AS total,
+                      count(*) FILTER (
+                        WHERE lower(coalesce(payload_json->>'mailbox_skip',
+                                             payload_json->>'skip_reason', ''))
+                              IN ('spam', 'trash')
+                      )::int AS spam_trash,
+                      count(*) FILTER (
+                        WHERE lower(coalesce(payload_json->>'mailbox_skip',
+                                             payload_json->>'skip_reason', ''))
+                              NOT IN ('spam', 'trash')
+                          OR coalesce(payload_json->>'mailbox_skip',
+                                      payload_json->>'skip_reason', '') = ''
+                      )::int AS eligibleish
+                    FROM evidence
+                    WHERE evidence_kind = 'communication'
+                      AND lower(coalesce(payload_json->>'evidence_channel', 'email')) = 'email'
+                      AND (
+                        lower(coalesce(payload_json->>'from', '')) LIKE %s
+                        OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
+                      )
+                    """,
+                    (like, like),
+                ).fetchone()
+            spam_trash_diag = dict(row or {})
+            if int((spam_trash_diag or {}).get("total") or 0) > 0 and int(
+                (spam_trash_diag or {}).get("eligibleish") or 0
+            ) == 0:
+                _check(
+                    "peggo417_not_only_spam_trash",
+                    False,
+                    checks,
+                    problems,
+                    detail={
+                        **spam_trash_diag,
+                        "hint": (
+                            "All peggo417 From rows are mailbox_skip spam/trash; "
+                            "retrieve correctly excludes them — re-ingest without "
+                            "skipping originals, or clear skip flags for eligibility."
+                        ),
+                    },
+                )
+        except Exception as exc:  # noqa: BLE001
+            spam_trash_diag = {"error": str(exc)}
 
     gallery_result = {
         "plan": {
@@ -832,6 +886,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "full_evidence_email_items": len(email_items),
                 "gallery_email_n": int(email_n),
             },
+            "spam_trash_diag": spam_trash_diag,
             "problems": problems,
             "flightsim": bool(flightsim),
             "runtime": runtime,
