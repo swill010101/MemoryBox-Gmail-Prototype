@@ -489,6 +489,36 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "runtime": runtime,
             },
         )
+        # Fail closed before Immich rename / Person create / attach against the
+        # wrong DB — otherwise a silent ALLOW_DEV empty store mutates People.
+        gate = _write_gate_artifacts(
+            {
+                "gate": "address_centric_email_identity",
+                "stop": "gallery_and_full_evidence_v2 — no historian summarization",
+                "ok": False,
+                "problems": problems,
+                "inventory": {
+                    "structured_has_peg_legg": structured.get("has_peg_legg"),
+                    "structured_has_peggy_george": structured.get("has_peggy_george"),
+                    "quoted_has_peggy_george": quoted.get("has_peggy_george"),
+                    "structured_occurrence_count": struct_n,
+                },
+                "flightsim": True,
+                "runtime": runtime,
+                "error": "flightsim_archive_missing_peggo417_structured",
+            },
+            inv=inv,
+        )
+        return {
+            "ok": False,
+            "prove": "address_centric_email_e2e",
+            "flightsim": True,
+            "checks": checks,
+            "problems": problems,
+            "inventory": inv,
+            "address_centric_gate": gate,
+            "error": "flightsim_archive_missing_peggo417_structured",
+        }
     _check(
         "probe_structured_has_peg_legg",
         bool(structured.get("has_peg_legg"))
@@ -887,6 +917,8 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "stop": "gallery_and_full_evidence_v2 — no historian summarization",
             "ok": not problems
             and len(hits) > 0
+            and (len(email_items) > 0 or len(evidence) > 0)
+            and (int(email_n) > 0 or int(match_total) > 0)
             and _PROBE_ADDR in addrs
             and " " in (ask_peggy.display_name or ""),
             "requirements": {
@@ -895,7 +927,11 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
                 "person_is_multi_token": " " in (ask_peggy.display_name or ""),
                 "peggo417_confirmed": _PROBE_ADDR in addrs,
-                "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg")),
+                "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg"))
+                or any(
+                    (d.get("normalized_display") or "") == "peg legg"
+                    for d in (structured.get("distinct_display_names") or [])
+                ),
             },
             "person": {
                 "id": ask_peggy.id,

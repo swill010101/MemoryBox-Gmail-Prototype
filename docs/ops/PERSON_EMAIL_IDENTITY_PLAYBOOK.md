@@ -39,8 +39,10 @@ silent ALLOW_DEV localhost). Paste the printed gate block
 (need `"ok": true` and `"flightsim": true`). Gate `runtime` stamps `database`,
 `database_url_set`, and `git_head`.
 
-If `gh` is authenticated on FlightSim, the script also posts the gate JSON as a
-comment on PR #74 (auto-wakes the cloud agent). Manual paste into chat still works.
+Delivery (any one wakes the cloud agent):
+1. If `gh` is authenticated: posts the gate JSON as a comment on PR #74
+2. Always force-pushes gate artifacts to `cursor/flightsim-address-centric-result-49da`
+3. Console paste block (need `"ok": true` and `"flightsim": true`)
 
 If structured headers show Peg Legg on peggo417 but **no** same-address
 Peggy George observation (quoted or structured), auto nickname attach stays
