@@ -500,6 +500,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             title = (summary or kind or "Evidence")[:80]
             preview = excerpt or summary
             detail = excerpt or summary
+        is_email_item = type_ == "email"
         item = _item_base(
             id=f"evidence:{eid}",
             type_=type_ if type_ != "communication" else "email",
@@ -511,7 +512,8 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             evidence_id=eid,
             evidence_kind=kind,
             score=e.get("score"),
-            people=people or None,
+            # Email: structured From/To only. Never payload people[] on the card.
+            people=None if is_email_item else (people or None),
             attachments=e.get("attachments") or None,
             thread_id=e.get("thread_id"),
             direction=e.get("direction"),
@@ -520,12 +522,15 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["preview"] = preview
             item["detail"] = detail
             item["title"] = title
-        item["from"] = (
-            e.get("from_header")
-            or people[0]
-            or e.get("thread_id")
-            or "Message"
-        )
+        if is_email_item:
+            item["from"] = e.get("from_header") or "Message"
+        else:
+            item["from"] = (
+                e.get("from_header")
+                or (people[0] if people else None)
+                or e.get("thread_id")
+                or "Message"
+            )
         if e.get("to_header"):
             item["to"] = e.get("to_header")
         atts = e.get("attachments") or item.get("attachments") or []

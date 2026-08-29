@@ -500,6 +500,32 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         / "find.py"
     ).read_text(encoding="utf-8", errors="replace")
     attach_src = find_src.split("def _attach_visible_email")[-1].split("def _attach_calendar")[0]
+    from memorybox.explore.find import items_from_ask_result
+
+    gallery_email = items_from_ask_result(
+        {
+            "evidence_hits": [
+                {
+                    "evidence_id": "e-people-fill",
+                    "evidence_kind": "communication",
+                    "channel": "email",
+                    "from_header": "",
+                    "people": ["Peg Legg", "Random Cooccur"],
+                    "summary": "hi",
+                }
+            ]
+        }
+    )
+    ge = next((r for r in gallery_email if r.get("type") == "email"), {})
+    _check(
+        "gallery_email_from_does_not_use_people_array",
+        ge.get("from") != "Peg Legg"
+        and not ge.get("people")
+        and "Never payload people[] on the card" in find_src,
+        checks,
+        problems,
+        detail={"from": ge.get("from"), "people": ge.get("people")},
+    )
     _check(
         "gallery_reresolves_trusted_retrieve",
         "search_email_messages" in attach_src
