@@ -98,10 +98,28 @@ git diff --cached --quiet
 if not errorlevel 1 goto :eof
 git commit -m "%EVIDENCE_MSG%"
 if errorlevel 1 goto :eof
-git push -u origin HEAD
+for /f "delims=" %%B in ('git rev-parse --abbrev-ref HEAD') do set "EVIDENCE_BR=%%B"
+git fetch origin "%EVIDENCE_BR%"
+git pull --rebase origin "%EVIDENCE_BR%"
 if errorlevel 1 (
-  echo WARNING: evidence commit not pushed. Paste PHASE1_SUMMARY / PHASE2_SUMMARY on PR 77.
+  echo WARNING: rebase before evidence push failed. Do not force-push. Paste summaries on PR 77.
+  goto :eof
 )
+set PUSH_TRY=1
+set PUSH_SLEEP=4
+:evidence_push_retry
+git push -u origin "%EVIDENCE_BR%"
+if not errorlevel 1 goto evidence_push_ok
+if %PUSH_TRY% GEQ 5 (
+  echo WARNING: evidence commit not pushed. Paste PHASE1_SUMMARY / PHASE2_SUMMARY on PR 77.
+  goto :eof
+)
+echo evidence push retry %PUSH_TRY% in %PUSH_SLEEP%s
+timeout /t %PUSH_SLEEP% /nobreak >nul
+set /a PUSH_TRY+=1
+set /a PUSH_SLEEP*=2
+goto evidence_push_retry
+:evidence_push_ok
 where gh >nul 2>nul
 if not errorlevel 1 (
   if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" gh pr comment 77 --body-file "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
