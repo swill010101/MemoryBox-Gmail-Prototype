@@ -1437,7 +1437,20 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "after_both_single_pass_reports_only" in pipe_src
         and "complete_trusted=True" not in pipe_src
         and "run_chunked_models_after_single_pass" not in pipe_src
-        and "after_phase2_verifier" in pipe_src,
+        and "after_phase2_verifier" in pipe_src
+        and "compare_chunked_vs_unchunked" in pipe_src,
+        checks,
+        problems,
+    )
+    compare_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_fev2_chunking",
+            fromlist=["compare_chunked_vs_unchunked"],
+        ).compare_chunked_vs_unchunked
+    )
+    _check(
+        "chunk_compare_fails_closed_without_raising",
+        "l1_chunker" in compare_src and "except Exception" in compare_src,
         checks,
         problems,
     )

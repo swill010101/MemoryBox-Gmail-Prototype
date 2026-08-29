@@ -212,7 +212,15 @@ def run_trusted_evidence_pipeline(
         and (sol.get("input_sha256") or fixture_hash) == fixture_hash
     )
     both_single_pass = bool(gemma.get("ok")) and bool(sol.get("ok")) and same_hash
-    chunk = compare_chunked_vs_unchunked(fixture_path)
+    try:
+        chunk = compare_chunked_vs_unchunked(fixture_path)
+    except Exception as exc:  # noqa: BLE001
+        chunk = {
+            "ok": False,
+            "error": f"{type(exc).__name__}:{exc}",
+            "chunking": True,
+            "model_calls": 0,
+        }
     result["phase3_structure"] = chunk
     result["phase3_model_per_chunk"] = {
         "ran": False,

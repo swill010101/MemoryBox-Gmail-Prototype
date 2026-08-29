@@ -35,11 +35,22 @@ def compare_chunked_vs_unchunked(fixture_path: Path | str) -> dict[str, Any]:
     items = list(data.get("items") or [])
     original_ids = all_fixture_evidence_ids(items)
     item_ids = {str(it.get("item_id") or "") for it in items if it.get("item_id")}
-    chunked = run_l1_chunker(
-        items,
-        person_context=data.get("person_context") or {},
-        ask=str(data.get("ask") or ""),
-    )
+    try:
+        chunked = run_l1_chunker(
+            items,
+            person_context=data.get("person_context") or {},
+            ask=str(data.get("ask") or ""),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": f"l1_chunker:{type(exc).__name__}:{exc}",
+            "input_sha256": stored,
+            "unchunked_item_count": len(items),
+            "evidence_lost": sorted(item_ids | original_ids),
+            "chunking": True,
+            "model_calls": 0,
+        }
     proof = chunked.get("proof") or {}
     chunk_item_ids: set[str] = set()
     for ch in chunked.get("chunks") or []:
