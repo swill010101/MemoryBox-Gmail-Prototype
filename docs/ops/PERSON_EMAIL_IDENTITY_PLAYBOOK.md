@@ -41,15 +41,17 @@ silent ALLOW_DEV localhost). Paste the printed gate block
 
 Delivery (any one wakes the cloud agent):
 1. **Always** force-pushes gate artifacts to `cursor/flightsim-address-centric-result-49da` **first**
-   (including failure gates — env/DB/preflight stubs — so the agent never stays on
-   `waiting: true` after a real FlightSim run)
+   (including failure gates — env/DB/preflight stubs **and** early `gate.cmd`
+   git fetch/checkout/pull failures — so the agent never stays on
+   `waiting: true` after a real FlightSim attempt)
 2. If `gh` is already authenticated: posts the gate JSON as a comment on PR #74
    (skips comment when gh is missing/unauthed — never hangs on auth)
 3. Desktop + notepad VERDICT + console paste block
 
 Probe is **advisory** before prove; prove always owns `ADDRESS_CENTRIC_GATE.json`.
 Env/DB failures in `flightsim-address-centric-prove.ps1` still write a failure gate
-so the results branch updates.
+so the results branch updates. Early `gate.cmd` `:fail` (before prove starts) now
+also writes `error=gate_cmd_pre_prove_fail` and force-pushes the results branch.
 
 If structured headers show Peg Legg on peggo417 but **no** same-address
 Peggy George observation (quoted or structured), auto nickname attach stays
