@@ -562,49 +562,27 @@ def corroborate_email_candidate(
         result["reason"] = "no_full_display_name_match"
         return result
     result["corroboration"].append(f"display_name_{best_strength}:{best_dn}")
+    result["matched_display_name"] = best_dn
+    result["match_strength"] = best_strength
 
-    # First-name ambiguity: multiple People share first name and display is weak.
-    first = (_name_tokens(best_dn or "") or [""])[0]
-    sibling_rows: list[dict[str, Any]] = []
-    try:
-        nicks = sorted(_FIRST_NAME_NICKNAMES.get(first) or {first})
-        with connection() as conn:
-            sibling_rows = list(
-                conn.execute(
-                    """
-                    SELECT id, display_name FROM people
-                    WHERE status IN ('confirmed', 'unresolved')
-                      AND lower(split_part(display_name, ' ', 1)) = ANY(%s)
-                    """,
-                    (nicks,),
-                ).fetchall()
-            )
-    except Exception:  # noqa: BLE001
-        sibling_rows = [{"id": sid} for sid in _people_sharing_first_name(first)]
-    siblings = [str(r["id"]) for r in sibling_rows]
-    multi_sibs = [
-        str(r["id"])
-        for r in sibling_rows
-        if " " in str(r.get("display_name") or "").strip()
-    ]
-    if best_strength == "nickname_full":
-        # Peg Legg → Peggy George: require unique multi-token Person in the
-        # first-name family (ignore Immich single-token stubs like \"Peggy\").
-        if len(multi_sibs) > 1:
-            result["reason"] = "ambiguous_nickname_among_people"
-            result["ambiguous_person_ids"] = multi_sibs
-            return result
-        if multi_sibs and person_id not in multi_sibs:
-            result["reason"] = "nickname_belongs_to_other_person"
-            result["ambiguous_person_ids"] = multi_sibs
-            return result
-        if not any(" " in f for f in forms):
-            result["reason"] = "person_lacks_multi_token_name_for_nickname"
-            return result
-    elif len(siblings) > 1 and best_strength not in {"full", "alias_full"}:
-        result["reason"] = "ambiguous_first_name_among_people"
-        result["ambiguous_person_ids"] = siblings
+    header_fields = [str(f) for f in (candidate.get("header_fields") or []) if f]
+    structured_fields = [f for f in header_fields if not str(f).startswith("quoted_")]
+    if not structured_fields:
+        result["reason"] = "quoted_body_not_sufficient_to_confirm"
+        result["candidate"] = True
         return result
+
+    # Nickname/display inference (Peg Legg ↔ Peggy George) is a discovery
+    # signal only. It must not create a confirmed Person email identity.
+    # Retrieve of Peg Legg–labeled mail uses an already-confirmed address.
+    if best_strength == "nickname_full":
+        result["reason"] = "nickname_discovery_only"
+        result["candidate"] = True
+        return result
+    if best_strength not in {"full", "alias_full"}:
+        result["reason"] = "no_full_display_name_match"
+        return result
+
     # Even with full match, if another live Person has the exact same full display name → ambiguous.
     full_matches = []
     try:
@@ -1545,6 +1523,17 @@ def prune_uncorroborated_email_contacts(
         report["error"] = str(exc)
         return report
 
+    discovery_addrs = {
+        normalize_handle(str(c.get("address") or ""))
+        for c in cands
+        if normalize_handle(str(c.get("address") or ""))
+    }
+    # Nickname discovery may KEEP an already-confirmed mailbox (Peg Legg on
+    # peggo417). It must not be the only reason to CREATE a confirmation.
+    for addr in confirmed:
+        if addr in discovery_addrs:
+            keep.add(addr)
+
     related = _related_person_ids(pid)
     for cand in cands:
         addr = normalize_handle(str(cand.get("address") or ""))
@@ -1556,6 +1545,7 @@ def prune_uncorroborated_email_contacts(
         if decision.get("accepted"):
             keep.add(addr)
     report["header_keep"] = sorted(keep)
+    report["discovery_addrs"] = sorted(discovery_addrs)
 
     if not keep:
         report["ok"] = True

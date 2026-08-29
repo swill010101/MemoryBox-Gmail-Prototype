@@ -22,10 +22,16 @@ re-run the historian benchmark until identity e2e is green.
 ## Pipeline
 
 ```
-1. DISCOVER  probe-email-address → communication_identities (once)
-2. RESOLVE   ledger → Person contacts (cheap)
-3. RETRIEVE  Person → trusted addresses → mail (no archive inventory)
+1. DISCOVER  structured From/To/CC/BCC displays → candidate identities
+             (Peg Legg is a discovery signal; it does not confirm)
+2. RESOLVE   confirm only via full/alias header match or operator/profile
+             → person_contact_points
+3. RETRIEVE  confirmed address → every From/To/CC/BCC row for that mailbox
+             (Peg Legg–labeled mail is included because the address matches)
 ```
+
+Ask retrieve is read-only (no persist). `people[]` and quoted-body headers do not
+create confirmed identity. Co-recipients never attach from shared threads.
 
 ## FlightSim — identity gate (this is the email extraction check)
 
@@ -41,9 +47,14 @@ python -m memorybox prove-address-centric-email-e2e --flightsim
 
 Expect finish in minutes, not hours. Paste the prove JSON (`"ok": true`).
 
-The prove now **fails closed** if Peggy's confirmed emails include owner/noreply/marketplace
-addresses or if retrieve looks like the whole mailbox (the previous pass had
-700+ co-recipient addresses and ~42k hits). It prunes those contacts first.
+The prove reports `person.confirmed_identities` (why each address is attached),
+`counts.peggo417_structured_header_retrieve_n` (mail retrieved because of that
+mailbox), `incorrectly_attached_addresses` (must be `[]`), and
+`gallery_shows_peggy_email`.
+
+Nickname matching must not appear as the reason a contact was created. Peggy
+fixture caps (≤20 confirmed addresses, retrieve not whole-mailbox) are E2E
+sanity only — not generic MemoryBox identity rules.
 
 If a prior run already attached co-recipients, prune is included in e2e. Standalone:
 

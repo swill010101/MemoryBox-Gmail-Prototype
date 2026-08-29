@@ -699,20 +699,47 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         return "FALSE", []
     patterns = [f"%{a}%" for a in norms]
     # Cast JSON arrays to text and LIKE. Do not unnest JSON per row (seq scan).
+    # From/To/CC/BCC only — never people[] (co-occurrence is not ownership) and
+    # never body_text.
     sql = (
         "("
         " lower(coalesce(payload_json->>'from', '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
-        " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [patterns] * 9
+    return sql, [patterns] * 8
+
+
+def count_structured_header_emails_for_addresses(addrs: set[str] | list[str]) -> int:
+    """Count email Evidence rows whose From/To/CC/BCC include these addresses."""
+    addr_sql, addr_params = _sql_confirmed_email_addrs(addrs)
+    if addr_sql == "FALSE":
+        return 0
+    try:
+        from memorybox.db import connection
+
+        with connection() as conn:
+            conn.execute("SET LOCAL statement_timeout = '60s'")
+            row = conn.execute(
+                f"""
+                SELECT count(*) AS n
+                FROM evidence
+                WHERE evidence_kind = 'communication'
+                  AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                      NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+                  AND {addr_sql}
+                """,
+                tuple(addr_params),
+            ).fetchone()
+        return int((row or {}).get("n") or 0)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _person_scoped_comm_where(
@@ -1374,19 +1401,21 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         list(payload.get("from_parsed") or [])
         + list(payload.get("to_parsed") or [])
         + list(payload.get("cc_parsed") or [])
+        + list(payload.get("bcc_parsed") or [])
     ):
         if not isinstance(rec, dict):
             continue
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
-    # Fallback: raw From/To/CC (and people[]) when *_parsed is missing on older rows.
+    # Fallback: raw From/To/CC/BCC when *_parsed is missing on older rows.
+    # Do not read people[] — co-occurrence is not mailbox ownership.
     for raw in (
         payload.get("from"),
         payload.get("from_raw"),
         payload.get("to"),
         payload.get("cc"),
-        payload.get("people"),
+        payload.get("bcc"),
     ):
         texts: list[str]
         if isinstance(raw, (list, tuple)):
@@ -1673,8 +1702,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         channel_sql=channel_sql,
         win_sql=win_sql,
         win_params=list(win_params),
-        person_names=person_names,
-        person_ids=person_ids,
+        person_names=person_names if not confirmed_addrs else [],
+        person_ids=set() if confirmed_addrs else person_ids,
         header_fallback=False,
         confirmed_emails=confirmed_addrs if person_ids else None,
     )
@@ -1725,9 +1754,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
                 for m in ((payload.get("identity_resolution") or {}).get("mapped") or [])
                 if isinstance(m, dict) and m.get("person_id")
             }
-            if person_ids and (have & person_ids or mapped_ids & person_ids):
-                pass
-            elif confirmed_addrs and (addrs & confirmed_addrs):
+            if confirmed_addrs:
+                # Confirmed mailbox is the retrieve key. Peg Legg–labeled mail
+                # is kept because the address matches, not the display name.
+                # Do not keep co-recipient threads via backfilled person_ids.
+                if not (addrs & confirmed_addrs):
+                    return False
+            elif person_ids and (have & person_ids or mapped_ids & person_ids):
                 pass
             elif asked_owner and (
                 payload.get("from_owner")

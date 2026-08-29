@@ -109,6 +109,21 @@ def _seed_local_fixture() -> dict[str, Any]:
     return {"person_id": peggy.person_id, "display_name": peggy.display_name, "seeded": 2}
 
 
+def _seed_canonical_peggo417_contact(person_id: str) -> dict[str, Any]:
+    """Canonical Person already holds the hotmail mailbox — retrieve must not need nickname attach."""
+    from memorybox.person.comm_identity import ensure_confirmed_email_contact
+
+    return ensure_confirmed_email_contact(
+        person_id,
+        _PROBE_ADDR,
+        provenance={
+            "source": "person_profile",
+            "reason": "canonical_confirmed_contact",
+        },
+        note="Canonical Peggy email identity (profile)",
+    )
+
+
 def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str, Any]:
     """Prove discover→resolve→retrieve for peggo417 / Peg Legg / Peggy George."""
     checks: list[str] = []
@@ -121,7 +136,16 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         os.environ.setdefault("MEMORYBOX_ALLOW_DEV_DEFAULTS", "1")
         try:
             seed_info = _seed_local_fixture()
+            seeded_contact = _seed_canonical_peggo417_contact(str(seed_info.get("person_id") or ""))
+            seed_info["canonical_contact"] = seeded_contact
             _check("local_seed_ok", bool(seed_info.get("person_id")), checks, problems, detail=seed_info)
+            _check(
+                "local_canonical_peggo417_confirmed",
+                bool(seeded_contact.get("upserted")) or bool(seeded_contact.get("address")),
+                checks,
+                problems,
+                detail=seeded_contact,
+            )
         except Exception as exc:  # noqa: BLE001
             _check("local_seed_ok", False, checks, problems, detail=str(exc))
             return {
@@ -140,7 +164,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         retrieve_eligible_hits,
     )
     from memorybox.ask.i11a.person_context import build_person_context
-    from memorybox.ask.retrieve import search_email_messages
+    from memorybox.ask.retrieve import count_structured_header_emails_for_addresses, search_email_messages
     from memorybox.explore.find import _attach_visible_email
     from memorybox.person import find_ask_person_by_name
     from memorybox.person.comm_address_index import (
@@ -208,22 +232,31 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         }
 
     prune_info = prune_uncorroborated_email_contacts(ask_peggy.id, persist=True)
+    # Ask-equivalent: resolve is diagnostic only. Confirmed profile contacts
+    # are the retrieve key — nickname inference must not persist new identities.
     resolve = resolve_and_attach_addresses_for_person(
-        ask_peggy.id, persist=True, backfill=False, scan_archive=False
+        ask_peggy.id, persist=False, backfill=False, scan_archive=False
     )
-    accepted_addrs = [
-        normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
+    nickname_created = [
+        e
         for e in (resolve.get("accepted") or [])
+        if isinstance(e, dict)
+        and str((e.get("decision") or {}).get("match_strength") or "") == "nickname_full"
+        and str((e.get("decision") or {}).get("reason") or "") != "already_confirmed_for_person"
     ]
+    _check(
+        "nickname_does_not_create_confirmed_identity",
+        not nickname_created,
+        checks,
+        problems,
+        detail=nickname_created,
+    )
     expanded = expand_emails_for_retrieve({ask_peggy.id})
     addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
 
-    # FlightSim belt-and-suspenders: if ledger/auto resolve missed but structured
-    # headers exist for the probe address, operator-attest (same as --repair-address).
     repair_info: dict[str, Any] | None = None
     if (
-        flightsim
-        and _PROBE_ADDR not in addrs
+        _PROBE_ADDR not in addrs
         and int((structured.get("occurrence_count") or 0)) > 0
         and " " in (ask_peggy.display_name or "")
     ):
@@ -238,24 +271,77 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
 
     _check(
-        "resolve_or_expand_has_peggo417",
-        _PROBE_ADDR in addrs or _PROBE_ADDR in accepted_addrs,
+        "canonical_peggo417_is_confirmed_contact",
+        _PROBE_ADDR in addrs,
         checks,
         problems,
-        detail={
-            "accepted": accepted_addrs,
-            "expand": sorted(addrs),
-            "resolve": resolve,
-            "repair": repair_info,
-            "prune": prune_info,
-        },
+        detail={"expand": sorted(addrs), "resolve": resolve, "repair": repair_info, "prune": prune_info},
     )
 
-    forbidden = sorted(
-        a
-        for a in addrs
-        if any(m in a for m in _FORBIDDEN_ADDR_MARKERS)
+    from memorybox.profile.facts import list_contacts
+
+    identities: list[dict[str, Any]] = []
+    try:
+        for c in list_contacts(ask_peggy.id):
+            if str(c.contact_kind) != "email" or str(c.status) != "confirmed":
+                continue
+            addr = normalize_handle(str(c.value_text or ""))
+            prov = c.provenance if isinstance(c.provenance, dict) else {}
+            why = (
+                str(prov.get("reason") or "")
+                or str(prov.get("source") or "")
+                or str(c.actor_key or "")
+                or "confirmed_person_contact"
+            )
+            identities.append(
+                {
+                    "address": addr,
+                    "why": why,
+                    "source": prov.get("source") or c.actor_key,
+                    "match_strength": prov.get("match_strength"),
+                    "note": c.note,
+                }
+            )
+    except Exception:  # noqa: BLE001
+        identities = []
+    if _PROBE_ADDR in addrs and not any(i.get("address") == _PROBE_ADDR for i in identities):
+        identities.append(
+            {
+                "address": _PROBE_ADDR,
+                "why": "confirmed_person_contact",
+                "source": "person_contact_points",
+                "match_strength": None,
+                "note": None,
+            }
+        )
+
+    from memorybox.person.comm_address_index import find_addresses_for_person_forms
+    from memorybox.person.comm_identity import person_identity_snapshot
+
+    snap = person_identity_snapshot(ask_peggy.id)
+    forms = list(snap.get("known_name_forms") or [])
+    discovery = find_addresses_for_person_forms(forms) if forms else []
+    discovery_addrs = {
+        normalize_handle(str(c.get("address") or ""))
+        for c in discovery
+        if normalize_handle(str(c.get("address") or ""))
+    }
+    incorrect = sorted(
+        {
+            a
+            for a in addrs
+            if a != _PROBE_ADDR
+            and (a not in discovery_addrs or any(m in a for m in _FORBIDDEN_ADDR_MARKERS))
+        }
     )
+    _check(
+        "incorrectly_attached_addresses_must_be_zero",
+        not incorrect,
+        checks,
+        problems,
+        detail=incorrect,
+    )
+    forbidden = sorted(a for a in addrs if any(m in a for m in _FORBIDDEN_ADDR_MARKERS))
     _check(
         "person_addresses_exclude_owner_noreply_marketplace",
         not forbidden,
@@ -264,11 +350,11 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         detail=forbidden,
     )
     _check(
-        "person_confirmed_email_count_bounded",
+        "peggy_fixture_confirmed_email_count_le_20",
         1 <= len(addrs) <= _MAX_CONFIRMED_EMAILS,
         checks,
         problems,
-        detail={"count": len(addrs), "addresses": sorted(addrs)},
+        detail={"count": len(addrs), "addresses": sorted(addrs), "note": "Peggy E2E sanity, not a generic identity rule"},
     )
 
     plan = resolve_peggy_plan(photo=None, ask=PEGGY_ASK)
@@ -331,16 +417,30 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         place_names=(),
         notes=("complete_comm_retrieve", "full_evidence_diagnostic", "want_email_modality"),
     )
-    hits = search_email_messages(mail_plan, limit=5000)
+    hits = search_email_messages(mail_plan, limit=25000)
+    peggo417_n = count_structured_header_emails_for_addresses({_PROBE_ADDR})
+    _check(
+        "retrieve_via_confirmed_peggo417_gt_0",
+        peggo417_n > 0,
+        checks,
+        problems,
+        detail=peggo417_n,
+    )
     _check("retrieve_email_hits_gt_0", len(hits) > 0, checks, problems, detail=len(hits))
     header_n = int(structured.get("occurrence_count") or 0)
     retrieve_cap = max(500, header_n * 3) if header_n else 500
     _check(
-        "retrieve_not_whole_mailbox",
-        len(hits) <= retrieve_cap,
+        "peggy_fixture_retrieve_not_whole_mailbox",
+        peggo417_n <= retrieve_cap and len(hits) <= retrieve_cap,
         checks,
         problems,
-        detail={"hits": len(hits), "probe_header_n": header_n, "cap": retrieve_cap},
+        detail={
+            "peggo417_structured_n": peggo417_n,
+            "hits": len(hits),
+            "probe_header_n": header_n,
+            "cap": retrieve_cap,
+            "note": "Peggy E2E sanity, not a generic identity rule",
+        },
     )
 
     gallery_result = {
@@ -358,7 +458,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         [], gallery_result, ask_text=_ASK, show_email=True
     )
     _check(
-        "gallery_email_gt_0",
+        "gallery_shows_peggy_email",
         int(email_n) > 0 or int(match_total) > 0,
         checks,
         problems,
@@ -400,14 +500,18 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "id": ask_peggy.id,
             "display_name": ask_peggy.display_name,
             "addresses": sorted(addrs),
+            "confirmed_identities": identities,
         },
         "counts": {
+            "peggo417_structured_header_retrieve_n": peggo417_n,
             "retrieve_hits": len(hits),
             "full_evidence_email_items": len(email_items),
             "full_evidence_evidence": len(evidence),
             "gallery_email_n": int(email_n),
             "gallery_match_total": int(match_total),
         },
+        "incorrectly_attached_addresses": incorrect,
+        "gallery_shows_peggy_email": int(email_n) > 0 or int(match_total) > 0,
         "seed": seed_info,
         "repair": repair_info,
         "prune": prune_info,

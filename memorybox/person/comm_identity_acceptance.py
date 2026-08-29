@@ -144,6 +144,13 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=sql,
     )
+    _check(
+        "email_addr_sql_excludes_people_json",
+        "people" not in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
     where, wparams, scope = _person_scoped_comm_where(
         channel_sql="true",
         win_sql="true",
@@ -183,6 +190,23 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=raw_only,
+    )
+    people_only = _payload_email_addresses(
+        {
+            "from": "",
+            "to": [],
+            "from_parsed": [],
+            "to_parsed": [],
+            "cc_parsed": [],
+            "people": ["Tom Will <swill01@gmail.com>"],
+        }
+    )
+    _check(
+        "payload_addrs_ignore_people_json",
+        "swill01@gmail.com" not in people_only,
+        checks,
+        problems,
+        detail=people_only,
     )
 
     # Empty identity probe still fail-closed without ids/emails
@@ -334,8 +358,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         ]
         nick_dec = corroborate_email_candidate("person-peggy-george", nick_cand)
     _check(
-        "peg_legg_nickname_accepted_for_peggy_george",
-        bool(nick_dec.get("accepted")),
+        "peg_legg_nickname_is_discovery_only",
+        not nick_dec.get("accepted")
+        and nick_dec.get("reason") == "nickname_discovery_only",
         checks,
         problems,
         detail=nick_dec,
@@ -348,7 +373,34 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=nick_dec,
     )
 
-    # Quoted-body header extraction (lower confidence; not identity alone)
+    quoted_only = {
+        "address": "someone@example.com",
+        "display_names": {"Peggy George": 8},
+        "occurrences": 8,
+        "evidence_ids": ["q1"],
+        "header_fields": ["quoted_from", "quoted_to"],
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ):
+        quoted_dec = corroborate_email_candidate("person-peggy", quoted_only)
+    _check(
+        "quoted_body_cannot_confirm_identity",
+        not quoted_dec.get("accepted")
+        and quoted_dec.get("reason") == "quoted_body_not_sufficient_to_confirm",
+        checks,
+        problems,
+        detail=quoted_dec,
+    )
     body = (
         "Thanks!\n\n"
         "-----Original Message-----\n"
@@ -603,8 +655,9 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
                 "person-peggy-george", peg_addrs[0], known_forms=["peggy george"]
             )
             _check(
-                "resolve_accepts_peggo417_for_peggy_george",
-                bool(dec.get("accepted")),
+                "nickname_discover_does_not_confirm_peggo417",
+                not dec.get("accepted")
+                and dec.get("reason") == "nickname_discovery_only",
                 checks,
                 problems,
                 detail=dec,
@@ -783,10 +836,16 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             "person-peggy-george", persist=True, backfill=True
         )
         _check(
-            "ledger_resolve_attaches_peggo417_to_peggy_george",
-            any(
+            "ledger_nickname_does_not_confirm_peggo417",
+            not any(
                 (e.get("candidate") or {}).get("address") == "peggo417@hotmail.com"
                 for e in (resolve_report.get("accepted") or [])
+            )
+            and any(
+                (e.get("candidate") or {}).get("address") == "peggo417@hotmail.com"
+                and str((e.get("decision") or {}).get("reason") or "")
+                == "nickname_discovery_only"
+                for e in (resolve_report.get("rejected") or [])
             ),
             checks,
             problems,

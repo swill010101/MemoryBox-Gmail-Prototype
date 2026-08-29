@@ -33,9 +33,9 @@ Person-scoped email retrieve was chicken-and-egg: needing a Person email contact
 2. Confirms whether structured headers contain both `Peggy George` and `Peg Legg` pairings.
 3. Archive-wide `communication_identities` stores address → observed display names → optional resolved_person_id.
 4. Discovery does **not** require the Person to already contain the email.
-5. Once `peggo417` ↔ Peggy: Gallery + Full-Evidence V2 include Peg Legg–labeled messages; same path as Ask.
-6. No Peggy-specific hardcode.
-7. A Person's confirmed emails are **that Person's mailboxes**, not co-recipients on the same threads. Owner/noreply/marketplace addresses must not attach. Retrieve must not be "the whole mailbox."
+5. Once `peggo417` is a **confirmed** Person contact: Gallery + Full-Evidence V2 include every structured From/To/CC/BCC message involving that address, including Peg Legg–labeled rows. The confirmed address is the retrieve key; nickname inference is not.
+6. No Peggy-specific hardcode in the identity engine. Peggy E2E may still assert fixture sanity (confirmed-count cap, retrieve not whole-mailbox).
+7. A Person's confirmed emails are **that Person's mailboxes**, not co-recipients on the same threads. `people[]` co-occurrence and quoted/body headers do not create confirmed identity. Nickname/display matching is a **candidate discovery** signal only.
 
 ## Out of scope
 
@@ -45,6 +45,7 @@ Person-scoped email retrieve was chicken-and-egg: needing a Person email contact
 
 ## Constraints
 
-- Prefer structured participant headers; quoted RFC headers = lower confidence only
+- Prefer structured participant headers; quoted RFC headers = lower confidence only and **cannot confirm** identity
 - Fail closed on multi-person address claims
-- Reuse `person_contact_points` as confirmed Person attachment **after** resolve
+- Reuse `person_contact_points` as confirmed Person attachment **after** resolve (full/alias display or operator attestation — not nickname alone)
+- Ask/Gallery retrieve is read-only on identity (no persist)

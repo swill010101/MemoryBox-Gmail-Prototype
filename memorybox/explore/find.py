@@ -994,7 +994,7 @@ def _attach_visible_email(
             time_start=t0,
             time_end=t1,
             temporal_windows=tw,
-            notes=("gallery_email_eligible",),
+            notes=("gallery_email_eligible", "complete_comm_retrieve", "want_email_modality"),
         )
         hits = search_email_messages(mail_plan, limit=_VISIBLE_EMAIL_GALLERY_CAP)
         if hits:
