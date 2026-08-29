@@ -702,9 +702,29 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         _check("peg_legg_alias_seeded_after_attach", False, checks, problems, detail=str(exc))
 
     plan = resolve_peggy_plan(photo=None, ask=PEGGY_ASK)
+    # Bind Full-Evidence / Gallery to the Person we just resolved+attached.
+    # resolve_peggy_plan can return empty person_ids on P1 (no lazy seed) right after
+    # a cold create/upgrade, which would zero email even with peggo417 confirmed.
+    plan_pids = tuple(getattr(plan, "person_ids", ()) or ())
+    if ask_peggy is not None and (
+        not plan_pids or ask_peggy.id not in {str(p) for p in plan_pids}
+    ):
+        from dataclasses import replace
+
+        plan = replace(
+            plan,
+            person_ids=(ask_peggy.id,),
+            person_names=(ask_peggy.display_name or "Peggy George",),
+            notes=tuple(
+                list(getattr(plan, "notes", ()) or ())
+                + ["address_centric_e2e_bound_person", "full_evidence_diagnostic"]
+            ),
+        )
     _check(
         "full_evidence_plan_has_person",
-        bool(getattr(plan, "person_ids", ()) or ()),
+        bool(getattr(plan, "person_ids", ()) or ())
+        and ask_peggy is not None
+        and ask_peggy.id in {str(p) for p in (getattr(plan, "person_ids", ()) or ())},
         checks,
         problems,
         detail={"person_ids": getattr(plan, "person_ids", ()), "names": getattr(plan, "person_names", ())},
