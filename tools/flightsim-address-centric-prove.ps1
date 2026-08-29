@@ -212,10 +212,31 @@ if ($LASTEXITCODE -ne 0) {
 
 & $Python -m memorybox prove-address-centric-email-e2e --flightsim
 $proveExit = $LASTEXITCODE
+$gateJson = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json"
+$verdictPath = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt"
+$auditPath = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_AUDIT.json"
 if ($proveExit -ne 0) {
-  $gateJson = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json"
   if (-not (Test-Path -LiteralPath $gateJson)) {
     Write-AddressCentricGateFailure "prove_exited_without_gate" "exit=$proveExit"
   }
 }
+
+# Requirement audit — stamps goal_complete for the cloud agent / results branch.
+$verifyPy = Join-Path $Root "tools\verify-address-centric-gate.py"
+if ((Test-Path -LiteralPath $gateJson) -and (Test-Path -LiteralPath $verifyPy)) {
+  Write-Host "==> verify-address-centric-gate (goal_complete requires ok+flightsim)"
+  $auditJson = & $Python $verifyPy $gateJson 2>&1 | Out-String
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($auditPath, $auditJson, $utf8)
+  $goalComplete = $false
+  try {
+    $auditObj = $auditJson | ConvertFrom-Json
+    $goalComplete = [bool]$auditObj.goal_complete
+  } catch {}
+  if (Test-Path -LiteralPath $verdictPath) {
+    Add-Content -LiteralPath $verdictPath -Value ("GOAL_COMPLETE=" + $goalComplete) -Encoding ascii
+  }
+  Write-Host ("GOAL_COMPLETE=" + $goalComplete)
+}
+
 exit $proveExit

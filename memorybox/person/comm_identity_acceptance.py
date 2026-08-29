@@ -1552,6 +1552,19 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "prove_ps1_runs_goal_complete_verifier",
+        "verify-address-centric-gate.py" in prove_ps1
+        and "GOAL_COMPLETE=" in prove_ps1,
+        checks,
+        problems,
+    )
+    _check(
+        "gate_cmd_pushes_audit_json",
+        "ADDRESS_CENTRIC_AUDIT.json" in gate_cmd,
+        checks,
+        problems,
+    )
 
     # Full-Evidence AmbiguousIdentity recovery prefers exact George/Legg from
     # the candidate list before another Ask round-trip.

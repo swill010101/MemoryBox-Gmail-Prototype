@@ -21,6 +21,7 @@ set REPO_ROOT=%~dp0..
 set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
 set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
 set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
+set GATE_AUDIT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_AUDIT.json
 REM Wall-clock budgets so hung startmb/prove still deliver a gate (not waiting:true).
 if not defined STARTMB_WATCHDOG_SEC set STARTMB_WATCHDOG_SEC=600
 if not defined PROVE_WATCHDOG_SEC set PROVE_WATCHDOG_SEC=2700
@@ -45,6 +46,7 @@ REM Untracked gate artifacts from prior runs can block checkout; remove only tho
 if exist "%GATE_JSON%" del /f /q "%GATE_JSON%" 2>nul
 if exist "%GATE_VERDICT%" del /f /q "%GATE_VERDICT%" 2>nul
 if exist "%GATE_FAIL%" del /f /q "%GATE_FAIL%" 2>nul
+if exist "%GATE_AUDIT%" del /f /q "%GATE_AUDIT%" 2>nul
 
 REM Auto-stash tracked dirt so checkout succeeds. Do NOT use -u: keep
 REM gitignored config\memorybox_app.env / immich.env on disk for startmb/prove.
@@ -290,6 +292,7 @@ if errorlevel 1 (
 git add --force "%GATE_JSON%"
 if exist "%GATE_VERDICT%" git add --force "%GATE_VERDICT%"
 if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
+if exist "%GATE_AUDIT%" git add --force "%GATE_AUDIT%"
 git status --short
 git diff --cached --quiet
 if errorlevel 1 (
