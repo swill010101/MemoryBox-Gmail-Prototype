@@ -1422,6 +1422,38 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=enriched,
     )
 
+    # FlightSim Immich stub rename must not require Peggy George observation when
+    # structured Peg Legg on peggo417 is present (thin quoted Takeout inventory).
+    from memorybox.person import address_centric_e2e as _ace
+
+    ace_src = open(_ace.__file__, encoding="utf-8").read()
+    _check(
+        "flightsim_upgrade_allows_peg_legg_structured_alone",
+        "archive_lacks_peg_legg_structured" in ace_src
+        and "has_legg and struct_n > 0" in ace_src,
+        checks,
+        problems,
+    )
+    # Structural: upgrade early-exit no longer requires both names for Immich rename.
+    _check(
+        "flightsim_upgrade_no_longer_requires_george_for_rename",
+        "archive_lacks_peg_legg_and_peggy_george_corroboration" not in ace_src,
+        checks,
+        problems,
+    )
+
+    # Full-Evidence AmbiguousIdentity recovery prefers exact George/Legg from
+    # the candidate list before another Ask round-trip.
+    from memorybox.ask.i11a import full_evidence_diagnostic as _fed
+
+    fed_src = open(_fed.__file__, encoding="utf-8").read()
+    _check(
+        "full_evidence_ambig_prefers_candidate_display_name",
+        "prefer_l = prefer.lower()" in fed_src and "== prefer_l" in fed_src,
+        checks,
+        problems,
+    )
+
     return {
         "ok": not problems,
         "prove": "person_email_identity",

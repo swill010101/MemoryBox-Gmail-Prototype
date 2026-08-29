@@ -199,6 +199,27 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
                             email_hits.append(pid)
                     if len(set(email_hits)) == 1:
                         view = get_person(email_hits[0])
+                    if view is None:
+                        # Prefer exact George/Legg from the ambiguity list before
+                        # another Ask round-trip (FlightSim multi-Peggy* noise).
+                        for prefer in ("Peggy George", "Peg Legg"):
+                            prefer_l = prefer.lower()
+                            hits = [
+                                str(
+                                    (c or {}).get("person_id")
+                                    or (c or {}).get("id")
+                                    or ""
+                                )
+                                for c in cands
+                                if str((c or {}).get("display_name") or "")
+                                .strip()
+                                .lower()
+                                == prefer_l
+                            ]
+                            hits = [h for h in hits if h]
+                            if len(set(hits)) == 1:
+                                view = get_person(hits[0])
+                                break
                 except Exception:  # noqa: BLE001
                     view = None
                 if view is None:

@@ -127,9 +127,12 @@ def _flightsim_upgrade_immich_peggy(
 ) -> tuple[Any, dict[str, Any] | None]:
     """Operator-run FlightSim: rename unique Immich \"Peggy\" → \"Peggy George\".
 
-    Only when archive inventory corroborates Peg Legg (structured) and Peggy George
-    (structured or quoted) on peggo417. Does not create People from thin air and does
-    not run on local seed proves.
+    Prefer archive corroboration of Peg Legg (structured) **and** Peggy George
+    (structured or quoted) on peggo417. When Takeout only shows Peg Legg on the
+    address (thin quoted inventory / mailto missed), still rename the unique
+    Immich single-token stub — operator gate run + structured Peg Legg is enough
+    to prefer Peggy George over unrelated Peggy* distractors. Never creates
+    People from thin air; never renames a multi-token Peggy*.
     """
     if person is None:
         return person, None
@@ -149,10 +152,14 @@ def _flightsim_upgrade_immich_peggy(
         for d in (structured.get("distinct_display_names") or [])
             + (quoted.get("distinct_display_names") or [])
     )
-    if not (has_legg and has_george and int(structured.get("occurrence_count") or 0) > 0):
+    struct_n = int(structured.get("occurrence_count") or 0)
+    if not (has_legg and struct_n > 0):
         return person, {
             "skipped": True,
-            "reason": "archive_lacks_peg_legg_and_peggy_george_corroboration",
+            "reason": "archive_lacks_peg_legg_structured",
+            "has_legg": has_legg,
+            "has_george": has_george,
+            "structured_occurrence_count": struct_n,
         }
 
     from memorybox.person import list_people_by_first_token, rename_person
@@ -213,6 +220,12 @@ def _flightsim_upgrade_immich_peggy(
         "from": dn,
         "to": getattr(refreshed, "display_name", None),
         "person_id": getattr(refreshed, "id", None),
+        "reason": (
+            "flightsim_immich_peggy_renamed_on_peg_legg_and_peggy_george"
+            if has_george
+            else "flightsim_immich_peggy_renamed_on_peg_legg_structured"
+        ),
+        "has_george_observation": has_george,
     }
 
 
