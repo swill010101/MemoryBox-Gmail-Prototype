@@ -286,6 +286,17 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    email_search_src = inspect.getsource(retrieve_mod.search_email_messages)
+    resolve_src = inspect.getsource(retrieve_mod._resolve_person_ids_from_names)
+    _check(
+        "name_only_email_resolves_person_then_trusted",
+        "_resolve_person_ids_from_names" in email_search_src
+        and "create_if_missing=False" in resolve_src
+        and "lazy_seed=False" in resolve_src
+        and "never name-blob retrieve" in email_search_src,
+        checks,
+        problems,
+    )
     _check(
         "identity_snapshot_emails_are_trusted_classified",
         "classify_contact_trust" in snap_src and "retrieval_trust" in snap_src,

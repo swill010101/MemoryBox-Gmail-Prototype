@@ -1447,6 +1447,41 @@ def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
     return trusted_emails_for_people(person_ids)
 
 
+def _resolve_person_ids_from_names(names: list[str] | tuple[str, ...]) -> set[str]:
+    """Name → Person id. Not a retrieve key. Do not create People. Fail closed."""
+    out: set[str] = set()
+    for raw in names:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        try:
+            from memorybox.person import resolve_person_by_name
+
+            resolved = resolve_person_by_name(
+                name, create_if_missing=False, confirm=False
+            )
+            pid = str(
+                getattr(resolved, "person_id", "")
+                or getattr(resolved, "id", "")
+                or ""
+            )
+            if pid:
+                out.add(pid)
+                continue
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from memorybox.person import find_ask_person_by_name
+
+            view = find_ask_person_by_name(name, photo=None, lazy_seed=False)
+            pid = str(getattr(view, "id", "") or "")
+            if pid:
+                out.add(pid)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
 def _asked_person_is_owner(plan: QueryPlan) -> bool:
     try:
         from memorybox.profile.owner import get_owner_person_id
@@ -1553,6 +1588,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     attach_only = bool(EMAIL_ATTACH_ASK_RE.search(ask))
     thread_open = bool(EMAIL_THREAD_RE.search(ask))
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    if not person_ids and plan.person_names:
+        # Ask/Gallery may carry Peg Legg / display names without ids.
+        # Resolve to Person, then trusted emails — never name-blob retrieve.
+        person_ids = _resolve_person_ids_from_names(plan.person_names)
     from memorybox.ingest.comms_email import owner_emails
 
     owner_addrs = owner_emails()
