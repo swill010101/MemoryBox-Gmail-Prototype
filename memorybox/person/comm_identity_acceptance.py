@@ -1641,7 +1641,17 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
     _check(
         "full_evidence_ambig_exact_name_last_resort",
         "list_people_by_exact_name" in fed_src
-        and "Last resort: unique exact Peggy George" in fed_src,
+        and (
+            "Last resort: unique exact Peggy George" in fed_src
+            or "_pick_exact_peggy_george" in fed_src
+        ),
+        checks,
+        problems,
+    )
+    _check(
+        "full_evidence_ambig_prefers_peggo_claimant_on_dup_george",
+        "_pick_exact_peggy_george" in fed_src
+        and "peggo417@hotmail.com" in fed_src,
         checks,
         problems,
     )

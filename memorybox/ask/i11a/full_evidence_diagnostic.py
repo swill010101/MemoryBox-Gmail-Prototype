@@ -36,6 +36,49 @@ CHUNK_TARGET_MAX_TOKENS = 150_000
 
 PEGGY_ASK = HISTORIAN_CASES["peggy"]
 
+# Address-centric Peggy gate: Immich may duplicate exact "Peggy George". Prefer
+# the unique person holding the archive probe address over an arbitrary row.
+_PEGGY_PROBE_ADDR = "peggo417@hotmail.com"
+
+
+def _pick_exact_peggy_george(people: list[Any]) -> Any | None:
+    """Pick Peggy George among exact-name hits; prefer peggo417 claimant."""
+    if not people:
+        return None
+    if len(people) == 1:
+        return people[0]
+    try:
+        from memorybox.db import connection as _db_conn
+        from memorybox.person.comm_identity import normalize_handle
+
+        addr = normalize_handle(_PEGGY_PROBE_ADDR)
+        claimants: list[Any] = []
+        with _db_conn() as conn:
+            for cand in people:
+                pid = getattr(cand, "id", None)
+                if not pid:
+                    continue
+                hit = conn.execute(
+                    """
+                    SELECT 1
+                    FROM person_contact_points
+                    WHERE person_id = %s::uuid
+                      AND contact_kind = 'email'
+                      AND status = 'confirmed'
+                      AND lower(value_text) = %s
+                    LIMIT 1
+                    """,
+                    (pid, addr),
+                ).fetchone()
+                if hit:
+                    claimants.append(cand)
+        if len(claimants) == 1:
+            return claimants[0]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 _SOURCE_ORDER = (
     "person",
     "sms",
@@ -225,12 +268,13 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
                 if view is None:
                     # Exact ledger Person (cold-created Peggy George) may not be in
                     # the AmbiguousIdentity candidate list yet — prefer it over abort.
+                    # Multiple Immich "Peggy George" rows: prefer unique peggo417
+                    # claimant (same rule as address-centric e2e bootstrap).
                     try:
                         from memorybox.person import list_people_by_exact_name
 
                         exact = list_people_by_exact_name("Peggy George")
-                        if len(exact) == 1:
-                            view = exact[0]
+                        view = _pick_exact_peggy_george(exact)
                     except Exception:  # noqa: BLE001
                         view = None
                 if view is None:
@@ -255,15 +299,16 @@ def resolve_peggy_plan(*, photo: Any = None, ask: str | None = None) -> Any:
             "peggy" in str(n).lower() or "peg legg" in str(n).lower()
             for n in (plan.person_names or ())
         ):
-            # Last resort: unique exact Peggy George even when every name token
-            # raised AmbiguousIdentity with an empty/unhelpful candidate set.
+            # Last resort: Peggy George (unique, or unique peggo417 claimant when
+            # Immich duplicated the exact display name).
             try:
                 from memorybox.person import list_people_by_exact_name
 
                 exact = list_people_by_exact_name("Peggy George")
-                if len(exact) == 1:
-                    pids = [exact[0].id]
-                    labels = [exact[0].display_name or "Peggy George"]
+                picked = _pick_exact_peggy_george(exact)
+                if picked is not None:
+                    pids = [picked.id]
+                    labels = [picked.display_name or "Peggy George"]
             except Exception:  # noqa: BLE001
                 pass
         if pids:
