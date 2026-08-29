@@ -90,6 +90,8 @@ if not exist "%EVIDENCE_DIR%" goto :eof
 if exist "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json" git add -- "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json"
 if exist "%EVIDENCE_DIR%\PHASE1_prove.json" git add -- "%EVIDENCE_DIR%\PHASE1_prove.json"
 if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+if exist "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt"
+if exist "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt"
 for %%F in ("%EVIDENCE_DIR%\FEV2REPORT_*.json") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\PIPELINE_*.json") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\FEV2_*.json") do if exist "%%F" git add -- "%%F"
@@ -123,5 +125,7 @@ goto evidence_push_retry
 where gh >nul 2>nul
 if not errorlevel 1 (
   if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" gh pr comment 77 --body-file "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+  if exist "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt" gh pr comment 77 --body-file "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt"
+  if exist "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt" gh pr comment 77 --body-file "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt"
 )
 goto :eof

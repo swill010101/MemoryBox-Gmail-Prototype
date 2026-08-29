@@ -29,6 +29,17 @@ def _write(path: Path, payload: dict[str, Any]) -> Path:
     return path
 
 
+def _write_phase2_summary_files(out: Path, result: dict[str, Any], stamp: str) -> None:
+    """Stable + stamped FlightSim paste. Gate commits PHASE2_SUMMARY.txt to PR #77."""
+    text = str(result.get("phase2_summary") or format_phase2_summary(result))
+    result["phase2_summary"] = text
+    try:
+        (out / "PHASE2_SUMMARY.txt").write_text(text, encoding="utf-8")
+        (out / f"PHASE2_SUMMARY_{stamp}.txt").write_text(text, encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _try_model_run(
     fixture_path: str,
     *,
@@ -111,7 +122,7 @@ def run_trusted_evidence_pipeline(
     if not phase1.get("ok") or not phase1.get("trusted_addresses"):
         result["stop"] = "phase_1_failed — do not widen matching; attest or fix provenance"
         result["error"] = phase1.get("error") or "phase_1_not_ok"
-        result["phase2_summary"] = format_phase2_summary(result)
+        _write_phase2_summary_files(out, result, stamp)
         _write(out / f"PIPELINE_{stamp}.json", result)
         return result
 
@@ -132,7 +143,7 @@ def run_trusted_evidence_pipeline(
     }
     if not freeze.get("ok") or not freeze.get("fixture_path"):
         result["stop"] = "phase_2_freeze_failed"
-        result["phase2_summary"] = format_phase2_summary(result)
+        _write_phase2_summary_files(out, result, stamp)
         _write(out / f"PIPELINE_{stamp}.json", result)
         return result
 
@@ -231,7 +242,7 @@ def run_trusted_evidence_pipeline(
         result["stop"] = "phase_2_models_not_run — fixture frozen; run Gemma then Sol on FlightSim"
     result["fixture_path"] = fixture_path
     result["input_sha256"] = fixture_hash
-    result["phase2_summary"] = format_phase2_summary(result)
+    _write_phase2_summary_files(out, result, stamp)
     _write(out / f"PIPELINE_{stamp}.json", result)
     return result
 

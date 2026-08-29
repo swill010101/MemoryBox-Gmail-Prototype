@@ -719,6 +719,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("run-trusted-fev2-chunked-models --from-dir")
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
+        and "PHASE2_SUMMARY.txt" in gate_txt
+        and "PHASE3_SUMMARY.txt" in gate_txt
         and "git pull --rebase" in gate_txt
         and "--force" not in gate_txt,
         checks,
@@ -1359,9 +1361,17 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             fromlist=["format_phase2_summary"],
         ).format_phase2_summary
     )
+    phase2_write_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_evidence_pipeline",
+            fromlist=["_write_phase2_summary_files"],
+        )._write_phase2_summary_files
+    )
     _check(
         "pipeline_writes_phase2_human_summary",
         "phase2_summary" in pipe_src
+        and "_write_phase2_summary_files" in pipe_src
+        and "PHASE2_SUMMARY.txt" in phase2_write_src
         and "TRUSTED-EVIDENCE PHASE 2 SUMMARY" in phase2_sum_src,
         checks,
         problems,
@@ -1419,6 +1429,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=ready,
+    )
+    chunk_run_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_fev2_chunking",
+            fromlist=["run_chunked_models_after_single_pass"],
+        ).run_chunked_models_after_single_pass
+    )
+    _check(
+        "chunk_models_write_phase3_human_summary",
+        "PHASE3_SUMMARY.txt" in chunk_run_src
+        and "TRUSTED-EVIDENCE PHASE 3 SUMMARY" in chunk_run_src,
+        checks,
+        problems,
     )
 
     invented = validate_fev2_document(

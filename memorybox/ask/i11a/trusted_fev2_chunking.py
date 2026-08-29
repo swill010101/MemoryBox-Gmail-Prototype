@@ -333,7 +333,23 @@ def run_chunked_models_after_single_pass(
     sol_rep = _load_json(sol_report_path)
     gate = ready_for_chunk_models(fixture_path, gemma_rep, sol_rep)
     if not gate.get("ok"):
-        return {**gate, "chunking": True, "model_calls": 0}
+        blocked = {**gate, "chunking": True, "model_calls": 0}
+        dest = Path(out_dir) if out_dir else Path(fixture_path).parent
+        dest.mkdir(parents=True, exist_ok=True)
+        summary = "\n".join(
+            [
+                "TRUSTED-EVIDENCE PHASE 3 SUMMARY",
+                "ok: False",
+                f"error: {blocked.get('error')}",
+                "ran: False",
+            ]
+        )
+        blocked["phase3_summary"] = summary
+        try:
+            (dest / "PHASE3_SUMMARY.txt").write_text(summary, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return blocked
     gemma = run_provider_over_chunks(
         fixture_path,
         provider="ollama",
@@ -361,6 +377,23 @@ def run_chunked_models_after_single_pass(
     path = dest / f"FEV2CHUNK_{gate.get('input_sha256', '')[:8]}.json"
     path.write_text(json.dumps(result, indent=2, default=str, ensure_ascii=False), encoding="utf-8")
     result["report_path"] = str(path)
+    summary = "\n".join(
+        [
+            "TRUSTED-EVIDENCE PHASE 3 SUMMARY",
+            f"ok: {result.get('ok')}",
+            f"ran: {result.get('ran')}",
+            f"input_sha256: {result.get('input_sha256')}",
+            f"structure_ok: {(result.get('structure') or {}).get('ok')}",
+            f"gemma_chunked_ok: {(result.get('gemma_chunked') or {}).get('ok')}",
+            f"sol_chunked_ok: {(result.get('sol_chunked') or {}).get('ok')}",
+            f"report: {path}",
+        ]
+    )
+    result["phase3_summary"] = summary
+    try:
+        (dest / "PHASE3_SUMMARY.txt").write_text(summary, encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
     return result
 
 
@@ -393,12 +426,26 @@ def run_chunked_models_from_dir(
         + list(dest.glob("FEV2REPORT_openai_*.json"))
     )
     if not fixtures or not gemma_paths or not sol_paths:
-        return {
+        blocked = {
             "ok": False,
             "ran": False,
             "error": "missing_fixture_or_phase2_reports",
             "chunking": True,
         }
+        summary = "\n".join(
+            [
+                "TRUSTED-EVIDENCE PHASE 3 SUMMARY",
+                "ok: False",
+                "error: missing_fixture_or_phase2_reports",
+                "ran: False",
+            ]
+        )
+        blocked["phase3_summary"] = summary
+        try:
+            (dest / "PHASE3_SUMMARY.txt").write_text(summary, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return blocked
     fixture = max(fixtures, key=lambda p: p.stat().st_mtime)
     gemma_path = max(gemma_paths, key=lambda p: p.stat().st_mtime)
     sol_path = max(sol_paths, key=lambda p: p.stat().st_mtime)
