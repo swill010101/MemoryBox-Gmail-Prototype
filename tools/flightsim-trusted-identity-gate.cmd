@@ -13,13 +13,22 @@ set MEMORYBOX_ALLOW_DEV_DEFAULTS=
 if exist config\memorybox_app.env (
   if not defined MEMORYBOX_DATABASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_DATABASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_DATABASE_URL=%%B"
   if not defined MEMORYBOX_QDRANT_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_QDRANT_URL=" config\memorybox_app.env`) do set "MEMORYBOX_QDRANT_URL=%%B"
+  if not defined MEMORYBOX_OLLAMA_BASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_OLLAMA_BASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_OLLAMA_BASE_URL=%%B"
+  if not defined MEMORYBOX_CLOUD_LLM_BASE_URL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_BASE_URL=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_BASE_URL=%%B"
+  if not defined MEMORYBOX_CLOUD_LLM_API_KEY for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_API_KEY=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_API_KEY=%%B"
+  if not defined MEMORYBOX_CLOUD_LLM_MODEL for /f "usebackq tokens=1,* delims==" %%A in (`findstr /i /b "MEMORYBOX_CLOUD_LLM_MODEL=" config\memorybox_app.env`) do set "MEMORYBOX_CLOUD_LLM_MODEL=%%B"
 )
 if not defined MEMORYBOX_DATABASE_URL set MEMORYBOX_DATABASE_URL=postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox
 if not defined MEMORYBOX_QDRANT_URL set MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333
+if not defined MEMORYBOX_OLLAMA_BASE_URL set MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434
 echo hostname=%COMPUTERNAME%
 echo MEMORYBOX_P1_RUNTIME_HOST=%MEMORYBOX_P1_RUNTIME_HOST%
 echo ALLOW_DEV_DEFAULTS=%MEMORYBOX_ALLOW_DEV_DEFAULTS%
 echo MEMORYBOX_QDRANT_URL=%MEMORYBOX_QDRANT_URL%
+echo MEMORYBOX_OLLAMA_BASE_URL=%MEMORYBOX_OLLAMA_BASE_URL%
+echo CLOUD_LLM_MODEL=%MEMORYBOX_CLOUD_LLM_MODEL%
+if defined MEMORYBOX_CLOUD_LLM_BASE_URL (echo CLOUD_LLM_BASE_URL_SET=1) else (echo CLOUD_LLM_BASE_URL_SET=)
+if defined MEMORYBOX_CLOUD_LLM_API_KEY (echo CLOUD_LLM_KEY_SET=1) else (echo CLOUD_LLM_KEY_SET=)
 echo.
 echo === migrate ===
 python -m memorybox migrate
@@ -49,8 +58,9 @@ echo === Phase 2/3 pipeline (single-pass freeze, Gemma, Sol) ===
 python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
 if errorlevel 1 (
   echo TRUSTED EVIDENCE PIPELINE FAILED OR SKIPPED
-  echo Pull gemma4:26b locally if ollama_model_missing: ollama pull gemma4:26b
-  echo Set MEMORYBOX_CLOUD_LLM_* if cloud Sol is unset
+  echo Paste the PHASE2_SUMMARY block printed above.
+  echo If gemma error is ollama_model_missing: ollama pull gemma4:26b
+  echo If sol error is cloud_sol_not_configured / no_sol_model: set MEMORYBOX_CLOUD_LLM_* in config\memorybox_app.env
   echo Phase 3 chunking stays refused until both single-pass reports share the freeze hash.
   exit /b 1
 )

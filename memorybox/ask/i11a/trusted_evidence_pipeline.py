@@ -112,6 +112,7 @@ def run_trusted_evidence_pipeline(
     if not phase1.get("ok") or not phase1.get("trusted_addresses"):
         result["stop"] = "phase_1_failed — do not widen matching; attest or fix provenance"
         result["error"] = phase1.get("error") or "phase_1_not_ok"
+        result["phase2_summary"] = format_phase2_summary(result)
         _write(out / f"PIPELINE_{stamp}.json", result)
         return result
 
@@ -132,6 +133,7 @@ def run_trusted_evidence_pipeline(
     }
     if not freeze.get("ok") or not freeze.get("fixture_path"):
         result["stop"] = "phase_2_freeze_failed"
+        result["phase2_summary"] = format_phase2_summary(result)
         _write(out / f"PIPELINE_{stamp}.json", result)
         return result
 
@@ -270,5 +272,26 @@ def run_trusted_evidence_pipeline(
         result["stop"] = "phase_2_models_not_run — fixture frozen; run Gemma then Sol on FlightSim"
     result["fixture_path"] = fixture_path
     result["input_sha256"] = fixture_hash
+    result["phase2_summary"] = format_phase2_summary(result)
     _write(out / f"PIPELINE_{stamp}.json", result)
     return result
+
+
+def format_phase2_summary(result: dict[str, Any]) -> str:
+    """FlightSim-pasteable Phase 2 stop + Gemma/Sol skip reasons."""
+    freeze = result.get("freeze") or {}
+    gemma = result.get("gemma") or {}
+    sol = result.get("sol") or {}
+    return "\n".join(
+        [
+            "TRUSTED-EVIDENCE PHASE 2 SUMMARY",
+            f"ok: {result.get('ok')}",
+            f"stop: {result.get('stop')}",
+            f"freeze_ok: {freeze.get('ok')} error={freeze.get('error') or ''}",
+            f"fixture: {result.get('fixture_path') or freeze.get('fixture_path') or ''}",
+            f"gemma: ok={gemma.get('ok')} skipped={gemma.get('skipped')} "
+            f"error={gemma.get('error') or ''}",
+            f"sol: ok={sol.get('ok')} skipped={sol.get('skipped')} "
+            f"error={sol.get('error') or ''}",
+        ]
+    )

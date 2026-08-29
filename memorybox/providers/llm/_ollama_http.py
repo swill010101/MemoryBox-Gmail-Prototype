@@ -139,10 +139,10 @@ def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
         return json.load(resp)
 
 
-def ollama_has_model(base_url: str, model: str, *, timeout: float = 2.5) -> bool:
-    """True when /api/tags lists this exact model (e.g. gemma4:26b)."""
+def ollama_has_model(base_url: str, model: str, *, timeout: float = 8.0) -> bool:
+    """True when /api/tags lists this model (e.g. gemma4:26b or gemma4:26b:latest)."""
     want = (model or "").strip()
-    if not want or not ollama_reachable(base_url, timeout=timeout):
+    if not want or not ollama_reachable(base_url, timeout=min(timeout, 2.5)):
         return False
     try:
         data = ollama_tags(base_url, timeout=int(max(timeout, 2)))
@@ -154,4 +154,7 @@ def ollama_has_model(base_url: str, model: str, *, timeout: float = 2.5) -> bool
             names.append(str(row.get("name") or row.get("model") or "").strip())
         else:
             names.append(str(row).strip())
-    return want in names
+    norms = [n.split("@")[0].strip() for n in names if n and n.strip()]
+    return want in norms or any(
+        n == f"{want}:latest" or n.startswith(f"{want}:") for n in norms
+    )

@@ -1579,6 +1579,10 @@ def main(argv: list[str] | None = None) -> int:
         if summary:
             print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
             print(summary, flush=True)
+        phase2_summary = payload.get("phase2_summary")
+        if phase2_summary:
+            print("\n===== PHASE2_SUMMARY (paste this) =====", flush=True)
+            print(phase2_summary, flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

@@ -720,7 +720,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and gate_txt.find("set MEMORYBOX_ALLOW_DEV_DEFAULTS=")
         < gate_txt.find("prove-trusted-identity-retrieval --flightsim")
         and gate_txt.find("MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333")
-        < gate_txt.find("python -m memorybox migrate"),
+        < gate_txt.find("python -m memorybox migrate")
+        and "MEMORYBOX_CLOUD_LLM_BASE_URL=" in gate_txt
+        and "MEMORYBOX_CLOUD_LLM_MODEL=" in gate_txt
+        and "MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434" in gate_txt,
         checks,
         problems,
     )
@@ -1012,6 +1015,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    ollama_http_src = open(
+        __import__("pathlib").Path(__file__).resolve().parents[1]
+        / "providers"
+        / "llm"
+        / "_ollama_http.py",
+        encoding="utf-8",
+    ).read()
+    _check(
+        "ollama_has_model_accepts_latest_tag",
+        'n == f"{want}:latest"' in ollama_http_src,
+        checks,
+        problems,
+    )
     ground = score_email_grounding(
         {
             "claims": [
@@ -1087,6 +1103,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "pipeline_writes_phase1_human_summary",
         "PHASE1_SUMMARY_" in pipe_src and "phase1_summary" in pipe_src,
+        checks,
+        problems,
+    )
+    phase2_sum_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_evidence_pipeline",
+            fromlist=["format_phase2_summary"],
+        ).format_phase2_summary
+    )
+    _check(
+        "pipeline_writes_phase2_human_summary",
+        "phase2_summary" in pipe_src
+        and "TRUSTED-EVIDENCE PHASE 2 SUMMARY" in phase2_sum_src,
         checks,
         problems,
     )
