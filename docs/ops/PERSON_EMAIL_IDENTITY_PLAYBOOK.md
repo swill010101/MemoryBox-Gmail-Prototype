@@ -60,6 +60,15 @@ timeouts `taskkill /F /T` the process tree then emit a failure gate.
 Bootstrap skips archive-wide Peg* nickname discover when operator-attest of
 `peggo417` is accepted (or retries attest once) — avoids Takeout hang.
 
+**Completion audit** (after FlightSim overwrites the results branch):
+
+```bat
+python tools\verify-address-centric-gate.py docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+```
+
+Need `"goal_complete": true` (`ok` + `flightsim`, not `waiting`). Local dry-run:
+`python tools/verify-address-centric-gate.py --allow-local …` (never goal_complete).
+
 If structured headers show Peg Legg on peggo417 but **no** same-address
 Peggy George observation (quoted or structured), auto nickname attach stays
 fail-closed (so unrelated `Peg *` mailboxes are not claimed). In that case
