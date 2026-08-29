@@ -249,9 +249,9 @@ def _seed_local_fixture() -> dict[str, Any]:
             "DELETE FROM people WHERE display_name IN ('Peggy George','Peggy','Peg Legg')"
         )
 
-    # Immich-style single-token stub (must not win Ask over Peggy George).
-    resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
-    peggy = resolve_person_by_name("Peggy George", create_if_missing=True, confirm=True)
+    # Immich-style single-token stub only — e2e must upgrade/create Peggy George
+    # the same way FlightSim does (no pre-seeded multi-token Person).
+    immich = resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
 
     payload = {
         "evidence_channel": "email",
@@ -278,7 +278,9 @@ def _seed_local_fixture() -> dict[str, Any]:
         "subject": "Hello from Peg",
         "body_text": (
             "Hi Tom\n-----Original Message-----\n"
+            # Angle-bracket + Outlook mailto forms (FlightSim Takeout shapes).
             f"From: someone\nCc: Peggy George <{_PROBE_ADDR}>\n"
+            f"From: Peggy George [mailto:{_PROBE_ADDR}]\n"
         ),
         "sent_at": "2019-06-15T12:00:00Z",
         "person_ids": [],
@@ -379,12 +381,13 @@ def _seed_local_fixture() -> dict[str, Any]:
             )
             noise_n += 1
     return {
-        "person_id": peggy.person_id,
-        "display_name": peggy.display_name,
+        "person_id": immich.person_id,
+        "display_name": immich.display_name,
         "seeded": 2,
         "bare_from_evidence_id": bare_from_eid,
         "noise_emails": noise_n,
         "immich_stub": "Peggy",
+        "immich_stub_only": True,
     }
 
 
@@ -541,11 +544,13 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     ask_peggy = None
     ask_legg = None
     upgrade_info: dict[str, Any] | None = None
+    # Local Immich-stub-only seed exercises the same Person bootstrap as FlightSim.
+    bootstrap = bool(flightsim) or bool((seed_info or {}).get("immich_stub_only"))
     try:
         # Prefer multi-token Peggy George when present (Immich often seeds \"Peggy\").
-        ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=not flightsim)
+        ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=not bootstrap)
         if ask_peggy is None or " " not in ((ask_peggy.display_name or "").strip()):
-            ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not flightsim)
+            ask_peggy = find_ask_person_by_name("Peggy", lazy_seed=not bootstrap)
         ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
     except Exception as exc:  # noqa: BLE001 — AmbiguousIdentityError or DB errors
         _check(
@@ -581,7 +586,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "seed": seed_info,
             "address_centric_gate": gate,
         }
-    if flightsim:
+    if bootstrap:
         def _archive_has_legg() -> bool:
             return bool(structured.get("has_peg_legg")) or any(
                 (d.get("normalized_display") or "") == "peg legg"
@@ -717,13 +722,14 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     expanded = expand_emails_for_retrieve({ask_peggy.id})
     addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
 
-    # FlightSim belt-and-suspenders: if ledger/auto resolve missed but structured
+    # Belt-and-suspenders: if ledger/auto resolve missed but structured
     # headers exist for the probe address, operator-attest (same as --repair-address).
     if (
-        flightsim
+        bootstrap
         and _PROBE_ADDR not in addrs
         and struct_n > 0
-        and " " in (ask_peggy.display_name or "")
+        and ask_peggy is not None
+        and (ask_peggy.display_name or "").strip().lower() == "peggy george"
     ):
         from memorybox.person.comm_identity import repair_email_identity_contacts
 
