@@ -1373,6 +1373,14 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
     )
     _check(
+        "discover_pass1b_prefers_multi_token_before_limit",
+        "Pass 1b" in discover_src
+        and "Prefer multi-token" in discover_src
+        and discover_src.count("ORDER BY CASE") >= 2,
+        checks,
+        problems,
+    )
+    _check(
         "resolve_caps_nickname_only_candidates",
         "nickname_candidates_kept" in resolve_src and "48" in resolve_src,
         checks,

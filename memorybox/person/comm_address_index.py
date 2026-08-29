@@ -595,6 +595,10 @@ def find_addresses_for_person_forms(
                 _ingest_rows(list(pass1a))
 
             # Pass 1b: nickname first-token on structured parsed display (Peg Legg).
+            # Prefer multi-token form hits (Peg Legg / Peggy George) over bare
+            # nickname %peg % noise so ORDER BY id LIMIT does not starve the
+            # real address on large Takeouts full of unrelated Peg* mail.
+            order_multi = multi_patterns or patterns
             pass1b = conn.execute(
                 """
                 SELECT id, payload_json
@@ -611,10 +615,28 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
                   )
-                ORDER BY id
+                ORDER BY CASE
+                  WHEN lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
+                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)
+                  THEN 0
+                  ELSE 1
+                END,
+                id
                 LIMIT %s
                 """,
-                (patterns, patterns, patterns, patterns, limit_scan),
+                (
+                    patterns,
+                    patterns,
+                    patterns,
+                    patterns,
+                    order_multi,
+                    order_multi,
+                    order_multi,
+                    order_multi,
+                    limit_scan,
+                ),
             ).fetchall()
             _ingest_rows(list(pass1b))
 
