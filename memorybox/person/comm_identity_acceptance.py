@@ -474,6 +474,22 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=qhits_mailto,
     )
+    from memorybox.person.comm_identity import _header_records as _hr_mailto
+
+    struct_mailto = _hr_mailto(
+        {"from": "Peggy George [mailto:peggo417@hotmail.com]", "to": [], "cc": []}
+    )
+    _check(
+        "structured_mailto_from_finds_peggy_george",
+        any(
+            (r.get("address") or "") == "peggo417@hotmail.com"
+            and (r.get("display_name") or "").strip().lower() == "peggy george"
+            for r in struct_mailto
+        ),
+        checks,
+        problems,
+        detail=struct_mailto,
+    )
     retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
     _check(
         "retrieve_has_no_peggo_hardcode",

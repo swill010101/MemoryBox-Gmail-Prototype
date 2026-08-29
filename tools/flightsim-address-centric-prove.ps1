@@ -76,27 +76,38 @@ $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
 # FlightSim must not fall back to empty ALLOW_DEV stores.
 Remove-Item Env:MEMORYBOX_ALLOW_DEV_DEFAULTS -ErrorAction SilentlyContinue
 
-function Get-RedactedDbHost([string]$Url) {
+function Get-DbEndpoint([string]$Url) {
+  # postgresql://user:pass@host:5432/db  or  host without port → 5432
+  $hostName = "127.0.0.1"
+  $port = 5432
   try {
-    if ($Url -match '@([^/:]+)') { return $Matches[1] }
+    if ($Url -match '@([^/:]+)(?::(\d+))?') {
+      $hostName = $Matches[1]
+      if ($Matches[2]) { $port = [int]$Matches[2] }
+    }
   } catch {}
-  return "(unparsed)"
+  return @{ Host = $hostName; Port = $port }
 }
 
+function Get-RedactedDbHost([string]$Url) {
+  return (Get-DbEndpoint $Url).Host
+}
+
+$DbEp = Get-DbEndpoint $env:MEMORYBOX_DATABASE_URL
 Write-Host "hostname=$([System.Net.Dns]::GetHostName())"
-Write-Host "MEMORYBOX_DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL) host=$(Get-RedactedDbHost $env:MEMORYBOX_DATABASE_URL)"
+Write-Host "MEMORYBOX_DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL) host=$($DbEp.Host) port=$($DbEp.Port)"
 Write-Host "MEMORYBOX_P1_RUNTIME_HOST=$($env:MEMORYBOX_P1_RUNTIME_HOST)"
 Write-Host "ALLOW_DEV_DEFAULTS=$($env:MEMORYBOX_ALLOW_DEV_DEFAULTS)"
 
 # startmb -Restart can leave migrate racing Postgres/Docker bring-up.
-Write-Host "==> waiting for Postgres :5432 (up to ${DbWaitSec}s)"
+Write-Host "==> waiting for Postgres $($DbEp.Host):$($DbEp.Port) (up to ${DbWaitSec}s)"
 $deadline = (Get-Date).AddSeconds($DbWaitSec)
 while ((Get-Date) -lt $deadline) {
-  if (Test-TcpPort "127.0.0.1" 5432) { break }
+  if (Test-TcpPort $DbEp.Host $DbEp.Port) { break }
   Start-Sleep -Seconds 2
 }
-if (-not (Test-TcpPort "127.0.0.1" 5432)) {
-  Write-Host "ERROR: Postgres not reachable on 127.0.0.1:5432 after ${DbWaitSec}s" -ForegroundColor Red
+if (-not (Test-TcpPort $DbEp.Host $DbEp.Port)) {
+  Write-Host "ERROR: Postgres not reachable on $($DbEp.Host):$($DbEp.Port) after ${DbWaitSec}s" -ForegroundColor Red
   Write-Host "Start Docker / memorybox-pg (startmb.cmd), then re-run."
   exit 1
 }

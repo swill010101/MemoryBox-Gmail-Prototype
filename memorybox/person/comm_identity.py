@@ -243,15 +243,23 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                     continue
                 if addr in parsed_addrs_by_field.get(field, set()):
                     continue
-                # Display name before <addr>
+                # Display name before <addr> or Outlook [mailto:addr]
                 dn = ""
                 angle = re.search(
-                    rf"([^<>]*?)\s*<\s*{re.escape(m.group(0))}\s*>",
+                    rf"([^<>\[]*?)\s*<\s*{re.escape(m.group(0))}\s*>",
                     text,
                     flags=re.I,
                 )
                 if angle:
                     dn = angle.group(1).strip().strip('"')
+                if not dn:
+                    mailto = re.search(
+                        rf"([^\[\]<>]*?)\s*\[\s*mailto\s*:\s*{re.escape(m.group(0))}\s*\]",
+                        text,
+                        flags=re.I,
+                    )
+                    if mailto:
+                        dn = mailto.group(1).strip().strip('"').rstrip(",")
                 out.append(
                     {
                         "address": addr,
