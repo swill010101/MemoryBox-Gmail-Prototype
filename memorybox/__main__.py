@@ -670,6 +670,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Ask used to retrieve eligible evidence",
     )
     p_fev2_freeze.add_argument("--out-dir", default=None)
+    p_fev2_freeze.add_argument(
+        "--complete-trusted",
+        action="store_true",
+        help="Phase 3 larger trusted set: do not token-cap trusted email",
+    )
     p_fev2_run = sub.add_parser(
         "run-trusted-full-evidence-v2",
         help="Phase 2: replay frozen FEV2 through ollama (Gemma) or cloud (Sol)",
@@ -1495,6 +1500,7 @@ def main(argv: list[str] | None = None) -> int:
             person_id=resolved.person_id,
             ask=args.ask,
             out_dir=out,
+            complete_trusted=bool(getattr(args, "complete_trusted", False)),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1

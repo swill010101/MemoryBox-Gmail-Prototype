@@ -156,6 +156,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     where_src = inspect.getsource(retrieve_mod._person_scoped_comm_where)
     header_src = inspect.getsource(ci._header_records)
     expand_src = inspect.getsource(ci.expand_emails_for_retrieve)
+    snap_src = inspect.getsource(ci.person_identity_snapshot)
+    claim_src = inspect.getsource(ci._address_claimed_by)
     sql_src = inspect.getsource(retrieve_mod._sql_confirmed_email_addrs)
     _check(
         "retrieve_keep_does_not_use_name_blob",
@@ -187,6 +189,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "expand_retrieve_is_trusted_only",
         "trusted_emails_for_people" in expand_src and "trusted_only" in expand_src,
+        checks,
+        problems,
+    )
+    _check(
+        "identity_snapshot_emails_are_trusted_classified",
+        "classify_contact_trust" in snap_src and "retrieval_trust" in snap_src,
+        checks,
+        problems,
+    )
+    _check(
+        "claimed_by_requires_trusted_not_any_confirmed",
+        "classify_contact_trust" in claim_src,
         checks,
         problems,
     )

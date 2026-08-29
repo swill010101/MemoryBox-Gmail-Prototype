@@ -173,6 +173,20 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
             ask="tell me about this person",
             out_dir=tmp,
         )
+        complete = freeze_trusted_full_evidence_v2(
+            person_id=person_id,
+            ask="tell me about this person",
+            out_dir=tmp,
+            complete_trusted=True,
+        )
+        _ok("complete_trusted_freeze_ok", bool(complete.get("ok")), complete.get("error"))
+        if complete.get("fixture_path"):
+            from memorybox.ask.i11a.trusted_fev2_chunking import (
+                compare_chunked_vs_unchunked as _cmp2,
+            )
+
+            big = _cmp2(complete["fixture_path"])
+            _ok("larger_trusted_set_chunk_structure_ok", bool(big.get("ok")), big)
         _ok("freeze_ok", bool(freeze.get("ok")), freeze.get("error"))
         _ok(
             "freeze_email_ids",

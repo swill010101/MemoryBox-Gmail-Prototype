@@ -104,12 +104,20 @@ def person_identity_snapshot(person_id: str) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         provider_ids = []
 
-    emails = [
-        c
-        for c in contacts
-        if str(c.get("contact_kind") or "").lower() == "email"
-        and str(c.get("status") or "") == "confirmed"
-    ]
+    from memorybox.person.trusted_identity import classify_contact_trust
+
+    emails = []
+    for c in contacts:
+        if str(c.get("contact_kind") or "").lower() != "email":
+            continue
+        verdict = classify_contact_trust(
+            {
+                "actor_key": c.get("actor_key"),
+                "provenance_json": c.get("provenance") or c.get("provenance_json") or {},
+            }
+        )
+        if verdict.get("retrieval_trust") == "trusted":
+            emails.append(c)
     phones = [
         c
         for c in contacts
@@ -168,18 +176,25 @@ def _address_claimed_by(addr: str) -> list[str]:
     out: list[str] = []
     try:
         with connection() as conn:
+            from memorybox.person.trusted_identity import classify_contact_trust
+
             rows = conn.execute(
                 """
-                SELECT person_id, value_text
+                SELECT person_id, value_text, actor_key, provenance_json, status
                 FROM person_contact_points
-                WHERE contact_kind = 'email' AND status = 'confirmed'
+                WHERE contact_kind = 'email'
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 """
             ).fetchall()
             for r in rows:
-                if normalize_handle(str(r.get("value_text") or "")) == norm:
-                    pid = str(r["person_id"])
-                    if pid not in out:
-                        out.append(pid)
+                if normalize_handle(str(r.get("value_text") or "")) != norm:
+                    continue
+                verdict = classify_contact_trust(dict(r))
+                if verdict.get("retrieval_trust") != "trusted":
+                    continue
+                pid = str(r["person_id"])
+                if pid not in out:
+                    out.append(pid)
             rows2 = conn.execute(
                 """
                 SELECT person_id, external_id

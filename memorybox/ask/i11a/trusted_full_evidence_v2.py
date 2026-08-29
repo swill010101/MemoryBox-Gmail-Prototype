@@ -351,6 +351,7 @@ def freeze_trusted_full_evidence_v2(
     out_dir: Path | str | None = None,
     plan: Any | None = None,
     token_budget: int = SINGLE_PASS_TOKEN_BUDGET,
+    complete_trusted: bool = False,
 ) -> dict[str, Any]:
     """Build a hash-stable Full-Evidence V2 fixture from trusted retrieve."""
     from memorybox.ask.deps import build_photo, build_video
@@ -394,10 +395,11 @@ def freeze_trusted_full_evidence_v2(
     person_context = build_person_context(plan)
     retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
     norm = normalize_retrieved(retrieved, person_context=person_context)
+    budget = 1_000_000_000 if complete_trusted else token_budget
     items = select_single_pass_items(
         list(norm.get("items") or []),
         trusted_addrs=trusted,
-        token_budget=token_budget,
+        token_budget=budget,
     )
     paste = format_full_evidence_text(
         items,
@@ -417,7 +419,12 @@ def freeze_trusted_full_evidence_v2(
         if str(it.get("source") or "") == "email":
             email_ids.update(item_evidence_ids(it))
     body = {
-        "fixture_kind": "full_evidence_v2_trusted",
+        "fixture_kind": (
+            "full_evidence_v2_trusted_complete"
+            if complete_trusted
+            else "full_evidence_v2_trusted"
+        ),
+        "complete_trusted": bool(complete_trusted),
         "ask": ask,
         "person_id": person_id,
         "trusted_addresses": sorted(trusted),
@@ -425,7 +432,7 @@ def freeze_trusted_full_evidence_v2(
         "items": items,
         "evidence_type_counts": by_source,
         "email_evidence_ids": sorted(email_ids),
-        "token_budget": token_budget,
+        "token_budget": budget,
         "estimated_tokens": _estimate_tokens(paste),
         "source_commit": _git_commit(),
         "built_at": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
@@ -434,7 +441,8 @@ def freeze_trusted_full_evidence_v2(
         "user_message": paste,
     }
     body["input_sha256"] = fev2_input_sha256(body)
-    fname = f"FEV2_{body['built_at']}_{body['input_sha256'][:8]}.json"
+    prefix = "FEV2COMPLETE" if complete_trusted else "FEV2"
+    fname = f"{prefix}_{body['built_at']}_{body['input_sha256'][:8]}.json"
     path = out / fname
     path.write_text(serialize_fixture_document(body), encoding="utf-8")
     paste_path = out / f"FEV2_paste_{body['input_sha256'][:8]}.txt"
