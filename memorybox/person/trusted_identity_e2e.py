@@ -125,27 +125,6 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
             rec_keep.get("demoted"),
         )
 
-        ensure_confirmed_email_contact(
-            person_id,
-            promote_addr,
-            provenance={"source": "comm_identity_expand"},
-            note="auto-expand first",
-        )
-        add_contact(
-            person_id,
-            contact_kind="email",
-            value_text=promote_addr,
-            actor_key="owner",
-            provenance={"source": "person_profile"},
-        )
-        rec_promote = reclassify_person_email_trust(person_id)
-        trusted_promote = {str(x.get("address")) for x in rec_promote.get("trusted") or []}
-        _ok(
-            "owner_add_promotes_existing_auto_expand",
-            promote_addr in trusted_promote,
-            rec_promote,
-        )
-
         with connection() as conn:
             for i, (addr, dn) in enumerate(
                 (
@@ -172,6 +151,27 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
         addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
         _ok("expand_only_trusted", addrs == {trusted_addr}, sorted(addrs))
         _ok("expand_excludes_noise", noise_addr not in addrs, sorted(addrs))
+
+        ensure_confirmed_email_contact(
+            person_id,
+            promote_addr,
+            provenance={"source": "comm_identity_expand"},
+            note="auto-expand first",
+        )
+        add_contact(
+            person_id,
+            contact_kind="email",
+            value_text=promote_addr,
+            actor_key="owner",
+            provenance={"source": "person_profile"},
+        )
+        rec_promote = reclassify_person_email_trust(person_id)
+        trusted_promote = {str(x.get("address")) for x in rec_promote.get("trusted") or []}
+        _ok(
+            "owner_add_promotes_existing_auto_expand",
+            promote_addr in trusted_promote,
+            rec_promote,
+        )
 
         plan = QueryPlan(
             original_ask="tell me about this person",
