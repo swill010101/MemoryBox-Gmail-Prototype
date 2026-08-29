@@ -43,15 +43,24 @@ def _index_confirmed_handles(conn: Any | None = None) -> dict[str, list[str]]:
         try:
             rows = c.execute(
                 """
-                SELECT person_id, value_text
+                SELECT person_id, value_text, contact_kind, actor_key, provenance_json, status
                 FROM person_contact_points
                 WHERE contact_kind IN ('phone', 'email')
-                  AND status = 'confirmed'
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 """
             ).fetchall()
         except Exception:  # noqa: BLE001
             rows = []
+        from memorybox.person.trusted_identity import classify_contact_trust
+
         for r in rows:
+            kind = str(r.get("contact_kind") or "")
+            if kind == "email":
+                verdict = classify_contact_trust(dict(r))
+                if verdict.get("retrieval_trust") != "trusted":
+                    continue
+            elif str(r.get("status") or "") != "confirmed":
+                continue
             key = normalize_handle(str(r.get("value_text") or ""))
             if not key:
                 continue

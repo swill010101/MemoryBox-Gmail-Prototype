@@ -150,6 +150,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
 
     from memorybox.ask import retrieve as retrieve_mod
     from memorybox.person import comm_identity as ci
+    from memorybox.person import phone_map as pm
 
     keep_src = inspect.getsource(retrieve_mod.search_email_messages)
     blob_src = inspect.getsource(retrieve_mod._email_person_blob)
@@ -201,6 +202,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "claimed_by_requires_trusted_not_any_confirmed",
         "classify_contact_trust" in claim_src,
+        checks,
+        problems,
+    )
+    index_src = inspect.getsource(pm._index_confirmed_handles)
+    _check(
+        "sms_handle_index_emails_require_trusted",
+        "classify_contact_trust" in index_src and "retrieval_trust" in index_src,
+        checks,
+        problems,
+    )
+    gate_txt = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "flightsim-trusted-identity-gate.cmd"
+    ).read_text(encoding="utf-8", errors="replace")
+    _check(
+        "flightsim_gate_runs_phase1_prove_before_pipeline",
+        "prove-trusted-identity-retrieval --flightsim" in gate_txt
+        and "errorlevel 1" in gate_txt
+        and gate_txt.find("prove-trusted-identity-retrieval")
+        < gate_txt.find("run-trusted-evidence-pipeline"),
         checks,
         problems,
     )
