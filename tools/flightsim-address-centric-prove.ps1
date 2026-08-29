@@ -57,16 +57,61 @@ function Test-TcpPort([string]$TargetHost, [int]$Port, [int]$TimeoutMs = 800) {
   }
 }
 
+function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
+  <#
+  .SYNOPSIS
+    Emit ADDRESS_CENTRIC_GATE.json even when prove never starts (env/DB/preflight).
+    Without this, gate.cmd cannot push results and the cloud agent stays on waiting:true.
+  #>
+  $outDir = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2"
+  New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+  $gitHead = ""
+  try { $gitHead = (& git rev-parse HEAD 2>$null) } catch {}
+  $hostName = [System.Net.Dns]::GetHostName()
+  $gate = @{
+    gate = "address_centric_email_identity"
+    ok = $false
+    flightsim = $true
+    error = $ErrorCode
+    problems = @("$ErrorCode`: $Detail")
+    runtime = @{
+      git_head = "$gitHead"
+      hostname = "$hostName"
+      p1_runtime_host = $true
+      database_url_set = [bool]$env:MEMORYBOX_DATABASE_URL
+      allow_dev_defaults = [bool]$env:MEMORYBOX_ALLOW_DEV_DEFAULTS
+      flightsim = $true
+    }
+  }
+  $gatePath = Join-Path $outDir "ADDRESS_CENTRIC_GATE.json"
+  $verdictPath = Join-Path $outDir "ADDRESS_CENTRIC_VERDICT.txt"
+  $failPath = Join-Path $outDir "ADDRESS_CENTRIC_FAILURE_DIAG.json"
+  ($gate | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $gatePath -Encoding UTF8
+  "VERDICT ok=False flightsim=True git_head=$gitHead hostname=$hostName error=$ErrorCode" |
+    Set-Content -LiteralPath $verdictPath -Encoding UTF8
+  (@{
+    ok = $false
+    problems = $gate.problems
+    flightsim = $true
+    error = $ErrorCode
+    runtime = $gate.runtime
+    hint = "Pre-prove failure on FlightSim — fix env/DB then re-run tools\flightsim-address-centric-gate.cmd"
+  } | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $failPath -Encoding UTF8
+  Write-Host "Wrote failure gate: $gatePath" -ForegroundColor Yellow
+}
+
 $appEnv = Join-Path $Root "config\memorybox_app.env"
 if (-not (Test-Path -LiteralPath $appEnv)) {
   Write-Host "ERROR: missing $appEnv — FlightSim prove needs the Takeout archive DSN." -ForegroundColor Red
   Write-Host "Create it from config\memorybox_app.env.example (do not commit secrets)."
+  Write-AddressCentricGateFailure "missing_memorybox_app_env" $appEnv
   exit 1
 }
 Import-DotEnvFile $appEnv
 Import-DotEnvFile (Join-Path $Root "config\memorybox_sources.env")
 if (-not $env:MEMORYBOX_DATABASE_URL) {
   Write-Host "ERROR: MEMORYBOX_DATABASE_URL unset after loading $appEnv" -ForegroundColor Red
+  Write-AddressCentricGateFailure "memorybox_database_url_unset" $appEnv
   exit 1
 }
 if (-not $env:MEMORYBOX_QDRANT_URL) {
@@ -109,6 +154,7 @@ while ((Get-Date) -lt $deadline) {
 if (-not (Test-TcpPort $DbEp.Host $DbEp.Port)) {
   Write-Host "ERROR: Postgres not reachable on $($DbEp.Host):$($DbEp.Port) after ${DbWaitSec}s" -ForegroundColor Red
   Write-Host "Start Docker / memorybox-pg (startmb.cmd), then re-run."
+  Write-AddressCentricGateFailure "postgres_unreachable" "$($DbEp.Host):$($DbEp.Port)"
   exit 1
 }
 
@@ -117,6 +163,7 @@ function Resolve-Python {
   if (-not $cmd) { $cmd = Get-Command py -ErrorAction SilentlyContinue }
   if (-not $cmd) {
     Write-Host "ERROR: python/py not found on PATH" -ForegroundColor Red
+    Write-AddressCentricGateFailure "python_not_found" "PATH missing python/py"
     exit 1
   }
   return $cmd.Source
@@ -140,14 +187,26 @@ if (-not $healthOk) {
 }
 
 & $Python -m memorybox migrate
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host "==> preflight probe peggo417@hotmail.com (structured count must be > 0)"
-& $Python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "ERROR: probe-email-address failed or structured occurrence_count=0 — wrong DB / empty archive." -ForegroundColor Red
+  Write-AddressCentricGateFailure "migrate_failed" "exit=$LASTEXITCODE"
   exit $LASTEXITCODE
 }
 
+# Advisory preflight — do NOT hard-exit here. prove-address-centric-email-e2e
+# always writes ADDRESS_CENTRIC_GATE.json (incl. missing-structured failure),
+# which gate.cmd force-pushes to the results branch for the cloud agent.
+Write-Host "==> preflight probe peggo417@hotmail.com (advisory; prove owns gate artifacts)"
+& $Python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "WARNING: probe-email-address failed or structured occurrence_count=0 — continuing to prove for gate artifacts." -ForegroundColor Yellow
+}
+
 & $Python -m memorybox prove-address-centric-email-e2e --flightsim
-exit $LASTEXITCODE
+$proveExit = $LASTEXITCODE
+if ($proveExit -ne 0) {
+  $gateJson = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json"
+  if (-not (Test-Path -LiteralPath $gateJson)) {
+    Write-AddressCentricGateFailure "prove_exited_without_gate" "exit=$proveExit"
+  }
+}
+exit $proveExit

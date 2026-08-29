@@ -85,6 +85,24 @@ set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_
 set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
 set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
 
+REM Last-resort stub so results-branch push still wakes the cloud agent when
+REM prove.ps1 died before writing gate artifacts (e.g. powershell crash).
+if not exist "%GATE_JSON%" (
+  echo WARNING: gate JSON missing after prove — writing delivery stub
+  if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
+  (
+    echo {
+    echo   "gate": "address_centric_email_identity",
+    echo   "ok": false,
+    echo   "flightsim": true,
+    echo   "error": "gate_cmd_stub_missing_prove_artifacts",
+    echo   "problems": ["prove exited %PROVE_EXIT% without ADDRESS_CENTRIC_GATE.json"],
+    echo   "prove_exit": %PROVE_EXIT%
+    echo }
+  ) > "%GATE_JSON%"
+  echo VERDICT ok=False flightsim=True error=gate_cmd_stub_missing_prove_artifacts prove_exit=%PROVE_EXIT%> "%GATE_VERDICT%"
+)
+
 echo.
 echo ===== ADDRESS_CENTRIC_GATE (paste into agent if auto-deliver fails) =====
 if exist "%GATE_VERDICT%" (
