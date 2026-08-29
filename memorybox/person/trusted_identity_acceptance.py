@@ -300,6 +300,48 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     h2 = fev2_input_sha256(body)
     _check("fev2_hash_stable", h1 == h2 and len(h1) == 64, checks, problems, detail=h1)
 
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import validate_fev2_document
+
+    invented = validate_fev2_document(
+        {
+            "episodes": [],
+            "claims": [{"text": "nope", "evidence_ids": ["ev-invented"]}],
+        },
+        allowed_ids={"ev-trust"},
+        email_evidence_ids={"ev-trust"},
+    )
+    _check(
+        "fev2_fails_closed_on_invented_ids",
+        not invented.get("ok") and "ev-invented" in (invented.get("invented_evidence_ids") or []),
+        checks,
+        problems,
+        detail=invented,
+    )
+
+    from memorybox.ask.i11a.trusted_fev2_chunking import merge_chunk_documents
+
+    merged = merge_chunk_documents(
+        [
+            {
+                "episodes": [{"title": "a", "when": "2020-01-01", "evidence_ids": ["ev-trust"]}],
+                "claims": [{"text": "Peggy emailed", "evidence_ids": ["ev-trust"]}],
+            },
+            {
+                "episodes": [],
+                "claims": [{"text": "Peggy emailed", "evidence_ids": ["ev-trust"]}],
+            },
+        ],
+        allowed_ids={"ev-trust"},
+        email_evidence_ids={"ev-trust"},
+    )
+    _check(
+        "chunk_merge_dedupes_claims",
+        merged.get("ok") and len((merged.get("document") or {}).get("claims") or []) == 1,
+        checks,
+        problems,
+        detail=merged,
+    )
+
     return {
         "ok": not problems,
         "prove": "trusted_identity_retrieval",

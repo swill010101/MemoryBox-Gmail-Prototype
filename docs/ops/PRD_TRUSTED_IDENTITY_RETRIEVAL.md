@@ -74,3 +74,9 @@ python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provide
 
 Cloud Sol is opt-in and stateless: `MEMORYBOX_CLOUD_LLM_BASE_URL` + `MEMORYBOX_CLOUD_LLM_API_KEY`.
 No chunking on these two runs. Phase 3 starts only after both reports are comparable.
+
+Phase 3 structure-only (after both single-pass reports exist):
+
+```
+python -m memorybox compare-trusted-fev2-chunks --fixture <same FEV2.json>
+```

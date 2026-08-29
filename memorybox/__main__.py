@@ -679,6 +679,11 @@ def main(argv: list[str] | None = None) -> int:
     p_fev2_run.add_argument("--model", required=True)
     p_fev2_run.add_argument("--timeout-seconds", type=int, default=1800)
     p_fev2_run.add_argument("--out-dir", default=None)
+    p_fev2_chunks = sub.add_parser(
+        "compare-trusted-fev2-chunks",
+        help="Phase 3: semantic chunk vs unchunked frozen FEV2 (structure only)",
+    )
+    p_fev2_chunks.add_argument("--fixture", required=True)
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1476,6 +1481,13 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=int(args.timeout_seconds),
             out_dir=_Path(args.out_dir) if args.out_dir else None,
         )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "compare-trusted-fev2-chunks":
+        from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
+
+        payload = compare_chunked_vs_unchunked(args.fixture)
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

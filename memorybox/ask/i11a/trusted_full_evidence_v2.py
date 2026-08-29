@@ -40,6 +40,17 @@ _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
 
+FEV2_SYSTEM = """You are MemoryBox Full-Evidence V2. Use only the supplied evidence.
+Return JSON only:
+{"episodes":[{"title":"","when":"","summary":"","evidence_ids":[]}],
+ "claims":[{"text":"","evidence_ids":[]}],
+ "relationships":[{"from":"","to":"","role":"","evidence_ids":[]}],
+ "narrator":""}
+Every accepted claim, episode, and relationship MUST cite original evidence_ids
+from the input. Invented facts or unknown ids are forbidden. If email evidence
+is present, grounded output must use those email ids when they support a claim.
+No chunking. Stateless. Do not use outside knowledge."""
+
 
 def _git_commit() -> str:
     try:
@@ -64,6 +75,8 @@ def fev2_input_sha256(body: dict[str, Any]) -> str:
         "person_context": body.get("person_context"),
         "items": body.get("items"),
         "email_evidence_ids": body.get("email_evidence_ids"),
+        "user_message": body.get("user_message"),
+        "system": body.get("system"),
         "chunking": False,
     }
     if body.get("prepared"):
@@ -152,7 +165,9 @@ def score_email_grounding(
             continue
         ids = [str(x) for x in (claim.get("evidence_ids") or claim.get("support_ids") or []) if x]
         if not ids:
-            unsupported.append({"claim": claim.get("text") or claim.get("claim"), "reason": "missing_evidence_ids"})
+            unsupported.append(
+                {"claim": claim.get("text") or claim.get("claim"), "reason": "missing_evidence_ids"}
+            )
             continue
         cited.update(ids)
         if any(i in email_evidence_ids for i in ids):
@@ -171,6 +186,47 @@ def score_email_grounding(
         "email_affected_output": accepted_with_email > 0 or bool(email_cited),
         "unsupported_claims": unsupported,
         "ok": bool(email_evidence_ids) and (accepted_with_email > 0 or bool(email_cited)),
+    }
+
+
+def all_fixture_evidence_ids(items: list[dict[str, Any]]) -> set[str]:
+    out: set[str] = set()
+    for it in items:
+        out.update(item_evidence_ids(it))
+    return out
+
+
+def validate_fev2_document(
+    document: dict[str, Any],
+    *,
+    allowed_ids: set[str],
+    email_evidence_ids: set[str],
+) -> dict[str, Any]:
+    """Fail closed on missing or invented provenance."""
+    invented: list[str] = []
+    missing_prov: list[str] = []
+    for section in ("claims", "episodes", "relationships"):
+        for row in document.get(section) or []:
+            if not isinstance(row, dict):
+                continue
+            ids = [str(x) for x in (row.get("evidence_ids") or []) if x]
+            if not ids:
+                missing_prov.append(
+                    str(row.get("text") or row.get("title") or row.get("role") or section)
+                )
+                continue
+            for i in ids:
+                if i not in allowed_ids:
+                    invented.append(i)
+    ground = score_email_grounding(document, email_evidence_ids=email_evidence_ids)
+    ok = not invented and not missing_prov and bool(ground.get("ok"))
+    return {
+        **ground,
+        "invented_evidence_ids": sorted(set(invented)),
+        "rows_missing_provenance": missing_prov[:24],
+        "ok": ok,
+        "schema_ok": isinstance(document.get("claims"), list)
+        and isinstance(document.get("episodes"), list),
     }
 
 
@@ -260,6 +316,8 @@ def freeze_trusted_full_evidence_v2(
         "source_commit": _git_commit(),
         "built_at": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
         "chunking": False,
+        "system": FEV2_SYSTEM,
+        "user_message": paste,
     }
     body["input_sha256"] = fev2_input_sha256(body)
     fname = f"FEV2_{body['built_at']}_{body['input_sha256'][:8]}.json"
@@ -299,7 +357,8 @@ def run_trusted_full_evidence_v2(
     recomputed = fev2_input_sha256(data)
     if stored and stored != recomputed:
         raise ValueError(f"fixture hash mismatch file={stored} recomputed={recomputed}")
-    # If this is a historian prepared wrapper, reuse the established runner.
+    email_ids = {str(x) for x in (data.get("email_evidence_ids") or []) if x}
+    allowed = all_fixture_evidence_ids(list(data.get("items") or []))
     if data.get("prepared"):
         result = run_fixture(
             fixture_path,
@@ -309,28 +368,75 @@ def run_trusted_full_evidence_v2(
             out_dir=Path(out_dir) if out_dir else None,
         )
         doc = result.get("document") or {}
-        email_ids = set(data.get("email_evidence_ids") or [])
-        if not email_ids:
-            for it in (data.get("items") or []):
-                if str(it.get("source") or "") == "email":
-                    email_ids.update(item_evidence_ids(it))
-        grounding = score_email_grounding(doc, email_evidence_ids=email_ids)
+        grounding = validate_fev2_document(
+            doc, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
+        )
         result["email_grounding"] = grounding
         result["input_sha256"] = stored
         result["chunking"] = False
         result["ok"] = bool(result.get("ok")) and bool(grounding.get("ok"))
         return result
-    # Raw FEV2 pack: wrap as a minimal historian prepared payload is out of scope
-    # without observations. Report freeze-only until prepared is attached.
-    return {
-        "ok": False,
-        "error": "fixture_has_no_prepared_ask_relative_payload",
+    user_message = str(data.get("user_message") or "")
+    system = str(data.get("system") or FEV2_SYSTEM)
+    if not user_message:
+        return {
+            "ok": False,
+            "error": "fixture_missing_frozen_user_message",
+            "input_sha256": stored,
+            "provider": provider,
+            "model": model,
+            "chunking": False,
+        }
+    from memorybox.ask.i11a.historian_provider import (
+        HistorianProviderSpec,
+        build_historian_provider,
+        historian_chat_json,
+        normalize_provider_kind,
+    )
+    from memorybox.ask.i11a.validate import parse_inference_json
+
+    spec = HistorianProviderSpec(
+        provider=normalize_provider_kind(provider),
+        model=model,
+        timeout_seconds=int(timeout_seconds),
+    )
+    llm = build_historian_provider(spec)
+    raw, usage, wall_ms = historian_chat_json(
+        llm,
+        system=system,
+        user_message=user_message,
+        json_mode=True,
+        requested_model=model,
+    )
+    parsed = parse_inference_json(raw) if raw else {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+    grounding = validate_fev2_document(
+        parsed, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
+    )
+    result = {
+        "ok": bool(grounding.get("ok")),
         "input_sha256": stored,
-        "provider": provider,
+        "provider": spec.provider,
         "model": model,
         "chunking": False,
-        "hint": "Freeze via historian-prepared path or attach prepared before model run",
+        "timing_ms": wall_ms,
+        "usage": usage,
+        "document": parsed,
+        "raw": (raw or "")[:4000],
+        "email_grounding": grounding,
+        "evidence_type_counts": data.get("evidence_type_counts"),
+        "trusted_addresses": data.get("trusted_addresses"),
     }
+    out = Path(out_dir) if out_dir else Path(fixture_path).parent
+    out.mkdir(parents=True, exist_ok=True)
+    run_name = f"FEV2RUN_{spec.provider}_{model.replace(':', '-')}_{stored[:8]}.json"
+    (out / run_name).write_text(
+        json.dumps(result, indent=2, default=str, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    result["run_path"] = str(out / run_name)
+    return result
 
 
 def attach_prepared_and_write(
