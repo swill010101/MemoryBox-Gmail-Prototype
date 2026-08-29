@@ -184,6 +184,7 @@ echo.
 echo need: "ok": true  and  "flightsim": true
 echo file: %GATE_JSON%
 echo results: origin/%RESULT_BRANCH%
+echo delivery PR: https://github.com/swill010101/MemoryBox-Gmail-Prototype/pull/76
 echo STOP — do not run historian summarization / OBSERVATION_EXTRACT
 echo.
 popd
