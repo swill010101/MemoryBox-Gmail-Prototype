@@ -280,6 +280,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional: resolve/attach this address onto the Person after inventory",
     )
     p_probe_addr.add_argument(
+        "--require-structured-hits",
+        action="store_true",
+        help="Exit non-zero when structured_header.occurrence_count is 0 (FlightSim preflight)",
+    )
+    p_probe_addr.add_argument(
         "--flightsim",
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
@@ -1047,7 +1052,20 @@ def main(argv: list[str] | None = None) -> int:
             "person_resolve": attach,
         }
         print(json.dumps(payload, indent=2, default=str))
-        return 0 if payload.get("ok") else 1
+        if not payload.get("ok"):
+            return 1
+        if getattr(args, "require_structured_hits", False):
+            struct_n = int(
+                (inv.get("structured_header") or {}).get("occurrence_count") or 0
+            )
+            if struct_n <= 0:
+                print(
+                    "ERROR: --require-structured-hits but structured occurrence_count=0 "
+                    "(wrong DATABASE_URL / empty archive)",
+                    file=sys.stderr,
+                )
+                return 2
+        return 0
 
     if args.cmd == "rebuild-comms-index":
         from memorybox.ingest.rebuild_index import rebuild_comms_index

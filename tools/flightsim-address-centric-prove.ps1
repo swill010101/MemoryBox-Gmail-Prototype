@@ -119,9 +119,9 @@ python -m memorybox migrate
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "==> preflight probe peggo417@hotmail.com (structured count must be > 0)"
-python -m memorybox probe-email-address peggo417@hotmail.com
+python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "ERROR: probe-email-address failed — wrong DB or migrate incomplete." -ForegroundColor Red
+  Write-Host "ERROR: probe-email-address failed or structured occurrence_count=0 — wrong DB / empty archive." -ForegroundColor Red
   exit $LASTEXITCODE
 }
 

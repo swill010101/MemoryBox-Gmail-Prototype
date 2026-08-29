@@ -44,12 +44,32 @@ def _quoted_body_address_displays(body: str, address: str) -> list[dict[str, str
             continue
         dn = ""
         angle = re.search(
-            rf"([^<>]*?)\s*<\s*{re.escape(addr)}\s*>",
+            rf"([^<>\[]*?)\s*<\s*{re.escape(addr)}\s*>",
             value,
             flags=re.I,
         )
         if angle:
             dn = angle.group(1).strip().strip('"')
+        if not dn:
+            # Outlook / Hotmail reply headers: Name [mailto:addr@…]
+            mailto = re.search(
+                rf"([^\[\]<>]*?)\s*\[\s*mailto\s*:\s*{re.escape(addr)}\s*\]",
+                value,
+                flags=re.I,
+            )
+            if mailto:
+                dn = mailto.group(1).strip().strip('"').rstrip(",")
+        if not dn:
+            # Bare "Name addr@…" without brackets (last resort).
+            bare = re.search(
+                rf"^(.+?)\s+{re.escape(addr)}\s*$",
+                value.strip(),
+                flags=re.I,
+            )
+            if bare:
+                cand = bare.group(1).strip().strip('"').rstrip(",")
+                if cand and "@" not in cand and len(cand.split()) <= 6:
+                    dn = cand
         out.append({"header_field": f"quoted_{field}", "display_name": dn, "raw": value[:240]})
     return out
 

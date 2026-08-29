@@ -457,6 +457,23 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=qhits_gt,
     )
+    # Outlook / Hotmail: Name [mailto:addr] must still yield the display name.
+    body_mailto = (
+        "-----Original Message-----\n"
+        "From: Peggy George [mailto:peggo417@hotmail.com]\n"
+        "Sent: Monday\n"
+    )
+    qhits_mailto = _quoted_body_address_displays(body_mailto, "peggo417@hotmail.com")
+    _check(
+        "quoted_body_mailto_finds_peggy_george",
+        any(
+            "peggy george" == (h.get("display_name") or "").strip().lower()
+            for h in qhits_mailto
+        ),
+        checks,
+        problems,
+        detail=qhits_mailto,
+    )
     retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
     _check(
         "retrieve_has_no_peggo_hardcode",

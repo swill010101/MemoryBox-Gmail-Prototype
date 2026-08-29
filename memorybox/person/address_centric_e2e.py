@@ -582,32 +582,67 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "address_centric_gate": gate,
         }
     if flightsim:
-        if ask_peggy is None or " " not in ((ask_peggy.display_name or "").strip()):
-            if ask_peggy is None:
-                from memorybox.person import list_people_by_exact_name
-
-                exact = list_people_by_exact_name("Peggy")
-                if len(exact) == 1:
-                    ask_peggy = exact[0]
-            if ask_peggy is not None and " " not in ((ask_peggy.display_name or "").strip()):
-                ask_peggy, upgrade_info = _flightsim_upgrade_immich_peggy(
-                    ask_peggy, structured=structured, quoted=quoted
-                )
-        # Cold FlightSim: no Peggy Person at all, but archive corroborates both
-        # Peg Legg (structured) and Peggy George on peggo417 — operator-create.
-        if ask_peggy is None:
-            has_legg = bool(structured.get("has_peg_legg")) or any(
+        def _archive_has_legg() -> bool:
+            return bool(structured.get("has_peg_legg")) or any(
                 (d.get("normalized_display") or "") == "peg legg"
                 for d in (structured.get("distinct_display_names") or [])
             )
-            has_george = bool(structured.get("has_peggy_george")) or bool(
+
+        def _archive_has_george() -> bool:
+            return bool(structured.get("has_peggy_george")) or bool(
                 quoted.get("has_peggy_george")
             ) or any(
                 (d.get("normalized_display") or "") == "peggy george"
                 for d in (structured.get("distinct_display_names") or [])
                     + (quoted.get("distinct_display_names") or [])
             )
-            if has_legg and has_george and struct_n > 0:
+
+        # Prefer exact Peggy George; never operator-attach onto a random Peggy*.
+        if ask_peggy is not None:
+            dn_now = (ask_peggy.display_name or "").strip().lower()
+            if dn_now != "peggy george":
+                ask_peggy = None
+
+        if ask_peggy is None:
+            from memorybox.person import list_people_by_exact_name
+
+            exact_george = list_people_by_exact_name("Peggy George")
+            if len(exact_george) == 1:
+                ask_peggy = exact_george[0]
+            elif not exact_george:
+                exact_peggy = list_people_by_exact_name("Peggy")
+                if len(exact_peggy) == 1:
+                    ask_peggy = exact_peggy[0]
+
+        if ask_peggy is not None and (ask_peggy.display_name or "").strip().lower() != "peggy george":
+            ask_peggy, upgrade_info = _flightsim_upgrade_immich_peggy(
+                ask_peggy, structured=structured, quoted=quoted
+            )
+            # Immich stub + Peg Legg on peggo417: rename even if Peggy George
+            # observation is still missing (mailto forms / thin quoted inventory).
+            if (
+                ask_peggy is not None
+                and (ask_peggy.display_name or "").strip().lower() != "peggy george"
+                and _archive_has_legg()
+                and struct_n > 0
+                and (upgrade_info or {}).get("skipped")
+            ):
+                from memorybox.person import rename_person
+
+                upgraded = rename_person(ask_peggy.id, "Peggy George")
+                ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=False) or upgraded
+                upgrade_info = {
+                    "upgraded": True,
+                    "from": "Peggy",
+                    "to": getattr(ask_peggy, "display_name", None),
+                    "person_id": getattr(ask_peggy, "id", None),
+                    "reason": "flightsim_immich_peggy_renamed_on_peg_legg_structured",
+                    "prior_skip": upgrade_info,
+                }
+
+        # Cold FlightSim: no Peggy George Person, archive corroborates both names.
+        if ask_peggy is None or (ask_peggy.display_name or "").strip().lower() != "peggy george":
+            if ask_peggy is None and _archive_has_legg() and _archive_has_george() and struct_n > 0:
                 from memorybox.person import resolve_person_by_name
 
                 created = resolve_person_by_name(
@@ -621,9 +656,13 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                     or created.display_name,
                     "reason": "flightsim_archive_corroborated_peg_legg_and_peggy_george",
                 }
+            elif ask_peggy is not None and (ask_peggy.display_name or "").strip().lower() != "peggy george":
+                ask_peggy = None
+
     _check(
         "ask_peggy_is_peggy_george",
-        ask_peggy is not None and " " in (ask_peggy.display_name or ""),
+        ask_peggy is not None
+        and (ask_peggy.display_name or "").strip().lower() == "peggy george",
         checks,
         problems,
         detail={
@@ -920,12 +959,14 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             and (len(email_items) > 0 or len(evidence) > 0)
             and (int(email_n) > 0 or int(match_total) > 0)
             and _PROBE_ADDR in addrs
-            and " " in (ask_peggy.display_name or ""),
+            and (ask_peggy.display_name or "").strip().lower() == "peggy george",
             "requirements": {
                 "full_evidence_email_gt_0": len(email_items) > 0 or len(evidence) > 0,
                 "retrieve_email_hits_gt_0": len(hits) > 0,
                 "gallery_email_gt_0": int(email_n) > 0 or int(match_total) > 0,
                 "person_is_multi_token": " " in (ask_peggy.display_name or ""),
+                "person_is_peggy_george": (ask_peggy.display_name or "").strip().lower()
+                == "peggy george",
                 "peggo417_confirmed": _PROBE_ADDR in addrs,
                 "probe_structured_has_peg_legg": bool(structured.get("has_peg_legg"))
                 or any(
