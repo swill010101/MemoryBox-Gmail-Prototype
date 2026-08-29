@@ -58,7 +58,7 @@ if ($Target -eq "startmb") {
   exit $p.ExitCode
 }
 
-# prove — invoke IN-PROCESS. A nested Start-Process powershell -File still
+# prove - invoke IN-PROCESS. A nested Start-Process powershell -File still
 # returned 0 on FlightSim (233fbba) without creating PROVE_STARTED.
 $provePs1 = Join-Path $PSScriptRoot "flightsim-address-centric-prove.ps1"
 if (-not (Test-Path -LiteralPath $provePs1)) {

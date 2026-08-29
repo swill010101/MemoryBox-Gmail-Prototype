@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   startmb.cmd loads config\memorybox_app.env only inside its PowerShell process.
-  Parent cmd.exe (and a bare `python -m memorybox …`) does not inherit those vars,
+  Parent cmd.exe (and a bare `python -m memorybox ...`) does not inherit those vars,
   so prove can silently use MEMORYBOX_ALLOW_DEV_DEFAULTS localhost defaults and
   miss the Takeout archive. This script loads the same dotenv files as startmb,
   sets P1=1, waits for Postgres after startmb -Restart, then migrate + prove.
@@ -99,7 +99,7 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
   $gatePath = Join-Path $outDir "ADDRESS_CENTRIC_GATE.json"
   $verdictPath = Join-Path $outDir "ADDRESS_CENTRIC_VERDICT.txt"
   $failPath = Join-Path $outDir "ADDRESS_CENTRIC_FAILURE_DIAG.json"
-  # UTF-8 without BOM — Windows PS 5.1 Set-Content -Encoding UTF8 writes BOM,
+  # UTF-8 without BOM - Windows PS 5.1 Set-Content -Encoding UTF8 writes BOM,
   # which breaks strict json.loads on the results branch.
   $utf8 = New-Object System.Text.UTF8Encoding $false
   [System.IO.File]::WriteAllText($gatePath, (($gate | ConvertTo-Json -Depth 6) + "`n"), $utf8)
@@ -115,7 +115,7 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
     waiting = $false
     error = $ErrorCode
     runtime = $gate.runtime
-    hint = "Pre-prove failure on FlightSim — fix env/DB then re-run tools\flightsim-address-centric-gate.cmd"
+    hint = "Pre-prove failure on FlightSim - fix env/DB then re-run tools\flightsim-address-centric-gate.cmd"
   }
   [System.IO.File]::WriteAllText($failPath, (($failDoc | ConvertTo-Json -Depth 6) + "`n"), $utf8)
   Write-Host "Wrote failure gate: $gatePath" -ForegroundColor Yellow
@@ -123,7 +123,7 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
 
 $appEnv = Join-Path $Root "config\memorybox_app.env"
 if (-not (Test-Path -LiteralPath $appEnv)) {
-  Write-Host "ERROR: missing $appEnv — FlightSim prove needs the Takeout archive DSN." -ForegroundColor Red
+  Write-Host "ERROR: missing $appEnv - FlightSim prove needs the Takeout archive DSN." -ForegroundColor Red
   Write-Host "Create it from config\memorybox_app.env.example (do not commit secrets)."
   Write-AddressCentricGateFailure "missing_memorybox_app_env" $appEnv
   exit 1
@@ -143,7 +143,7 @@ $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
 Remove-Item Env:MEMORYBOX_ALLOW_DEV_DEFAULTS -ErrorAction SilentlyContinue
 
 function Get-DbEndpoint([string]$Url) {
-  # postgresql://user:pass@host:5432/db  or  host without port → 5432
+  # postgresql://user:pass@host:5432/db  or  host without port -> 5432
   $hostName = "127.0.0.1"
   $port = 5432
   try {
@@ -205,7 +205,7 @@ while ((Get-Date) -lt $healthDeadline) {
   Start-Sleep -Seconds 2
 }
 if (-not $healthOk) {
-  Write-Host "WARNING: memorybox health not green yet — continuing to migrate" -ForegroundColor Yellow
+  Write-Host "WARNING: memorybox health not green yet - continuing to migrate" -ForegroundColor Yellow
 }
 
 & $Python -m memorybox migrate
@@ -214,13 +214,13 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-# Advisory preflight — do NOT hard-exit here. prove-address-centric-email-e2e
+# Advisory preflight - do NOT hard-exit here. prove-address-centric-email-e2e
 # always writes ADDRESS_CENTRIC_GATE.json (incl. missing-structured failure),
 # which gate.cmd force-pushes to the results branch for the cloud agent.
 Write-Host "==> preflight probe peggo417@hotmail.com (advisory; prove owns gate artifacts)"
 & $Python -m memorybox probe-email-address --address peggo417@hotmail.com --flightsim --require-structured-hits
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "WARNING: probe-email-address failed or structured occurrence_count=0 — continuing to prove for gate artifacts." -ForegroundColor Yellow
+  Write-Host "WARNING: probe-email-address failed or structured occurrence_count=0 - continuing to prove for gate artifacts." -ForegroundColor Yellow
 }
 
 $outDir = Join-Path $Root "docs\test-output\historian-full-evidence\peggy-v2"
@@ -232,9 +232,9 @@ $proveLog = Join-Path $outDir "ADDRESS_CENTRIC_PROVE.log"
 $proveErr = Join-Path $outDir "ADDRESS_CENTRIC_PROVE.err.log"
 $env:MEMORYBOX_ADDRESS_CENTRIC_OUT = $outDir
 
-# Start-Process ExitCode is reliable on Windows PS 5.1. Native "& python; $LASTEXITCODE"
-# can stay 0 from migrate/probe when the prove process never updates it, and Tee-Object
-# also clobbers LASTEXITCODE — that produced gate.cmd stub
+# Start-Process ExitCode is reliable on Windows PS 5.1. Native LASTEXITCODE
+# can stay 0 from migrate/probe when the prove process never updates it.
+# Tee-Object also clobbers LASTEXITCODE. That produced gate.cmd stub
 # gate_cmd_stub_missing_prove_artifacts / prove_exit=0.
 Write-Host "==> prove-address-centric-email-e2e --flightsim (cwd=$Root)"
 if (Test-Path -LiteralPath $proveLog) { Remove-Item -LiteralPath $proveLog -Force }
@@ -258,7 +258,7 @@ if (-not (Test-Path -LiteralPath $gateJson)) {
   if ($proveExit -eq 0) { $proveExit = 2 }
 }
 
-# Requirement audit — stamps goal_complete for the cloud agent / results branch.
+# Requirement audit - stamps goal_complete for the cloud agent / results branch.
 $verifyPy = Join-Path $Root "tools\verify-address-centric-gate.py"
 if ((Test-Path -LiteralPath $gateJson) -and (Test-Path -LiteralPath $verifyPy)) {
   Write-Host "==> verify-address-centric-gate (goal_complete requires ok+flightsim)"

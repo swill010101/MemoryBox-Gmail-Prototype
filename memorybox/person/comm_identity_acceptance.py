@@ -1589,9 +1589,16 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
-    wd_ps1 = open(
-        "tools/flightsim-address-centric-watchdog.ps1", encoding="utf-8"
+    wd_ps1_bytes = open(
+        "tools/flightsim-address-centric-watchdog.ps1", "rb"
     ).read()
+    _check(
+        "watchdog_ps1_is_ascii",
+        all(b < 128 for b in wd_ps1_bytes),
+        checks,
+        problems,
+    )
+    wd_ps1 = wd_ps1_bytes.decode("ascii")
     _check(
         "watchdog_ps1_taskkill_tree",
         "taskkill /F /T /PID" in wd_ps1
@@ -1599,9 +1606,14 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
-    prove_ps1 = open(
-        "tools/flightsim-address-centric-prove.ps1", encoding="utf-8"
-    ).read()
+    prove_ps1_bytes = open("tools/flightsim-address-centric-prove.ps1", "rb").read()
+    _check(
+        "prove_ps1_is_ascii",
+        all(b < 128 for b in prove_ps1_bytes),
+        checks,
+        problems,
+    )
+    prove_ps1 = prove_ps1_bytes.decode("ascii")
     _check(
         "prove_ps1_failure_gate_utf8_no_bom",
         "UTF8Encoding $false" in prove_ps1 and "waiting = $false" in prove_ps1,
