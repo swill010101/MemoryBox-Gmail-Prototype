@@ -50,6 +50,8 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 def _quoted_body_address_displays(body: str, address: str) -> list[dict[str, str]]:
     """Lower-confidence: RFC-looking From/To/Cc/Bcc lines inside body text."""
+    from memorybox.person.comm_identity import _mailbox_display_name
+
     addr = normalize_handle(address)
     if not addr or "@" not in addr or not body:
         return []
@@ -60,13 +62,11 @@ def _quoted_body_address_displays(body: str, address: str) -> list[dict[str, str
         if addr not in value.lower():
             continue
         dn = ""
-        angle = re.search(
-            rf"([^<>]*?)\s*<\s*{re.escape(addr)}\s*>",
-            value,
-            flags=re.I,
-        )
-        if angle:
-            dn = angle.group(1).strip().strip('"')
+        for em in _EMAIL_RE.finditer(value):
+            if normalize_handle(em.group(0)) != addr:
+                continue
+            dn = _mailbox_display_name(value, em.group(0))
+            break
         out.append({"header_field": f"quoted_{field}", "display_name": dn, "raw": value[:240]})
     return out
 

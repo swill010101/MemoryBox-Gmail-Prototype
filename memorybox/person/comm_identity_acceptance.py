@@ -79,6 +79,36 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
     )
+    _check(
+        "concatenated_to_list_rejected",
+        _display_matches_person("Peggy George, Tom Will", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "couple_mailbox_rejected",
+        _display_matches_person("Rick & Peggy George", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "address_as_display_rejected",
+        _display_matches_person("EdWill@aol.com, Peggy George", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "leading_comma_display_cleaned",
+        _display_matches_person(", Peggy George", forms) in {"full", "alias_full"},
+        checks,
+        problems,
+    )
+    _check(
+        "last_first_display_matches",
+        _display_matches_person("George, Peggy", forms) in {"full", "alias_full"},
+        checks,
+        problems,
+    )
 
     # SQL scope includes confirmed emails (common retrieve path)
     sql, params = _sql_confirmed_email_addrs({"peggo01417@hotmail.com"})
@@ -390,7 +420,8 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         and "discover_email_candidates_from_archive" not in hook
         and "scan_archive=False" in hook
         and "discover=False" in hook
-        and "backfill=False" in hook,
+        and "backfill=False" in hook
+        and "persist=False" in hook,
         checks,
         problems,
         detail=hook[:800],
@@ -442,6 +473,36 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         checks,
         problems,
         detail=recs,
+    )
+    concat_payload = {
+        "evidence_channel": "email",
+        "from": "Amazon <noreply@amazon.com>",
+        "to": "EdWill@aol.com, Peggy George <peggo417@hotmail.com>, Tom Will <tom.will@icloud.com>",
+        "cc": [],
+        "people": ["Peg Legg", "Tom Will", "Peggy George"],
+    }
+    concat_recs = _header_records(concat_payload)
+    tom_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "tom.will@icloud.com"),
+        None,
+    )
+    amazon_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "noreply@amazon.com"),
+        None,
+    )
+    peg_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "peggo417@hotmail.com"),
+        None,
+    )
+    _check(
+        "mailbox_display_not_prior_recipients",
+        (tom_dn or "").lower() == "tom will"
+        and "peggy" not in (tom_dn or "").lower()
+        and (peg_dn or "").lower() == "peggy george"
+        and "peggy" not in (amazon_dn or "").lower(),
+        checks,
+        problems,
+        detail=concat_recs,
     )
     q_only = _quoted_body_address_displays(
         str(archive_payload["body_text"]), "peggo417@hotmail.com"
@@ -513,6 +574,29 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
             checks,
             problems,
             detail=found,
+        )
+        _check(
+            "discover_does_not_attach_corecipient_swill01",
+            not any(
+                normalize_handle(str(c.get("address") or "")) == "swill01@gmail.com"
+                for c in found
+            ),
+            checks,
+            problems,
+            detail=found,
+        )
+        from memorybox.person.comm_identity import discover_email_candidates_from_archive
+
+        discovered = discover_email_candidates_from_archive(
+            "person-peggy-george", known_forms=["peggy george"]
+        )
+        _check(
+            "archive_discover_skips_people_json_corecipients",
+            any(c.get("address") == "peggo417@hotmail.com" for c in discovered)
+            and not any(c.get("address") == "swill01@gmail.com" for c in discovered),
+            checks,
+            problems,
+            detail=discovered,
         )
         if peg_addrs:
             dec = corroborate_email_candidate(

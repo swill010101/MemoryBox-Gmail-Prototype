@@ -82,7 +82,8 @@ def run_prove_i11a(*, flightsim: bool = False) -> dict[str, Any]:
         "a_person_email_retrieve_does_not_inventory_archive",
         "inventory_email_address" not in hook
         and "scan_archive=False" in hook
-        and "discover=False" in hook,
+        and "discover=False" in hook
+        and "persist=False" in hook,
         checks,
         problems,
         detail="Ask/benchmark email retrieve must not run probe inventory",

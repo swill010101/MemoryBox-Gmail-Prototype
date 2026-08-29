@@ -249,6 +249,19 @@ def main(argv: list[str] | None = None) -> int:
             "Requires --person-id."
         ),
     )
+    p_repair_email.add_argument(
+        "--prune-uncorroborated",
+        action="store_true",
+        help=(
+            "Withdraw confirmed emails whose own mailbox display does not "
+            "corroborate this Person (co-recipient contamination)."
+        ),
+    )
+    p_repair_email.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
     p_email_trace = sub.add_parser(
         "person-email-identity-trace",
         help="Trace Person names/contacts and explain an email address candidate",
@@ -970,6 +983,7 @@ def main(argv: list[str] | None = None) -> int:
             getattr(args, "person_id", None),
             force_rediscover=bool(getattr(args, "force_rediscover", False)),
             known_address=getattr(args, "address", None),
+            prune_uncorroborated=bool(getattr(args, "prune_uncorroborated", False)),
         )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1

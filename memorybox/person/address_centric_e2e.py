@@ -14,6 +14,17 @@ from memorybox.person.phone_map import normalize_handle
 
 _PROBE_ADDR = "peggo417@hotmail.com"
 _ASK = "tell me what you know about Peggy"
+_MAX_CONFIRMED_EMAILS = 20
+_FORBIDDEN_ADDR_MARKERS = (
+    "noreply@",
+    "no-reply@",
+    "donotreply@",
+    "do-not-reply@",
+    "marketplace.amazon.com",
+    "groups.facebook.com",
+    "swill01@",
+    "tom.will@",
+)
 
 
 def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
@@ -137,7 +148,10 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         resolve_and_attach_addresses_for_person,
         upsert_communication_identity_from_inventory,
     )
-    from memorybox.person.comm_identity import expand_emails_for_retrieve
+    from memorybox.person.comm_identity import (
+        expand_emails_for_retrieve,
+        prune_uncorroborated_email_contacts,
+    )
     from memorybox.planner import QueryPlan
 
     inv = inventory_email_address(_PROBE_ADDR, include_quoted_body=True)
@@ -193,6 +207,7 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "seed": seed_info,
         }
 
+    prune_info = prune_uncorroborated_email_contacts(ask_peggy.id, persist=True)
     resolve = resolve_and_attach_addresses_for_person(
         ask_peggy.id, persist=True, backfill=False, scan_archive=False
     )
@@ -232,7 +247,28 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "expand": sorted(addrs),
             "resolve": resolve,
             "repair": repair_info,
+            "prune": prune_info,
         },
+    )
+
+    forbidden = sorted(
+        a
+        for a in addrs
+        if any(m in a for m in _FORBIDDEN_ADDR_MARKERS)
+    )
+    _check(
+        "person_addresses_exclude_owner_noreply_marketplace",
+        not forbidden,
+        checks,
+        problems,
+        detail=forbidden,
+    )
+    _check(
+        "person_confirmed_email_count_bounded",
+        1 <= len(addrs) <= _MAX_CONFIRMED_EMAILS,
+        checks,
+        problems,
+        detail={"count": len(addrs), "addresses": sorted(addrs)},
     )
 
     plan = resolve_peggy_plan(photo=None, ask=PEGGY_ASK)
@@ -297,6 +333,15 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     )
     hits = search_email_messages(mail_plan, limit=5000)
     _check("retrieve_email_hits_gt_0", len(hits) > 0, checks, problems, detail=len(hits))
+    header_n = int(structured.get("occurrence_count") or 0)
+    retrieve_cap = max(500, header_n * 3) if header_n else 500
+    _check(
+        "retrieve_not_whole_mailbox",
+        len(hits) <= retrieve_cap,
+        checks,
+        problems,
+        detail={"hits": len(hits), "probe_header_n": header_n, "cap": retrieve_cap},
+    )
 
     gallery_result = {
         "plan": {
@@ -365,5 +410,6 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
         },
         "seed": seed_info,
         "repair": repair_info,
+        "prune": prune_info,
         "stop": "gallery_and_full_evidence_v2 — no historian summarization",
     }

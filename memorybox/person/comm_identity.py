@@ -65,6 +65,60 @@ def _name_tokens(raw: str | None) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9']{2,}", _norm_name(raw)) if t]
 
 
+_LEADING_DISPLAY_JUNK_RE = re.compile(r"^[\s,;:\"']+")
+
+
+def _mailbox_display_name(header_text: str, email_raw: str) -> str:
+    """Display name bound to one mailbox, not the rest of a To/CC list.
+
+    ``Peggy George, Tom Will <tom@x>`` must yield ``Tom Will`` for tom@x, never
+    the preceding recipient names. ``[^<>]*`` across the whole header is wrong.
+    """
+    text = str(header_text or "")
+    email = str(email_raw or "").strip()
+    if not text or not email:
+        return ""
+    m = re.search(
+        rf"(?:^|[,;])\s*([^,;<>]*?)\s*<\s*{re.escape(email)}\s*>",
+        text,
+        flags=re.I,
+    )
+    if not m:
+        return ""
+    return m.group(1).strip().strip("\"'").strip()
+
+
+def _clean_person_display_name(raw: str | None) -> str | None:
+    """Single-person header name, or None (fail closed).
+
+    Rejects concatenated To-lists, couple mailboxes, and addresses-as-names.
+    ``George, Peggy`` (Last, First) is rewritten to ``peggy george``.
+    """
+    s = _LEADING_DISPLAY_JUNK_RE.sub("", str(raw or "").strip())
+    s = s.strip().strip("\"'").strip()
+    if not s:
+        return None
+    if "@" in s:
+        return None
+    if "&" in s or re.search(r"\band\b", s, flags=re.I):
+        return None
+    if ";" in s:
+        return None
+    if "," in s:
+        left, right = [p.strip() for p in s.split(",", 1)]
+        if "," in right:
+            return None
+        lt, rt = _name_tokens(left), _name_tokens(right)
+        if len(lt) == 1 and len(rt) == 1:
+            s = f"{right} {left}"
+        else:
+            return None
+    tokens = _name_tokens(s)
+    if len(tokens) < 2 or len(tokens) > 4:
+        return None
+    return _norm_name(s)
+
+
 def person_identity_snapshot(person_id: str) -> dict[str, Any]:
     """Names, aliases, phones, emails, provider mappings for one Person."""
     from memorybox.person import get_person
@@ -133,7 +187,7 @@ def _known_name_forms(display_name: str | None, aliases: list[dict[str, Any]]) -
     forms: list[str] = []
     seen: set[str] = set()
     for raw in [display_name] + [a.get("alias_text") for a in aliases]:
-        n = _norm_name(str(raw or ""))
+        n = _clean_person_display_name(str(raw or ""))
         if not n or n in seen:
             continue
         seen.add(n)
@@ -197,10 +251,46 @@ def _address_claimed_by(addr: str) -> list[str]:
     return out
 
 
+def _field_header_texts(raw: Any) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        return [str(x) for x in raw if x]
+    if raw:
+        return [str(raw)]
+    return []
+
+
+def _raw_mailbox_display(texts: list[str], addr: str) -> str:
+    """Prefer the display bound to this mailbox in raw header text."""
+    want = normalize_handle(addr)
+    if not want:
+        return ""
+    for text in texts:
+        for m in _EMAIL_RE.finditer(text):
+            if normalize_handle(m.group(0)) != want:
+                continue
+            dn = _mailbox_display_name(text, m.group(0))
+            if dn:
+                return dn
+    return ""
+
+
 def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
-    """Extract participant records from From/To/CC/BCC (never body text)."""
+    """Extract participant records from From/To/CC/BCC (never body text).
+
+    Display names come from the mailbox immediately before ``<addr>``. Raw
+    header text overrides parsed display when both exist, so a polluted
+    ``to_parsed`` cannot stamp Peggy's name onto a co-recipient.
+    """
+    raw_by_field: dict[str, list[str]] = {
+        "from": _field_header_texts(payload.get("from") or payload.get("from_raw")),
+        "to": _field_header_texts(payload.get("to")),
+        "cc": _field_header_texts(payload.get("cc")),
+        "bcc": _field_header_texts(payload.get("bcc")),
+    }
     out: list[dict[str, str]] = []
+    seen_addr_field: set[tuple[str, str]] = set()
     for field in ("from_parsed", "to_parsed", "cc_parsed", "bcc_parsed"):
+        field_name = field.replace("_parsed", "")
         for rec in payload.get(field) or []:
             if not isinstance(rec, dict):
                 continue
@@ -209,47 +299,30 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
             )
             if not addr or "@" not in addr:
                 continue
+            parsed_dn = str(rec.get("display_name") or "").strip()
+            raw_dn = _raw_mailbox_display(raw_by_field.get(field_name) or [], addr)
             out.append(
                 {
                     "address": addr,
-                    "display_name": str(rec.get("display_name") or "").strip(),
-                    "header_field": field.replace("_parsed", ""),
+                    "display_name": raw_dn or parsed_dn,
+                    "header_field": field_name,
                 }
             )
-    # Fallback: parse raw From/To/CC/BCC strings when parsed arrays missing.
-    for field, raw in (
-        ("from", payload.get("from") or payload.get("from_raw")),
-        ("to", payload.get("to")),
-        ("cc", payload.get("cc")),
-        ("bcc", payload.get("bcc")),
-    ):
-        texts: list[str] = []
-        if isinstance(raw, (list, tuple)):
-            texts = [str(x) for x in raw]
-        elif raw:
-            texts = [str(raw)]
+            seen_addr_field.add((addr, field_name))
+    for field_name, texts in raw_by_field.items():
         for text in texts:
             for m in _EMAIL_RE.finditer(text):
                 addr = normalize_handle(m.group(0))
-                if not addr:
+                if not addr or (addr, field_name) in seen_addr_field:
                     continue
-                # Display name before <addr>
-                dn = ""
-                angle = re.search(
-                    rf"([^<>]*?)\s*<\s*{re.escape(m.group(0))}\s*>",
-                    text,
-                    flags=re.I,
-                )
-                if angle:
-                    dn = angle.group(1).strip().strip('"')
                 out.append(
                     {
                         "address": addr,
-                        "display_name": dn,
-                        "header_field": field,
+                        "display_name": _mailbox_display_name(text, m.group(0)),
+                        "header_field": field_name,
                     }
                 )
-    # Dedupe
+                seen_addr_field.add((addr, field_name))
     seen: set[tuple[str, str, str]] = set()
     uniq: list[dict[str, str]] = []
     for rec in out:
@@ -266,25 +339,35 @@ def _display_matches_person(display_name: str, known_forms: list[str]) -> str | 
 
     First-name-only display (\"Peggy\") is never enough. Multi-token nickname
     headers (\"Peg Legg\") may match Person \"Peggy George\" as nickname_full.
+    Concatenated To-lists, couple names, and address-as-name strings never match.
     """
-    dn = _norm_name(display_name)
+    dn = _clean_person_display_name(display_name)
     if not dn or not known_forms:
         return None
     tokens = _name_tokens(dn)
     if len(tokens) < 2:
-        # Single-token display ("Peggy") is ambiguous by policy.
         return None
+    cleaned_forms: list[str] = []
+    seen: set[str] = set()
     for form in known_forms:
+        cf = _clean_person_display_name(form)
+        if not cf or cf in seen:
+            continue
+        seen.add(cf)
+        cleaned_forms.append(cf)
+    if not cleaned_forms:
+        return None
+    for i, form in enumerate(cleaned_forms):
         if dn == form:
-            return "full" if form == known_forms[0] else "alias_full"
-        # Allow "Last, First" vs "First Last"
+            return "full" if i == 0 else "alias_full"
         form_toks = _name_tokens(form)
         if len(form_toks) >= 2 and set(tokens) == set(form_toks):
-            return "full"
-    # Nickname first-token + multi-token surname (Peg Legg ↔ Peggy George)
-    for form in known_forms:
+            return "full" if i == 0 else "alias_full"
+    # Nickname first-token + a real surname (Peg Legg ↔ Peggy George).
+    # Requires a cleaned two-to-four token display — never a To-list.
+    for form in cleaned_forms:
         form_toks = _name_tokens(form)
-        if not form_toks:
+        if len(form_toks) < 2:
             continue
         person_first = form_toks[0]
         nicks = _FIRST_NAME_NICKNAMES.get(person_first) or {person_first}
@@ -386,40 +469,9 @@ def discover_email_candidates_from_archive(
         payload = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
         header_hit = False
         for rec in _header_records(payload):
+            # Own mailbox display only. people[] / co-recipients are not this
+            # address's identity (that attached every To/CC on Peggy's threads).
             strength = _display_matches_person(rec["display_name"], forms)
-            if not strength:
-                # Same-message people[] may carry Peg Legg / Peggy George while the
-                # address row itself only has a short/empty display_name.
-                people_vals = [str(p) for p in (payload.get("people") or [])]
-                people_strength = None
-                for p in people_vals:
-                    s = _display_matches_person(p, forms)
-                    if s in {"full", "alias_full", "nickname_full"}:
-                        people_strength = s
-                        break
-                if people_strength:
-                    # Accept people[] nickname/full when this address appears in
-                    # the same message headers (already true: we are iterating
-                    # this address's header record). Prefer raw-header corroboration
-                    # when present, but do not discard nickname_full solely because
-                    # "peggy george" is absent from raw From/To/CC.
-                    raw_bits = " ".join(
-                        [
-                            str(payload.get("from") or ""),
-                            str((payload.get("to") or "")),
-                            str((payload.get("cc") or "")),
-                            str((payload.get("bcc") or "")),
-                            rec.get("display_name") or "",
-                            " ".join(people_vals),
-                        ]
-                    ).lower()
-                    if any(f in raw_bits for f in forms if " " in f) or any(
-                        " " in (p or "") and _display_matches_person(p, forms)
-                        for p in people_vals
-                    ):
-                        strength = people_strength
-                    else:
-                        strength = None
             if not strength:
                 continue
             header_hit = True
@@ -436,14 +488,7 @@ def discover_email_candidates_from_archive(
                 },
             )
             slot["occurrences"] += 1
-            dn = rec["display_name"] or next(
-                (
-                    str(p)
-                    for p in (payload.get("people") or [])
-                    if _display_matches_person(str(p), forms)
-                ),
-                "",
-            )
+            dn = rec["display_name"] or ""
             if dn:
                 slot["display_names"][dn] = int(slot["display_names"].get(dn) or 0) + 1
             slot["header_fields"].add(rec["header_field"])
@@ -885,7 +930,8 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
     2. Resolve those identities to People (ledger → contacts)
     3. Retrieve complete Person evidence using confirmed addresses (this function)
 
-    Does not scan Evidence, inventory bodies, or backfill person_ids.
+    Does not scan Evidence, inventory bodies, backfill person_ids, or persist
+    new contacts. Retrieve uses already-confirmed addresses only.
     """
     ids = [str(p) for p in person_ids if str(p).strip()]
     address_reports: list[dict[str, Any]] = []
@@ -898,7 +944,7 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
             address_reports.append(
                 resolve_and_attach_addresses_for_person(
                     pid,
-                    persist=True,
+                    persist=False,
                     backfill=False,
                     inventory_attached=False,
                     scan_archive=False,
@@ -908,12 +954,14 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
             address_reports.append({"person_id": pid, "error": str(exc)})
 
     expansion = expand_person_communication_identities(
-        ids, persist=True, backfill=False, discover=False
+        ids, persist=False, backfill=False, discover=False
     )
     expansion["address_centric_resolve"] = address_reports
     expansion["pipeline"] = ["discover", "resolve", "retrieve"]
     expansion["retrieve_scan"] = "contacts_and_ledger_only"
-    # Flatten accepted addresses from address-centric resolve for retrieve notes.
+    # Report in-memory resolve accepts for diagnosis. Do not retrieve on them
+    # until they are confirmed contacts — Ask must not treat co-recipient
+    # ledger hits as this Person's addresses.
     flat_accepted: list[dict[str, Any]] = []
     for rep in address_reports:
         if not isinstance(rep, dict):
@@ -926,8 +974,6 @@ def expand_emails_for_retrieve(person_ids: set[str] | list[str]) -> dict[str, An
     if flat_accepted:
         expansion["accepted"] = flat_accepted
     addrs: set[str] = set()
-    for item in flat_accepted:
-        addrs.add(str(item["address"]))
     for _pid, emails in (expansion.get("emails_by_person") or {}).items():
         for e in emails:
             n = normalize_handle(e)
@@ -986,7 +1032,9 @@ def _seed_header_display_aliases(
     Example: Person ``Peggy George`` with hotmail header ``Peg Legg`` — after
     operator-attested address attach, seed ``Peg Legg`` so later discovery ORs it.
     """
-    forms = {_norm_name(f) for f in (known_forms or []) if f}
+    form_list = [f for f in (known_forms or []) if f]
+    forms = {_clean_person_display_name(f) or _norm_name(f) for f in form_list}
+    forms = {f for f in forms if f}
     seeded: list[dict[str, Any]] = []
     seen: set[str] = set(forms)
     try:
@@ -995,10 +1043,10 @@ def _seed_header_display_aliases(
         return seeded
     for raw in display_names:
         text = str(raw or "").strip()
-        n = _norm_name(text)
-        if not n or n in seen or " " not in n:
+        n = _clean_person_display_name(text)
+        if not n or n in seen:
             continue
-        if len(_name_tokens(text)) < 2:
+        if not _display_matches_person(text, form_list):
             continue
         seen.add(n)
         try:
@@ -1118,21 +1166,24 @@ def attach_known_email_if_corroborated(
                 sample_raw_displays.append(dn)
             if _display_matches_person(dn, forms):
                 display_names[dn] = int(display_names.get(dn) or 0) + 1
-            for p in payload.get("people") or []:
-                if _display_matches_person(str(p), forms):
-                    display_names[str(p)] = int(display_names.get(str(p)) or 0) + 1
-            # Header raw text may include "Peggy George <addr>"
-            blob = " ".join(
-                [
-                    str(payload.get("from") or ""),
-                    str(payload.get("to") or ""),
-                    str(payload.get("cc") or ""),
-                    str(payload.get("bcc") or ""),
-                ]
-            ).lower()
-            for form in forms:
-                if " " in form and form in blob:
-                    display_names[form] = int(display_names.get(form) or 0) + 1
+            # Operator attestation may use people[] / raw blob as extra
+            # corroboration for this one known address. Auto path stays
+            # mailbox-display-only so co-recipients cannot inherit the name.
+            if operator_attested:
+                for p in payload.get("people") or []:
+                    if _display_matches_person(str(p), forms):
+                        display_names[str(p)] = int(display_names.get(str(p)) or 0) + 1
+                blob = " ".join(
+                    [
+                        str(payload.get("from") or ""),
+                        str(payload.get("to") or ""),
+                        str(payload.get("cc") or ""),
+                        str(payload.get("bcc") or ""),
+                    ]
+                ).lower()
+                for form in forms:
+                    if " " in form and form in blob:
+                        display_names[form] = int(display_names.get(form) or 0) + 1
             eid = str(r.get("id") or "")
             if eid and eid not in evidence_ids:
                 evidence_ids.append(eid)
@@ -1449,17 +1500,180 @@ def diagnose_email_retrieve_gap(
     return out
 
 
+def prune_uncorroborated_email_contacts(
+    person_id: str,
+    *,
+    persist: bool = True,
+) -> dict[str, Any]:
+    """Withdraw confirmed emails whose own mailbox display is not this Person.
+
+    Keep set comes from archive header scan (address + its own display), never
+    from people[] co-occurrence and never from polluted ledger stamps.
+    If discovery finds no header identities, skip so we do not wipe contacts.
+    """
+    from memorybox.person.comm_address_index import find_addresses_for_person_forms
+
+    pid = str(person_id or "").strip()
+    report: dict[str, Any] = {
+        "person_id": pid,
+        "kept": [],
+        "withdrawn_contacts": [],
+        "withdrawn_aliases": [],
+        "unconfirmed_ledger": [],
+        "skipped": False,
+    }
+    if not pid:
+        report["ok"] = False
+        report["reason"] = "missing_person_id"
+        return report
+
+    snap = person_identity_snapshot(pid)
+    forms = list(snap.get("known_name_forms") or [])
+    confirmed = [
+        normalize_handle(str(c.get("value_text") or ""))
+        for c in (snap.get("emails") or [])
+    ]
+    confirmed = [a for a in confirmed if a and "@" in a]
+    report["confirmed_before"] = list(confirmed)
+
+    keep: set[str] = set()
+    try:
+        cands = find_addresses_for_person_forms(forms) if forms else []
+    except Exception as exc:  # noqa: BLE001
+        report["ok"] = False
+        report["reason"] = "discover_error"
+        report["error"] = str(exc)
+        return report
+
+    related = _related_person_ids(pid)
+    for cand in cands:
+        addr = normalize_handle(str(cand.get("address") or ""))
+        if not addr:
+            continue
+        decision = corroborate_email_candidate(
+            pid, cand, known_forms=forms, related_ids=related
+        )
+        if decision.get("accepted"):
+            keep.add(addr)
+    report["header_keep"] = sorted(keep)
+
+    if not keep:
+        report["ok"] = True
+        report["skipped"] = True
+        report["reason"] = "no_header_identities_found_skip_prune"
+        return report
+
+    aliases_withdrawn: list[str] = []
+    contacts_withdrawn: list[str] = []
+    ledger_cleared: list[str] = []
+    if persist:
+        try:
+            with connection() as conn:
+                alias_rows = list(
+                    conn.execute(
+                        """
+                        SELECT id, alias_text
+                        FROM person_aliases
+                        WHERE person_id = %s
+                          AND status = 'confirmed'
+                          AND alias_kind = 'alternate_name'
+                        """,
+                        (pid,),
+                    ).fetchall()
+                )
+                for row in alias_rows:
+                    raw = str(row.get("alias_text") or "")
+                    if _clean_person_display_name(raw) and _display_matches_person(
+                        raw, forms
+                    ):
+                        continue
+                    conn.execute(
+                        """
+                        UPDATE person_aliases
+                        SET status = 'withdrawn', updated_at = now(),
+                            note = TRIM(BOTH FROM COALESCE(note, '') ||
+                              ' [withdrawn: not a single-person header name]')
+                        WHERE id = %s
+                        """,
+                        (row.get("id"),),
+                    )
+                    aliases_withdrawn.append(raw)
+
+                for addr in confirmed:
+                    if addr in keep:
+                        continue
+                    conn.execute(
+                        """
+                        UPDATE person_contact_points
+                        SET status = 'withdrawn',
+                            actor_key = 'comm_identity_prune',
+                            note = TRIM(BOTH FROM COALESCE(note, '') ||
+                              ' [withdrawn: mailbox display does not corroborate Person]'),
+                            updated_at = now()
+                        WHERE person_id = %s
+                          AND contact_kind = 'email'
+                          AND status = 'confirmed'
+                          AND lower(value_text) = %s
+                        """,
+                        (pid, addr),
+                    )
+                    contacts_withdrawn.append(addr)
+
+                extra_ledger = list(
+                    conn.execute(
+                        """
+                        SELECT address_normalized
+                        FROM communication_identities
+                        WHERE identity_kind = 'email'
+                          AND resolved_person_id = %s
+                        """,
+                        (pid,),
+                    ).fetchall()
+                )
+                for row in extra_ledger:
+                    addr = normalize_handle(str(row.get("address_normalized") or ""))
+                    if not addr or addr in keep:
+                        continue
+                    conn.execute(
+                        """
+                        UPDATE communication_identities
+                        SET resolved_person_id = NULL,
+                            resolution_status = 'observed',
+                            updated_at = now()
+                        WHERE identity_kind = 'email'
+                          AND address_normalized = %s
+                          AND resolved_person_id = %s
+                        """,
+                        (addr, pid),
+                    )
+                    ledger_cleared.append(addr)
+        except Exception as exc:  # noqa: BLE001
+            report["ok"] = False
+            report["reason"] = "persist_error"
+            report["error"] = str(exc)
+            return report
+
+    report["ok"] = True
+    report["kept"] = sorted(keep)
+    report["withdrawn_contacts"] = contacts_withdrawn
+    report["withdrawn_aliases"] = aliases_withdrawn
+    report["unconfirmed_ledger"] = ledger_cleared
+    return report
+
+
 def repair_email_identity_contacts(
     person_id: str | None = None,
     *,
     force_rediscover: bool = False,
     known_address: str | None = None,
+    prune_uncorroborated: bool = False,
 ) -> dict[str, Any]:
     """Discover/persist corroborated email contacts for People missing them.
 
     When person_id is set, expand that Person only. Otherwise expand live People
     that have a multi-token display name and zero confirmed emails.
     Optional known_address (e.g. peggo417@hotmail.com) is corroborated via headers.
+    prune_uncorroborated withdraws co-recipient contacts before re-resolve.
     """
     ids: list[str] = []
     if person_id:
@@ -1489,6 +1703,10 @@ def repair_email_identity_contacts(
 
     known_results = []
     address_reports: list[dict[str, Any]] = []
+    prune_reports: list[dict[str, Any]] = []
+    if prune_uncorroborated:
+        for pid in ids:
+            prune_reports.append(prune_uncorroborated_email_contacts(pid, persist=True))
     # Address-centric path first (ledger + archive discover → resolve → backfill).
     try:
         from memorybox.person.comm_address_index import (
@@ -1514,6 +1732,7 @@ def repair_email_identity_contacts(
                 ),
                 "person_ids": ids,
                 "address_centric_resolve": address_reports,
+                "prune": prune_reports,
             }
         # Explicit --address + --person-id is operator attestation.
         # Auto Ask expand never sets operator_attested.
@@ -1568,6 +1787,7 @@ def repair_email_identity_contacts(
             "results": reports,
             "known_address_results": known_results,
             "address_centric_resolve": address_reports,
+            "prune": prune_reports,
         }
 
     expansion = expand_person_communication_identities(
@@ -1580,4 +1800,5 @@ def repair_email_identity_contacts(
         "expansion": expansion,
         "known_address_results": known_results,
         "address_centric_resolve": address_reports,
+        "prune": prune_reports,
     }

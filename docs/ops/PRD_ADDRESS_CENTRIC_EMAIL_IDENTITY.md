@@ -35,6 +35,7 @@ Person-scoped email retrieve was chicken-and-egg: needing a Person email contact
 4. Discovery does **not** require the Person to already contain the email.
 5. Once `peggo417` ↔ Peggy: Gallery + Full-Evidence V2 include Peg Legg–labeled messages; same path as Ask.
 6. No Peggy-specific hardcode.
+7. A Person's confirmed emails are **that Person's mailboxes**, not co-recipients on the same threads. Owner/noreply/marketplace addresses must not attach. Retrieve must not be "the whole mailbox."
 
 ## Out of scope
 

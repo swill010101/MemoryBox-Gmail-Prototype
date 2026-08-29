@@ -41,6 +41,17 @@ python -m memorybox prove-address-centric-email-e2e --flightsim
 
 Expect finish in minutes, not hours. Paste the prove JSON (`"ok": true`).
 
+The prove now **fails closed** if Peggy's confirmed emails include owner/noreply/marketplace
+addresses or if retrieve looks like the whole mailbox (the previous pass had
+700+ co-recipient addresses and ~42k hits). It prunes those contacts first.
+
+If a prior run already attached co-recipients, prune is included in e2e. Standalone:
+
+```bat
+python -m memorybox repair-email-identities --flightsim --person-id <PEGGY_ID> --prune-uncorroborated --address peggo417@hotmail.com
+python -m memorybox prove-address-centric-email-e2e --flightsim
+```
+
 Optional one-address probe (header scan, 60s cap):
 
 ```bat
