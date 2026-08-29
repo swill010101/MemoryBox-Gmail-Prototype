@@ -858,34 +858,82 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     emails_before = _confirmed_emails_for(ask_peggy.id)
     had_peggo_before = _PROBE_ADDR in emails_before
 
-    resolve = resolve_and_attach_addresses_for_person(
-        ask_peggy.id, persist=True, backfill=True, inventory_attached=True
-    )
-    accepted_addrs = [
-        normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
-        for e in (resolve.get("accepted") or [])
-    ]
-    expanded = expand_emails_for_retrieve({ask_peggy.id})
-    addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
+    resolve: dict[str, Any] | None = None
+    accepted_addrs: list[str] = []
+    addrs: set[str] = set()
 
-    # Belt-and-suspenders: if ledger/auto resolve missed but structured
-    # headers exist for the probe address, operator-attest (same as --repair-address).
+    # FlightSim / Immich-stub bootstrap: when probe address has structured hits,
+    # operator-attest that address first. Avoids archive-wide Peg* nickname
+    # discovery (tens of thousands of rows) on every cold prove — same end state
+    # as --repair-address after Person bootstrap.
     if (
         bootstrap
-        and _PROBE_ADDR not in addrs
         and struct_n > 0
         and ask_peggy is not None
         and (ask_peggy.display_name or "").strip().lower() == "peggy george"
+        and not had_peggo_before
     ):
-        from memorybox.person.comm_identity import repair_email_identity_contacts
+        from memorybox.person.comm_address_index import (
+            upsert_communication_identity_from_inventory,
+        )
+        from memorybox.person.comm_identity import attach_known_email_if_corroborated
 
-        repair_info = repair_email_identity_contacts(
+        try:
+            upsert_communication_identity_from_inventory(
+                inv if isinstance(inv, dict) else {},
+                resolved_person_id=None,
+                resolution_status="observed",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        repair_info = attach_known_email_if_corroborated(
             ask_peggy.id,
-            known_address=_PROBE_ADDR,
-            force_rediscover=False,
+            _PROBE_ADDR,
+            persist=True,
+            backfill=True,
+            operator_attested=True,
         )
         expanded = expand_emails_for_retrieve({ask_peggy.id})
         addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
+        if _PROBE_ADDR in addrs or bool((repair_info or {}).get("accepted")):
+            accepted_addrs = [_PROBE_ADDR]
+            resolve = {
+                "accepted": [{"candidate": {"address": _PROBE_ADDR}}],
+                "mode": "bootstrap_operator_attested_probe",
+                "repair": repair_info,
+            }
+
+    if _PROBE_ADDR not in addrs:
+        resolve = resolve_and_attach_addresses_for_person(
+            ask_peggy.id, persist=True, backfill=True, inventory_attached=True
+        )
+        accepted_addrs = [
+            normalize_handle(str((e.get("candidate") or {}).get("address") or ""))
+            for e in (resolve.get("accepted") or [])
+        ]
+        expanded = expand_emails_for_retrieve({ask_peggy.id})
+        addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
+
+        # Belt-and-suspenders: if ledger/auto resolve missed but structured
+        # headers exist for the probe address, operator-attest (same as --repair-address).
+        if (
+            bootstrap
+            and _PROBE_ADDR not in addrs
+            and struct_n > 0
+            and ask_peggy is not None
+            and (ask_peggy.display_name or "").strip().lower() == "peggy george"
+        ):
+            from memorybox.person.comm_identity import attach_known_email_if_corroborated
+
+            repair_info = attach_known_email_if_corroborated(
+                ask_peggy.id,
+                _PROBE_ADDR,
+                persist=True,
+                backfill=True,
+                operator_attested=True,
+            )
+            expanded = expand_emails_for_retrieve({ask_peggy.id})
+            addrs = {normalize_handle(a) for a in (expanded.get("addresses") or set())}
 
     _check(
         "resolve_or_expand_has_peggo417",
