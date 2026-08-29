@@ -93,6 +93,8 @@ def run_trusted_evidence_pipeline(
             "counts": phase1.get("counts"),
             "per_trusted_address": phase1.get("per_trusted_address"),
             "unique_emails_by_trusted_address": phase1.get("unique_emails_by_trusted_address"),
+            "unique_only_via_trusted_address": phase1.get("unique_only_via_trusted_address"),
+            "shared_across_trusted_addresses": phase1.get("shared_across_trusted_addresses"),
             "unsupported_retrieve_addresses": phase1.get("unsupported_retrieve_addresses"),
             "unsupported_retrieve_hit_count": phase1.get("unsupported_retrieve_hit_count"),
             "retrieve_hit_count": phase1.get("retrieve_hit_count"),

@@ -440,6 +440,8 @@ def _live_retrieve_and_gallery_scope(person_id: str, trusted: set[str]) -> dict[
         hits = search_email_messages(plan, limit=500_000)
         out["retrieve_hit_count"] = len(hits)
         by_addr: dict[str, int] = {a: 0 for a in sorted(trusted)}
+        only_via: dict[str, int] = {a: 0 for a in sorted(trusted)}
+        shared = 0
         unsupported: list[str] = []
         for h in hits:
             payload = getattr(h, "payload", None) or {}
@@ -450,11 +452,18 @@ def _live_retrieve_and_gallery_scope(person_id: str, trusted: set[str]) -> dict[
             if hit_trusted:
                 for a in hit_trusted:
                     by_addr[a] = int(by_addr.get(a) or 0) + 1
+                if len(hit_trusted) == 1:
+                    only = next(iter(hit_trusted))
+                    only_via[only] = int(only_via.get(only) or 0) + 1
+                else:
+                    shared += 1
             else:
                 eid = str(getattr(h, "evidence_id", "") or "")
                 if eid:
                     unsupported.append(eid)
         out["unique_emails_by_trusted_address"] = by_addr
+        out["unique_only_via_trusted_address"] = only_via
+        out["shared_across_trusted_addresses"] = shared
         out["unsupported_retrieve_hits"] = unsupported[:48]
         out["unsupported_retrieve_hit_count"] = len(unsupported)
     except Exception as exc:  # noqa: BLE001

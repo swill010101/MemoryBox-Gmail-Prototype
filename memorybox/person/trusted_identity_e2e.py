@@ -166,6 +166,12 @@ def run_trusted_identity_db_e2e() -> dict[str, Any]:
             and not report.get("unsupported_retrieve_hit_count"),
             report.get("unsupported_retrieve_hits"),
         )
+        only_via = report.get("unique_only_via_trusted_address") or {}
+        _ok(
+            "report_unique_only_via_trusted",
+            int(only_via.get(trusted_addr) or 0) == 3,
+            only_via,
+        )
 
         tmp = Path(tempfile.mkdtemp(prefix="fev2-"))
         freeze = freeze_trusted_full_evidence_v2(
