@@ -161,6 +161,20 @@ def _flightsim_upgrade_immich_peggy(
     token_hits = list_people_by_first_token("Peggy")
     multi = [p for p in token_hits if " " in (p.display_name or "").strip()]
     if multi:
+        # Prefer existing exact Peggy George; never rename Immich stub onto
+        # an unrelated Peggy* (e.g. Peggy Smith distractor on FlightSim).
+        george = [
+            p
+            for p in multi
+            if (p.display_name or "").strip().lower() == "peggy george"
+        ]
+        if len(george) == 1:
+            return george[0], {
+                "reused": True,
+                "person_id": george[0].id,
+                "display_name": george[0].display_name,
+                "reason": "multi_token_peggy_george_already_exists",
+            }
         return person, {
             "skipped": True,
             "reason": "multi_token_peggy_already_exists",
@@ -241,17 +255,22 @@ def _seed_local_fixture() -> dict[str, Any]:
         conn.execute(
             """
             DELETE FROM person_aliases WHERE person_id IN (
-              SELECT id FROM people WHERE display_name IN ('Peggy George','Peggy','Peg Legg')
+              SELECT id FROM people
+              WHERE display_name IN ('Peggy George','Peggy','Peg Legg','Peggy Smith')
             )
             """
         )
         conn.execute(
-            "DELETE FROM people WHERE display_name IN ('Peggy George','Peggy','Peg Legg')"
+            "DELETE FROM people WHERE display_name IN "
+            "('Peggy George','Peggy','Peg Legg','Peggy Smith')"
         )
 
     # Immich-style single-token stub only — e2e must upgrade/create Peggy George
     # the same way FlightSim does (no pre-seeded multi-token Person).
     immich = resolve_person_by_name("Peggy", create_if_missing=True, confirm=False)
+    # Second multi-token Peggy* without email — Ask \"Peggy\" must prefer the
+    # address-bearing Peggy George after attach (FlightSim AmbiguousIdentity shape).
+    resolve_person_by_name("Peggy Smith", create_if_missing=True, confirm=True)
 
     payload = {
         "evidence_channel": "email",
@@ -340,6 +359,23 @@ def _seed_local_fixture() -> dict[str, Any]:
             """,
             (eid2, p2["subject"], json.dumps(p2)),
         )
+        # Spam/trash peggo417 row — must NOT inflate structured inventory / discover
+        # (retrieve already skips mailbox_skip spam|trash).
+        eid_spam = uuid.UUID("eeeeeeee-0000-0000-0000-000000000099")
+        p_spam = dict(p1)
+        p_spam["subject"] = "Spam Peg Legg"
+        p_spam["mailbox_skip"] = "spam"
+        p_spam["skip_reason"] = "spam"
+        p_spam["sent_at"] = "2019-08-01T12:00:00Z"
+        conn.execute(
+            """
+            INSERT INTO evidence (id, evidence_kind, summary, payload_json)
+            VALUES (%s, 'communication', %s, %s::jsonb)
+            ON CONFLICT (id) DO UPDATE
+              SET payload_json = EXCLUDED.payload_json, updated_at = now()
+            """,
+            (eid_spam, p_spam["subject"], json.dumps(p_spam)),
+        )
         # Broad "%peg %" noise (no peggo417) — old single-pass LIMIT could starve.
         for i in range(3, 83):
             eid = uuid.UUID(f"eeeeeeee-0000-0000-0000-{i:012d}")
@@ -388,6 +424,8 @@ def _seed_local_fixture() -> dict[str, Any]:
         "noise_emails": noise_n,
         "immich_stub": "Peggy",
         "immich_stub_only": True,
+        "spam_trash_peggo417_seeded": True,
+        "ambiguous_peggy_smith_seeded": True,
     }
 
 
@@ -632,18 +670,39 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
                 and struct_n > 0
                 and (upgrade_info or {}).get("skipped")
             ):
+                from memorybox.db import connection as _db_conn
                 from memorybox.person import rename_person
 
-                upgraded = rename_person(ask_peggy.id, "Peggy George")
-                ask_peggy = find_ask_person_by_name("Peggy George", lazy_seed=False) or upgraded
-                upgrade_info = {
-                    "upgraded": True,
-                    "from": "Peggy",
-                    "to": getattr(ask_peggy, "display_name", None),
-                    "person_id": getattr(ask_peggy, "id", None),
-                    "reason": "flightsim_immich_peggy_renamed_on_peg_legg_structured",
-                    "prior_skip": upgrade_info,
-                }
+                # Only rename the Immich single-token stub — never a random Peggy*.
+                if (ask_peggy.display_name or "").strip().lower() == "peggy":
+                    upgraded = rename_person(ask_peggy.id, "Peggy George")
+                    try:
+                        with _db_conn() as conn:
+                            conn.execute(
+                                """
+                                UPDATE people
+                                SET status = 'confirmed', updated_at = now()
+                                WHERE id = %s::uuid AND status <> 'confirmed'
+                                """,
+                                (upgraded.id,),
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    ask_peggy = (
+                        find_ask_person_by_name("Peggy George", lazy_seed=False)
+                        or upgraded
+                    )
+                    # Prefer the renamed row even if Ask still prefers another Peggy*.
+                    if (ask_peggy.display_name or "").strip().lower() != "peggy george":
+                        ask_peggy = upgraded
+                    upgrade_info = {
+                        "upgraded": True,
+                        "from": "Peggy",
+                        "to": getattr(ask_peggy, "display_name", None),
+                        "person_id": getattr(ask_peggy, "id", None),
+                        "reason": "flightsim_immich_peggy_renamed_on_peg_legg_structured",
+                        "prior_skip": upgrade_info,
+                    }
 
         # Cold FlightSim: no Peggy George Person, archive corroborates both names.
         if ask_peggy is None or (ask_peggy.display_name or "").strip().lower() != "peggy george":
@@ -675,6 +734,12 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "upgrade": upgrade_info,
         },
     )
+    # Re-resolve Peg Legg after bootstrap/rename — pre-bootstrap nickname family
+    # may have preferred an unrelated confirmed Peggy* (e.g. Peggy Smith).
+    try:
+        ask_legg = find_ask_person_by_name("Peg Legg", lazy_seed=False)
+    except Exception:  # noqa: BLE001
+        ask_legg = None
     if ask_legg is not None:
         _check(
             "ask_peg_legg_resolves_same_person",

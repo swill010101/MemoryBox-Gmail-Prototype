@@ -1128,6 +1128,64 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         detail=[p.display_name for p in alias_hits],
     )
 
+    # Ambiguous short Ask: prefer unique multi-token over stub; prefer unique email.
+    from memorybox.person import (
+        AmbiguousIdentityError as _Amb,
+        PersonView as _PV,
+        _pick_unique_ask_person as _pick,
+        _person_has_confirmed_email as _has_email,
+    )
+
+    stub = _PV(
+        id="pick-stub",
+        display_name="Peggy",
+        status="confirmed",
+        identity_authority="owner_confirmed",
+    )
+    george = _PV(
+        id="pick-george",
+        display_name="Peggy George",
+        status="confirmed",
+        identity_authority="owner_confirmed",
+    )
+    smith = _PV(
+        id="pick-smith",
+        display_name="Peggy Smith",
+        status="confirmed",
+        identity_authority="owner_confirmed",
+    )
+    preferred = _pick([stub, george])
+    _check(
+        "ask_pick_prefers_unique_multi_token",
+        preferred is not None and preferred.id == "pick-george",
+        checks,
+        problems,
+        detail=getattr(preferred, "display_name", None),
+    )
+    try:
+        _pick([george, smith])
+        _check(
+            "ask_pick_still_ambiguous_two_multi_token",
+            False,
+            checks,
+            problems,
+            detail="expected AmbiguousIdentityError",
+        )
+    except _Amb as exc:
+        _check(
+            "ask_pick_still_ambiguous_two_multi_token",
+            "Peggy George" in str(exc) and "Peggy Smith" in str(exc),
+            checks,
+            problems,
+            detail=str(exc),
+        )
+    _check(
+        "ask_pick_email_helper_callable",
+        callable(_has_email) and _has_email("nonexistent-person-id") is False,
+        checks,
+        problems,
+    )
+
     # Person-complete email retrieve must not keyword-filter narrative Ask verbs.
     import inspect as _inspect
 

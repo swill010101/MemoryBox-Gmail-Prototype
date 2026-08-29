@@ -1090,17 +1090,49 @@ def resolve_person_for_identity_teach(
     return view
 
 
+def _person_has_confirmed_email(person_id: str) -> bool:
+    """True when person_contact_points has a confirmed email for this Person."""
+    pid = str(person_id or "").strip()
+    if not pid:
+        return False
+    try:
+        with connection() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM person_contact_points
+                WHERE person_id = %s
+                  AND contact_kind = 'email'
+                  AND status = 'confirmed'
+                LIMIT 1
+                """,
+                (pid,),
+            ).fetchone()
+            return bool(row)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _pick_unique_ask_person(candidates: list[PersonView]) -> PersonView | None:
-    """Return the single usable Ask person, or raise if several distinct people match."""
+    """Return the single usable Ask person, or raise if several distinct people match.
+
+    When several People match a short Ask name (e.g. \"Peggy\"), prefer:
+    1. The unique Person with a confirmed email contact (address-centric identity),
+    2. Else the unique multi-token display name over single-token Immich stubs,
+    3. Else raise AmbiguousIdentityError listing candidates.
+    """
     if not candidates:
         return None
-    # Prefer confirmed, then trusted-provider, then mapped unresolved
+    # Prefer confirmed, then trusted-provider / owner-confirmed, then mapped unresolved
     ranked: list[PersonView] = []
     for p in candidates:
         if p.status == "confirmed":
             ranked.append(p)
             continue
-        if p.identity_authority == AUTHORITY_TRUSTED_PROVIDER:
+        if p.identity_authority in {
+            AUTHORITY_TRUSTED_PROVIDER,
+            AUTHORITY_OWNER_CONFIRMED,
+        }:
             ranked.append(p)
             continue
         if any(
@@ -1117,6 +1149,16 @@ def _pick_unique_ask_person(candidates: list[PersonView]) -> PersonView | None:
     unique = list(by_id.values())
     if len(unique) == 1:
         return unique[0]
+
+    with_email = [p for p in unique if _person_has_confirmed_email(p.id)]
+    if len(with_email) == 1:
+        return with_email[0]
+
+    multi = [p for p in unique if " " in (p.display_name or "").strip()]
+    single = [p for p in unique if " " not in (p.display_name or "").strip()]
+    if len(multi) == 1 and single:
+        return multi[0]
+
     first = (unique[0].display_name or "person").strip().split()[0] or "person"
     labels = [str(p.display_name) for p in unique if p.display_name]
     raise AmbiguousIdentityError(
