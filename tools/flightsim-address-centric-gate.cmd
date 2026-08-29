@@ -35,13 +35,28 @@ if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAIL
   del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json" 2>nul
 )
 
+REM Auto-stash tracked dirt so checkout succeeds. Do NOT use -u: keep
+REM gitignored config\memorybox_app.env / immich.env on disk for startmb/prove.
+set TRACKED_DIRTY=0
+git diff --quiet
+if errorlevel 1 set TRACKED_DIRTY=1
+git diff --cached --quiet
+if errorlevel 1 set TRACKED_DIRTY=1
+if not "%TRACKED_DIRTY%"=="0" (
+  echo ===== stashing tracked local changes (address-centric-gate-temp) =====
+  git stash push -m "address-centric-gate-temp"
+  if errorlevel 1 (
+    echo WARNING: stash failed — trying checkout anyway
+  ) else (
+    echo Stashed. Restore later with: git stash list ^& git stash pop
+  )
+)
+
 git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (
   echo.
-  echo CHECKOUT FAILED — working tree may be dirty. Either commit/stash local
-  echo changes on FlightSim, or run:
+  echo CHECKOUT FAILED — working tree still blocked. Inspect:
   echo   git status
-  echo   git stash push -u -m address-centric-gate-temp
   echo then re-run this script.
   goto :fail
 )

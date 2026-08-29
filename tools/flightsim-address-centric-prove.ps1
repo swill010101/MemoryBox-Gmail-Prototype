@@ -57,17 +57,34 @@ function Test-TcpPort([string]$TargetHost, [int]$Port, [int]$TimeoutMs = 800) {
   }
 }
 
-Import-DotEnvFile (Join-Path $Root "config\memorybox_app.env")
+$appEnv = Join-Path $Root "config\memorybox_app.env"
+if (-not (Test-Path -LiteralPath $appEnv)) {
+  Write-Host "ERROR: missing $appEnv — FlightSim prove needs the Takeout archive DSN." -ForegroundColor Red
+  Write-Host "Create it from config\memorybox_app.env.example (do not commit secrets)."
+  exit 1
+}
+Import-DotEnvFile $appEnv
 Import-DotEnvFile (Join-Path $Root "config\memorybox_sources.env")
 if (-not $env:MEMORYBOX_DATABASE_URL) {
-  $env:MEMORYBOX_DATABASE_URL = "postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox"
+  Write-Host "ERROR: MEMORYBOX_DATABASE_URL unset after loading $appEnv" -ForegroundColor Red
+  exit 1
 }
 if (-not $env:MEMORYBOX_QDRANT_URL) {
   $env:MEMORYBOX_QDRANT_URL = "http://127.0.0.1:6333"
 }
 $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
+# FlightSim must not fall back to empty ALLOW_DEV stores.
+Remove-Item Env:MEMORYBOX_ALLOW_DEV_DEFAULTS -ErrorAction SilentlyContinue
 
-Write-Host "MEMORYBOX_DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL)"
+function Get-RedactedDbHost([string]$Url) {
+  try {
+    if ($Url -match '@([^/:]+)') { return $Matches[1] }
+  } catch {}
+  return "(unparsed)"
+}
+
+Write-Host "hostname=$([System.Net.Dns]::GetHostName())"
+Write-Host "MEMORYBOX_DATABASE_URL set: $([bool]$env:MEMORYBOX_DATABASE_URL) host=$(Get-RedactedDbHost $env:MEMORYBOX_DATABASE_URL)"
 Write-Host "MEMORYBOX_P1_RUNTIME_HOST=$($env:MEMORYBOX_P1_RUNTIME_HOST)"
 Write-Host "ALLOW_DEV_DEFAULTS=$($env:MEMORYBOX_ALLOW_DEV_DEFAULTS)"
 
@@ -100,6 +117,13 @@ if (-not $healthOk) {
 
 python -m memorybox migrate
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "==> preflight probe peggo417@hotmail.com (structured count must be > 0)"
+python -m memorybox probe-email-address peggo417@hotmail.com
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "ERROR: probe-email-address failed — wrong DB or migrate incomplete." -ForegroundColor Red
+  exit $LASTEXITCODE
+}
 
 python -m memorybox prove-address-centric-email-e2e --flightsim
 exit $LASTEXITCODE
