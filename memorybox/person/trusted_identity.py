@@ -510,9 +510,14 @@ def report_named_person_identity_trust(display_name: str) -> dict[str, Any]:
     if not pid:
         return {"ok": False, "error": "person_not_found", "display_name": name}
     rec = report_person_identity_and_retrieve(pid)
+    trusted_n = len(rec.get("trusted_addresses") or [])
+    retrieve_n = rec.get("retrieve_hit_count")
     rec["ok"] = (
         not rec.get("unsupported_retrieve_addresses")
         and not rec.get("unsupported_retrieve_hit_count")
+        and trusted_n > 0
+        and retrieve_n is not None
+        and int(retrieve_n) > 0
     )
     rec["display_name"] = name
     return rec

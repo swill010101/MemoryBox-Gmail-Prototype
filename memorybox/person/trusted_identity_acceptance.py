@@ -267,6 +267,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             problems,
             detail=flightsim_report.get("trusted"),
         )
+        _check(
+            "flightsim_retrieve_has_trusted_mail",
+            int(flightsim_report.get("retrieve_hit_count") or 0) > 0,
+            checks,
+            problems,
+            detail={
+                "retrieve_hit_count": flightsim_report.get("retrieve_hit_count"),
+                "error": flightsim_report.get("retrieve_scope_error"),
+            },
+        )
+        _check(
+            "flightsim_gallery_shows_trusted_mail",
+            int(flightsim_report.get("gallery_email_count") or 0) > 0
+            and not flightsim_report.get("gallery_scope_error"),
+            checks,
+            problems,
+            detail={
+                "gallery_email_count": flightsim_report.get("gallery_email_count"),
+                "error": flightsim_report.get("gallery_scope_error"),
+            },
+        )
 
     from memorybox.ask.i11a.trusted_full_evidence_v2 import (
         PHASE2_REPORT_KEYS,
