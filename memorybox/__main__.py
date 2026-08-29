@@ -7,6 +7,12 @@ import os
 import sys
 
 
+def _apply_trusted_identity_flightsim_env() -> None:
+    """Match tools/flightsim-trusted-identity-gate.cmd: P1=1 and no ALLOW_DEV."""
+    os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+    os.environ["MEMORYBOX_ALLOW_DEV_DEFAULTS"] = ""
+
+
 def main(argv: list[str] | None = None) -> int:
     if "MEMORYBOX_DATABASE_URL" not in os.environ and "MEMORYBOX_ALLOW_DEV_DEFAULTS" not in os.environ:
         os.environ["MEMORYBOX_ALLOW_DEV_DEFAULTS"] = "1"
@@ -1454,7 +1460,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         if args.flightsim:
-            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+            _apply_trusted_identity_flightsim_env()
         payload = run_prove_trusted_identity_retrieval(flightsim=bool(args.flightsim))
         print(json.dumps(payload, indent=2, default=str), flush=True)
         summary = (payload.get("flightsim_report") or {}).get("phase1_summary")
@@ -1564,7 +1570,7 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
 
         if args.flightsim:
-            os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+            _apply_trusted_identity_flightsim_env()
         payload = run_trusted_evidence_pipeline(
             person_name=args.person,
             out_dir=_P(args.out_dir) if args.out_dir else None,

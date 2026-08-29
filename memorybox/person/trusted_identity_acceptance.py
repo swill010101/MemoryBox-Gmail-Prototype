@@ -362,10 +362,23 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=blob_src,
     )
     hit_src = inspect.getsource(retrieve_mod._email_hit)
+    header_people_src = inspect.getsource(retrieve_mod.structured_header_display_names)
     _check(
         "email_hit_does_not_copy_people_array",
         'payload.get("people")' not in hit_src
-        and "from_parsed" in hit_src,
+        and "structured_header_display_names" in hit_src
+        and "from_parsed" in header_people_src
+        and 'payload.get("people")' not in header_people_src,
+        checks,
+        problems,
+    )
+    pack_src = (
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "correlate" / "pack.py"
+    ).read_text(encoding="utf-8")
+    _check(
+        "correlation_email_hits_omit_people_array",
+        "structured_header_display_names" in pack_src
+        and 'kind == "email"' in pack_src,
         checks,
         problems,
     )
@@ -449,6 +462,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "classify_contact_trust" in claim_src
         and "identity_kind) = 'email'" not in claim_src
         and "Provider email rows are not trusted-for-retrieval" in claim_src,
+        checks,
+        problems,
+    )
+    report_src = inspect.getsource(
+        __import__(
+            "memorybox.person.trusted_identity",
+            fromlist=["report_named_person_identity_trust"],
+        ).report_named_person_identity_trust
+    )
+    _check(
+        "phase1_ok_requires_gallery_mail",
+        "gallery_email_count" in report_src and "gallery_scope_error" in report_src,
         checks,
         problems,
     )
@@ -738,6 +763,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    main_src = open(
+        __import__("pathlib").Path(__file__).resolve().parents[2] / "memorybox" / "__main__.py",
+        encoding="utf-8",
+    ).read()
+    _check(
+        "flightsim_cli_clears_allow_dev",
+        "_apply_trusted_identity_flightsim_env" in main_src
+        and 'MEMORYBOX_ALLOW_DEV_DEFAULTS"] = ""' in main_src
+        and main_src.count("_apply_trusted_identity_flightsim_env") >= 3,
+        checks,
+        problems,
+    )
     runtime_src = open(
         __import__("pathlib").Path(__file__).resolve().parent / "trusted_identity_acceptance.py",
         encoding="utf-8",
@@ -991,7 +1028,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "single_pass_freeze_skips_unbounded_immich",
-        "visual = bool(complete_trusted)" in freeze_src and "want_still=visual" in freeze_src,
+        "retrieve_eligible_hits" not in freeze_src
+        and "want_still=False" in freeze_src
+        and "single_pass_no_unbounded_immich" in freeze_src,
         checks,
         problems,
     )
@@ -999,7 +1038,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "single_pass_freeze_skips_unbounded_sms",
         "search_email_messages" in freeze_src
         and "search_sms_messages" not in freeze_src
-        and "single_pass_no_unbounded_sms" in freeze_src,
+        and "single_pass_no_unbounded_sms" in freeze_src
+        and "retrieve_eligible_hits" not in freeze_src,
         checks,
         problems,
     )

@@ -18,7 +18,6 @@ from memorybox.ask.i11a.full_evidence_diagnostic import (
     format_cloud_paste,
     format_item_block,
     normalize_retrieved,
-    retrieve_eligible_hits,
     slim_person_context_for_model,
 )
 from memorybox.ask.i11a.historian_fixture import (
@@ -388,7 +387,6 @@ def freeze_trusted_full_evidence_v2(
     complete_trusted: bool = False,
 ) -> dict[str, Any]:
     """Build a hash-stable Full-Evidence V2 fixture from trusted retrieve."""
-    from memorybox.ask.deps import build_photo, build_video
     from memorybox.planner import QueryPlan
 
     out = Path(out_dir) if out_dir else _DEFAULT_OUT
@@ -401,27 +399,23 @@ def freeze_trusted_full_evidence_v2(
             "person_id": person_id,
             "chunking": False,
         }
-    photo = build_photo()
-    video = build_video()
     if plan is None:
-        # Single-pass: trusted email + established text (calendar/story/journal).
-        # Do not pull unbounded Immich or complete SMS — those hang FlightSim
-        # before Gemma/Sol. Visuals and SMS wait for the complete trusted freeze.
-        visual = bool(complete_trusted)
+        # Trusted email + established text only. Do not pull complete SMS or
+        # unbounded Immich — that hangs FlightSim.
         plan = QueryPlan(
             original_ask=ask,
             effective_ask=ask,
             is_followup=False,
-            want_photo=visual,
+            want_photo=False,
             want_communication=True,
             want_calendar=True,
             want_story=True,
             want_journal=True,
             want_artifact=True,
-            want_visual=visual,
-            want_still=visual,
-            want_video=visual,
-            want_spoken=visual,
+            want_visual=False,
+            want_still=False,
+            want_video=False,
+            want_spoken=False,
             person_names=(),
             person_ids=(str(person_id),),
             place_names=(),
@@ -431,30 +425,27 @@ def freeze_trusted_full_evidence_v2(
             notes=("complete_comm_retrieve", "trusted_full_evidence_v2"),
         )
     person_context = build_person_context(plan)
-    if complete_trusted:
-        retrieved = retrieve_eligible_hits(plan, photo=photo, video=video)
-    else:
-        from memorybox.ask import retrieve as R
+    from memorybox.ask import retrieve as R
 
-        mail = list(R.search_email_messages(plan) or [])
-        cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
-        stories = list(R.search_stories(plan, limit=0) or []) if plan.want_story else []
-        journals = list(R.search_journals(plan, limit=0) or []) if plan.want_journal else []
-        artifacts = (
-            list(R.search_artifacts(plan, limit=0) or []) if plan.want_artifact else []
-        )
-        retrieved = {
-            "evidence": mail + cal,
-            "photos": [],
-            "videos": [],
-            "stories": stories,
-            "journals": journals,
-            "artifacts": artifacts,
-            "guided_capture": [],
-            "photo_status": {"skipped": "single_pass_no_unbounded_immich"},
-            "video_status": {"skipped": "single_pass_no_unbounded_immich"},
-            "sms_status": {"skipped": "single_pass_no_unbounded_sms"},
-        }
+    mail = list(R.search_email_messages(plan) or [])
+    cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
+    stories = list(R.search_stories(plan, limit=0) or []) if plan.want_story else []
+    journals = list(R.search_journals(plan, limit=0) or []) if plan.want_journal else []
+    artifacts = (
+        list(R.search_artifacts(plan, limit=0) or []) if plan.want_artifact else []
+    )
+    retrieved = {
+        "evidence": mail + cal,
+        "photos": [],
+        "videos": [],
+        "stories": stories,
+        "journals": journals,
+        "artifacts": artifacts,
+        "guided_capture": [],
+        "photo_status": {"skipped": "single_pass_no_unbounded_immich"},
+        "video_status": {"skipped": "single_pass_no_unbounded_immich"},
+        "sms_status": {"skipped": "single_pass_no_unbounded_sms"},
+    }
     norm = normalize_retrieved(retrieved, person_context=person_context)
     budget = 1_000_000_000 if complete_trusted else token_budget
     items = select_single_pass_items(

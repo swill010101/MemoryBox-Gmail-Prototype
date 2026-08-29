@@ -121,7 +121,12 @@ def _load_evidence_hit(evidence_id: str) -> Any | None:
         return None
     payload = _payload_dict(row.get("payload_json"))
     kind = str(row.get("evidence_kind") or "unknown")
-    people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
+    if kind == "email":
+        from memorybox.ask.retrieve import structured_header_display_names
+
+        people = structured_header_display_names(payload)
+    else:
+        people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
     return EvidenceHit(
         evidence_id=str(row["id"]),
         evidence_kind=kind,

@@ -1202,7 +1202,7 @@ def build_explore_find(
     if show_email and not show_sms and not email_available and not tell_mode:
         summary = (
             (summary or "").rstrip()
-            + " 0 emails matched this person (Person id, confirmed address, or full display name)."
+            + " 0 emails matched this person (trusted confirmed address)."
         ).strip()
     if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
         plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")

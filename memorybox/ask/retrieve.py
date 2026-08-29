@@ -1516,10 +1516,10 @@ def _email_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
 
 
-def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
-    # Structured header displays only. Never payload.people[] (Takeout co-occurrence).
+def structured_header_display_names(payload: dict[str, Any]) -> list[str]:
+    """From/To/CC/BCC display names only. Never payload.people[]."""
     people: list[str] = []
-    seen_people: set[str] = set()
+    seen: set[str] = set()
     for rec in (
         list(payload.get("from_parsed") or [])
         + list(payload.get("to_parsed") or [])
@@ -1532,10 +1532,16 @@ def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) ->
         if not label:
             continue
         key = label.casefold()
-        if key in seen_people:
+        if key in seen:
             continue
-        seen_people.add(key)
+        seen.add(key)
         people.append(label)
+    return people
+
+
+def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
+    # Structured header displays only. Never payload.people[] (Takeout co-occurrence).
+    people = structured_header_display_names(payload)
     mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
     identity = [
         {

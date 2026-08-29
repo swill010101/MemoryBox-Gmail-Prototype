@@ -631,6 +631,8 @@ def report_named_person_identity_trust(display_name: str) -> dict[str, Any]:
         and trusted_n > 0
         and retrieve_n is not None
         and int(retrieve_n) > 0
+        and int(rec.get("gallery_email_count") or 0) > 0
+        and not rec.get("gallery_scope_error")
     )
     rec["display_name"] = name
     rec["phase1_summary"] = format_phase1_human_report(rec)
