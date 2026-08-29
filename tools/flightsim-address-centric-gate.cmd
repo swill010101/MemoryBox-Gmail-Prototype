@@ -13,12 +13,19 @@ REM Auto-deliver: posts gate to PR #74 via gh when available, and always force-p
 REM gate artifacts to cursor/flightsim-address-centric-result-49da for the cloud agent.
 REM
 setlocal
-cd /d "%~dp0.."
+REM pushd maps UNC (\\flightsim\memorybox) to a drive letter; cd /d cannot.
+pushd "%~dp0.."
+if errorlevel 1 (
+  echo ERROR: could not enter repo root from "%~dp0"
+  echo Prefer a mapped path like C:\memorybox when running over UNC.
+  goto :fail
+)
 set BRANCH=cursor/p2-i11a-address-centric-email-49da
 set RESULT_BRANCH=cursor/flightsim-address-centric-result-49da
 
 echo ===== address-centric email gate (FlightSim) =====
 echo branch: %BRANCH%
+echo cwd: %CD%
 echo.
 
 git fetch origin %BRANCH%
