@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="status">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Archive Health</title>
+  <style>
+    /* Page-local; shell.css supplies MBUX chrome */
+    main { max-width: 980px; margin: 0 auto; padding: 1rem 1.25rem 2.5rem; }
+    .ah-head { margin-bottom: 0.75rem; }
+    .ah-head h1 {
+      font-family: Georgia, "Iowan Old Style", serif;
+      font-size: 1.65rem;
+      margin: 0 0 0.35rem;
+      color: #eef1ef;
+    }
+    .ah-sub { color: #c5cec8; font-size: 0.92rem; margin: 0 0 0.5rem; max-width: 42rem; }
+    .ah-disclaimer {
+      color: #a68b4b;
+      font-size: 0.88rem;
+      margin: 0.5rem 0 1rem;
+      max-width: 42rem;
+    }
+    .ah-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .ah-actions button, .ah-work-btn {
+      border: 1px solid rgba(166, 139, 75, 0.55);
+      background: #2f6b56;
+      color: #eef1ef;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.88rem;
+    }
+    .ah-work-btn { text-decoration: none; display: inline-block; margin-top: 0.35rem; }
+    .ah-job-status { display: block; margin-top: 0.35rem; font-size: 0.82rem; color: #5a564c; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0 1rem; }
+    .tabs button {
+      border: 1px solid rgba(197, 206, 200, 0.28);
+      background: rgba(255, 255, 255, 0.08);
+      color: #dfe5e1;
+      padding: 0.4rem 0.65rem;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+    }
+    .tabs button.active {
+      border-color: rgba(166, 139, 75, 0.7);
+      background: rgba(47, 107, 86, 0.55);
+      color: #fff;
+    }
+    section.block {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(31, 77, 63, 0.14);
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.75rem;
+      color: #141816;
+    }
+    section.block[data-concept="provider_health"] { border-left: 3px solid #2f6b56; }
+    section.block[data-concept="processing_state"] { border-left: 3px solid #3d4a5c; }
+    section.block[data-concept="knowledge_gaps"] { border-left: 3px solid #a68b4b; }
+    section.block[data-concept="work_on_these_now"] { border-left: 3px solid #1f4d3f; }
+    section.block h2 { font-size: 1.05rem; margin: 0 0 0.45rem; color: #1f4d3f; font-family: Georgia, serif; }
+    .intro { color: #5a564c; font-size: 0.9rem; margin: 0 0 0.55rem; }
+    table.metrics { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    table.metrics td { padding: 0.32rem 0.35rem; vertical-align: top; border-bottom: 1px solid #ebe4d8; }
+    table.metrics td.k { color: #5a564c; width: 58%; }
+    table.metrics td.v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    table.metrics a { color: #1f4d3f; }
+    .na { color: #8a3b12; font-weight: 600; }
+    .partial { color: #6b5a2a; }
+    .note { display: block; color: #6a655c; font-size: 0.75rem; margin-top: 0.15rem; text-align: left; }
+    ul.tasks { margin: 0.25rem 0 0; padding-left: 0; list-style: none; }
+    ul.tasks li {
+      margin: 0.55rem 0;
+      padding: 0.55rem 0.65rem;
+      background: rgba(31, 77, 63, 0.05);
+      border: 1px solid rgba(31, 77, 63, 0.12);
+    }
+    ul.tasks .task-text { display: block; margin-bottom: 0.25rem; }
+    .err { color: #8a3b12; font-weight: 600; }
+    .muted { color: #c5cec8; font-size: 0.85rem; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <div class="ah-head">
+    <h1>Archive Health</h1>
+    <p class="ah-sub">
+      Owner / system view of what MemoryBox can reach, what is processing, and what it still does not know.
+      Evolved from Status — not a separate admin product.
+    </p>
+    <p class="ah-disclaimer" id="disclaimer">
+      Healthy providers do not mean the archive is complete.
+    </p>
+    <div class="ah-actions">
+      <button type="button" id="refreshBtn">Refresh</button>
+      <a class="ah-work-btn" href="/settings/ui?mb_return=1">Settings / providers</a>
+    </div>
+    <p class="muted" id="calcAt">Loading Archive Health…</p>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div id="panel"><p class="muted">Loading panels from Postgres and cached provider counts. The home-video folder is not fully walked on this page.</p></div>
+  <p class="err" id="loadErr"></p>
+</main>
+<script>
+  let data = null;
+  let active = "archive_health";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderTabs() {
+    const nav = (data && data.nav) || [];
+    document.getElementById("tabs").innerHTML = nav.map(t => {
+      const cls = t.id === active ? "active" : "";
+      return `<button type="button" class="${cls}" data-tab="${esc(t.id)}">${esc(t.label)}</button>`;
+    }).join("");
+    document.querySelectorAll("#tabs button").forEach(btn => {
+      btn.onclick = () => { active = btn.getAttribute("data-tab"); renderTabs(); renderPanel(); };
+    });
+  }
+
+  function metricRow(m) {
+    const state = m.state || (m.available ? "available" : "unavailable");
+    let val;
+    if (state === "unavailable" || state === "deferred") {
+      // Never show numeric 0 for unavailable/deferred
+      val = `<span class="na">${esc(m.display || m.reason || "Not available")}</span>`;
+    } else if (m.href && (state === "available" || state === "partial")) {
+      val = `<a href="${esc(m.href)}">${esc(m.display)}</a>`;
+    } else {
+      val = esc(m.display);
+    }
+    if (state === "partial" && !String(m.display || "").toLowerCase().includes("partial")) {
+      val += ` <span class="partial">(partial)</span>`;
+    }
+    const bits = [];
+    if (m.note) bits.push(esc(m.note));
+    if (m.source) bits.push("determined via: " + esc(m.source));
+    if (m.reason && state !== "available") bits.push(esc(m.reason));
+    const note = bits.length ? `<span class="note">${bits.join(" · ")}</span>` : "";
+    return `<tr><td class="k">${esc(m.label)}${note}</td><td class="v">${val}</td></tr>`;
+  }
+
+  function renderPanel() {
+    const tab = data.tabs[active];
+    const panel = document.getElementById("panel");
+    if (!tab) { panel.innerHTML = "<p class='err'>Unknown tab</p>"; return; }
+    let html = "";
+    (tab.sections || []).forEach(sec => {
+      const concept = sec.concept || "";
+      html += `<section class="block" data-concept="${esc(concept)}"><h2>${esc(sec.title)}</h2>`;
+      if (sec.intro) html += `<p class="intro">${esc(sec.intro)}</p>`;
+      if (sec.metrics && sec.metrics.length) {
+        html += `<table class="metrics"><tbody>`;
+        sec.metrics.forEach(m => { html += metricRow(m); });
+        html += `</tbody></table>`;
+      }
+      if (sec.jobs && sec.jobs.length) {
+        html += `<ul class="tasks">`;
+        sec.jobs.forEach(j => {
+          const label = j.action_label || "Run now";
+          const jid = esc(j.id || "job");
+          html += `<li>` +
+            `<span class="task-text"><strong>${esc(j.label || "Job")}</strong> — ${esc(j.text || "")}</span>` +
+            `<button type="button" class="ah-work-btn" data-job-run="1" data-job-id="${jid}" ` +
+            `data-href="${esc(j.href || "")}" data-method="${esc(j.method || "POST")}" ` +
+            `data-confirm="${esc(j.confirm || "")}">${esc(label)}</button>` +
+            `<span class="ah-job-status" id="jobStatus-${jid}"></span>` +
+            `</li>`;
+        });
+        html += `</ul>`;
+      }
+      if (sec.tasks && sec.tasks.length) {
+        html += `<ul class="tasks">`;
+        sec.tasks.forEach(t => {
+          const label = t.action_label || "Work on this now";
+          const body = t.href
+            ? `<span class="task-text">${esc(t.text)}</span>` +
+              `<a class="ah-work-btn" href="${esc(t.href)}">${esc(label)}</a>`
+            : `<span class="task-text">${esc(t.text)}</span>`;
+          const note = t.note ? `<span class="note">${esc(t.note)}</span>` : "";
+          html += `<li>${body}${note}</li>`;
+        });
+        html += `</ul>`;
+      } else if (sec.concept === "work_on_these_now") {
+        html += `<p class="intro">No high-leverage tasks from current signals.</p>`;
+      }
+      html += `</section>`;
+    });
+    panel.innerHTML = html;
+    panel.querySelectorAll("[data-job-run]").forEach((btn) => {
+      btn.addEventListener("click", () => runOwnerJob(btn));
+    });
+  }
+
+  async function runOwnerJob(btn) {
+    const href = btn.getAttribute("data-href") || "";
+    const method = (btn.getAttribute("data-method") || "POST").toUpperCase();
+    const confirmMsg = btn.getAttribute("data-confirm") || "";
+    const jid = btn.getAttribute("data-job-id") || "job";
+    const statusEl = document.getElementById("jobStatus-" + jid);
+    if (!href) return;
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Running…";
+    try {
+      const r = await fetch(href, { method });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.detail || r.statusText);
+      const queued = body.people_queued != null ? String(body.people_queued) : "?";
+      const unchanged = body.unchanged != null ? String(body.unchanged) : "?";
+      if (statusEl) {
+        statusEl.textContent =
+          "Queued. Drain continues in the background. people_queued=" +
+          queued +
+          " unchanged=" +
+          unchanged +
+          ". Open Refresh to update queue counts.";
+      }
+    } catch (err) {
+      if (statusEl) statusEl.textContent = String(err.message || err);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function load() {
+    document.getElementById("loadErr").textContent = "";
+    try {
+      const r = await fetch("/status/summary");
+      data = await r.json();
+      if (!r.ok || !data.ok) throw new Error((data && data.detail) || "Archive Health failed");
+      active = data.default_tab || "archive_health";
+      document.getElementById("calcAt").textContent = data.calculated_at
+        ? ("Last calculated: " + data.calculated_at)
+        : "";
+      const d = (data.concepts && data.concepts.disclaimer) || data.honesty && data.honesty.completeness;
+      if (d) document.getElementById("disclaimer").textContent = d;
+      renderTabs();
+      renderPanel();
+    } catch (e) {
+      document.getElementById("loadErr").textContent = String(e.message || e);
+    }
+  }
+
+  document.getElementById("refreshBtn").onclick = load;
+  load();
+</script>
+</body>
+</html>

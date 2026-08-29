@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox People</title>
+  <style>
+    :root { --ink:#e8edf5; --line:rgba(255,255,255,0.14); --accent:#5b8cff; --panel:#141b27; --warn:#f0b4a8; --ok:#3dcf9a; }
+    * { box-sizing: border-box; }
+    html[data-mb-surface="people"] body,
+    html[data-mb-surface="people"] body.mb-shell,
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: #0f141c !important;
+      color: var(--ink) !important;
+      min-height: 100vh;
+    }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 0.45rem; }
+    .sub { color: #9aa3b5; font-size: 0.92rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.88rem; margin: 0.55rem 0 0.2rem; font-weight: 600; }
+    input, select, textarea {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--line);
+      background: #1a2230;
+      color: #e8edf5;
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.6rem 0.95rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.55rem;
+      font: inherit;
+    }
+    button.secondary { background: #1a2230; color: #c9dbff; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1rem;
+      margin-bottom: 0.85rem;
+    }
+    .muted { color: #9aa3b5; font-size: 0.86rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.12rem 0.45rem;
+      border: 1px solid var(--line);
+      margin-left: 0.35rem;
+      color: #9aa3b5;
+    }
+    .profile-block { margin: 0.65rem 0; padding: 0.55rem 0; border-top: 1px solid var(--line); }
+    .profile-block:first-of-type { border-top: 0; }
+    .profile-block h3 { font-size: 0.95rem; margin: 0 0 0.35rem; }
+    ul.clean { margin: 0.25rem 0 0; padding-left: 1.15rem; }
+    .contact-card {
+      border: 1px solid var(--line);
+      background: #1a2230;
+      padding: 0.65rem 0.75rem;
+      margin: 0.45rem 0;
+      cursor: pointer;
+    }
+    .contact-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .contact-card .kind { font-size: 0.78rem; color: #9aa3b5; text-transform: uppercase; letter-spacing: 0.03em; }
+    .contact-card .val { font-size: 1.05rem; font-weight: 600; margin-top: 0.15rem; }
+    .contact-card .edit-row { display: none; margin-top: 0.55rem; }
+    .contact-card.active .edit-row { display: block; }
+    .date-wrap { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem; align-items: end; }
+    .date-wrap input[type="date"] { width: auto; min-width: 9.5rem; }
+    #statusLine { min-height: 1.2rem; margin-bottom: 0.5rem; }
+    details.tech { margin-top: 0.75rem; }
+    details.tech pre { max-height: 14rem; overflow: auto; font-size: 0.78rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>People</h1>
+    <p class="sub">
+      Choose a person to open their <strong>Person Explorer</strong> — Ask, Gallery, Timeline, and Map stay on that person.
+      MemoryBox and photo-library names appear together (each name once).
+      You are: <span id="ownerStatus">(loading)</span>
+    </p>
+    <p id="statusLine" class="muted"></p>
+
+    <section>
+      <h2>Who am I?</h2>
+      <p class="muted">
+        Ask needs this so “my father” / “my mother” are relative to you.
+        Pick your MemoryBox person (Tom Will), then save.
+      </p>
+      <label for="ownerSel">I am this person</label>
+      <select id="ownerSel"><option value="">(loading…)</option></select>
+      <button id="saveOwner" type="button">Save as me</button>
+      <p id="ownerHint" class="muted" style="margin-top:0.4rem"></p>
+    </section>
+
+    <section>
+      <h2>Open a person</h2>
+      <p class="muted" id="pickerHint">Loading names…</p>
+      <label for="profileSel">Person</label>
+      <select id="profileSel"><option value="">(loading…)</option></select>
+      <button id="refreshPicker" class="secondary" type="button">Refresh names</button>
+      <button id="loadProfile" type="button">Open Person</button>
+      <div id="profileView" class="muted" style="margin-top:0.75rem">Choose a person, then Open Person → Explorer.</div>
+      <p class="muted" style="margin-top:0.65rem">
+        Need the old profile editor (facts, contacts, merge)?
+        <a href="/people/ui?admin=1">Open admin editor</a>
+      </p>
+    </section>
+
+    <div id="mb-people-admin" hidden>
+    <section>
+      <h2>Add or update details</h2>
+      <p class="muted">Uses the person selected above. Birth dates replace the previous birth date; emails and phones can be corrected.</p>
+      <div class="row">
+        <div>
+          <label for="factKind">What kind of fact?</label>
+          <select id="factKind">
+            <option value="birth_date">Birth date</option>
+            <option value="death_date">Death date</option>
+            <option value="note">Note</option>
+          </select>
+          <label for="factDate">Date</label>
+          <div class="date-wrap">
+            <input id="factDate" type="text" inputmode="numeric" placeholder="mm-dd-yyyy or mmddyyyy" autocomplete="off" />
+            <input id="factDateCal" type="date" title="Pick from calendar" aria-label="Pick fact date" />
+          </div>
+          <label for="factText">Note text (for notes)</label>
+          <input id="factText" placeholder="Optional note" />
+          <button id="addFact" type="button">Save fact</button>
+        </div>
+        <div>
+          <label for="aliasKind">Nickname / other name</label>
+          <select id="aliasKind">
+            <option value="nickname">Nickname</option>
+            <option value="alternate_name">Other name</option>
+          </select>
+          <label for="aliasText">Name</label>
+          <input id="aliasText" placeholder="e.g. Gene" />
+          <button id="addAlias" type="button">Save nickname</button>
+          <label for="contactKind">Add contact</label>
+          <select id="contactKind">
+            <option value="email">Email</option>
+            <option value="phone">Phone (10 digits)</option>
+          </select>
+          <label for="contactText">Email or phone</label>
+          <input id="contactText" placeholder="email or 10-digit phone" />
+          <p class="muted">Phone: digits only (no dashes). To change an existing contact, open the profile and tap that contact card.</p>
+          <button id="addContact" type="button">Add contact</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Family relationship</h2>
+      <p class="muted">Example: Eugene <b>is the father of</b> Tom. One record — MemoryBox understands the reverse automatically.</p>
+      <label for="relFrom">This person…</label>
+      <select id="relFrom"><option value="">(choose)</option></select>
+      <label for="relRole">…is the…</label>
+      <select id="relRole">
+        <option value="father_of">father of</option>
+        <option value="mother_of">mother of</option>
+        <option value="parent_of">parent of</option>
+        <option value="biological_parent_of">biological parent of</option>
+        <option value="adoptive_parent_of">adoptive parent of</option>
+        <option value="step_parent_of">step-parent of</option>
+        <option value="child_of">child of</option>
+        <option value="son_of">son of</option>
+        <option value="daughter_of">daughter of</option>
+        <option value="spouse_of">spouse of</option>
+        <option value="partner_of">partner of</option>
+        <option value="sibling_of">sibling of</option>
+        <option value="grandparent_of">grandparent of</option>
+        <option value="grandchild_of">grandchild of</option>
+        <option value="uncle_of">uncle of</option>
+        <option value="aunt_of">aunt of</option>
+      </select>
+      <label for="relTo">…this person</label>
+      <select id="relTo"><option value="">(choose)</option></select>
+      <button id="addRel" type="button">Save relationship</button>
+    </section>
+
+    <section>
+      <h2>Marriage / anniversary</h2>
+      <p class="muted">One shared date for both people — not copied onto two separate profiles.</p>
+      <label for="marA">Person A</label>
+      <select id="marA"><option value="">(choose)</option></select>
+      <label for="marB">Person B</label>
+      <select id="marB"><option value="">(choose)</option></select>
+      <label for="marDate">Wedding / anniversary date</label>
+      <div class="date-wrap">
+        <input id="marDate" type="text" inputmode="numeric" placeholder="mm-dd-yyyy or mmddyyyy" autocomplete="off" />
+        <input id="marDateCal" type="date" title="Pick from calendar" aria-label="Pick marriage date" />
+      </div>
+      <button id="addMarriage" type="button">Save marriage date</button>
+    </section>
+
+    <section>
+      <h2>Fix a name</h2>
+      <label for="renameSel">Person</label>
+      <select id="renameSel"><option value="">(choose)</option></select>
+      <label for="renameName">Correct spelling</label>
+      <input id="renameName" placeholder="Correct display name" />
+      <button id="renameBtn" type="button">Save name</button>
+    </section>
+
+    <section>
+      <h2>Reject a wrong photo match</h2>
+      <p class="muted">If a photo-library face was linked to the wrong person, reject that pairing.</p>
+      <label for="rejectPersonSel">MemoryBox person</label>
+      <select id="rejectPersonSel"><option value="">(choose)</option></select>
+      <label for="rejectImmichSel">Photo-library face to reject</label>
+      <select id="rejectImmichSel"><option value="">(choose person first, or refresh)</option></select>
+      <button id="rejectBtn" type="button">Reject this match</button>
+    </section>
+
+    <section>
+      <h2>Merge duplicate people</h2>
+      <p class="muted">Keep one person; fold the other into them. Use when the same person was enrolled twice.</p>
+      <label for="survivorSel">Keep this person</label>
+      <select id="survivorSel"><option value="">(choose)</option></select>
+      <label for="loserSel">Merge this duplicate away</label>
+      <select id="loserSel"><option value="">(choose)</option></select>
+      <button id="mergeBtn" type="button">Merge</button>
+    </section>
+
+    <section>
+      <h2>Teach a photo face (optional)</h2>
+      <p class="muted">Usually picking a name above is enough. Use this only when you want to confirm a specific Immich face → MemoryBox person.</p>
+      <label for="immichPerson">Photo-library person</label>
+      <select id="immichPerson"><option value="">(loading…)</option></select>
+      <label for="displayName">Name in MemoryBox</label>
+      <input id="displayName" placeholder="Usually filled from the Immich name" />
+      <button id="teachBtn" type="button">Teach / confirm</button>
+    </section>
+    </div>
+
+    <details class="tech">
+      <summary class="muted">Technical detail (optional)</summary>
+      <pre id="out" class="muted">No action yet.</pre>
+    </details>
+  </main>
+  <script>
+    const isPeopleAdmin =
+      new URLSearchParams(location.search).get("admin") === "1";
+    const adminRoot = document.getElementById("mb-people-admin");
+    if (adminRoot) adminRoot.hidden = !isPeopleAdmin;
+    if (isPeopleAdmin) {
+      document.title = "MemoryBox People — Admin";
+      const h1 = document.querySelector("main h1");
+      if (h1) h1.textContent = "People — Admin editor";
+    }
+    // Explore → People with active person: continue into Person Explorer
+    (function continueActivePerson() {
+      if (isPeopleAdmin) return;
+      const params = new URLSearchParams(location.search);
+      if (params.get("person") || params.get("person_id") || params.get("person_name")) {
+        return;
+      }
+      // Only auto-continue when arriving from exploration (shell adds mb_return=1).
+      // Family People opens the owner Person Explorer. ?pick=1 is this picker.
+      if (params.get("mb_return") !== "1") return;
+      let active = null;
+      try {
+        active =
+          (window.mbShell &&
+            window.mbShell.getActivePerson &&
+            window.mbShell.getActivePerson()) ||
+          JSON.parse(sessionStorage.getItem("mb_active_person") || "null");
+      } catch (_) {
+        active = null;
+      }
+      if (!active || (!active.id && !active.name)) return;
+      const q = new URLSearchParams();
+      if (active.id) q.set("person", active.id);
+      if (active.name) q.set("person_name", active.name);
+      q.set("mb_return", "1");
+      location.replace("/people/ui?" + q.toString());
+    })();
+    const out = document.getElementById("out");
+    let pickerOptions = [];
+    let currentPersonId = null;
+    let currentProfile = null;
+    let ownerId = null;
+
+    function setStatus(msg, isWarn) {
+      const el = document.getElementById("statusLine");
+      el.textContent = msg || "";
+      el.className = isWarn ? "warn" : "muted";
+    }
+    function show(data) { out.textContent = JSON.stringify(data, null, 2); }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    function fillSelect(sel, emptyLabel, opts, { mbOnly } = {}) {
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = emptyLabel;
+      sel.appendChild(none);
+      (opts || []).forEach((o) => {
+        if (mbOnly && o.source !== "memorybox") return;
+        const opt = document.createElement("option");
+        opt.value = o.key;
+        const tag = o.source === "immich" ? " · from photos" : "";
+        opt.textContent = o.label + tag;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    }
+
+    function fillAllPickers() {
+      const empty = "(choose a person)";
+      // Profile / relationships / marriage / rename: full unified list (Immich lazy-teach OK)
+      ["profileSel", "relFrom", "relTo", "marA", "marB", "renameSel"].forEach((id) => {
+        fillSelect(document.getElementById(id), empty, pickerOptions);
+      });
+      // Merge / reject / who-am-I: MemoryBox people only
+      ["rejectPersonSel", "survivorSel", "loserSel", "ownerSel"].forEach((id) => {
+        fillSelect(document.getElementById(id), empty, pickerOptions, { mbOnly: true });
+      });
+    }
+
+    async function loadPicker() {
+      setStatus("Loading names…");
+      const data = await j("/people/picker-options?limit=400");
+      pickerOptions = data.options || [];
+      fillAllPickers();
+      const hint = document.getElementById("pickerHint");
+      const nMb = pickerOptions.filter((o) => o.source === "memorybox").length;
+      const nIm = pickerOptions.filter((o) => o.source === "immich").length;
+      hint.textContent =
+        nMb + " in MemoryBox · " + nIm + " photo-library-only" +
+        (data.immich_error ? (" · Immich note: " + data.immich_error) : "") +
+        " · each name shown once";
+      hint.className = data.immich_error && !nIm ? "warn" : "muted";
+      setStatus("Names ready.", false);
+      show(data);
+      return data;
+    }
+
+    async function ensureFromKey(key) {
+      if (!key) throw { detail: "Choose a person from the list." };
+      if (key.startsWith("mb:")) {
+        const person_id = key.slice(3);
+        const data = await j("/people/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person_id }),
+        });
+        return data.person;
+      }
+      if (key.startsWith("immich:")) {
+        const rest = key.slice("immich:".length);
+        const i = rest.indexOf(":");
+        if (i < 0) throw { detail: "Invalid photo-library selection." };
+        const external_id = decodeURIComponent(rest.slice(0, i));
+        const display_name = decodeURIComponent(rest.slice(i + 1));
+        setStatus("Adding “" + display_name + "” to MemoryBox…");
+        const data = await j("/people/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider_key: "immich",
+            external_id,
+            display_name,
+          }),
+        });
+        // Refresh picker so this person is now MB
+        await loadPicker();
+        return data.person;
+      }
+      throw { detail: "Unknown person selection." };
+    }
+
+    /** Display ISO/date as mm-dd-yyyy */
+    function formatDateDisplay(raw) {
+      if (!raw) return "";
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return m[2] + "-" + m[3] + "-" + m[1];
+      return s;
+    }
+
+    /**
+     * Accept mmddyyyy, mm/dd/yyyy, mm-dd-yyyy, or yyyy-mm-dd → ISO yyyy-mm-dd.
+     * Returns null if empty; throws {detail} if invalid.
+     */
+    function parseDateInput(raw) {
+      const s = String(raw || "").trim();
+      if (!s) return null;
+      let mm, dd, yyyy;
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) {
+        yyyy = m[1]; mm = m[2]; dd = m[3];
+      } else {
+        m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (m) {
+          mm = m[1]; dd = m[2]; yyyy = m[3];
+        } else {
+          const digits = s.replace(/\D/g, "");
+          if (digits.length === 8) {
+            mm = digits.slice(0, 2);
+            dd = digits.slice(2, 4);
+            yyyy = digits.slice(4, 8);
+          } else {
+            throw { detail: "Date must be mm-dd-yyyy, mm/dd/yyyy, or mmddyyyy." };
+          }
+        }
+      }
+      const mi = parseInt(mm, 10);
+      const di = parseInt(dd, 10);
+      const yi = parseInt(yyyy, 10);
+      if (mi < 1 || mi > 12 || di < 1 || di > 31 || yi < 1800 || yi > 2100) {
+        throw { detail: "That date does not look valid." };
+      }
+      const iso = String(yi).padStart(4, "0") + "-" +
+        String(mi).padStart(2, "0") + "-" + String(di).padStart(2, "0");
+      const dt = new Date(iso + "T00:00:00");
+      if (isNaN(dt.getTime()) || dt.getMonth() + 1 !== mi || dt.getDate() !== di) {
+        throw { detail: "That date does not look valid." };
+      }
+      return iso;
+    }
+
+    function wireDatePair(textId, calId) {
+      const text = document.getElementById(textId);
+      const cal = document.getElementById(calId);
+      if (!text || !cal) return;
+      cal.addEventListener("change", () => {
+        if (!cal.value) return;
+        text.value = formatDateDisplay(cal.value);
+      });
+      text.addEventListener("blur", () => {
+        try {
+          const iso = parseDateInput(text.value);
+          if (iso) {
+            text.value = formatDateDisplay(iso);
+            cal.value = iso;
+          }
+        } catch (_) { /* leave as typed until save */ }
+      });
+    }
+    wireDatePair("factDate", "factDateCal");
+    wireDatePair("marDate", "marDateCal");
+
+    function normalizePhone(raw) {
+      const digits = String(raw || "").replace(/\D/g, "");
+      if (digits.length !== 10) {
+        throw { detail: "Phone must be exactly 10 digits (US), no dashes or spaces." };
+      }
+      return digits;
+    }
+
+    function formatPhoneDisplay(raw) {
+      const d = String(raw || "").replace(/\D/g, "");
+      if (d.length === 10) return d; // store/display digits only per owner rule
+      return raw || "";
+    }
+
+    function renderProfile(profile) {
+      const el = document.getElementById("profileView");
+      const idn = profile.identity || {};
+      const facts = profile.facts || [];
+      const aliases = profile.aliases || [];
+      const contacts = profile.contacts || [];
+      const rels = (profile.relationships && profile.relationships.assertions_sot) || [];
+      const derived = (profile.relationships && profile.relationships.derived_edges) || [];
+      const events = profile.life_events || [];
+      const maps = idn.provider_mappings || [];
+
+      let html = "<div class='profile-block'><h3>" +
+        esc(idn.display_name || "(unnamed)") +
+        (profile.is_canonical_owner ? " <span class='pill'>owner</span>" : "") +
+        "</h3><p class='muted'>Status: " + esc(idn.status || "") +
+        (idn.identity_authority ? (" · " + esc(idn.identity_authority)) : "") +
+        "</p></div>";
+
+      html += "<div class='profile-block'><h3>Names</h3>";
+      if (!aliases.length) html += "<p class='muted'>No nicknames yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        aliases.forEach((a) => {
+          html += "<li>" + esc(a.alias_kind) + ": <b>" + esc(a.alias_text) + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Facts</h3>";
+      if (!facts.length) html += "<p class='muted'>No birth/death/notes yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        facts.forEach((f) => {
+          let v = f.value_text || "";
+          if (f.fact_kind === "birth_date" || f.fact_kind === "death_date") {
+            v = formatDateDisplay(f.value_date || f.value_text);
+          }
+          html += "<li>" + esc(friendlyFact(f.fact_kind)) + ": <b>" + esc(v) + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Contacts</h3>";
+      html += "<p class='muted'>Tap a card to change it.</p>";
+      if (!contacts.length) html += "<p class='muted'>No email/phone yet.</p>";
+      else {
+        contacts.forEach((c) => {
+          const shown = c.contact_kind === "phone"
+            ? formatPhoneDisplay(c.value_text)
+            : (c.value_text || "");
+          html += "<div class='contact-card' data-contact-id='" + esc(c.id) +
+            "' data-kind='" + esc(c.contact_kind) + "'>" +
+            "<div class='kind'>" + esc(c.contact_kind) + "</div>" +
+            "<div class='val'>" + esc(shown) + "</div>" +
+            "<div class='edit-row'>" +
+            "<label>New value</label>" +
+            "<input class='contact-edit-input' type='text' value='" + esc(shown) + "' />" +
+            "<button type='button' class='contact-save-btn'>Save change</button>" +
+            "<button type='button' class='secondary contact-cancel-btn'>Cancel</button>" +
+            "</div></div>";
+        });
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Relationships</h3>";
+      if (!rels.length) html += "<p class='muted'>No family links recorded yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        rels.forEach((r) => {
+          html += "<li>" + esc(r.from_display_name || r.from_person_id) +
+            " <b>" + esc(friendlyRole(r.role_kind)) + "</b> " +
+            esc(r.to_display_name || r.to_person_id) + "</li>";
+        });
+        html += "</ul>";
+        const inv = derived.filter((d) => d.is_inverse_projection);
+        if (inv.length) {
+          html += "<p class='muted' style='margin-top:0.4rem'>Also understood the other way:</p><ul class='clean'>";
+          inv.forEach((d) => {
+            html += "<li>" + esc(d.from_display_name || d.from_person_id) +
+              " " + esc(friendlyRole(d.role_kind)) + " " +
+              esc(d.to_display_name || d.to_person_id) + "</li>";
+          });
+          html += "</ul>";
+        }
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Marriage / anniversary</h3>";
+      if (!events.length) html += "<p class='muted'>None recorded.</p>";
+      else {
+        html += "<ul class='clean'>";
+        events.forEach((e) => {
+          const names = (e.participants || []).map((p) => p.display_name || p.person_id).join(" & ");
+          html += "<li>" + esc(names) + " — <b>" + esc(formatDateDisplay(e.event_date) || "date unknown") + "</b></li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      html += "<div class='profile-block'><h3>Photo-library links</h3>";
+      if (!maps.length) html += "<p class='muted'>No Immich faces linked yet.</p>";
+      else {
+        html += "<ul class='clean'>";
+        maps.forEach((m) => {
+          html += "<li>" + esc(m.provider_key || "") + " · " +
+            esc(m.label || m.external_id || "") + "</li>";
+        });
+        html += "</ul>";
+      }
+      html += "</div>";
+
+      el.innerHTML = html;
+      el.className = "";
+
+      el.querySelectorAll(".contact-card").forEach((card) => {
+        card.addEventListener("click", (ev) => {
+          if (ev.target.closest(".edit-row")) return;
+          el.querySelectorAll(".contact-card").forEach((c) => c.classList.remove("active"));
+          card.classList.add("active");
+          const inp = card.querySelector(".contact-edit-input");
+          if (inp) inp.focus();
+        });
+        const saveBtn = card.querySelector(".contact-save-btn");
+        const cancelBtn = card.querySelector(".contact-cancel-btn");
+        if (saveBtn) {
+          saveBtn.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            try {
+              let val = card.querySelector(".contact-edit-input").value.trim();
+              const kind = card.getAttribute("data-kind");
+              if (kind === "phone") val = normalizePhone(val);
+              const cid = card.getAttribute("data-contact-id");
+              show(await j("/people/contacts/" + encodeURIComponent(cid) + "/supersede", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ value_text: val, note: "owner correction" }),
+              }));
+              setStatus("Contact updated.", false);
+              await openProfileForKey("mb:" + currentPersonId);
+            } catch (err) {
+              show(err);
+              setStatus(err.detail || "Could not update contact.", true);
+            }
+          });
+        }
+        if (cancelBtn) {
+          cancelBtn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            card.classList.remove("active");
+          });
+        }
+      });
+
+      // Reject Immich faces for this person
+      const rej = document.getElementById("rejectImmichSel");
+      rej.innerHTML = "";
+      const rNone = document.createElement("option");
+      rNone.value = "";
+      rNone.textContent = maps.length ? "(choose face to reject)" : "(no linked faces)";
+      rej.appendChild(rNone);
+      maps.forEach((m) => {
+        if ((m.provider_key || "") !== "immich") return;
+        const opt = document.createElement("option");
+        opt.value = m.external_id;
+        opt.textContent = (m.label || m.external_id || "") + "";
+        rej.appendChild(opt);
+      });
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+    function friendlyFact(k) {
+      return ({ birth_date: "Birth date", death_date: "Death date", note: "Note" })[k] || k;
+    }
+    function friendlyRole(k) {
+      return String(k || "").replace(/_/g, " ");
+    }
+
+    async function openProfileForKey(key) {
+      const person = await ensureFromKey(key);
+      currentPersonId = person.id;
+      // I5: Person Explorer is primary; stay on this form only with ?admin=1
+      if (isPeopleAdmin) {
+        const data = await j("/people/" + encodeURIComponent(person.id) + "/profile");
+        currentProfile = data.profile;
+        renderProfile(data.profile);
+        show(data);
+        setStatus("Opened “" + (person.display_name || person.id) + "”.", false);
+        const mbKey = "mb:" + person.id;
+        const sel = document.getElementById("profileSel");
+        if (![...sel.options].some((o) => o.value === mbKey)) {
+          await loadPicker();
+        }
+        sel.value = mbKey;
+        document.getElementById("rejectPersonSel").value = mbKey;
+        return person;
+      }
+      window.location.href =
+        "/people/ui?person=" +
+        encodeURIComponent(person.id) +
+        "&person_name=" +
+        encodeURIComponent(person.display_name || "");
+      return person;
+    }
+
+    document.getElementById("refreshPicker").onclick = () =>
+      loadPicker().catch((e) => { show(e); setStatus("Could not load names.", true); });
+
+    document.getElementById("loadProfile").onclick = async () => {
+      try {
+        await openProfileForKey(document.getElementById("profileSel").value);
+      } catch (err) { show(err); setStatus(err.detail || err.message || "Failed", true); }
+    };
+
+    document.getElementById("addFact").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        const kind = document.getElementById("factKind").value;
+        let value_date = null;
+        let value_text = document.getElementById("factText").value.trim() || null;
+        if (kind === "birth_date" || kind === "death_date") {
+          value_date = parseDateInput(document.getElementById("factDate").value);
+          if (!value_date) throw { detail: "Enter a date (mm-dd-yyyy) or pick from the calendar." };
+        }
+        const body = { fact_kind: kind, value_date, value_text };
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/facts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }));
+        setStatus("Fact saved.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save fact.", true); }
+    };
+
+    document.getElementById("addAlias").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/aliases", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            alias_kind: document.getElementById("aliasKind").value,
+            alias_text: document.getElementById("aliasText").value.trim(),
+          }),
+        }));
+        setStatus("Nickname saved.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save nickname.", true); }
+    };
+
+    document.getElementById("addContact").onclick = async () => {
+      try {
+        if (!currentPersonId) await openProfileForKey(document.getElementById("profileSel").value);
+        const kind = document.getElementById("contactKind").value;
+        let value_text = document.getElementById("contactText").value.trim();
+        if (kind === "phone") value_text = normalizePhone(value_text);
+        if (!value_text) throw { detail: "Enter an email or 10-digit phone." };
+        show(await j("/people/" + encodeURIComponent(currentPersonId) + "/contacts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contact_kind: kind, value_text }),
+        }));
+        document.getElementById("contactText").value = "";
+        setStatus("Contact added — tap its card on the profile to change it later.", false);
+        await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not add contact.", true); }
+    };
+
+    document.getElementById("addRel").onclick = async () => {
+      try {
+        const fromP = await ensureFromKey(document.getElementById("relFrom").value);
+        const toP = await ensureFromKey(document.getElementById("relTo").value);
+        const data = await j("/people/relationships", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from_person_id: fromP.id,
+            to_person_id: toP.id,
+            role_kind: document.getElementById("relRole").value,
+          }),
+        });
+        show(data);
+        setStatus(
+          "Saved: " + (fromP.display_name || "") + " is " +
+          friendlyRole(document.getElementById("relRole").value) + " " +
+          (toP.display_name || "") + ".",
+          false
+        );
+        if (currentPersonId) await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save relationship.", true); }
+    };
+
+    document.getElementById("addMarriage").onclick = async () => {
+      try {
+        const a = await ensureFromKey(document.getElementById("marA").value);
+        const b = await ensureFromKey(document.getElementById("marB").value);
+        const data = await j("/people/life-events/marriage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_a_id: a.id,
+            person_b_id: b.id,
+            event_date: parseDateInput(document.getElementById("marDate").value),
+          }),
+        });
+        show(data);
+        setStatus("Marriage / anniversary saved for " + (a.display_name || "") + " & " + (b.display_name || "") + ".", false);
+        if (currentPersonId) await openProfileForKey("mb:" + currentPersonId);
+      } catch (err) { show(err); setStatus(err.detail || "Could not save marriage.", true); }
+    };
+
+    document.getElementById("renameBtn").onclick = async () => {
+      try {
+        const person = await ensureFromKey(document.getElementById("renameSel").value);
+        const display_name = document.getElementById("renameName").value.trim();
+        show(await j("/people/" + encodeURIComponent(person.id) + "/name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name }),
+        }));
+        setStatus("Name updated.", false);
+        await loadPicker();
+      } catch (err) { show(err); setStatus(err.detail || "Could not rename.", true); }
+    };
+
+    document.getElementById("rejectBtn").onclick = async () => {
+      try {
+        const person = await ensureFromKey(document.getElementById("rejectPersonSel").value);
+        const external_id = document.getElementById("rejectImmichSel").value;
+        if (!external_id) { setStatus("Choose which photo face to reject.", true); return; }
+        show(await j("/people/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id: person.id,
+            provider_key: "immich",
+            external_id,
+          }),
+        }));
+        setStatus("Rejected that photo match.", false);
+        await openProfileForKey("mb:" + person.id);
+      } catch (err) { show(err); setStatus(err.detail || "Reject failed.", true); }
+    };
+
+    document.getElementById("rejectPersonSel").onchange = async () => {
+      try {
+        const key = document.getElementById("rejectPersonSel").value;
+        if (!key) return;
+        const person = await ensureFromKey(key);
+        const view = await j("/people/" + encodeURIComponent(person.id));
+        const maps = (view.person && view.person.provider_mappings) || [];
+        const rej = document.getElementById("rejectImmichSel");
+        rej.innerHTML = "";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = maps.length ? "(choose face)" : "(no linked Immich faces)";
+        rej.appendChild(none);
+        maps.forEach((m) => {
+          if ((m.provider_key || "") !== "immich") return;
+          const opt = document.createElement("option");
+          opt.value = m.external_id;
+          opt.textContent = m.label || m.external_id;
+          rej.appendChild(opt);
+        });
+      } catch (err) { show(err); }
+    };
+
+    document.getElementById("mergeBtn").onclick = async () => {
+      try {
+        const survivor = await ensureFromKey(document.getElementById("survivorSel").value);
+        const loser = await ensureFromKey(document.getElementById("loserSel").value);
+        show(await j("/people/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            survivor_person_id: survivor.id,
+            loser_person_id: loser.id,
+          }),
+        }));
+        setStatus("Merged. Kept “" + (survivor.display_name || "") + "”.", false);
+        await loadPicker();
+      } catch (err) { show(err); setStatus(err.detail || "Merge failed.", true); }
+    };
+
+    async function loadImmichTeach() {
+      const data = await j("/people/provider/immich");
+      const sel = document.getElementById("immichPerson");
+      sel.innerHTML = "";
+      const people = data.people || [];
+      if (!people.length) {
+        sel.innerHTML = "<option value=\"\">(no Immich people)</option>";
+        return;
+      }
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "(choose)";
+      sel.appendChild(none);
+      people.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.external_id;
+        opt.dataset.name = p.display_name || "";
+        opt.textContent = (p.display_name || "(unnamed)");
+        sel.appendChild(opt);
+      });
+    }
+    document.getElementById("immichPerson").onchange = () => {
+      const sel = document.getElementById("immichPerson");
+      const opt = sel.options[sel.selectedIndex];
+      if (opt && opt.dataset.name) {
+        document.getElementById("displayName").value = opt.dataset.name;
+      }
+    };
+    document.getElementById("teachBtn").onclick = async () => {
+      try {
+        const external_id = document.getElementById("immichPerson").value;
+        const display_name = document.getElementById("displayName").value.trim();
+        if (!external_id || !display_name) {
+          setStatus("Pick a photo person and a name.", true);
+          return;
+        }
+        const data = await j("/people/teach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name,
+            provider_key: "immich",
+            external_id,
+            label: display_name,
+          }),
+        });
+        show(data);
+        setStatus("Taught “" + display_name + "”.", false);
+        await loadPicker();
+        if (data.person && data.person.id) {
+          document.getElementById("profileSel").value = "mb:" + data.person.id;
+          await openProfileForKey("mb:" + data.person.id);
+        }
+      } catch (err) { show(err); setStatus(err.detail || "Teach failed.", true); }
+    };
+
+    async function loadOwner() {
+      try {
+        const o = await j("/people/owner");
+        const el = document.getElementById("ownerStatus");
+        const hint = document.getElementById("ownerHint");
+        if (o.configured) {
+          ownerId = o.owner_person_id;
+          el.textContent = (o.display_name || "you") + " ✓";
+          el.className = "ok";
+          const sel = document.getElementById("ownerSel");
+          if (sel && ownerId) sel.value = "mb:" + ownerId;
+          let msg = "Ask treats “my …” relative to " + (o.display_name || "you") + ".";
+          if (o.env_overrides) {
+            msg += " Note: MEMORYBOX_OWNER_PERSON_ID env is set and overrides the saved choice until cleared.";
+          } else if (o.source === "database") {
+            msg += " Saved in MemoryBox.";
+          }
+          hint.textContent = msg;
+          hint.className = "muted";
+        } else {
+          ownerId = null;
+          el.textContent = "not set — pick yourself below";
+          el.className = "warn";
+          hint.textContent =
+            "Until you save “I am this person,” Ask cannot answer my father / my mother.";
+          hint.className = "warn";
+        }
+      } catch (_) {
+        document.getElementById("ownerStatus").textContent = "error";
+      }
+    }
+
+    document.getElementById("saveOwner").onclick = async () => {
+      try {
+        const key = document.getElementById("ownerSel").value;
+        if (!key || !key.startsWith("mb:")) {
+          setStatus("Choose your MemoryBox person (Tom Will) from the list.", true);
+          return;
+        }
+        const person_id = key.slice(3);
+        setStatus("Saving who you are…");
+        const data = await j("/people/owner", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ person_id }),
+        });
+        show(data);
+        await loadOwner();
+        setStatus(
+          data.env_overrides
+            ? "Saved, but env MEMORYBOX_OWNER_PERSON_ID still overrides Ask until that shell env is cleared."
+            : ("You are " + (data.display_name || "set") + ". Ask can use my father / my mother now."),
+          !!data.env_overrides
+        );
+      } catch (err) {
+        show(err);
+        setStatus(err.detail || "Could not save who you are.", true);
+      }
+    };
+
+    loadOwner();
+    loadPicker().then(() => loadOwner()).catch((e) => { show(e); setStatus("Could not load people list.", true); });
+    loadImmichTeach().catch(show);
+  </script>
+</body>
+</html>

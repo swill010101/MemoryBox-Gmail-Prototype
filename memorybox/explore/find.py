@@ -1,0 +1,1353 @@
+"""P2-I4 Explore find — map real Ask (and optional Library) hits to Explore items.
+
+Preserves the Explore UI item contract used by the accepted interaction reference.
+Does not hard-code people or events into product logic.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from memorybox.ask.narrative import persistable_view
+
+_SMS_ITEM_TYPES = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+_SMS_ASK_RE = re.compile(
+    r"(?i)\b("
+    r"sms|imessage|i-?message|mms|rcs|"
+    r"text(?:s|ed|ing)?(?:\s+messages?)?|"
+    r"messages?\s+(?:from|to|between|with)|"
+    r"from\s+and\s+to|last\s+\d+\s+messages?"
+    r")\b"
+)
+_EMAIL_ASK_RE = re.compile(r"(?i)\b(e-?mails?|inbox|correspondence)\b")
+_CAL_ASK_RE = re.compile(
+    r"(?i)\b(calendar|appointment|schedule|meeting|ics)\b"
+)
+# All-ask: small hidden sample so Email/Text works. Count is the real archive.
+# Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
+_HIDDEN_SMS_CARD_SAMPLE = 800
+_VISIBLE_SMS_GALLERY_CAP = 10000
+_TELL_GALLERY_ITEM_CAP = 200
+_VISIBLE_EMAIL_GALLERY_CAP = 800
+_VISIBLE_CALENDAR_GALLERY_CAP = 800
+_HOLIDAY_WINDOW_MARKERS = (
+    "christmas",
+    "xmas",
+    "thanksgiving",
+    "easter",
+    "halloween",
+    "holiday",
+    "nye",
+    "nyd",
+    "memorial",
+    "labor",
+    "juneteenth",
+)
+
+
+def _is_sms_type(type_: str) -> bool:
+    return str(type_ or "").lower() in _SMS_ITEM_TYPES
+
+
+def _is_email_type(type_: str) -> bool:
+    return str(type_ or "").lower() == "email"
+
+
+def _is_calendar_type(type_: str) -> bool:
+    return str(type_ or "").lower() == "calendar"
+
+
+def _ask_blob(result: dict[str, Any] | None, ask_text: str | None, plan: dict[str, Any]) -> str:
+    return " ".join(
+        [
+            ask_text or "",
+            str(plan.get("original_ask") or ""),
+            str((result or {}).get("ask") or ""),
+        ]
+    )
+
+
+def _tell_pack_not_gallery_unhide(plan: dict[str, Any]) -> bool:
+    """I11 C-03 / I8A: tell retrieves comms for the pack; that is not Add texts/email/calendar."""
+    notes = plan.get("notes") or ()
+    if str(plan.get("output_mode") or "") == "tell":
+        return True
+    return "tell_multimodal_i11" in notes
+
+
+def explicit_text_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    """True when the ask itself requested texts (not a broad memory query)."""
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_SMS_ASK_RE.search(blob))
+    if "want_sms_modality" in notes:
+        return True
+    return bool(_SMS_ASK_RE.search(blob))
+
+
+def explicit_email_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_EMAIL_ASK_RE.search(blob))
+    if "want_email_modality" in notes:
+        return True
+    if plan.get("gallery_show_email") is True:
+        return True
+    return bool(_EMAIL_ASK_RE.search(blob))
+
+
+def explicit_calendar_gallery(result: dict[str, Any] | None, ask_text: str | None = None) -> bool:
+    plan = (result or {}).get("plan") or {}
+    notes = plan.get("notes") or ()
+    blob = _ask_blob(result, ask_text, plan)
+    if _tell_pack_not_gallery_unhide(plan):
+        return bool(_CAL_ASK_RE.search(blob))
+    if "want_calendar_modality" in notes:
+        return True
+    if plan.get("gallery_show_calendar") is True:
+        return True
+    return bool(_CAL_ASK_RE.search(blob))
+
+
+def _date_prefix(raw: str | None) -> str:
+    if not raw:
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    # ISO or date-only
+    return s[:10] if len(s) >= 10 else s
+
+
+def _item_base(
+    *,
+    id: str,
+    type_: str,
+    title: str,
+    date: str = "",
+    preview: str = "",
+    detail: str = "",
+    **extra: Any,
+) -> dict[str, Any]:
+    undated = bool(extra.pop("undated", False) or not date)
+    out: dict[str, Any] = {
+        "id": id,
+        "type": type_,
+        "kind": type_,
+        "title": title or type_,
+        "date": "" if undated else date,
+        "undated": undated,
+        "preview": preview or detail or title,
+        "detail": detail or preview or title,
+    }
+    out.update(extra)
+    return out
+
+
+def _ask_scoped_person_names(result: dict[str, Any]) -> list[str]:
+    """People the Ask was about — attach to photo items when Immich omits tags."""
+    names: list[str] = []
+
+    def add(raw: Any) -> None:
+        s = str(raw or "").strip()
+        if not s or s.lower() == "unknown":
+            return
+        if s not in names:
+            names.append(s)
+
+    ctx = result.get("context") or {}
+    slots = ctx.get("plan_slots") or {}
+    plan = result.get("plan") or {}
+    plan_slots = plan.get("slots") or {}
+    for key in ("person",):
+        for n in slots.get(key) or plan_slots.get(key) or []:
+            add(n)
+    for n in ctx.get("person_names") or plan.get("person_names") or []:
+        add(n)
+    status = result.get("provider_status") or {}
+    for block in status.values():
+        if not isinstance(block, dict):
+            continue
+        for n in block.get("mapped_person_names") or []:
+            add(n)
+    return names
+
+
+def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert AskResult.to_dict() (or equivalent) into Explore gallery items."""
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    ask_people = _ask_scoped_person_names(result)
+
+    def add(it: dict[str, Any]) -> None:
+        iid = str(it.get("id") or "")
+        if not iid or iid in seen:
+            return
+        seen.add(iid)
+        items.append(it)
+
+    for p in result.get("photo_hits") or []:
+        eid = str(p.get("external_id") or "")
+        if not eid:
+            continue
+        taken = _date_prefix(p.get("taken_at"))
+        people: list[str] = []
+        for n in list(p.get("people") or []):
+            s = str(n or "").strip()
+            if s and s.lower() != "unknown" and s not in people:
+                people.append(s)
+        mb_name = str(p.get("mb_person_name") or "").strip() or None
+        if mb_name and mb_name.lower() != "unknown" and mb_name not in people:
+            people.insert(0, mb_name)
+        for face in p.get("faces") or []:
+            if not isinstance(face, dict):
+                continue
+            fn = str(face.get("name") or "").strip()
+            if fn and fn.lower() != "unknown" and fn not in people:
+                people.append(fn)
+        if mb_name and people:
+            from memorybox.person import asked_name_matches_person
+
+            if not any(asked_name_matches_person(mb_name, n) for n in people):
+                mb_name = None
+        if not people:
+            for n in ask_people:
+                if n not in people:
+                    people.append(n)
+        name = mb_name or (people[0] if people else None)
+        title = name or "Photo"
+        place = p.get("place") or None
+        loc_str = p.get("location") or None
+        if place and not loc_str:
+            loc_str = str(place)
+        if loc_str and not place:
+            place = str(loc_str).split(",")[0].strip() or loc_str
+        if place:
+            title = f"{title} · {place}"
+        elif p.get("location"):
+            title = f"{title} · {p.get('location')}"
+        thumb = f"/library/media/photo/{eid}"
+        face_box = p.get("face_box")
+        lat = p.get("latitude")
+        lng = p.get("longitude")
+        try:
+            lat_f = float(lat) if lat is not None else None
+            lng_f = float(lng) if lng is not None else None
+        except (TypeError, ValueError):
+            lat_f = lng_f = None
+        if lat_f is not None and (lat_f < -90 or lat_f > 90):
+            lat_f = None
+        if lng_f is not None and (lng_f < -180 or lng_f > 180):
+            lng_f = None
+        extra: dict[str, Any] = {
+            "people": people,
+            "mb_person_id": p.get("mb_person_id"),
+            "mb_person_name": mb_name or (people[0] if people else None),
+            "provider_key": p.get("provider_key") or "immich",
+            "external_id": eid,
+            "media_url": thumb,
+            "thumb_url": thumb,
+            "web_url": p.get("web_url"),
+            "teachable": True,
+            "face_identity": mb_name or (people[0] if people else None) or "Unknown",
+            "place": place,
+            "location": loc_str,
+            "city": p.get("city"),
+            "state": p.get("state"),
+            "country": p.get("country"),
+            "original_filename": p.get("original_filename"),
+            "exif": p.get("exif") if isinstance(p.get("exif"), dict) else None,
+            "faces": list(p.get("faces") or []) if isinstance(p.get("faces"), list) else [],
+        }
+        if lat_f is not None and lng_f is not None:
+            extra["lat"] = lat_f
+            extra["lng"] = lng_f
+            extra["latitude"] = lat_f
+            extra["longitude"] = lng_f
+        # Only attach real geometry — never invent a placeholder box.
+        if isinstance(face_box, dict) and all(
+            isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
+        ):
+            extra["face_box"] = {
+                "x": float(face_box["x"]),
+                "y": float(face_box["y"]),
+                "w": float(face_box["w"]),
+                "h": float(face_box["h"]),
+            }
+        exif_d = p.get("exif") if isinstance(p.get("exif"), dict) else {}
+        photo_type = (
+            "video"
+            if str((exif_d or {}).get("media") or "").lower() == "video"
+            else "photo"
+        )
+        if photo_type == "video" and eid:
+            # Immich library videos stream here — never HVRT /review/media.
+            extra["play_url"] = f"/library/media/immich-video/{eid}"
+            extra["video_provider_key"] = p.get("provider_key") or "immich"
+        add(
+            _item_base(
+                id=f"photo:{p.get('provider_key') or 'immich'}:{eid}",
+                type_=photo_type,
+                title=str(title)[:80],
+                date=taken,
+                undated=not taken,
+                preview=str(p.get("attribution") or name or "Photo"),
+                detail=str(p.get("attribution") or ""),
+                **extra,
+            )
+        )
+
+    video_raw: list[dict[str, Any]] = []
+    for v in result.get("video_hits") or []:
+        vid = str(v.get("video_external_id") or v.get("external_id") or "")
+        if not vid:
+            continue
+        t0 = float(v.get("start_sec") or 0)
+        t1 = v.get("end_sec")
+        face = v.get("face_external_id")
+        pk = str(v.get("provider_key") or "hvrt")
+        hit_play = str(v.get("play_url") or "")
+        looks_immich = pk == "immich" or (
+            len(vid) == 36 and vid.count("-") == 4 and not vid.startswith("vid-")
+        )
+        if looks_immich:
+            play = (
+                hit_play
+                if "/library/media/immich-video/" in hit_play
+                else f"/library/media/immich-video/{vid}?t={t0:.3f}"
+            )
+        else:
+            play = f"/review/media/{vid}?t={t0:.3f}"
+            if face:
+                play += f"&face={face}"
+        poster = str(v.get("thumb_url") or "")
+        if not poster and not str(vid).startswith(("video-peggy-", "video-library-")):
+            poster = f"/library/media/video-poster?video={vid}&t={t0:.3f}"
+        label = v.get("label") or v.get("mb_person_name") or "Video moment"
+        if label == "face-appearance-moment":
+            label = v.get("mb_person_name") or "Video moment"
+        taken = str(v.get("taken_at") or "").strip()
+        orig_name = str(v.get("original_filename") or "").strip()
+        if orig_name:
+            stem = Path(orig_name.replace("\\", "/")).stem
+            if stem and stem.lower() not in str(label).lower():
+                label = f"{label} · {stem}"
+        face_box = v.get("face_box")
+        item = _item_base(
+            id=f"video:{v.get('provider_key') or 'hvrt'}:{v.get('external_id') or vid}:{t0}",
+            type_="video",
+            title=str(label)[:80],
+            date=taken,
+            undated=not taken,
+            preview=f"Moment @ {t0:.1f}s",
+            detail=f"{t0:.1f}s" + (f"–{float(t1):.1f}s" if t1 is not None else ""),
+            people=[v["mb_person_name"]] if v.get("mb_person_name") else [],
+            mb_person_id=v.get("mb_person_id"),
+            mb_person_name=v.get("mb_person_name"),
+            provider_key=v.get("provider_key") or "hvrt",
+            video_provider_key=v.get("provider_key") or "hvrt",
+            video_external_id=vid,
+            external_id=vid or v.get("external_id"),
+            face_external_id=face,
+            t=t0,
+            start_sec=t0,
+            end_sec=t1,
+            duration_sec=(float(t1) - t0) if t1 is not None else None,
+            play_url=play,
+            media_url=poster,
+            thumb_url=poster,
+            original_filename=orig_name or None,
+            teachable=True,
+            paused_frame=True,
+            face_identity=v.get("mb_person_name") or "Unknown",
+            spoken_text=v.get("spoken_text"),
+        )
+        if v.get("spoken_text"):
+            item["preview"] = str(v.get("spoken_text"))[:160]
+            item["detail"] = str(v.get("spoken_text"))
+            item["title"] = str(v.get("label") or v.get("spoken_text") or "Spoken moment")[:80]
+        if isinstance(face_box, dict) and all(
+            isinstance(face_box.get(k), (int, float)) for k in ("x", "y", "w", "h")
+        ):
+            item["face_box"] = {
+                "x": float(face_box["x"]),
+                "y": float(face_box["y"]),
+                "w": float(face_box["w"]),
+                "h": float(face_box["h"]),
+            }
+        video_raw.append(item)
+
+    # Collapse stacked ranges on the same file (same visit / overlapping starts)
+    video_kept: list[dict[str, Any]] = []
+    video_slots: set[tuple[str, int]] = set()
+    pending: dict[str, list[dict[str, Any]]] = {}
+    pending_order: list[str] = []
+    for it in video_raw:
+        vid = str(it.get("video_external_id") or "")
+        if it.get("spoken_text"):
+            if vid not in pending:
+                pending_order.append(vid)
+                pending[vid] = []
+            pending[vid].append(it)
+            continue
+        slot = int(float(it.get("start_sec") or 0) // 2.5)
+        key = (vid, slot)
+        if key in video_slots:
+            continue
+        video_slots.add(key)
+        if vid not in pending:
+            pending_order.append(vid)
+            pending[vid] = []
+        pending[vid].append(it)
+    for vid in pending_order:
+        group = sorted(pending[vid], key=lambda x: float(x.get("start_sec") or 0))
+        merged: list[dict[str, Any]] = []
+        for it in group:
+            if not merged:
+                merged.append(it)
+                continue
+            prev = merged[-1]
+            if it.get("spoken_text") or prev.get("spoken_text"):
+                merged.append(it)
+                continue
+            gap = 8.0
+            if float(it.get("start_sec") or 0) <= float(prev.get("end_sec") or 0) + gap:
+                start = min(float(prev.get("start_sec") or 0), float(it.get("start_sec") or 0))
+                end_a = prev.get("end_sec")
+                end_b = it.get("end_sec")
+                ends = [float(x) for x in (end_a, end_b) if x is not None]
+                end = max(ends) if ends else start
+                prev["start_sec"] = start
+                prev["t"] = start
+                prev["end_sec"] = end
+                prev["duration_sec"] = (end - start) if end is not None else prev.get("duration_sec")
+                prev["preview"] = f"Moment @ {start:.1f}s"
+                play = str(prev.get("play_url") or "")
+                if "t=" in play:
+                    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                    parts = urlparse(play)
+                    q = parse_qs(parts.query, keep_blank_values=True)
+                    q["t"] = [f"{start:.3f}"]
+                    prev["play_url"] = urlunparse(
+                        (
+                            parts.scheme,
+                            parts.netloc,
+                            parts.path,
+                            parts.params,
+                            urlencode(q, doseq=True),
+                            parts.fragment,
+                        )
+                    )
+                poster = f"/library/media/video-poster?video={vid}&t={start:.3f}"
+                prev["thumb_url"] = poster
+                prev["media_url"] = poster
+            else:
+                merged.append(it)
+        video_kept.extend(merged)
+    for it in video_kept:
+        add(it)
+
+    for e in result.get("evidence_hits") or []:
+        kind = str(e.get("evidence_kind") or "document").lower()
+        channel = str(e.get("channel") or "").lower()
+        sms_channels = {"sms", "text", "imessage", "mms", "rcs"}
+        # Map communication-ish kinds to email/sms/calendar for Explore filters
+        if channel in sms_channels or e.get("source") == "sms_export":
+            type_ = "sms"
+        elif kind == "calendar_event" or channel == "calendar":
+            type_ = "calendar"
+        elif kind in ("email", "sms", "text", "communication", "comms"):
+            type_ = "sms" if kind in ("sms", "text") else "email"
+        else:
+            type_ = "document" if kind in ("document", "file") else kind
+        if type_ not in ("email", "sms", "text", "document", "calendar", "recipe"):
+            # Keep as email/text bucket for unknown communication evidence
+            if "mail" in kind or "sms" in kind or "message" in kind:
+                type_ = "email"
+            else:
+                type_ = "document"
+        eid = str(e.get("evidence_id") or "")
+        if not eid:
+            continue
+        sent = _date_prefix(e.get("sent_at"))
+        people = [str(p) for p in (e.get("people") or []) if str(p).strip()]
+        excerpt = str(e.get("excerpt") or "").strip()
+        summary = str(e.get("summary") or "").strip()
+        people_title = " & ".join(people) if people else ""
+        is_sms_item = type_ == "sms" or str(e.get("source") or "") == "sms_export"
+        if is_sms_item:
+            body = excerpt
+            if body and people_title and body.lower() == people_title.lower():
+                body = ""
+            if (
+                not body
+                and summary
+                and people_title
+                and summary.lower() != people_title.lower()
+                and summary.lower() != (people[0] or "").lower()
+            ):
+                body = summary
+            title = (people_title or summary or "Text")[:80]
+            preview = body[:160]
+            detail = body
+        else:
+            title = (summary or kind or "Evidence")[:80]
+            preview = excerpt or summary
+            detail = excerpt or summary
+        item = _item_base(
+            id=f"evidence:{eid}",
+            type_=type_ if type_ != "communication" else "email",
+            title=title,
+            date=sent,
+            undated=not sent,
+            preview=preview,
+            detail=detail,
+            evidence_id=eid,
+            evidence_kind=kind,
+            score=e.get("score"),
+            people=people or None,
+            attachments=e.get("attachments") or None,
+            thread_id=e.get("thread_id"),
+            direction=e.get("direction"),
+        )
+        if is_sms_item:
+            item["preview"] = preview
+            item["detail"] = detail
+            item["title"] = title
+        item["from"] = (
+            e.get("from_header")
+            or people[0]
+            or e.get("thread_id")
+            or "Message"
+        )
+        if e.get("to_header"):
+            item["to"] = e.get("to_header")
+        atts = e.get("attachments") or item.get("attachments") or []
+        item["attachments"] = atts
+        item["attachment_count"] = len(atts) if isinstance(atts, list) else 0
+        if e.get("identity_mapped"):
+            item["identity_mapped"] = e.get("identity_mapped")
+        if e.get("match_total") is not None:
+            item["match_total"] = e.get("match_total")
+            item["truncated"] = bool(e.get("truncated"))
+        if _is_sms_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_text_gallery(result)
+        elif _is_email_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_email_gallery(result)
+        elif _is_calendar_type(item.get("type") or type_):
+            item["gallery_default_hidden"] = not explicit_calendar_gallery(result)
+        add(item)
+
+    for a in result.get("artifact_hits") or []:
+        aid = str(a.get("artifact_id") or a.get("id") or "")
+        if not aid:
+            continue
+        add(
+            _item_base(
+                id=f"artifact:{aid}",
+                type_="artifact",
+                title=str(a.get("label") or a.get("title") or "Artifact")[:80],
+                date=_date_prefix(a.get("created_at") or a.get("date")),
+                undated=not _date_prefix(a.get("created_at") or a.get("date")),
+                preview=str(a.get("summary") or a.get("label") or ""),
+                detail=str(a.get("summary") or ""),
+                artifact_id=aid,
+            )
+        )
+
+    for s in result.get("story_hits") or []:
+        sid = str(s.get("story_id") or "")
+        if not sid:
+            continue
+        taken = str(s.get("taken_at") or "")
+        thumb = str(s.get("thumb_url") or "")
+        photo_id = str(s.get("source_photo_id") or "")
+        if photo_id and not thumb:
+            thumb = f"/library/media/photo/{photo_id}"
+        people = [str(p).strip() for p in (s.get("people") or []) if str(p).strip()]
+        add(
+            _item_base(
+                id=f"story:{sid}",
+                type_="story",
+                title=str(s.get("title") or "Story")[:80],
+                date=taken,
+                undated=not taken,
+                preview=str(s.get("excerpt") or s.get("attribution") or ""),
+                detail=str(s.get("excerpt") or ""),
+                story_id=sid,
+                version=s.get("version"),
+                attribution=s.get("attribution"),
+                media_url=thumb or None,
+                thumb_url=thumb or None,
+                external_id=photo_id or None,
+                people=people or None,
+            )
+        )
+
+    return items
+
+
+def chips_from_ask_result(result: dict[str, Any]) -> list[dict[str, str]]:
+    chips: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(kind: str, label: str) -> None:
+        s = str(label or "").strip()
+        if not s:
+            return
+        key = f"{kind}:{s.lower()}"
+        if key in seen:
+            return
+        seen.add(key)
+        chips.append({"kind": kind, "label": s})
+
+    ctx = result.get("context") or {}
+    slots = ctx.get("plan_slots") or {}
+    plan = result.get("plan") or {}
+    for name in slots.get("person") or ctx.get("person_names") or plan.get("person_names") or []:
+        add("person", str(name))
+    for pl in slots.get("place") or ctx.get("place_names") or plan.get("place_names") or []:
+        add("place", str(pl))
+    for ev in slots.get("event") or ctx.get("event_labels") or plan.get("event_labels") or []:
+        add("event", str(ev))
+    for tr in slots.get("trip") or plan.get("trip_labels") or []:
+        add("trip", str(tr))
+    for th in slots.get("theme") or plan.get("theme_labels") or []:
+        add("theme", str(th))
+    # Temporal chip — prefer holiday/season label over raw year range chip later
+    tlabel = plan.get("temporal_label") or slots.get("time_label")
+    if tlabel:
+        add("time", str(tlabel))
+    elif plan.get("time_start") and plan.get("time_end"):
+        a = str(plan["time_start"])[:4]
+        b = str(plan["time_end"])[:4]
+        add("time", a if a == b else f"{a}–{b}")
+    return chips
+
+
+def _immich_diag_line(provider_status: dict[str, Any] | None) -> str:
+    photo_search = (provider_status or {}).get("photo_search") or {}
+    if not isinstance(photo_search, dict):
+        return ""
+    diag = photo_search.get("immich_diag") or {}
+    if not isinstance(diag, dict) or not diag:
+        return ""
+    last = (diag.get("last") or [{}])[-1] if diag.get("last") else {}
+    if not isinstance(last, dict):
+        last = {}
+    bits = [
+        f"{int(diag.get('calls') or 0)} calls",
+        f"{int(diag.get('fails') or 0)} fail",
+        f"{int(diag.get('total_ms') or 0)}ms",
+    ]
+    if diag.get("circuit"):
+        bits.append("circuit open")
+    if diag.get("source"):
+        bits.append(f"src={diag.get('source')}")
+    if last.get("path"):
+        bits.append(
+            f"last {last.get('method') or 'GET'} {last.get('path')} "
+            f"{last.get('err') or last.get('status')}"
+        )
+    return " Immich diag: " + ", ".join(bits) + "."
+
+
+def client_narrative_pack(pack: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Explore coverage/volume plus a slim life-period outline — not week dumps."""
+    if not isinstance(pack, dict):
+        return pack
+    outline = pack.get("life_period_outline") if isinstance(pack.get("life_period_outline"), dict) else {}
+    slim_eps = []
+    for ep in outline.get("episodes") or []:
+        if not isinstance(ep, dict):
+            continue
+        slim_eps.append(
+            {
+                "theme_or_episode": ep.get("theme_or_episode"),
+                "claims": list(ep.get("claims") or [])[:3],
+                "date_span": ep.get("date_span"),
+                "people": list(ep.get("people") or [])[:8],
+                "significance": ep.get("significance"),
+            }
+        )
+    return {
+        "schema_version": pack.get("schema_version"),
+        "coverage": pack.get("coverage"),
+        "volume": pack.get("volume"),
+        "evidence_used": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "evidence_considered": pack.get("evidence_considered") or pack.get("evidence_used"),
+        "background": pack.get("background") or {},
+        "life_period_outline": {
+            "period": outline.get("period"),
+            "episodes": slim_eps,
+        },
+        "period_understanding": {
+            "label": (pack.get("period_understanding") or {}).get("label")
+            if isinstance(pack.get("period_understanding"), dict)
+            else None,
+        },
+    }
+
+
+def curator_answer_text(result: dict[str, Any]) -> str | None:
+    """I11: tell uses full-pack answer_text. Show keeps count-from-visible unless clarifying."""
+    if result.get("answer_kind") == "clarification":
+        raw = result.get("answer_text")
+        return str(raw).strip() if raw else None
+    plan = result.get("plan") or {}
+    mode = str(plan.get("output_mode") or result.get("output_mode") or "show")
+    # Show / mixed / play: never reuse tell synthesis as Memories copy.
+    if mode == "tell":
+        raw = result.get("answer_text")
+        return str(raw).strip() if raw else None
+    return None
+
+
+def curator_from_items(
+    ask_text: str,
+    items: list[dict[str, Any]],
+    answer_text: str | None,
+    *,
+    provider_status: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Title + summary for Explore curator."""
+    title = (ask_text or "Memories").strip()
+    if len(title) > 64:
+        title = title[:61] + "…"
+    if answer_text and str(answer_text).strip():
+        summary = str(answer_text).strip()
+    else:
+        counts = {
+            "photo": sum(1 for i in items if i.get("type") == "photo"),
+            "video": sum(1 for i in items if i.get("type") == "video"),
+            "sms": sum(1 for i in items if _is_sms_type(i.get("type"))),
+            "email": sum(1 for i in items if i.get("type") == "email"),
+            "calendar": sum(1 for i in items if i.get("type") == "calendar"),
+            "artifact": sum(1 for i in items if i.get("type") == "artifact"),
+            "story": sum(1 for i in items if i.get("type") == "story"),
+        }
+        parts = []
+        if counts["photo"]:
+            parts.append(f"{counts['photo']} photo{'s' if counts['photo'] != 1 else ''}")
+        if counts["video"]:
+            parts.append(
+                f"{counts['video']} video moment{'s' if counts['video'] != 1 else ''}"
+            )
+        if counts["sms"]:
+            parts.append(f"{counts['sms']} text{'s' if counts['sms'] != 1 else ''}")
+        if counts["email"]:
+            parts.append(f"{counts['email']} email{'s' if counts['email'] != 1 else ''}")
+        if counts["calendar"]:
+            parts.append(
+                f"{counts['calendar']} calendar event{'s' if counts['calendar'] != 1 else ''}"
+            )
+        if counts["artifact"]:
+            parts.append(
+                f"{counts['artifact']} artifact{'s' if counts['artifact'] != 1 else ''}"
+            )
+        if counts["story"]:
+            parts.append(f"{counts['story']} stor{'y' if counts['story'] == 1 else 'ies'}")
+        undated = sum(1 for i in items if i.get("undated"))
+        summary = f"I found {len(items)} memories"
+        if parts:
+            summary += ", including " + ", ".join(parts)
+        summary += "."
+        if undated:
+            summary += f" {undated} undated (not placed on the Timeline axis)."
+    # Honest photo-provider disclosure when Ask resolved a person but Immich returned none.
+    # Orchestrator stores health under "photo" and search outcome under "photo_search".
+    photos = sum(1 for i in items if i.get("type") == "photo")
+    if photos == 0 and provider_status:
+        photo_health = provider_status.get("photo") or {}
+        photo_search = provider_status.get("photo_search") or {}
+        if not isinstance(photo_health, dict):
+            photo_health = {}
+        if not isinstance(photo_search, dict):
+            photo_search = {}
+        search_detail = str(photo_search.get("detail") or "").strip()
+        health_detail = str(photo_health.get("detail") or "").strip()
+        if photo_search.get("unavailable"):
+            summary += (
+                f" Photos unavailable from Immich "
+                f"({search_detail or health_detail or 'provider unhealthy'})."
+            )
+        elif search_detail and search_detail not in ("not_requested",):
+            # Ping can fail while /people still works — don't hide the search detail.
+            summary += f" Immich photos: {search_detail}."
+        elif photo_health and photo_health.get("ok") is False:
+            summary += (
+                f" Photos unavailable from Immich "
+                f"({health_detail or 'provider unhealthy'})."
+            )
+        summary += _immich_diag_line(provider_status)
+    return title, summary
+
+
+def range_chip_for_items(items: list[dict[str, Any]]) -> dict[str, str] | None:
+    dates = sorted(
+        {
+            str(i.get("date"))[:4]
+            for i in items
+            if i.get("date") and not i.get("undated") and len(str(i.get("date"))) >= 4
+        }
+    )
+    if not dates:
+        return None
+    if dates[0] == dates[-1]:
+        return {"kind": "range", "label": dates[0]}
+    return {"kind": "range", "label": f"{dates[0]}–{dates[-1]}"}
+
+
+def _sms_attach_windows(plan: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Prefer holiday/event windows. Never treat a lifetime span as the SMS set."""
+    raw = plan.get("temporal_windows") or ()
+    out: list[tuple[str, str]] = []
+    for w in raw:
+        if not isinstance(w, (list, tuple)) or len(w) < 2:
+            continue
+        a, b = str(w[0] or "")[:10], str(w[1] or "")[:10]
+        if a and b:
+            out.append((a, b))
+    if out:
+        return tuple(out)
+    blob = " ".join(
+        [
+            str(plan.get("temporal_label") or ""),
+            " ".join(str(x) for x in (plan.get("notes") or ())),
+            str(plan.get("original_ask") or ""),
+            str(plan.get("effective_ask") or ""),
+        ]
+    ).lower()
+    if any(m in blob for m in _HOLIDAY_WINDOW_MARKERS):
+        return ()
+    t0, t1 = plan.get("time_start"), plan.get("time_end")
+    if t0 and t1:
+        return ((str(t0)[:10], str(t1)[:10]),)
+    return ()
+
+
+def _attach_hidden_sms(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+    show_sms: bool,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Keep SMS eligible for Add texts without dumping cards on broad memory asks.
+
+    Gallery visibility is not evidence exclusion. Caps hidden cards so Explore
+    stays usable; full retrieve/count remains on the SMS Ask path.
+    """
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    sms_already = [i for i in items if _is_sms_type(i.get("type"))]
+    if show_sms and sms_already:
+        for i in sms_already:
+            i["gallery_default_hidden"] = False
+        return items, len(sms_already), 0
+    if not show_sms:
+        # Q3: do not hydrate 80k SMS rows on a broad person Ask (FlightSim 30s+).
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        return items, len(sms_already), len(sms_already)
+
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    if not people and not pids and not sms_already:
+        hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
+        return items, len(sms_already), hidden
+
+    tw = _sms_attach_windows(plan)
+    holiday_blob = " ".join(
+        [
+            ask_text or "",
+            str(plan.get("temporal_label") or ""),
+            " ".join(str(x) for x in (plan.get("notes") or ())),
+        ]
+    ).lower()
+    holiday_ask = any(m in holiday_blob for m in _HOLIDAY_WINDOW_MARKERS)
+    # Retrieve already scoped holiday SMS. Do not pad with the person-wide cap
+    # (Peggy Christmas curator was 500 all-time texts).
+    if sms_already and (tw or holiday_ask):
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        return items, len(sms_already), len(sms_already)
+    if holiday_ask and not tw:
+        for i in sms_already:
+            i["gallery_default_hidden"] = True
+        hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
+        return items, len(sms_already), hidden
+
+    extra: list[dict[str, Any]] = []
+    match_total = 0
+    try:
+        from memorybox.ask.retrieve import search_sms_messages
+        from memorybox.planner import QueryPlan
+
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
+        sms_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=True,
+            want_calendar=False,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
+            time_start=t0,
+            time_end=t1,
+            temporal_windows=tw,
+            notes=("gallery_sms_eligible",),
+        )
+        cap = _VISIBLE_SMS_GALLERY_CAP if show_sms else _HIDDEN_SMS_CARD_SAMPLE
+        hits = search_sms_messages(sms_plan, limit=cap)
+        if hits:
+            match_total = int(getattr(hits[0], "match_total", None) or len(hits))
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ()},
+            }
+        )
+        for it in mapped:
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = True
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+
+    out = list(items) + extra
+    if not show_sms:
+        for i in out:
+            if _is_sms_type(i.get("type")):
+                i["gallery_default_hidden"] = True
+    sms_n = sum(1 for i in out if _is_sms_type(i.get("type")))
+    hidden_n = sum(
+        1
+        for i in out
+        if _is_sms_type(i.get("type")) and i.get("gallery_default_hidden")
+    )
+    if match_total > sms_n:
+        sms_n = match_total
+        if not show_sms:
+            hidden_n = match_total
+    return out, sms_n, hidden_n
+
+
+def _attach_visible_email(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+    show_email: bool,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Person-scoped Find keeps emails eligible. Q3: hidden unless presentation on."""
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    already = [i for i in items if _is_email_type(i.get("type"))]
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    if already:
+        for i in already:
+            i["gallery_default_hidden"] = not show_email
+        match_total = 0
+        for e in result.get("evidence_hits") or []:
+            if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
+                match_total = max(match_total, int(e.get("match_total") or 0))
+        return items, match_total or len(already), match_total
+    if not show_email:
+        return items, 0, 0
+    if not people and not pids:
+        return items, 0, 0
+
+    extra: list[dict[str, Any]] = []
+    match_total = 0
+    try:
+        from memorybox.ask.retrieve import search_email_messages
+        from memorybox.planner import QueryPlan
+
+        tw = _sms_attach_windows(plan)
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
+        mail_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=True,
+            want_calendar=False,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
+            time_start=t0,
+            time_end=t1,
+            temporal_windows=tw,
+            notes=("gallery_email_eligible", "complete_comm_retrieve", "want_email_modality"),
+        )
+        hits = search_email_messages(mail_plan, limit=_VISIBLE_EMAIL_GALLERY_CAP)
+        if hits:
+            match_total = int(getattr(hits[0], "match_total", None) or len(hits))
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ("want_email_modality",) if show_email else ()},
+            }
+        )
+        for it in mapped:
+            if not _is_email_type(it.get("type")):
+                continue
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = not show_email
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+
+    out = list(items) + extra
+    if not show_email:
+        for i in out:
+            if _is_email_type(i.get("type")):
+                i["gallery_default_hidden"] = True
+    email_n = sum(1 for i in out if _is_email_type(i.get("type")))
+    if match_total > email_n:
+        email_n = match_total
+    return out, email_n, match_total
+
+
+def _attach_calendar(
+    items: list[dict[str, Any]],
+    result: dict[str, Any],
+    *,
+    ask_text: str,
+    show_calendar: bool,
+) -> tuple[list[dict[str, Any]], int]:
+    """Eligible calendar_event rows; Q3 hidden unless Calendar presentation is on."""
+    existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
+    already = [i for i in items if _is_calendar_type(i.get("type"))]
+    if already:
+        for i in already:
+            i["gallery_default_hidden"] = not show_calendar
+        return items, len(already)
+    if not show_calendar:
+        return items, 0
+    plan = result.get("plan") or {}
+    people = list(plan.get("person_names") or [])
+    pids = list(plan.get("person_ids") or [])
+    extra: list[dict[str, Any]] = []
+    try:
+        from memorybox.ask.retrieve import search_calendar_events
+        from memorybox.planner import QueryPlan
+
+        tw = _sms_attach_windows(plan)
+        t0 = tw[0][0] if tw else plan.get("time_start")
+        t1 = tw[-1][1] if tw else plan.get("time_end")
+        cal_plan = QueryPlan(
+            original_ask=ask_text or plan.get("original_ask") or "",
+            effective_ask=plan.get("effective_ask") or ask_text or "",
+            is_followup=False,
+            want_photo=False,
+            want_communication=False,
+            want_calendar=True,
+            person_names=tuple(people),
+            person_ids=tuple(pids),
+            place_names=tuple(plan.get("place_names") or ()),
+            time_start=t0,
+            time_end=t1,
+            temporal_windows=tw,
+            notes=("gallery_calendar_eligible",),
+        )
+        hits = search_calendar_events(cal_plan, limit=_VISIBLE_CALENDAR_GALLERY_CAP)
+        mapped = items_from_ask_result(
+            {
+                "evidence_hits": [h.to_dict() for h in hits],
+                "plan": {"notes": ("want_calendar_modality",) if show_calendar else ()},
+            }
+        )
+        for it in mapped:
+            if not _is_calendar_type(it.get("type")):
+                continue
+            eid = str(it.get("evidence_id") or "")
+            if eid and eid in existing_ids:
+                continue
+            it["gallery_default_hidden"] = not show_calendar
+            extra.append(it)
+            if eid:
+                existing_ids.add(eid)
+    except Exception:  # noqa: BLE001
+        extra = []
+    out = list(items) + extra
+    if not show_calendar:
+        for i in out:
+            if _is_calendar_type(i.get("type")):
+                i["gallery_default_hidden"] = True
+    return out, sum(1 for i in out if _is_calendar_type(i.get("type")))
+
+
+def build_explore_find(
+    *,
+    ask_text: str,
+    session_id: str | None = None,
+    orchestrator: Any | None = None,
+    present: str | None = None,
+) -> dict[str, Any]:
+    """Run Ask and return an Explore-ready payload (same shape as demo_payload)."""
+    text = (ask_text or "").strip()
+    present_l = str(present or "").strip().lower()
+    if not text:
+        return {
+            "ok": True,
+            "demo": False,
+            "live": True,
+            "ask_text": "",
+            "title": "What would you like to see?",
+            "summary": "Ask MemoryBox about a person, place, time, or kind of memory.",
+            "chips": [],
+            "items": [],
+            "counts": {},
+            "session_id": session_id,
+            "provider_status": {},
+        }
+
+    if orchestrator is None:
+        from memorybox.ask.orchestrator import AskOrchestrator
+        from memorybox.context import default_context_store
+
+        orchestrator = AskOrchestrator(store=default_context_store)
+
+    result_obj = orchestrator.ask(text, session_id=session_id)
+    result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
+    plan_early = result.get("plan") or {}
+    tell_mode = str(plan_early.get("output_mode") or result.get("output_mode") or "show") == "tell"
+    show_sms = explicit_text_gallery(result, text)
+    show_email = explicit_email_gallery(result, text)
+    show_calendar = explicit_calendar_gallery(result, text)
+    clarifying = (
+        result.get("answer_kind") == "clarification"
+        or plan_early.get("requires_clarification")
+    )
+    if plan_early.get("want_cross_source") and not clarifying:
+        show_sms = True
+        show_email = True
+        show_calendar = True
+    if present_l in {"communications", "comms", "email", "sms", "texts"}:
+        if present_l in {"communications", "comms"}:
+            show_sms = True
+            show_email = True
+        elif present_l in {"sms", "texts"}:
+            show_sms = True
+            show_email = False
+        elif present_l == "email":
+            show_email = True
+            show_sms = False
+    if present_l in {"calendar", "cal"}:
+        show_calendar = True
+    result_for_items = result
+    if tell_mode and not show_sms and not show_email and not show_calendar:
+        result_for_items = dict(result)
+        result_for_items["evidence_hits"] = []
+    items = items_from_ask_result(result_for_items)
+    if tell_mode:
+        items = items[:_TELL_GALLERY_ITEM_CAP]
+    sms_available = sms_hidden = 0
+    email_available = email_match_total = 0
+    calendar_available = 0
+    if not tell_mode or show_sms or show_email or show_calendar:
+        items, sms_available, sms_hidden = _attach_hidden_sms(
+            items, result, ask_text=text, show_sms=show_sms
+        )
+        items, email_available, email_match_total = _attach_visible_email(
+            items, result, ask_text=text, show_email=show_email
+        )
+        items, calendar_available = _attach_calendar(
+            items, result, ask_text=text, show_calendar=show_calendar
+        )
+    visible_items = [
+        i
+        for i in items
+        if not (
+            i.get("gallery_default_hidden")
+            and (
+                _is_sms_type(i.get("type"))
+                or _is_email_type(i.get("type"))
+                or _is_calendar_type(i.get("type"))
+            )
+        )
+    ]
+    plan = result.get("plan") or {}
+    tell_mode = str(plan.get("output_mode") or result.get("output_mode") or "show") == "tell"
+    # All-ask curator counts the archive (photos + hidden texts + video).
+    # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).
+    # I11 tell: use orchestrator synthesis from the retrieved pack, not visible tiles.
+    answer_for_curator = curator_answer_text(result)
+    title, summary = curator_from_items(
+        text,
+        visible_items,
+        answer_for_curator,
+        provider_status=result.get("provider_status") or {},
+    )
+    if not tell_mode:
+        # A new show/mixed Ask replaces curator; do not keep prior tell prose.
+        answer_for_curator = None
+    if show_email and not show_sms and not email_available and not tell_mode:
+        summary = (
+            (summary or "").rstrip()
+            + " 0 emails matched this person (Person id, confirmed address, or full display name)."
+        ).strip()
+    if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
+        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
+        if plan_mode != "tell":
+            summary = (
+                (summary or "").rstrip()
+                + (
+                    f" {sms_available} text message(s) are in the archive "
+                    "(hidden in Gallery — say Add texts to show them)."
+                )
+            ).strip()
+    chips = chips_from_ask_result(result)
+    # Prefer plan temporal chip over item-derived year range when present
+    if not any(c.get("kind") == "time" for c in chips):
+        rc = range_chip_for_items(visible_items)
+        if rc:
+            chips.append(rc)
+
+    counts: dict[str, int] = {}
+    for i in visible_items:
+        t = str(i.get("type") or "other")
+        counts[t] = counts.get(t, 0) + 1
+    counts["undated"] = sum(1 for i in visible_items if i.get("undated"))
+    counts["sms_available"] = sms_available
+    counts["sms_hidden"] = sms_hidden
+    sms_match_total = 0
+    sms_truncated = False
+    for e in result.get("evidence_hits") or []:
+        if e.get("match_total"):
+            sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
+        if e.get("truncated"):
+            sms_truncated = True
+    if sms_truncated and sms_match_total and not tell_mode:
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" Showing {counts.get('sms', 0) or sms_available} of "
+                f"{sms_match_total} matching texts (every year kept on the Timeline)."
+            )
+        ).strip()
+    if email_match_total > (counts.get("email") or 0) and not tell_mode:
+        shown = counts.get("email") or 0
+        summary = (
+            (summary or "").rstrip()
+            + (
+                f" Showing {shown} of {email_match_total} emails involving this person "
+                "(year-fair sample; use Email/Text to focus on mail)."
+            )
+        ).strip()
+    counts["email_available"] = email_available
+    counts["calendar_available"] = calendar_available
+
+    coverage = result.get("coverage") if isinstance(result.get("coverage"), dict) else None
+    if coverage and coverage.get("summary") and not tell_mode:
+        summary = (
+            str(coverage.get("summary") or "").strip() + " " + (summary or "")
+        ).strip()
+    place_names = list(plan.get("place_names") or [])
+    if not place_names:
+        slots = ((result.get("context") or {}).get("plan_slots") or {}).get("place") or []
+        place_names = [str(p) for p in slots if p]
+    place_match = None
+    if place_names:
+        from memorybox.ask.place_match import place_match_spec
+
+        place_match = place_match_spec(tuple(place_names))
+    photo_search = ((result.get("provider_status") or {}).get("photo_search") or {})
+    if isinstance(photo_search, dict) and photo_search.get("place_filter"):
+        before_n = int(photo_search.get("before_place_filter") or 0)
+        after_n = int(photo_search.get("after_place_filter") or 0)
+        if before_n > after_n:
+            dropped = before_n - after_n
+            label = (place_names[0] if place_names else "that place")
+            extra = (
+                f" Gallery is {label} photos only — {after_n} located there, "
+                f"{dropped} from this person had no {label} location."
+            )
+            if extra.strip() not in (summary or ""):
+                summary = ((summary or "").rstrip() + extra).strip()
+    return {
+        "ok": True,
+        "demo": False,
+        "live": True,
+        "fixture_id": None,
+        "ask_text": text,
+        "title": title,
+        "summary": summary,
+        "narrative_text": answer_for_curator if tell_mode else None,
+        "chips": chips,
+        "items": items,
+        "counts": counts,
+        "session_id": result.get("session_id") or session_id,
+        "answer_kind": result.get("answer_kind"),
+        "missing_disclosure": result.get("missing_disclosure"),
+        "provider_status": result.get("provider_status") or {},
+        "plan": plan,
+        "context": result.get("context"),
+        "coverage": coverage,
+        # Shared exploration hints for Gallery/Timeline/Map sync
+        "explore_state": {
+            "person_names": list(plan.get("person_names") or []),
+            "place_names": place_names,
+            "place_match": place_match,
+            "time_start": plan.get("time_start"),
+            "time_end": plan.get("time_end"),
+            "temporal_windows": list(plan.get("temporal_windows") or []),
+            "temporal_label": plan.get("temporal_label"),
+            "visual_scope": plan.get("visual_scope"),
+            "life_event_kind": plan.get("life_event_kind"),
+            "life_event_years": list(plan.get("life_event_years") or []),
+            "gallery_show_sms": show_sms,
+            "gallery_show_email": show_email,
+            "gallery_show_calendar": show_calendar,
+            "prefer_story_filter": bool(
+                plan.get("want_story")
+                and re.search(r"(?i)\bstor(?:y|ies|ied|iest)\b", text or "")
+            ),
+            "sms_available": sms_available,
+            "sms_hidden": sms_hidden,
+            "sms_match_total": sms_match_total,
+            "sms_truncated": sms_truncated,
+            "email_available": email_available,
+            "email_match_total": email_match_total,
+            "calendar_available": calendar_available,
+            "output_mode": plan.get("output_mode") or "show",
+        },
+        "output_mode": plan.get("output_mode") or "show",
+        "answer_text": result.get("answer_text"),
+        "statements": result.get("statements") or [],
+        "citations": result.get("citations") or [],
+        "narrative_pack": client_narrative_pack(result.get("narrative_pack")),
+        "narration_unavailable": bool(result.get("narration_unavailable")),
+        "evidence_used": ((result.get("narrative_pack") or {}).get("evidence_used") if isinstance(result.get("narrative_pack"), dict) else None),
+        "living_view": persistable_view(
+            original_ask=text,
+            plan=plan,
+            presentation={
+                "gallery_show_sms": show_sms,
+                "gallery_show_email": show_email,
+                "gallery_show_calendar": show_calendar,
+                "visual_scope": plan.get("visual_scope"),
+            },
+        ),
+    }

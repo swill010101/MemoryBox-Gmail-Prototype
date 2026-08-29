@@ -1,0 +1,1166 @@
+"""Acceptance for Person communication-identity expansion (email)."""
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import patch
+
+from memorybox.ask.retrieve import (
+    _payload_email_addresses,
+    _person_scoped_comm_where,
+    _sql_confirmed_email_addrs,
+)
+from memorybox.person.comm_address_index import _quoted_body_address_displays
+from memorybox.person.comm_identity import (
+    _display_matches_person,
+    attach_known_email_if_corroborated,
+    corroborate_email_candidate,
+    expand_person_communication_identities,
+)
+from memorybox.person.phone_map import normalize_handle
+
+
+def _check(name: str, ok: bool, checks: list[str], problems: list[str], *, detail: Any = None) -> None:
+    checks.append(name)
+    if not ok:
+        problems.append(f"{name}: {detail}")
+
+
+def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any]:
+    checks: list[str] = []
+    problems: list[str] = []
+
+    # Display-name matching policy
+    forms = ["peggy george", "margaret george"]
+    _check(
+        "normalize_extracts_angle_addr",
+        normalize_handle("Peg Legg <peggo01417@hotmail.com>") == "peggo01417@hotmail.com",
+        checks,
+        problems,
+    )
+    _check(
+        "normalize_bare_email",
+        normalize_handle("peggo01417@hotmail.com") == "peggo01417@hotmail.com",
+        checks,
+        problems,
+    )
+    _check(
+        "full_name_matches",
+        _display_matches_person("Peggy George", forms) in {"full", "alias_full"},
+        checks,
+        problems,
+    )
+    _check(
+        "alias_full_matches",
+        _display_matches_person("Margaret George", forms) is not None,
+        checks,
+        problems,
+    )
+    _check(
+        "first_name_only_rejected",
+        _display_matches_person("Peggy", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "peg_legg_alias_matches",
+        _display_matches_person("Peg Legg", forms + ["peg legg"]) == "alias_full",
+        checks,
+        problems,
+    )
+    _check(
+        "peg_legg_nickname_matches_peggy_george",
+        _display_matches_person("Peg Legg", forms) == "nickname_full",
+        checks,
+        problems,
+    )
+    _check(
+        "unrelated_name_rejected",
+        _display_matches_person("Tom Will", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "concatenated_to_list_rejected",
+        _display_matches_person("Peggy George, Tom Will", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "couple_mailbox_rejected",
+        _display_matches_person("Rick & Peggy George", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "address_as_display_rejected",
+        _display_matches_person("EdWill@aol.com, Peggy George", forms) is None,
+        checks,
+        problems,
+    )
+    _check(
+        "leading_comma_display_cleaned",
+        _display_matches_person(", Peggy George", forms) in {"full", "alias_full"},
+        checks,
+        problems,
+    )
+    _check(
+        "last_first_display_matches",
+        _display_matches_person("George, Peggy", forms) in {"full", "alias_full"},
+        checks,
+        problems,
+    )
+
+    # SQL scope includes confirmed emails (common retrieve path)
+    sql, params = _sql_confirmed_email_addrs({"peggo01417@hotmail.com"})
+    _check("email_addr_sql_not_false", sql != "FALSE", checks, problems, detail=sql)
+    _check(
+        "email_addr_sql_header_only",
+        "from" in sql and "body_text" not in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_handles_to_json_array",
+        "payload_json->'to')::text" in sql.replace(" ", "")
+        or "(payload_json->'to')::text" in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_not_broken_to_arrow",
+        "payload_json->>'to'" not in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_parsed_as_text_not_unnest",
+        "from_parsed" in sql
+        and "jsonb_array_elements" not in sql
+        and "(payload_json->'from_parsed')::text" in sql.replace(" ", ""),
+        checks,
+        problems,
+        detail=sql,
+    )
+    _check(
+        "email_addr_sql_excludes_people_json",
+        "people" not in sql,
+        checks,
+        problems,
+        detail=sql,
+    )
+    where, wparams, scope = _person_scoped_comm_where(
+        channel_sql="true",
+        win_sql="true",
+        win_params=[],
+        person_names=[],
+        person_ids={"person-peggy"},
+        header_fallback=False,
+        confirmed_emails={"peggo01417@hotmail.com"},
+    )
+    _check("where_not_none_with_email", where is not None, checks, problems, detail=scope)
+    _check(
+        "scope_includes_confirmed_email_headers",
+        "confirmed_email_headers" in scope,
+        checks,
+        problems,
+        detail=scope,
+    )
+    _check(
+        "scope_includes_person_ids_gin",
+        "person_ids_gin" in scope,
+        checks,
+        problems,
+        detail=scope,
+    )
+    raw_only = _payload_email_addresses(
+        {
+            "from": "Peg Legg <peggo01417@hotmail.com>",
+            "to": ["owner@example.com"],
+            "from_parsed": [],
+            "to_parsed": [],
+            "cc_parsed": [],
+        }
+    )
+    _check(
+        "payload_addrs_from_raw_headers",
+        "peggo01417@hotmail.com" in raw_only,
+        checks,
+        problems,
+        detail=raw_only,
+    )
+    people_only = _payload_email_addresses(
+        {
+            "from": "",
+            "to": [],
+            "from_parsed": [],
+            "to_parsed": [],
+            "cc_parsed": [],
+            "people": ["Tom Will <swill01@gmail.com>"],
+        }
+    )
+    _check(
+        "payload_addrs_ignore_people_json",
+        "swill01@gmail.com" not in people_only,
+        checks,
+        problems,
+        detail=people_only,
+    )
+
+    # Empty identity probe still fail-closed without ids/emails
+    where_empty, _, scope_empty = _person_scoped_comm_where(
+        channel_sql="true",
+        win_sql="true",
+        win_params=[],
+        person_names=["peggy"],
+        person_ids=set(),
+        header_fallback=False,
+        confirmed_emails=None,
+    )
+    _check(
+        "email_without_ids_or_addrs_skips_scan",
+        where_empty is None and scope_empty == "identity_probe_empty",
+        checks,
+        problems,
+        detail=scope_empty,
+    )
+
+    # Corroboration: peggo417 with full display name, unclaimed
+    cand = {
+        "address": "peggo417@hotmail.com",
+        "display_names": {"Peggy George": 3},
+        "occurrences": 3,
+        "evidence_ids": ["e1", "e2", "e3"],
+        "header_fields": ["from"],
+        "match_strength": "full",
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity._people_sharing_first_name",
+        return_value=["person-peggy"],
+    ), patch(
+        "memorybox.person.comm_identity.connection"
+    ) as conn_ctx:
+        # full display name unique
+        conn = conn_ctx.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.return_value = [
+            {"id": "person-peggy", "display_name": "Peggy George"}
+        ]
+        decision = corroborate_email_candidate("person-peggy", cand)
+    _check(
+        "peggo417_accepted_with_full_name",
+        bool(decision.get("accepted")),
+        checks,
+        problems,
+        detail=decision,
+    )
+    _check(
+        "peggo417_reason_corroborated",
+        decision.get("reason") == "corroborated_header_identity",
+        checks,
+        problems,
+        detail=decision,
+    )
+
+    # Ambiguous: address claimed by another person
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by",
+        return_value=["person-other"],
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+        },
+    ):
+        rejected = corroborate_email_candidate("person-peggy", cand)
+    _check(
+        "claimed_address_rejected",
+        not rejected.get("accepted")
+        and rejected.get("reason") == "address_claimed_by_other_person",
+        checks,
+        problems,
+        detail=rejected,
+    )
+
+    # First-name-only candidate rejected even if occurrences high
+    weak = {
+        "address": "someone@example.com",
+        "display_names": {"Peggy": 10},
+        "occurrences": 10,
+        "evidence_ids": ["e9"],
+        "header_fields": ["from"],
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+        },
+    ):
+        weak_dec = corroborate_email_candidate("person-peggy", weak)
+    _check(
+        "first_name_header_not_enough",
+        not weak_dec.get("accepted"),
+        checks,
+        problems,
+        detail=weak_dec,
+    )
+
+    # Nickname header Peg Legg + peggo417 → Peggy George when unique multi-token Person
+    nick_cand = {
+        "address": "peggo417@hotmail.com",
+        "display_names": {"Peg Legg": 4},
+        "occurrences": 4,
+        "evidence_ids": ["e10", "e11"],
+        "header_fields": ["from"],
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity.connection"
+    ) as conn_ctx:
+        conn = conn_ctx.return_value.__enter__.return_value
+        # first call: sibling rows for nickname family; later: full display unique
+        conn.execute.return_value.fetchall.side_effect = [
+            [
+                {"id": "person-peggy-stub", "display_name": "Peggy"},
+                {"id": "person-peggy-george", "display_name": "Peggy George"},
+            ],
+            [{"id": "person-peggy-george", "display_name": "Peg Legg"}],
+        ]
+        nick_dec = corroborate_email_candidate("person-peggy-george", nick_cand)
+    _check(
+        "peg_legg_nickname_is_discovery_only",
+        not nick_dec.get("accepted")
+        and nick_dec.get("reason") == "nickname_discovery_only",
+        checks,
+        problems,
+        detail=nick_dec,
+    )
+    _check(
+        "peg_legg_match_strength_nickname",
+        nick_dec.get("match_strength") == "nickname_full",
+        checks,
+        problems,
+        detail=nick_dec,
+    )
+
+    quoted_only = {
+        "address": "someone@example.com",
+        "display_names": {"Peggy George": 8},
+        "occurrences": 8,
+        "evidence_ids": ["q1"],
+        "header_fields": ["quoted_from", "quoted_to"],
+    }
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ):
+        quoted_dec = corroborate_email_candidate("person-peggy", quoted_only)
+    _check(
+        "quoted_body_cannot_confirm_identity",
+        not quoted_dec.get("accepted")
+        and quoted_dec.get("reason") == "quoted_body_not_sufficient_to_confirm",
+        checks,
+        problems,
+        detail=quoted_dec,
+    )
+    body = (
+        "Thanks!\n\n"
+        "-----Original Message-----\n"
+        "From: Peg Legg <peggo417@hotmail.com>\n"
+        "Cc: Peggy George <peggo417@hotmail.com>\n"
+        "Subject: hi\n"
+    )
+    qhits = _quoted_body_address_displays(body, "peggo417@hotmail.com")
+    q_names = {_norm for _norm in (
+        (h.get("display_name") or "").strip().lower() for h in qhits
+    )}
+    _check(
+        "quoted_body_finds_peg_legg",
+        any("peg legg" == (h.get("display_name") or "").strip().lower() for h in qhits),
+        checks,
+        problems,
+        detail=qhits,
+    )
+    _check(
+        "quoted_body_finds_peggy_george",
+        any(
+            "peggy george" == (h.get("display_name") or "").strip().lower() for h in qhits
+        ),
+        checks,
+        problems,
+        detail=qhits,
+    )
+    retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
+    inv_src = open("memorybox/person/comm_address_index.py", encoding="utf-8").read()
+    inv_fn = inv_src[
+        inv_src.find("def inventory_email_address") : inv_src.find(
+            "\ndef ledger_identity_view"
+        )
+    ]
+    _check(
+        "inventory_sql_is_headers_only",
+        "payload_json->>'body_text'" not in inv_fn.split("for r in rows", 1)[0]
+        and "jsonb_array_elements" not in inv_fn
+        and "SET LOCAL statement_timeout" in inv_fn,
+        checks,
+        problems,
+        detail="probe inventory must not LIKE body_text or unnest JSON",
+    )
+    _check(
+        "retrieve_has_no_peggo_hardcode",
+        "peggo417" not in retrieve_src and "peggo01417" not in retrieve_src,
+        checks,
+        problems,
+    )
+    from memorybox.person import comm_identity as ci
+
+    expand_src = open("memorybox/person/comm_identity.py", encoding="utf-8").read()
+    idx = expand_src.find("def expand_emails_for_retrieve")
+    nxt = expand_src.find("\ndef ", idx + 10)
+    hook = expand_src[idx:nxt]
+    _check(
+        "expand_hook_is_address_centric",
+        "discover" in (ci.expand_emails_for_retrieve.__doc__ or "").lower()
+        and "resolve" in (ci.expand_emails_for_retrieve.__doc__ or "").lower()
+        and "retrieve" in (ci.expand_emails_for_retrieve.__doc__ or "").lower(),
+        checks,
+        problems,
+        detail=ci.expand_emails_for_retrieve.__doc__,
+    )
+    _check(
+        "expand_retrieve_does_not_scan_evidence",
+        "inventory_email_address" not in hook
+        and "find_addresses_for_person_forms" not in hook
+        and "discover_email_candidates_from_archive" not in hook
+        and "scan_archive=False" in hook
+        and "discover=False" in hook
+        and "backfill=False" in hook
+        and "persist=False" in hook,
+        checks,
+        problems,
+        detail=hook[:800],
+    )
+
+    # End-to-end offline: Peg Legg structured + Peggy George quoted on peggo417
+    # → nickname discover → corroborate → confirmed-email SQL would retrieve.
+    from memorybox.person.comm_address_index import find_addresses_for_person_forms
+    from memorybox.person.comm_identity import _header_records
+
+    archive_payload = {
+        "evidence_channel": "email",
+        "from": "Peg Legg <peggo417@hotmail.com>",
+        "to": ["Tom Will <swill01@gmail.com>"],
+        "cc": [],
+        "from_parsed": [
+            {
+                "display_name": "Peg Legg",
+                "address": "peggo417@hotmail.com",
+                "normalized": "peggo417@hotmail.com",
+            }
+        ],
+        "to_parsed": [
+            {
+                "display_name": "Tom Will",
+                "address": "swill01@gmail.com",
+                "normalized": "swill01@gmail.com",
+            }
+        ],
+        "cc_parsed": [],
+        "people": ["Peg Legg", "Tom Will"],
+        "body_text": (
+            "Thanks\n-----Original Message-----\n"
+            "From: someone\n"
+            "Cc: Peggy George <peggo417@hotmail.com>\n"
+        ),
+    }
+    recs = _header_records(archive_payload)
+    _check(
+        "structured_header_has_peg_legg_not_body",
+        any(
+            r["address"] == "peggo417@hotmail.com"
+            and (r.get("display_name") or "").lower() == "peg legg"
+            for r in recs
+        )
+        and not any(
+            (r.get("display_name") or "").lower() == "peggy george" for r in recs
+        ),
+        checks,
+        problems,
+        detail=recs,
+    )
+    concat_payload = {
+        "evidence_channel": "email",
+        "from": "Amazon <noreply@amazon.com>",
+        "to": "EdWill@aol.com, Peggy George <peggo417@hotmail.com>, Tom Will <tom.will@icloud.com>",
+        "cc": [],
+        "people": ["Peg Legg", "Tom Will", "Peggy George"],
+    }
+    concat_recs = _header_records(concat_payload)
+    tom_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "tom.will@icloud.com"),
+        None,
+    )
+    amazon_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "noreply@amazon.com"),
+        None,
+    )
+    peg_dn = next(
+        (r.get("display_name") or "" for r in concat_recs if r["address"] == "peggo417@hotmail.com"),
+        None,
+    )
+    _check(
+        "mailbox_display_not_prior_recipients",
+        (tom_dn or "").lower() == "tom will"
+        and "peggy" not in (tom_dn or "").lower()
+        and (peg_dn or "").lower() == "peggy george"
+        and "peggy" not in (amazon_dn or "").lower(),
+        checks,
+        problems,
+        detail=concat_recs,
+    )
+    q_only = _quoted_body_address_displays(
+        str(archive_payload["body_text"]), "peggo417@hotmail.com"
+    )
+    _check(
+        "peggy_george_only_in_quoted_body_for_fixture",
+        any(
+            (h.get("display_name") or "").strip().lower() == "peggy george"
+            for h in q_only
+        ),
+        checks,
+        problems,
+        detail=q_only,
+    )
+
+    class _Rows:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            # discover SQL
+            if "LIKE ANY" in str(sql) or "like any" in str(sql).lower():
+                return _Rows([{"id": "ev-peg", "payload_json": archive_payload}])
+            # sibling / uniqueness queries
+            if "split_part" in str(sql):
+                return _Rows(
+                    [
+                        {"id": "person-peggy-stub", "display_name": "Peggy"},
+                        {"id": "person-peggy-george", "display_name": "Peggy George"},
+                    ]
+                )
+            if "lower(display_name)" in str(sql):
+                return _Rows(
+                    [{"id": "person-peggy-george", "display_name": "Peggy George"}]
+                )
+            return _Rows([])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_address_index.connection", return_value=_Conn()
+    ), patch(
+        "memorybox.person.comm_identity.connection", return_value=_Conn()
+    ), patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ):
+        found = find_addresses_for_person_forms(["peggy george"])
+        peg_addrs = [c for c in found if c.get("address") == "peggo417@hotmail.com"]
+        _check(
+            "discover_finds_peggo417_via_peg_legg_structured",
+            bool(peg_addrs),
+            checks,
+            problems,
+            detail=found,
+        )
+        _check(
+            "discover_does_not_attach_corecipient_swill01",
+            not any(
+                normalize_handle(str(c.get("address") or "")) == "swill01@gmail.com"
+                for c in found
+            ),
+            checks,
+            problems,
+            detail=found,
+        )
+        from memorybox.person.comm_identity import discover_email_candidates_from_archive
+
+        discovered = discover_email_candidates_from_archive(
+            "person-peggy-george", known_forms=["peggy george"]
+        )
+        _check(
+            "archive_discover_skips_people_json_corecipients",
+            any(c.get("address") == "peggo417@hotmail.com" for c in discovered)
+            and not any(c.get("address") == "swill01@gmail.com" for c in discovered),
+            checks,
+            problems,
+            detail=discovered,
+        )
+        if peg_addrs:
+            dec = corroborate_email_candidate(
+                "person-peggy-george", peg_addrs[0], known_forms=["peggy george"]
+            )
+            _check(
+                "nickname_discover_does_not_confirm_peggo417",
+                not dec.get("accepted")
+                and dec.get("reason") == "nickname_discovery_only",
+                checks,
+                problems,
+                detail=dec,
+            )
+            sql, _params = _sql_confirmed_email_addrs({"peggo417@hotmail.com"})
+            _check(
+                "retrieve_sql_matches_address_not_display_name",
+                "peggo417" not in sql  # patterns are params
+                and "from" in sql
+                and "bcc" in sql
+                and "body_text" not in sql,
+                checks,
+                problems,
+                detail=sql,
+            )
+            # Closure: Peg Legg–labeled mail is included because address matches
+            keep_addrs = {
+                r["address"]
+                for r in _header_records(archive_payload)
+                if r["address"] == "peggo417@hotmail.com"
+            }
+            _check(
+                "identity_closure_includes_peg_legg_labeled_mail",
+                "peggo417@hotmail.com" in keep_addrs,
+                checks,
+                problems,
+                detail=keep_addrs,
+            )
+
+    # Ledger-first discover: probe inventory already stored peggo417 + Peg Legg
+    from memorybox.person.comm_address_index import (
+        find_ledger_addresses_for_person_forms,
+        resolve_and_attach_addresses_for_person,
+    )
+
+    class _LedgerConn:
+        def execute(self, sql, params=None):
+            s = str(sql).lower()
+            if "from communication_identities" in s and "observed_display_names" in s:
+
+                class _R:
+                    def fetchall(self_inner):
+                        return [
+                            {
+                                "address_normalized": "peggo417@hotmail.com",
+                                "observed_display_names": {
+                                    "peg legg": {
+                                        "display_name": "Peg Legg",
+                                        "header_count": 5,
+                                        "quoted_body_count": 0,
+                                        "header_fields": ["from"],
+                                    },
+                                    "peggy george": {
+                                        "display_name": "Peggy George",
+                                        "header_count": 0,
+                                        "quoted_body_count": 2,
+                                        "header_fields": ["quoted_cc"],
+                                    },
+                                },
+                                "header_occurrence_count": 5,
+                                "quoted_body_occurrence_count": 2,
+                                "evidence_ids_sample": ["ev-1"],
+                                "resolution_status": "observed",
+                                "resolved_person_id": None,
+                            }
+                        ]
+
+                return _R()
+            if "like any" in s:
+                class _Empty:
+                    def fetchall(self_inner):
+                        return []
+
+                return _Empty()
+            if "split_part" in s:
+                class _Sib:
+                    def fetchall(self_inner):
+                        return [
+                            {"id": "person-peggy-stub", "display_name": "Peggy"},
+                            {
+                                "id": "person-peggy-george",
+                                "display_name": "Peggy George",
+                            },
+                        ]
+
+                return _Sib()
+            if "lower(display_name)" in s:
+                class _Full:
+                    def fetchall(self_inner):
+                        return [
+                            {
+                                "id": "person-peggy-george",
+                                "display_name": "Peggy George",
+                            }
+                        ]
+
+                return _Full()
+
+            class _Empty2:
+                def fetchall(self_inner):
+                    return []
+
+                def fetchone(self_inner):
+                    return None
+
+            return _Empty2()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_address_index.connection", return_value=_LedgerConn()
+    ), patch(
+        "memorybox.person.comm_identity.connection", return_value=_LedgerConn()
+    ), patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy-george",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_address_index.inventory_email_address",
+        return_value={
+            "ok": True,
+            "address": "peggo417@hotmail.com",
+            "rows_scanned": 5,
+            "structured_header": {
+                "occurrence_count": 5,
+                "has_peggy_george": False,
+                "has_peg_legg": True,
+                "distinct_display_names": [
+                    {"normalized_display": "peg legg", "display_name": "Peg Legg", "count": 5}
+                ],
+                "evidence_ids_sample": ["ev-1"],
+            },
+            "quoted_body_headers_only": {
+                "occurrence_count": 2,
+                "has_peggy_george": True,
+                "has_peg_legg": False,
+                "distinct_display_names": [],
+            },
+        },
+    ), patch(
+        "memorybox.person.comm_address_index.upsert_communication_identity_from_inventory",
+        return_value={"upserted": True, "address": "peggo417@hotmail.com"},
+    ), patch(
+        "memorybox.person.comm_identity.ensure_confirmed_email_contact",
+        return_value={"upserted": True},
+    ), patch(
+        "memorybox.person.comm_identity._seed_header_display_aliases",
+        return_value=[],
+    ), patch(
+        "memorybox.person.comm_identity.backfill_email_person_ids",
+        return_value={"updated": 5},
+    ), patch(
+        "memorybox.person.comm_address_index.find_addresses_for_person_forms",
+        return_value=[],
+    ):
+        ledger_hits = find_ledger_addresses_for_person_forms(["peggy george"])
+        _check(
+            "ledger_discover_finds_peggo417_via_peg_legg",
+            any(c.get("address") == "peggo417@hotmail.com" for c in ledger_hits),
+            checks,
+            problems,
+            detail=ledger_hits,
+        )
+        resolve_report = resolve_and_attach_addresses_for_person(
+            "person-peggy-george", persist=True, backfill=True
+        )
+        _check(
+            "ledger_nickname_does_not_confirm_peggo417",
+            not any(
+                (e.get("candidate") or {}).get("address") == "peggo417@hotmail.com"
+                for e in (resolve_report.get("accepted") or [])
+            )
+            and any(
+                (e.get("candidate") or {}).get("address") == "peggo417@hotmail.com"
+                and str((e.get("decision") or {}).get("reason") or "")
+                == "nickname_discovery_only"
+                for e in (resolve_report.get("rejected") or [])
+            ),
+            checks,
+            problems,
+            detail=resolve_report,
+        )
+
+    # Confirmed People emails: reuse + still discover additional header identities
+    with patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value={
+            "person_id": "person-peggy",
+            "display_name": "Peggy George",
+            "known_name_forms": ["peggy george"],
+            "emails": [
+                {
+                    "contact_kind": "email",
+                    "value_text": "peggo01417@hotmail.com",
+                    "status": "confirmed",
+                }
+            ],
+            "aliases": [],
+        },
+    ), patch(
+        "memorybox.person.comm_identity.discover_email_candidates_from_archive",
+        return_value=[],
+    ) as discover, patch(
+        "memorybox.person.comm_identity.backfill_email_person_ids",
+        return_value={"updated": 12, "scanned": 12},
+    ) as backfill:
+        report = expand_person_communication_identities(
+            ["person-peggy"], persist=False, backfill=True, discover=True
+        )
+        _check(
+            "discovery_still_runs_with_confirmed_present",
+            discover.call_count >= 1,
+            checks,
+            problems,
+            detail=report.get("rounds"),
+        )
+        _check(
+            "emails_returned_from_people_contacts",
+            "peggo01417@hotmail.com" in (report.get("emails_by_person") or {}).get(
+                "person-peggy", []
+            ),
+            checks,
+            problems,
+            detail=report.get("emails_by_person"),
+        )
+        _check(
+            "backfill_runs_when_confirmed_present",
+            backfill.call_count >= 1,
+            checks,
+            problems,
+            detail=report.get("rounds"),
+        )
+
+    # Body-name matching must not be the retrieve mechanism (header SQL only)
+    _check(
+        "retrieve_sql_helper_avoids_body_text",
+        "body_text" not in sql and "payload_json->>'body" not in sql,
+        checks,
+        problems,
+    )
+
+    # Operator-attested attach: bare/first-name headers still attach when --address
+    # is explicit; auto path remains fail-closed.
+    bare_payload = {
+        "evidence_channel": "email",
+        "from": "peggo417@hotmail.com",
+        "to": ["owner@example.com"],
+        "cc": [],
+        "from_parsed": [
+            {
+                "display_name": "Peggy",
+                "address": "peggo417@hotmail.com",
+                "normalized": "peggo417@hotmail.com",
+            }
+        ],
+        "to_parsed": [
+            {
+                "display_name": "",
+                "address": "owner@example.com",
+                "normalized": "owner@example.com",
+            }
+        ],
+        "cc_parsed": [],
+        "people": ["Peggy", "owner@example.com"],
+    }
+    snap_peggy = {
+        "person_id": "person-peggy",
+        "display_name": "Peggy George",
+        "known_name_forms": ["peggy george"],
+        "emails": [],
+        "aliases": [],
+    }
+
+    class _FakeConn:
+        def execute(self, *_a, **_k):
+            class _R:
+                def fetchall(self_inner):
+                    return [{"id": "ev-1", "payload_json": bare_payload}]
+
+            return _R()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    with patch(
+        "memorybox.person.comm_identity._address_claimed_by", return_value=[]
+    ), patch(
+        "memorybox.person.comm_identity.person_identity_snapshot",
+        return_value=snap_peggy,
+    ), patch(
+        "memorybox.person.comm_identity.connection",
+        return_value=_FakeConn(),
+    ), patch(
+        "memorybox.person.comm_identity.corroborate_email_candidate",
+        wraps=corroborate_email_candidate,
+    ):
+        auto = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=False,
+        )
+        op = attach_known_email_if_corroborated(
+            "person-peggy",
+            "peggo417@hotmail.com",
+            persist=False,
+            backfill=False,
+            operator_attested=True,
+        )
+    _check(
+        "auto_rejects_bare_or_first_name_headers",
+        not auto.get("accepted"),
+        checks,
+        problems,
+        detail=auto,
+    )
+    _check(
+        "operator_attested_accepts_address_in_headers",
+        bool(op.get("accepted"))
+        and (op.get("decision") or {}).get("reason")
+        == "operator_attested_address_in_headers",
+        checks,
+        problems,
+        detail=op,
+    )
+    _check(
+        "operator_attested_reports_rows",
+        int(op.get("rows_with_address") or 0) >= 1,
+        checks,
+        problems,
+        detail=op.get("rows_with_address"),
+    )
+
+    # People status filter must use domain statuses (not stories' 'active').
+    import inspect
+
+    from memorybox.person import (
+        find_ask_person_by_name,
+        list_people_by_alias,
+        list_people_by_nickname_family,
+    )
+    from memorybox.person import comm_identity as ci_mod
+    from memorybox.person import comm_address_index as cai
+
+    src_ci = inspect.getsource(ci_mod)
+    _check(
+        "people_status_filter_not_active",
+        "status = 'active'" not in src_ci
+        and "status IN ('confirmed', 'unresolved')" in src_ci,
+        checks,
+        problems,
+    )
+    upsert_src = inspect.getsource(cai.upsert_communication_identity_from_inventory)
+    _check(
+        "ledger_upsert_never_downgrades_confirmed",
+        "resolution_status = 'confirmed'" in upsert_src
+        and "IS DISTINCT FROM 'confirmed'" in upsert_src,
+        checks,
+        problems,
+    )
+
+    class _PersonRow:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+    class _PersonConn:
+        def execute(self, sql, params=None):
+            s = str(sql).lower()
+            if "person_aliases" in s:
+                return _PersonRow(
+                    [
+                        {
+                            "id": "person-peggy-george",
+                            "display_name": "Peggy George",
+                            "status": "confirmed",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    ]
+                )
+            if "split_part" in s:
+                return _PersonRow(
+                    [
+                        {
+                            "id": "person-peggy-stub",
+                            "display_name": "Peggy",
+                            "status": "unresolved",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        },
+                        {
+                            "id": "person-peggy-george",
+                            "display_name": "Peggy George",
+                            "status": "confirmed",
+                            "merged_into_id": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        },
+                    ]
+                )
+            return _PersonRow([])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    def _fake_view(_conn, row):
+        from memorybox.person import PersonView
+
+        return PersonView(
+            id=str(row["id"]),
+            display_name=row.get("display_name"),
+            status=row.get("status") or "unresolved",
+            merged_into_id=None,
+            created_at=None,
+            updated_at=None,
+            provider_mappings=[],
+            identity_authority=None,
+        )
+
+    with patch("memorybox.person.connection", return_value=_PersonConn()), patch(
+        "memorybox.person._view", side_effect=_fake_view
+    ), patch(
+        "memorybox.person.find_confirmed_person_by_name", return_value=None
+    ), patch(
+        "memorybox.person.list_people_by_exact_name", return_value=[]
+    ):
+        nick_hits = list_people_by_nickname_family("Peg Legg")
+        multi = [p for p in nick_hits if " " in (p.display_name or "")]
+        _check(
+            "ask_nickname_family_finds_peggy_george",
+            any(p.display_name == "Peggy George" for p in multi),
+            checks,
+            problems,
+            detail=[p.display_name for p in nick_hits],
+        )
+        resolved = find_ask_person_by_name("Peg Legg", photo=None, lazy_seed=False)
+        _check(
+            "ask_resolves_peg_legg_to_peggy_george",
+            resolved is not None and resolved.display_name == "Peggy George",
+            checks,
+            problems,
+            detail=getattr(resolved, "display_name", None),
+        )
+        alias_hits = list_people_by_alias("Peg Legg")
+    _check(
+        "ask_alias_lookup_finds_person",
+        any(p.display_name == "Peggy George" for p in alias_hits),
+        checks,
+        problems,
+        detail=[p.display_name for p in alias_hits],
+    )
+
+    # Person-complete email retrieve must not keyword-filter narrative Ask verbs.
+    import inspect as _inspect
+
+    from memorybox.ask import retrieve as retrieve_mod
+
+    email_src = _inspect.getsource(retrieve_mod.search_email_messages)
+    _check(
+        "complete_person_email_clears_narrative_keywords",
+        "_complete_comm_retrieve(plan) and person_ids" in email_src
+        and "keywords = []" in email_src,
+        checks,
+        problems,
+    )
+
+    return {
+        "ok": not problems,
+        "prove": "person_email_identity",
+        "flightsim": bool(flightsim),
+        "checks": checks,
+        "problems": problems,
+        "peggo417_decision_fixture": decision,
+        "root_cause": (
+            "Email Person retrieve uses confirmed People contacts + header SQL. "
+            "Archive-first address ledger (discover→resolve→retrieve). "
+            "Ask resolves aliases and nickname forms (Peg Legg → Peggy George). "
+            "No Peggy-specific address hardcoding."
+        ),
+    }

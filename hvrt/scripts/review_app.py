@@ -1,0 +1,1485 @@
+"""
+HVRT R2 Review App — evidence console + background learning.
+
+  python scripts/review_app.py
+  http://127.0.0.1:8788
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import mimetypes
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from pydantic import BaseModel, Field
+import uvicorn
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from hvrt.annotations import (  # noqa: E402
+    add_annotation,
+    delete_exemplar,
+    delete_exemplar_by_index,
+    ensure_gallery_dir,
+    list_people,
+    list_person_exemplars,
+    list_places,
+    sync_people_from_gallery,
+    upsert_person,
+    upsert_place,
+)
+from hvrt.browser_proxy import BrowserProxyManager  # noqa: E402
+from hvrt.learning import LearningManager  # noqa: E402
+from hvrt.process_jobs import ProcessJobManager, safe_sample_name  # noqa: E402
+from hvrt.schema_r2 import connect as db_connect, init_r2_schema  # noqa: E402
+
+DEFAULT_DB = ROOT / "database" / "hvrt.sqlite"
+DEFAULT_GALLERY = ROOT / "gallery"
+DEFAULT_SAMPLE = ROOT / "sample"
+STATIC = ROOT / "hvrt" / "static" / "review.html"
+HOST = "127.0.0.1"
+PORT = 8788
+
+
+def _multipart_installed() -> bool:
+    try:
+        import python_multipart  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    try:
+        import multipart  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    init_r2_schema(cfg_db())
+    cfg_working().mkdir(parents=True, exist_ok=True)
+    (cfg_working() / "exemplars").mkdir(parents=True, exist_ok=True)
+    (cfg_working() / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    DEFAULT_GALLERY.mkdir(parents=True, exist_ok=True)
+    sync_people_from_gallery(conn(), cfg_gallery_dirs())
+    yield
+
+
+app = FastAPI(title="HVRT Review R2", version="0.2.0", lifespan=_lifespan)
+
+
+class MarkPlaceIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float
+    place_name: str
+    address_label: str | None = None
+    use_video_gps: bool = False
+    save_frame: bool = True
+    frame_jpeg_base64: str | None = None
+
+
+class MarkDateIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float
+    date_text: str
+
+
+class EnrollFaceIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float | None = None
+    person_name: str | None = None
+    person_id: int | None = None
+    create_person: bool = False
+    crop_jpeg_base64: str = Field(..., min_length=32)
+
+
+class EnrollVoiceIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float
+    person_id: int | None = None
+    person_name: str | None = None
+    selected_text: str | None = None
+
+
+class OcrConfirmIn(BaseModel):
+    video_id: int
+    start_sec: float
+    end_sec: float
+    text: str
+
+
+class DeleteExemplarIn(BaseModel):
+    """Prefer index (safe). path is accepted only as a fallback with ownership check."""
+    index: int | None = None
+    path: str | None = None
+    person_id: int | None = None
+
+
+def _load_hvrt_config() -> dict[str, Any]:
+    cfg_path = ROOT / "config" / "hvrt.json"
+    if cfg_path.is_file():
+        return json.loads(cfg_path.read_text(encoding="utf-8"))
+    return {}
+
+
+def cfg_db() -> Path:
+    return Path(getattr(app.state, "db_path", DEFAULT_DB))
+
+
+def cfg_working() -> Path:
+    return Path(getattr(app.state, "working_dir", ROOT / "working"))
+
+
+def cfg_gallery_dirs() -> list[Path]:
+    dirs = getattr(app.state, "gallery_dirs", None)
+    if dirs:
+        return [Path(d) for d in dirs]
+    return [DEFAULT_GALLERY, cfg_working() / "exemplars" / "people"]
+
+
+def cfg_sample() -> Path:
+    return Path(getattr(app.state, "sample_dir", DEFAULT_SAMPLE))
+
+
+def conn():
+    """Per-request DB handle. Schema is applied at startup only (avoids write locks during Learn)."""
+    return db_connect(cfg_db())
+
+
+def _learning_busy() -> bool:
+    try:
+        run = learner().active_run()
+    except sqlite3.Error:
+        return False
+    return bool(run and run.get("status") in ("queued", "running"))
+
+
+def _db_http_error(exc: BaseException) -> HTTPException:
+    msg = str(exc)
+    if isinstance(exc, sqlite3.OperationalError) and "locked" in msg.lower():
+        return HTTPException(
+            503,
+            "Database busy while Learn/process is writing — retry Load hits in a moment",
+        )
+    return HTTPException(500, msg or "Database error")
+
+
+def learner() -> LearningManager:
+    mgr = getattr(app.state, "learner", None)
+    if mgr is None:
+        mgr = LearningManager(cfg_db(), cfg_working(), gallery_dirs=cfg_gallery_dirs())
+        app.state.learner = mgr
+    return mgr
+
+
+def processor() -> ProcessJobManager:
+    mgr = getattr(app.state, "processor", None)
+    if mgr is None:
+        mgr = ProcessJobManager(db_path=cfg_db(), root=ROOT, sample_dir=cfg_sample())
+        app.state.processor = mgr
+    return mgr
+
+
+def proxies() -> BrowserProxyManager:
+    mgr = getattr(app.state, "proxies", None)
+    if mgr is None:
+        mgr = BrowserProxyManager(cfg_working())
+        app.state.proxies = mgr
+    return mgr
+
+
+def _video_row(video_id: int):
+    row = conn().execute(
+        "SELECT id, path, filename FROM videos WHERE id=?", (video_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "video not found")
+    return row
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    path = STATIC if STATIC.is_file() else ROOT / "hvrt" / "static" / "viewer.html"
+    if not path.is_file():
+        raise HTTPException(404, f"UI missing: {STATIC}")
+    # Always re-read from disk; never let the browser keep a stale review.html.
+    return HTMLResponse(
+        path.read_text(encoding="utf-8"),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    c = conn()
+    transcript_n = 0
+    video_n = 0
+    try:
+        transcript_n = c.execute("SELECT COUNT(*) AS c FROM transcript_segments").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        video_n = c.execute("SELECT COUNT(*) AS c FROM videos").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        pass
+    ui = STATIC if STATIC.is_file() else ROOT / "hvrt" / "static" / "viewer.html"
+    ui_build = None
+    if ui.is_file():
+        text = ui.read_text(encoding="utf-8")
+        marker = "build "
+        # pull first "build xxx" from the tagline
+        idx = text.find(marker)
+        if idx >= 0:
+            frag = text[idx : idx + 40].split("·")[0].split("<")[0].strip()
+            ui_build = frag
+    return {
+        "ok": True,
+        "release": "R2",
+        "build": "fix-analysis-passes",
+        "ui_path": str(ui),
+        "ui_build": ui_build,
+        "ui_mtime": ui.stat().st_mtime if ui.is_file() else None,
+        "database": str(cfg_db()),
+        "gallery_dirs": [str(p) for p in cfg_gallery_dirs()],
+        "sample_dir": str(cfg_sample()),
+        "videos": video_n,
+        "transcript_segments": transcript_n,
+        "settings_engine": False,
+        "place_recognition_engine": False,
+        "decision_model": "owner>user>ai",
+    }
+
+
+@app.get("/api/people")
+def api_people() -> dict[str, Any]:
+    c = conn()
+    try:
+        # Gallery sync writes — skip while Learn holds the DB so Load hits can read.
+        if _learning_busy():
+            people = list_people(c)
+        else:
+            people = sync_people_from_gallery(c, cfg_gallery_dirs())
+            c.commit()
+        out = []
+        for p in people:
+            # Same merge as Load hits so dropdown count matches the sidebar
+            n = len(_merged_face_hits(c, person_id=int(p["id"])))
+            out.append({**p, "hit_count": n})
+        return {"people": out, "gallery_dirs": [str(p) for p in cfg_gallery_dirs()]}
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
+
+
+@app.get("/api/people/{person_id}/exemplars")
+def api_person_exemplars(person_id: int) -> dict[str, Any]:
+    c = conn()
+    try:
+        person = c.execute(
+            "SELECT id, name, gallery_path FROM people WHERE id=?", (person_id,)
+        ).fetchone()
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
+    if not person:
+        raise HTTPException(404, "person not found")
+    exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
+    # Add stable URLs for browser display (cache-bust with mtime so re-enroll
+    # after Remove does not show the previous sliver from browser cache).
+    for i, ex in enumerate(exemplars):
+        mtime = 0
+        try:
+            mtime = int(Path(ex["path"]).stat().st_mtime)
+        except OSError:
+            pass
+        ex["index"] = i
+        ex["url"] = f"/api/people/{person_id}/exemplars/{i}/image?v={mtime}"
+    return {
+        "person": dict(person),
+        "count": len(exemplars),
+        "exemplars": exemplars,
+    }
+
+
+@app.get("/api/people/{person_id}/exemplars/{index}/image")
+def api_person_exemplar_image(person_id: int, index: int):
+    c = conn()
+    exemplars = list_person_exemplars(c, person_id, extra_dirs=cfg_gallery_dirs())
+    if index < 0 or index >= len(exemplars):
+        raise HTTPException(404, "exemplar not found")
+    path = Path(exemplars[index]["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    media_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=path.name,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+@app.delete("/api/people/{person_id}/exemplars")
+def api_delete_exemplar(
+    person_id: int,
+    path: str | None = Query(None),
+    index: int | None = Query(None),
+) -> dict[str, Any]:
+    c = conn()
+    person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
+    if not person:
+        raise HTTPException(404, "person not found")
+    try:
+        if index is not None:
+            result = delete_exemplar_by_index(
+                c, person_id, index, extra_dirs=cfg_gallery_dirs()
+            )
+        elif path:
+            result = delete_exemplar(
+                c, path, person_id=person_id, extra_dirs=cfg_gallery_dirs()
+            )
+        else:
+            raise HTTPException(400, "index or path required")
+    except IndexError as e:
+        raise HTTPException(404, str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    return {"ok": True, "person": dict(person), **result}
+
+
+@app.post("/api/people/{person_id}/exemplars/delete")
+def api_delete_exemplar_post(person_id: int, body: DeleteExemplarIn) -> dict[str, Any]:
+    c = conn()
+    person = c.execute("SELECT id, name FROM people WHERE id=?", (person_id,)).fetchone()
+    if not person:
+        raise HTTPException(404, "person not found")
+    try:
+        if body.index is not None:
+            result = delete_exemplar_by_index(
+                c, person_id, body.index, extra_dirs=cfg_gallery_dirs()
+            )
+        elif body.path:
+            result = delete_exemplar(
+                c, body.path, person_id=person_id, extra_dirs=cfg_gallery_dirs()
+            )
+        else:
+            raise HTTPException(400, "index or path required")
+    except IndexError as e:
+        raise HTTPException(404, str(e)) from e
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    return {"ok": True, "person": dict(person), **result}
+
+
+@app.get("/api/places")
+def api_places() -> dict[str, Any]:
+    return {"places": list_places(conn())}
+
+
+@app.get("/api/videos")
+def api_videos() -> dict[str, Any]:
+    c = conn()
+    rows = c.execute(
+        """
+        SELECT id, filename, path, duration_sec, recording_date, file_mtime,
+               gps_lat, gps_lon, camera, device
+        FROM videos ORDER BY id
+        """
+    ).fetchall()
+    return {"count": len(rows), "videos": [dict(r) for r in rows]}
+
+
+@app.get("/api/videos/{video_id}")
+def api_video(video_id: int) -> dict[str, Any]:
+    """Video metadata for the review toolbar (date + GPS)."""
+    c = conn()
+    v = c.execute(
+        """
+        SELECT id, filename, path, duration_sec, recording_date, file_mtime,
+               gps_lat, gps_lon, camera, device
+        FROM videos WHERE id=?
+        """,
+        (video_id,),
+    ).fetchone()
+    if not v:
+        raise HTTPException(404, "video not found")
+    out = dict(v)
+
+    # Prefer owner date annotation; else recording_date; else file_mtime
+    date_ann = c.execute(
+        """
+        SELECT id, label_text, start_sec, end_sec, created_at
+        FROM annotations
+        WHERE video_id=? AND kind='date' AND revoked=0
+        ORDER BY id DESC LIMIT 1
+        """,
+        (video_id,),
+    ).fetchone()
+    if date_ann and date_ann["label_text"]:
+        out["display_date"] = date_ann["label_text"]
+        out["date_source"] = "owner"
+        out["date_annotation_id"] = date_ann["id"]
+    elif v["recording_date"]:
+        out["display_date"] = v["recording_date"]
+        out["date_source"] = "recording_date"
+        out["date_annotation_id"] = None
+    elif v["file_mtime"]:
+        out["display_date"] = str(v["file_mtime"])[:10]
+        out["date_source"] = "file_mtime"
+        out["date_annotation_id"] = None
+    else:
+        out["display_date"] = None
+        out["date_source"] = None
+        out["date_annotation_id"] = None
+
+    lat, lon = v["gps_lat"], v["gps_lon"]
+    if lat is not None and lon is not None:
+        out["gps"] = {"lat": lat, "lon": lon}
+        out["maps_url"] = (
+            f"https://www.google.com/maps?q={lat},{lon}"
+        )
+    else:
+        out["gps"] = None
+        out["maps_url"] = None
+    return out
+
+
+@app.get("/api/videos/{video_id}/transcript")
+def api_video_transcript(
+    video_id: int,
+    start_sec: float = Query(0.0),
+    end_sec: float | None = Query(None),
+) -> dict[str, Any]:
+    """Transcript segments + approximate word timings for voice enroll highlighting."""
+    c = conn()
+    v = c.execute("SELECT id FROM videos WHERE id=?", (video_id,)).fetchone()
+    if not v:
+        raise HTTPException(404, "video not found")
+    end = end_sec if end_sec is not None else 1e12
+    try:
+        rows = c.execute(
+            """
+            SELECT s.id, s.start_sec, s.end_sec, s.text, s.confidence
+            FROM transcript_segments s
+            WHERE s.video_id=?
+              AND s.start_sec < ?
+              AND s.end_sec > ?
+            ORDER BY s.start_sec
+            """,
+            (video_id, end, start_sec),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    segments = []
+    words: list[dict[str, Any]] = []
+    for r in rows:
+        text = (r["text"] or "").strip()
+        if not text:
+            continue
+        seg = {
+            "id": r["id"],
+            "start_sec": float(r["start_sec"] or 0),
+            "end_sec": float(r["end_sec"] or r["start_sec"] or 0),
+            "text": text,
+            "confidence": r["confidence"],
+        }
+        segments.append(seg)
+        toks = text.split()
+        if not toks:
+            continue
+        s0, s1 = seg["start_sec"], seg["end_sec"]
+        dur = max(0.01, s1 - s0)
+        for i, tok in enumerate(toks):
+            w0 = s0 + dur * (i / len(toks))
+            w1 = s0 + dur * ((i + 1) / len(toks))
+            words.append(
+                {
+                    "i": len(words),
+                    "word": tok,
+                    "start_sec": w0,
+                    "end_sec": w1,
+                    "segment_id": r["id"],
+                }
+            )
+    return {
+        "video_id": video_id,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
+        "segment_count": len(segments),
+        "segments": segments,
+        "words": words,
+    }
+
+
+@app.get("/api/hits/faces")
+def hits_faces(
+    name: str | None = Query(None),
+    person_id: int | None = Query(None),
+) -> dict[str, Any]:
+    """Return owner/user face marks AND Phase-1 AI face appearances.
+
+    One owner row in evidence_effective must not hide face_appearances.
+    Prefer person_id from the Person dropdown when provided.
+    """
+    if person_id is None and not (name or "").strip():
+        raise HTTPException(400, "person_id or name required")
+    c = conn()
+    try:
+        hits = _merged_face_hits(
+            c,
+            person_id=person_id,
+            name=(name or "").strip() or None,
+        )
+        label = name
+        if person_id is not None:
+            prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+            if prow:
+                label = prow["name"]
+    except sqlite3.OperationalError as e:
+        raise _db_http_error(e) from e
+    eff_n = sum(1 for h in hits if str(h.get("source", "")).startswith("eff") or h.get("source") == "effective")
+    fa_n = len(hits) - eff_n
+    return {
+        "query": label or name or str(person_id),
+        "person_id": person_id,
+        "count": len(hits),
+        "effective_count": eff_n,
+        "ai_count": fa_n,
+        "hits": hits,
+    }
+
+
+def _ranges_overlap(
+    a0: float, a1: float, b0: float, b1: float, *, pad: float = 0.75
+) -> bool:
+    return a0 < (b1 + pad) and b0 < (a1 + pad)
+
+
+# AI face samples are ~1s bookmarks every ~10s; coalesce for review.
+FACE_AI_MERGE_GAP_SEC = 60.0
+FACE_AI_MIN_SPAN_SEC = 3.0
+
+
+def _coalesce_ai_face_spans(
+    hits: list[dict[str, Any]],
+    *,
+    gap_sec: float = FACE_AI_MERGE_GAP_SEC,
+    min_span_sec: float = FACE_AI_MIN_SPAN_SEC,
+) -> list[dict[str, Any]]:
+    """Merge consecutive AI face samples on the same video into presence spans.
+
+    Gap is measured between the previous span end and the next sample start.
+    Owner/user marks are not passed through here.
+    """
+    if not hits:
+        return []
+    ordered = sorted(
+        hits,
+        key=lambda h: (
+            int(h.get("video_id") or 0),
+            float(h.get("start_sec") or 0),
+            float(h.get("end_sec") or 0),
+        ),
+    )
+    out: list[dict[str, Any]] = []
+    for h in ordered:
+        cur = dict(h)
+        cur["sample_count"] = int(cur.get("sample_count") or 1)
+        if (
+            out
+            and int(out[-1]["video_id"]) == int(cur["video_id"])
+            and float(cur["start_sec"]) - float(out[-1]["end_sec"]) <= gap_sec
+        ):
+            prev = out[-1]
+            prev["end_sec"] = max(float(prev["end_sec"]), float(cur["end_sec"]))
+            prev["confidence"] = max(
+                float(prev.get("confidence") or 0),
+                float(cur.get("confidence") or 0),
+            )
+            prev["sample_count"] = int(prev.get("sample_count") or 1) + cur["sample_count"]
+            # Stable id for the run; keep first sample id prefix
+            if "ids" in prev and isinstance(prev["ids"], list):
+                prev["ids"].append(cur.get("hit_id"))
+            continue
+        cur["ids"] = [cur.get("hit_id")]
+        out.append(cur)
+    for h in out:
+        span = float(h["end_sec"]) - float(h["start_sec"])
+        if span < min_span_sec:
+            h["end_sec"] = float(h["start_sec"]) + min_span_sec
+        h["hit_id"] = f"fa-span:{h.get('video_id')}:{int(float(h['start_sec']))}-{int(float(h['end_sec']))}"
+    return out
+
+
+def _table_columns(c, table: str) -> set[str]:
+    try:
+        return {r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _load_face_appearances(
+    c,
+    *,
+    person_id: int | None,
+    name: str | None,
+) -> list[Any]:
+    """Load Phase-1 AI face hits; tolerate schema drift and missing passes."""
+    cols = _table_columns(c, "face_appearances")
+    if not cols:
+        return []
+
+    start_col = "start_sec" if "start_sec" in cols else ("start_time" if "start_time" in cols else None)
+    end_col = "end_sec" if "end_sec" in cols else ("end_time" if "end_time" in cols else None)
+    if not start_col:
+        return []
+
+    end_expr = f"f.{end_col}" if end_col else f"f.{start_col}"
+    has_pass = "pass_id" in cols and bool(_table_columns(c, "analysis_passes"))
+
+    def run(where_sql: str, params: tuple[Any, ...], *, require_done_pass: bool) -> list[Any]:
+        pass_join = ""
+        if require_done_pass and has_pass:
+            pass_join = "JOIN analysis_passes p ON p.id = f.pass_id AND p.status = 'done'"
+        sql = f"""
+            SELECT f.id AS hit_id, f.video_id, f.{start_col} AS start_sec,
+                   {end_expr} AS end_sec, f.confidence,
+                   'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                   pe.name AS label, f.person_id, NULL AS annotation_id,
+                   'face_appearances' AS source
+            FROM face_appearances f
+            JOIN people pe ON pe.id = f.person_id
+            JOIN videos v ON v.id = f.video_id
+            {pass_join}
+            WHERE {where_sql}
+            ORDER BY f.confidence DESC, v.filename, f.{start_col}
+        """
+        return list(c.execute(sql, params).fetchall())
+
+    rows: list[Any] = []
+    try:
+        if person_id is not None:
+            # Prefer done analysis passes, then fall back to all rows for that person
+            rows = run("f.person_id = ?", (person_id,), require_done_pass=True)
+            if not rows:
+                rows = run("f.person_id = ?", (person_id,), require_done_pass=False)
+        elif name:
+            rows = run("pe.name = ? COLLATE NOCASE", (name,), require_done_pass=True)
+            if not rows:
+                rows = run("pe.name = ? COLLATE NOCASE", (name,), require_done_pass=False)
+            if not rows:
+                rows = run(
+                    "pe.name LIKE ? COLLATE NOCASE",
+                    (f"%{name}%",),
+                    require_done_pass=False,
+                )
+    except Exception:  # noqa: BLE001
+        rows = []
+    return rows
+
+
+def _merged_face_hits(
+    c,
+    *,
+    name: str | None = None,
+    person_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Merge evidence_effective face marks with Phase-1 face_appearances."""
+    if person_id is None and not name:
+        return []
+
+    if person_id is not None:
+        person_filter_eff = "e.person_id = ?"
+        params: tuple[Any, ...] = (person_id,)
+    else:
+        person_filter_eff = "pe.name = ? COLLATE NOCASE"
+        params = (name.strip(),)
+
+    eff_sql = f"""
+        SELECT e.id AS hit_id, e.video_id, e.start_sec, e.end_sec, e.confidence,
+               e.actor_key, v.filename, v.path, v.duration_sec, pe.name AS label,
+               e.person_id, e.annotation_id, 'effective' AS source
+        FROM evidence_effective e
+        JOIN videos v ON v.id = e.video_id
+        JOIN people pe ON pe.id = e.person_id
+        WHERE e.kind='person_face' AND {person_filter_eff}
+        ORDER BY e.confidence DESC, v.filename, e.start_sec
+    """
+    eff_rows = list(c.execute(eff_sql, params).fetchall())
+
+    if not eff_rows and name and person_id is None:
+        eff_rows = list(
+            c.execute(
+                """
+                SELECT e.id AS hit_id, e.video_id, e.start_sec, e.end_sec, e.confidence,
+                       e.actor_key, v.filename, v.path, v.duration_sec, pe.name AS label,
+                       e.person_id, e.annotation_id, 'effective' AS source
+                FROM evidence_effective e
+                JOIN videos v ON v.id = e.video_id
+                JOIN people pe ON pe.id = e.person_id
+                WHERE e.kind='person_face' AND pe.name LIKE ? COLLATE NOCASE
+                ORDER BY e.confidence DESC, v.filename, e.start_sec
+                """,
+                (f"%{name.strip()}%",),
+            ).fetchall()
+        )
+
+    fa_rows = _load_face_appearances(c, person_id=person_id, name=name)
+
+    hits: list[dict[str, Any]] = []
+    covered: list[tuple[int, float, float]] = []
+
+    def add_eff(r: Any) -> None:
+        h = _hit(r, "face")
+        h["hit_id"] = f"eff:{r['hit_id']}"
+        h["source"] = r["source"] if "source" in r.keys() else "effective"
+        hits.append(h)
+        covered.append(
+            (
+                int(r["video_id"]),
+                float(r["start_sec"] or 0),
+                float(r["end_sec"] or r["start_sec"] or 0),
+            )
+        )
+
+    for r in eff_rows:
+        add_eff(r)
+
+    fa_hits: list[dict[str, Any]] = []
+    for r in fa_rows:
+        h = _hit(r, "face")
+        h["hit_id"] = f"fa:{r['hit_id']}"
+        h["source"] = r["source"] if "source" in r.keys() else "face_appearances"
+        if not h.get("actor_key"):
+            h["actor_key"] = "ai"
+        h["sample_count"] = 1
+        fa_hits.append(h)
+
+    for h in _coalesce_ai_face_spans(fa_hits):
+        vid = int(h["video_id"])
+        s0 = float(h["start_sec"] or 0)
+        s1 = float(h["end_sec"] or s0)
+        if any(vid == cv and _ranges_overlap(s0, s1, c0, c1) for cv, c0, c1 in covered):
+            continue
+        hits.append(h)
+        covered.append((vid, s0, s1))
+
+    # Chronological within file — presence spans read as a timeline
+    hits.sort(
+        key=lambda h: (
+            str(h.get("filename") or ""),
+            float(h.get("start_sec") or 0),
+            -float(h.get("confidence") or 0),
+        )
+    )
+    return hits
+
+
+@app.get("/api/hits/places")
+def hits_places(name: str = Query(..., min_length=1)) -> dict[str, Any]:
+    c = conn()
+    rows = c.execute(
+        """
+        SELECT e.id AS hit_id, e.video_id, e.start_sec, e.end_sec, e.confidence,
+               e.actor_key, v.filename, v.path, v.duration_sec,
+               COALESCE(pl.name, e.label_text) AS label, e.place_id, e.annotation_id
+        FROM evidence_effective e
+        JOIN videos v ON v.id = e.video_id
+        LEFT JOIN places pl ON pl.id = e.place_id
+        WHERE e.kind='place' AND (
+            pl.name LIKE ? COLLATE NOCASE OR e.label_text LIKE ? COLLATE NOCASE
+        )
+        ORDER BY e.confidence DESC, v.filename, e.start_sec
+        """,
+        (f"%{name}%", f"%{name}%"),
+    ).fetchall()
+    # GPS whole-video proximity for named places with coords
+    gps_hits = []
+    place = c.execute(
+        "SELECT * FROM places WHERE name LIKE ? COLLATE NOCASE LIMIT 1",
+        (f"%{name}%",),
+    ).fetchone()
+    if place and place["lat"] is not None and place["lon"] is not None:
+        # rough degree radius from meters (~111km per degree lat)
+        deg = float(place["radius_m"] or 100) / 111_000.0
+        vids = c.execute(
+            """
+            SELECT id, filename, path, duration_sec, gps_lat, gps_lon
+            FROM videos
+            WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL
+              AND ABS(gps_lat - ?) <= ? AND ABS(gps_lon - ?) <= ?
+            """,
+            (place["lat"], deg, place["lon"], deg),
+        ).fetchall()
+        for v in vids:
+            gps_hits.append(
+                {
+                    "kind": "place_gps",
+                    "hit_id": f"gps-{v['id']}",
+                    "video_id": v["id"],
+                    "filename": v["filename"],
+                    "path": v["path"],
+                    "start_sec": 0.0,
+                    "end_sec": float(v["duration_sec"] or 0),
+                    "confidence": 1.0,
+                    "duration_sec": v["duration_sec"],
+                    "label": place["name"],
+                    "actor_key": "owner",
+                    "stream_url": f"/api/media/{v['id']}",
+                    "note": "Whole-video GPS near place pin",
+                }
+            )
+    hits = [_hit(r, "place") for r in rows] + gps_hits
+    return {"query": name, "count": len(hits), "hits": hits}
+
+
+@app.get("/api/hits/text")
+def hits_text(q: str = Query("")) -> dict[str, Any]:
+    """Search transcript lines. Empty q returns all spoken segments (browse mode)."""
+    c = conn()
+    q = (q or "").strip()
+    try:
+        if q:
+            rows = c.execute(
+                """
+                SELECT s.id AS hit_id, s.video_id, s.start_sec, s.end_sec, s.confidence,
+                       'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                       s.text AS label, NULL AS annotation_id
+                FROM transcript_segments s
+                JOIN videos v ON v.id = s.video_id
+                WHERE s.text LIKE ? COLLATE NOCASE
+                ORDER BY v.filename, s.start_sec
+                """,
+                (f"%{q}%",),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT s.id AS hit_id, s.video_id, s.start_sec, s.end_sec, s.confidence,
+                       'ai' AS actor_key, v.filename, v.path, v.duration_sec,
+                       s.text AS label, NULL AS annotation_id
+                FROM transcript_segments s
+                JOIN videos v ON v.id = s.video_id
+                ORDER BY v.filename, s.start_sec
+                LIMIT 500
+                """
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    total = 0
+    try:
+        total = c.execute("SELECT COUNT(*) AS c FROM transcript_segments").fetchone()["c"]
+    except Exception:  # noqa: BLE001
+        total = len(rows)
+    return {
+        "query": q or "(all spoken lines)",
+        "count": len(rows),
+        "corpus_segments": total,
+        "hits": [_hit(r, "text") for r in rows],
+    }
+
+
+@app.get("/api/hits/voice")
+def hits_voice(
+    name: str | None = Query(None),
+    person_id: int | None = Query(None),
+) -> dict[str, Any]:
+    """Browse enrolled + AI-matched speech spans for a speaker."""
+    if person_id is None and not (name or "").strip():
+        raise HTTPException(400, "person_id or name required")
+    c = conn()
+    label = (name or "").strip() or None
+    if person_id is not None:
+        prow = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        if prow:
+            label = prow["name"]
+    try:
+        if person_id is not None:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, pe.name, '') AS label,
+                       a.id AS annotation_id, a.person_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                LEFT JOIN people pe ON pe.id = a.person_id
+                WHERE a.revoked=0 AND a.kind='person_voice' AND a.person_id=?
+                ORDER BY CASE a.actor_key WHEN 'owner' THEN 0 WHEN 'user' THEN 1 ELSE 2 END,
+                         v.filename, a.start_sec
+                """,
+                (person_id,),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, pe.name, '') AS label,
+                       a.id AS annotation_id, a.person_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                LEFT JOIN people pe ON pe.id = a.person_id
+                WHERE a.revoked=0 AND a.kind='person_voice'
+                  AND (pe.name = ? COLLATE NOCASE OR a.label_text = ? COLLATE NOCASE)
+                ORDER BY CASE a.actor_key WHEN 'owner' THEN 0 WHEN 'user' THEN 1 ELSE 2 END,
+                         v.filename, a.start_sec
+                """,
+                (label, label),
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    hits = [_hit(r, "voice") for r in rows]
+    owner_n = sum(1 for h in hits if h.get("actor_key") in ("owner", "user"))
+    ai_n = len(hits) - owner_n
+    return {
+        "query": label or name or str(person_id),
+        "person_id": person_id,
+        "count": len(hits),
+        "owner_count": owner_n,
+        "ai_count": ai_n,
+        "hits": hits,
+    }
+
+
+@app.get("/api/hits/ocr")
+def hits_ocr(q: str = Query("")) -> dict[str, Any]:
+    """Browse owner OCR marks. Empty q returns all OCR annotations."""
+    c = conn()
+    q = (q or "").strip()
+    try:
+        if q:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, '') AS label, a.id AS annotation_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                WHERE a.revoked=0 AND a.kind='ocr'
+                  AND (a.label_text LIKE ? COLLATE NOCASE
+                       OR CAST(a.payload AS TEXT) LIKE ? COLLATE NOCASE)
+                ORDER BY v.filename, a.start_sec
+                """,
+                (f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """
+                SELECT a.id AS hit_id, a.video_id, a.start_sec, a.end_sec, a.confidence,
+                       a.actor_key, v.filename, v.path, v.duration_sec,
+                       COALESCE(a.label_text, '') AS label, a.id AS annotation_id
+                FROM annotations a
+                JOIN videos v ON v.id = a.video_id
+                WHERE a.revoked=0 AND a.kind='ocr'
+                ORDER BY v.filename, a.start_sec
+                LIMIT 500
+                """
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    return {
+        "query": q or "(all OCR marks)",
+        "count": len(rows),
+        "hits": [_hit(r, "ocr") for r in rows],
+    }
+
+
+def _hit(r: Any, kind: str) -> dict[str, Any]:
+    start = float(r["start_sec"] or 0)
+    return {
+        "kind": kind,
+        "hit_id": r["hit_id"],
+        "video_id": r["video_id"],
+        "filename": r["filename"],
+        "path": r["path"],
+        "start_sec": start,
+        "end_sec": float(r["end_sec"] or start),
+        "confidence": r["confidence"],
+        "duration_sec": r["duration_sec"],
+        "label": r["label"] if "label" in r.keys() else None,
+        "actor_key": r["actor_key"] if "actor_key" in r.keys() else None,
+        "annotation_id": r["annotation_id"] if "annotation_id" in r.keys() else None,
+        "stream_url": f"/api/media/{r['video_id']}",
+    }
+
+
+@app.post("/api/videos/{video_id}/open-local")
+def open_local_video(video_id: int) -> dict[str, Any]:
+    """Open the source file in the OS default player (Windows/macOS/Linux)."""
+    row = _video_row(video_id)
+    path = Path(row["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+    except OSError as e:
+        raise HTTPException(500, f"Could not open: {e}") from e
+    return {"ok": True, "path": str(path), "filename": row["filename"]}
+
+
+@app.post("/api/videos/{video_id}/browser-proxy")
+def start_browser_proxy(video_id: int) -> dict[str, Any]:
+    """Transcode source → H.264/AAC so Chrome can show frames (fixes HEVC)."""
+    row = _video_row(video_id)
+    path = Path(row["path"])
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    try:
+        return proxies().start(video_id, path)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.get("/api/videos/{video_id}/browser-proxy")
+def browser_proxy_status(video_id: int) -> dict[str, Any]:
+    row = _video_row(video_id)
+    return proxies().status(video_id, Path(row["path"]))
+
+
+@app.get("/api/media/{video_id}")
+def stream_media(video_id: int, request: Request, proxy: int = Query(0)):
+    row = _video_row(video_id)
+    source = Path(row["path"])
+    if int(proxy) == 1:
+        path = proxies().proxy_path(video_id)
+        if not path.is_file():
+            raise HTTPException(
+                404,
+                "Browser proxy not ready — POST /api/videos/{id}/browser-proxy first",
+            )
+        filename = f"{Path(row['filename']).stem}_browser.mp4"
+    else:
+        path = source
+        filename = row["filename"]
+    if not path.is_file():
+        raise HTTPException(404, f"missing file: {path}")
+    media_type = mimetypes.guess_type(str(path))[0] or "video/mp4"
+    file_size = path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            path,
+            media_type=media_type,
+            filename=filename,
+            headers={"Accept-Ranges": "bytes"},
+        )
+    units, _, rng = range_header.partition("=")
+    if units.strip() != "bytes":
+        raise HTTPException(416, "Only bytes ranges supported")
+    start_s, _, end_s = rng.partition("-")
+    start = int(start_s) if start_s else 0
+    end = int(end_s) if end_s else file_size - 1
+    end = min(end, file_size - 1)
+    length = end - start + 1
+
+    def iter_range():
+        with path.open("rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                data = f.read(min(1024 * 1024, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    return StreamingResponse(
+        iter_range(),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+        },
+    )
+
+
+def _save_b64_jpeg(data_b64: str, dest: Path) -> Path:
+    raw = data_b64.split(",", 1)[-1]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(base64.b64decode(raw))
+    return dest
+
+
+@app.post("/api/annotations/place")
+def mark_place(body: MarkPlaceIn) -> dict[str, Any]:
+    c = conn()
+    v = c.execute("SELECT * FROM videos WHERE id=?", (body.video_id,)).fetchone()
+    if not v:
+        raise HTTPException(404, "video not found")
+    lat = lon = None
+    if body.use_video_gps:
+        lat, lon = v["gps_lat"], v["gps_lon"]
+    gallery = ensure_gallery_dir(cfg_working() / "exemplars", "places", body.place_name)
+    place_id = upsert_place(
+        c,
+        body.place_name,
+        address_label=body.address_label,
+        lat=lat,
+        lon=lon,
+        gallery_path=str(gallery),
+        actor_key="owner",
+    )
+    exemplar = None
+    if body.save_frame and body.frame_jpeg_base64:
+        exemplar = str(
+            _save_b64_jpeg(
+                body.frame_jpeg_base64,
+                gallery / f"frame_{body.video_id}_{int(body.start_sec)}_{uuid.uuid4().hex[:8]}.jpg",
+            )
+        )
+    ann_id = add_annotation(
+        c,
+        video_id=body.video_id,
+        kind="place",
+        start_sec=body.start_sec,
+        end_sec=body.end_sec,
+        actor_key="owner",
+        label_text=body.place_name,
+        place_id=place_id,
+        exemplar_path=exemplar,
+        provenance={"use_video_gps": body.use_video_gps},
+    )
+    return {"annotation_id": ann_id, "place_id": place_id, "confidence": 1.0}
+
+
+@app.post("/api/annotations/date")
+def mark_date(body: MarkDateIn) -> dict[str, Any]:
+    ann_id = add_annotation(
+        conn(),
+        video_id=body.video_id,
+        kind="date",
+        start_sec=body.start_sec,
+        end_sec=body.end_sec,
+        actor_key="owner",
+        label_text=body.date_text.strip(),
+        payload={"date_text": body.date_text.strip()},
+    )
+    return {"annotation_id": ann_id, "confidence": 1.0}
+
+
+@app.post("/api/annotations/face")
+def enroll_face(body: EnrollFaceIn) -> dict[str, Any]:
+    c = conn()
+    name = (body.person_name or "").strip()
+    person_id = body.person_id
+    primary_gallery = cfg_gallery_dirs()[0]
+
+    if body.create_person:
+        if not name:
+            raise HTTPException(400, "person_name required to create")
+        existing = c.execute(
+            "SELECT id, name FROM people WHERE name = ? COLLATE NOCASE", (name,)
+        ).fetchone()
+        if existing:
+            raise HTTPException(
+                409,
+                f"Person '{existing['name']}' already exists — pick from dropdown",
+            )
+        person_id = upsert_person(c, name, str((primary_gallery / name).resolve()))
+    elif person_id is not None:
+        prow = c.execute(
+            "SELECT name, gallery_path FROM people WHERE id=?", (person_id,)
+        ).fetchone()
+        if not prow:
+            raise HTTPException(404, "person_id not found")
+        name = prow["name"]
+        upsert_person(c, name, str((primary_gallery / name).resolve()))
+    elif name:
+        row = c.execute(
+            "SELECT id, name, gallery_path FROM people WHERE name = ? COLLATE NOCASE",
+            (name,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Person not found — enable create or pick dropdown")
+        person_id = int(row["id"])
+        name = row["name"]
+        upsert_person(c, name, str((primary_gallery / name).resolve()))
+    else:
+        raise HTTPException(400, "person_id or person_name required")
+
+    # Always save into gallery/<PersonName>/ — never a stale/wrong gallery_path
+    gallery = primary_gallery / name
+    gallery.mkdir(parents=True, exist_ok=True)
+    dest = gallery / f"face_{body.video_id}_{int(body.start_sec)}_{uuid.uuid4().hex[:8]}.jpg"
+    exemplar = str(_save_b64_jpeg(body.crop_jpeg_base64, dest))
+    # Sanity: refuse empty/tiny writes so a bad crop cannot silently land
+    if Path(exemplar).stat().st_size < 500:
+        Path(exemplar).unlink(missing_ok=True)
+        raise HTTPException(400, "Crop image was empty — box the face again")
+    end = body.end_sec if body.end_sec is not None else body.start_sec + 1.0
+    ann_id = add_annotation(
+        c,
+        video_id=body.video_id,
+        kind="person_face",
+        start_sec=body.start_sec,
+        end_sec=end,
+        actor_key="owner",
+        label_text=name,
+        person_id=person_id,
+        exemplar_path=exemplar,
+        payload={"enroll": True, "bytes": Path(exemplar).stat().st_size},
+    )
+    return {
+        "annotation_id": ann_id,
+        "person_id": person_id,
+        "person_name": name,
+        "exemplar_path": exemplar,
+        "exemplar_filename": Path(exemplar).name,
+        "confidence": 1.0,
+    }
+
+
+@app.post("/api/annotations/voice")
+def enroll_voice(body: EnrollVoiceIn) -> dict[str, Any]:
+    c = conn()
+    person_id = body.person_id
+    name = (body.person_name or "").strip()
+    primary_gallery = cfg_gallery_dirs()[0]
+    if person_id is None:
+        if not name:
+            raise HTTPException(400, "person required — pick Speaker or type New speaker")
+        gallery = primary_gallery / name
+        gallery.mkdir(parents=True, exist_ok=True)
+        person_id = upsert_person(c, name, str(gallery.resolve()))
+        name_row = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        name = name_row["name"]
+    else:
+        name_row = c.execute("SELECT name FROM people WHERE id=?", (person_id,)).fetchone()
+        if not name_row:
+            raise HTTPException(404, "person not found")
+        name = name_row["name"]
+
+    # Span marker; audio extract can be filled by learning job / ffmpeg later
+    stub = cfg_working() / "exemplars" / "voice" / f"person_{person_id}"
+    stub.mkdir(parents=True, exist_ok=True)
+    marker = stub / f"span_{body.video_id}_{int(body.start_sec)}_{int(body.end_sec)}.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "video_id": body.video_id,
+                "start_sec": body.start_sec,
+                "end_sec": body.end_sec,
+                "person_id": person_id,
+                "selected_text": (body.selected_text or "").strip() or None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    ann_id = add_annotation(
+        c,
+        video_id=body.video_id,
+        kind="person_voice",
+        start_sec=body.start_sec,
+        end_sec=body.end_sec,
+        actor_key="owner",
+        label_text=name,
+        person_id=person_id,
+        exemplar_path=str(marker),
+        payload={
+            "voice_enroll": True,
+            "selected_text": (body.selected_text or "").strip() or None,
+        },
+    )
+    c.execute(
+        """
+        INSERT INTO voice_samples (person_id, video_id, annotation_id, path, start_sec, end_sec, actor_key)
+        VALUES (?,?,?,?,?,?, 'owner')
+        """,
+        (person_id, body.video_id, ann_id, str(marker), body.start_sec, body.end_sec),
+    )
+    c.commit()
+    return {
+        "annotation_id": ann_id,
+        "person_id": person_id,
+        "person_name": name,
+        "selected_text": (body.selected_text or "").strip() or None,
+        "confidence": 1.0,
+    }
+
+
+@app.post("/api/annotations/ocr")
+def confirm_ocr(body: OcrConfirmIn) -> dict[str, Any]:
+    ann_id = add_annotation(
+        conn(),
+        video_id=body.video_id,
+        kind="ocr",
+        start_sec=body.start_sec,
+        end_sec=body.end_sec,
+        actor_key="owner",
+        label_text=body.text.strip(),
+        payload={"text": body.text.strip()},
+    )
+    return {"annotation_id": ann_id, "confidence": 1.0}
+
+
+@app.get("/api/annotations")
+def list_annotations(video_id: int | None = None) -> dict[str, Any]:
+    c = conn()
+    if video_id is None:
+        rows = c.execute(
+            "SELECT * FROM annotations WHERE revoked=0 ORDER BY id DESC LIMIT 200"
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT * FROM annotations WHERE revoked=0 AND video_id=? ORDER BY start_sec",
+            (video_id,),
+        ).fetchall()
+    return {"count": len(rows), "annotations": [dict(r) for r in rows]}
+
+
+@app.post("/api/learn/start")
+def learn_start() -> dict[str, Any]:
+    return learner().start()
+
+
+@app.get("/api/learn/status")
+def learn_status() -> dict[str, Any]:
+    st = learner().active_run()
+    return st or {"status": "idle", "steps": [], "background": True}
+
+
+def _register_process_upload() -> None:
+    """File upload needs python-multipart. Register only when installed."""
+    if not _multipart_installed():
+        @app.post("/api/process/upload")
+        async def process_upload_missing() -> dict[str, Any]:
+            raise HTTPException(
+                503,
+                'Install python-multipart then restart: pip install python-multipart',
+            )
+        return
+
+    from fastapi import File, UploadFile
+
+    @app.post("/api/process/upload")
+    async def process_upload(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        """Accept one or more videos (e.g. from P: share) and save into sample\\."""
+        if processor().busy():
+            raise HTTPException(409, "A process job is already running")
+        if not files:
+            raise HTTPException(400, "No files selected")
+        sample = cfg_sample()
+        sample.mkdir(parents=True, exist_ok=True)
+        saved: list[dict[str, Any]] = []
+        for uf in files:
+            try:
+                name = safe_sample_name(uf.filename or "video.bin")
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+            dest = sample / name
+            # Avoid clobber: if exists, add a short suffix
+            if dest.exists():
+                stem, suf = dest.stem, dest.suffix
+                dest = sample / f"{stem}_{int(time.time())}{suf}"
+                name = dest.name
+            size = 0
+            with dest.open("wb") as out:
+                while True:
+                    chunk = await uf.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    size += len(chunk)
+            if size < 1000:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, f"{name} looks empty — check the share path")
+            saved.append({"filename": name, "path": str(dest), "bytes": size})
+        return {"ok": True, "count": len(saved), "saved": saved, "sample_dir": str(sample)}
+
+
+_register_process_upload()
+
+
+class ProcessStartIn(BaseModel):
+    saved: list[dict[str, Any]] | None = None
+
+
+@app.post("/api/process/start")
+def process_start(body: ProcessStartIn | None = None) -> dict[str, Any]:
+    """Run process_videos.py in the background (new/pending passes)."""
+    saved = body.saved if body else None
+    return processor().start(saved_files=saved)
+
+
+@app.get("/api/process/status")
+def process_status() -> dict[str, Any]:
+    return processor().status()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="HVRT R2 Review App")
+    parser.add_argument("--db", default=None)
+    parser.add_argument("--working", default=None)
+    parser.add_argument("--gallery", default=None, help="Primary face gallery dir")
+    parser.add_argument("--sample", default=None, help="Sample video ingest dir")
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    args = parser.parse_args()
+
+    file_cfg = _load_hvrt_config()
+    db_path = Path(args.db or file_cfg.get("database_path") or DEFAULT_DB)
+    working = Path(args.working or file_cfg.get("working_dir") or (ROOT / "working"))
+    gallery = Path(args.gallery or file_cfg.get("gallery_dir") or DEFAULT_GALLERY)
+    sample = Path(args.sample or file_cfg.get("sample_dir") or DEFAULT_SAMPLE)
+    host = args.host or file_cfg.get("api", {}).get("host", HOST)
+    # Review UI stays on 8788 by default so it doesn't collide with run_api.py (8787).
+    port = int(args.port or file_cfg.get("api", {}).get("review_port") or PORT)
+
+    app.state.db_path = db_path
+    app.state.working_dir = working
+    app.state.sample_dir = sample
+    app.state.gallery_dirs = [gallery, working / "exemplars" / "people"]
+    app.state.learner = LearningManager(db_path, working, gallery_dirs=[gallery, working / "exemplars" / "people"])
+    app.state.processor = ProcessJobManager(db_path=db_path, root=ROOT, sample_dir=sample)
+    app.state.proxies = BrowserProxyManager(working)
+    init_r2_schema(db_path)
+    gallery.mkdir(parents=True, exist_ok=True)
+    sample.mkdir(parents=True, exist_ok=True)
+    (working / "exemplars" / "people").mkdir(parents=True, exist_ok=True)
+    (working / "browser_proxies").mkdir(parents=True, exist_ok=True)
+    sync_people_from_gallery(conn(), app.state.gallery_dirs)
+
+    print(f"HVRT Review R2   http://{host}:{port}")
+    print(f"Database         {db_path}")
+    print(f"Sample dir       {sample}")
+    print(f"Gallery dirs     {app.state.gallery_dirs}")
+    print("Settings engine  disabled (placeholder)")
+    print("Place recognition disabled (annotate/exemplars only)")
+    if not _multipart_installed():
+        print("WARNING: python-multipart missing — Add & process upload disabled.")
+        print("         Prefer the project venv, then: pip install -r requirements.txt")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()

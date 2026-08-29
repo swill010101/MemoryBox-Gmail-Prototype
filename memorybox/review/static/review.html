@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox Review</title>
+  <style>
+    :root { --ink:#1a1f2a; --line:#c5c9d1; --accent:#2c4a6e; --panel:#f7f8fb; --warn:#8a3b12; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background: linear-gradient(165deg, #e4e8ef 0%, #f7f8fb 55%, #eef1f6 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .sub { color: #5a6170; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.5rem 0 0.2rem; }
+    input, select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer;
+      margin-right: 0.4rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .muted { color: #6a7180; font-size: 0.85rem; }
+    .warn { color: var(--warn); font-weight: 600; }
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      margin-top: 0.5rem;
+      background: #0b0f14;
+      min-height: 12rem;
+      max-height: 56vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    video#player {
+      display: block;
+      max-width: 100%;
+      max-height: 56vh;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      background: #0b0f14;
+    }
+    canvas#overlay {
+      position: absolute;
+      left: 0; top: 0;
+      display: none;
+      pointer-events: none;
+      z-index: 2;
+      cursor: crosshair;
+    }
+    canvas#overlay.boxing {
+      display: block;
+      pointer-events: auto;
+    }
+    .crop-preview { display: none; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+    .crop-preview.on { display: flex; }
+    .crop-preview img {
+      width: 96px; height: 96px; object-fit: contain;
+      background: #111; border: 1px solid var(--line);
+    }
+    code { font-size: 0.8rem; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MemoryBox Review</h1>
+    <p class="sub">
+      Thin Review &amp; Learn (Increment 7) — scrub → create candidate → <strong>box the face</strong> → Teach via I6.
+      <a href="/ask/ui">Ask</a> · <a href="/library/ui" id="libraryNav">Library</a> · <a href="/people/ui">People</a> · <a href="/journal/ui">Journal</a>
+      <span id="libraryReturnWrap" hidden> · <a id="libraryReturn" href="/library/ui">← Back to Library place</a></span>
+    </p>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Video</h2>
+      <button class="secondary" id="refreshVideos" type="button">Refresh videos</button>
+      <label for="videoSel">Family video (from configured media-server path)</label>
+      <select id="videoSel"><option value="">(load videos)</option></select>
+      <div class="video-wrap" id="videoWrap">
+        <video id="player" controls playsinline preload="metadata"></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <p id="videoNote" class="muted">Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.</p>
+      <button class="secondary" id="browserProxyBtn" type="button">Make browser-playable (H.264)</button>
+      <p id="codecNote" class="warn" hidden>
+        Video frame not decoding in this browser (audio-only / blank picture is often HEVC/H.265).
+        Click <strong>Make browser-playable (H.264)</strong> — same fix as the HVRT POC (ffmpeg derived copy; originals untouched).
+      </p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">2. Face candidate → box → Teach</h2>
+      <p class="muted">With multiple people in frame: pause, create candidate, drag a box on the one face you mean, confirm box, then Teach.</p>
+      <button id="addFace" type="button">Create face candidate at playhead</button>
+      <button class="secondary" id="boxBtn" type="button" disabled>Box face</button>
+      <button id="saveBoxBtn" type="button" disabled>Confirm face box</button>
+      <div id="cropPreview" class="crop-preview">
+        <img id="cropPreviewImg" alt="Crop preview" />
+        <span id="cropPreviewMeta" class="muted">Drag a box around the face to preview the crop.</span>
+      </div>
+      <label for="faceSel">Face candidate</label>
+      <select id="faceSel"><option value="">(none yet)</option></select>
+      <label for="personSel">Person (MemoryBox + photo-library names — same list as People / Artifact)</label>
+      <select id="personSel"><option value="">(loading…)</option></select>
+      <button class="secondary" id="refreshPeople" type="button">Refresh names</button>
+      <p id="pickerHint" class="muted">Loading names…</p>
+      <button id="teachBtn" type="button" disabled>Teach / Confirm face → this person</button>
+      <button class="secondary" id="rejectBtn" type="button">Reject pairing</button>
+      <p id="ambHint" class="warn" hidden></p>
+      <p>Last taught Person ID: <code id="lastId">(none yet)</code></p>
+      <p id="archiveMsg" class="muted"></p>
+    </section>
+
+    <section>
+      <h2 style="font-size:1rem;margin:0 0 0.5rem">Result</h2>
+      <pre id="out" class="muted">No action yet.</pre>
+    </section>
+  </main>
+  <script>
+    const out = document.getElementById("out");
+    const player = document.getElementById("player");
+    const overlay = document.getElementById("overlay");
+    const codecNote = document.getElementById("codecNote");
+    const teachBtn = document.getElementById("teachBtn");
+    const boxBtn = document.getElementById("boxBtn");
+    const saveBoxBtn = document.getElementById("saveBoxBtn");
+
+    let lastFaceId = "";
+    let lastPersonId = "";
+    let boxMode = false;
+    let drawing = false;
+    let box = null; // canvas coords
+    let faceMeta = {}; // id -> {boxed, provider}
+    let usingBrowserProxy = false;
+    let proxyTimer = null;
+    const readyProxyIds = new Set();
+    const browserProxyBtn = document.getElementById("browserProxyBtn");
+
+    function show(data) { out.textContent = JSON.stringify(data, null, 2); }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); }
+      catch { data = { detail: "non-JSON (" + r.status + ")" }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+
+    function syncOverlaySize() {
+      const vr = player.getBoundingClientRect();
+      const wrap = document.getElementById("videoWrap").getBoundingClientRect();
+      const controlsPad = boxMode ? 0 : 0;
+      const w = Math.max(1, Math.round(vr.width));
+      const h = Math.max(1, Math.round(vr.height - controlsPad));
+      overlay.width = w;
+      overlay.height = h;
+      overlay.style.width = w + "px";
+      overlay.style.height = h + "px";
+      overlay.style.left = (vr.left - wrap.left) + "px";
+      overlay.style.top = (vr.top - wrap.top) + "px";
+    }
+
+    function videoContentRect() {
+      const vw = player.videoWidth, vh = player.videoHeight;
+      if (!vw || !vh) return null;
+      const ew = overlay.width, eh = overlay.height;
+      const scale = Math.min(ew / vw, eh / vh);
+      const drawW = vw * scale, drawH = vh * scale;
+      const offsetX = (ew - drawW) / 2, offsetY = (eh - drawH) / 2;
+      return { vw, vh, ew, eh, drawW, drawH, offsetX, offsetY };
+    }
+
+    function drawBox() {
+      const ctx = overlay.getContext("2d");
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      const content = videoContentRect();
+      if (content && boxMode) {
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.strokeRect(content.offsetX, content.offsetY, content.drawW, content.drawH);
+      }
+      if (!box) return;
+      const x = Math.min(box.x0, box.x1);
+      const y = Math.min(box.y0, box.y1);
+      const w = Math.abs(box.x1 - box.x0);
+      const h = Math.abs(box.y1 - box.y0);
+      ctx.strokeStyle = "#5ad1ff";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "rgba(90,209,255,0.15)";
+      ctx.fillRect(x, y, w, h);
+    }
+
+    function overlayEventToCanvas(e) {
+      const r = overlay.getBoundingClientRect();
+      return {
+        x: (e.clientX - r.left) * (overlay.width / Math.max(1, r.width)),
+        y: (e.clientY - r.top) * (overlay.height / Math.max(1, r.height)),
+      };
+    }
+
+    function boxToVideoPixels(b) {
+      const content = videoContentRect();
+      if (!content) throw new Error("Video frame not ready — wait until a picture is visible, then box again");
+      const { vw, vh, drawW, drawH, offsetX, offsetY } = content;
+      let sx0 = ((Math.min(b.x0, b.x1) - offsetX) / drawW) * vw;
+      let sy0 = ((Math.min(b.y0, b.y1) - offsetY) / drawH) * vh;
+      let sx1 = ((Math.max(b.x0, b.x1) - offsetX) / drawW) * vw;
+      let sy1 = ((Math.max(b.y0, b.y1) - offsetY) / drawH) * vh;
+      sx0 = Math.max(0, Math.min(vw, sx0));
+      sy0 = Math.max(0, Math.min(vh, sy0));
+      sx1 = Math.max(0, Math.min(vw, sx1));
+      sy1 = Math.max(0, Math.min(vh, sy1));
+      const x = Math.floor(Math.min(sx0, sx1));
+      const y = Math.floor(Math.min(sy0, sy1));
+      const w = Math.ceil(Math.abs(sx1 - sx0));
+      const h = Math.ceil(Math.abs(sy1 - sy0));
+      if (w < 8 || h < 8) throw new Error("Face box too small — drag over the face in the picture");
+      return { x, y, w, h, vw, vh };
+    }
+
+    function captureCropJpeg() {
+      const pix = boxToVideoPixels(box);
+      const pad = 0.45;
+      const fw = player.videoWidth || pix.vw;
+      const fh = player.videoHeight || pix.vh;
+      const x = Math.max(0, Math.floor(pix.x - pix.w * pad));
+      const y = Math.max(0, Math.floor(pix.y - pix.h * pad));
+      const x2 = Math.min(fw, Math.ceil(pix.x + pix.w + pix.w * pad));
+      const y2 = Math.min(fh, Math.ceil(pix.y + pix.h + pix.h * pad));
+      const w = Math.max(8, x2 - x);
+      const h = Math.max(8, y2 - y);
+      const full = document.createElement("canvas");
+      full.width = Math.max(1, fw);
+      full.height = Math.max(1, fh);
+      full.getContext("2d").drawImage(player, 0, 0, full.width, full.height);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(full, x, y, w, h, 0, 0, w, h);
+      return c.toDataURL("image/jpeg", 0.92);
+    }
+
+    function updateCropPreview() {
+      const panel = document.getElementById("cropPreview");
+      try {
+        if (!boxMode || !box) { panel.classList.remove("on"); return; }
+        const dataUrl = captureCropJpeg();
+        const pix = boxToVideoPixels(box);
+        document.getElementById("cropPreviewImg").src = dataUrl;
+        document.getElementById("cropPreviewMeta").textContent =
+          `Crop preview ${pix.w}×${pix.h}px — this is the face that will be taught.`;
+        panel.classList.add("on");
+        saveBoxBtn.disabled = false;
+      } catch (err) {
+        panel.classList.remove("on");
+        saveBoxBtn.disabled = true;
+        document.getElementById("cropPreviewMeta").textContent = err.message || "Invalid box";
+      }
+    }
+
+    function enterBoxMode() {
+      if (!lastFaceId) {
+        show({ detail: "Create a face candidate first." });
+        return;
+      }
+      boxMode = true;
+      box = null;
+      overlay.classList.add("boxing");
+      try { player.pause(); } catch (e) {}
+      syncOverlaySize();
+      drawBox();
+      saveBoxBtn.disabled = true;
+      document.getElementById("cropPreview").classList.remove("on");
+      document.getElementById("videoNote").textContent =
+        "Drag a box around the one face you mean. Check crop preview, then Confirm face box.";
+    }
+
+    function exitBoxMode(msg) {
+      boxMode = false;
+      drawing = false;
+      overlay.classList.remove("boxing");
+      overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
+      if (msg) document.getElementById("videoNote").textContent = msg;
+    }
+
+    function refreshTeachEnabled() {
+      const id = document.getElementById("faceSel").value;
+      const meta = faceMeta[id] || {};
+      teachBtn.disabled = !(id && meta.boxed);
+      boxBtn.disabled = !id;
+    }
+
+    async function loadVideos() {
+      const data = await j("/review/videos");
+      const sel = document.getElementById("videoSel");
+      sel.innerHTML = "";
+      const videos = data.videos || [];
+      if (!videos.length) {
+        sel.innerHTML = "<option value=\"\">(no videos — set MEMORYBOX_VIDEO_MEDIA_ROOT on worker)</option>";
+        show(data);
+        return;
+      }
+      videos.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.external_id;
+        opt.textContent = (v.title || v.external_id) + (v.path_hint ? " — " + v.path_hint : "");
+        sel.appendChild(opt);
+      });
+      show({ ok: true, count: videos.length, provider_status: data.provider_status });
+
+      // Library "Open in Review" deep-link: ?video=&t=&face=
+      const q = new URLSearchParams(location.search);
+      const wantVideo = (q.get("video") || "").trim();
+      const wantT = parseFloat(q.get("t") || "");
+      const wantFace = (q.get("face") || "").trim();
+      let pick = videos[0] && videos[0].external_id;
+      if (wantVideo) {
+        const hit = videos.find((v) => v.external_id === wantVideo);
+        if (hit) pick = hit.external_id;
+        else {
+          const note = document.getElementById("videoNote");
+          note.textContent =
+            "Deep-link video not in list: " + wantVideo +
+            " — check MEMORYBOX_VIDEO_MEDIA_ROOT / worker. Showing first video.";
+          note.className = "warn";
+        }
+      }
+      if (pick) {
+        sel.value = pick;
+        const seekTo = Number.isFinite(wantT) && wantT >= 0 ? wantT : null;
+        await onVideoChange({ seekTo, preferFace: wantFace || null });
+      }
+    }
+
+    function mediaUrl(id, proxy) {
+      const base = "/review/media/" + encodeURIComponent(id);
+      return proxy ? base + "?proxy=1" : base;
+    }
+
+    function playVideo(id, { proxy = false, keepTime = true, seekTo = null } = {}) {
+      const t =
+        seekTo != null && Number.isFinite(seekTo)
+          ? seekTo
+          : keepTime
+            ? (player.currentTime || 0)
+            : 0;
+      usingBrowserProxy = !!proxy;
+      const onMeta = () => {
+        try {
+          if (t > 0) player.currentTime = t;
+        } catch (e) {}
+        try { player.pause(); } catch (e) {}
+        player.removeEventListener("loadedmetadata", onMeta);
+        syncOverlaySize();
+        if (player.videoWidth) codecNote.hidden = true;
+        if (seekTo != null && Number.isFinite(seekTo)) {
+          const note = document.getElementById("videoNote");
+          note.textContent =
+            "Opened from Library at " + seekTo.toFixed(1) +
+            "s — originals read-only; box/teach if needed.";
+          note.className = "muted";
+        }
+      };
+      player.addEventListener("loadedmetadata", onMeta);
+      player.src = mediaUrl(id, proxy);
+      player.load();
+      if (proxy) {
+        browserProxyBtn.textContent = "Using browser-playable copy";
+        document.getElementById("videoNote").textContent =
+          "Playing H.264 browser copy (source may be HEVC). Originals untouched.";
+      } else {
+        browserProxyBtn.textContent = "Make browser-playable (H.264)";
+      }
+      browserProxyBtn.disabled = false;
+      browserProxyBtn.hidden = false;
+    }
+
+    async function ensureBrowserProxy({ auto = false, seekTo = null } = {}) {
+      const id = document.getElementById("videoSel").value;
+      if (!id) return;
+      browserProxyBtn.hidden = false;
+      browserProxyBtn.disabled = true;
+      document.getElementById("videoNote").textContent = auto
+        ? "Chrome has no video frames (often HEVC). Building H.264 browser copy with ffmpeg…"
+        : "Building H.264 browser copy with ffmpeg…";
+      const start = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy", {
+        method: "POST",
+      });
+      show(start);
+      if (start.status === "ready") {
+        readyProxyIds.add(id);
+        playVideo(id, { proxy: true, keepTime: false, seekTo });
+        return;
+      }
+      if (proxyTimer) clearInterval(proxyTimer);
+      proxyTimer = setInterval(async () => {
+        try {
+          const st = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy");
+          browserProxyBtn.textContent =
+            st.status === "running" || st.status === "queued"
+              ? `Converting… ${Math.round(st.progress_pct || 0)}%`
+              : "Make browser-playable (H.264)";
+          document.getElementById("videoNote").textContent = st.message || "";
+          if (st.status === "ready") {
+            clearInterval(proxyTimer); proxyTimer = null;
+            readyProxyIds.add(id);
+            playVideo(id, { proxy: true, keepTime: false, seekTo });
+            show(st);
+          } else if (st.status === "error") {
+            clearInterval(proxyTimer); proxyTimer = null;
+            browserProxyBtn.disabled = false;
+            codecNote.hidden = false;
+            show(st);
+          }
+        } catch (err) {
+          clearInterval(proxyTimer); proxyTimer = null;
+          browserProxyBtn.disabled = false;
+          show(err);
+        }
+      }, 1500);
+    }
+
+    async function onVideoChange({ seekTo = null, preferFace = null } = {}) {
+      const id = document.getElementById("videoSel").value;
+      exitBoxMode("Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.");
+      codecNote.hidden = true;
+      usingBrowserProxy = false;
+      if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
+      if (!id) { player.removeAttribute("src"); return; }
+      if (readyProxyIds.has(id)) playVideo(id, { proxy: true, keepTime: false, seekTo });
+      else {
+        playVideo(id, { proxy: false, keepTime: false, seekTo });
+        setTimeout(() => {
+          const cur = document.getElementById("videoSel").value;
+          if (cur === id && !(player.videoWidth && player.videoHeight)) {
+            codecNote.hidden = false;
+            ensureBrowserProxy({ auto: true, seekTo }).catch(show);
+          }
+        }, 1400);
+      }
+      await loadFaces({ preferFace });
+    }
+
+    async function loadFaces({ preferFace = null } = {}) {
+      const vid = document.getElementById("videoSel").value;
+      const data = await j("/review/faces?video_external_id=" + encodeURIComponent(vid || ""));
+      const sel = document.getElementById("faceSel");
+      sel.innerHTML = "";
+      faceMeta = {};
+      const faces = data.faces || [];
+      if (!faces.length) {
+        sel.innerHTML = "<option value=\"\">(no face candidates — create at playhead)</option>";
+        refreshTeachEnabled();
+        return;
+      }
+      faces.forEach((f) => {
+        faceMeta[f.external_id] = {
+          boxed: !!f.boxed,
+          provider: f.provider_key || "hvrt",
+        };
+        const opt = document.createElement("option");
+        opt.value = f.external_id;
+        opt.dataset.provider = f.provider_key || "hvrt";
+        opt.textContent = (f.label || "face") + (f.boxed ? " [boxed]" : " [needs box]") + " — " + f.external_id;
+        sel.appendChild(opt);
+      });
+      if (preferFace && faceMeta[preferFace]) {
+        sel.value = preferFace;
+        lastFaceId = preferFace;
+      } else if (lastFaceId && faceMeta[lastFaceId]) {
+        sel.value = lastFaceId;
+      }
+      refreshTeachEnabled();
+    }
+
+    document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
+    document.getElementById("videoSel").onchange = () => {
+      try { onVideoChange(); } catch (e) { show(e); }
+    };
+    browserProxyBtn.onclick = () => ensureBrowserProxy({ auto: false }).catch(show);
+    document.getElementById("faceSel").onchange = () => {
+      lastFaceId = document.getElementById("faceSel").value;
+      refreshTeachEnabled();
+    };
+
+    player.addEventListener("loadedmetadata", () => {
+      syncOverlaySize();
+      if (!player.videoWidth && !usingBrowserProxy) codecNote.hidden = false;
+      if (player.videoWidth) codecNote.hidden = true;
+    });
+    player.addEventListener("playing", () => {
+      if (!player.videoWidth && !usingBrowserProxy) codecNote.hidden = false;
+      else if (player.videoWidth) codecNote.hidden = true;
+    });
+    window.addEventListener("resize", () => { if (boxMode) { syncOverlaySize(); drawBox(); } });
+
+    document.getElementById("addFace").onclick = async () => {
+      try {
+        const video_external_id = document.getElementById("videoSel").value;
+        if (!video_external_id) { show({ detail: "Select a video first." }); return; }
+        try { player.pause(); } catch (e) {}
+        const t_sec = player.currentTime || 0;
+        const data = await j("/review/faces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_external_id, t_sec }),
+        });
+        lastFaceId = data.face && data.face.external_id;
+        await loadFaces();
+        if (lastFaceId) document.getElementById("faceSel").value = lastFaceId;
+        show(data);
+        enterBoxMode();
+      } catch (err) { show(err); }
+    };
+
+    boxBtn.onclick = () => {
+      if (boxMode) exitBoxMode("Box mode cancelled.");
+      else enterBoxMode();
+    };
+
+    overlay.addEventListener("mousedown", (e) => {
+      if (!boxMode) return;
+      e.preventDefault();
+      drawing = true;
+      const p = overlayEventToCanvas(e);
+      box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+      drawBox();
+    });
+    overlay.addEventListener("mousemove", (e) => {
+      if (!drawing || !box) return;
+      const p = overlayEventToCanvas(e);
+      box.x1 = p.x; box.y1 = p.y;
+      drawBox();
+      updateCropPreview();
+    });
+    window.addEventListener("mouseup", () => {
+      if (!drawing) return;
+      drawing = false;
+      updateCropPreview();
+    });
+
+    saveBoxBtn.onclick = async () => {
+      try {
+        if (!lastFaceId || !box) throw new Error("Create candidate and drag a face box first");
+        const pix = boxToVideoPixels(box);
+        const crop = captureCropJpeg();
+        const data = await j("/review/faces/" + encodeURIComponent(lastFaceId), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bbox: {
+              x: pix.x, y: pix.y, w: pix.w, h: pix.h,
+              frame_w: pix.vw, frame_h: pix.vh,
+              t_sec: player.currentTime || 0,
+            },
+            crop_jpeg_base64: crop,
+          }),
+        });
+        faceMeta[lastFaceId] = faceMeta[lastFaceId] || {};
+        faceMeta[lastFaceId].boxed = true;
+        exitBoxMode("Face box saved. Enter MB display name and Teach / Confirm.");
+        await loadFaces();
+        document.getElementById("faceSel").value = lastFaceId;
+        refreshTeachEnabled();
+        show(data);
+      } catch (err) { show(err.message ? { detail: err.message } : err); }
+    };
+
+    teachBtn.onclick = async () => {
+      try {
+        const external_id = document.getElementById("faceSel").value;
+        const personKey = document.getElementById("personSel").value;
+        const meta = faceMeta[external_id] || {};
+        const ambHint = document.getElementById("ambHint");
+        if (ambHint) { ambHint.hidden = true; ambHint.textContent = ""; }
+        if (!external_id) {
+          show({ detail: "Pick a face candidate." });
+          return;
+        }
+        if (!meta.boxed) {
+          show({ detail: "Confirm a face box first — required when multiple faces may be in frame." });
+          return;
+        }
+        if (!personKey) {
+          show({ detail: "Pick a person from the name list (MemoryBox or photo-library)." });
+          return;
+        }
+        const provider_key = meta.provider || "hvrt";
+        // Resolve/ensure MB Person from unified picker (mb: or immich:)
+        let person;
+        if (personKey.startsWith("mb:")) {
+          const person_id = personKey.slice(3);
+          const ensured = await j("/people/ensure", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ person_id }),
+          });
+          person = ensured.person;
+        } else if (personKey.startsWith("immich:")) {
+          const rest = personKey.slice("immich:".length);
+          const i = rest.indexOf(":");
+          if (i < 0) throw { detail: "Invalid photo-library selection." };
+          const immich_ext = decodeURIComponent(rest.slice(0, i));
+          const display_name = decodeURIComponent(rest.slice(i + 1));
+          const ensured = await j("/people/ensure", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider_key: "immich",
+              external_id: immich_ext,
+              display_name,
+            }),
+          });
+          person = ensured.person;
+          await loadPersonPicker();
+        } else {
+          throw { detail: "Unknown person selection." };
+        }
+        if (!person || !person.id) throw { detail: "Could not resolve MB Person." };
+        const label = person.display_name || "face";
+        const data = await j("/people/" + encodeURIComponent(person.id) + "/map", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name: label,
+            provider_key,
+            external_id,
+            label,
+            video_external_id: document.getElementById("videoSel").value || undefined,
+            t_sec: player.currentTime || 0,
+          }),
+        });
+        lastPersonId = data.person && data.person.id;
+        if (lastPersonId) {
+          document.getElementById("lastId").textContent = lastPersonId;
+          document.getElementById("personSel").value = "mb:" + lastPersonId;
+        }
+        document.getElementById("archiveMsg").textContent =
+          (data.i8b_learn && data.i8b_learn.ok)
+            ? "Archive Updated — Teach saved an I8B exemplar; this video scanned first, others queued."
+            : "Archive Updated — Immich + video face on one Person (do not recreate per provider).";
+        show(data);
+      } catch (err) {
+        const d = err && err.detail;
+        if (d && d.error === "ambiguous_identity") {
+          const ambHint = document.getElementById("ambHint");
+          if (ambHint) {
+            ambHint.hidden = false;
+            ambHint.textContent =
+              (d.message || "Ambiguous identity") +
+              " — pick the correct name from the list (same person in Immich and MemoryBox).";
+          }
+        }
+        show(err);
+      }
+    };
+
+    async function loadPersonPicker() {
+      const sel = document.getElementById("personSel");
+      const hint = document.getElementById("pickerHint");
+      if (!sel) return;
+      const data = await j("/people/picker-options?limit=400");
+      const opts = data.options || [];
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "(choose a person)";
+      sel.appendChild(none);
+      opts.forEach((o) => {
+        const opt = document.createElement("option");
+        opt.value = o.key;
+        const tag = o.source === "immich" ? " · from photos" : "";
+        opt.textContent = (o.label || "") + tag;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+      const nMb = opts.filter((o) => o.source === "memorybox").length;
+      const nIm = opts.filter((o) => o.source === "immich").length;
+      if (hint) {
+        hint.textContent =
+          nMb + " in MemoryBox · " + nIm + " photo-library-only" +
+          (data.immich_error ? (" · Immich note: " + data.immich_error) : "") +
+          " · each name shown once";
+        hint.className = data.immich_error && !nIm ? "warn" : "muted";
+      }
+    }
+    document.getElementById("refreshPeople").onclick = () => loadPersonPicker().catch(show);
+    loadPersonPicker().catch((e) => {
+      const hint = document.getElementById("pickerHint");
+      if (hint) { hint.textContent = "Could not load people list."; hint.className = "warn"; }
+      show(e);
+    });
+
+    document.getElementById("rejectBtn").onclick = async () => {
+      try {
+        const external_id = document.getElementById("faceSel").value;
+        const person_id = lastPersonId || document.getElementById("lastId").textContent;
+        const meta = faceMeta[external_id] || {};
+        if (!external_id || !person_id || person_id === "(none yet)") {
+          show({ detail: "Need face + person id (Teach first or paste)." });
+          return;
+        }
+        show(await j("/people/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_id,
+            provider_key: meta.provider || "hvrt",
+            external_id,
+          }),
+        }));
+      } catch (err) { show(err); }
+    };
+
+    // Library return place (I8: Open in Review → back without losing filter/card)
+    (function wireLibraryReturn() {
+      const q = new URLSearchParams(location.search);
+      const ret = q.get("return");
+      const wrap = document.getElementById("libraryReturnWrap");
+      const a = document.getElementById("libraryReturn");
+      const nav = document.getElementById("libraryNav");
+      if (ret && ret.indexOf("/library") === 0) {
+        if (a) a.href = ret;
+        if (wrap) wrap.hidden = false;
+        if (nav) nav.href = ret;
+      } else {
+        try {
+          const saved = sessionStorage.getItem("memorybox_library_place");
+          if (saved && saved.indexOf("/library") === 0) {
+            if (a) a.href = saved;
+            if (wrap) wrap.hidden = false;
+            if (nav) nav.href = saved;
+          }
+        } catch (_) { /* ignore */ }
+      }
+    })();
+
+    loadVideos().catch(show);
+  </script>
+</body>
+</html>

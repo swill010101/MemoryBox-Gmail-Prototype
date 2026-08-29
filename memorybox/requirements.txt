@@ -1,0 +1,10 @@
+# MemoryBox monolith (MBBS-001 Increment 1+)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9
+psycopg[binary]>=3.2.0
+pydantic>=2.0
+qdrant-client>=1.9.0
+icalendar>=5.0.0
+# Optional FlightSim STT (Capture/STT provider): faster-whisper
+# faster-whisper>=1.0.0

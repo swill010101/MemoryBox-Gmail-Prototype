@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Prototype 1 (Scenes)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../experience/styles.css" />
+  <link rel="stylesheet" href="proto.css" />
+</head>
+<body>
+  <header class="site-bar">
+    <div>
+      <div class="brand">MemoryBox</div>
+      <div class="meta">Prototype 1 · Scenes from storyboards 1 &amp; 2 · Not final UI · Explorer postponed</div>
+    </div>
+    <nav class="site-nav">
+      <a href="../experience/index.html">Gallery</a>
+      <a href="index.html" aria-current="page">Prototype 1</a>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <p class="screen-label">Prototype 1 · Clickable scenes</p>
+    <h1 class="screen-title" id="outer-title">Threshold</h1>
+    <p class="screen-thesis" id="outer-thesis">Quiet curator copy pass. People and artifacts carry the emotion.</p>
+
+    <div class="review-strip" aria-label="Review success criteria">
+      <strong>Did we succeed?</strong> Yes / No — (1) Never feels like operating software.
+      (2) Every click answers curiosity, not navigation.
+      (3) Visitor naturally asks another question before the end.
+      Silence after Grandpa is required. Voice: factual, curious, not cinematic.
+    </div>
+
+    <p class="scene-name" id="scene-name">Scene · Threshold</p>
+
+    <div class="device" id="device">
+      <div class="device-top">
+        <span class="mode">Guided Exploration</span>
+        <span id="device-aside">MemoryBox</span>
+      </div>
+
+      <!-- ========== FIRST FIVE MINUTES ========== -->
+
+      <section class="scene is-active" data-scene="threshold" data-title="Threshold" data-thesis="Invite. Nothing else." data-aside="MemoryBox" data-label="Scene · Threshold">
+        <div class="device-body">
+          <p class="brand-mark">MemoryBox</p>
+          <h2 class="invite">What would you like to explore today?</h2>
+          <div class="hints" aria-label="Suggestions">
+            <button type="button" class="hint hint-action" data-go="invitation">Christmas at our house</button>
+            <button type="button" class="hint hint-action" data-go="invitation">What have I forgotten?</button>
+          </div>
+          <div class="conversation">
+            <input type="text" id="ask-threshold" placeholder="Ask about a person, place, or time…" aria-label="Ask" />
+            <button type="button" data-go="invitation">Ask</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="invitation" data-title="Invitation" data-thesis="Confirm the question. Then reconstruct." data-aside="Christmas" data-label="Scene · Invitation">
+        <div class="device-body">
+          <span class="tag">Question</span>
+          <p class="ask-echo">“Tell me about Christmas at our house.”</p>
+          <div class="actions">
+            <button type="button" class="btn" data-go="discovery-christmas">Continue</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="discovery-christmas" data-title="Discovery" data-thesis="Narrative from evidence. Short confidence note." data-aside="Christmas · Oak Street · 2014" data-label="Scene · Discovery">
+        <div class="device-body">
+          <span class="tag">Narrative</span>
+          <p class="narrative">
+            Christmas week, 2014, at the Oak Street house.
+            Peggy is in the photographs. The tree is in the living room.
+            An email thread from early December mentions travel plans.
+            The calendar marks the week as family time.
+          </p>
+          <p class="confidence">Year and place look solid — mail, calendar, and photos agree. Some photos still have no exact day.</p>
+          <div class="photo-strip" aria-hidden="true">
+            <div class="photo" data-label="Living room"></div>
+            <div class="photo" data-label="Tree"></div>
+            <div class="photo" data-label="Kitchen"></div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn ghost" id="btn-why">Show evidence</button>
+            <button type="button" class="btn" data-go="reflection">Continue</button>
+          </div>
+          <div class="evidence-panel" id="evidence-panel" hidden>
+            <div class="evidence-row">
+              <span class="evidence-chip"><strong>Photos</strong> · living room, tree, kitchen</span>
+              <span class="evidence-chip"><strong>Calendar</strong> · Dec 2014</span>
+              <span class="evidence-chip"><strong>Email</strong> · 3 Dec 2014</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="reflection" data-title="Reflection" data-thesis="One soft question. Optional." data-aside="Living room photo" data-label="Scene · Reflection">
+        <div class="device-body">
+          <div class="photo-strip" style="max-width:200px" aria-hidden="true">
+            <div class="photo" data-label="Living room"></div>
+          </div>
+          <div class="invite-card">
+            <span class="tag">Question</span>
+            <p>Do you remember about when this was taken?</p>
+            <div class="actions">
+              <button type="button" class="btn" data-go="teaching-christmas">Around 2014</button>
+              <button type="button" class="btn ghost" data-go="wonder">Skip for now</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="teaching-christmas" data-title="Teaching" data-thesis="Confirm. Remember. Move on." data-aside="Saved" data-label="Scene · Teaching">
+        <div class="device-body">
+          <span class="tag">Saved</span>
+          <p class="narrative">Thank you. I’ll remember that — about 2014.</p>
+          <p class="lede">Linked to the living-room photos from that Christmas.</p>
+          <div class="actions">
+            <button type="button" class="btn" data-go="wonder">Continue</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="wonder" data-title="Wonder" data-thesis="Related questions. No speechifying." data-aside="Related" data-label="Scene · Wonder">
+        <div class="device-body">
+          <p class="brand-mark">MemoryBox</p>
+          <h2 class="invite">What would you like to explore next?</h2>
+          <div class="hints">
+            <button type="button" class="hint hint-action" data-go="discovery-grandpa" data-marks-question>Tell me about Grandpa</button>
+            <button type="button" class="hint hint-action" data-go="discovery-grandpa" data-marks-question>Who else is in the living-room photo?</button>
+          </div>
+          <div class="conversation open-ask">
+            <input type="text" id="ask-wonder" placeholder="Ask another question…" aria-label="Ask another question" />
+            <button type="button" id="btn-wonder-ask" data-marks-question>Ask</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== GRANDPA ========== -->
+
+      <section class="scene" data-scene="discovery-grandpa" data-title="Discovery" data-thesis="Facts from evidence. No biography poetry." data-aside="Grandpa" data-label="Scene · Discovery · Grandpa">
+        <div class="device-body">
+          <span class="tag">Narrative</span>
+          <p class="narrative">
+            Grandpa appears in photographs from the porch, the workshop, and family gatherings.
+            There are short letters in his handwriting.
+            Military papers list his service years.
+            A voice recording from 1998 is in the archive.
+          </p>
+          <p class="confidence">Based on photos, letters, papers, and one recording. Gaps remain.</p>
+          <div class="actions">
+            <button type="button" class="btn" data-go="presence">Show photographs</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="presence" data-title="Presence" data-thesis="Artifacts first. Minimal caption." data-aside="Grandpa · photographs" data-label="Scene · Presence">
+        <div class="device-body">
+          <div class="photo-strip" aria-hidden="true">
+            <div class="photo photo-warm" data-label="Porch"></div>
+            <div class="photo photo-cool" data-label="Workshop"></div>
+            <div class="photo" data-label="Family"></div>
+          </div>
+          <div class="paper-chip">
+            <strong>Military papers</strong><br />
+            Service years on file. Available on request.
+          </div>
+          <div class="actions">
+            <button type="button" class="btn" data-go="silence">Play recording · 1998</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Silence: five seconds — no flash, popup, suggestion, or animation -->
+      <section class="scene silence-hold" data-scene="silence" data-title="Silence" data-thesis="No copy. No prompt. Wait." data-aside="Grandpa · 1998" data-label="Scene · Silence">
+        <div class="device-body" style="padding:0">
+          <div class="listening">
+            <div class="wave" aria-hidden="true"></div>
+            <p>Grandpa · 1998</p>
+            <div class="continue-ready">
+              <button type="button" class="btn ghost" data-go="teaching-grandpa">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="teaching-grandpa" data-title="Teaching" data-thesis="Invite after silence. Plain question." data-aside="Unidentified person" data-label="Scene · Teaching · After silence">
+        <div class="device-body">
+          <div class="photo-strip" style="max-width:280px" aria-hidden="true">
+            <div class="photo photo-warm" data-label="With Grandpa"></div>
+            <div class="photo" data-label="Picnic"></div>
+            <div class="photo" data-label="Porch"></div>
+          </div>
+          <div class="invite-card">
+            <div class="face-row">
+              <div class="face" aria-hidden="true"></div>
+              <div>
+                <span class="tag">Question</span>
+                <p style="margin:0;font-family:var(--font-display);font-size:1.1rem;">This person appears with Grandpa in several photos. Do you know who it is?</p>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" data-go="bloom">Aunt Sue</button>
+              <button type="button" class="btn ghost" data-go="open-ask">Not now</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="bloom" data-title="Wonder" data-thesis="Report what changed. Stop." data-aside="Sue · linked" data-label="Scene · Wonder · Linked">
+        <div class="device-body">
+          <p class="bloom-count">183 photographs</p>
+          <p class="lede">Sue now appears with Grandpa across picnic, porch, and winter photos.</p>
+          <div class="actions">
+            <button type="button" class="btn" data-go="open-ask">Continue</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene" data-scene="open-ask" data-title="Wonder" data-thesis="Leave the door open. No speech." data-aside="MemoryBox" data-label="Scene · Wonder · Ask">
+        <div class="device-body">
+          <p class="brand-mark">MemoryBox</p>
+          <h2 class="invite">What would you like to explore today?</h2>
+          <div class="hints">
+            <button type="button" class="hint hint-action" data-marks-question data-echo>Sue and Grandpa at the lake</button>
+            <button type="button" class="hint hint-action" data-marks-question data-echo>Mom laughing</button>
+            <button type="button" class="hint hint-action" data-marks-question data-echo>What have I forgotten?</button>
+          </div>
+          <div class="conversation open-ask">
+            <input type="text" id="ask-final" placeholder="Ask another question…" aria-label="Ask another question" />
+            <button type="button" id="btn-final-ask" data-marks-question>Ask</button>
+          </div>
+          <div class="win-note" id="win-note">
+            Another question asked — Prototype 1 success criterion met.
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p class="success-cue">
+      Reviewers: software should sound like a curator — quiet, factual, curious.
+      If it sounds like a movie narrator, the copy failed. Explorer held for Prototype 2.
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      const scenes = Array.from(document.querySelectorAll(".scene"));
+      const byName = Object.fromEntries(scenes.map((s) => [s.dataset.scene, s]));
+      const titleEl = document.getElementById("outer-title");
+      const thesisEl = document.getElementById("outer-thesis");
+      const asideEl = document.getElementById("device-aside");
+      const labelEl = document.getElementById("scene-name");
+      const evidencePanel = document.getElementById("evidence-panel");
+      const winNote = document.getElementById("win-note");
+      let silenceTimer = null;
+      let askedAnother = false;
+
+      function markQuestion() {
+        askedAnother = true;
+        if (winNote) winNote.classList.add("is-shown");
+      }
+
+      function showScene(name) {
+        const next = byName[name];
+        if (!next) return;
+
+        scenes.forEach((s) => {
+          s.classList.remove("is-active");
+          s.classList.remove("is-ready");
+        });
+        next.classList.add("is-active");
+
+        titleEl.textContent = next.dataset.title || "";
+        thesisEl.textContent = next.dataset.thesis || "";
+        asideEl.textContent = next.dataset.aside || "";
+        labelEl.textContent = next.dataset.label || "";
+
+        if (evidencePanel) {
+          evidencePanel.classList.remove("is-open");
+          evidencePanel.hidden = true;
+        }
+
+        if (silenceTimer) {
+          clearTimeout(silenceTimer);
+          silenceTimer = null;
+        }
+
+        if (name === "silence") {
+          silenceTimer = setTimeout(function () {
+            next.classList.add("is-ready");
+          }, 5000);
+        }
+
+        next.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      document.getElementById("device").addEventListener("click", function (e) {
+        const t = e.target.closest("[data-go], [data-marks-question], #btn-why");
+        if (!t) return;
+
+        if (t.id === "btn-why") {
+          if (evidencePanel) {
+            evidencePanel.hidden = false;
+            evidencePanel.classList.add("is-open");
+          }
+          return;
+        }
+
+        if (t.hasAttribute("data-marks-question")) {
+          markQuestion();
+        }
+
+        if (t.hasAttribute("data-echo") && !t.hasAttribute("data-go")) {
+          const input = document.getElementById("ask-final");
+          if (input) input.value = t.textContent.trim();
+          markQuestion();
+          return;
+        }
+
+        const go = t.getAttribute("data-go");
+        if (go) showScene(go);
+      });
+
+      function wireAsk(inputId, buttonId, destination) {
+        const input = document.getElementById(inputId);
+        const btn = document.getElementById(buttonId);
+        if (!input || !btn) return;
+        function submit() {
+          if (input.value.trim()) markQuestion();
+          if (destination) showScene(destination);
+        }
+        btn.addEventListener("click", submit);
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        });
+      }
+
+      wireAsk("ask-wonder", "btn-wonder-ask", "discovery-grandpa");
+      wireAsk("ask-final", "btn-final-ask", null);
+
+      const thresholdAsk = document.getElementById("ask-threshold");
+      if (thresholdAsk) {
+        thresholdAsk.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            showScene("invitation");
+          }
+        });
+      }
+
+      showScene("threshold");
+    })();
+  </script>
+</body>
+</html>

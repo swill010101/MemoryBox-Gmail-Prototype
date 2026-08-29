@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Artifacts</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10b-3" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
+  <style>
+    :root {
+      --ink: #e8edf5; --muted: #9aa3b5; --blue: #3b82f6; --green: #3dcf9a;
+      --orange: #fb923c; --line: rgba(255,255,255,0.12); --card: #1a2230; --page: #0f141c;
+      --display: "Newsreader", Georgia, serif; --ui: "Figtree", "Segoe UI", system-ui, sans-serif;
+    }
+    html[data-mb-surface="artifact"] .mb-site-bar,
+    html[data-mb-surface="artifact"] .mb-nav-system { display: none !important; }
+    html[data-mb-surface="artifact"] body { background: var(--page) !important; color: var(--ink) !important; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: var(--ui); background: #0f141c; color: #e8edf5; }
+    a { color: #93c5fd; }
+    button { font: inherit; cursor: pointer; }
+    input, textarea, select {
+      font: inherit; color: var(--ink); background: #141b27; border: 1px solid var(--line);
+      border-radius: 10px; padding: 0.55rem 0.75rem; width: 100%;
+    }
+    textarea { min-height: 5rem; resize: vertical; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; }
+    .sub { color: var(--muted); margin: 0.25rem 0 0; }
+    .btn { border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line); background: #141b27; color: var(--ink); }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,0.3); background: transparent; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.8rem 0 1rem; }
+    .tabs button { border: 0; background: #141b27; color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px; }
+    .tabs button.on { background: var(--blue); color: #fff; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
+    html[data-mb-surface="artifact"] body.mb-shell .card,
+    html[data-mb-surface="artifact"] .card,
+    .card {
+      background: #1a2230 !important;
+      color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .card .thumb { height: 140px; background: #111827; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.78rem; text-align: center; padding: 0.4rem; }
+    .card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .card .body { padding: 0.8rem 0.9rem; background: #1a2230 !important; color: #e8edf5 !important; }
+    .card h3 { font-family: var(--display); font-size: 1.05rem; margin: 0 0 0.3rem; color: #e8edf5 !important; }
+    .card p { color: #9aa3b5 !important; font-size: 0.82rem; margin: 0 0 0.4rem; }
+    #pk-q, .mb-explore-ask-field input {
+      color: #e8edf5 !important;
+      caret-color: #e8edf5;
+      background: transparent !important;
+    }
+    #pk-q::placeholder, .mb-explore-ask-field input::placeholder { color: #9aa3b5 !important; }
+    #pk-field.is-searching {
+      animation: art-search-pulse 0.85s ease-in-out infinite;
+      border-color: #93c5fd !important;
+    }
+    @keyframes art-search-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(147, 197, 253, 0.12); }
+      50% { box-shadow: 0 0 0 8px rgba(147, 197, 253, 0.35); }
+    }
+    #pk-searching { color: #93c5fd; font-size: 0.85rem; min-height: 1.1rem; margin: 0.25rem 0 0; }
+    .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
+    .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.2rem; }
+    .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; margin-bottom: 0.8rem; }
+    .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; }
+    .mem { display: flex; gap: 0.7rem; align-items: center; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; }
+    .mem img { width: 88px; height: 66px; object-fit: cover; border-radius: 8px; background: #0f141c; }
+    .dash { border: 1px dashed var(--line); border-radius: 12px; padding: 1.2rem; text-align: center; color: var(--muted); }
+    .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 1.2rem; }
+    .modal { width: min(880px, 100%); max-height: 92vh; overflow: hidden; display: flex; flex-direction: column; background: #121826; border: 1px solid var(--line); border-radius: 16px; }
+    .modal-scroll { overflow: auto; flex: 1; min-height: 0; padding: 1rem 1rem 0.4rem; }
+    .pk-foot {
+      flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
+      gap: 0.8rem; padding: 0.75rem 1rem; background: #121826; border-top: 1px solid var(--line);
+    }
+    .person-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 18rem; overflow: auto; margin-top: 0.45rem; }
+    .person-row {
+      display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink);
+      border-radius: 10px; padding: 0.4rem 0.55rem;
+    }
+    .person-row img, .person-row .av { width: 40px; height: 40px; border-radius: 99px; object-fit: cover; }
+    .person-row.on { outline: 2px solid var(--blue); }
+    .ask-field { display: flex; gap: 0.4rem; align-items: center; margin: 0.6rem 0; }
+    .pick img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; background: #0f141c; display: block; margin-bottom: 0.35rem; }
+    .pick .ph { height: 110px; display: flex; align-items: center; justify-content: center; color: var(--muted); background: #0f141c; border-radius: 8px; margin-bottom: 0.35rem; }
+    .hidden { display: none !important; }
+    .empty { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+    .warn { color: #fdba74; }
+    .chip { display: inline-flex; align-items: center; gap: 0.4rem; background: #111827; border-radius: 999px; padding: 0.2rem 0.55rem; margin: 0.15rem; }
+    .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
+    .viewer { background: #111827; border-radius: 14px; min-height: 220px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .viewer img { max-width: 100%; max-height: 360px; object-fit: contain; }
+    .pick { background: #141b27; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem; cursor: pointer; }
+    .pick.on { outline: 2px solid var(--blue); }
+    .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+    @media (max-width: 900px) { .grid, .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="mb-explore" id="mb-art-chrome">
+    <header class="mb-explore-top">
+      <a class="mb-explore-brand" href="/explore/ui">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
+        </div>
+      </a>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+    <section class="mb-explore-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="askQ">What would you like to see?</label>
+        <div class="mb-explore-ask-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="askQ" type="text" placeholder="Ask about a keepsake, document, recipe, or meaningful thing" />
+          <button type="button" class="mb-explore-ask-go" id="askGo">→</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div id="view" class="wrap"></div>
+  <div id="modals"></div>
+  <div id="editor-foot" class="editor-foot hidden"></div>
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-7"></script>
+  <script>
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const KINDS = [
+      ["keepsake_object", "Keepsake / object"],
+      ["letter", "Letter"],
+      ["document", "Document"],
+      ["recipe_card", "Recipe card"],
+      ["clipping", "Clipping"],
+      ["photograph_of_object", "Photograph of object"],
+      ["other", "Other"],
+    ];
+    const state = {
+      view: "panel", items: [], people: [], owner: null, artifact: null,
+      filters: { q: "", kind_group: "", needs_context: false, person_id: "" },
+      draft: emptyDraft(), staged: [],
+    };
+    function emptyDraft() {
+      return {
+        kind: "keepsake_object", label: "", description: "", visibility: "private",
+        described_start_date: "", described_precision: "unknown", place_label: "",
+        person_ids: [], memories: [],
+      };
+    }
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    async function j(url, opts) {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data && data.detail;
+        const msg = typeof d === "string" ? d : (d && (d.message || JSON.stringify(d))) || res.statusText;
+        throw new Error(msg);
+      }
+      return data;
+    }
+    const NAV = [
+      { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
+      { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+      { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+      { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+      { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+      { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
+      { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
+    ];
+    function renderNav() {
+      const el = document.getElementById("mb-explore-nav");
+      if (!el) return;
+      el.innerHTML = NAV.map((n) =>
+        `<a class="mb-explore-nav-link${n.id === "artifacts" ? " is-active" : ""}" href="${n.href}"><span>${n.ico}</span> ${n.label}</a>`
+      ).join("");
+    }
+    async function loadPeople() {
+      try {
+        const data = await j("/library/person-options?limit=300");
+        state.people = data.people || [];
+      } catch (_) {
+        try { state.people = (await j("/people?limit=300")).people || []; } catch (e) { state.people = []; }
+      }
+    }
+    async function loadOwner() {
+      try { state.owner = await j("/people/owner"); } catch (_) { state.owner = null; }
+    }
+    function personName(id) {
+      const p = state.people.find((x) => x.id === id);
+      return (p && p.display_name) || "Person";
+    }
+    function initial(name) {
+      return String(name || "?").trim().charAt(0).toUpperCase() || "?";
+    }
+    function sortedPeople() {
+      return (state.people || []).slice().sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
+      );
+    }
+    function personMatches(p, q) {
+      const needle = String(q || "").trim().toLowerCase();
+      if (!needle) return true;
+      return String(p.display_name || "").toLowerCase().includes(needle);
+    }
+    function portraitInner(p) {
+      const id = p.id || p.person_id || "";
+      const name = p.display_name || "Person";
+      const src = p.portrait_url || (id ? "/people/" + id + "/portrait" : "");
+      return `<img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='inline-flex'" /><span class="av" style="display:none">${initial(name)}</span><span>${esc(name)}</span>`;
+    }
+    function subtitle(a) {
+      if (a.described_start_date && a.described_precision && a.described_precision !== "unknown") {
+        const d = String(a.described_start_date).slice(0, 10);
+        if (a.described_precision === "year" || a.described_precision === "approximate") {
+          return (a.described_precision === "approximate" ? "about " : "") + d.slice(0, 4);
+        }
+        return d;
+      }
+      const k = KINDS.find((x) => x[0] === a.kind);
+      return k ? k[1] : a.kind;
+    }
+    function primaryThumb(a) {
+      if (a.cover_thumb_url) return a.cover_thumb_url;
+      const r = (a.representations || []).find((x) => x.presentation === "preview" && x.download_url);
+      if (r) return r.download_url;
+      const mem = (a.memories || []).find((m) => m.thumb_url || m.source_kind === "photo");
+      if (!mem) return "";
+      return mem.thumb_url || (mem.source_kind === "photo" ? "/library/media/photo/" + mem.source_id : "");
+    }
+    function thumbHtml(url, emptyLabel) {
+      const label = emptyLabel || "Needs representation";
+      if (!url) return `<span>${esc(label)}</span>`;
+      return `<img src="${esc(url)}" alt="" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.hidden=false" /><span hidden>${esc(label)}</span>`;
+    }
+    function memThumb(it) {
+      if (it.thumb_url) return it.thumb_url;
+      if (it.source_kind === "photo" && it.source_id) return "/library/media/photo/" + it.source_id;
+      if (it.source_kind === "video" && it.source_id) {
+        return "/library/media/video-poster?video=" + encodeURIComponent(it.source_id) + "&t=0.000";
+      }
+      return "";
+    }
+    async function loadList() {
+      const f = state.filters;
+      const qs = new URLSearchParams({ limit: "80" });
+      if (f.q) qs.set("q", f.q);
+      if (f.kind_group) qs.set("kind_group", f.kind_group);
+      if (f.person_id) qs.set("person_id", f.person_id);
+      if (f.needs_context) qs.set("needs_context", "true");
+      const data = await j("/artifact?" + qs.toString());
+      state.items = data.artifacts || [];
+    }
+    function renderPanel() {
+      state.view = "panel";
+      document.getElementById("editor-foot").classList.add("hidden");
+      const groups = [["", "All"], ["objects", "Objects"], ["documents", "Documents"], ["recipes", "Recipes"], ["other", "Other"]];
+      const cards = state.items.map((a) => `
+        <article class="card" data-id="${esc(a.id)}">
+          <div class="thumb">${thumbHtml(primaryThumb(a), a.needs_representation ? "Needs representation" : "No preview")}</div>
+          <div class="body">
+            <h3>${esc(a.label)}</h3>
+            <p>${esc(subtitle(a))}</p>
+            <p>${esc((a.people || []).map((p) => p.display_name).join(", "))}</p>
+            <p>${(a.memories || []).length} memories · ${(a.stories || a.story_ids || []).length} stories${a.place_label ? " · " + esc(a.place_label) : ""}</p>
+            ${a.needs_representation ? `<span class="badge">Needs representation</span>` : ""}
+            ${a.needs_context && !a.needs_representation ? `<span class="badge">Needs context</span>` : ""}
+          </div>
+        </article>`).join("");
+      document.getElementById("view").innerHTML = `
+        <div class="page-head">
+          <div><h1>Artifacts</h1><p class="sub">The meaningful things—and the stories they carry.</p></div>
+          <button class="btn primary" id="add-art">+ Add artifact</button>
+        </div>
+        <div class="filters">
+          <input id="art-q" placeholder="Search artifacts" value="${esc(state.filters.q)}" style="max-width:220px" />
+          <div class="tabs">${groups.map(([k, lab]) => `<button type="button" data-g="${k}" class="${state.filters.kind_group===k?"on":""}">${lab}</button>`).join("")}</div>
+          <button type="button" class="btn ${state.filters.needs_context?"primary":""}" id="needs">Needs context</button>
+        </div>
+        <div class="grid">${cards || `<p class="empty">No artifacts yet.</p>`}</div>
+        <p class="sub" style="text-align:center;margin-top:2rem">Artifacts remain distinct objects with their own evidence, people, places, stories, and history.</p>`;
+      document.getElementById("add-art").onclick = () => openEditor(null);
+      document.getElementById("art-q").onchange = async (e) => { state.filters.q = e.target.value; await loadList(); renderPanel(); };
+      document.querySelectorAll(".tabs button").forEach((b) => {
+        b.onclick = async () => { state.filters.kind_group = b.getAttribute("data-g"); await loadList(); renderPanel(); };
+      });
+      document.getElementById("needs").onclick = async () => {
+        state.filters.needs_context = !state.filters.needs_context; await loadList(); renderPanel();
+      };
+      document.querySelectorAll(".card").forEach((c) => {
+        c.onclick = () => openDetail(c.getAttribute("data-id"));
+      });
+    }
+    function renderDetail(a) {
+      state.view = "detail";
+      state.artifact = a;
+      document.getElementById("editor-foot").classList.add("hidden");
+      const reps = a.representations || [];
+      const first = reps[0];
+      const people = (a.people || []).map((p) => `<span class="chip">${esc(p.display_name)}</span>`).join(" ");
+      const stories = (a.stories || []).map((s) => `
+        <a class="mem" href="/story/ui?id=${esc(s.id)}"><div><strong>${esc(s.title)}</strong>
+        <p class="sub">${s.narrator_display_name ? "Narrated by " + esc(s.narrator_display_name) : ""} · ${s.ask_available ? "Saved" : "Draft"}</p></div></a>`).join("");
+      const mems = (a.memories || []).map((m) => `
+        <div class="mem">${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : ""}
+          <div><strong>${esc(m.source_kind)} · ${esc(m.label_snapshot || m.source_id)}</strong>
+          <p class="sub">${esc(m.occurred_on || "")}</p></div></div>`).join("");
+      const img = first && first.presentation === "preview" && first.download_url
+        ? `<img src="${esc(first.download_url)}" alt="${esc(first.view_kind)}" />`
+        : first ? `<p class="sub">Open original: <a href="${esc(first.download_url)}">${esc(first.original_filename || "file")}</a></p>` : `<p class="sub">No representations yet</p>`;
+      document.getElementById("view").innerHTML = `
+        <p class="crumb"><a href="#" id="back">Artifacts</a> / ${esc(a.label)}</p>
+        <div class="page-head">
+          <div>
+            <h1>${esc(a.label)}</h1>
+            <p><span class="badge">Saved</span><span class="badge">Available to Ask</span></p>
+          </div>
+          <div>
+            <button class="btn danger" id="del">Delete artifact</button>
+            <button class="btn primary" id="edit">Edit artifact</button>
+          </div>
+        </div>
+        <div class="layout">
+          <div>
+            <div class="viewer">${img}</div>
+            <p>${esc((a.kind || "") + (subtitle(a) ? " · " + subtitle(a) : "") + (a.place_label ? " · " + a.place_label : ""))}</p>
+            <p>${esc(a.description || "")}</p>
+            <h3>People</h3><p>${people || "<span class='sub'>None</span>"}</p>
+            <h3>Stories</h3>${stories || "<p class='sub'>No stories yet.</p>"}
+            <p>
+              <button class="btn" id="add-story">+ Add story</button>
+              <button class="btn" id="tell">Tell its story</button>
+              <button class="btn" id="link-story">Link existing story</button>
+            </p>
+            <h3>Supporting memories</h3>${mems || "<p class='sub'>None linked.</p>"}
+            <p><button class="btn" id="add-mem-detail">+ Add memories</button></p>
+          </div>
+          <div>
+            <div class="side"><h4>About this artifact</h4>
+              <p>Kind · ${esc(a.kind)}</p>
+              <p>Date · ${esc(subtitle(a))}</p>
+              <p>Place · ${esc(a.place_label || "—")}</p>
+              <p>Representations · ${reps.length}</p>
+              <p>Visibility · ${a.visibility === "shared_with_family" ? "Shared with family" : "Private"}</p>
+            </div>
+            <div class="side"><h4>Connections</h4>
+              <p>${(a.people||[]).length} person · ${(a.memories||[]).length} memories · ${(a.stories||[]).length} story</p>
+              <p class="sub">Original files preserved by MemoryBox.</p>
+              <p class="sub">${a.added_by ? "Added by " + esc(a.added_by) : ""} ${a.created_at ? " · " + esc(String(a.created_at).slice(0,10)) : ""}</p>
+            </div>
+          </div>
+        </div>`;
+      document.getElementById("back").onclick = async (e) => { e.preventDefault(); await loadList(); renderPanel(); };
+      document.getElementById("edit").onclick = () => openEditor(a);
+      document.getElementById("del").onclick = async () => {
+        if (!confirm("Remove this artifact from MemoryBox? Original files are preserved.")) return;
+        state.items = state.items.filter((x) => x.id !== a.id);
+        renderPanel();
+        try {
+          await j("/artifact/" + a.id + "/removed", { method: "POST" });
+        } catch (e) {
+          alert(e.message || "Could not remove artifact.");
+        }
+        try { await loadList(); } catch (_) {}
+        renderPanel();
+      };
+      document.getElementById("add-story").onclick = () => {
+        location.href = "/story/ui?new=1&artifact=" + encodeURIComponent(a.id);
+      };
+      document.getElementById("tell").onclick = () => {
+        location.href = "/story/ui?new=1&artifact=" + encodeURIComponent(a.id) + "&capture=1";
+      };
+      document.getElementById("link-story").onclick = () => openLinkStory(a);
+      document.getElementById("add-mem-detail").onclick = () => {
+        state.draft = {
+          id: a.id, kind: a.kind, label: a.label, description: a.description || "",
+          visibility: a.visibility || "private",
+          described_start_date: (a.described_start_date || "").slice(0, 10),
+          described_precision: a.described_precision || "unknown",
+          place_label: a.place_label || "", person_ids: a.person_ids || [],
+          memories: a.memories || [],
+        };
+        state.artifact = a;
+        openMemModal({ returnTo: "detail" });
+      };
+    }
+    function kindOptions(sel) {
+      return KINDS.map(([v, l]) => `<option value="${v}" ${sel===v?"selected":""}>${l}</option>`).join("");
+    }
+    function openEditor(a) {
+      state.view = "editor";
+      state.staged = [];
+      if (a) {
+        state.draft = {
+          id: a.id, kind: a.kind, label: a.label, description: a.description || "",
+          visibility: a.visibility || "private",
+          described_start_date: (a.described_start_date || "").slice(0, 10),
+          described_precision: a.described_precision || "unknown",
+          place_label: a.place_label || "", person_ids: a.person_ids || [],
+        };
+        state.artifact = a;
+      } else {
+        state.draft = emptyDraft();
+        state.artifact = null;
+        const p = new URLSearchParams(location.search);
+        if (p.get("photo")) state.draft.memories = [{ source_kind: "photo", source_id: p.get("photo"), label_snapshot: p.get("title") || "Photo", thumb_url: p.get("thumb") || "" }];
+        if (p.get("video")) state.draft.memories = [{ source_kind: "video", source_id: p.get("video"), label_snapshot: p.get("title") || "Video" }];
+      }
+      paintEditor();
+    }
+    function paintEditor() {
+      const prev = document.getElementById("ed-desc");
+      if (prev) {
+        state.draft.description = prev.value;
+        if (prev._mbNarrative && prev._mbNarrative.destroy) prev._mbNarrative.destroy();
+      }
+      const d = state.draft;
+      const a = state.artifact;
+      const isNew = !d.id;
+      const reps = (a && a.representations) || [];
+      const mems = (a && a.memories) || d.memories || [];
+      const people = (d.person_ids || []).map((id) => `<span class="chip">${esc(personName(id))} <button type="button" class="btn rem-p" data-id="${esc(id)}">×</button></span>`).join(" ");
+      const staged = state.staged.map((s, i) => `<div class="mem"><div>${esc(s.name)} · ${esc(s.view_kind)} <button type="button" class="btn drop-st" data-i="${i}">Remove</button></div></div>`).join("");
+      document.getElementById("view").innerHTML = `
+        <p class="crumb"><a href="#" id="back">Artifacts</a> / ${isNew ? "New artifact" : esc(d.label) + " / Edit"}</p>
+        <h1>${isNew ? "New artifact" : "Edit artifact"}</h1>
+        <p class="sub">${isNew ? "Create one meaningful object, then add the views and evidence that help preserve it." : "Update the object and its connections. Original representation files remain unchanged."}</p>
+        <div class="layout">
+          <div>
+            <label>Name</label><input id="ed-label" value="${esc(d.label)}" placeholder="e.g. Grandpa's pocket watch" />
+            <label>Description (optional)</label>
+            <p class="sub">Describe the object itself. Add recollections as Stories after the artifact is saved.</p>
+            <textarea id="ed-desc">${esc(d.description)}</textarea>
+            <h3>Representations</h3>
+            <p class="sub">${isNew ? "Files stay on this device until Save artifact." : "Originals are preserved."}</p>
+            ${reps.map((r) => `<div class="mem">${r.presentation==="preview"&&r.download_url?`<img src="${esc(r.download_url)}" alt="" />`:""}<div><strong>${esc(r.view_kind)}</strong> · ${esc(r.original_filename||"")}<br/><button type="button" class="btn rem-r" data-id="${esc(r.id)}">Remove</button></div></div>`).join("")}
+            ${staged}
+            ${!reps.length && !state.staged.length ? `<div class="dash">No representations yet</div>` : ""}
+            <p><button class="btn primary" id="add-rep">+ Add representation</button></p>
+            <p id="up-err" class="warn"></p>
+            <h3>Supporting memories</h3>
+            ${mems.map((m) => `<div class="mem"><div>${esc(m.source_kind)} · ${esc(m.label_snapshot||m.source_id)} ${m.id?`<button type="button" class="btn rem-m" data-id="${esc(m.id)}">Remove</button>`:""}</div></div>`).join("")}
+            <p><button class="btn" id="add-mem" ${isNew ? "disabled" : ""} title="${isNew ? "Save the artifact first, then add archive memories." : "Link existing photos, video, and other evidence"}">+ Add memories</button></p>
+            ${isNew ? `<p class="sub">Save the artifact first. Photo or video opened from Explore is attached on Save.</p>` : ""}
+          </div>
+          <div>
+            <div class="side">
+              <h4>Artifact details</h4>
+              <label>Kind</label><select id="ed-kind">${kindOptions(d.kind)}</select>
+              <label>Approximate date</label>
+              <select id="ed-prec">
+                ${[["unknown","Unknown"],["day","Exact day"],["month","Month"],["year","Year"],["approximate","Approximate year"]].map(([v,l])=>`<option value="${v}" ${d.described_precision===v?"selected":""}>${l}</option>`).join("")}
+              </select>
+              <input id="ed-date" type="date" value="${esc(d.described_start_date)}" />
+              <label>Place (optional)</label><input id="ed-place" value="${esc(d.place_label)}" placeholder="Florissant" />
+              <label>Visibility</label>
+              <select id="ed-vis">
+                <option value="private" ${d.visibility==="private"?"selected":""}>Private</option>
+                <option value="shared_with_family" ${d.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
+              </select>
+              <p>People</p>${people || "<p class='sub'>None</p>"}
+              <button class="btn" id="add-p">+ Add people</button>
+              <p class="sub">${state.owner && state.owner.display_name ? "Added by " + esc(state.owner.display_name) : ""}</p>
+            </div>
+            <p class="sub">Stories are managed in the Story editor and remain linked to this artifact.</p>
+          </div>
+        </div>`;
+      const foot = document.getElementById("editor-foot");
+      foot.classList.remove("hidden");
+      foot.innerHTML = `<button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">${isNew?"Save artifact":"Save changes"}</button>`;
+      document.getElementById("back").onclick = async (e) => {
+        e.preventDefault();
+        const ta = document.getElementById("ed-desc");
+        if (ta && ta._mbNarrative && ta._mbNarrative.discardUnsaved) ta._mbNarrative.discardUnsaved();
+        if (isNew) { await loadList(); renderPanel(); } else openDetail(d.id);
+      };
+      document.getElementById("cancel").onclick = async () => {
+        state.staged = [];
+        const ta = document.getElementById("ed-desc");
+        if (ta && ta._mbNarrative && ta._mbNarrative.discardUnsaved) ta._mbNarrative.discardUnsaved();
+        if (isNew) { await loadList(); renderPanel(); } else openDetail(d.id);
+      };
+      document.getElementById("save").onclick = saveEditor;
+      document.getElementById("add-rep").onclick = () => openRepModal(isNew);
+      document.getElementById("add-mem").onclick = () => { if (isNew) return; openMemModal({ returnTo: "editor" }); };
+      document.getElementById("add-p").onclick = openPeople;
+      document.querySelectorAll(".rem-p").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.getAttribute("data-id");
+          if (d.id) { const data = await j("/artifact/" + d.id + "/persons/" + id + "/removed", { method: "POST" }); state.artifact = data.artifact; d.person_ids = data.artifact.person_ids; }
+          else d.person_ids = d.person_ids.filter((x) => x !== id);
+          paintEditor();
+        };
+      });
+      document.querySelectorAll(".rem-r").forEach((b) => {
+        b.onclick = async () => {
+          if (!confirm("Remove this representation? The original file is preserved.")) return;
+          const data = await j("/artifact/" + d.id + "/representations/" + b.getAttribute("data-id") + "/removed", { method: "POST" });
+          state.artifact = data.artifact; paintEditor();
+        };
+      });
+      document.querySelectorAll(".drop-st").forEach((b) => {
+        b.onclick = () => { state.staged.splice(Number(b.getAttribute("data-i")), 1); paintEditor(); };
+      });
+      document.querySelectorAll(".rem-m").forEach((b) => {
+        b.onclick = async () => {
+          const data = await j("/artifact/" + d.id + "/memories/" + b.getAttribute("data-id") + "/removed", { method: "POST" });
+          state.artifact = data.artifact; paintEditor();
+        };
+      });
+      ["ed-label","ed-desc","ed-kind","ed-prec","ed-date","ed-place","ed-vis"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.onchange = el.oninput = () => {
+          d.label = document.getElementById("ed-label").value;
+          d.description = document.getElementById("ed-desc").value;
+          d.kind = document.getElementById("ed-kind").value;
+          d.described_precision = document.getElementById("ed-prec").value;
+          d.described_start_date = document.getElementById("ed-date").value;
+          d.place_label = document.getElementById("ed-place").value;
+          d.visibility = document.getElementById("ed-vis").value;
+        };
+      });
+      if (window.MBNarrativeField) {
+        const ta = document.getElementById("ed-desc");
+        if (ta) {
+          window.MBNarrativeField.mount(ta, {
+            speech: "convenience",
+            onChange: () => { d.description = ta.value; },
+          });
+        }
+      }
+    }
+    async function saveEditor() {
+      const d = state.draft;
+      if (!d.label.trim()) { alert("Name is required."); return; }
+      const body = {
+        kind: d.kind, label: d.label.trim(), description: d.description,
+        visibility: d.visibility, described_precision: d.described_precision,
+        described_start_date: d.described_precision === "unknown" ? null : (d.described_start_date || null),
+        place_label: d.place_label || null, person_ids: d.person_ids,
+      };
+      let art;
+      if (!d.id) {
+        art = (await j("/artifact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).artifact;
+        const err = [];
+        for (const s of state.staged) {
+          const fd = new FormData();
+          fd.append("file", s.file, s.name);
+          fd.append("view_kind", s.view_kind);
+          if (s.label) fd.append("label", s.label);
+          if (s.caption) fd.append("caption", s.caption);
+          try {
+            art = (await j("/artifact/" + art.id + "/representations", { method: "POST", body: fd })).artifact;
+          } catch (e) { err.push(s.name + ": " + e.message); }
+        }
+        for (const m of d.memories || []) {
+          try {
+            art = (await j("/artifact/" + art.id + "/memories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) })).artifact;
+          } catch (e) { err.push(e.message); }
+        }
+        state.staged = [];
+        state.artifact = art;
+        if (err.length) {
+          alert("Artifact saved. Some uploads failed — retry from Edit.\n" + err.join("\n"));
+          openEditor(art);
+          document.getElementById("up-err").textContent = err.join(" · ");
+          return;
+        }
+        openEditor(art);
+        return;
+      }
+      art = (await j("/artifact/" + d.id + "/revise", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).artifact;
+      state.artifact = art;
+      openDetail(art.id);
+    }
+    function openRepModal(localOnly) {
+      document.getElementById("modals").innerHTML = `
+        <div class="modal-back"><div class="modal">
+          <div class="modal-scroll">
+          <h2>Add another view of this artifact</h2>
+          <p class="sub">Upload a file that <em>is</em> a view of this object (front, back, engraving, scan). Library photos stay supporting memories — they are not representations and are not chosen from the gallery here.</p>
+          <input id="rep-file" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,.txt,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,application/pdf,text/plain" />
+          <label>Representation type</label>
+          <select id="rep-vk">${["front","back","detail","engraving","document","other"].map((v)=>`<option value="${v}">${v}</option>`).join("")}</select>
+          <label>Label (optional)</label><input id="rep-lab" placeholder="e.g. Engraving on back" />
+          <label>Caption (optional)</label><textarea id="rep-cap" placeholder="What does this view show?"></textarea>
+          <p class="sub">The uploaded original is preserved. Labels and captions can be changed later without altering the file.</p>
+          </div>
+          <div class="pk-foot"><button class="btn" id="rep-x">Cancel</button> <button class="btn primary" id="rep-go">Add representation</button></div>
+        </div></div>`;
+      document.getElementById("rep-x").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("rep-go").onclick = async () => {
+        const file = document.getElementById("rep-file").files[0];
+        if (!file) { alert("Choose a file."); return; }
+        const rec = { file, name: file.name, view_kind: document.getElementById("rep-vk").value, label: document.getElementById("rep-lab").value, caption: document.getElementById("rep-cap").value };
+        if (localOnly || !state.draft.id) {
+          document.getElementById("modals").innerHTML = "";
+          state.staged.push(rec); paintEditor(); return;
+        }
+        const go = document.getElementById("rep-go");
+        go.disabled = true; go.textContent = "Saving…";
+        const fd = new FormData();
+        fd.append("file", rec.file, rec.name);
+        fd.append("view_kind", rec.view_kind);
+        if (rec.label) fd.append("label", rec.label);
+        if (rec.caption) fd.append("caption", rec.caption);
+        try {
+          const data = await j("/artifact/" + state.draft.id + "/representations", { method: "POST", body: fd });
+          state.artifact = data.artifact;
+          document.getElementById("modals").innerHTML = "";
+          paintEditor();
+        } catch (e) {
+          go.disabled = false; go.textContent = "Add representation";
+          alert(e.message || "Could not save this representation.");
+        }
+      };
+    }
+    async function openMemModal(opts) {
+      opts = opts || {};
+      const returnTo = opts.returnTo || "editor";
+      let kind = "all";
+      const selected = {};
+      let items = [];
+      document.getElementById("modals").innerHTML = `
+        <div class="modal-back"><div class="modal">
+          <div class="modal-scroll">
+          <h2>Link evidence to ${esc(state.draft.label || "this artifact")}</h2>
+          <p class="sub">Search existing memories. They remain independent and their originals stay unchanged.</p>
+          <div class="ask-field mb-explore-ask-field" id="pk-field">
+            <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+            <input id="pk-q" placeholder="Search people, places, dates, or memories." />
+            <button type="button" class="mb-explore-ask-go" id="pk-go">→</button>
+          </div>
+          <div class="tabs" id="pk-tabs"></div>
+          <p class="sub" id="pk-meta">Ask to fill the gallery</p>
+          <p id="pk-searching" hidden>Searching…</p>
+          <div id="pk-grid" class="pick-grid"></div>
+          <p class="sub">These become supporting evidence. Use Add representation for files that are views of the artifact itself.</p>
+          </div>
+          <div class="pk-foot">
+            <button class="btn" id="pk-x">Cancel</button>
+            <button class="btn primary" id="pk-add" disabled>Add memories</button>
+          </div>
+        </div></div>`;
+      const kinds = [["all","Memory"],["photos","Photos"],["videos","Video"],["communications","Communications"],["calendar","Calendar"],["journal","Journal"],["audio","Audio"]];
+      const tabs = document.getElementById("pk-tabs");
+      tabs.innerHTML = kinds.map(([k,l]) => `<button type="button" data-k="${k}" class="${k==="all"?"on":""}">${l}</button>`).join("");
+      function memCardCopy(it) {
+        const who = (it.people || []).map((p) => p.display_name || p.name || p).filter(Boolean).join(", ");
+        const title = it.title && !/^photo$/i.test(it.title) ? it.title : (it.label_snapshot && !/^photo$/i.test(it.label_snapshot) ? it.label_snapshot : "");
+        const ctx = (it.context && !/^photo$/i.test(it.context) ? it.context : who);
+        const when = (it.occurred_on || "").toString().slice(0, 10);
+        const lines = [title || ctx || when || it.source_id || "Memory"];
+        if (ctx && ctx !== lines[0]) lines.push(ctx);
+        if (when) lines.push(when);
+        return lines;
+      }
+      function paintGrid() {
+        document.getElementById("pk-grid").innerHTML = items.map((it) => {
+          const key = it.source_kind + ":" + it.source_id;
+          const thumb = memThumb(it);
+          const lines = memCardCopy(it);
+          return `<div class="pick ${selected[key]?"on":""}" data-k="${esc(key)}">${thumb ? `<img src="${esc(thumb)}" alt="" />` : `<div class="ph">${esc((it.source_kind || "memory").replace(/_/g, " "))}</div>`}<strong>${esc((it.source_kind || "").replace(/_/g, " "))}</strong>${lines.map((t) => `<p>${esc(t)}</p>`).join("")}</div>`;
+        }).join("") || "<p class='empty'>Ask for a person or words first — the gallery stays empty until you search.</p>";
+        document.querySelectorAll(".pick").forEach((el) => {
+          el.onclick = () => {
+            const k = el.getAttribute("data-k");
+            const it = items.find((x) => (x.source_kind + ":" + x.source_id) === k);
+            if (!it) return;
+            if (selected[k]) delete selected[k];
+            else selected[k] = it;
+            el.classList.toggle("on", Boolean(selected[k]));
+            const n = Object.keys(selected).length;
+            const add = document.getElementById("pk-add");
+            add.disabled = !n;
+            add.textContent = n ? "Add " + n + " memories" : "Add memories";
+          };
+        });
+      }
+      async function search() {
+        const q = (document.getElementById("pk-q").value || "").trim();
+        const field = document.getElementById("pk-field");
+        const pulse = document.getElementById("pk-searching");
+        if (field) field.classList.add("is-searching");
+        if (pulse) pulse.hidden = false;
+        try {
+          if (!q) {
+            items = [];
+            document.getElementById("pk-meta").textContent = "Ask to fill the gallery";
+          } else {
+            const map = { photos:"photo", videos:"video", communications:"email_thread,sms_conversation", calendar:"calendar_event", journal:"journal", audio:"audio" };
+            const qs = new URLSearchParams({ q, limit: "80" });
+            if (kind !== "all") qs.set("types", map[kind] || kind);
+            const data = await j("/story/evidence-search?" + qs.toString());
+            items = (data.items || []).filter((x) => x.source_kind !== "artifact");
+            document.getElementById("pk-meta").textContent = (data.total || items.length) + " matches";
+          }
+        } finally {
+          if (field) field.classList.remove("is-searching");
+          if (pulse) pulse.hidden = true;
+        }
+        paintGrid();
+      }
+      tabs.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => {
+          kind = b.getAttribute("data-k");
+          tabs.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+          if ((document.getElementById("pk-q").value || "").trim()) search();
+        };
+      });
+      document.getElementById("pk-go").onclick = search;
+      document.getElementById("pk-q").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } };
+      document.getElementById("pk-x").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("pk-add").onclick = async () => {
+        let art = state.artifact;
+        for (const m of Object.values(selected)) {
+          art = (await j("/artifact/" + state.draft.id + "/memories", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_kind: m.source_kind,
+              source_id: m.source_id,
+              label_snapshot: m.label_snapshot || m.title || m.source_kind,
+              thumb_url: memThumb(m) || null,
+              occurred_on: (m.occurred_on || "").toString().slice(0, 10) || null,
+            }),
+          })).artifact;
+        }
+        state.artifact = art;
+        document.getElementById("modals").innerHTML = "";
+        if (returnTo === "detail") openDetail(art.id);
+        else paintEditor();
+      };
+      paintGrid();
+    }
+    function openPeople() {
+      let pickId = "";
+      const chosen = () => new Set(state.draft.person_ids || []);
+      const listHtml = (q) => {
+        const rows = sortedPeople().filter((p) => personMatches(p, q) && !chosen().has(p.id));
+        return rows.slice(0, 80).map((p) =>
+          `<button type="button" class="person-row ${p.id === pickId ? "on" : ""}" data-id="${esc(p.id)}">${portraitInner(p)}</button>`
+        ).join("") || `<p class="sub">No matching people.</p>`;
+      };
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <div class="modal-scroll">
+          <h2>Add people</h2>
+          <p class="sub">Type a name to jump in the list. Select one person, then Add person.</p>
+          <input id="pp-q" placeholder="Type a name" autocomplete="off" />
+          <div class="person-list" id="pp-list">${listHtml("")}</div>
+        </div>
+        <div class="pk-foot">
+          <button class="btn" id="px">Done</button>
+          <button class="btn primary" id="p-add" disabled>Add person</button>
+        </div>
+      </div></div>`;
+      const paint = () => {
+        document.getElementById("pp-list").innerHTML = listHtml(document.getElementById("pp-q").value);
+        document.getElementById("p-add").disabled = !pickId;
+        document.querySelectorAll("#pp-list .person-row").forEach((b) => {
+          b.onclick = () => { pickId = b.dataset.id; paint(); };
+        });
+      };
+      document.getElementById("pp-q").oninput = () => { pickId = ""; paint(); };
+      document.getElementById("px").onclick = () => { document.getElementById("modals").innerHTML = ""; paintEditor(); };
+      document.getElementById("p-add").onclick = async () => {
+        const id = pickId;
+        if (!id) return;
+        if (state.draft.id) {
+          const data = await j("/artifact/" + state.draft.id + "/persons/" + id, { method: "POST" });
+          state.artifact = data.artifact; state.draft.person_ids = data.artifact.person_ids;
+        } else if (!state.draft.person_ids.includes(id)) state.draft.person_ids.push(id);
+        pickId = "";
+        document.getElementById("pp-q").value = "";
+        paint();
+      };
+      paint();
+      document.getElementById("pp-q").focus();
+    }
+    async function openLinkStory(a) {
+      const data = await j("/story?limit=80");
+      const items = data.stories || data.items || [];
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <div class="modal-scroll"><h2>Link existing story</h2>
+        ${items.map((s) => `<button class="btn s-row" data-id="${esc(s.id)}" style="display:block;margin:0.3rem 0">${esc(s.title || "Untitled")}</button>`).join("") || "<p class='empty'>No stories yet.</p>"}
+        </div>
+        <div class="pk-foot"><button class="btn" id="sx">Cancel</button></div></div></div>`;
+      document.getElementById("sx").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.querySelectorAll(".s-row").forEach((b) => {
+        b.onclick = async () => {
+          await j("/artifact/" + a.id + "/stories/" + b.getAttribute("data-id"), { method: "POST" });
+          document.getElementById("modals").innerHTML = "";
+          openDetail(a.id);
+        };
+      });
+    }
+    async function openDetail(id) {
+      const data = await j("/artifact/" + id);
+      history.replaceState({}, "", "/artifact/ui?id=" + encodeURIComponent(id));
+      renderDetail(data.artifact);
+    }
+    document.getElementById("askGo").onclick = () => {
+      location.href = "/explore/ui?q=" + encodeURIComponent(document.getElementById("askQ").value.trim());
+    };
+    (async function boot() {
+      renderNav();
+      const p = new URLSearchParams(location.search);
+      const peopleP = Promise.all([loadPeople(), loadOwner()]);
+      if (p.get("new") === "1" || p.get("photo") || p.get("video")) {
+        await peopleP; openEditor(null); return;
+      }
+      if (p.get("id") && UUID_RE.test(p.get("id"))) {
+        await Promise.all([peopleP, openDetail(p.get("id"))]);
+        return;
+      }
+      try { await loadList(); } catch (_) { state.items = []; }
+      renderPanel();
+      await peopleP;
+    })();
+  </script>
+</body>
+</html>

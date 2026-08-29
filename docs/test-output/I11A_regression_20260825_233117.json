@@ -1,0 +1,3870 @@
+{
+  "generated_at": "2026-08-25T23:31:17.391965+00:00",
+  "model": "llama3.2",
+  "runtime": {
+    "provider_key": "fake_llm",
+    "chat_model": null,
+    "base_url": null,
+    "health": {
+      "ok": true,
+      "detail": "fake"
+    }
+  },
+  "summary": {
+    "tests_run": 4,
+    "tests_completed": 4,
+    "tests_with_errors": 3,
+    "total_model_calls": 1,
+    "total_duration_ms": 4672,
+    "total_timeouts": 0,
+    "calls_by_stage": {
+      "chat": 0,
+      "embed": 1,
+      "by_stage": {
+        "provider_call": 1
+      }
+    },
+    "per_test": [
+      {
+        "ask": "write a narrative about my January 2025",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_calls": 0,
+        "duration_ms": 1129,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 0,
+          "embed": 0,
+          "by_operation": {},
+          "by_stage": {},
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "evidence_considered": {
+          "communication": 0,
+          "photo": 0,
+          "story": 0,
+          "journal": 0,
+          "video": 0,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+            "missing": [
+              "photos"
+            ],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 0,
+            "eligible_n": 0,
+            "processed_n": 0,
+            "prepared_n": 0,
+            "supplied_to_model_n": 0,
+            "narrator_input_n": 0,
+            "episode_n": 0,
+            "significant_episode_n": 0,
+            "reduction": "episode"
+          }
+        }
+      },
+      {
+        "ask": "write a narrative about my trip to las vegas in January 2026",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_calls": 0,
+        "duration_ms": 1090,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 0,
+          "embed": 0,
+          "by_operation": {},
+          "by_stage": {},
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "evidence_considered": {
+          "communication": 0,
+          "photo": 0,
+          "story": 0,
+          "journal": 0,
+          "video": 0,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+            "missing": [
+              "photos"
+            ],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 0,
+            "eligible_n": 0,
+            "processed_n": 0,
+            "prepared_n": 0,
+            "supplied_to_model_n": 0,
+            "narrator_input_n": 0,
+            "episode_n": 0,
+            "significant_episode_n": 0,
+            "reduction": "episode"
+          }
+        }
+      },
+      {
+        "ask": "write a narrative about my alaska trip in 2026",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_calls": 0,
+        "duration_ms": 1082,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 0,
+          "embed": 0,
+          "by_operation": {},
+          "by_stage": {},
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "evidence_considered": {
+          "communication": 0,
+          "photo": 0,
+          "story": 0,
+          "journal": 0,
+          "video": 0,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {
+            "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+            "missing": [
+              "photos"
+            ],
+            "conflicts": [],
+            "excluded": [
+              "spam",
+              "trash"
+            ],
+            "truncated": false,
+            "incomplete": false,
+            "truncation_disclosure": null
+          },
+          "narrative_pack_volume": {
+            "retrieved_n": 0,
+            "eligible_n": 0,
+            "processed_n": 0,
+            "prepared_n": 0,
+            "supplied_to_model_n": 0,
+            "narrator_input_n": 0,
+            "episode_n": 0,
+            "significant_episode_n": 0,
+            "reduction": "episode"
+          }
+        }
+      },
+      {
+        "ask": "tell me what you know about Peggy",
+        "status": "ok",
+        "error_class": null,
+        "model_calls": 1,
+        "duration_ms": 1371,
+        "timeouts": 0,
+        "provider_calls": {
+          "chat": 0,
+          "embed": 1,
+          "by_operation": {
+            "embed": 1
+          },
+          "by_stage": {
+            "provider_call": 1
+          },
+          "timeouts": 0,
+          "errors": 0
+        },
+        "observations_a": null,
+        "observations_b": null,
+        "extract_calls": null,
+        "evidence_considered": {
+          "communication": 0,
+          "photo": 0,
+          "story": 0,
+          "journal": 0,
+          "video": 0,
+          "artifact": 0,
+          "guided_capture": 0,
+          "coverage": {},
+          "narrative_pack_volume": null
+        }
+      }
+    ]
+  },
+  "tests": [
+    {
+      "index": 1,
+      "ask": "write a narrative about my January 2025",
+      "session_id": "i11a-regression-1-5d8e586a-43fc-40d5-bfc5-2aeb7e8aaa43",
+      "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+      "started_at": "2026-08-25T23:31:12.537177+00:00",
+      "ended_at": "2026-08-25T23:31:13.703219+00:00",
+      "duration_ms": 1129,
+      "wall_duration_ms": 1166,
+      "model_call_count": 0,
+      "status": "ok",
+      "error_class": "PARSE_SCHEMA",
+      "curator_response": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+      "answer_kind": "insufficient",
+      "narration_unavailable": true,
+      "evidence_considered": {
+        "communication": 0,
+        "photo": 0,
+        "story": 0,
+        "journal": 0,
+        "video": 0,
+        "artifact": 0,
+        "guided_capture": 0,
+        "coverage": {
+          "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+          "missing": [
+            "photos"
+          ],
+          "conflicts": [],
+          "excluded": [
+            "spam",
+            "trash"
+          ],
+          "truncated": false,
+          "incomplete": false,
+          "truncation_disclosure": null
+        },
+        "narrative_pack_volume": {
+          "retrieved_n": 0,
+          "eligible_n": 0,
+          "processed_n": 0,
+          "prepared_n": 0,
+          "supplied_to_model_n": 0,
+          "narrator_input_n": 0,
+          "episode_n": 0,
+          "significant_episode_n": 0,
+          "reduction": "episode"
+        }
+      },
+      "provider_calls": {
+        "chat": 0,
+        "embed": 0,
+        "by_operation": {},
+        "by_stage": {},
+        "timeouts": 0,
+        "errors": 0
+      },
+      "inference_accounting": {
+        "units_deterministic": 0,
+        "units_model_extract": 0
+      },
+      "harness_error": null,
+      "trace": {
+        "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+        "created_at": "2026-08-25T23:31:12.556428+00:00",
+        "updated_at": "2026-08-25T23:31:13.701917+00:00",
+        "request_kind": "ask",
+        "originating_ask": "write a narrative about my January 2025",
+        "session_id": "i11a-regression-1-5d8e586a-43fc-40d5-bfc5-2aeb7e8aaa43",
+        "purpose": "ask",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_call_count": 0,
+        "duration_ms": 1129,
+        "initiator": {
+          "ask": "write a narrative about my January 2025",
+          "kind": "ask",
+          "session_id": "i11a-regression-1-5d8e586a-43fc-40d5-bfc5-2aeb7e8aaa43"
+        },
+        "assembled_context": {
+          "plan": {
+            "act": "find",
+            "notes": [
+              "temporal=month_year",
+              "tell_multimodal_i11",
+              "want_story_modality",
+              "want_journal_modality",
+              "want_artifact_modality",
+              "want_guided_capture_modality",
+              "want_sms_modality",
+              "want_email_modality",
+              "want_calendar_modality"
+            ],
+            "time_end": "2025-01-31",
+            "person_ids": [],
+            "time_start": "2025-01-01",
+            "want_photo": true,
+            "want_still": true,
+            "want_story": true,
+            "want_video": true,
+            "is_followup": false,
+            "output_mode": "tell",
+            "place_names": [],
+            "refine_verb": null,
+            "trip_labels": [],
+            "want_spoken": false,
+            "want_visual": true,
+            "event_labels": [],
+            "original_ask": "write a narrative about my January 2025",
+            "person_names": [],
+            "spoken_about": null,
+            "theme_labels": [],
+            "visual_scope": "broad",
+            "want_journal": true,
+            "effective_ask": "write a narrative about my January 2025 | time:2025-01-01..2025-01-31 | constraints:2025 | visual_scope:broad",
+            "spoken_phrase": null,
+            "want_artifact": true,
+            "want_calendar": true,
+            "profile_answer": null,
+            "profile_intent": null,
+            "temporal_after": false,
+            "temporal_label": "January 2025",
+            "life_event_kind": null,
+            "navigate_target": null,
+            "subject_changed": false,
+            "attachments_only": null,
+            "gallery_show_sms": null,
+            "life_event_years": [],
+            "temporal_windows": [
+              [
+                "2025-01-01",
+                "2025-01-31"
+              ]
+            ],
+            "ambiguity_message": null,
+            "want_cross_source": false,
+            "compile_provenance": "deterministic",
+            "gallery_show_email": null,
+            "reference_resolved": false,
+            "want_communication": true,
+            "memory_presentation": null,
+            "want_guided_capture": true,
+            "broaden_same_context": false,
+            "inherit_from_context": false,
+            "semantic_constraints": [],
+            "gallery_show_calendar": null,
+            "retrieval_constraints": [
+              "2025"
+            ],
+            "journal_capture_intent": false,
+            "requires_clarification": false
+          }
+        },
+        "final_disposition": {
+          "inventing": false,
+          "photo_hits": 0,
+          "answer_kind": "insufficient",
+          "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+          "evidence_hits": 0,
+          "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+        },
+        "error": null,
+        "spans": [
+          {
+            "span_id": "83af2c94-496e-4808-8aa1-120dc6b8a2fa",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 1,
+            "stage": "initiation",
+            "component": "orchestrator",
+            "operation": "request",
+            "started_at": "2026-08-25T23:31:12.558924+00:00",
+            "ended_at": "2026-08-25T23:31:12.558926+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "ask": "write a narrative about my January 2025",
+              "session_id": "i11a-regression-1-5d8e586a-43fc-40d5-bfc5-2aeb7e8aaa43",
+              "request_kind": "ask"
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {
+              "ask": "write a narrative about my January 2025",
+              "kind": "ask",
+              "session_id": "i11a-regression-1-5d8e586a-43fc-40d5-bfc5-2aeb7e8aaa43"
+            }
+          },
+          {
+            "span_id": "9b0293f7-a5cc-46b8-b030-4346a90e0914",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 2,
+            "stage": "retrieval_resolution",
+            "component": "retrieve",
+            "operation": "retrieval_resolution",
+            "started_at": "2026-08-25T23:31:13.340298+00:00",
+            "ended_at": "2026-08-25T23:31:13.340300+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "resolved": false,
+              "ambiguous": false,
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ],
+              "place_names": [],
+              "trip_labels": [],
+              "clarification": null,
+              "comm_pipeline": [],
+              "needs_refetch": false,
+              "candidate_windows": [],
+              "discovery_windows": [
+                [
+                  "2025-01-01",
+                  "2025-01-31"
+                ]
+              ],
+              "resolved_trip_window": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2025-01-31",
+                    "time_start": "2025-01-01",
+                    "temporal_label": "January 2025",
+                    "temporal_windows": [
+                      [
+                        "2025-01-01",
+                        "2025-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "person_time_only",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": null,
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ]
+            },
+            "validation": null,
+            "disposition": {
+              "resolved": false,
+              "comm_skipped": 0,
+              "comm_selected": 0,
+              "eligible_photos": 0,
+              "eligible_evidence": 0
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "ce25b11d-a991-42f2-82f4-a26778498f2b",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 3,
+            "stage": "i11a_inference",
+            "component": "i11a",
+            "operation": "preaggregation",
+            "started_at": "2026-08-25T23:31:13.593239+00:00",
+            "ended_at": "2026-08-25T23:31:13.593241+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "2cd4e33c-0955-49d4-bf11-60dac3a33946",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 4,
+            "stage": "i11a_validate",
+            "component": "i11a",
+            "operation": "fail_closed",
+            "started_at": "2026-08-25T23:31:13.607068+00:00",
+            "ended_at": "2026-08-25T23:31:13.607070+00:00",
+            "duration_ms": 0,
+            "status": "error",
+            "error_class": "PARSE_SCHEMA",
+            "assembled_context": {
+              "ok": false,
+              "reason": "no evidence units",
+              "partial": false,
+              "document": null,
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "error_class": "PARSE_SCHEMA",
+              "fail_closed": true,
+              "person_context": {
+                "as_of": "2025-01-01",
+                "requestor": {
+                  "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                  "display_name": "Tom Will",
+                  "age_at_period": null,
+                  "known_relationships": [],
+                  "allowed_relationship_labels": []
+                },
+                "focal_subjects": [
+                  {
+                    "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                    "display_name": "Tom Will",
+                    "age_at_period": null,
+                    "known_relationships": [],
+                    "allowed_relationship_labels": []
+                  }
+                ],
+                "allowed_relationship_labels": []
+              },
+              "request_context": {
+                "focal_subject_names": [],
+                "requestor_person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                "focal_subject_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ],
+                "visual_library_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ]
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "31c53909-e460-443f-86df-97eb1c993271",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 5,
+            "stage": "i11a_consideration",
+            "component": "i11a",
+            "operation": "consideration",
+            "started_at": "2026-08-25T23:31:13.628987+00:00",
+            "ended_at": "2026-08-25T23:31:13.628989+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "media": {
+                "note": "Person-library unwindowed count, in-window Person assets, and Gallery display count are separate. year_fair is not applied when the Ask has time windows — a January stills count of 9 is membership, not a cap of 9. candidate_visual_ids rank Gallery; empty IDs never suppress eligible media.",
+                "year_fair_applied": null,
+                "retrieved_photo_hits": 0,
+                "retrieved_video_hits": 0,
+                "gallery_display_count": 0,
+                "location_filtered_count": null,
+                "evidence_units_generated": 0,
+                "media_provider_candidates": 0,
+                "person_assets_in_window_n": null,
+                "time_filtered_media_count": 0,
+                "units_passed_to_inference": null,
+                "person_filtered_media_count": 0,
+                "person_library_unwindowed_n": null,
+                "representative_gallery_assets_selected": null
+              },
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "leaf_calls": 0,
+              "semantic_ir": null,
+              "comm_pipeline": [],
+              "evidence_sets": {
+                "inference": {
+                  "note": "Not an arbitrary top-N. Chunking may batch; it must not drop calendar/travel/media.",
+                  "by_kind": {
+                    "sms": 0,
+                    "emails": 0,
+                    "photos": 0,
+                    "travel": 0,
+                    "stories": 0,
+                    "artifacts": 0,
+                    "place_event": 0,
+                    "video_assets": 0,
+                    "video_moments": 0,
+                    "spoken_moments": 0,
+                    "calendar_events": 0,
+                    "journal_entries": 0,
+                    "external_historical": 0
+                  },
+                  "chunk_n": 0,
+                  "units_generated": 0,
+                  "units_passed_to_inference": 0
+                },
+                "retrieved": {
+                  "total": 0,
+                  "photos": 0,
+                  "videos": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "evidence_hits": 0
+                },
+                "presentation": {
+                  "note": "Representative Gallery assets only. Never used as the inference consideration cap.",
+                  "representative_gallery_assets_selected": null
+                }
+              },
+              "preaggregation": {
+                "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                "sms_raw": 0,
+                "stories": 0,
+                "journals": 0,
+                "artifacts": 0,
+                "email_raw": 0,
+                "normalized": 0,
+                "photos_raw": 0,
+                "raw_eligible": 0,
+                "travel_units": 0,
+                "extract_units": 0,
+                "media_clusters": 0,
+                "inference_units": 0,
+                "video_assets_raw": 0,
+                "sms_segment_units": 0,
+                "video_moments_raw": 0,
+                "comm_pattern_units": 0,
+                "deduplicated_media": 0,
+                "email_thread_units": 0,
+                "place_observations": 0,
+                "spoken_moments_raw": 0,
+                "deterministic_units": 0,
+                "calendar_event_count": 0,
+                "calendar_series_units": 0,
+                "correlated_event_units": 0,
+                "duplicate_media_dropped": 0,
+                "inference_units_after_compact": 0
+              },
+              "ask_relative_view": null,
+              "calendar_pipeline": [],
+              "semantic_observations": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "dd01f851-46a1-4c39-a546-64e6b6be3cc3",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 6,
+            "stage": "planner",
+            "component": "planner",
+            "operation": "plan_ask",
+            "started_at": "2026-08-25T23:31:13.652954+00:00",
+            "ended_at": "2026-08-25T23:31:13.652956+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "plan": {
+                "act": "find",
+                "notes": [
+                  "temporal=month_year",
+                  "tell_multimodal_i11",
+                  "want_story_modality",
+                  "want_journal_modality",
+                  "want_artifact_modality",
+                  "want_guided_capture_modality",
+                  "want_sms_modality",
+                  "want_email_modality",
+                  "want_calendar_modality"
+                ],
+                "time_end": "2025-01-31",
+                "person_ids": [],
+                "time_start": "2025-01-01",
+                "want_photo": true,
+                "want_still": true,
+                "want_story": true,
+                "want_video": true,
+                "is_followup": false,
+                "output_mode": "tell",
+                "place_names": [],
+                "refine_verb": null,
+                "trip_labels": [],
+                "want_spoken": false,
+                "want_visual": true,
+                "event_labels": [],
+                "original_ask": "write a narrative about my January 2025",
+                "person_names": [],
+                "spoken_about": null,
+                "theme_labels": [],
+                "visual_scope": "broad",
+                "want_journal": true,
+                "effective_ask": "write a narrative about my January 2025 | time:2025-01-01..2025-01-31 | constraints:2025 | visual_scope:broad",
+                "spoken_phrase": null,
+                "want_artifact": true,
+                "want_calendar": true,
+                "profile_answer": null,
+                "profile_intent": null,
+                "temporal_after": false,
+                "temporal_label": "January 2025",
+                "life_event_kind": null,
+                "navigate_target": null,
+                "subject_changed": false,
+                "attachments_only": null,
+                "gallery_show_sms": null,
+                "life_event_years": [],
+                "temporal_windows": [
+                  [
+                    "2025-01-01",
+                    "2025-01-31"
+                  ]
+                ],
+                "ambiguity_message": null,
+                "want_cross_source": false,
+                "compile_provenance": "deterministic",
+                "gallery_show_email": null,
+                "reference_resolved": false,
+                "want_communication": true,
+                "memory_presentation": null,
+                "want_guided_capture": true,
+                "broaden_same_context": false,
+                "inherit_from_context": false,
+                "semantic_constraints": [],
+                "gallery_show_calendar": null,
+                "retrieval_constraints": [
+                  "2025"
+                ],
+                "journal_capture_intent": false,
+                "requires_clarification": false
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "act": "find",
+              "want_visual": true,
+              "person_names": [],
+              "compile_provenance": "deterministic",
+              "want_communication": true,
+              "requires_clarification": false
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "6c91a299-2449-4ba4-b54b-922d1ec50d52",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 7,
+            "stage": "disposition",
+            "component": "orchestrator",
+            "operation": "disposition",
+            "started_at": "2026-08-25T23:31:13.666920+00:00",
+            "ended_at": "2026-08-25T23:31:13.666922+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "f7d9a9b3-9a5c-45f0-8f9c-abf3d89b7cb0",
+            "trace_id": "7de81dbc-0df1-41ca-b638-bb4dc951dd24",
+            "parent_span_id": null,
+            "seq": 8,
+            "stage": "final_result",
+            "component": "orchestrator",
+            "operation": "final_result",
+            "started_at": "2026-08-25T23:31:13.681252+00:00",
+            "ended_at": "2026-08-25T23:31:13.681253+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          }
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "ask": "write a narrative about my trip to las vegas in January 2026",
+      "session_id": "i11a-regression-2-21c57d8e-ea70-42df-80a4-d41202c948db",
+      "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+      "started_at": "2026-08-25T23:31:13.711076+00:00",
+      "ended_at": "2026-08-25T23:31:14.838465+00:00",
+      "duration_ms": 1090,
+      "wall_duration_ms": 1127,
+      "model_call_count": 0,
+      "status": "ok",
+      "error_class": "PARSE_SCHEMA",
+      "curator_response": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+      "answer_kind": "insufficient",
+      "narration_unavailable": true,
+      "evidence_considered": {
+        "communication": 0,
+        "photo": 0,
+        "story": 0,
+        "journal": 0,
+        "video": 0,
+        "artifact": 0,
+        "guided_capture": 0,
+        "coverage": {
+          "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+          "missing": [
+            "photos"
+          ],
+          "conflicts": [],
+          "excluded": [
+            "spam",
+            "trash"
+          ],
+          "truncated": false,
+          "incomplete": false,
+          "truncation_disclosure": null
+        },
+        "narrative_pack_volume": {
+          "retrieved_n": 0,
+          "eligible_n": 0,
+          "processed_n": 0,
+          "prepared_n": 0,
+          "supplied_to_model_n": 0,
+          "narrator_input_n": 0,
+          "episode_n": 0,
+          "significant_episode_n": 0,
+          "reduction": "episode"
+        }
+      },
+      "provider_calls": {
+        "chat": 0,
+        "embed": 0,
+        "by_operation": {},
+        "by_stage": {},
+        "timeouts": 0,
+        "errors": 0
+      },
+      "inference_accounting": {
+        "units_deterministic": 0,
+        "units_model_extract": 0
+      },
+      "harness_error": null,
+      "trace": {
+        "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+        "created_at": "2026-08-25T23:31:13.717560+00:00",
+        "updated_at": "2026-08-25T23:31:14.837306+00:00",
+        "request_kind": "ask",
+        "originating_ask": "write a narrative about my trip to las vegas in January 2026",
+        "session_id": "i11a-regression-2-21c57d8e-ea70-42df-80a4-d41202c948db",
+        "purpose": "ask",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_call_count": 0,
+        "duration_ms": 1090,
+        "initiator": {
+          "ask": "write a narrative about my trip to las vegas in January 2026",
+          "kind": "ask",
+          "session_id": "i11a-regression-2-21c57d8e-ea70-42df-80a4-d41202c948db"
+        },
+        "assembled_context": {
+          "plan": {
+            "act": "find",
+            "notes": [
+              "temporal=month_year",
+              "tell_multimodal_i11",
+              "ask_kind=trip",
+              "place_as_semantic_hint",
+              "want_story_modality",
+              "want_journal_modality",
+              "want_artifact_modality",
+              "want_guided_capture_modality",
+              "want_sms_modality",
+              "want_email_modality",
+              "want_calendar_modality",
+              "trip_window_unresolved",
+              "trip_discovery_no_place_match"
+            ],
+            "time_end": "2026-01-31",
+            "person_ids": [],
+            "time_start": "2026-01-01",
+            "want_photo": true,
+            "want_still": true,
+            "want_story": true,
+            "want_video": true,
+            "is_followup": false,
+            "output_mode": "tell",
+            "place_names": [
+              "Las Vegas"
+            ],
+            "refine_verb": null,
+            "trip_labels": [
+              "Las Vegas"
+            ],
+            "want_spoken": false,
+            "want_visual": true,
+            "event_labels": [
+              "trip:Las Vegas"
+            ],
+            "original_ask": "write a narrative about my trip to las vegas in January 2026",
+            "person_names": [],
+            "spoken_about": null,
+            "theme_labels": [],
+            "visual_scope": "broad",
+            "want_journal": true,
+            "effective_ask": "write a narrative about my trip to las vegas in January 2026 | places:Las Vegas | trips:Las Vegas | time:2026-01-01..2026-01-31 | visual_scope:broad",
+            "spoken_phrase": null,
+            "want_artifact": true,
+            "want_calendar": true,
+            "profile_answer": null,
+            "profile_intent": null,
+            "temporal_after": false,
+            "temporal_label": "January 2026",
+            "life_event_kind": null,
+            "navigate_target": null,
+            "subject_changed": false,
+            "attachments_only": null,
+            "gallery_show_sms": null,
+            "life_event_years": [],
+            "temporal_windows": [
+              [
+                "2026-01-01",
+                "2026-01-31"
+              ]
+            ],
+            "ambiguity_message": null,
+            "want_cross_source": false,
+            "compile_provenance": "deterministic",
+            "gallery_show_email": null,
+            "reference_resolved": false,
+            "want_communication": true,
+            "memory_presentation": null,
+            "want_guided_capture": true,
+            "broaden_same_context": false,
+            "inherit_from_context": false,
+            "semantic_constraints": [],
+            "gallery_show_calendar": null,
+            "retrieval_constraints": [],
+            "journal_capture_intent": false,
+            "requires_clarification": false
+          }
+        },
+        "final_disposition": {
+          "inventing": false,
+          "photo_hits": 0,
+          "answer_kind": "insufficient",
+          "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+          "evidence_hits": 0,
+          "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+        },
+        "error": null,
+        "spans": [
+          {
+            "span_id": "6beffb2a-b11b-4877-8d38-9cd255e5c583",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 1,
+            "stage": "initiation",
+            "component": "orchestrator",
+            "operation": "request",
+            "started_at": "2026-08-25T23:31:13.718666+00:00",
+            "ended_at": "2026-08-25T23:31:13.718668+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "ask": "write a narrative about my trip to las vegas in January 2026",
+              "session_id": "i11a-regression-2-21c57d8e-ea70-42df-80a4-d41202c948db",
+              "request_kind": "ask"
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {
+              "ask": "write a narrative about my trip to las vegas in January 2026",
+              "kind": "ask",
+              "session_id": "i11a-regression-2-21c57d8e-ea70-42df-80a4-d41202c948db"
+            }
+          },
+          {
+            "span_id": "c8fce19c-908b-464d-a373-33f6e95fed16",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 2,
+            "stage": "retrieval_resolution",
+            "component": "retrieve",
+            "operation": "retrieval_resolution",
+            "started_at": "2026-08-25T23:31:14.478530+00:00",
+            "ended_at": "2026-08-25T23:31:14.478531+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "resolved": false,
+              "ambiguous": false,
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ],
+              "place_names": [
+                "Las Vegas"
+              ],
+              "trip_labels": [
+                "Las Vegas"
+              ],
+              "clarification": null,
+              "comm_pipeline": [],
+              "needs_refetch": false,
+              "candidate_windows": [],
+              "discovery_windows": [
+                [
+                  "2026-01-01",
+                  "2026-01-31"
+                ]
+              ],
+              "resolved_trip_window": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-01-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "January 2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-01-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Las Vegas",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ]
+            },
+            "validation": null,
+            "disposition": {
+              "resolved": false,
+              "comm_skipped": 0,
+              "comm_selected": 0,
+              "eligible_photos": 0,
+              "eligible_evidence": 0
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "a72741f9-9471-40a1-892e-f244a81c5837",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 3,
+            "stage": "i11a_inference",
+            "component": "i11a",
+            "operation": "preaggregation",
+            "started_at": "2026-08-25T23:31:14.722995+00:00",
+            "ended_at": "2026-08-25T23:31:14.722997+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "b1f8ef67-78e5-402d-9fab-76320f801c6a",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 4,
+            "stage": "i11a_validate",
+            "component": "i11a",
+            "operation": "fail_closed",
+            "started_at": "2026-08-25T23:31:14.738205+00:00",
+            "ended_at": "2026-08-25T23:31:14.738206+00:00",
+            "duration_ms": 0,
+            "status": "error",
+            "error_class": "PARSE_SCHEMA",
+            "assembled_context": {
+              "ok": false,
+              "reason": "no evidence units",
+              "partial": false,
+              "document": null,
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "error_class": "PARSE_SCHEMA",
+              "fail_closed": true,
+              "person_context": {
+                "as_of": "2026-01-01",
+                "requestor": {
+                  "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                  "display_name": "Tom Will",
+                  "age_at_period": null,
+                  "known_relationships": [],
+                  "allowed_relationship_labels": []
+                },
+                "focal_subjects": [
+                  {
+                    "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                    "display_name": "Tom Will",
+                    "age_at_period": null,
+                    "known_relationships": [],
+                    "allowed_relationship_labels": []
+                  }
+                ],
+                "allowed_relationship_labels": []
+              },
+              "request_context": {
+                "focal_subject_names": [],
+                "requestor_person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                "focal_subject_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ],
+                "visual_library_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ]
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "4aa377bb-c313-4d54-9732-3fd930c7ea6e",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 5,
+            "stage": "i11a_consideration",
+            "component": "i11a",
+            "operation": "consideration",
+            "started_at": "2026-08-25T23:31:14.761077+00:00",
+            "ended_at": "2026-08-25T23:31:14.761079+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "media": {
+                "note": "Person-library unwindowed count, in-window Person assets, and Gallery display count are separate. year_fair is not applied when the Ask has time windows — a January stills count of 9 is membership, not a cap of 9. candidate_visual_ids rank Gallery; empty IDs never suppress eligible media.",
+                "year_fair_applied": null,
+                "retrieved_photo_hits": 0,
+                "retrieved_video_hits": 0,
+                "gallery_display_count": 0,
+                "location_filtered_count": 0,
+                "evidence_units_generated": 0,
+                "media_provider_candidates": 0,
+                "person_assets_in_window_n": null,
+                "time_filtered_media_count": 0,
+                "units_passed_to_inference": null,
+                "person_filtered_media_count": 0,
+                "person_library_unwindowed_n": null,
+                "representative_gallery_assets_selected": null
+              },
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "leaf_calls": 0,
+              "semantic_ir": null,
+              "comm_pipeline": [],
+              "evidence_sets": {
+                "inference": {
+                  "note": "Not an arbitrary top-N. Chunking may batch; it must not drop calendar/travel/media.",
+                  "by_kind": {
+                    "sms": 0,
+                    "emails": 0,
+                    "photos": 0,
+                    "travel": 0,
+                    "stories": 0,
+                    "artifacts": 0,
+                    "place_event": 0,
+                    "video_assets": 0,
+                    "video_moments": 0,
+                    "spoken_moments": 0,
+                    "calendar_events": 0,
+                    "journal_entries": 0,
+                    "external_historical": 0
+                  },
+                  "chunk_n": 0,
+                  "units_generated": 0,
+                  "units_passed_to_inference": 0
+                },
+                "retrieved": {
+                  "total": 0,
+                  "photos": 0,
+                  "videos": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "evidence_hits": 0
+                },
+                "presentation": {
+                  "note": "Representative Gallery assets only. Never used as the inference consideration cap.",
+                  "representative_gallery_assets_selected": null
+                }
+              },
+              "preaggregation": {
+                "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                "sms_raw": 0,
+                "stories": 0,
+                "journals": 0,
+                "artifacts": 0,
+                "email_raw": 0,
+                "normalized": 0,
+                "photos_raw": 0,
+                "raw_eligible": 0,
+                "travel_units": 0,
+                "extract_units": 0,
+                "media_clusters": 0,
+                "inference_units": 0,
+                "video_assets_raw": 0,
+                "sms_segment_units": 0,
+                "video_moments_raw": 0,
+                "comm_pattern_units": 0,
+                "deduplicated_media": 0,
+                "email_thread_units": 0,
+                "place_observations": 0,
+                "spoken_moments_raw": 0,
+                "deterministic_units": 0,
+                "calendar_event_count": 0,
+                "calendar_series_units": 0,
+                "correlated_event_units": 0,
+                "duplicate_media_dropped": 0,
+                "inference_units_after_compact": 0
+              },
+              "ask_relative_view": null,
+              "calendar_pipeline": [],
+              "semantic_observations": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "549370bf-9d14-453e-b52b-55b622853fae",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 6,
+            "stage": "planner",
+            "component": "planner",
+            "operation": "plan_ask",
+            "started_at": "2026-08-25T23:31:14.784367+00:00",
+            "ended_at": "2026-08-25T23:31:14.784369+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "plan": {
+                "act": "find",
+                "notes": [
+                  "temporal=month_year",
+                  "tell_multimodal_i11",
+                  "ask_kind=trip",
+                  "place_as_semantic_hint",
+                  "want_story_modality",
+                  "want_journal_modality",
+                  "want_artifact_modality",
+                  "want_guided_capture_modality",
+                  "want_sms_modality",
+                  "want_email_modality",
+                  "want_calendar_modality",
+                  "trip_window_unresolved",
+                  "trip_discovery_no_place_match"
+                ],
+                "time_end": "2026-01-31",
+                "person_ids": [],
+                "time_start": "2026-01-01",
+                "want_photo": true,
+                "want_still": true,
+                "want_story": true,
+                "want_video": true,
+                "is_followup": false,
+                "output_mode": "tell",
+                "place_names": [
+                  "Las Vegas"
+                ],
+                "refine_verb": null,
+                "trip_labels": [
+                  "Las Vegas"
+                ],
+                "want_spoken": false,
+                "want_visual": true,
+                "event_labels": [
+                  "trip:Las Vegas"
+                ],
+                "original_ask": "write a narrative about my trip to las vegas in January 2026",
+                "person_names": [],
+                "spoken_about": null,
+                "theme_labels": [],
+                "visual_scope": "broad",
+                "want_journal": true,
+                "effective_ask": "write a narrative about my trip to las vegas in January 2026 | places:Las Vegas | trips:Las Vegas | time:2026-01-01..2026-01-31 | visual_scope:broad",
+                "spoken_phrase": null,
+                "want_artifact": true,
+                "want_calendar": true,
+                "profile_answer": null,
+                "profile_intent": null,
+                "temporal_after": false,
+                "temporal_label": "January 2026",
+                "life_event_kind": null,
+                "navigate_target": null,
+                "subject_changed": false,
+                "attachments_only": null,
+                "gallery_show_sms": null,
+                "life_event_years": [],
+                "temporal_windows": [
+                  [
+                    "2026-01-01",
+                    "2026-01-31"
+                  ]
+                ],
+                "ambiguity_message": null,
+                "want_cross_source": false,
+                "compile_provenance": "deterministic",
+                "gallery_show_email": null,
+                "reference_resolved": false,
+                "want_communication": true,
+                "memory_presentation": null,
+                "want_guided_capture": true,
+                "broaden_same_context": false,
+                "inherit_from_context": false,
+                "semantic_constraints": [],
+                "gallery_show_calendar": null,
+                "retrieval_constraints": [],
+                "journal_capture_intent": false,
+                "requires_clarification": false
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "act": "find",
+              "want_visual": true,
+              "person_names": [],
+              "compile_provenance": "deterministic",
+              "want_communication": true,
+              "requires_clarification": false
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "166e4428-3894-4d3e-89f3-3d3545277089",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 7,
+            "stage": "disposition",
+            "component": "orchestrator",
+            "operation": "disposition",
+            "started_at": "2026-08-25T23:31:14.801557+00:00",
+            "ended_at": "2026-08-25T23:31:14.801558+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "c93305d2-986d-4112-8725-4b98045461cc",
+            "trace_id": "7b089f36-bd02-475f-ad1b-e8ec47b4416f",
+            "parent_span_id": null,
+            "seq": 8,
+            "stage": "final_result",
+            "component": "orchestrator",
+            "operation": "final_result",
+            "started_at": "2026-08-25T23:31:14.816614+00:00",
+            "ended_at": "2026-08-25T23:31:14.816616+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          }
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "ask": "write a narrative about my alaska trip in 2026",
+      "session_id": "i11a-regression-3-c319758b-48f2-49d1-ba2e-3133e47af547",
+      "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+      "started_at": "2026-08-25T23:31:14.847856+00:00",
+      "ended_at": "2026-08-25T23:31:15.968463+00:00",
+      "duration_ms": 1082,
+      "wall_duration_ms": 1120,
+      "model_call_count": 0,
+      "status": "ok",
+      "error_class": "PARSE_SCHEMA",
+      "curator_response": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+      "answer_kind": "insufficient",
+      "narration_unavailable": true,
+      "evidence_considered": {
+        "communication": 0,
+        "photo": 0,
+        "story": 0,
+        "journal": 0,
+        "video": 0,
+        "artifact": 0,
+        "guided_capture": 0,
+        "coverage": {
+          "summary": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.",
+          "missing": [
+            "photos"
+          ],
+          "conflicts": [],
+          "excluded": [
+            "spam",
+            "trash"
+          ],
+          "truncated": false,
+          "incomplete": false,
+          "truncation_disclosure": null
+        },
+        "narrative_pack_volume": {
+          "retrieved_n": 0,
+          "eligible_n": 0,
+          "processed_n": 0,
+          "prepared_n": 0,
+          "supplied_to_model_n": 0,
+          "narrator_input_n": 0,
+          "episode_n": 0,
+          "significant_episode_n": 0,
+          "reduction": "episode"
+        }
+      },
+      "provider_calls": {
+        "chat": 0,
+        "embed": 0,
+        "by_operation": {},
+        "by_stage": {},
+        "timeouts": 0,
+        "errors": 0
+      },
+      "inference_accounting": {
+        "units_deterministic": 0,
+        "units_model_extract": 0
+      },
+      "harness_error": null,
+      "trace": {
+        "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+        "created_at": "2026-08-25T23:31:14.853714+00:00",
+        "updated_at": "2026-08-25T23:31:15.966702+00:00",
+        "request_kind": "ask",
+        "originating_ask": "write a narrative about my alaska trip in 2026",
+        "session_id": "i11a-regression-3-c319758b-48f2-49d1-ba2e-3133e47af547",
+        "purpose": "ask",
+        "status": "ok",
+        "error_class": "PARSE_SCHEMA",
+        "model_call_count": 0,
+        "duration_ms": 1082,
+        "initiator": {
+          "ask": "write a narrative about my alaska trip in 2026",
+          "kind": "ask",
+          "session_id": "i11a-regression-3-c319758b-48f2-49d1-ba2e-3133e47af547"
+        },
+        "assembled_context": {
+          "plan": {
+            "act": "find",
+            "notes": [
+              "possessive=requestor",
+              "temporal=year_range",
+              "tell_multimodal_i11",
+              "ask_kind=trip",
+              "place_as_semantic_hint",
+              "want_story_modality",
+              "want_journal_modality",
+              "want_artifact_modality",
+              "want_guided_capture_modality",
+              "want_sms_modality",
+              "want_email_modality",
+              "want_calendar_modality",
+              "trip_window_unresolved",
+              "trip_discovery_no_place_match"
+            ],
+            "time_end": "2026-12-31",
+            "person_ids": [],
+            "time_start": "2026-01-01",
+            "want_photo": true,
+            "want_still": true,
+            "want_story": true,
+            "want_video": true,
+            "is_followup": false,
+            "output_mode": "tell",
+            "place_names": [
+              "Alaska"
+            ],
+            "refine_verb": null,
+            "trip_labels": [
+              "Alaska"
+            ],
+            "want_spoken": false,
+            "want_visual": true,
+            "event_labels": [
+              "trip:Alaska"
+            ],
+            "original_ask": "write a narrative about my alaska trip in 2026",
+            "person_names": [],
+            "spoken_about": null,
+            "theme_labels": [],
+            "visual_scope": "broad",
+            "want_journal": true,
+            "effective_ask": "write a narrative about my alaska trip in 2026 | places:Alaska | trips:Alaska | time:2026-01-01..2026-12-31 | visual_scope:broad",
+            "spoken_phrase": null,
+            "want_artifact": true,
+            "want_calendar": true,
+            "profile_answer": null,
+            "profile_intent": null,
+            "temporal_after": false,
+            "temporal_label": "2026",
+            "life_event_kind": null,
+            "navigate_target": null,
+            "subject_changed": false,
+            "attachments_only": null,
+            "gallery_show_sms": null,
+            "life_event_years": [],
+            "temporal_windows": [
+              [
+                "2026-01-01",
+                "2026-12-31"
+              ]
+            ],
+            "ambiguity_message": null,
+            "want_cross_source": false,
+            "compile_provenance": "deterministic",
+            "gallery_show_email": null,
+            "reference_resolved": false,
+            "want_communication": true,
+            "memory_presentation": null,
+            "want_guided_capture": true,
+            "broaden_same_context": false,
+            "inherit_from_context": false,
+            "semantic_constraints": [],
+            "gallery_show_calendar": null,
+            "retrieval_constraints": [],
+            "journal_capture_intent": false,
+            "requires_clarification": false
+          }
+        },
+        "final_disposition": {
+          "inventing": false,
+          "photo_hits": 0,
+          "answer_kind": "insufficient",
+          "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+          "evidence_hits": 0,
+          "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+        },
+        "error": null,
+        "spans": [
+          {
+            "span_id": "e08edac3-5f90-47b9-9e0e-d84030169584",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 1,
+            "stage": "initiation",
+            "component": "orchestrator",
+            "operation": "request",
+            "started_at": "2026-08-25T23:31:14.854579+00:00",
+            "ended_at": "2026-08-25T23:31:14.854581+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "ask": "write a narrative about my alaska trip in 2026",
+              "session_id": "i11a-regression-3-c319758b-48f2-49d1-ba2e-3133e47af547",
+              "request_kind": "ask"
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {
+              "ask": "write a narrative about my alaska trip in 2026",
+              "kind": "ask",
+              "session_id": "i11a-regression-3-c319758b-48f2-49d1-ba2e-3133e47af547"
+            }
+          },
+          {
+            "span_id": "b8b2f8be-1d09-431a-ad29-bbfc999b20cc",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 2,
+            "stage": "retrieval_resolution",
+            "component": "retrieve",
+            "operation": "retrieval_resolution",
+            "started_at": "2026-08-25T23:31:15.610015+00:00",
+            "ended_at": "2026-08-25T23:31:15.610017+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "resolved": false,
+              "ambiguous": false,
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ],
+              "place_names": [
+                "Alaska"
+              ],
+              "trip_labels": [
+                "Alaska"
+              ],
+              "clarification": null,
+              "comm_pipeline": [],
+              "needs_refetch": false,
+              "candidate_windows": [],
+              "discovery_windows": [
+                [
+                  "2026-01-01",
+                  "2026-12-31"
+                ]
+              ],
+              "resolved_trip_window": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "modalities": [
+                {
+                  "provider": "fake_photo",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": false,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [
+                    "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                  ],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": 0,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "fake_video",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                },
+                {
+                  "provider": "postgres",
+                  "skipped_reason": null,
+                  "time_constraints": {
+                    "time_end": "2026-12-31",
+                    "time_start": "2026-01-01",
+                    "temporal_label": "2026",
+                    "temporal_windows": [
+                      [
+                        "2026-01-01",
+                        "2026-12-31"
+                      ]
+                    ]
+                  },
+                  "post_filter_count": 0,
+                  "year_fair_applied": null,
+                  "constraint_applied": "hint_score",
+                  "person_constraints": [],
+                  "stills_in_window_n": null,
+                  "videos_in_window_n": null,
+                  "semantic_constraint": "Alaska",
+                  "initial_candidate_count": 0,
+                  "person_assets_in_window_n": null,
+                  "person_library_unwindowed_n": null,
+                  "gallery_display_is_presentation_only": true
+                }
+              ]
+            },
+            "validation": null,
+            "disposition": {
+              "resolved": false,
+              "comm_skipped": 0,
+              "comm_selected": 0,
+              "eligible_photos": 0,
+              "eligible_evidence": 0
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "aa50b7df-ca35-4f88-8c58-6ada3cbbf18b",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 3,
+            "stage": "i11a_inference",
+            "component": "i11a",
+            "operation": "preaggregation",
+            "started_at": "2026-08-25T23:31:15.857403+00:00",
+            "ended_at": "2026-08-25T23:31:15.857405+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": {
+              "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+              "sms_raw": 0,
+              "stories": 0,
+              "journals": 0,
+              "artifacts": 0,
+              "email_raw": 0,
+              "normalized": 0,
+              "photos_raw": 0,
+              "raw_eligible": 0,
+              "travel_units": 0,
+              "extract_units": 0,
+              "media_clusters": 0,
+              "inference_units": 0,
+              "video_assets_raw": 0,
+              "sms_segment_units": 0,
+              "video_moments_raw": 0,
+              "comm_pattern_units": 0,
+              "deduplicated_media": 0,
+              "email_thread_units": 0,
+              "place_observations": 0,
+              "spoken_moments_raw": 0,
+              "deterministic_units": 0,
+              "calendar_event_count": 0,
+              "calendar_series_units": 0,
+              "correlated_event_units": 0,
+              "duplicate_media_dropped": 0,
+              "inference_units_after_compact": 0
+            },
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "e77d710d-83d1-48bb-998b-a214982c2a6e",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 4,
+            "stage": "i11a_validate",
+            "component": "i11a",
+            "operation": "fail_closed",
+            "started_at": "2026-08-25T23:31:15.871429+00:00",
+            "ended_at": "2026-08-25T23:31:15.871431+00:00",
+            "duration_ms": 0,
+            "status": "error",
+            "error_class": "PARSE_SCHEMA",
+            "assembled_context": {
+              "ok": false,
+              "reason": "no evidence units",
+              "partial": false,
+              "document": null,
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "error_class": "PARSE_SCHEMA",
+              "fail_closed": true,
+              "person_context": {
+                "as_of": null,
+                "requestor": {
+                  "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                  "display_name": "Tom Will",
+                  "age_at_period": null,
+                  "known_relationships": [],
+                  "allowed_relationship_labels": []
+                },
+                "focal_subjects": [
+                  {
+                    "person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                    "display_name": "Tom Will",
+                    "age_at_period": null,
+                    "known_relationships": [],
+                    "allowed_relationship_labels": []
+                  }
+                ],
+                "allowed_relationship_labels": []
+              },
+              "request_context": {
+                "focal_subject_names": [],
+                "requestor_person_id": "de553ac2-9074-4fbf-9926-dfcef8343c4d",
+                "focal_subject_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ],
+                "visual_library_person_ids": [
+                  "de553ac2-9074-4fbf-9926-dfcef8343c4d"
+                ]
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "706da50d-b46d-4055-ba2e-deebec17294f",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 5,
+            "stage": "i11a_consideration",
+            "component": "i11a",
+            "operation": "consideration",
+            "started_at": "2026-08-25T23:31:15.892909+00:00",
+            "ended_at": "2026-08-25T23:31:15.892910+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "media": {
+                "note": "Person-library unwindowed count, in-window Person assets, and Gallery display count are separate. year_fair is not applied when the Ask has time windows — a January stills count of 9 is membership, not a cap of 9. candidate_visual_ids rank Gallery; empty IDs never suppress eligible media.",
+                "year_fair_applied": null,
+                "retrieved_photo_hits": 0,
+                "retrieved_video_hits": 0,
+                "gallery_display_count": 0,
+                "location_filtered_count": 0,
+                "evidence_units_generated": 0,
+                "media_provider_candidates": 0,
+                "person_assets_in_window_n": null,
+                "time_filtered_media_count": 0,
+                "units_passed_to_inference": null,
+                "person_filtered_media_count": 0,
+                "person_library_unwindowed_n": null,
+                "representative_gallery_assets_selected": null
+              },
+              "rejected": [],
+              "accounting": {
+                "engine": "observations_ir_ask_relative",
+                "chunk_n": 0,
+                "retries": 1,
+                "leaf_calls": 0,
+                "merge_depth": 0,
+                "failed_units": 0,
+                "extract_calls": 0,
+                "eligible_units": 0,
+                "observations_a": 0,
+                "observations_b": 0,
+                "preaggregation": {
+                  "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                  "sms_raw": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "email_raw": 0,
+                  "normalized": 0,
+                  "photos_raw": 0,
+                  "raw_eligible": 0,
+                  "travel_units": 0,
+                  "extract_units": 0,
+                  "media_clusters": 0,
+                  "inference_units": 0,
+                  "video_assets_raw": 0,
+                  "sms_segment_units": 0,
+                  "video_moments_raw": 0,
+                  "comm_pattern_units": 0,
+                  "deduplicated_media": 0,
+                  "email_thread_units": 0,
+                  "place_observations": 0,
+                  "spoken_moments_raw": 0,
+                  "deterministic_units": 0,
+                  "calendar_event_count": 0,
+                  "calendar_series_units": 0,
+                  "correlated_event_units": 0,
+                  "duplicate_media_dropped": 0,
+                  "inference_units_after_compact": 0
+                },
+                "attempted_units": 0,
+                "units_generated": 0,
+                "successful_units": 0,
+                "ask_relative_calls": 0,
+                "units_deterministic": 0,
+                "units_model_extract": 0,
+                "dropped_before_inference": 0,
+                "units_passed_to_inference": 0
+              },
+              "leaf_calls": 0,
+              "semantic_ir": null,
+              "comm_pipeline": [],
+              "evidence_sets": {
+                "inference": {
+                  "note": "Not an arbitrary top-N. Chunking may batch; it must not drop calendar/travel/media.",
+                  "by_kind": {
+                    "sms": 0,
+                    "emails": 0,
+                    "photos": 0,
+                    "travel": 0,
+                    "stories": 0,
+                    "artifacts": 0,
+                    "place_event": 0,
+                    "video_assets": 0,
+                    "video_moments": 0,
+                    "spoken_moments": 0,
+                    "calendar_events": 0,
+                    "journal_entries": 0,
+                    "external_historical": 0
+                  },
+                  "chunk_n": 0,
+                  "units_generated": 0,
+                  "units_passed_to_inference": 0
+                },
+                "retrieved": {
+                  "total": 0,
+                  "photos": 0,
+                  "videos": 0,
+                  "stories": 0,
+                  "journals": 0,
+                  "artifacts": 0,
+                  "evidence_hits": 0
+                },
+                "presentation": {
+                  "note": "Representative Gallery assets only. Never used as the inference consideration cap.",
+                  "representative_gallery_assets_selected": null
+                }
+              },
+              "preaggregation": {
+                "note": "Pre-aggregation retains all source evidence IDs. Not a first-N cap.",
+                "sms_raw": 0,
+                "stories": 0,
+                "journals": 0,
+                "artifacts": 0,
+                "email_raw": 0,
+                "normalized": 0,
+                "photos_raw": 0,
+                "raw_eligible": 0,
+                "travel_units": 0,
+                "extract_units": 0,
+                "media_clusters": 0,
+                "inference_units": 0,
+                "video_assets_raw": 0,
+                "sms_segment_units": 0,
+                "video_moments_raw": 0,
+                "comm_pattern_units": 0,
+                "deduplicated_media": 0,
+                "email_thread_units": 0,
+                "place_observations": 0,
+                "spoken_moments_raw": 0,
+                "deterministic_units": 0,
+                "calendar_event_count": 0,
+                "calendar_series_units": 0,
+                "correlated_event_units": 0,
+                "duplicate_media_dropped": 0,
+                "inference_units_after_compact": 0
+              },
+              "ask_relative_view": null,
+              "calendar_pipeline": [],
+              "semantic_observations": null
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "a526f000-4100-4f48-a15a-a624c9393651",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 6,
+            "stage": "planner",
+            "component": "planner",
+            "operation": "plan_ask",
+            "started_at": "2026-08-25T23:31:15.914983+00:00",
+            "ended_at": "2026-08-25T23:31:15.914985+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "plan": {
+                "act": "find",
+                "notes": [
+                  "possessive=requestor",
+                  "temporal=year_range",
+                  "tell_multimodal_i11",
+                  "ask_kind=trip",
+                  "place_as_semantic_hint",
+                  "want_story_modality",
+                  "want_journal_modality",
+                  "want_artifact_modality",
+                  "want_guided_capture_modality",
+                  "want_sms_modality",
+                  "want_email_modality",
+                  "want_calendar_modality",
+                  "trip_window_unresolved",
+                  "trip_discovery_no_place_match"
+                ],
+                "time_end": "2026-12-31",
+                "person_ids": [],
+                "time_start": "2026-01-01",
+                "want_photo": true,
+                "want_still": true,
+                "want_story": true,
+                "want_video": true,
+                "is_followup": false,
+                "output_mode": "tell",
+                "place_names": [
+                  "Alaska"
+                ],
+                "refine_verb": null,
+                "trip_labels": [
+                  "Alaska"
+                ],
+                "want_spoken": false,
+                "want_visual": true,
+                "event_labels": [
+                  "trip:Alaska"
+                ],
+                "original_ask": "write a narrative about my alaska trip in 2026",
+                "person_names": [],
+                "spoken_about": null,
+                "theme_labels": [],
+                "visual_scope": "broad",
+                "want_journal": true,
+                "effective_ask": "write a narrative about my alaska trip in 2026 | places:Alaska | trips:Alaska | time:2026-01-01..2026-12-31 | visual_scope:broad",
+                "spoken_phrase": null,
+                "want_artifact": true,
+                "want_calendar": true,
+                "profile_answer": null,
+                "profile_intent": null,
+                "temporal_after": false,
+                "temporal_label": "2026",
+                "life_event_kind": null,
+                "navigate_target": null,
+                "subject_changed": false,
+                "attachments_only": null,
+                "gallery_show_sms": null,
+                "life_event_years": [],
+                "temporal_windows": [
+                  [
+                    "2026-01-01",
+                    "2026-12-31"
+                  ]
+                ],
+                "ambiguity_message": null,
+                "want_cross_source": false,
+                "compile_provenance": "deterministic",
+                "gallery_show_email": null,
+                "reference_resolved": false,
+                "want_communication": true,
+                "memory_presentation": null,
+                "want_guided_capture": true,
+                "broaden_same_context": false,
+                "inherit_from_context": false,
+                "semantic_constraints": [],
+                "gallery_show_calendar": null,
+                "retrieval_constraints": [],
+                "journal_capture_intent": false,
+                "requires_clarification": false
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "act": "find",
+              "want_visual": true,
+              "person_names": [],
+              "compile_provenance": "deterministic",
+              "want_communication": true,
+              "requires_clarification": false
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "2ebed14c-b701-4105-a636-9c55b9a5a9be",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 7,
+            "stage": "disposition",
+            "component": "orchestrator",
+            "operation": "disposition",
+            "started_at": "2026-08-25T23:31:15.929933+00:00",
+            "ended_at": "2026-08-25T23:31:15.929934+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "3047fe85-eb30-4730-8846-535482520ec4",
+            "trace_id": "409bb1a5-f148-477c-abb8-31184a1657d9",
+            "parent_span_id": null,
+            "seq": 8,
+            "stage": "final_result",
+            "component": "orchestrator",
+            "operation": "final_result",
+            "started_at": "2026-08-25T23:31:15.944826+00:00",
+            "ended_at": "2026-08-25T23:31:15.944827+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "insufficient",
+              "answer_text": "Considered 0 eligible item(s); processed 0; 0 episode(s); 0 narrator structures.\n\nno evidence units\n\nNarration unavailable. Family evidence and coverage are still shown. MemoryBox will not substitute a stitched essay for the narrator.\n\nFamily evidence considered: 0 photos · 0 video moments · 0 emails · 0 texts · 0 calendar events · 0 journal entries · 0 stories · 0 artifacts · 0 travel records.",
+              "evidence_hits": 0,
+              "missing_disclosure": "Insufficient Evidence: no matching photos, videos, Stories, Journals, Artifacts, Guided Capture Responses, or email/calendar Evidence were found for this ask. MemoryBox will not invent a family fact. Photo library did not return stills for this person; video moments stay visible. Resolvable MB Person(s) exist without video provider mapping; results are unconfirmed candidates only."
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          }
+        ]
+      }
+    },
+    {
+      "index": 4,
+      "ask": "tell me what you know about Peggy",
+      "session_id": "i11a-regression-4-3e2febaf-7ad0-4d5f-b411-61a03b6fa84a",
+      "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+      "started_at": "2026-08-25T23:31:15.976794+00:00",
+      "ended_at": "2026-08-25T23:31:17.383464+00:00",
+      "duration_ms": 1371,
+      "wall_duration_ms": 1406,
+      "model_call_count": 1,
+      "status": "ok",
+      "error_class": null,
+      "curator_response": "Who is Peggy?",
+      "answer_kind": "clarification",
+      "narration_unavailable": false,
+      "evidence_considered": {
+        "communication": 0,
+        "photo": 0,
+        "story": 0,
+        "journal": 0,
+        "video": 0,
+        "artifact": 0,
+        "guided_capture": 0,
+        "coverage": {},
+        "narrative_pack_volume": null
+      },
+      "provider_calls": {
+        "chat": 0,
+        "embed": 1,
+        "by_operation": {
+          "embed": 1
+        },
+        "by_stage": {
+          "provider_call": 1
+        },
+        "timeouts": 0,
+        "errors": 0
+      },
+      "inference_accounting": {},
+      "harness_error": null,
+      "trace": {
+        "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+        "created_at": "2026-08-25T23:31:15.982548+00:00",
+        "updated_at": "2026-08-25T23:31:17.381634+00:00",
+        "request_kind": "ask",
+        "originating_ask": "tell me what you know about Peggy",
+        "session_id": "i11a-regression-4-3e2febaf-7ad0-4d5f-b411-61a03b6fa84a",
+        "purpose": "ask",
+        "status": "ok",
+        "error_class": null,
+        "model_call_count": 1,
+        "duration_ms": 1371,
+        "initiator": {
+          "ask": "tell me what you know about Peggy",
+          "kind": "ask",
+          "session_id": "i11a-regression-4-3e2febaf-7ad0-4d5f-b411-61a03b6fa84a"
+        },
+        "assembled_context": {
+          "plan": {
+            "act": "find",
+            "notes": [
+              "exploratory_about_subject",
+              "exploratory_multimodal_i4",
+              "want_story_modality",
+              "want_journal_modality",
+              "want_artifact_modality",
+              "want_guided_capture_modality",
+              "want_email_modality",
+              "want_calendar_modality"
+            ],
+            "time_end": null,
+            "person_ids": [],
+            "time_start": null,
+            "want_photo": true,
+            "want_still": true,
+            "want_story": true,
+            "want_video": true,
+            "is_followup": false,
+            "output_mode": "show",
+            "place_names": [],
+            "refine_verb": null,
+            "trip_labels": [],
+            "want_spoken": false,
+            "want_visual": true,
+            "event_labels": [],
+            "original_ask": "tell me what you know about Peggy",
+            "person_names": [
+              "Peggy"
+            ],
+            "spoken_about": null,
+            "theme_labels": [],
+            "visual_scope": "broad",
+            "want_journal": true,
+            "effective_ask": "tell me what you know about Peggy | people:Peggy | constraints:Peggy | visual_scope:broad",
+            "spoken_phrase": null,
+            "want_artifact": true,
+            "want_calendar": true,
+            "profile_answer": null,
+            "profile_intent": null,
+            "temporal_after": false,
+            "temporal_label": null,
+            "life_event_kind": null,
+            "navigate_target": null,
+            "subject_changed": false,
+            "attachments_only": null,
+            "gallery_show_sms": null,
+            "life_event_years": [],
+            "temporal_windows": [],
+            "ambiguity_message": "Who is Peggy?",
+            "want_cross_source": false,
+            "compile_provenance": "deterministic",
+            "gallery_show_email": null,
+            "reference_resolved": false,
+            "want_communication": true,
+            "memory_presentation": null,
+            "want_guided_capture": true,
+            "broaden_same_context": false,
+            "inherit_from_context": false,
+            "semantic_constraints": [],
+            "gallery_show_calendar": null,
+            "retrieval_constraints": [
+              "Peggy"
+            ],
+            "journal_capture_intent": false,
+            "requires_clarification": true
+          }
+        },
+        "final_disposition": {
+          "inventing": false,
+          "photo_hits": 0,
+          "answer_kind": "clarification",
+          "answer_text": "Who is Peggy?",
+          "evidence_hits": 0,
+          "missing_disclosure": "Who is Peggy?"
+        },
+        "error": null,
+        "spans": [
+          {
+            "span_id": "8c82e8d1-e472-4ab0-856c-7a323a350849",
+            "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+            "parent_span_id": null,
+            "seq": 1,
+            "stage": "initiation",
+            "component": "orchestrator",
+            "operation": "request",
+            "started_at": "2026-08-25T23:31:15.983626+00:00",
+            "ended_at": "2026-08-25T23:31:15.983628+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "ask": "tell me what you know about Peggy",
+              "session_id": "i11a-regression-4-3e2febaf-7ad0-4d5f-b411-61a03b6fa84a",
+              "request_kind": "ask"
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": null,
+            "error": null,
+            "meta": {
+              "ask": "tell me what you know about Peggy",
+              "kind": "ask",
+              "session_id": "i11a-regression-4-3e2febaf-7ad0-4d5f-b411-61a03b6fa84a"
+            }
+          },
+          {
+            "span_id": "789f2b14-177f-4b22-917f-d2ff51bd2bb6",
+            "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+            "parent_span_id": null,
+            "seq": 2,
+            "stage": "provider_call",
+            "component": "llm_wrapper",
+            "operation": "embed",
+            "started_at": "2026-08-25T23:31:16.635150+00:00",
+            "ended_at": "2026-08-25T23:31:16.635332+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "ask": "tell me what you know about Peggy | people:Peggy | constraints:Peggy | visual_scope:broad",
+              "purpose": "query",
+              "component": "retrieve",
+              "original_ask": "tell me what you know about Peggy"
+            },
+            "provider_payload": {
+              "text": "tell me what you know about Peggy | people:Peggy | constraints:Peggy | visual_scope:broad",
+              "purpose": "query"
+            },
+            "raw_response": {
+              "model": "fake-embed",
+              "purpose": "query",
+              "dimensions": 32,
+              "vector_persisted": false
+            },
+            "parsed": null,
+            "validation": null,
+            "disposition": null,
+            "model": {
+              "host": null,
+              "model": "fake-embed",
+              "capability": "embedding",
+              "provider_key": "fake_llm"
+            },
+            "error": null,
+            "meta": {
+              "input_chars": 89
+            }
+          },
+          {
+            "span_id": "01b81c6c-73f4-4292-9a6a-f5767baafb8a",
+            "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+            "parent_span_id": null,
+            "seq": 3,
+            "stage": "planner",
+            "component": "planner",
+            "operation": "plan_ask",
+            "started_at": "2026-08-25T23:31:17.333008+00:00",
+            "ended_at": "2026-08-25T23:31:17.333010+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": {
+              "plan": {
+                "act": "find",
+                "notes": [
+                  "exploratory_about_subject",
+                  "exploratory_multimodal_i4",
+                  "want_story_modality",
+                  "want_journal_modality",
+                  "want_artifact_modality",
+                  "want_guided_capture_modality",
+                  "want_email_modality",
+                  "want_calendar_modality"
+                ],
+                "time_end": null,
+                "person_ids": [],
+                "time_start": null,
+                "want_photo": true,
+                "want_still": true,
+                "want_story": true,
+                "want_video": true,
+                "is_followup": false,
+                "output_mode": "show",
+                "place_names": [],
+                "refine_verb": null,
+                "trip_labels": [],
+                "want_spoken": false,
+                "want_visual": true,
+                "event_labels": [],
+                "original_ask": "tell me what you know about Peggy",
+                "person_names": [
+                  "Peggy"
+                ],
+                "spoken_about": null,
+                "theme_labels": [],
+                "visual_scope": "broad",
+                "want_journal": true,
+                "effective_ask": "tell me what you know about Peggy | people:Peggy | constraints:Peggy | visual_scope:broad",
+                "spoken_phrase": null,
+                "want_artifact": true,
+                "want_calendar": true,
+                "profile_answer": null,
+                "profile_intent": null,
+                "temporal_after": false,
+                "temporal_label": null,
+                "life_event_kind": null,
+                "navigate_target": null,
+                "subject_changed": false,
+                "attachments_only": null,
+                "gallery_show_sms": null,
+                "life_event_years": [],
+                "temporal_windows": [],
+                "ambiguity_message": "Who is Peggy?",
+                "want_cross_source": false,
+                "compile_provenance": "deterministic",
+                "gallery_show_email": null,
+                "reference_resolved": false,
+                "want_communication": true,
+                "memory_presentation": null,
+                "want_guided_capture": true,
+                "broaden_same_context": false,
+                "inherit_from_context": false,
+                "semantic_constraints": [],
+                "gallery_show_calendar": null,
+                "retrieval_constraints": [
+                  "Peggy"
+                ],
+                "journal_capture_intent": false,
+                "requires_clarification": true
+              }
+            },
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "act": "find",
+              "want_visual": true,
+              "person_names": [
+                "Peggy"
+              ],
+              "compile_provenance": "deterministic",
+              "want_communication": true,
+              "requires_clarification": true
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "6d8141a9-0e32-4d3a-a4b2-18f4b8e73efb",
+            "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+            "parent_span_id": null,
+            "seq": 4,
+            "stage": "disposition",
+            "component": "orchestrator",
+            "operation": "disposition",
+            "started_at": "2026-08-25T23:31:17.348422+00:00",
+            "ended_at": "2026-08-25T23:31:17.348423+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "clarification",
+              "answer_text": "Who is Peggy?",
+              "evidence_hits": 0,
+              "missing_disclosure": "Who is Peggy?"
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          },
+          {
+            "span_id": "14aece4f-969f-4551-a22a-fb8b5fbc274e",
+            "trace_id": "a89f6d76-32ab-4fb7-93a1-efb52e8c85ad",
+            "parent_span_id": null,
+            "seq": 5,
+            "stage": "final_result",
+            "component": "orchestrator",
+            "operation": "final_result",
+            "started_at": "2026-08-25T23:31:17.362080+00:00",
+            "ended_at": "2026-08-25T23:31:17.362081+00:00",
+            "duration_ms": 0,
+            "status": "ok",
+            "error_class": null,
+            "assembled_context": null,
+            "provider_payload": null,
+            "raw_response": null,
+            "parsed": null,
+            "validation": null,
+            "disposition": {
+              "inventing": false,
+              "photo_hits": 0,
+              "answer_kind": "clarification",
+              "answer_text": "Who is Peggy?",
+              "evidence_hits": 0,
+              "missing_disclosure": "Who is Peggy?"
+            },
+            "model": null,
+            "error": null,
+            "meta": {}
+          }
+        ]
+      }
+    }
+  ]
+}

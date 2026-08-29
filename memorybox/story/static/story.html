@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Stories</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=i10a-story-1" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
+  <style>
+    :root {
+      --ink: #e8edf5;
+      --muted: #9aa3b5;
+      --blue: #3b82f6;
+      --green: #3dcf9a;
+      --orange: #fb923c;
+      --line: rgba(255,255,255,0.12);
+      --card: #1a2230;
+      --page: #0f141c;
+      --display: "Newsreader", Georgia, serif;
+      --ui: "Figtree", "Segoe UI", system-ui, sans-serif;
+    }
+    html[data-mb-surface="story"] .mb-site-bar,
+    html[data-mb-surface="story"] .mb-nav-system { display: none !important; }
+    html[data-mb-surface="story"] body.mb-shell,
+    html[data-mb-surface="story"] body {
+      background: var(--page) !important;
+      color: var(--ink) !important;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--ui);
+      background: #0f141c;
+      color: #e8edf5;
+    }
+    a { color: #93c5fd; }
+    button { font: inherit; cursor: pointer; }
+    input, textarea, select {
+      font: inherit;
+      color: var(--ink);
+      background: #141b27;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+      width: 100%;
+    }
+    textarea { min-height: 8rem; resize: vertical; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+    #mb-story-chrome.mb-explore { padding-bottom: 0; }
+    html[data-mb-surface="story"] .mb-explore-brand-name { color: #f3f6fb !important; }
+    html[data-mb-surface="story"] .mb-explore-tagline { color: #b7c0d0 !important; }
+    .date-stack { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+    .date-stack input[type="date"] { width: 100%; min-width: 0; }
+    .person-typeahead { position: relative; }
+    .person-typeahead input { width: 100%; }
+    .person-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 18rem; overflow: auto; margin-top: 0.45rem; }
+    .person-row {
+      display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink);
+      border-radius: 10px; padding: 0.4rem 0.55rem;
+    }
+    .person-row img, .person-row .av { width: 56px; height: 56px; border-radius: 999px; object-fit: cover; }
+    .person-row .chip { font-size: 1.31rem; }
+    .person-row.on { outline: 2px solid var(--blue); }
+    .ask-field { display: flex; gap: 0.4rem; }
+    .ask-go { width: 40px; border-radius: 999px; border: 0; background: var(--blue); color: #fff; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; }
+    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; }
+    .sub { color: var(--muted); margin: 0.25rem 0 0; }
+    .btn {
+      border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line);
+      background: #141b27; color: var(--ink);
+    }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn.ghost { background: transparent; }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,0.3); background: transparent; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .continue {
+      display: grid; grid-template-columns: 280px 1fr; gap: 0;
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+      margin-bottom: 1.1rem; cursor: pointer;
+    }
+    .continue img, .cover { width: 100%; height: 100%; object-fit: cover; background: #111827; min-height: 140px; }
+    .continue .meta { padding: 1rem 1.2rem; }
+    .pill { display: inline-block; font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(59,130,246,0.2); color: #93c5fd; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.8rem 0 1rem; }
+    .tabs { display: flex; gap: 0.3rem; }
+    .tabs button {
+      border: 0; background: #141b27; color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px;
+    }
+    .tabs button.on { background: var(--blue); color: #fff; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer;
+    }
+    .card .thumb { height: 140px; background: #111827; }
+    .card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .card .body { padding: 0.8rem 0.9rem 0.95rem; }
+    .card h3 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 0.3rem; }
+    .card p { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.6rem; }
+    .people { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .chip { display: inline-flex; align-items: center; gap: 0.5rem; background: #111827; border-radius: 999px; padding: 0.2rem 0.65rem 0.2rem 0.2rem; font-size: 1.31rem; }
+    .chip img, .av { width: 39px; height: 39px; border-radius: 999px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .foot { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.75rem; margin-top: 0.55rem; }
+    .dot { width: 7px; height: 7px; border-radius: 99px; display: inline-block; margin-right: 0.3rem; }
+    .dot.saved { background: var(--green); }
+    .dot.draft { background: var(--orange); }
+    .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
+    .crumb a { color: inherit; text-decoration: none; }
+    .hero { display: grid; grid-template-columns: 340px 1fr; gap: 1.2rem; margin: 0.8rem 0 1.2rem; }
+    .hero .cover, .hero > div:first-child {
+      background: #111827; border-radius: 14px; min-height: 220px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .hero img { width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 14px; background: #111827; }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; }
+    .layout { display: grid; grid-template-columns: 1fr 300px; gap: 1.2rem; }
+    .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; margin-bottom: 0.8rem; }
+    .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
+    .side dt { color: var(--muted); font-size: 0.78rem; }
+    .side dd { margin: 0 0 0.45rem; }
+    .mem { display: flex; gap: 0.7rem; align-items: center; background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.55rem; margin: 0.5rem 0; color: inherit; text-decoration: none; }
+    a.mem, .mem-edit { cursor: pointer; }
+    a.mem:hover, .mem-edit:hover { outline: 2px solid var(--blue); }
+    .mem img, .mem .mem-ph {
+      width: 110px; height: 82px; object-fit: contain; border-radius: 8px;
+      background: #0f141c; flex: 0 0 auto;
+    }
+    .mem .mem-ph { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .chip .rem-person { margin-left: 0.35rem; font-size: 0.7rem; padding: 0.2rem 0.45rem; }
+    .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
+    .editor-foot {
+      position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center;
+      gap: 0.8rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line);
+    }
+    .modal-back {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center;
+      z-index: 40; padding: 1.2rem;
+    }
+    .modal {
+      width: min(1080px, 100%); max-height: 92vh; overflow: auto; background: #121826; border: 1px solid var(--line);
+      border-radius: 16px; padding: 1rem 1.1rem 1.1rem;
+    }
+    .modal.small { width: min(480px, 100%); }
+    .hidden { display: none !important; }
+    .empty { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+    .dash {
+      border: 1px dashed var(--line); border-radius: 12px; padding: 1.2rem; text-align: center; color: var(--muted);
+    }
+    .kind-tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.6rem 0; }
+    .kind-tabs button { border: 0; background: #141b27; color: var(--muted); border-radius: 999px; padding: 0.3rem 0.65rem; }
+    .kind-tabs button.on { background: var(--blue); color: #fff; }
+    .pick-grid { display: grid; gap: 0.6rem; overflow: auto; min-height: 12rem; max-height: min(52vh, 560px); }
+    .pick-grid[data-density="1"] { grid-template-columns: repeat(5, 1fr); }
+    .pick-grid[data-density="2"] { grid-template-columns: repeat(3, 1fr); }
+    .pick-grid[data-density="3"] { grid-template-columns: repeat(2, 1fr); }
+    .pick-grid[data-density="1"] img { height: 88px; }
+    .pick-grid[data-density="2"] img { height: 140px; }
+    .pick-grid[data-density="3"] img { height: 200px; }
+    .pick { position: relative; background: #141b27; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem; cursor: pointer; }
+    .pick.on { outline: 2px solid var(--blue); }
+    .pick img { width: 100%; object-fit: contain; border-radius: 8px; background: #0f141c; }
+    .pk-foot {
+      position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center;
+      gap: 0.8rem; margin-top: 0.7rem; padding: 0.7rem 0 0.1rem; background: #121826;
+      border-top: 1px solid var(--line); z-index: 2;
+    }
+    .pk-density { display: flex; align-items: center; gap: 0.35rem; }
+    .pk-density button { min-width: 2rem; }
+    .note { color: var(--muted); font-size: 0.8rem; }
+    .actions { display: flex; gap: 0.45rem; }
+    @media (max-width: 900px) {
+      .grid, .layout, .hero, .continue, .pick-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mb-explore" id="mb-story-chrome">
+    <header class="mb-explore-top">
+      <a class="mb-explore-brand" id="mb-home" href="/explore/ui" title="Clear context and open Explore">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
+        </div>
+      </a>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+    <section class="mb-explore-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="askQ" id="askLabel">What would you like to see?</label>
+        <div class="mb-explore-ask-field" id="askField">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="askQ" type="text" autocomplete="off" placeholder="Ask MemoryBox… e.g. Only photos. Only Oak Street. Show map." />
+          <button type="button" class="mb-explore-ask-go" id="askGo" title="Ask" aria-label="Ask">→</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="view-panel" class="wrap"></div>
+  <div id="view-detail" class="wrap hidden"></div>
+  <div id="view-editor" class="wrap hidden"></div>
+  <div id="modals"></div>
+  <div id="editor-foot" class="editor-foot hidden"></div>
+
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-7"></script>
+  <script>
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const state = {
+      view: "panel",
+      stories: [],
+      filters: { status: "all", visibility: "", person_id: "", q: "" },
+      people: [],
+      owner: null,
+      story: null,
+      draft: emptyDraft(),
+      dirty: false,
+      savedSnap: "",
+      picker: { items: [], selected: {}, kind: "all", q: "", total: 0, truncated: false },
+      modal: null,
+      previewing: false,
+      bodyField: null,
+      captureArmed: true,
+      speechCommit: null,
+    };
+
+    function emptyDraft() {
+      return {
+        id: null,
+        title: "",
+        description: "",
+        body: "",
+        blocks: [],
+        memories: [],
+        person_ids: [],
+        people: [],
+        narrator_person_id: "",
+        described_start_date: "",
+        described_end_date: "",
+        place_label: "",
+        visibility: "private",
+        saved_version: null,
+        lifecycle: "ephemeral",
+      };
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function initial(name) {
+      return esc((name || "?").trim().charAt(0).toUpperCase() || "?");
+    }
+    async function j(url, opts) {
+      const r = await fetch(url, opts);
+      let data;
+      try { data = await r.json(); } catch { data = { detail: "non-JSON " + r.status }; }
+      if (!r.ok) throw data;
+      return data;
+    }
+    function portraitInner(p) {
+      const id = p.id || p.person_id || "";
+      const name = p.display_name || "Person";
+      const src = p.portrait_url || (id ? "/people/" + id + "/portrait" : "");
+      return `<img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='inline-flex'" /><span class="av" style="display:none">${initial(name)}</span><span>${esc(name)}</span>`;
+    }
+    function portrait(p) {
+      return `<span class="chip">${portraitInner(p)}</span>`;
+    }
+    function fmtRange(a, b) {
+      const x = (a || "").slice(0, 4);
+      const y = (b || "").slice(0, 4);
+      if (x && y && x !== y) return x + "–" + y;
+      return x || y || "";
+    }
+    function badge(s) {
+      const draft = s.has_working_draft || s.badge === "draft" || s.lifecycle === "draft_only";
+      return `<span><span class="dot ${draft && !s.ask_available ? "draft" : (draft ? "draft" : "saved")}"></span>${draft && !s.ask_available ? "Draft" : (draft ? "Draft" : "Saved")}</span>`;
+    }
+    function snapOf(d) {
+      return JSON.stringify({
+        title: d.title, description: d.description, body: d.body,
+        memories: d.memories, person_ids: d.person_ids,
+        narrator_person_id: d.narrator_person_id,
+        described_start_date: d.described_start_date,
+        described_end_date: d.described_end_date,
+        place_label: d.place_label, visibility: d.visibility,
+      });
+    }
+    function markDirty() {
+      state.dirty = snapOf(state.draft) !== state.savedSnap;
+    }
+    function blocksFromBody(text) {
+      return String(text || "").split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean).map((t, i) => {
+        if (t.startsWith("# ")) return { kind: "heading", text: t.slice(2), position: i };
+        return { kind: "paragraph", text: t, position: i };
+      });
+    }
+    function bodyFromBlocks(blocks) {
+      return (blocks || []).filter((b) => b.kind !== "memory_ref").map((b) => {
+        return b.kind === "heading" ? "# " + (b.text || "") : (b.text || "");
+      }).join("\n\n");
+    }
+    function payloadFromDraft() {
+      const d = state.draft;
+      const blocks = blocksFromBody(d.body);
+      (d.memories || []).forEach((m, i) => {
+        if (m.insert) blocks.push({ kind: "memory_ref", memory_client_key: m.client_key || ("m" + i), position: blocks.length });
+      });
+      const payload = {
+        title: d.title || null,
+        description: d.description || null,
+        body_text: d.body || "",
+        blocks,
+        memories: (d.memories || []).map((m, i) => {
+          const h = hydrateMemory(m);
+          return {
+            client_key: h.client_key || ("m" + i),
+            source_kind: h.source_kind,
+            source_id: h.source_id,
+            label_snapshot: h.label_snapshot || h.title || null,
+            thumb_url: h.thumb_url || null,
+            occurred_on: (h.occurred_on || "").slice(0, 10) || null,
+            attributes_json: h.attributes_json || {},
+            position: i,
+          };
+        }),
+        person_ids: d.person_ids || [],
+        narrator_person_id: d.narrator_person_id || null,
+        described_start_date: d.described_start_date || null,
+        described_end_date: d.described_end_date || null,
+        place_label: d.place_label || null,
+        visibility: d.visibility || "private",
+      };
+      const commit = state.bodyField && state.bodyField.getCommit && state.bodyField.getCommit();
+      if (commit && commit.audio_uri) {
+        payload.audio_uri = commit.audio_uri;
+        payload.speech_origin = commit.speech_origin || "speech";
+        payload.speech_user_edited = Boolean(commit.speech_user_edited);
+        payload.speech_captured_at = commit.speech_captured_at || null;
+        payload.speech_audio_id = commit.audio_id || null;
+      }
+      return payload;
+    }
+    function loadDraftFromStory(s) {
+      const d = emptyDraft();
+      d.id = s.id;
+      d.title = s.title || "";
+      d.description = s.description || "";
+      d.body = bodyFromBlocks(s.blocks) || (s.version && s.version.body_text) || "";
+      d.blocks = s.blocks || [];
+      d.memories = (s.memories || []).map((m, i) => ({ ...m, client_key: m.id || ("m" + i) }));
+      d.people = s.people || [];
+      d.person_ids = (s.people || []).map((p) => p.id).concat(s.person_ids || []).filter((v, i, a) => v && a.indexOf(v) === i);
+      d.narrator_person_id = s.narrator_person_id || "";
+      d.described_start_date = (s.described_start_date || "").slice(0, 10);
+      d.described_end_date = (s.described_end_date || "").slice(0, 10);
+      d.place_label = s.place_label || "";
+      d.visibility = s.visibility || "private";
+      d.saved_version = s.current_version;
+      d.lifecycle = s.lifecycle;
+      state.draft = d;
+      state.savedSnap = snapOf(d);
+      state.dirty = false;
+    }
+
+    function show(view) {
+      state.view = view;
+      ["panel", "detail", "editor"].forEach((v) => {
+        document.getElementById("view-" + v).classList.toggle("hidden", v !== view);
+      });
+      document.getElementById("editor-foot").classList.toggle("hidden", view !== "editor" || state.previewing);
+      const scoped = view === "detail" && state.story;
+      document.getElementById("askLabel").textContent = scoped ? "Ask about this story" : "What would you like to see?";
+      document.getElementById("askQ").placeholder = scoped
+        ? "Ask about this story"
+        : "Ask about a person, memory, or family story";
+    }
+    function setHash(params) {
+      const u = new URL(location.href);
+      u.search = "";
+      Object.entries(params).forEach(([k, v]) => {
+        if (v == null || v === "" || v === false) u.searchParams.delete(k);
+        else u.searchParams.set(k, String(v));
+      });
+      history.replaceState({}, "", u);
+    }
+
+    async function loadPeople() {
+      try {
+        const data = await j("/library/person-options?limit=300");
+        state.people = data.people || [];
+      } catch (_) {
+        try {
+          const data = await j("/people?limit=300");
+          state.people = data.people || [];
+        } catch (e) { state.people = []; }
+      }
+      state.people.sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
+      );
+    }
+    async function loadOwner() {
+      try {
+        const o = await j("/people/owner");
+        state.owner = o;
+        if (!state.draft.narrator_person_id && o.owner_person_id) {
+          state.draft.narrator_person_id = o.owner_person_id;
+        }
+      } catch (_) { state.owner = null; }
+    }
+    async function loadStories() {
+      const f = state.filters;
+      const qs = new URLSearchParams();
+      if (f.status && f.status !== "all") qs.set("status", f.status);
+      if (f.visibility) qs.set("visibility", f.visibility);
+      if (f.person_id) qs.set("person_id", f.person_id);
+      if (f.q) qs.set("q", f.q);
+      const data = await j("/story?" + qs.toString());
+      state.stories = data.stories || data.items || [];
+    }
+
+    function sortedPeople() {
+      return (state.people || []).slice().sort((a, b) =>
+        String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" })
+      );
+    }
+    function personMatches(p, q) {
+      const needle = String(q || "").trim().toLowerCase();
+      if (!needle) return true;
+      return String(p.display_name || "").toLowerCase().includes(needle);
+    }
+    function personSelect(id, value) {
+      const chosen = sortedPeople().find((p) => p.id === value);
+      return `<div class="person-typeahead" id="${id}-wrap">
+        <input id="${id}" placeholder="All people — type a name" value="${esc(chosen ? chosen.display_name : "")}" autocomplete="off" />
+        <input type="hidden" id="${id}-id" value="${esc(value || "")}" />
+        <div class="person-list" id="${id}-list" hidden></div>
+      </div>`;
+    }
+    function bindPersonFilter(id, onChange) {
+      const input = document.getElementById(id);
+      const hid = document.getElementById(id + "-id");
+      const list = document.getElementById(id + "-list");
+      if (!input || !list || !hid) return;
+      const paint = (q) => {
+        const rows = sortedPeople().filter((p) => personMatches(p, q));
+        list.hidden = false;
+        list.innerHTML =
+          `<button type="button" class="person-row" data-id="">All people</button>` +
+          rows.slice(0, 60).map((p) =>
+            `<button type="button" class="person-row ${p.id === hid.value ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
+          ).join("") || `<p class="note">No matching people.</p>`;
+        list.querySelectorAll(".person-row").forEach((b) => {
+          b.onclick = () => {
+            hid.value = b.dataset.id || "";
+            const p = sortedPeople().find((x) => x.id === b.dataset.id);
+            input.value = p ? (p.display_name || "") : "";
+            list.hidden = true;
+            onChange(hid.value);
+          };
+        });
+      };
+      input.onfocus = () => paint(input.value);
+      input.oninput = () => paint(input.value);
+      input.onkeydown = (e) => {
+        if (e.key === "Escape") { list.hidden = true; }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const first = list.querySelector(".person-row[data-id]:not([data-id=''])") || list.querySelector(".person-row");
+          if (first) first.click();
+        }
+      };
+    }
+    function narratorSelect(value) {
+      const opts = [`<option value="">(choose narrator)</option>`].concat(
+        state.people.map((p) => `<option value="${esc(p.id)}" ${p.id === value ? "selected" : ""}>${esc(p.display_name)}</option>`)
+      );
+      return `<select id="ed-narrator">${opts.join("")}</select>`;
+    }
+
+    function renderPanel() {
+      const drafts = state.stories.filter((s) => s.has_working_draft);
+      const cont = drafts[0];
+      const cards = state.stories;
+      document.getElementById("view-panel").innerHTML = `
+        <div class="page-head">
+          <div>
+            <h1>Stories</h1>
+            <p class="sub">The meaning behind the memories</p>
+          </div>
+          <button class="btn primary" id="btn-new" type="button">+ New story</button>
+        </div>
+        ${cont ? `
+          <div class="continue" id="continue-card" data-id="${esc(cont.id)}" data-draft="1">
+            <div class="thumb">${cont.cover_thumb_url ? `<img src="${esc(cont.cover_thumb_url)}" alt="" />` : ""}</div>
+            <div class="meta">
+              <span class="pill">Continue writing</span>
+              <h2 style="font-family:var(--display);margin:0.35rem 0">${esc(cont.title || "Untitled draft")}</h2>
+              <p class="note">${esc(cont.description || "")}</p>
+              <p class="note">Draft · ${cont.memory_count || 0} memories · Updated ${(cont.updated_at || "").slice(0, 10)}</p>
+            </div>
+          </div>` : ""}
+        <div class="filters">
+          <input id="story-q" placeholder="Search stories" value="${esc(state.filters.q)}" style="max-width:220px" />
+          <div class="tabs" role="tablist">
+            ${["all","drafts","saved"].map((t) => `<button type="button" data-status="${t}" class="${state.filters.status===t?"on":""}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}
+          </div>
+          <select id="vis-filter">
+            <option value="" ${!state.filters.visibility?"selected":""}>All visibility</option>
+            <option value="private" ${state.filters.visibility==="private"?"selected":""}>Private</option>
+            <option value="shared_with_family" ${state.filters.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
+          </select>
+          ${personSelect("person-filter", state.filters.person_id)}
+        </div>
+        ${cards.length ? `<div class="grid">${cards.map(cardHtml).join("")}</div>` : `<p class="empty">${state.stories.length===0 && !state.filters.q ? "No stories yet." : "No stories match these filters."}</p>`}
+        <p class="empty note">Stories are saved explicitly and retain author and revision history.</p>
+      `;
+      document.getElementById("btn-new").onclick = () => openNew();
+      document.querySelectorAll(".card, #continue-card").forEach((el) => {
+        el.onclick = () => openStory(el.dataset.id, { edit: false });
+      });
+      document.querySelectorAll(".tabs button").forEach((b) => {
+        b.onclick = async () => { state.filters.status = b.dataset.status; await refreshPanel(); };
+      });
+      document.getElementById("vis-filter").onchange = async (e) => { state.filters.visibility = e.target.value; await refreshPanel(); };
+      bindPersonFilter("person-filter", async (id) => { state.filters.person_id = id; await refreshPanel(); });
+      const q = document.getElementById("story-q");
+      q.onkeydown = async (e) => { if (e.key === "Enter") { state.filters.q = q.value; await refreshPanel(); } };
+      show("panel");
+      setHash({});
+    }
+    function cardHtml(s) {
+      return `<article class="card" data-id="${esc(s.id)}" data-draft="${s.lifecycle==="draft_only"?"1":"0"}">
+        <div class="thumb">${s.cover_thumb_url ? `<img src="${esc(s.cover_thumb_url)}" alt="" />` : ""}</div>
+        <div class="body">
+          <h3>${esc(s.title || "Untitled")}</h3>
+          <p>${esc(s.description || "")}</p>
+          <div class="people">${(s.people||[]).slice(0,3).map(portrait).join("")}${(s.people||[]).length>3?`<span class="chip">+${s.people.length-3}</span>`:""}</div>
+          <div class="foot"><span>${esc(fmtRange(s.described_start_date,s.described_end_date))} · ${s.memory_count||0} memories</span>${badge(s)}</div>
+        </div>
+      </article>`;
+    }
+
+    function hydrateMemory(m) {
+      const x = Object.assign({}, m || {});
+      const kind = x.source_kind || "memory";
+      const id = x.source_id || "";
+      if (!x.thumb_url && kind === "photo" && id) x.thumb_url = "/library/media/photo/" + id;
+      if (!x.thumb_url && kind === "video" && id) {
+        x.thumb_url = "/library/media/video-poster?video=" + encodeURIComponent(id) + "&t=0.000";
+      }
+      const label = String(x.label_snapshot || x.title || "").trim();
+      if (!label || /^(photo|video|memory|image|picture)$/i.test(label)) {
+        x.label_snapshot = x.title && !/^(photo|video|memory)$/i.test(x.title) ? x.title : (label || (kind === "photo" ? "Photo" : kind.replace(/_/g, " ")));
+      } else {
+        x.label_snapshot = label;
+      }
+      return x;
+    }
+    function memoryPeople(m) {
+      const raw = (m.people && m.people.length) ? m.people : ((m.attributes_json && m.attributes_json.people) || []);
+      return raw.map((p) => (typeof p === "string" ? p : (p.display_name || ""))).map((n) => String(n || "").trim()).filter(Boolean);
+    }
+    function memoryInfoLine(m) {
+      const bits = [];
+      const date = (m.occurred_on || "").slice(0, 10);
+      if (date) bits.push(date);
+      const names = memoryPeople(m);
+      if (names.length) bits.push(names.join(", "));
+      const ctx = m.context || (m.attributes_json && m.attributes_json.context);
+      if (ctx && !names.length) bits.push(ctx);
+      return bits.join(" · ");
+    }
+    function memoryCard(m, opts) {
+      opts = opts || {};
+      m = hydrateMemory(m);
+      const kind = (m.source_kind || "memory").replace(/_/g, " ");
+      const title = m.label_snapshot || m.title || kind;
+      const open = memoryHref(m);
+      const info = memoryInfoLine(m);
+      const del = opts.deleteIndex != null
+        ? `<button class="btn danger rem-mem" type="button" data-i="${opts.deleteIndex}">Delete memory</button>`
+        : "";
+      const inner = `
+        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : `<div class="mem-ph">${esc((kind[0] || "M").toUpperCase())}</div>`}
+        <div style="flex:1;min-width:0">
+          <strong>${esc(kind)}</strong> · ${esc(title)}<br/>
+          <span class="note">${esc(info)}</span>
+        </div>
+        ${del}`;
+      if (opts.deleteIndex != null) {
+        return `<div class="mem mem-edit" data-i="${opts.deleteIndex}" data-open="${esc(open)}">${inner}</div>`;
+      }
+      return open
+        ? `<a class="mem" href="${esc(open)}">${inner}</a>`
+        : `<div class="mem">${inner}</div>`;
+    }
+    function memoryHref(m) {
+      const k = m.source_kind, id = m.source_id;
+      if (k === "photo") return "/explore/ui?photo=" + encodeURIComponent(id);
+      if (k === "video") return "/explore/ui?video=" + encodeURIComponent(id);
+      if (k === "artifact") return "/artifact/ui?id=" + encodeURIComponent(id);
+      if (k === "journal") return "/journal/ui?id=" + encodeURIComponent(id);
+      return "";
+    }
+    function renderBlocks(blocks, memories) {
+      const memById = {};
+      (memories || []).forEach((m) => { memById[m.id] = m; });
+      if (!blocks || !blocks.length) return `<p class="note">No story text yet.</p>`;
+      return blocks.map((b) => {
+        if (b.kind === "heading") return `<h3 style="font-family:var(--display)">${esc(b.text||"")}</h3>`;
+        if (b.kind === "memory_ref") return memoryCard(memById[b.memory_id] || { source_kind: "memory", label_snapshot: "Memory" });
+        return `<p>${esc(b.text||"")}</p>`;
+      }).join("");
+    }
+
+    function renderDetail() {
+      const s = state.story;
+      if (!s) return;
+      if (s.lifecycle === "draft_only") { openEditor(s.id); return; }
+      const visLabel = s.visibility === "shared_with_family" ? "Shared with family" : "Private";
+      document.getElementById("view-detail").innerHTML = `
+        <p class="crumb"><a href="#" id="back-panel">Stories</a> / ${esc(s.title || "Story")}</p>
+        <div class="page-head">
+          <div></div>
+          <div class="actions">
+            <button class="btn" id="btn-save-memory" type="button">Save memory</button>
+            <button class="btn danger" id="btn-remove-story" type="button">Delete story</button>
+            <button class="btn primary" id="btn-edit" type="button">Edit story</button>
+          </div>
+        </div>
+        ${s.has_working_draft ? `<div class="banner">You have an unsaved revision. <button class="btn" id="btn-cont" type="button">Continue editing</button> <button class="btn danger" id="btn-disc" type="button">Discard</button></div>` : ""}
+        <div class="hero">
+          <div>${s.cover_thumb_url ? `<img src="${esc(s.cover_thumb_url)}" alt="" />` : `<div class="cover"></div>`}</div>
+          <div>
+            <h1>${esc(s.title || "Untitled")}</h1>
+            <p class="sub">${esc(s.description || "")}</p>
+            <p>
+              <span class="badge"><span class="dot saved"></span>Saved</span>
+              <span class="badge">${s.ask_available ? "Available to Ask" : "Not available to Ask"}</span>
+            </p>
+            <p class="note">Narrated by <b>${esc(s.narrator_display_name || "—")}</b> · Edited by <b>${esc(s.editor_display_name || "—")}</b></p>
+            <p class="note">${esc(fmtRange(s.described_start_date,s.described_end_date))} · ${(s.memories||[]).length} linked memories · Version ${s.current_version || 1}</p>
+          </div>
+        </div>
+        <div class="layout">
+          <div>
+            <h4 class="note">People in this story</h4>
+            <div class="people">${(s.people||[]).map(portrait).join("") || '<span class="note">None yet</span>'}</div>
+            <div style="margin-top:1rem">${renderBlocks(s.blocks, s.memories)}</div>
+            ${(s.memories||[]).length ? `<h4 class="note" style="margin-top:1.2rem">Supporting memories</h4>${s.memories.map(memoryCard).join("")}` : ""}
+          </div>
+          <aside>
+            <div class="side">
+              <h4>ABOUT THIS STORY</h4>
+              <dl>
+                <dt>Narrator</dt><dd>${esc(s.narrator_display_name || "—")}</dd>
+                <dt>Editor</dt><dd>${esc(s.editor_display_name || "—")}</dd>
+                <dt>Current version</dt><dd>${s.current_version || 1}</dd>
+                <dt>Last saved</dt><dd>${esc((s.updated_at||"").slice(0,10))}</dd>
+                <dt>Visibility</dt><dd>${visLabel}</dd>
+              </dl>
+              <button class="btn ghost" id="btn-hist" type="button">View revision history</button>
+            </div>
+            <div class="side">
+              <h4>STORY CONNECTIONS</h4>
+              <p>${(s.people||[]).length} people · ${(s.memories||[]).length} memories</p>
+              <p>${s.place_label ? "Place · " + esc(s.place_label) : ""}</p>
+              <button class="btn" id="btn-all-mem" type="button">View all supporting memories</button>
+            </div>
+            <p class="note">Editing creates a new working draft. The saved version remains available until the revision is saved.</p>
+          </aside>
+        </div>
+      `;
+      document.getElementById("back-panel").onclick = (e) => { e.preventDefault(); refreshPanel(); };
+      document.getElementById("btn-edit").onclick = () => openEditor(s.id);
+      const c = document.getElementById("btn-cont");
+      if (c) c.onclick = () => openEditor(s.id);
+      const d = document.getElementById("btn-disc");
+      if (d) d.onclick = () => confirmDiscard(s.id);
+      document.getElementById("btn-save-memory").onclick = () => saveMemoryPublish();
+      document.getElementById("btn-remove-story").onclick = () => confirmRemoveStory(s.id);
+      document.getElementById("btn-hist").onclick = () => openHistory(s.id);
+      document.getElementById("btn-all-mem").onclick = () => {
+        const box = document.getElementById("modals");
+        box.innerHTML = `<div class="modal-back"><div class="modal"><h2>Supporting memories</h2>${(s.memories||[]).map(memoryCard).join("") || "<p class='note'>None yet.</p>"}<p><button class="btn" id="close-m">Close</button></p></div></div>`;
+        document.getElementById("close-m").onclick = () => { box.innerHTML = ""; };
+      };
+      show("detail");
+      setHash({ id: s.id });
+    }
+
+    function snapshotSpeechCommit() {
+      const ta = document.getElementById("ed-body");
+      if (ta) state.draft.body = ta.value;
+      if (state.bodyField && state.bodyField.getCommit) {
+        const c = state.bodyField.getCommit();
+        state.speechCommit = (c && c.audio_uri) ? c : state.speechCommit;
+      }
+    }
+    function renderEditor() {
+      snapshotSpeechCommit();
+      if (state.bodyField && state.bodyField.destroy) {
+        state.bodyField.destroy();
+        state.bodyField = null;
+      }
+      const d = state.draft;
+      const revising = Boolean(d.id && d.saved_version && d.lifecycle !== "draft_only");
+      const editorName = (state.owner && state.owner.display_name) || "Owner";
+      document.getElementById("view-editor").innerHTML = `
+        <p class="crumb"><a href="#" id="back-nav">Stories</a> / ${revising ? esc(d.title || "Story") + " / Edit" : "New story"}</p>
+        <div class="page-head">
+          <div>
+            <h1>${revising ? "Edit story" : "New story"}</h1>
+            <p>
+              <span class="badge"><span class="dot draft"></span>${revising ? "Working draft" : "Draft"}</span>
+              <span class="badge">Not available to Ask</span>
+            </p>
+            <p class="sub">${revising ? "Saved version " + d.saved_version + " remains available to Ask until this revision is saved." : "Build a story from memories. Save when it is ready for MemoryBox."}</p>
+          </div>
+        </div>
+        ${revising ? `<div class="banner">Saved version ${d.saved_version} remains available to Ask until this revision is saved.</div>` : ""}
+        <div class="layout">
+          <div>
+            <label>Title</label>
+            <input id="ed-title" placeholder="Give your story a title" value="${esc(d.title)}" />
+            <label>Description (optional)</label>
+            <input id="ed-desc" placeholder="What is this story about?" value="${esc(d.description)}" />
+            <label>Story</label>
+            <p class="note">Use a blank line between paragraphs. Start a line with “# ” for a heading.</p>
+            <textarea id="ed-body" placeholder="Start writing your story…">${esc(d.body)}</textarea>
+            <h3 style="font-size:1rem;margin:1rem 0 0.4rem">Supporting memories</h3>
+            <p class="note">Photos, videos, artifacts, communications, calendar, journal, and audio. Originals stay unchanged.</p>
+            <div id="ed-mems">${d.memories.length ? d.memories.map((m,i)=>memEditorRow(m,i)).join("") : `<div class="dash">No memories yet.<br/><button class="btn primary" id="btn-add-mem" type="button">+ Add memories</button></div>`}</div>
+            ${d.memories.length ? `<p><button class="btn" id="btn-add-mem" type="button">+ Add memories</button></p>` : ""}
+          </div>
+          <aside>
+            <div class="side">
+              <h4>STORY DETAILS</h4>
+              <label>Narrator</label>
+              ${narratorSelect(d.narrator_person_id)}
+              <label>Editor</label>
+              <input value="${esc(editorName)}" disabled />
+              <label>Story date range</label>
+              <div class="date-stack">
+                <label for="ed-d0">Start</label>
+                <input id="ed-d0" type="date" value="${esc(d.described_start_date)}" />
+                <label for="ed-d1">End</label>
+                <input id="ed-d1" type="date" value="${esc(d.described_end_date)}" />
+              </div>
+              <label>Place</label>
+              <input id="ed-place" placeholder="Add a place" value="${esc(d.place_label)}" />
+              <label>Visibility</label>
+              <select id="ed-vis">
+                <option value="private" ${d.visibility==="private"?"selected":""}>Private</option>
+                <option value="shared_with_family" ${d.visibility==="shared_with_family"?"selected":""}>Shared with family</option>
+              </select>
+              <label>People</label>
+              <div class="people" id="ed-people">${(d.people||[]).map(editorPersonChip).join("") || '<span class="note">None yet</span>'}</div>
+              <button class="btn" id="btn-add-people" type="button">+ Add people</button>
+            </div>
+          </aside>
+        </div>
+      `;
+      bindEditorFields();
+      document.getElementById("editor-foot").innerHTML = `
+        <div>
+          <button class="btn ghost" id="foot-cancel" type="button">Cancel</button>
+          <button class="btn danger" id="foot-discard" type="button">${revising ? "Discard draft" : "Delete draft"}</button>
+        </div>
+        <p class="note">${revising ? "Save memory creates version " + ((d.saved_version||1)+1) + " and makes it searchable in Explore." : "Save memory makes this version searchable in Explore. Save draft keeps it out of Explore."}</p>
+        <div class="actions">
+          ${revising ? `<button class="btn" id="foot-preview" type="button">Preview</button>` : `<button class="btn" id="foot-draft" type="button">Save draft</button>`}
+          ${revising ? `<button class="btn" id="foot-draft" type="button">Save draft</button>` : ""}
+          <button class="btn primary" id="foot-save" type="button">Save memory</button>
+        </div>
+      `;
+      document.getElementById("back-nav").onclick = (e) => { e.preventDefault(); leaveEditor(); };
+      document.getElementById("foot-cancel").onclick = () => leaveEditor();
+      document.getElementById("foot-draft").onclick = () => persistDraft();
+      document.getElementById("foot-save").onclick = () => persistSave(revising);
+      const prev = document.getElementById("foot-preview");
+      if (prev) prev.onclick = () => openPreview();
+      const disc = document.getElementById("foot-discard");
+      if (disc) disc.onclick = () => confirmDiscard(d.id);
+      show("editor");
+      setHash(d.id ? { id: d.id, edit: 1 } : { new: 1 });
+    }
+    function memEditorRow(m, i) {
+      return memoryCard(m, { deleteIndex: i });
+    }
+    function bindEditorFields() {
+      const map = [
+        ["ed-title","title"],["ed-desc","description"],["ed-body","body"],
+        ["ed-d0","described_start_date"],["ed-d1","described_end_date"],
+        ["ed-place","place_label"],["ed-vis","visibility"],["ed-narrator","narrator_person_id"],
+      ];
+      map.forEach(([id, key]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.oninput = el.onchange = () => { state.draft[key] = el.value; markDirty(); };
+      });
+      const add = document.getElementById("btn-add-mem");
+      if (add) add.onclick = () => openPicker();
+      document.querySelectorAll(".mem-edit").forEach((el) => {
+        el.onclick = (e) => {
+          if (e.target.closest(".rem-mem")) return;
+          const href = el.getAttribute("data-open");
+          if (href) window.location.href = href;
+        };
+      });
+      document.querySelectorAll(".rem-mem").forEach((b) => {
+        b.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmDeleteMemory(Number(b.dataset.i));
+        };
+      });
+      document.getElementById("btn-add-people").onclick = () => openPeoplePicker();
+      document.querySelectorAll(".rem-person").forEach((b) => {
+        b.onclick = () => removeDraftPerson(b.dataset.id);
+      });
+      if (window.MBNarrativeField) {
+        const ta = document.getElementById("ed-body");
+        const p = new URLSearchParams(location.search);
+        const auto = Boolean(state.captureArmed) && p.get("capture") === "1" && !state.speechCommit;
+        state.captureArmed = false;
+        state.bodyField = window.MBNarrativeField.mount(ta, {
+          speech: "authored-memory",
+          autoStart: auto,
+          onChange: () => { state.draft.body = ta.value; markDirty(); },
+        });
+        if (state.speechCommit && state.bodyField.restoreCommit) {
+          state.bodyField.restoreCommit(state.speechCommit);
+        }
+      }
+    }
+    function editorPersonChip(p) {
+      return `<span class="chip">${portraitInner(p)}<button type="button" class="btn ghost rem-person" data-id="${esc(p.id)}">Remove</button></span>`;
+    }
+    function removeDraftPerson(id, rerender) {
+      state.draft.person_ids = (state.draft.person_ids || []).filter((x) => x !== id);
+      state.draft.people = (state.draft.people || []).filter((p) => p.id !== id);
+      markDirty();
+      if (rerender !== false) renderEditor();
+    }
+    function addPeopleFromMemory(m) {
+      const incoming = [];
+      (m.people || []).forEach((p) => {
+        if (typeof p === "string") incoming.push({ name: p });
+        else incoming.push({ id: p.id || p.person_id || "", name: p.display_name || p.name || "" });
+      });
+      if (m.mb_person_id) incoming.push({ id: m.mb_person_id, name: m.mb_person_name || "" });
+      incoming.forEach((row) => {
+        let hit = null;
+        if (row.id) hit = sortedPeople().find((p) => p.id === row.id);
+        if (!hit && row.name) {
+          const n = row.name.trim().toLowerCase();
+          hit = sortedPeople().find((p) => String(p.display_name || "").trim().toLowerCase() === n);
+        }
+        if (!hit || !hit.id) return;
+        if (!state.draft.person_ids.includes(hit.id)) {
+          state.draft.person_ids.push(hit.id);
+        }
+      });
+      state.draft.people = sortedPeople().filter((p) => state.draft.person_ids.includes(p.id));
+    }
+
+    async function persistDraft() {
+      const body = payloadFromDraft();
+      const data = state.draft.id
+        ? await j("/story/" + state.draft.id + "/drafts", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) })
+        : await j("/story/drafts", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      loadDraftFromStory(data.story);
+      if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
+      state.speechCommit = null;
+      renderEditor();
+      return data.story;
+    }
+    async function persistSave(revising) {
+      const body = payloadFromDraft();
+      if (!(body.title || "").trim()) {
+        alert("A title is required to save a Story.");
+        return;
+      }
+      let data;
+      if (!state.draft.id) {
+        data = await j("/story", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      } else {
+        data = await j("/story/" + state.draft.id + "/revisions", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      }
+      state.dirty = false;
+      if (state.bodyField && state.bodyField.consumeCommit) state.bodyField.consumeCommit();
+      state.speechCommit = null;
+      state.story = data.story;
+      loadDraftFromStory(data.story);
+      renderDetail();
+    }
+    function leaveEditor() {
+      if (state.dirty) {
+        openUnsaved();
+        return;
+      }
+      if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
+      if (state.draft.id && state.draft.lifecycle !== "draft_only" && state.story && state.story.ask_available) renderDetail();
+      else refreshPanel();
+    }
+    function openUnsaved() {
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>You have unsaved changes.</h2>
+        <p class="note">Save draft keeps this out of Ask. Discard changes leaves the last persisted draft.</p>
+        <p class="actions">
+          <button class="btn" id="u-stay">Stay</button>
+          <button class="btn danger" id="u-drop">Discard changes</button>
+          <button class="btn primary" id="u-save">Save draft</button>
+        </p>
+      </div></div>`;
+      document.getElementById("u-stay").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("u-drop").onclick = () => {
+        state.dirty = false;
+        if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
+        document.getElementById("modals").innerHTML = "";
+        leaveEditor();
+      };
+      document.getElementById("u-save").onclick = async () => { await persistDraft(); document.getElementById("modals").innerHTML = ""; leaveEditor(); };
+    }
+    async function confirmDiscard(id) {
+      const row = (state.stories || []).find((s) => s.id === id)
+        || (state.story && state.story.id === id ? state.story : null)
+        || (state.draft && state.draft.id === id ? state.draft : null);
+      const never = !id || !row || row.lifecycle === "draft_only" || row.ask_available === false;
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>${never ? "Delete this draft?" : "Discard this working draft?"}</h2>
+        <p class="note">${never ? "It has never been saved for Ask. This cannot be undone." : "The saved version stays available to Ask."}</p>
+        <p class="actions">
+          <button class="btn" id="d-no">Keep</button>
+          <button class="btn danger" id="d-yes">${never ? "Delete draft" : "Discard draft"}</button>
+        </p>
+      </div></div>`;
+      document.getElementById("d-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("d-yes").onclick = async () => {
+        if (!id) {
+          state.dirty = false;
+          if (state.bodyField && state.bodyField.discardUnsaved) state.bodyField.discardUnsaved();
+      state.speechCommit = null;
+          document.getElementById("modals").innerHTML = "";
+          refreshPanel();
+          return;
+        }
+        const data = await j("/story/" + id + "/working/discard", { method: "POST" });
+        document.getElementById("modals").innerHTML = "";
+        state.dirty = false;
+        if (data.removed || !data.story) refreshPanel();
+        else { state.story = data.story; renderDetail(); }
+      };
+    }
+    function confirmDeleteMemory(i) {
+      const m = state.draft.memories[i];
+      if (!m) return;
+      const label = m.label_snapshot || m.title || m.source_id || "this memory";
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Delete this memory?</h2>
+        <p class="note">${esc(label)} will be unlinked from this story. The original photo, video, or file is unchanged.</p>
+        <p class="actions">
+          <button class="btn" id="m-no">Keep</button>
+          <button class="btn danger" id="m-yes">Delete memory</button>
+        </p>
+      </div></div>`;
+      document.getElementById("m-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("m-yes").onclick = async () => {
+        state.draft.memories.splice(i, 1);
+        markDirty();
+        document.getElementById("modals").innerHTML = "";
+        if (state.draft.id) {
+          try { await persistDraft(); } catch (e) { renderEditor(); }
+        } else {
+          renderEditor();
+        }
+      };
+    }
+    function confirmRemoveStory(id) {
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Delete this story?</h2>
+        <p class="note">It will leave Stories and Ask. Supporting memories are not deleted.</p>
+        <p class="actions">
+          <button class="btn" id="r-no">Keep</button>
+          <button class="btn danger" id="r-yes">Delete story</button>
+        </p>
+      </div></div>`;
+      document.getElementById("r-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("r-yes").onclick = async () => {
+        await j("/story/" + encodeURIComponent(id), { method: "DELETE" });
+        document.getElementById("modals").innerHTML = "";
+        state.dirty = false;
+        refreshPanel();
+      };
+    }
+    function openPreview() {
+      const blocks = blocksFromBody(state.draft.body);
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <h2>Preview</h2>
+        <p class="note">Working draft — not saved to Ask.</p>
+        <h1 style="font-family:var(--display)">${esc(state.draft.title || "Untitled")}</h1>
+        <p>${esc(state.draft.description || "")}</p>
+        ${renderBlocks(blocks, state.draft.memories)}
+        ${(state.draft.memories||[]).map(memoryCard).join("")}
+        <p><button class="btn" id="prev-close">Close</button></p>
+      </div></div>`;
+      document.getElementById("prev-close").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+    }
+    async function saveMemoryPublish() {
+      if (state.view === "editor") {
+        const revising = Boolean(state.draft.id && state.draft.saved_version && state.draft.lifecycle !== "draft_only");
+        await persistSave(revising);
+        return;
+      }
+      const s = state.story;
+      if (!s) return;
+      if (s.ask_available && !s.has_working_draft && s.lifecycle !== "draft_only") {
+        return;
+      }
+      await openEditor(s.id);
+      const revising = Boolean(state.draft.id && state.draft.saved_version && state.draft.lifecycle !== "draft_only");
+      await persistSave(revising);
+    }
+    async function openHistory(id) {
+      const data = await j("/story/" + id + "/versions");
+      const rows = (data.versions || []).map((v) => `<p><button class="btn ghost hist" data-n="${v.version}">Version ${v.version} · ${esc((v.frozen_at||"").slice(0,10))} · ${esc((v.editor && v.editor.display_name) || "")}</button></p>`).join("");
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Revision history</h2>
+        ${rows || "<p class='note'>No saved versions yet.</p>"}
+        <p><button class="btn" id="h-x">Close</button></p>
+      </div></div>`;
+      document.getElementById("h-x").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.querySelectorAll(".hist").forEach((b) => {
+        b.onclick = async () => {
+          const data = await j("/story/" + id + "?version=" + b.dataset.n);
+          state.story = data.story;
+          document.getElementById("modals").innerHTML = "";
+          renderDetail();
+        };
+      });
+    }
+    function openPeoplePicker() {
+      let pickId = "";
+      const chosenHtml = () =>
+        (state.draft.people || []).map((p) =>
+          `<span class="chip">${portraitInner(p)}<button type="button" class="btn ghost pp-drop" data-id="${esc(p.id)}">Remove</button></span>`
+        ).join("") || `<span class="note">None yet</span>`;
+      const listHtml = (q) => {
+        const chosen = new Set(state.draft.person_ids || []);
+        const rows = sortedPeople().filter((p) => personMatches(p, q) && !chosen.has(p.id));
+        return rows.slice(0, 80).map((p) =>
+          `<button type="button" class="person-row ${p.id === pickId ? "on" : ""}" data-id="${esc(p.id)}">${portrait(p)}</button>`
+        ).join("") || `<p class="note">No matching people.</p>`;
+      };
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal small">
+        <h2>Add a person</h2>
+        <p class="note">Select one person, then Add person. Type to jump to a name.</p>
+        <div class="people" id="pp-selected">${chosenHtml()}</div>
+        <input id="pp-q" placeholder="Type a name" value="" autocomplete="off" />
+        <div class="person-list" id="pp-list">${listHtml("")}</div>
+        <p class="pk-foot">
+          <button class="btn" id="p-x" type="button">Done</button>
+          <button class="btn primary" id="p-add" type="button" disabled>Add person</button>
+        </p>
+      </div></div>`;
+      const paint = () => {
+        document.getElementById("pp-selected").innerHTML = chosenHtml();
+        document.getElementById("pp-list").innerHTML = listHtml(document.getElementById("pp-q").value);
+        document.getElementById("p-add").disabled = !pickId;
+        document.querySelectorAll("#pp-list .person-row").forEach((b) => {
+          b.onclick = () => { pickId = b.dataset.id; paint(); };
+        });
+        document.querySelectorAll(".pp-drop").forEach((b) => {
+          b.onclick = () => {
+            removeDraftPerson(b.dataset.id, false);
+            pickId = "";
+            paint();
+          };
+        });
+      };
+      document.getElementById("pp-q").oninput = () => { pickId = ""; paint(); };
+      document.getElementById("p-x").onclick = () => {
+        document.getElementById("modals").innerHTML = "";
+        renderEditor();
+      };
+      document.getElementById("p-add").onclick = () => {
+        const p = sortedPeople().find((x) => x.id === pickId);
+        if (!p) return;
+        if (!state.draft.person_ids.includes(p.id)) {
+          state.draft.person_ids.push(p.id);
+          state.draft.people = sortedPeople().filter((x) => state.draft.person_ids.includes(x.id));
+          markDirty();
+        }
+        pickId = "";
+        document.getElementById("pp-q").value = "";
+        paint();
+      };
+      paint();
+      document.getElementById("pp-q").focus();
+    }
+
+    async function openPicker() {
+      state.picker = { items: [], selected: {}, kind: "all", q: "", total: 0, truncated: false, asked: false, density: 2 };
+      drawPicker();
+    }
+    async function searchPicker() {
+      const kind = state.picker.kind;
+      const types = kind === "all" ? "" : ({
+        photos: "photo", videos: "video", communications: "email_thread,sms_conversation",
+        calendar: "calendar_event", artifacts: "artifact", journal: "journal", audio: "audio",
+      }[kind] || kind);
+      const qs = new URLSearchParams({ q: state.picker.q || "", limit: "80" });
+      if (types) qs.set("types", types);
+      const data = await j("/story/evidence-search?" + qs.toString());
+      state.picker.items = data.items || [];
+      state.picker.total = data.total || 0;
+      state.picker.truncated = Boolean(data.truncated);
+      state.picker.matched_person_id = data.matched_person_id || "";
+    }
+    function pickerEmptyHint() {
+      const p = state.picker;
+      if (!p.asked) return "Ask for a person or words first — the gallery stays empty until you search.";
+      return p.q ? "No matches for this search. Try a person name, or switch type." : "No memories in this filter yet.";
+    }
+    function selectedCount() {
+      return Object.keys(state.picker.selected || {}).length;
+    }
+    function updatePickerFooter() {
+      const n = selectedCount();
+      const add = document.getElementById("pk-add");
+      const count = document.getElementById("pk-count");
+      const sel = document.getElementById("pk-selected");
+      if (add) {
+        add.disabled = !n;
+        add.textContent = n ? "Add " + n + " memories" : "Add memories";
+      }
+      if (count) count.textContent = n ? n + " selected" : "None selected";
+      if (sel) {
+        sel.innerHTML = n
+          ? Object.values(state.picker.selected).map((m) => `<p class="note">${esc(m.title || m.source_id)}</p>`).join("")
+          : "<p class='note'>None yet.</p>";
+      }
+    }
+    function bindPickCards() {
+      document.querySelectorAll("#pk-grid .pick").forEach((el) => {
+        el.onclick = () => {
+          const key = el.dataset.key;
+          const item = state.picker.items.find((x) => (x.source_kind + ":" + x.source_id) === key);
+          if (!item) return;
+          if (state.picker.selected[key]) delete state.picker.selected[key];
+          else state.picker.selected[key] = item;
+          el.classList.toggle("on", Boolean(state.picker.selected[key]));
+          updatePickerFooter();
+        };
+      });
+    }
+    function refreshPickerGrid() {
+      const grid = document.getElementById("pk-grid");
+      const meta = document.getElementById("pk-meta");
+      if (!grid) return;
+      const scroll = grid.scrollTop;
+      const p = state.picker;
+      grid.dataset.density = String(p.density || 2);
+      grid.innerHTML = p.items.map(pickCard).join("") || `<p class='note'>${pickerEmptyHint()}</p>`;
+      grid.scrollTop = scroll;
+      if (meta) {
+        meta.textContent = p.asked
+          ? (p.total + " matches" + (p.truncated ? " (more exist than this page)" : "") + (p.matched_person_id ? " · matched a person" : ""))
+          : "Ask to fill the gallery";
+      }
+      const densLabel = document.getElementById("pk-density-label");
+      if (densLabel) densLabel.textContent = ({ 1: "Small", 2: "Medium", 3: "Large" })[p.density] || "Medium";
+      bindPickCards();
+      updatePickerFooter();
+    }
+    async function runPickerAsk() {
+      const input = document.getElementById("pk-q");
+      state.picker.q = input ? input.value.trim() : "";
+      const field = document.getElementById("pk-field");
+      if (field) field.classList.add("is-searching");
+      try {
+        if (!state.picker.q) {
+          state.picker.items = [];
+          state.picker.asked = false;
+          state.picker.total = 0;
+        } else {
+          await searchPicker();
+          state.picker.asked = true;
+        }
+      } finally {
+        if (field) field.classList.remove("is-searching");
+      }
+      refreshPickerGrid();
+    }
+    function drawPicker() {
+      const p = state.picker;
+      const n = selectedCount();
+      const tabs = ["all","photos","videos","communications","calendar","artifacts","journal","audio"];
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <div class="page-head"><div><h2 style="margin:0">Add supporting memories</h2><p class="note">Ask first. Gallery stays empty until you search. Stories cannot be added here.</p></div><button class="btn ghost" id="pk-x">Close</button></div>
+        <div class="ask-field mb-explore-ask-field" id="pk-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="pk-q" value="${esc(p.q)}" placeholder="Ask for a person or words — Anne Will, Christmas" />
+          <button class="ask-go mb-explore-ask-go" id="pk-go" type="button">→</button>
+        </div>
+        <div class="filters">
+          <div class="kind-tabs">${tabs.map((t)=>`<button type="button" data-k="${t}" class="${p.kind===t?"on":""}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
+          <div class="pk-density">
+            <button type="button" class="btn" id="pk-density-minus">−</button>
+            <span id="pk-density-label">Medium</span>
+            <button type="button" class="btn" id="pk-density-plus">+</button>
+          </div>
+        </div>
+        <p class="note" id="pk-meta">Ask to fill the gallery</p>
+        <div class="layout">
+          <div class="pick-grid" id="pk-grid" data-density="${p.density || 2}"></div>
+          <aside class="side">
+            <h4>Selected · <span id="pk-count">${n ? n + " selected" : "None selected"}</span></h4>
+            <div id="pk-selected">${n ? Object.values(p.selected).map((m)=>`<p class="note">${esc(m.title||m.source_id)}</p>`).join("") : "<p class='note'>None yet.</p>"}</div>
+            <p class="note">Selections are added as supporting evidence. Originals stay unchanged.</p>
+          </aside>
+        </div>
+        <div class="pk-foot">
+          <div class="actions">
+            <button class="btn" id="pk-cancel" type="button">Cancel</button>
+            <button class="btn ghost" id="pk-clear" type="button">Clear all</button>
+          </div>
+          <button class="btn primary" id="pk-add" type="button" ${n?"":"disabled"}>${n ? "Add " + n + " memories" : "Add memories"}</button>
+        </div>
+      </div></div>`;
+      document.getElementById("pk-x").onclick = document.getElementById("pk-cancel").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("pk-go").onclick = () => runPickerAsk();
+      document.getElementById("pk-q").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); runPickerAsk(); } };
+      document.querySelectorAll(".kind-tabs button").forEach((b) => {
+        b.onclick = async () => {
+          state.picker.kind = b.dataset.k;
+          document.querySelectorAll(".kind-tabs button").forEach((x) => x.classList.toggle("on", x === b));
+          if (state.picker.asked) await runPickerAsk();
+        };
+      });
+      document.getElementById("pk-density-minus").onclick = () => {
+        state.picker.density = Math.max(1, (state.picker.density || 2) - 1);
+        refreshPickerGrid();
+      };
+      document.getElementById("pk-density-plus").onclick = () => {
+        state.picker.density = Math.min(3, (state.picker.density || 2) + 1);
+        refreshPickerGrid();
+      };
+      const clr = document.getElementById("pk-clear");
+      if (clr) clr.onclick = () => { state.picker.selected = {}; refreshPickerGrid(); };
+      document.getElementById("pk-add").onclick = () => {
+        Object.values(state.picker.selected).forEach((m) => {
+          if (m.source_kind === "story") return;
+          if (state.draft.memories.some((x) => x.source_kind === m.source_kind && x.source_id === m.source_id)) return;
+          state.draft.memories.push({ ...m, client_key: "m" + Date.now() + Math.random() });
+          addPeopleFromMemory(m);
+        });
+        markDirty();
+        document.getElementById("modals").innerHTML = "";
+        renderEditor();
+      };
+      refreshPickerGrid();
+    }
+    function pickCard(m) {
+      const key = m.source_kind + ":" + m.source_id;
+      const on = Boolean(state.picker.selected[key]);
+      const kind = (m.source_kind || "").replace(/_/g, " ");
+      const who = m.context || (m.people || []).map((p) => p.display_name || p.name || p).filter(Boolean).join(", ");
+      const from = m.attributes_json && (m.attributes_json.from || m.attributes_json.channel);
+      const ctx = who || from || "";
+      return `<div class="pick ${on?"on":""}" data-key="${esc(key)}">
+        ${m.thumb_url ? `<img src="${esc(m.thumb_url)}" alt="" />` : ""}
+        <strong>${esc(kind)}</strong>
+        <div>${esc(m.title || "")}</div>
+        ${ctx ? `<div class="note">${esc(ctx)}</div>` : ""}
+        <div class="note">${esc((m.occurred_on||"").toString().slice(0,10))}</div>
+      </div>`;
+    }
+
+    function openNew(pre) {
+      state.story = null;
+      state.draft = emptyDraft();
+      if (state.owner && state.owner.owner_person_id) state.draft.narrator_person_id = state.owner.owner_person_id;
+      if (pre && pre.memory) state.draft.memories = [pre.memory];
+      if (pre && pre.title) state.draft.title = pre.title;
+      state.savedSnap = snapOf(state.draft);
+      state.dirty = false;
+      renderEditor();
+    }
+    async function openStory(id, opts) {
+      opts = opts || {};
+      if (opts.edit) {
+        await openEditor(id);
+        return;
+      }
+      const data = await j("/story/" + encodeURIComponent(id));
+      state.story = data.story;
+      if (data.story.lifecycle === "draft_only") { await openEditor(id); return; }
+      renderDetail();
+    }
+    async function openEditor(id) {
+      let data;
+      try {
+        data = await j("/story/" + id + "/working");
+      } catch (_) {
+        try {
+          data = await j("/story/" + id + "/edit", { method: "POST" });
+        } catch (e) {
+          data = await j("/story/" + id);
+        }
+      }
+      state.story = (await j("/story/" + id).catch(() => ({ story: data.story }))).story || data.story;
+      loadDraftFromStory(data.story);
+      renderEditor();
+    }
+    async function refreshPanel() {
+      await loadStories();
+      renderPanel();
+    }
+
+    const STORY_NAV = [
+      { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
+      { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+      { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+      { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+      { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+      { id: "family-night", label: "Family Night", href: "/family-night/ui", ico: "✧" },
+      { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
+    ];
+    function renderStoryNav() {
+      const el = document.getElementById("mb-explore-nav");
+      if (!el) return;
+      el.innerHTML = STORY_NAV.map((n) =>
+        `<a href="${n.href}" data-nav="${n.id}"${n.id === "stories" ? ' aria-current="page"' : ""}><span class="mb-nav-ico" aria-hidden="true">${n.ico}</span>${n.label}</a>`
+      ).join("");
+    }
+    function goHomeExplore() {
+      if (window.mbShell && typeof window.mbShell.clearExploration === "function") {
+        window.mbShell.clearExploration();
+      }
+      window.location.href = "/explore/ui";
+    }
+    function submitStoryAsk() {
+      const q = document.getElementById("askQ").value.trim();
+      const extra = state.view === "detail" && state.story && state.story.title ? " " + state.story.title : "";
+      const field = document.getElementById("askField");
+      if (field) field.classList.add("is-searching");
+      window.location.href = "/explore/ui?q=" + encodeURIComponent(q || extra.trim());
+    }
+    document.getElementById("askGo").onclick = submitStoryAsk;
+    document.getElementById("askQ").onkeydown = (e) => { if (e.key === "Enter") submitStoryAsk(); };
+    const home = document.getElementById("mb-home");
+    if (home) home.onclick = (e) => { e.preventDefault(); goHomeExplore(); };
+    window.addEventListener("beforeunload", (e) => {
+      if (state.view === "editor" && state.dirty) { e.preventDefault(); e.returnValue = ""; }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (document.getElementById("modals").innerHTML) { document.getElementById("modals").innerHTML = ""; return; }
+      if (state.view === "editor") leaveEditor();
+      else if (state.view === "detail") refreshPanel();
+    });
+
+    (async function boot() {
+      renderStoryNav();
+      await Promise.all([loadPeople(), loadOwner()]);
+      const p = new URLSearchParams(location.search);
+      if (p.get("new") === "1" || p.get("photo") || p.get("video") || p.get("artifact")) {
+        const mem = p.get("photo")
+          ? { source_kind: "photo", source_id: p.get("photo"), thumb_url: p.get("thumb") || ("/library/media/photo/" + p.get("photo")), occurred_on: (p.get("taken") || "").slice(0,10), label_snapshot: p.get("title") || "Photo" }
+          : (p.get("video") ? { source_kind: "video", source_id: p.get("video"), label_snapshot: p.get("title") || "Video" }
+            : (p.get("artifact") && UUID_RE.test(p.get("artifact"))
+              ? { source_kind: "artifact", source_id: p.get("artifact"), label_snapshot: p.get("title") || "Artifact" }
+              : null));
+        openNew({ memory: mem, title: p.get("title") || "" });
+        if (mem) addPeopleFromMemory({
+          people: (p.get("people") || "").split(",").map((n) => n.trim()).filter(Boolean),
+          mb_person_id: p.get("person") || "",
+        });
+        renderEditor();
+        return;
+      }
+      if (p.get("id") && UUID_RE.test(p.get("id"))) {
+        if (p.get("edit") === "1") await openEditor(p.get("id"));
+        else await openStory(p.get("id"), { edit: false });
+        return;
+      }
+      await refreshPanel();
+    })();
+  </script>
+</body>
+</html>

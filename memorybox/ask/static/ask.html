@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="ask">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Ask</title>
+  <style>
+    /* Page-local only; shell.css supplies MBUX chrome — dark, readable */
+    html[data-mb-surface="ask"] body,
+    html[data-mb-surface="ask"] body.mb-shell {
+      color: #e8edf5;
+    }
+    #breadcrumb {
+      margin: 0.65rem 0;
+      padding: 0.55rem 0.7rem;
+      border: 1px dashed rgba(232, 237, 245, 0.22);
+      background: rgba(15, 20, 28, 0.72);
+      color: #e8edf5;
+      min-height: 2.2rem;
+      font-size: 0.9rem;
+    }
+    #breadcrumb:empty::before { content: "Context: (none)"; color: #9aa3b5; }
+    .crumb { display: inline-block; margin-right: 0.6rem; }
+    .crumb b { font-weight: 600; color: #f3f6fb; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; align-items: center; }
+    .ask-section {
+      background: rgba(20, 27, 39, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 0.85rem;
+      margin-bottom: 0.75rem;
+      border-radius: 2px;
+      color: #e8edf5;
+    }
+    .ask-section h2 { font-size: 1rem; margin: 0 0 0.5rem; color: #e8edf5; font-family: Georgia, serif; }
+    .warn { color: #f0b4a8; font-weight: 600; }
+    .muted { color: #9aa3b5; font-size: 0.85rem; }
+    ul { margin: 0.25rem 0; padding-left: 1.2rem; }
+    #sessionId { font-size: 0.75rem; color: #9aa3b5; }
+    #answer, #results, #citations { color: #e8edf5; }
+    #resultsHome { display: none; }
+    #resultsHome.is-open { display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mb-panel" id="invitePanel">
+      <p class="mb-recent" id="homeEyebrow">Guided exploration</p>
+      <h1 class="mb-invite-title">What would you like to explore today?</h1>
+      <p class="mb-invite-lede">
+        You are walking into a living museum of a life. The curator is quiet.
+        Curiosity leads — not folders, not dashboards.
+      </p>
+      <div class="mb-journey-row" id="journeyRow" aria-label="Suggested journeys">
+        <button type="button" class="mb-journey" data-ask="Show me Peggy George">Show me Peggy George</button>
+        <button type="button" class="mb-journey" data-ask="Tell me about Peggy around Christmas">Peggy around Christmas</button>
+        <button type="button" class="mb-journey" data-ask="What have I forgotten?">What have I forgotten?</button>
+      </div>
+      <p class="mb-recent"><a href="/explore/ui">Open Mixed-Media Explore</a> · <a href="/explore/ui?demo=peggy-christmas">Demo fixture (prove)</a></p>
+      <p class="mb-recent" id="recentRow"></p>
+      <div class="mb-ask-bar">
+        <input id="askInput" type="text" placeholder="Ask about a person, place, or time…" autocomplete="off" />
+        <button id="askBtn" type="button">Ask</button>
+      </div>
+      <div id="breadcrumb" aria-live="polite"></div>
+      <div class="row">
+        <button class="mb-btn-secondary" id="clearBtn" type="button">Clear context</button>
+        <button class="mb-btn-secondary" id="changeBtn" type="button">Change context…</button>
+        <span id="sessionId"></span>
+      </div>
+    </div>
+
+    <div id="resultsHome">
+      <section class="ask-section">
+        <h2>Answer</h2>
+        <div id="answer" class="muted">Submit an ask to see results.</div>
+      </section>
+      <section class="ask-section">
+        <h2>Results</h2>
+        <div id="results" class="muted">—</div>
+      </section>
+      <section class="ask-section">
+        <h2>Evidence / citations</h2>
+        <div id="citations" class="muted">—</div>
+      </section>
+      <details class="mb-adv ask-section">
+        <summary>Provider status (advanced)</summary>
+        <pre id="providers" class="muted" style="white-space:pre-wrap;margin:0.5rem 0 0;">—</pre>
+      </details>
+    </div>
+  </main>
+  <script>
+    let sessionId = localStorage.getItem("mb_ask_session") || "";
+
+    function renderBreadcrumb(ctx) {
+      const el = document.getElementById("breadcrumb");
+      el.innerHTML = "";
+      const crumbs = (ctx && ctx.breadcrumb) || [];
+      if (!crumbs.length) return;
+      crumbs.forEach(c => {
+        const span = document.createElement("span");
+        span.className = "crumb";
+        span.innerHTML = `<b>${c.kind}</b>: ${c.value}`;
+        el.appendChild(span);
+      });
+    }
+
+    function showResultsPane() {
+      document.getElementById("resultsHome").classList.add("is-open");
+    }
+
+    function renderRecent() {
+      const row = document.getElementById("recentRow");
+      const recent = (window.mbShell && window.mbShell.recentAsks && window.mbShell.recentAsks()) || [];
+      if (!recent.length) {
+        row.textContent = "";
+        return;
+      }
+      row.innerHTML = "Continue: " + recent.slice(0, 3).map((t) => {
+        const safe = t.replace(/"/g, "&quot;");
+        return `<a href="#" data-ask="${safe}">${t}</a>`;
+      }).join(" · ");
+      row.querySelectorAll("a[data-ask]").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          document.getElementById("askInput").value = a.getAttribute("data-ask") || "";
+          doAsk();
+        });
+      });
+    }
+
+    function renderResult(data) {
+      showResultsPane();
+      sessionId = data.session_id;
+      localStorage.setItem("mb_ask_session", sessionId);
+      document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
+      renderBreadcrumb(data.context);
+      const planPeople = (data.plan && data.plan.person_names) || [];
+      const planIds = (data.plan && data.plan.person_ids) || [];
+      if (window.mbShell && (planPeople[0] || planIds[0])) {
+        if (window.mbShell.setActivePerson) {
+          window.mbShell.setActivePerson({ id: planIds[0] || "", name: planPeople[0] || "" });
+        }
+        if (window.mbShell.setActiveAsk) {
+          window.mbShell.setActiveAsk(document.getElementById("askInput").value || "");
+        }
+        if (window.mbShell.refreshPeopleNavLinks) window.mbShell.refreshPeopleNavLinks();
+      }
+      const ans = document.getElementById("answer");
+      const kind = data.answer_kind || "";
+      ans.innerHTML = "";
+      if (kind === "provider_unavailable" || (data.provider_status && data.provider_status.photo_search && data.provider_status.photo_search.unavailable)) {
+        const w = document.createElement("p");
+        w.className = "warn";
+        w.textContent = "Photo provider unavailable (not “no photos”).";
+        ans.appendChild(w);
+      }
+      if (kind === "journal_capture") {
+        const p = document.createElement("p");
+        p.innerHTML = (data.answer_text || "") + ' <a href="/journal/ui"><b>Open Journal</b></a>';
+        ans.appendChild(p);
+      } else if (kind === "clarification" || data.missing_disclosure) {
+        const m = document.createElement("p");
+        m.className = "warn";
+        m.textContent = data.missing_disclosure || data.answer_text || "";
+        ans.appendChild(m);
+      }
+      if (kind !== "clarification" && kind !== "journal_capture") {
+        const p = document.createElement("p");
+        p.textContent = data.answer_text || "";
+        ans.appendChild(p);
+      }
+      const slots = (data.context && data.context.plan_slots) || null;
+      if (slots) {
+        const s = document.createElement("p");
+        s.className = "muted";
+        s.textContent = "Effective retrieval: " + JSON.stringify(slots);
+        ans.appendChild(s);
+      }
+
+      const results = document.getElementById("results");
+      const ev = data.evidence_hits || [];
+      const ph = data.photo_hits || [];
+      const st = data.story_hits || [];
+      const jn = data.journal_hits || [];
+      const ar = data.artifact_hits || [];
+      const plan = data.plan || {};
+      const personIds = plan.person_ids || [];
+      const libPerson = personIds[0] || (ph[0] && ph[0].mb_person_id) || "";
+      let html = `<p class="muted">evidence=${ev.length} · photos=${ph.length} · stories=${st.length} · journals=${jn.length} · artifacts=${ar.length} · kind=${kind}</p>`;
+      if (libPerson) {
+        html += `<p><a href="/library/ui?person_id=${encodeURIComponent(libPerson)}"><b>Open in Library</b></a></p>`;
+      }
+      if (ph.length) {
+        html += `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin:0.5rem 0">`;
+        ph.slice(0, 12).forEach(h => {
+          const eid = h.external_id || "";
+          const thumb = eid
+            ? ("/library/media/photo/" + encodeURIComponent(eid))
+            : (h.thumb_url || "");
+          const label = (h.mb_person_name || (h.people && h.people[0]) || eid || "photo");
+          if (thumb) {
+            html += `<a href="/library/ui?person_id=${encodeURIComponent(h.mb_person_id || libPerson || "")}" title="${label}" style="display:block">` +
+              `<img src="${thumb}" alt="${label}" style="width:96px;height:96px;object-fit:cover;border:1px solid #c5c9d1;background:#fff" loading="lazy" />` +
+              `</a>`;
+          }
+        });
+        html += `</div>`;
+      }
+      html += `<ul>`;
+      ev.slice(0, 12).forEach(h => {
+        html += `<li>[${h.evidence_kind}] <code>${h.evidence_id}</code> — ${(h.summary || "").slice(0, 80)}</li>`;
+      });
+      ph.slice(0, 12).forEach(h => {
+        html += `<li>[photo] <code>${h.external_id || ""}</code>${h.mb_person_name ? (" — " + h.mb_person_name) : ""}</li>`;
+      });
+      st.slice(0, 12).forEach(h => {
+        html += `<li>[story] <code>${h.story_id}</code> v${h.version} — ${h.attribution || ""}</li>`;
+      });
+      jn.slice(0, 12).forEach(h => {
+        html += `<li>[journal] <code>${h.journal_id}</code> v${h.version}</li>`;
+      });
+      ar.slice(0, 12).forEach(h => {
+        html += `<li>[artifact] <code>${h.artifact_id}</code> — ${h.label || ""}</li>`;
+      });
+      html += "</ul>";
+      results.innerHTML = html;
+
+      const cit = document.getElementById("citations");
+      const citations = data.citations || [];
+      if (!citations.length) {
+        cit.textContent = "No citations (system status / insufficient disclosure only).";
+      } else {
+        cit.innerHTML = "<ul>" + citations.map(c => {
+          if (c.kind === "evidence") {
+            return `<li>Evidence <code>${c.evidence_id}</code> (${c.evidence_kind})</li>`;
+          }
+          if (c.kind === "story") {
+            return `<li>Story <code>${c.story_id}</code> v${c.version}</li>`;
+          }
+          if (c.kind === "journal") {
+            return `<li>Journal <code>${c.journal_id}</code> v${c.version}</li>`;
+          }
+          if (c.kind === "profile") {
+            return `<li>Profile / relationship` +
+              (c.person_id ? ` <code>${c.person_id}</code>` : "") + `</li>`;
+          }
+          if (c.kind === "photo") {
+            const eid = c.external_id || "";
+            const src = eid ? ("/library/media/photo/" + encodeURIComponent(eid)) : (c.thumb_url || "");
+            const t = src
+              ? ` <img src="${src}" alt="" style="width:48px;height:48px;object-fit:cover;vertical-align:middle;border:1px solid #c5c9d1" loading="lazy" />`
+              : "";
+            return `<li>Photo <code>${eid}</code> (${c.provider_key || ""})${t}</li>`;
+          }
+          if (c.kind === "video") {
+            const vid = c.video_external_id || c.external_id || "";
+            const t = (c.start_sec != null) ? Number(c.start_sec) : null;
+            const play = c.play_url || (vid && t != null
+              ? ("/review/ui?video=" + encodeURIComponent(vid) + "&t=" + encodeURIComponent(String(t)))
+              : "");
+            const link = play
+              ? ` <a href="${play}">Open moment @ ${t != null ? t.toFixed(1) + "s" : "?"}</a>`
+              : "";
+            return `<li>Video moment <code>${vid}</code>${link}</li>`;
+          }
+          if (c.kind === "artifact") {
+            return `<li>Artifact <code>${c.artifact_id || ""}</code> — ${c.label || ""}</li>`;
+          }
+          return `<li>${c.kind || "citation"}</li>`;
+        }).join("") + "</ul>";
+      }
+      document.getElementById("providers").textContent = JSON.stringify(data.provider_status || {}, null, 2);
+    }
+
+    async function doAsk() {
+      const text = document.getElementById("askInput").value.trim();
+      if (!text) return;
+      if (window.mbShell && window.mbShell.rememberAsk) window.mbShell.rememberAsk(text);
+      renderRecent();
+      // I4: Mixed-Media Explore — live find (same Ask state). Demo only if ?demo= set.
+      const lower = text.toLowerCase();
+      const personGuess = (text.match(/\b(?:show(?:\s+me)?|tell me about|who is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/) || [])[1]
+        || (text.match(/\b(?:with|from|about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/) || [])[1]
+        || "";
+      if (window.mbShell) {
+        if (personGuess && window.mbShell.setActivePerson) {
+          window.mbShell.setActivePerson({ id: "", name: personGuess });
+        }
+        if (window.mbShell.setActiveAsk) window.mbShell.setActiveAsk(text);
+        if (window.mbShell.refreshPeopleNavLinks) window.mbShell.refreshPeopleNavLinks();
+      }
+      if (/peggy/.test(lower) && /christmas/.test(lower)) {
+        // Prefer live Explore; optional demo prove uses ?demo=peggy-christmas
+        window.location.href =
+          "/explore/ui?q=" + encodeURIComponent(text);
+        return;
+      }
+      // Person / memory / text asks: land on Explore with the same query (keep People context)
+      if (
+        /^(show|tell me about|who is)\b/i.test(text) ||
+        /\b(photo|photos|video|videos|memories|texts?|sms|imessage|messages?)\b/i.test(lower)
+      ) {
+        window.location.href = "/explore/ui?q=" + encodeURIComponent(text);
+        return;
+      }
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ask: text, session_id: sessionId || null }),
+      });
+      const data = await res.json();
+      renderResult(data);
+    }
+
+    async function clearContext() {
+      if (!sessionId) return;
+      const res = await fetch(`/ask/context/${sessionId}`, { method: "DELETE" });
+      const data = await res.json();
+      renderBreadcrumb(data.context);
+      document.getElementById("answer").textContent = "Context cleared.";
+    }
+
+    async function changeContext() {
+      if (!sessionId) {
+        alert("Ask once first to create a session.");
+        return;
+      }
+      const person = prompt("Set person names (comma-separated), or leave blank to clear people:", "");
+      if (person === null) return;
+      const place = prompt("Set place names (comma-separated), or leave blank to clear places:", "");
+      if (place === null) return;
+      const body = {
+        person_names: person.split(",").map(s => s.trim()).filter(Boolean),
+        place_names: place.split(",").map(s => s.trim()).filter(Boolean),
+      };
+      const res = await fetch(`/ask/context/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      renderBreadcrumb(data.context);
+    }
+
+    document.getElementById("askBtn").addEventListener("click", doAsk);
+    document.getElementById("askInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doAsk();
+    });
+    function wireAskHistory() {
+      const el = document.getElementById("askInput");
+      if (window.mbShell && window.mbShell.bindAskHistory && el) {
+        window.mbShell.bindAskHistory(el);
+        return true;
+      }
+      return false;
+    }
+    if (!wireAskHistory()) window.addEventListener("load", wireAskHistory);
+    document.getElementById("clearBtn").addEventListener("click", clearContext);
+    document.getElementById("changeBtn").addEventListener("click", changeContext);
+    document.querySelectorAll(".mb-journey[data-ask]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.getElementById("askInput").value = btn.getAttribute("data-ask") || "";
+        doAsk();
+      });
+    });
+
+    (async () => {
+      renderRecent();
+      const q = new URLSearchParams(location.search).get("q");
+      if (q) {
+        document.getElementById("askInput").value = q;
+        await doAsk();
+      }
+      if (!sessionId) return;
+      try {
+        const res = await fetch(`/ask/context/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          renderBreadcrumb(data.context);
+          document.getElementById("sessionId").textContent = "session: " + sessionId.slice(0, 8) + "…";
+        }
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>
