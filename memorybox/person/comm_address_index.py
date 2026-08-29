@@ -14,8 +14,9 @@ from memorybox.db import connection
 from memorybox.person.phone_map import normalize_handle
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# Allow common reply/forward prefixes: "> From:", "|From:", indented "  From:".
 _QUOTED_HDR_RE = re.compile(
-    r"(?im)^(from|to|cc|bcc)\s*:\s*(.+)$",
+    r"(?im)^[>|\s]*(from|to|cc|bcc)\s*:\s*(.+)$",
 )
 _MAX_EVIDENCE_SAMPLE = 48
 

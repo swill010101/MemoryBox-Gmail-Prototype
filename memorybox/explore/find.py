@@ -1015,8 +1015,10 @@ def _attach_visible_email(
             extra.append(it)
             if eid:
                 existing_ids.add(eid)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         extra = []
+        if isinstance(result, dict):
+            result["gallery_email_error"] = f"{type(exc).__name__}:{exc}"
 
     out = list(items) + extra
     if not show_email:

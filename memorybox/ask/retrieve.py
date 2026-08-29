@@ -1385,18 +1385,20 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         list(payload.get("from_parsed") or [])
         + list(payload.get("to_parsed") or [])
         + list(payload.get("cc_parsed") or [])
+        + list(payload.get("bcc_parsed") or [])
     ):
         if not isinstance(rec, dict):
             continue
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
-    # Fallback: raw From/To/CC (and people[]) when *_parsed is missing on older rows.
+    # Fallback: raw From/To/CC/BCC (and people[]) when *_parsed is missing on older rows.
     for raw in (
         payload.get("from"),
         payload.get("from_raw"),
         payload.get("to"),
         payload.get("cc"),
+        payload.get("bcc"),
         payload.get("people"),
     ):
         texts: list[str]

@@ -440,6 +440,23 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         problems,
         detail=qhits,
     )
+    # Common reply-prefix forms ("> From:") must still extract display names.
+    body_gt = (
+        "On Mon wrote:\n"
+        "> From: Peg Legg <peggo417@hotmail.com>\n"
+        "> Cc: Peggy George <peggo417@hotmail.com>\n"
+    )
+    qhits_gt = _quoted_body_address_displays(body_gt, "peggo417@hotmail.com")
+    _check(
+        "quoted_body_gt_prefix_finds_peggy_george",
+        any(
+            "peggy george" == (h.get("display_name") or "").strip().lower()
+            for h in qhits_gt
+        ),
+        checks,
+        problems,
+        detail=qhits_gt,
+    )
     retrieve_src = open("memorybox/ask/retrieve.py", encoding="utf-8").read()
     _check(
         "retrieve_has_no_peggo_hardcode",

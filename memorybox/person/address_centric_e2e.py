@@ -640,12 +640,15 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
     _items, email_n, match_total = _attach_visible_email(
         [], gallery_result, ask_text=_ASK, show_email=True
     )
+    gallery_err = gallery_result.get("gallery_email_error")
+    if gallery_err and int(email_n) <= 0 and int(match_total) <= 0:
+        _check("gallery_email_attach_ok", False, checks, problems, detail=gallery_err)
     _check(
         "gallery_email_gt_0",
         int(email_n) > 0 or int(match_total) > 0,
         checks,
         problems,
-        detail={"email_n": email_n, "match_total": match_total},
+        detail={"email_n": email_n, "match_total": match_total, "error": gallery_err},
     )
 
     if not flightsim:
