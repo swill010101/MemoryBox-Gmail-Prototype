@@ -1021,6 +1021,19 @@ def run_prove_address_centric_email_e2e(*, flightsim: bool = False) -> dict[str,
             "resolve": ask_resolve_detail,
         },
     )
+    # Full-Evidence path must resolve without the e2e bind once email is attached
+    # (FlightSim has multiple Peggy*; AmbiguousIdentity recovery prefers email).
+    _check(
+        "full_evidence_plan_resolves_without_bind",
+        plan_ok,
+        checks,
+        problems,
+        detail={
+            "person_ids": list(getattr(plan, "person_ids", ()) or ()),
+            "person_names": list(getattr(plan, "person_names", ()) or ()),
+            "expected_id": getattr(ask_peggy, "id", None),
+        },
+    )
     # Bind Full-Evidence / Gallery to the Person we just resolved+attached.
     # resolve_peggy_plan can return empty person_ids on P1 (no lazy seed) right after
     # a cold create/upgrade, which would zero email even with peggo417 confirmed.
