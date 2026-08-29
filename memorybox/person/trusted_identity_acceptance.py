@@ -488,6 +488,22 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         / "tools"
         / "flightsim-trusted-identity-gate.cmd"
     ).read_text(encoding="utf-8", errors="replace")
+    mig026 = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "memorybox"
+        / "migrations"
+        / "026_backfill_email_retrieval_trust.sql"
+    ).read_text(encoding="utf-8")
+    _check(
+        "migrate_backfills_email_trust_fail_closed",
+        "SET DEFAULT 'untrusted'" in mig026
+        and "ELSE 'untrusted'" in mig026
+        and "comm_identity_expand" in mig026
+        and "person_profile" in mig026
+        and "Do not delete rows" in mig026,
+        checks,
+        problems,
+    )
     _check(
         "flightsim_gate_runs_phase1_prove_before_pipeline",
         "prove-trusted-identity-retrieval --flightsim" in gate_txt
