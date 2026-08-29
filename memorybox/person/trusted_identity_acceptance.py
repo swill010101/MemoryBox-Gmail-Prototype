@@ -891,7 +891,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "freeze_pins_person_id_not_peggy_resolver",
-        "resolve_peggy_plan" not in freeze_src and "person_ids=(str(person_id),)" in freeze_src,
+        "resolve_peggy_plan" not in freeze_src
+        and "person_ids=(str(person_id),)" in freeze_src
+        and "PEGGY FULL-FIDELITY" not in freeze_src
+        and "format_cloud_paste" in freeze_src,
         checks,
         problems,
     )

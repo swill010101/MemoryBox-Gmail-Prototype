@@ -15,7 +15,7 @@ from typing import Any
 
 from memorybox.ask.i11a.full_evidence_diagnostic import (
     CHUNK_TRIGGER_TOKENS,
-    format_full_evidence_text,
+    format_cloud_paste,
     format_item_block,
     normalize_retrieved,
     retrieve_eligible_hits,
@@ -462,14 +462,10 @@ def freeze_trusted_full_evidence_v2(
         trusted_addrs=trusted,
         token_budget=budget,
     )
-    paste = format_full_evidence_text(
+    paste = format_cloud_paste(
         items,
         ask=ask,
         person_context=person_context,
-        plan_snapshot={
-            "person_ids": list(getattr(plan, "person_ids", ()) or ()),
-            "person_names": list(getattr(plan, "person_names", ()) or ()),
-        },
     )
     by_source: dict[str, int] = {}
     for it in items:

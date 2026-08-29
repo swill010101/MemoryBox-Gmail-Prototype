@@ -266,7 +266,7 @@ def run_provider_over_chunks(
     timeout_seconds: int = 1800,
 ) -> dict[str, Any]:
     """Replay each L1 chunk through one model; chrono-reduce + fail closed."""
-    from memorybox.ask.i11a.full_evidence_diagnostic import format_full_evidence_text
+    from memorybox.ask.i11a.full_evidence_diagnostic import format_cloud_paste
     from memorybox.ask.i11a.trusted_full_evidence_v2 import FEV2_SYSTEM
 
     data = _load_json(fixture_path)
@@ -282,7 +282,7 @@ def run_provider_over_chunks(
     per_chunk: list[dict[str, Any]] = []
     for i, ch in enumerate(chunked.get("chunks") or []):
         ch_items = list(ch.get("items") or [])
-        paste = format_full_evidence_text(
+        paste = format_cloud_paste(
             ch_items,
             ask=str(data.get("ask") or ""),
             person_context=data.get("person_context") or {},
