@@ -72,6 +72,7 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
     gate = "address_centric_email_identity"
     ok = $false
     flightsim = $true
+    waiting = $false
     error = $ErrorCode
     problems = @("$ErrorCode`: $Detail")
     runtime = @{
@@ -86,17 +87,25 @@ function Write-AddressCentricGateFailure([string]$ErrorCode, [string]$Detail) {
   $gatePath = Join-Path $outDir "ADDRESS_CENTRIC_GATE.json"
   $verdictPath = Join-Path $outDir "ADDRESS_CENTRIC_VERDICT.txt"
   $failPath = Join-Path $outDir "ADDRESS_CENTRIC_FAILURE_DIAG.json"
-  ($gate | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $gatePath -Encoding UTF8
-  "VERDICT ok=False flightsim=True git_head=$gitHead hostname=$hostName error=$ErrorCode" |
-    Set-Content -LiteralPath $verdictPath -Encoding UTF8
-  (@{
+  # UTF-8 without BOM — Windows PS 5.1 Set-Content -Encoding UTF8 writes BOM,
+  # which breaks strict json.loads on the results branch.
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($gatePath, (($gate | ConvertTo-Json -Depth 6) + "`n"), $utf8)
+  [System.IO.File]::WriteAllText(
+    $verdictPath,
+    "VERDICT ok=False flightsim=True git_head=$gitHead hostname=$hostName error=$ErrorCode`n",
+    $utf8
+  )
+  $failDoc = @{
     ok = $false
     problems = $gate.problems
     flightsim = $true
+    waiting = $false
     error = $ErrorCode
     runtime = $gate.runtime
     hint = "Pre-prove failure on FlightSim — fix env/DB then re-run tools\flightsim-address-centric-gate.cmd"
-  } | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $failPath -Encoding UTF8
+  }
+  [System.IO.File]::WriteAllText($failPath, (($failDoc | ConvertTo-Json -Depth 6) + "`n"), $utf8)
   Write-Host "Wrote failure gate: $gatePath" -ForegroundColor Yellow
 }
 

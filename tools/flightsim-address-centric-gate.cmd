@@ -13,15 +13,25 @@ REM Auto-deliver: force-pushes gate artifacts to cursor/flightsim-address-centri
 REM first, then posts to PR #74 via gh when already authenticated (never blocks on auth).
 REM
 setlocal
+REM Branch names MUST be set before pushd — :fail delivery needs them even when
+REM pushd/UNC mapping fails (otherwise RESULT_BRANCH is empty and no push happens).
+set BRANCH=cursor/p2-i11a-address-centric-email-49da
+set RESULT_BRANCH=cursor/flightsim-address-centric-result-49da
+set REPO_ROOT=%~dp0..
+set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
+set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
+REM Wall-clock budgets so hung startmb/prove still deliver a gate (not waiting:true).
+if not defined STARTMB_WATCHDOG_SEC set STARTMB_WATCHDOG_SEC=600
+if not defined PROVE_WATCHDOG_SEC set PROVE_WATCHDOG_SEC=2700
+
 REM pushd maps UNC (\\flightsim\memorybox) to a drive letter; cd /d cannot.
-pushd "%~dp0.."
+pushd "%REPO_ROOT%"
 if errorlevel 1 (
-  echo ERROR: could not enter repo root from "%~dp0"
+  echo ERROR: could not enter repo root from "%REPO_ROOT%"
   echo Prefer a mapped path like C:\memorybox when running over UNC.
   goto :fail
 )
-set BRANCH=cursor/p2-i11a-address-centric-email-49da
-set RESULT_BRANCH=cursor/flightsim-address-centric-result-49da
 
 echo ===== address-centric email gate (FlightSim) =====
 echo branch: %BRANCH%
@@ -32,15 +42,9 @@ git fetch origin %BRANCH%
 if errorlevel 1 goto :fail
 
 REM Untracked gate artifacts from prior runs can block checkout; remove only those paths.
-if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json" (
-  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json" 2>nul
-)
-if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" (
-  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt" 2>nul
-)
-if exist "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json" (
-  del /f /q "docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json" 2>nul
-)
+if exist "%GATE_JSON%" del /f /q "%GATE_JSON%" 2>nul
+if exist "%GATE_VERDICT%" del /f /q "%GATE_VERDICT%" 2>nul
+if exist "%GATE_FAIL%" del /f /q "%GATE_FAIL%" 2>nul
 
 REM Auto-stash tracked dirt so checkout succeeds. Do NOT use -u: keep
 REM gitignored config\memorybox_app.env / immich.env on disk for startmb/prove.
@@ -72,18 +76,54 @@ if errorlevel 1 goto :fail
 git rev-parse --short HEAD
 echo.
 
-echo Restart MemoryBox services, then migrate + prove...
-call ".\startmb.cmd" -Restart
-if errorlevel 1 (
-  echo WARNING: startmb -Restart returned %errorlevel% — continuing
+echo Restart MemoryBox services (watchdog %STARTMB_WATCHDOG_SEC%s)...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','.\startmb.cmd -Restart' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%STARTMB_WATCHDOG_SEC%000)) { Write-Host 'ERROR: startmb watchdog timeout'; try { $p.Kill() } catch {}; exit 98 }; exit $p.ExitCode"
+set STARTMB_EXIT=%errorlevel%
+if "%STARTMB_EXIT%"=="98" (
+  echo ERROR: startmb -Restart exceeded %STARTMB_WATCHDOG_SEC%s — writing timeout gate
+  if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
+  (
+    echo {
+    echo   "gate": "address_centric_email_identity",
+    echo   "ok": false,
+    echo   "flightsim": true,
+    echo   "waiting": false,
+    echo   "error": "gate_cmd_startmb_watchdog_timeout",
+    echo   "problems": ["startmb -Restart exceeded %STARTMB_WATCHDOG_SEC%s"]
+    echo }
+  ) > "%GATE_JSON%"
+  echo VERDICT ok=False flightsim=True error=gate_cmd_startmb_watchdog_timeout> "%GATE_VERDICT%"
+  set PROVE_EXIT=98
+  goto :after_prove
+)
+if not "%STARTMB_EXIT%"=="0" (
+  echo WARNING: startmb -Restart returned %STARTMB_EXIT% — continuing
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0flightsim-address-centric-prove.ps1"
+echo Prove under watchdog %PROVE_WATCHDOG_SEC%s...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%~dp0flightsim-address-centric-prove.ps1' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%PROVE_WATCHDOG_SEC%000)) { Write-Host 'ERROR: prove watchdog timeout'; try { $p.Kill() } catch {}; exit 99 }; exit $p.ExitCode"
 set PROVE_EXIT=%errorlevel%
+if "%PROVE_EXIT%"=="99" (
+  echo ERROR: prove exceeded %PROVE_WATCHDOG_SEC%s — writing timeout gate
+  if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
+  if not exist "%GATE_JSON%" (
+    (
+      echo {
+      echo   "gate": "address_centric_email_identity",
+      echo   "ok": false,
+      echo   "flightsim": true,
+      echo   "waiting": false,
+      echo   "error": "gate_cmd_prove_watchdog_timeout",
+      echo   "problems": ["prove exceeded %PROVE_WATCHDOG_SEC%s — possible Peg* archive hang"]
+      echo }
+    ) > "%GATE_JSON%"
+    echo VERDICT ok=False flightsim=True error=gate_cmd_prove_watchdog_timeout> "%GATE_VERDICT%"
+  )
+)
 
-set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
-set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
-set GATE_FAIL=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_FAILURE_DIAG.json
+:after_prove
 
 REM Last-resort stub so results-branch push still wakes the cloud agent when
 REM prove.ps1 died before writing gate artifacts (e.g. powershell crash).
@@ -95,6 +135,7 @@ if not exist "%GATE_JSON%" (
     echo   "gate": "address_centric_email_identity",
     echo   "ok": false,
     echo   "flightsim": true,
+    echo   "waiting": false,
     echo   "error": "gate_cmd_stub_missing_prove_artifacts",
     echo   "problems": ["prove exited %PROVE_EXIT% without ADDRESS_CENTRIC_GATE.json"],
     echo   "prove_exit": %PROVE_EXIT%
@@ -212,9 +253,9 @@ exit /b %PROVE_EXIT%
 echo FAILED — fix git/migrate errors above, then re-run.
 REM Early git/pushd failures used to exit with no GATE.json — cloud agent stayed
 REM on waiting:true forever, indistinguishable from "never ran". Always emit +
-REM attempt results-branch push when we still have a repo cwd.
-set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
-set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
+REM attempt results-branch push when we can reach the repo root.
+cd /d "%REPO_ROOT%" 2>nul
+if not exist "docs" cd /d "%~dp0.." 2>nul
 if exist "docs" (
   if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
   if not exist "%GATE_JSON%" (
@@ -224,9 +265,9 @@ if exist "docs" (
       echo   "gate": "address_centric_email_identity",
       echo   "ok": false,
       echo   "flightsim": true,
+      echo   "waiting": false,
       echo   "error": "gate_cmd_pre_prove_fail",
-      echo   "problems": ["gate.cmd failed before prove (git fetch/checkout/pull or pushd)"],
-      echo   "waiting": false
+      echo   "problems": ["gate.cmd failed before prove (git fetch/checkout/pull or pushd)"]
       echo }
     ) > "%GATE_JSON%"
     echo VERDICT ok=False flightsim=True error=gate_cmd_pre_prove_fail> "%GATE_VERDICT%"
@@ -235,6 +276,8 @@ if exist "docs" (
     echo ===== force-pushing pre-prove failure gate to %RESULT_BRANCH% =====
     call :push_results_branch
   )
+) else (
+  echo WARNING: repo root unreachable — cannot write/push failure gate. Paste console output to PR #74.
 )
 popd 2>nul
 exit /b 1

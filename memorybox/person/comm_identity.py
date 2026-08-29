@@ -790,6 +790,7 @@ def ensure_confirmed_email_contact(
     # Keep address-centric ledger in sync with confirmed Person contacts.
     # Probe upsert leaves rows as observed; repair/attach must promote them.
     # Direct SQL — do not re-inventory the archive on every contact ensure.
+    ledger_promote: dict[str, Any] = {"ok": False}
     try:
         with connection() as conn:
             updated = conn.execute(
@@ -833,9 +834,20 @@ def ensure_confirmed_email_contact(
                         ),
                     ),
                 )
-    except Exception:  # noqa: BLE001
-        pass
-    return {"upserted": bool(upserted), "address": norm, "person_id": person_id}
+            ledger_promote = {"ok": True, "address": norm, "person_id": person_id}
+    except Exception as exc:  # noqa: BLE001
+        ledger_promote = {
+            "ok": False,
+            "error": str(exc),
+            "address": norm,
+            "person_id": person_id,
+        }
+    return {
+        "upserted": bool(upserted),
+        "address": norm,
+        "person_id": person_id,
+        "ledger_promote": ledger_promote,
+    }
 
 
 def backfill_email_person_ids(
