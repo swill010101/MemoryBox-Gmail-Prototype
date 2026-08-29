@@ -210,6 +210,32 @@ exit /b %PROVE_EXIT%
 
 :fail
 echo FAILED — fix git/migrate errors above, then re-run.
+REM Early git/pushd failures used to exit with no GATE.json — cloud agent stayed
+REM on waiting:true forever, indistinguishable from "never ran". Always emit +
+REM attempt results-branch push when we still have a repo cwd.
+set GATE_JSON=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_GATE.json
+set GATE_VERDICT=docs\test-output\historian-full-evidence\peggy-v2\ADDRESS_CENTRIC_VERDICT.txt
+if exist "docs" (
+  if not exist "docs\test-output\historian-full-evidence\peggy-v2" mkdir "docs\test-output\historian-full-evidence\peggy-v2"
+  if not exist "%GATE_JSON%" (
+    echo WARNING: writing pre-prove failure gate for results-branch delivery
+    (
+      echo {
+      echo   "gate": "address_centric_email_identity",
+      echo   "ok": false,
+      echo   "flightsim": true,
+      echo   "error": "gate_cmd_pre_prove_fail",
+      echo   "problems": ["gate.cmd failed before prove (git fetch/checkout/pull or pushd)"],
+      echo   "waiting": false
+      echo }
+    ) > "%GATE_JSON%"
+    echo VERDICT ok=False flightsim=True error=gate_cmd_pre_prove_fail> "%GATE_VERDICT%"
+  )
+  if exist "%GATE_JSON%" (
+    echo ===== force-pushing pre-prove failure gate to %RESULT_BRANCH% =====
+    call :push_results_branch
+  )
+)
 popd 2>nul
 exit /b 1
 
