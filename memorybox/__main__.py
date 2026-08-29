@@ -699,11 +699,16 @@ def main(argv: list[str] | None = None) -> int:
         "run-trusted-fev2-chunked-models",
         help="Phase 3: model-per-chunk after both single-pass reports exist",
     )
-    p_fev2_chunk_models.add_argument("--fixture", required=True)
-    p_fev2_chunk_models.add_argument("--gemma-report", required=True)
-    p_fev2_chunk_models.add_argument("--sol-report", required=True)
+    p_fev2_chunk_models.add_argument("--fixture", default="")
+    p_fev2_chunk_models.add_argument("--gemma-report", default="")
+    p_fev2_chunk_models.add_argument("--sol-report", default="")
+    p_fev2_chunk_models.add_argument(
+        "--from-dir",
+        default="",
+        help="Discover latest FEV2 fixture + Phase 2 reports in this directory",
+    )
     p_fev2_chunk_models.add_argument("--gemma-model", default=None)
-    p_fev2_chunk_models.add_argument("--sol-model", required=True)
+    p_fev2_chunk_models.add_argument("--sol-model", default="")
     p_fev2_chunk_models.add_argument("--timeout-seconds", type=int, default=1800)
     p_fev2_chunk_models.add_argument("--out-dir", default=None)
     p_fev2_pipe = sub.add_parser(
@@ -1546,18 +1551,32 @@ def main(argv: list[str] | None = None) -> int:
 
         from memorybox.ask.i11a.trusted_fev2_chunking import (
             run_chunked_models_after_single_pass,
+            run_chunked_models_from_dir,
         )
         from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
 
-        payload = run_chunked_models_after_single_pass(
-            args.fixture,
-            gemma_report_path=args.gemma_report,
-            sol_report_path=args.sol_report,
-            gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
-            sol_model=args.sol_model,
-            timeout_seconds=int(args.timeout_seconds),
-            out_dir=_PC(args.out_dir) if args.out_dir else None,
-        )
+        if args.from_dir:
+            payload = run_chunked_models_from_dir(
+                args.from_dir,
+                gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+                sol_model=args.sol_model or None,
+                timeout_seconds=int(args.timeout_seconds),
+            )
+        elif args.fixture and args.gemma_report and args.sol_report and args.sol_model:
+            payload = run_chunked_models_after_single_pass(
+                args.fixture,
+                gemma_report_path=args.gemma_report,
+                sol_report_path=args.sol_report,
+                gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+                sol_model=args.sol_model,
+                timeout_seconds=int(args.timeout_seconds),
+                out_dir=_PC(args.out_dir) if args.out_dir else None,
+            )
+        else:
+            payload = {
+                "ok": False,
+                "error": "need --from-dir or --fixture + --gemma-report + --sol-report + --sol-model",
+            }
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

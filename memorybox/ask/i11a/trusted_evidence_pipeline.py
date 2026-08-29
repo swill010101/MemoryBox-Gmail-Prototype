@@ -12,10 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from memorybox.ask.i11a.trusted_fev2_chunking import (
-    compare_chunked_vs_unchunked,
-    run_chunked_models_after_single_pass,
-)
+from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     ESTABLISHED_GEMMA_MODEL,
     freeze_trusted_full_evidence_v2,
@@ -213,54 +210,14 @@ def run_trusted_evidence_pipeline(
         ),
     }
     if both_single_pass:
-        result["phase"] = 3
-        g_path = gemma.get("report_path")
-        s_path = sol.get("report_path")
-        cloud_model = (
-            sol.get("model")
-            or (sol.get("phase2_report") or {}).get("model")
-            or sol_model
-            or os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL")
-            or ""
-        )
-        if g_path and s_path and cloud_model:
-            chunked_models = run_chunked_models_after_single_pass(
-                fixture_path,
-                gemma_report_path=g_path,
-                sol_report_path=s_path,
-                gemma_model=gemma_model,
-                sol_model=str(cloud_model),
-                timeout_seconds=timeout_seconds,
-                out_dir=out,
-            )
-            result["phase3_model_per_chunk"] = chunked_models
-            complete = freeze_trusted_full_evidence_v2(
-                person_id=pid, ask=ask, out_dir=out, complete_trusted=True
-            )
-            result["larger_trusted_set"] = {
-                "ok": complete.get("ok"),
-                "deferred": False,
-                "fixture_path": complete.get("fixture_path"),
-                "input_sha256": complete.get("input_sha256"),
-                "item_count": complete.get("item_count"),
-                "evidence_type_counts": complete.get("evidence_type_counts"),
-                "email_evidence_ids": complete.get("email_evidence_ids"),
-            }
-            if complete.get("fixture_path"):
-                result["larger_trusted_set"]["chunk_structure"] = (
-                    compare_chunked_vs_unchunked(complete["fixture_path"])
-                )
-            result["ok"] = bool(chunk.get("ok")) and bool(chunked_models.get("ok"))
-            result["stop"] = (
-                "phase_3_complete"
-                if result["ok"]
-                else "phase_3_chunked_models_failed"
-            )
-        else:
-            result["ok"] = bool(chunk.get("ok"))
-            result["stop"] = (
-                "phase_3_structure_ready — missing report paths for model-per-chunk"
-            )
+        # Phase 2 must land (and verify) before multi-hour chunk-model runs.
+        result["phase"] = 2
+        result["ok"] = True
+        result["stop"] = "phase_2_complete — run chunk models after FEV2 verifier"
+        result["phase3_model_per_chunk"] = {
+            "ran": False,
+            "reason": "after_phase2_verifier — run-trusted-fev2-chunked-models --from-dir",
+        }
     elif gemma.get("ok") and not sol.get("ok"):
         result["ok"] = False
         result["stop"] = "phase_2_sol_incomplete — do not chunk-with-models yet"

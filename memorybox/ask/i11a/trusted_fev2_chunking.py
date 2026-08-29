@@ -362,3 +362,63 @@ def run_chunked_models_after_single_pass(
     path.write_text(json.dumps(result, indent=2, default=str, ensure_ascii=False), encoding="utf-8")
     result["report_path"] = str(path)
     return result
+
+
+def run_chunked_models_from_dir(
+    out_dir: Path | str,
+    *,
+    gemma_model: str | None = None,
+    sol_model: str | None = None,
+    timeout_seconds: int = 1800,
+) -> dict[str, Any]:
+    """Discover latest frozen fixture + Phase 2 reports, then run chunk models."""
+    import os
+
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+    dest = Path(out_dir)
+    fixtures = [
+        p
+        for p in dest.glob("FEV2_*.json")
+        if p.name.startswith("FEV2_")
+        and not p.name.startswith("FEV2REPORT_")
+        and not p.name.startswith("FEV2CHUNK_")
+        and not p.name.startswith("FEV2COMPLETE_")
+        and not p.name.startswith("FEV2_paste_")
+        and not p.name.startswith("FEV2_manifest_")
+    ]
+    gemma_paths = sorted(dest.glob("FEV2REPORT_ollama_*.json"))
+    sol_paths = sorted(
+        list(dest.glob("FEV2REPORT_cloud_*.json"))
+        + list(dest.glob("FEV2REPORT_openai_*.json"))
+    )
+    if not fixtures or not gemma_paths or not sol_paths:
+        return {
+            "ok": False,
+            "ran": False,
+            "error": "missing_fixture_or_phase2_reports",
+            "chunking": True,
+        }
+    fixture = max(fixtures, key=lambda p: p.stat().st_mtime)
+    gemma_path = max(gemma_paths, key=lambda p: p.stat().st_mtime)
+    sol_path = max(sol_paths, key=lambda p: p.stat().st_mtime)
+    cloud = (
+        (sol_model or "").strip()
+        or (os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL") or "").strip()
+    )
+    if not cloud:
+        return {
+            "ok": False,
+            "ran": False,
+            "error": "no_sol_model",
+            "chunking": True,
+        }
+    return run_chunked_models_after_single_pass(
+        fixture,
+        gemma_report_path=gemma_path,
+        sol_report_path=sol_path,
+        gemma_model=(gemma_model or ESTABLISHED_GEMMA_MODEL),
+        sol_model=cloud,
+        timeout_seconds=timeout_seconds,
+        out_dir=dest,
+    )

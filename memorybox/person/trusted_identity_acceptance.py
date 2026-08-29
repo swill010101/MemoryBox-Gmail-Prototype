@@ -672,7 +672,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "verify-trusted-identity-gate.py" in gate_txt
         and gate_txt.find("prove-trusted-identity-retrieval")
         < gate_txt.find("verify-trusted-identity-gate.py")
-        < gate_txt.find("run-trusted-evidence-pipeline"),
+        < gate_txt.find("run-trusted-evidence-pipeline")
+        < gate_txt.find("verify-trusted-fev2-reports.py")
+        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir"),
         checks,
         problems,
     )
@@ -1168,8 +1170,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "pipeline_defers_larger_set_until_both_single_pass",
         "after_both_single_pass_reports_only" in pipe_src
-        and pipe_src.find("after_both_single_pass_reports_only")
-        < pipe_src.find("complete_trusted=True"),
+        and "complete_trusted=True" not in pipe_src
+        and "run_chunked_models_after_single_pass" not in pipe_src
+        and "after_phase2_verifier" in pipe_src,
         checks,
         problems,
     )

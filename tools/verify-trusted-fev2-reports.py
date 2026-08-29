@@ -98,11 +98,16 @@ def audit_fev2_reports(
         g.get("chunking") is not True and s.get("chunking") is not True,
         {"gemma_chunking": g.get("chunking"), "sol_chunking": s.get("chunking")},
     )
-    g_model = str(g.get("model") or "")
+    g_model = str(g.get("model") or "").split("@")[0].strip()
+    g_model_canon = ESTABLISHED_GEMMA if (
+        g_model == ESTABLISHED_GEMMA
+        or g_model == f"{ESTABLISHED_GEMMA}:latest"
+        or g_model.startswith(f"{ESTABLISHED_GEMMA}:")
+    ) else g_model
     check(
         "P2-9",
         f"established Gemma model is {ESTABLISHED_GEMMA}",
-        g_model == ESTABLISHED_GEMMA,
+        g_model_canon == ESTABLISHED_GEMMA,
         {"model": g_model},
     )
     check(
