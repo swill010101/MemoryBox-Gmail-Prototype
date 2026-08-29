@@ -77,8 +77,7 @@ git rev-parse --short HEAD
 echo.
 
 echo Restart MemoryBox services (watchdog %STARTMB_WATCHDOG_SEC%s)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','.\startmb.cmd -Restart' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%STARTMB_WATCHDOG_SEC%000)) { Write-Host 'ERROR: startmb watchdog timeout'; cmd /c ('taskkill /F /T /PID ' + $p.Id) 2>$null; try { $p.Kill() } catch {}; exit 98 }; exit $p.ExitCode"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target startmb -TimeoutSec %STARTMB_WATCHDOG_SEC% -RepoRoot "%CD%"
 set STARTMB_EXIT=%errorlevel%
 if "%STARTMB_EXIT%"=="98" (
   echo ERROR: startmb -Restart exceeded %STARTMB_WATCHDOG_SEC%s — writing timeout gate
@@ -102,8 +101,7 @@ if not "%STARTMB_EXIT%"=="0" (
 )
 
 echo Prove under watchdog %PROVE_WATCHDOG_SEC%s...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%CD%\tools\flightsim-address-centric-prove.ps1' -WorkingDirectory '%CD%' -NoNewWindow -PassThru; if (-not $p.WaitForExit(%PROVE_WATCHDOG_SEC%000)) { Write-Host 'ERROR: prove watchdog timeout'; cmd /c ('taskkill /F /T /PID ' + $p.Id) 2>$null; try { $p.Kill() } catch {}; exit 99 }; exit $p.ExitCode"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\flightsim-address-centric-watchdog.ps1" -Target prove -TimeoutSec %PROVE_WATCHDOG_SEC% -RepoRoot "%CD%"
 set PROVE_EXIT=%errorlevel%
 if "%PROVE_EXIT%"=="99" (
   echo ERROR: prove exceeded %PROVE_WATCHDOG_SEC%s — writing timeout gate

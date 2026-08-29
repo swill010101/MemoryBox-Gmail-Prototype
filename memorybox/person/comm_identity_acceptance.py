@@ -1529,7 +1529,17 @@ def run_prove_person_email_identity(*, flightsim: bool = False) -> dict[str, Any
         "gate_cmd_startmb_watchdog_timeout" in gate_cmd
         and "gate_cmd_prove_watchdog_timeout" in gate_cmd
         and '"waiting": false' in gate_cmd
-        and "taskkill /F /T /PID" in gate_cmd,
+        and "flightsim-address-centric-watchdog.ps1" in gate_cmd,
+        checks,
+        problems,
+    )
+    wd_ps1 = open(
+        "tools/flightsim-address-centric-watchdog.ps1", encoding="utf-8"
+    ).read()
+    _check(
+        "watchdog_ps1_taskkill_tree",
+        "taskkill /F /T /PID" in wd_ps1
+        and "ValidateSet(\"startmb\", \"prove\")" in wd_ps1,
         checks,
         problems,
     )

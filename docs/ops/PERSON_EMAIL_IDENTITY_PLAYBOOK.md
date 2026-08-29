@@ -52,8 +52,10 @@ Delivery (any one wakes the cloud agent):
 Probe is **advisory** before prove; prove always owns `ADDRESS_CENTRIC_GATE.json`.
 Env/DB failures in `flightsim-address-centric-prove.ps1` still write a failure gate
 (UTF-8 without BOM) so the results branch updates. Early `gate.cmd` `:fail`
-writes `error=gate_cmd_pre_prove_fail`. Watchdogs:
-`STARTMB_WATCHDOG_SEC` (default 600) / `PROVE_WATCHDOG_SEC` (default 2700).
+writes `error=gate_cmd_pre_prove_fail`. Watchdogs via
+`tools/flightsim-address-centric-watchdog.ps1`:
+`STARTMB_WATCHDOG_SEC` (default 600) / `PROVE_WATCHDOG_SEC` (default 2700);
+timeouts `taskkill /F /T` the process tree then emit a failure gate.
 
 Bootstrap skips archive-wide Peg* nickname discover when operator-attest of
 `peggo417` is accepted (or retries attest once) — avoids Takeout hang.
