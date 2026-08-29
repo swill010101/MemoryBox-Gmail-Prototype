@@ -9,8 +9,8 @@ REM Env: startmb loads config\memorybox_app.env only inside PowerShell. This
 REM script calls tools\flightsim-address-centric-prove.ps1 so migrate/prove use
 REM the same DATABASE_URL as serve (Takeout archive), not silent ALLOW_DEV defaults.
 REM
-REM Auto-deliver: posts gate to PR #74 via gh when available, and always force-pushes
-REM gate artifacts to cursor/flightsim-address-centric-result-49da for the cloud agent.
+REM Auto-deliver: force-pushes gate artifacts to cursor/flightsim-address-centric-result-49da
+REM first, then posts to PR #74 via gh when already authenticated (never blocks on auth).
 REM
 setlocal
 REM pushd maps UNC (\\flightsim\memorybox) to a drive letter; cd /d cannot.
@@ -128,33 +128,7 @@ REM block the cloud agent from fetching cursor/flightsim-address-centric-result-
 if exist "%GATE_JSON%" (
   echo.
   echo ===== force-pushing gate to %RESULT_BRANCH% =====
-  git fetch origin %RESULT_BRANCH% 2>nul
-  git checkout -B %RESULT_BRANCH%
-  if errorlevel 1 (
-    echo WARNING: could not checkout results branch — paste gate manually from above.
-  ) else (
-    git add --force "%GATE_JSON%"
-    if exist "%GATE_VERDICT%" git add --force "%GATE_VERDICT%"
-    if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
-    git status --short
-    git diff --cached --quiet
-    if errorlevel 1 (
-      git commit -m "flightsim: ADDRESS_CENTRIC_GATE from archive prove"
-    ) else (
-      echo No staged changes vs index — empty tip so push refreshes tip timestamp.
-      git commit --allow-empty -m "flightsim: ADDRESS_CENTRIC_GATE refresh"
-    )
-    git push -u origin %RESULT_BRANCH% --force
-    if errorlevel 1 (
-      echo WARNING: results-branch force-push failed — paste the gate manually from above.
-    ) else (
-      echo Pushed %RESULT_BRANCH% (force).
-    )
-    git checkout -B %BRANCH% origin/%BRANCH%
-    if errorlevel 1 (
-      echo WARNING: could not return to %BRANCH% — check git status on FlightSim.
-    )
-  )
+  call :push_results_branch
 )
 
 REM Auto-deliver to PR #74 when gh is already authenticated — wakes the cloud agent.
@@ -219,3 +193,48 @@ exit /b %PROVE_EXIT%
 echo FAILED — fix git/migrate errors above, then re-run.
 popd 2>nul
 exit /b 1
+
+:push_results_branch
+git fetch origin %RESULT_BRANCH% 2>nul
+git checkout -B %RESULT_BRANCH%
+if errorlevel 1 (
+  echo WARNING: could not checkout results branch — paste gate manually from above.
+  exit /b 1
+)
+git add --force "%GATE_JSON%"
+if exist "%GATE_VERDICT%" git add --force "%GATE_VERDICT%"
+if exist "%GATE_FAIL%" git add --force "%GATE_FAIL%"
+git status --short
+git diff --cached --quiet
+if errorlevel 1 (
+  git commit -m "flightsim: ADDRESS_CENTRIC_GATE from archive prove"
+) else (
+  echo No staged changes vs index — empty tip so push refreshes tip timestamp.
+  git commit --allow-empty -m "flightsim: ADDRESS_CENTRIC_GATE refresh"
+)
+set PUSH_OK=0
+set PUSH_TRY=1
+set PUSH_SLEEP=4
+:push_retry_loop
+echo push attempt %PUSH_TRY%/5 ...
+git push -u origin %RESULT_BRANCH% --force
+if not errorlevel 1 (
+  set PUSH_OK=1
+  echo Pushed %RESULT_BRANCH% (force^).
+  goto push_retry_done
+)
+if %PUSH_TRY% GEQ 5 goto push_retry_done
+echo WARNING: push failed — retry in %PUSH_SLEEP%s
+timeout /t %PUSH_SLEEP% /nobreak >nul
+set /a PUSH_TRY+=1
+set /a PUSH_SLEEP*=2
+goto push_retry_loop
+:push_retry_done
+if "%PUSH_OK%"=="0" (
+  echo WARNING: results-branch force-push failed after retries — paste gate manually from above.
+)
+git checkout -B %BRANCH% origin/%BRANCH%
+if errorlevel 1 (
+  echo WARNING: could not return to %BRANCH% — check git status on FlightSim.
+)
+exit /b 0
