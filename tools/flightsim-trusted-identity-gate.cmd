@@ -25,9 +25,13 @@ echo MEMORYBOX_OLLAMA_BASE_URL=%MEMORYBOX_OLLAMA_BASE_URL%
 echo CLOUD_LLM_MODEL=%MEMORYBOX_CLOUD_LLM_MODEL%
 if defined MEMORYBOX_CLOUD_LLM_BASE_URL (echo CLOUD_LLM_BASE_URL_SET=1) else (echo CLOUD_LLM_BASE_URL_SET=)
 if defined MEMORYBOX_CLOUD_LLM_API_KEY (echo CLOUD_LLM_KEY_SET=1) else (echo CLOUD_LLM_KEY_SET=)
+REM System32 powershell — PATH powershell.exe can be a WindowsApps stub (exit 0).
+set PS_REAL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
+if not exist "%PS_REAL%" set PS_REAL=powershell.exe
+set PROVE_PS1=%CD%\tools\flightsim-trusted-identity-prove.ps1
 echo.
 echo === migrate ===
-python -m memorybox migrate
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Migrate
 echo.
 echo === Phase 1 (reuse green FlightSim gate; otherwise prove) ===
 if exist docs\test-output\trusted-full-evidence-v2\TRUSTED_IDENTITY_GATE.json (
@@ -39,7 +43,7 @@ if exist docs\test-output\trusted-full-evidence-v2\TRUSTED_IDENTITY_GATE.json (
   echo Existing Phase 1 gate failed verifier — re-prove. Do not widen matching.
 )
 echo === Phase 1 prove (trusted retrieve + Gallery report) ===
-python -m memorybox prove-trusted-identity-retrieval --flightsim
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Phase1
 if errorlevel 1 (
   echo.
   echo PHASE 1 FAILED — do not widen matching.
@@ -62,12 +66,12 @@ call :deliver_evidence "evidence(flightsim): trusted-identity Phase 1 gate"
 :phase2_freeze
 echo.
 echo === Phase 2 preflight (Ollama Gemma + cloud Sol; commit even if missing) ===
-python -m memorybox fev2-preflight --out-dir docs\test-output\trusted-full-evidence-v2
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Preflight
 call :deliver_evidence "evidence(flightsim): Phase 2 preflight"
 echo.
 echo === Phase 2 freeze (year-fair email + slim person; no calendar/story scan) ===
 echo Commit before Gemma/Sol so a model timeout still leaves the fixture.
-python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs\test-output\trusted-full-evidence-v2 --reuse-if-coverage-ok
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Freeze
 if errorlevel 1 (
   echo PHASE 2 FREEZE FAILED — do not run Gemma/Sol.
   echo If error is trusted_email_starved, paste the freeze JSON selected_email_count.
@@ -76,7 +80,7 @@ if errorlevel 1 (
 call :deliver_evidence "evidence(flightsim): trusted FEV2 freeze"
 echo.
 echo === Phase 2 pipeline (freeze, Gemma, Sol) ===
-python -m memorybox run-trusted-evidence-pipeline --person "Peggy George" --flightsim
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Pipeline
 if errorlevel 1 (
   echo TRUSTED EVIDENCE PIPELINE FAILED OR SKIPPED
   echo Paste the PHASE2_SUMMARY block printed above.
@@ -86,7 +90,7 @@ if errorlevel 1 (
   call :deliver_evidence "evidence(flightsim): pipeline stop (Phase 2 incomplete)"
   exit /b 1
 )
-python tools\verify-trusted-fev2-reports.py
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Verify
 if errorlevel 1 (
   echo TRUSTED FEV2 REPORTS FAILED
   call :deliver_evidence "evidence(flightsim): trusted FEV2 reports (verifier failed)"
@@ -95,7 +99,7 @@ if errorlevel 1 (
 call :deliver_evidence "evidence(flightsim): trusted FEV2 Gemma+Sol reports"
 echo.
 echo === Phase 3 chunk models (after Phase 2 verifier) ===
-python -m memorybox run-trusted-fev2-chunked-models --from-dir docs\test-output\trusted-full-evidence-v2
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Chunks
 if errorlevel 1 (
   echo PHASE 3 CHUNK MODELS FAILED
   echo Phase 2 reports above still stand. Re-run only chunk models, not Phase 1.

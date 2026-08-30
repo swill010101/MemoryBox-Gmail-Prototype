@@ -721,19 +721,26 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    prove_ps1 = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "flightsim-trusted-identity-prove.ps1"
+    ).read_text(encoding="utf-8")
     _check(
         "flightsim_gate_runs_phase1_prove_before_pipeline",
-        "prove-trusted-identity-retrieval --flightsim" in gate_txt
-        and "errorlevel 1" in gate_txt
+        "errorlevel 1" in gate_txt
         and "verify-trusted-identity-gate.py" in gate_txt
         and "Phase 1 already PASS" in gate_txt
         and "goto phase2_freeze" in gate_txt
-        and gate_txt.find("prove-trusted-identity-retrieval")
-        < gate_txt.find(":phase2_freeze")
-        < gate_txt.find("freeze-trusted-full-evidence-v2")
-        < gate_txt.find("run-trusted-evidence-pipeline")
-        < gate_txt.find("verify-trusted-fev2-reports.py")
-        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir")
+        and "flightsim-trusted-identity-prove.ps1" in gate_txt
+        and "WindowsPowerShell" in gate_txt
+        and "ExecutionPolicy Bypass" in gate_txt
+        and gate_txt.find(":phase2_freeze")
+        < gate_txt.find("-Step Preflight")
+        < gate_txt.find("-Step Freeze")
+        < gate_txt.find("-Step Pipeline")
+        < gate_txt.find("-Step Verify")
+        < gate_txt.find("-Step Chunks")
         and "trusted FEV2 freeze" in gate_txt
         and "--authorize-phase3" not in gate_txt
         and "Phase 3 chunk models (after Phase 2 verifier)" in gate_txt
@@ -741,12 +748,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
         and "PHASE2_PREFLIGHT.json" in gate_txt
-        and "fev2-preflight" in gate_txt
-        and gate_txt.find("fev2-preflight")
-        < gate_txt.find("freeze-trusted-full-evidence-v2")
-        and "--reuse-if-coverage-ok" in gate_txt
         and "git pull --rebase" in gate_txt
         and "--force" not in gate_txt,
+        checks,
+        problems,
+    )
+    _check(
+        "flightsim_prove_ps1_loads_startmb_env_and_runs_fev2",
+        "Import-DotEnvFile" in prove_ps1
+        and "MEMORYBOX_P1_RUNTIME_HOST" in prove_ps1
+        and "WindowsApps" in prove_ps1
+        and "prove-trusted-identity-retrieval" in prove_ps1
+        and "fev2-preflight" in prove_ps1
+        and "freeze-trusted-full-evidence-v2" in prove_ps1
+        and "--reuse-if-coverage-ok" in prove_ps1
+        and "run-trusted-evidence-pipeline" in prove_ps1
+        and "verify-trusted-fev2-reports.py" in prove_ps1
+        and "run-trusted-fev2-chunked-models" in prove_ps1
+        and prove_ps1.find("fev2-preflight")
+        < prove_ps1.find("freeze-trusted-full-evidence-v2")
+        < prove_ps1.find("run-trusted-evidence-pipeline")
+        < prove_ps1.find("run-trusted-fev2-chunked-models"),
         checks,
         problems,
     )
@@ -766,10 +788,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "flightsim_gate_fails_closed_on_pipeline_skip",
-        "verify-trusted-fev2-reports.py" in gate_txt
-        and "if errorlevel 1" in gate_txt[gate_txt.find("run-trusted-evidence-pipeline") :]
-        and gate_txt.find("run-trusted-evidence-pipeline")
-        < gate_txt.find("verify-trusted-fev2-reports.py"),
+        "-Step Pipeline" in gate_txt
+        and "if errorlevel 1" in gate_txt[gate_txt.find("-Step Pipeline") :]
+        and gate_txt.find("-Step Pipeline")
+        < gate_txt.find("-Step Verify"),
         checks,
         problems,
     )
@@ -989,9 +1011,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "set MEMORYBOX_ALLOW_DEV_DEFAULTS=" in gate_txt
         and "MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333" in gate_txt
         and gate_txt.find("set MEMORYBOX_ALLOW_DEV_DEFAULTS=")
-        < gate_txt.find("prove-trusted-identity-retrieval --flightsim")
+        < gate_txt.find("-Step Phase1")
         and gate_txt.find("MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333")
-        < gate_txt.find("python -m memorybox migrate")
+        < gate_txt.find("-Step Migrate")
         and "export-memorybox-app-env.py" in gate_txt
         and "MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434" in gate_txt,
         checks,
