@@ -1708,6 +1708,113 @@ def _email_person_blob(payload: dict[str, Any]) -> str:
 
 
 @_timed_provider("email_ms")
+def _year_fair_email_hits_light_scan(
+    where_sql: str,
+    where_params: list[Any],
+    *,
+    limit: int,
+    scope: str,
+) -> list[EvidenceHit]:
+    """Year-fair sample without loading every trusted HTML body.
+
+    FlightSim FEV2 freeze only needs ``limit`` full payloads. Scanning
+    ``payload_json`` for 5k+ Takeout rows is the hang/1-email-starve path.
+    """
+    light: list[EvidenceHit] = []
+    last_id: Any = None
+    with connection() as conn:
+        while True:
+            clause = where_sql
+            qparams = list(where_params)
+            if last_id is not None:
+                clause = f"({where_sql}) AND id > %s"
+                qparams.append(last_id)
+            rows = conn.execute(
+                f"""
+                SELECT id, summary,
+                       coalesce(payload_json->>'sent_at','') AS sent_at,
+                       lower(coalesce(
+                           payload_json->>'mailbox_skip',
+                           payload_json->>'skip_reason',
+                           ''
+                       )) AS skip,
+                       lower(coalesce(
+                           payload_json->>'evidence_channel', 'email'
+                       )) AS ch
+                FROM evidence
+                WHERE {clause}
+                ORDER BY id
+                LIMIT %s
+                """,
+                qparams + [TELL_DB_PAGE],
+            ).fetchall()
+            if not rows:
+                break
+            for r in rows:
+                last_id = r["id"]
+                if str(r["ch"] or "email") != "email":
+                    continue
+                if str(r["skip"] or "").strip() in {"spam", "trash"}:
+                    continue
+                light.append(
+                    EvidenceHit(
+                        evidence_id=str(r["id"]),
+                        evidence_kind="communication",
+                        summary=str(r["summary"] or "email"),
+                        score=1.0,
+                        excerpt="",
+                        source="email_mbox",
+                        sent_at=str(r["sent_at"] or "") or None,
+                        channel="email",
+                    )
+                )
+    total = len(light)
+    sliced, truncated = _year_fair_slice(light, max(1, int(limit)))
+    ids = [h.evidence_id for h in sliced]
+    if not ids:
+        return []
+    raw_ids: list[Any] = []
+    for eid in ids:
+        try:
+            raw_ids.append(UUID(str(eid)))
+        except (ValueError, TypeError):
+            raw_ids.append(eid)
+    by_id: dict[str, EvidenceHit] = {}
+    with connection() as conn:
+        loaded = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE id = ANY(%s)
+            """,
+            (raw_ids,),
+        ).fetchall()
+    for r in loaded:
+        payload = _payload_dict(r["payload_json"])
+        by_id[str(r["id"])] = _email_hit(r, payload, score=1.0)
+    hits = [by_id[i] for i in ids if i in by_id]
+    note = (
+        f"ingested email export; n={total}; fev2_light_year_fair; scope={scope}"
+    )
+    if truncated:
+        years = sorted({(h.sent_at or "")[:4] for h in hits if (h.sent_at or "")[:4]})
+        note = (
+            f"{note}; showing {len(hits)} of {total} "
+            f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+        )
+    for h in hits:
+        h.match_total = total
+        h.truncated = truncated
+        h.count_scope = note
+    if hits:
+        hits[0].count_scope = note
+        if truncated:
+            hits[0].summary = (
+                f"Showing {len(hits)} of {total} emails ({note}). {hits[0].summary}"
+            )
+    return hits
+
+
 def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date / keyword retrieve over ingested email Evidence."""
     ask = plan.original_ask or ""
@@ -1887,6 +1994,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             paging_reason="email identity probe empty; skip Takeout scan",
         )
         return []
+    if "trusted_full_evidence_v2" in (plan.notes or ()):
+        return _year_fair_email_hits_light_scan(
+            where_sql,
+            where_params,
+            limit=max(1, int(limit)),
+            scope=str(scope),
+        )
     for r in _iter_evidence_rows(
         where_sql,
         where_params,

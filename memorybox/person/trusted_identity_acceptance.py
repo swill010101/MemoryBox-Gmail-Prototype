@@ -1693,7 +1693,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         'if "trusted_full_evidence_v2" in notes:' in retrieve_complete
         and "return False" in retrieve_complete
         and "trusted_full_evidence_v2" in retrieve_email
-        and "keywords = []" in retrieve_email,
+        and "keywords = []" in retrieve_email
+        and "_year_fair_email_hits_light_scan" in retrieve_email,
         checks,
         problems,
     )
