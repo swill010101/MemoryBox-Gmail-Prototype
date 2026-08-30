@@ -951,6 +951,20 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    cloud_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.historian_provider",
+            fromlist=["_CloudOpenAICompatChat"],
+        )._CloudOpenAICompatChat
+    )
+    _check(
+        "cloud_sol_sets_max_tokens_so_json_is_not_cut_off",
+        '"max_tokens"' in cloud_src
+        and "MEMORYBOX_CLOUD_LLM_MAX_TOKENS" in cloud_src
+        and "MEMORYBOX_CLOUD_LLM_MAX_TOKENS" in export_src,
+        checks,
+        problems,
+    )
     _check(
         "flightsim_gate_clears_allow_dev_before_prove",
         "set MEMORYBOX_P1_RUNTIME_HOST=1" in gate_txt

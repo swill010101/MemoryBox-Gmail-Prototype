@@ -37,6 +37,7 @@ class HistorianProviderSpec:
     model: str
     timeout_seconds: int
     num_ctx: int | None = None
+    max_tokens: int | None = None
 
 
 def normalize_provider_kind(raw: str | None) -> HistorianProviderKind:
@@ -144,13 +145,21 @@ class _CloudOpenAICompatChat:
 
     provider_key = "cloud"
 
-    def __init__(self, *, chat_model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self, *, chat_model: str, timeout_seconds: int, max_tokens: int | None = None
+    ) -> None:
         import os
 
         self.chat_model = chat_model
         self.timeout_seconds = int(timeout_seconds)
         self.base_url = (os.environ.get("MEMORYBOX_CLOUD_LLM_BASE_URL") or "").rstrip("/")
         self.api_key = (os.environ.get("MEMORYBOX_CLOUD_LLM_API_KEY") or "").strip()
+        env_max = (os.environ.get("MEMORYBOX_CLOUD_LLM_MAX_TOKENS") or "").strip()
+        self.max_tokens = (
+            int(max_tokens)
+            if max_tokens
+            else (int(env_max) if env_max.isdigit() else 8_192)
+        )
 
     def health(self) -> Any:
         from memorybox.providers.base import ProviderHealth
@@ -183,6 +192,7 @@ class _CloudOpenAICompatChat:
         payload: dict[str, Any] = {
             "model": self.chat_model,
             "temperature": 0,
+            "max_tokens": int(self.max_tokens),
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
         if json_mode:
@@ -219,7 +229,11 @@ def build_historian_provider(spec: HistorianProviderSpec) -> Any:
     if not model:
         raise HistorianProviderError("--model is required for historian-fixture-run")
     if spec.provider == "cloud":
-        return _CloudOpenAICompatChat(chat_model=model, timeout_seconds=spec.timeout_seconds)
+        return _CloudOpenAICompatChat(
+            chat_model=model,
+            timeout_seconds=spec.timeout_seconds,
+            max_tokens=spec.max_tokens,
+        )
     from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
     from memorybox.providers.llm._ollama_http import ollama_reachable
 

@@ -19,6 +19,7 @@ KEYS = (
     "MEMORYBOX_CLOUD_LLM_BASE_URL",
     "MEMORYBOX_CLOUD_LLM_API_KEY",
     "MEMORYBOX_CLOUD_LLM_MODEL",
+    "MEMORYBOX_CLOUD_LLM_MAX_TOKENS",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
