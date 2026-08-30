@@ -418,6 +418,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    inv_src = inspect.getsource(
+        __import__(
+            "memorybox.person.comm_address_index",
+            fromlist=["inventory_email_address"],
+        ).inventory_email_address
+    )
+    _check(
+        "inventory_counts_structured_hits_with_sql_count",
+        "SELECT COUNT(*) AS n FROM evidence" in inv_src
+        and "display_limit" in inv_src,
+        checks,
+        problems,
+    )
     attach_src = inspect.getsource(
         __import__(
             "memorybox.person.comm_identity",
