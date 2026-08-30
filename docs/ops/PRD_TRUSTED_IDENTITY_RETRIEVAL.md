@@ -65,7 +65,8 @@ drops the `:memory:` Qdrant fallback; without the URL, migrate/prove crash
 before the trusted report. Then: if `TRUSTED_IDENTITY_GATE.json` already verifies, skip archive prove
 and start year-fair freeze. Otherwise Phase 1 prove,
 `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
-fakes), then `freeze-trusted-full-evidence-v2` (committed before models), then
+fakes), then `freeze-trusted-full-evidence-v2` (year-fair 200 emails after a sent_at-only
+scan — does not load every trusted HTML body; committed before models), then
 `run-trusted-evidence-pipeline` (reuses the green Phase 1 gate and that
 year-fair freeze — no second Takeout identity scan). Pipeline
 skip/fail is `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py`
