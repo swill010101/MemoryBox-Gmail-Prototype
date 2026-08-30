@@ -730,6 +730,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "flightsim_gate_runs_phase1_prove_before_pipeline",
         "errorlevel 1" in gate_txt
         and "verify-trusted-identity-gate.py" in gate_txt
+        and "-Step Phase1Verify" in gate_txt
         and "Phase 1 already PASS" in gate_txt
         and "goto phase2_freeze" in gate_txt
         and "flightsim-trusted-identity-prove.ps1" in gate_txt
@@ -739,7 +740,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("-Step Preflight")
         < gate_txt.find("-Step Freeze")
         < gate_txt.find("-Step Pipeline")
-        < gate_txt.find("-Step Verify")
+        < gate_txt.find("-Step VerifyReports")
         < gate_txt.find("-Step Chunks")
         and "trusted FEV2 freeze" in gate_txt
         and "--authorize-phase3" not in gate_txt
@@ -759,6 +760,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "MEMORYBOX_P1_RUNTIME_HOST" in prove_ps1
         and "WindowsApps" in prove_ps1
         and "prove-trusted-identity-retrieval" in prove_ps1
+        and "Phase1Verify" in prove_ps1
+        and "PHASE2_GATE_STARTED.txt" in prove_ps1
         and "fev2-preflight" in prove_ps1
         and "freeze-trusted-full-evidence-v2" in prove_ps1
         and "--reuse-if-coverage-ok" in prove_ps1
@@ -791,7 +794,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "-Step Pipeline" in gate_txt
         and "if errorlevel 1" in gate_txt[gate_txt.find("-Step Pipeline") :]
         and gate_txt.find("-Step Pipeline")
-        < gate_txt.find("-Step Verify"),
+        < gate_txt.find("-Step VerifyReports"),
         checks,
         problems,
     )

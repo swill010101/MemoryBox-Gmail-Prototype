@@ -32,10 +32,12 @@ set PROVE_PS1=%CD%\tools\flightsim-trusted-identity-prove.ps1
 echo.
 echo === migrate ===
 "%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Migrate
+call :deliver_evidence "evidence(flightsim): trusted-identity gate started"
 echo.
 echo === Phase 1 (reuse green FlightSim gate; otherwise prove) ===
+REM verify-trusted-identity-gate.py via prove.ps1 — bare cmd python can be WindowsApps.
 if exist docs\test-output\trusted-full-evidence-v2\TRUSTED_IDENTITY_GATE.json (
-  python tools\verify-trusted-identity-gate.py
+  "%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Phase1Verify
   if not errorlevel 1 (
     echo Phase 1 already PASS — skip archive prove so year-fair freeze / Gemma / Sol can start.
     goto phase2_freeze
@@ -57,7 +59,7 @@ if errorlevel 1 (
 )
 echo.
 echo === Phase 1 FlightSim verifier (reject ALLOW_DEV / empty Gallery) ===
-python tools\verify-trusted-identity-gate.py
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Phase1Verify
 if errorlevel 1 (
   echo PHASE 1 VERIFIER FAILED — do not run Gemma/Sol.
   exit /b 1
@@ -90,7 +92,7 @@ if errorlevel 1 (
   call :deliver_evidence "evidence(flightsim): pipeline stop (Phase 2 incomplete)"
   exit /b 1
 )
-"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Verify
+"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step VerifyReports
 if errorlevel 1 (
   echo TRUSTED FEV2 REPORTS FAILED
   call :deliver_evidence "evidence(flightsim): trusted FEV2 reports (verifier failed)"
@@ -119,6 +121,7 @@ if not exist "%EVIDENCE_DIR%" goto :eof
 if exist "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json" git add -- "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json"
 if exist "%EVIDENCE_DIR%\PHASE1_prove.json" git add -- "%EVIDENCE_DIR%\PHASE1_prove.json"
 if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+if exist "%EVIDENCE_DIR%\PHASE2_GATE_STARTED.txt" git add -- "%EVIDENCE_DIR%\PHASE2_GATE_STARTED.txt"
 if exist "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json" git add -- "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json"
 if exist "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt"
 if exist "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt"

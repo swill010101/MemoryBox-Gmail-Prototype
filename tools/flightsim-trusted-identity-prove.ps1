@@ -12,7 +12,7 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("Migrate", "Phase1", "Preflight", "Freeze", "Pipeline", "Verify", "Chunks")]
+  [ValidateSet("Migrate", "Phase1Verify", "Phase1", "Preflight", "Freeze", "Pipeline", "VerifyReports", "Chunks")]
   [string]$Step = "Freeze",
   [int]$DbWaitSec = 90
 )
@@ -26,6 +26,14 @@ $Root = if ($PSScriptRoot) {
 Set-Location $Root
 $OutDir = Join-Path $Root "docs\test-output\trusted-full-evidence-v2"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$startedPath = Join-Path $OutDir "PHASE2_GATE_STARTED.txt"
+$utf8s = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText(
+  $startedPath,
+  ("started={0} hostname={1} step={2} pid={3}`n" -f (Get-Date).ToUniversalTime().ToString("o"), [System.Net.Dns]::GetHostName(), $Step, $PID),
+  $utf8s
+)
+Write-Host "TRUSTED_GATE_PS1_STARTED $startedPath"
 
 function Import-DotEnvFile([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return }
@@ -122,6 +130,12 @@ switch ($Step) {
   "Migrate" {
     Invoke-Mb @("-m", "memorybox", "migrate")
   }
+  "Phase1Verify" {
+    $v = Start-Process -FilePath $Python `
+      -ArgumentList @("-u", (Join-Path $Root "tools\verify-trusted-identity-gate.py")) `
+      -WorkingDirectory $Root -Wait -PassThru -NoNewWindow
+    if ($v.ExitCode -ne 0) { exit $v.ExitCode }
+  }
   "Phase1" {
     Invoke-Mb @("-m", "memorybox", "prove-trusted-identity-retrieval", "--flightsim")
     $v = Start-Process -FilePath $Python `
@@ -147,7 +161,7 @@ switch ($Step) {
       "--flightsim"
     )
   }
-  "Verify" {
+  "VerifyReports" {
     $v = Start-Process -FilePath $Python `
       -ArgumentList @("-u", (Join-Path $Root "tools\verify-trusted-fev2-reports.py")) `
       -WorkingDirectory $Root -Wait -PassThru -NoNewWindow
