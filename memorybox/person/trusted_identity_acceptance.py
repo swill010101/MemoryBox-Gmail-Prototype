@@ -716,11 +716,12 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("verify-trusted-identity-gate.py")
         < gate_txt.find("run-trusted-evidence-pipeline")
         < gate_txt.find("verify-trusted-fev2-reports.py")
-        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir")
+        and "run-trusted-fev2-chunked-models --from-dir" not in gate_txt
+        and "--authorize-phase3" not in gate_txt
+        and "Phase 3 chunking requires explicit authorization" in gate_txt
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
-        and "PHASE3_SUMMARY.txt" in gate_txt
         and "git pull --rebase" in gate_txt
         and "--force" not in gate_txt,
         checks,
@@ -1427,18 +1428,21 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
     )
     _check(
-        "pipeline_blocks_chunk_models_until_both_single_pass",
-        "blocked_until_both_single_pass" in pipe_src,
+        "pipeline_stops_after_phase2_unless_authorized",
+        "phase_3_requires_explicit_authorization" in pipe_src
+        and "phase_2_complete" in pipe_src
+        and "authorize_phase3" in pipe_src
+        and pipe_src.find("if both_single_pass and authorize_phase3")
+        < pipe_src.find("compare_chunked_vs_unchunked")
+        and pipe_src.find("if both_single_pass and authorize_phase3")
+        < pipe_src.find("run_chunked_models_after_single_pass"),
         checks,
         problems,
     )
     _check(
         "pipeline_defers_larger_set_until_both_single_pass",
         "after_both_single_pass_reports_only" in pipe_src
-        and "complete_trusted=True" not in pipe_src
-        and "run_chunked_models_after_single_pass" not in pipe_src
-        and "after_phase2_verifier" in pipe_src
-        and "compare_chunked_vs_unchunked" in pipe_src,
+        and "complete_trusted=True" not in pipe_src,
         checks,
         problems,
     )

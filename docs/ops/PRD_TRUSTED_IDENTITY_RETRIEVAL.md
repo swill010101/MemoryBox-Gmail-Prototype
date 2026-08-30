@@ -65,7 +65,9 @@ before the trusted report. Then: Phase 1 prove,
 fakes), then `run-trusted-evidence-pipeline`. Pipeline skip/fail is
 `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py` requires both
 Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email grounded,
-chunking still off.
+chunking still off. The gate prints `PHASE2_SUMMARY` and **exits**. Phase 3
+chunk compare / model-per-chunk stay off until explicitly authorized
+(`--authorize-phase3` or a later go).
 It stops on Phase 1 failure and does not widen matching.
 
 A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)
@@ -105,10 +107,6 @@ python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provide
 ```
 
 Cloud Sol is opt-in and stateless: `MEMORYBOX_CLOUD_LLM_BASE_URL` + `MEMORYBOX_CLOUD_LLM_API_KEY`.
-No chunking on these two runs. Phase 3 starts only after both reports are comparable.
-
-Phase 3 structure-only (after both single-pass reports exist):
-
-```
-python -m memorybox compare-trusted-fev2-chunks --fixture <same FEV2.json>
-```
+No chunking on these two runs. **Stop after Phase 2.** Do not run
+`compare-trusted-fev2-chunks` or `run-trusted-fev2-chunked-models` until
+Phase 3 is explicitly authorized.

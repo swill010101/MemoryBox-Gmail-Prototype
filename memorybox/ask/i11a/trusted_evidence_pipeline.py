@@ -1,8 +1,8 @@
-"""FlightSim / local pipeline: Phase 1 → frozen FEV2 → Gemma/Sol → chunk.
+"""FlightSim / local pipeline: Phase 1 → frozen FEV2 → Gemma/Sol.
 
 Stops on Phase 1 failure. Does not widen identity matching.
-Does not run models per chunk until both single-pass reports exist
-for the same fixture hash.
+Stops after paired Gemma/Sol reports share the freeze hash.
+Phase 3 chunk compare / model-per-chunk require authorize_phase3.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     ESTABLISHED_GEMMA_MODEL,
     freeze_trusted_full_evidence_v2,
@@ -76,11 +75,13 @@ def run_trusted_evidence_pipeline(
     sol_model: str | None = None,
     timeout_seconds: int = 1800,
     ask: str = "tell me what you know about this person",
+    authorize_phase3: bool = False,
 ) -> dict[str, Any]:
-    """Phase 1 report → freeze → optional Gemma then Sol → structure chunk.
+    """Phase 1 report → freeze → Gemma then Sol. Stop before Phase 3.
 
     Production retrieve is not person-hardcoded. The display name is an
     operator argument (FlightSim passes the Person under review).
+    Chunk compare and model-per-chunk run only when authorize_phase3 is True.
     """
     out = Path(out_dir) if out_dir else _DEFAULT_OUT
     out.mkdir(parents=True, exist_ok=True)
@@ -212,33 +213,68 @@ def run_trusted_evidence_pipeline(
         and (sol.get("input_sha256") or fixture_hash) == fixture_hash
     )
     both_single_pass = bool(gemma.get("ok")) and bool(sol.get("ok")) and same_hash
-    try:
-        chunk = compare_chunked_vs_unchunked(fixture_path)
-    except Exception as exc:  # noqa: BLE001
-        chunk = {
-            "ok": False,
-            "error": f"{type(exc).__name__}:{exc}",
-            "chunking": True,
-            "model_calls": 0,
-        }
-    result["phase3_structure"] = chunk
+    result["phase3_structure"] = {
+        "ran": False,
+        "reason": "phase_3_requires_explicit_authorization",
+    }
     result["phase3_model_per_chunk"] = {
         "ran": False,
-        "reason": (
-            None
-            if both_single_pass
-            else "blocked_until_both_single_pass_reports_exist_for_same_fixture_hash"
-        ),
+        "reason": "phase_3_requires_explicit_authorization",
     }
-    if both_single_pass:
-        # Phase 2 must land (and verify) before multi-hour chunk-model runs.
+    if both_single_pass and authorize_phase3:
+        from memorybox.ask.i11a.trusted_fev2_chunking import (
+            compare_chunked_vs_unchunked,
+            run_chunked_models_after_single_pass,
+        )
+
+        try:
+            chunk = compare_chunked_vs_unchunked(fixture_path)
+        except Exception as exc:  # noqa: BLE001
+            chunk = {
+                "ok": False,
+                "error": f"{type(exc).__name__}:{exc}",
+                "chunking": True,
+                "model_calls": 0,
+            }
+        result["phase3_structure"] = chunk
+        g_path = gemma.get("report_path")
+        s_path = sol.get("report_path")
+        cloud_model = (
+            sol.get("model")
+            or (sol.get("phase2_report") or {}).get("model")
+            or sol_model
+            or os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL")
+            or ""
+        )
+        if g_path and s_path and cloud_model:
+            result["phase3_model_per_chunk"] = run_chunked_models_after_single_pass(
+                fixture_path,
+                gemma_report_path=g_path,
+                sol_report_path=s_path,
+                gemma_model=gemma_model,
+                sol_model=str(cloud_model),
+                timeout_seconds=timeout_seconds,
+                out_dir=out,
+            )
+            result["ok"] = bool(chunk.get("ok")) and bool(
+                result["phase3_model_per_chunk"].get("ok")
+            )
+            result["phase"] = 3
+            result["stop"] = (
+                "phase_3_complete" if result["ok"] else "phase_3_chunked_models_failed"
+            )
+        else:
+            result["ok"] = bool(chunk.get("ok"))
+            result["phase"] = 3
+            result["stop"] = (
+                "phase_3_structure_ready — missing report paths for model-per-chunk"
+            )
+    elif both_single_pass:
         result["phase"] = 2
         result["ok"] = True
-        result["stop"] = "phase_2_complete — run chunk models after FEV2 verifier"
-        result["phase3_model_per_chunk"] = {
-            "ran": False,
-            "reason": "after_phase2_verifier — run-trusted-fev2-chunked-models --from-dir",
-        }
+        result["stop"] = (
+            "phase_2_complete — Phase 3 chunking requires explicit authorization"
+        )
     elif gemma.get("ok") and not sol.get("ok"):
         result["ok"] = False
         result["stop"] = "phase_2_sol_incomplete — do not chunk-with-models yet"
@@ -271,5 +307,6 @@ def format_phase2_summary(result: dict[str, Any]) -> str:
             f"error={gemma.get('error') or ''}",
             f"sol: ok={sol.get('ok')} skipped={sol.get('skipped')} "
             f"error={sol.get('error') or ''}",
+            f"phase3: {(result.get('phase3_model_per_chunk') or {}).get('reason') or 'not_run'}",
         ]
     )

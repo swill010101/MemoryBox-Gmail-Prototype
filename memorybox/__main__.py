@@ -713,7 +713,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fev2_chunk_models.add_argument("--out-dir", default=None)
     p_fev2_pipe = sub.add_parser(
         "run-trusted-evidence-pipeline",
-        help="Phase 1 report → freeze FEV2 → Gemma/Sol → chunk structure",
+        help="Phase 1 report → freeze FEV2 → Gemma/Sol (stop before Phase 3)",
     )
     p_fev2_pipe.add_argument("--person", required=True, help="Person display name")
     p_fev2_pipe.add_argument("--ask", default="tell me what you know about this person")
@@ -730,6 +730,11 @@ def main(argv: list[str] | None = None) -> int:
         "--flightsim",
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
+    p_fev2_pipe.add_argument(
+        "--authorize-phase3",
+        action="store_true",
+        help="Run Phase 3 chunk compare + model-per-chunk. Default off.",
     )
     p_i11a_enrich.add_argument(
         "--ask",
@@ -1598,6 +1603,7 @@ def main(argv: list[str] | None = None) -> int:
             sol_model=args.sol_model,
             timeout_seconds=int(args.timeout_seconds),
             ask=args.ask,
+            authorize_phase3=bool(getattr(args, "authorize_phase3", False)),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         summary = ((payload.get("phase1") or {}).get("phase1_summary"))
