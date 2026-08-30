@@ -688,6 +688,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Phase 3 larger trusted set: do not token-cap trusted email",
     )
+    p_fev2_freeze.add_argument(
+        "--reuse-if-coverage-ok",
+        action="store_true",
+        help="Reuse a year-fair freeze already in --out-dir (skip a second Takeout scan)",
+    )
     p_fev2_run = sub.add_parser(
         "run-trusted-full-evidence-v2",
         help="Phase 2: replay frozen FEV2 through ollama (Gemma) or cloud (Sol)",
@@ -1526,6 +1531,19 @@ def main(argv: list[str] | None = None) -> int:
             args.person, create_if_missing=False, confirm=False
         )
         out = Path(args.out_dir) if args.out_dir else None
+        if getattr(args, "reuse_if_coverage_ok", False):
+            from memorybox.ask.i11a.trusted_evidence_pipeline import (
+                _DEFAULT_OUT,
+                load_reusable_year_fair_freeze,
+            )
+
+            reused = load_reusable_year_fair_freeze(
+                out if out is not None else _DEFAULT_OUT,
+                str(resolved.person_id),
+            )
+            if reused:
+                print(json.dumps(reused, indent=2, default=str), flush=True)
+                return 0
         payload = freeze_trusted_full_evidence_v2(
             person_id=resolved.person_id,
             ask=args.ask,

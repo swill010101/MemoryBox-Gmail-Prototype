@@ -740,6 +740,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
+        and "--reuse-if-coverage-ok" in gate_txt
         and "git pull --rebase" in gate_txt
         and "--force" not in gate_txt,
         checks,
@@ -866,7 +867,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         hasattr(pipe_mod, "load_reusable_year_fair_freeze")
         and "load_reusable_year_fair_freeze" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline)
         and hasattr(pipe_mod, "load_reusable_phase1_report")
-        and "load_reusable_phase1_report" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline),
+        and "load_reusable_phase1_report" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline)
+        and "--reuse-if-coverage-ok" in inspect.getsource(
+            __import__("memorybox.__main__", fromlist=["main"]).main
+        ),
         checks,
         problems,
     )
@@ -1263,6 +1267,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         PHASE2_REPORT_KEYS,
         build_phase2_model_report,
         fev2_input_sha256,
+        item_evidence_ids,
         score_email_grounding,
         select_single_pass_items,
         validate_fev2_document,
@@ -1608,10 +1613,99 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and prompt_paste.find("christmas wish list")
         < prompt_paste.find("===== PERSON CONTEXT =====")
         and prompt_paste.find("christmas wish list")
-        < prompt_paste.lower().find("person card"),
+        < prompt_paste.lower().find("person card")
+        and prompt_paste.find("===== TRUSTED EMAIL EVIDENCE =====")
+        < prompt_paste.find("ALLOWED_EVIDENCE_IDS:"),
         checks,
         problems,
         detail=[i.get("source") for i in prompt_order],
+    )
+    l1_items = [
+        {
+            "item_id": "person:peggy",
+            "source": "person",
+            "native_id": "pid-1",
+            "timestamp": "1947-01-01",
+            "title": "Person facts",
+            "body": "Peggy George",
+            "facts": {"display_name": "Peggy George"},
+        }
+    ]
+    for i in range(24):
+        year = 2000 + (i % 12)
+        eid = f"mail-{i:03d}"
+        l1_items.append(
+            {
+                "item_id": f"email:{eid}",
+                "source": "email",
+                "native_id": eid,
+                "evidence_id": eid,
+                "timestamp": f"{year}-06-15T12:00:00Z",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "from_parsed": [
+                    {
+                        "address": "peggo417@hotmail.com",
+                        "normalized": "peggo417@hotmail.com",
+                    }
+                ],
+                "subject": f"Note {i}",
+                "body": "planning dinner",
+                "thread_id": f"t-{i // 4}",
+            }
+        )
+    l1_selected = select_single_pass_items(
+        l1_items,
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=100_000,
+    )
+    l1_paste = format_trusted_fev2_paste(
+        l1_selected,
+        ask="tell me what you know about this person",
+        person_context={},
+    )
+    l1_body = {
+        "ask": "tell me what you know about this person",
+        "trusted_addresses": ["peggo417@hotmail.com"],
+        "person_context": {},
+        "items": l1_selected,
+        "email_evidence_ids": [
+            x
+            for it in l1_selected
+            for x in item_evidence_ids(it)
+            if it.get("source") == "email"
+        ],
+        "user_message": l1_paste,
+        "system": "sys",
+        "chunking": False,
+        "evidence_type_counts": {
+            "email": sum(1 for it in l1_selected if it.get("source") == "email"),
+            "person": 1,
+        },
+    }
+    l1_body["input_sha256"] = fev2_input_sha256(l1_body)
+    import tempfile as _l1_tempfile
+    from pathlib import Path as _L1Path
+
+    l1_fx = _L1Path(_l1_tempfile.mkdtemp()) / "FEV2_yearfair_l1.json"
+    l1_fx.write_text(__import__("json").dumps(l1_body), encoding="utf-8")
+    from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
+
+    l1_cmp = compare_chunked_vs_unchunked(l1_fx)
+    _check(
+        "year_fair_fev2_l1_chunk_structure_covers_items",
+        l1_cmp.get("ok") is True
+        and not (l1_cmp.get("evidence_lost") or [])
+        and "email_thread" in (l1_cmp.get("l1_unit_kinds") or {})
+        and int((l1_body.get("evidence_type_counts") or {}).get("email") or 0) >= 8,
+        checks,
+        problems,
+        detail={
+            "ok": l1_cmp.get("ok"),
+            "kinds": l1_cmp.get("l1_unit_kinds"),
+            "lost": l1_cmp.get("evidence_lost"),
+            "emails": (l1_body.get("evidence_type_counts") or {}).get("email"),
+        },
     )
     freeze_src = inspect.getsource(
         __import__(
@@ -2094,7 +2188,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "chunk_from_dir_pairs_reports_to_fixture_hash",
         "missing_phase2_reports_for_fixture_hash" in from_dir_src
-        and "fixture_is_single_pass_coverage_ok" in from_dir_src,
+        and "fixture_is_single_pass_coverage_ok" in from_dir_src
+        and "no_sol_model" in from_dir_src
+        and from_dir_src.count("PHASE3_SUMMARY.txt") >= 3,
         checks,
         problems,
     )

@@ -388,10 +388,12 @@ def format_trusted_fev2_paste(
             out.append(format_item_block(clean))
         return out
 
+    # Email blocks before the full id roster. Ollama default num_ctx often
+    # truncates the tail — a 100k-token ALLOWED list at the top is how the
+    # model never sees trusted mail and invents email_1.
     parts = [
-        "Cite evidence_ids by copying these strings exactly.",
+        "Cite evidence_ids by copying these strings exactly from the evidence blocks.",
         "Do not invent placeholders such as email_1 or person_1.",
-        "ALLOWED_EVIDENCE_IDS: " + ", ".join(allowed),
         "",
         "Use only the Person context and evidence below. Do not invent facts.",
         f"ASK: {ask}",
@@ -407,6 +409,8 @@ def format_trusted_fev2_paste(
         "===== OTHER EVIDENCE =====",
         "",
         *_blocks(other_items),
+        "",
+        "ALLOWED_EVIDENCE_IDS: " + ", ".join(allowed),
     ]
     return "\n".join(parts).rstrip() + "\n"
 

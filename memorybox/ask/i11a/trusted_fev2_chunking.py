@@ -525,12 +525,26 @@ def run_chunked_models_from_dir(
         or (os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL") or "").strip()
     )
     if not cloud:
-        return {
+        blocked = {
             "ok": False,
             "ran": False,
             "error": "no_sol_model",
             "chunking": True,
         }
+        summary = "\n".join(
+            [
+                "TRUSTED-EVIDENCE PHASE 3 SUMMARY",
+                "ok: False",
+                "error: no_sol_model",
+                "ran: False",
+            ]
+        )
+        blocked["phase3_summary"] = summary
+        try:
+            (dest / "PHASE3_SUMMARY.txt").write_text(summary, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return blocked
     return run_chunked_models_after_single_pass(
         fixture,
         gemma_report_path=gemma_path,

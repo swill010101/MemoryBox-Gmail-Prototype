@@ -62,7 +62,7 @@ call :deliver_evidence "evidence(flightsim): trusted-identity Phase 1 gate"
 :phase2_freeze
 echo.
 echo === Phase 2 freeze (commit before Gemma/Sol so a model timeout still leaves the fixture) ===
-python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs\test-output\trusted-full-evidence-v2
+python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs\test-output\trusted-full-evidence-v2 --reuse-if-coverage-ok
 if errorlevel 1 (
   echo PHASE 2 FREEZE FAILED — do not run Gemma/Sol.
   echo If error is trusted_email_starved, paste the freeze JSON selected_email_count.
