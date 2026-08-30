@@ -99,6 +99,8 @@ python -m memorybox prove-trusted-identity-retrieval --flightsim
 Auto-expand must not clobber an owner/operator profile contact. People UI
 `add_contact` upserts and promotes an existing auto-expand row.
 
+Each freeze item carries a bound `cite_as` alias (`email_1`, `person_1`, …)
+so Gemma’s observed placeholder citations ground on the real evidence_id.
 Phase 2 Gemma calls set Ollama `options.num_ctx` from the freeze token
 estimate (min 32k, max 128k, override `MEMORYBOX_FEV2_OLLAMA_NUM_CTX`) so
 the year-fair paste is not tail-truncated. Phase 2 is included in the pipeline when Ollama has `gemma4:26b` and cloud Sol
