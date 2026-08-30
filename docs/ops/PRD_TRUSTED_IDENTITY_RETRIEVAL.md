@@ -78,10 +78,9 @@ full ALLOWED_EVIDENCE_IDS roster so a short Ollama context still sees
 mail (not just a 100k-token id list). Pipeline
 skip/fail is `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py`
 requires both Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email
-grounded, selected emails ≥ 8 (rejects `3cf95fa4`). The gate then **stops**.
-Phase 3 chunk compare / model-per-chunk stay refused until Tom explicitly
-authorizes them (`--authorize-phase3` or a later instruction). It stops on
-Phase 1 failure and does not widen matching.
+grounded, selected emails ≥ 8 (rejects `3cf95fa4`). After that verifier the
+gate runs `run-trusted-fev2-chunked-models`. It stops on Phase 1 failure and
+does not widen matching.
 
 A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)
 with `C2`/`C2a` fail is a false fail: ALLOW_DEV leftover demoted the FlightSim
@@ -131,8 +130,7 @@ python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provide
 ```
 
 Cloud Sol is opt-in and stateless: `MEMORYBOX_CLOUD_LLM_BASE_URL` + `MEMORYBOX_CLOUD_LLM_API_KEY`.
-No chunking on the two single-pass runs. After both reports verify and Tom
-authorizes Phase 3:
+No chunking on the two single-pass runs. After both reports verify:
 
 ```
 python -m memorybox run-trusted-fev2-chunked-models --from-dir docs/test-output/trusted-full-evidence-v2
