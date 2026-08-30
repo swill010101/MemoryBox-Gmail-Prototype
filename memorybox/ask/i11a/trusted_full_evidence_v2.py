@@ -38,6 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
+PERSON_FACT_TOKEN_CAP = 4_000
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
 
 FEV2_SYSTEM = """You are MemoryBox Full-Evidence V2. Use only the supplied evidence.
@@ -158,9 +159,27 @@ def select_single_pass_items(
         key=lambda i: str(i.get("sent_at") or i.get("start") or i.get("timestamp") or ""),
         reverse=True,
     )
+    capped_person: list[dict[str, Any]] = []
+    for it in person:
+        block_tok = _estimate_tokens(format_item_block(it))
+        if block_tok <= PERSON_FACT_TOKEN_CAP:
+            capped_person.append(it)
+            continue
+        # FlightSim dumped 1,568 header aliases into person facts (~240k tokens)
+        # and starved trusted mail down to one message. Cap the card.
+        slim = dict(it)
+        facts = slim.get("facts") if isinstance(slim.get("facts"), dict) else {}
+        keep = {
+            "display_name": facts.get("display_name") or slim.get("title"),
+            "aliases": list(facts.get("aliases") or [])[:12],
+            "communication_identities": list(facts.get("communication_identities") or [])[:8],
+        }
+        slim["facts"] = keep
+        slim["body"] = json.dumps(keep, indent=2, default=str, ensure_ascii=False)
+        capped_person.append(slim)
     # Reserve budget so a large photo/SMS library cannot crowd out trusted email.
     email_reserve = max(token_budget // 3, 8_000) if email else 0
-    selected = list(person)
+    selected = list(capped_person)
     used = _estimate_tokens("\n".join(format_item_block(i) for i in selected)) if selected else 0
     non_email_room = max(0, token_budget - email_reserve - used)
     non_used = 0
@@ -180,6 +199,28 @@ def select_single_pass_items(
     if email and not any(item_is_trusted_email(i, trusted) for i in selected):
         selected.append(email[0])
     return selected
+
+
+def format_trusted_fev2_paste(
+    items: list[dict[str, Any]],
+    *,
+    ask: str,
+    person_context: dict[str, Any],
+) -> str:
+    """Historian paste plus the exact evidence_ids models must copy."""
+    allowed: list[str] = []
+    for it in items:
+        allowed.extend(item_evidence_ids(it))
+    allowed = list(dict.fromkeys(a for a in allowed if a))
+    head = [
+        "Cite evidence_ids by copying these strings exactly.",
+        "Do not invent placeholders such as email_1 or person_1.",
+        "ALLOWED_EVIDENCE_IDS: " + ", ".join(allowed),
+        "",
+    ]
+    return "\n".join(head) + format_cloud_paste(
+        items, ask=ask, person_context=person_context
+    )
 
 
 def score_email_grounding(
@@ -453,7 +494,7 @@ def freeze_trusted_full_evidence_v2(
         trusted_addrs=trusted,
         token_budget=budget,
     )
-    paste = format_cloud_paste(
+    paste = format_trusted_fev2_paste(
         items,
         ask=ask,
         person_context=person_context,

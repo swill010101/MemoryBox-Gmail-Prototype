@@ -1008,6 +1008,61 @@ def _normalize_guided(row: dict[str, Any], *, retrieved_index: int) -> dict[str,
     return item
 
 
+_UNTRUSTED_ALIAS_ACTORS = frozenset(
+    {"comm_identity_expand", "sms_auto_map", "comm_identity_header_alias"}
+)
+_UNTRUSTED_ALIAS_SOURCES = frozenset(
+    {
+        "comm_identity_expand",
+        "comm_identity_header_alias",
+        "address_centric",
+        "corroborated_header_identity",
+    }
+)
+
+
+def _canonical_alias_texts(aliases: Any, *, limit: int = 32) -> list[str]:
+    """Owner/profile names only. Header/auto-expand aliases are not Person facts."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in aliases or []:
+        if not isinstance(raw, dict):
+            text = str(raw or "").strip()
+            actor = ""
+            source = ""
+        else:
+            text = str(raw.get("alias_text") or raw.get("alias") or "").strip()
+            actor = str(raw.get("actor_key") or "").strip()
+            prov = raw.get("provenance") or {}
+            source = str(prov.get("source") or raw.get("source") or "").strip()
+        if not text or "@" in text:
+            continue
+        if actor in _UNTRUSTED_ALIAS_ACTORS or source in _UNTRUSTED_ALIAS_SOURCES:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _slim_comm_identities_for_facts(rows: Any) -> list[dict[str, Any]]:
+    slim: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        slim.append(
+            {
+                "contact_kind": row.get("contact_kind") or row.get("identity_kind"),
+                "value_text": row.get("value_text") or row.get("address_normalized"),
+            }
+        )
+    return slim[:16]
+
+
 def _person_fact_items(person_context: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     focals = list(person_context.get("focal_subjects") or [])
@@ -1020,8 +1075,10 @@ def _person_fact_items(person_context: dict[str, Any]) -> list[dict[str, Any]]:
             "birth_date": card.get("birth_date"),
             "death_date": card.get("death_date"),
             "age_at_period": card.get("age_at_period"),
-            "aliases": card.get("aliases") or [],
-            "communication_identities": card.get("communication_identities") or [],
+            "aliases": _canonical_alias_texts(card.get("aliases") or []),
+            "communication_identities": _slim_comm_identities_for_facts(
+                card.get("communication_identities") or []
+            ),
             "known_relationships": card.get("known_relationships") or [],
             "inferred_relationships": card.get("inferred_relationships") or [],
             "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],

@@ -1241,6 +1241,115 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=paste,
     )
+    from memorybox.ask.i11a.full_evidence_diagnostic import (
+        _canonical_alias_texts,
+        _person_fact_items,
+    )
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import format_trusted_fev2_paste
+
+    expand_aliases = [
+        {
+            "alias_text": "random header",
+            "actor_key": "comm_identity_expand",
+            "provenance": {"source": "comm_identity_header_alias"},
+        }
+        for _ in range(80)
+    ]
+    owner_aliases = [
+        {
+            "alias_text": "Peg Legg",
+            "actor_key": "owner",
+            "provenance": {"source": "person_profile"},
+        }
+    ]
+    _check(
+        "person_facts_drop_auto_expand_header_aliases",
+        _canonical_alias_texts(expand_aliases + owner_aliases) == ["Peg Legg"],
+        checks,
+        problems,
+        detail=_canonical_alias_texts(expand_aliases + owner_aliases),
+    )
+    fat_facts = _person_fact_items(
+        {
+            "focal_subjects": [
+                {
+                    "person_id": "p-peg",
+                    "display_name": "Peggy George",
+                    "aliases": expand_aliases + owner_aliases,
+                    "communication_identities": [
+                        {"contact_kind": "email", "value_text": "peggo417@hotmail.com"}
+                    ],
+                    "known_relationships": [],
+                    "inferred_relationships": [],
+                    "allowed_relationship_labels": ["sibling"],
+                }
+            ]
+        }
+    )
+    fat_body = str((fat_facts[0] or {}).get("body") or "")
+    _check(
+        "person_fact_item_omits_expand_alias_dump",
+        "Peg Legg" in fat_body
+        and "random header" not in fat_body
+        and "comm_identity_expand" not in fat_body,
+        checks,
+        problems,
+        detail=fat_body[:400],
+    )
+    starved = select_single_pass_items(
+        [
+            {
+                "source": "person",
+                "item_id": "person:huge",
+                "body": "x" * 200_000,
+                "facts": {"aliases": ["noise"] * 200},
+            },
+            {
+                "source": "email",
+                "item_id": "e-keep",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "body": "hello",
+            },
+        ],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=20_000,
+    )
+    starved_ids = {str(i.get("item_id")) for i in starved}
+    _check(
+        "fat_person_facts_do_not_starve_trusted_email",
+        "e-keep" in starved_ids,
+        checks,
+        problems,
+        detail=starved_ids,
+    )
+    trusted_paste = format_trusted_fev2_paste(
+        [
+            {
+                "source": "email",
+                "item_id": "email:992d6453-3376-425c-a62b-fa05db1b4a3e",
+                "evidence_id": "992d6453-3376-425c-a62b-fa05db1b4a3e",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "body": "wish list",
+            }
+        ],
+        ask="tell me about this person",
+        person_context={},
+    )
+    allowed_line = ""
+    for line in trusted_paste.splitlines():
+        if line.startswith("ALLOWED_EVIDENCE_IDS:"):
+            allowed_line = line
+            break
+    _check(
+        "trusted_fev2_paste_lists_real_evidence_ids",
+        "992d6453-3376-425c-a62b-fa05db1b4a3e" in allowed_line
+        and "email_1" not in allowed_line,
+        checks,
+        problems,
+        detail=allowed_line or trusted_paste[:400],
+    )
     empty_trusted = select_single_pass_items(
         items, trusted_addrs=set(), token_budget=50_000
     )
@@ -1285,7 +1394,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "resolve_peggy_plan" not in freeze_src
         and "person_ids=(str(person_id),)" in freeze_src
         and "PEGGY FULL-FIDELITY" not in freeze_src
-        and "format_cloud_paste" in freeze_src,
+        and "format_trusted_fev2_paste" in freeze_src,
         checks,
         problems,
     )
