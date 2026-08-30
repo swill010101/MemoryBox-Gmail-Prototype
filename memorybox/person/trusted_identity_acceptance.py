@@ -753,6 +753,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "checkout -B" in gate_txt
         and "reset --hard" in gate_txt
         and "cursor/p2-i11a-trusted-identity-retrieve-49da" in gate_txt
+        and "cursor/flightsim-trusted-identity-result-49da" in gate_txt
+        and "HEAD:%RESULT_BRANCH%" in gate_txt
         and "--force" not in gate_txt,
         checks,
         problems,

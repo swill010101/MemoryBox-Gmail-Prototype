@@ -4,6 +4,7 @@ REM Do not merge PR 74 or PR 76. Stop on Phase 1 failure — do not widen matchi
 REM Self-sync onto origin tip like address-centric (no force-push, no merge).
 setlocal
 set BRANCH=cursor/p2-i11a-trusted-identity-retrieve-49da
+set RESULT_BRANCH=cursor/flightsim-trusted-identity-result-49da
 set REPO_ROOT=%~dp0..
 pushd "%REPO_ROOT%" 2>nul
 if errorlevel 1 (
@@ -173,30 +174,38 @@ for %%F in ("%EVIDENCE_DIR%\FEV2_*.json") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\FEV2CHUNK_*.json") do if exist "%%F" git add -- "%%F"
 git diff --cached --quiet
 if not errorlevel 1 goto :eof
-git commit -m "%EVIDENCE_MSG%"
+git -c user.email=flightsim@memorybox.local -c user.name=FlightSim commit -m "%EVIDENCE_MSG%"
 if errorlevel 1 goto :eof
 for /f "delims=" %%B in ('git rev-parse --abbrev-ref HEAD') do set "EVIDENCE_BR=%%B"
 git fetch origin "%EVIDENCE_BR%"
 git pull --rebase origin "%EVIDENCE_BR%"
 if errorlevel 1 (
-  echo WARNING: rebase before evidence push failed. Do not force-push. Paste summaries on PR 77.
-  goto :eof
+  echo WARNING: rebase onto %EVIDENCE_BR% failed. Publishing HEAD to %RESULT_BRANCH% instead.
+  goto :publish_result
 )
 set PUSH_TRY=1
 set PUSH_SLEEP=4
 :evidence_push_retry
 git push -u origin "%EVIDENCE_BR%"
-if not errorlevel 1 goto evidence_push_ok
+if not errorlevel 1 goto publish_result
 if %PUSH_TRY% GEQ 5 (
-  echo WARNING: evidence commit not pushed. Paste PHASE1_SUMMARY / PHASE2_SUMMARY on PR 77.
-  goto :eof
+  echo WARNING: product-branch push failed. Publishing HEAD to %RESULT_BRANCH%.
+  goto :publish_result
 )
 echo evidence push retry %PUSH_TRY% in %PUSH_SLEEP%s
 timeout /t %PUSH_SLEEP% /nobreak >nul
 set /a PUSH_TRY+=1
 set /a PUSH_SLEEP*=2
 goto evidence_push_retry
-:evidence_push_ok
+:publish_result
+REM Fast-forward only — no force-push. Seeded at product tip so the first
+REM heartbeat/freeze commit can land even when #77 moved under the rebase.
+echo ===== publish evidence to origin/%RESULT_BRANCH% =====
+git push -u origin HEAD:%RESULT_BRANCH%
+if errorlevel 1 (
+  echo WARNING: result-branch push was not a fast-forward. Do not force-push.
+  echo Paste PHASE2_SUMMARY on PR 77 if it exists. Do not paste PHASE1_SUMMARY.
+)
 where gh >nul 2>nul
 if not errorlevel 1 (
   REM PHASE1_SUMMARY lists untrusted emails (ed.cox@...). Never body-file or
