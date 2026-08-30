@@ -70,9 +70,17 @@ if errorlevel 1 (
 )
 call :deliver_evidence "evidence(flightsim): trusted FEV2 Gemma+Sol reports"
 echo.
-echo PHASE 2 COMPLETE — Phase 3 chunking requires explicit authorization.
-echo Do not run chunk compare or model-per-chunk until Phase 3 is authorized.
-echo Paste PHASE2_SUMMARY. Reports: docs\test-output\trusted-full-evidence-v2\
+echo === Phase 3 chunk models (after Phase 2 verifier) ===
+python -m memorybox run-trusted-fev2-chunked-models --from-dir docs\test-output\trusted-full-evidence-v2
+if errorlevel 1 (
+  echo PHASE 3 CHUNK MODELS FAILED
+  echo Phase 2 reports above still stand. Re-run only chunk models, not Phase 1.
+  echo python -m memorybox run-trusted-fev2-chunked-models --from-dir docs\test-output\trusted-full-evidence-v2
+  exit /b 1
+)
+call :deliver_evidence "evidence(flightsim): trusted FEV2 + L1 chunk models"
+echo Cloud Sol needs MEMORYBOX_CLOUD_LLM_BASE_URL + MEMORYBOX_CLOUD_LLM_API_KEY + MEMORYBOX_CLOUD_LLM_MODEL
+echo Reports: docs\test-output\trusted-full-evidence-v2\
 goto :eof
 
 :deliver_evidence

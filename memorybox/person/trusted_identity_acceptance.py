@@ -729,9 +729,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("verify-trusted-identity-gate.py")
         < gate_txt.find("run-trusted-evidence-pipeline")
         < gate_txt.find("verify-trusted-fev2-reports.py")
-        and "run-trusted-fev2-chunked-models --from-dir" not in gate_txt
+        < gate_txt.find("run-trusted-fev2-chunked-models --from-dir")
         and "--authorize-phase3" not in gate_txt
-        and "Phase 3 chunking requires explicit authorization" in gate_txt
+        and "Phase 3 chunk models (after Phase 2 verifier)" in gate_txt
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
