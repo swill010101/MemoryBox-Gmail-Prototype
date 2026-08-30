@@ -3380,11 +3380,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     gi_txt = (
         __import__("pathlib").Path(__file__).resolve().parents[2] / ".gitignore"
     ).read_text(encoding="utf-8")
+    prep_cmd = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "flightsim-prepare-trusted-email-review.cmd"
+    ).read_text(encoding="utf-8", errors="replace")
     _check(
         "review_cli_and_gitignore_keep_paste_off_github",
         "prepare-trusted-email-review" in main_txt
         and "run-trusted-email-review-gemma" in main_txt
         and "trusted-email-review/**" in gi_txt,
+        checks,
+        problems,
+    )
+    _check(
+        "review_prepare_cmd_syncs_with_preset_commit_message",
+        "GIT_MERGE_AUTOEDIT=no" in prep_cmd
+        and "core.editor=true" in prep_cmd
+        and "--no-edit" in prep_cmd
+        and 'commit --no-edit -m "sync(flightsim):' in prep_cmd
+        and 'merge --no-edit -m "sync(flightsim):' in prep_cmd
+        and "GIT_EDITOR=true" in prep_cmd,
         checks,
         problems,
     )
