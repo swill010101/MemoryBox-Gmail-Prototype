@@ -1,0 +1,19 @@
+{
+  "fixture_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\FEV2_20260829T215848Z_3cf95fa4.json",
+  "paste_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\FEV2_paste_3cf95fa4.txt",
+  "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+  "item_count": 2,
+  "evidence_type_counts": {
+    "person": 1,
+    "email": 1
+  },
+  "trusted_addresses": [
+    "peggo417@hotmail.com"
+  ],
+  "email_evidence_ids": [
+    "992d6453-3376-425c-a62b-fa05db1b4a3e",
+    "email:992d6453-3376-425c-a62b-fa05db1b4a3e"
+  ],
+  "estimated_tokens": 241081,
+  "chunking": false
+}
