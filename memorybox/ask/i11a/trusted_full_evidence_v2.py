@@ -15,7 +15,6 @@ from typing import Any
 
 from memorybox.ask.i11a.full_evidence_diagnostic import (
     CHUNK_TRIGGER_TOKENS,
-    format_cloud_paste,
     format_item_block,
     normalize_retrieved,
     slim_person_context_for_model,
@@ -351,15 +350,47 @@ def format_trusted_fev2_paste(
     for it in ordered:
         allowed.extend(item_evidence_ids(it))
     allowed = list(dict.fromkeys(a for a in allowed if a))
-    head = [
+    slim = slim_person_context_for_model(person_context)
+
+    def _blocks(rows: list[dict[str, Any]]) -> list[str]:
+        out: list[str] = []
+        for it in rows:
+            clean = {
+                k: v
+                for k, v in it.items()
+                if k
+                not in {
+                    "content_fingerprint",
+                    "retrieved_index",
+                    "normalization",
+                    "raw_body_chars",
+                    "metadata",
+                }
+            }
+            out.append(format_item_block(clean))
+        return out
+
+    parts = [
         "Cite evidence_ids by copying these strings exactly.",
         "Do not invent placeholders such as email_1 or person_1.",
         "ALLOWED_EVIDENCE_IDS: " + ", ".join(allowed),
         "",
+        "Use only the Person context and evidence below. Do not invent facts.",
+        f"ASK: {ask}",
+        "",
+        "===== TRUSTED EMAIL EVIDENCE =====",
+        "",
+        *(_blocks(email_items) or ["(no trusted email in this freeze)"]),
+        "",
+        "===== PERSON CONTEXT =====",
+        "",
+        json.dumps(slim, indent=2, default=str, ensure_ascii=False),
+        "",
+        "===== OTHER EVIDENCE =====",
+        "",
+        *_blocks(other_items),
     ]
-    return "\n".join(head) + format_cloud_paste(
-        ordered, ask=ask, person_context=person_context
-    )
+    return "\n".join(parts).rstrip() + "\n"
 
 
 def score_email_grounding(

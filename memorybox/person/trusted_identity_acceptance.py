@@ -1380,6 +1380,47 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=fat_body[:400],
     )
+    rel_facts = _person_fact_items(
+        {
+            "focal_subjects": [
+                {
+                    "person_id": "p-peg",
+                    "display_name": "Peggy George",
+                    "aliases": owner_aliases,
+                    "known_relationships": [
+                        {
+                            "from_person_id": "p-peg",
+                            "to_person_id": f"p-{i}",
+                            "role_kind": "sibling",
+                            "provenance": {"dump": "x" * 200},
+                        }
+                        for i in range(80)
+                    ],
+                    "inferred_relationships": [
+                        {
+                            "from_person_id": "p-peg",
+                            "to_person_id": f"q-{i}",
+                            "role_kind": "friend",
+                            "provenance": {"dump": "y" * 200},
+                        }
+                        for i in range(80)
+                    ],
+                }
+            ]
+        }
+    )
+    rel_body = str((rel_facts[0] or {}).get("body") or "")
+    rel_known = (rel_facts[0] or {}).get("facts", {}).get("known_relationships") or []
+    rel_inf = (rel_facts[0] or {}).get("facts", {}).get("inferred_relationships") or []
+    _check(
+        "person_fact_item_caps_relationship_provenance",
+        len(rel_known) == 24
+        and len(rel_inf) == 12
+        and "dump" not in rel_body,
+        checks,
+        problems,
+        detail={"known": len(rel_known), "inferred": len(rel_inf)},
+    )
     starved = select_single_pass_items(
         [
             {
@@ -1526,7 +1567,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "single_pass_orders_email_before_person_in_model_prompt",
         prompt_order
         and str(prompt_order[0].get("source")) == "email"
-        and prompt_paste.lower().find("christmas wish list")
+        and "===== TRUSTED EMAIL EVIDENCE =====" in prompt_paste
+        and prompt_paste.find("christmas wish list")
+        < prompt_paste.find("===== PERSON CONTEXT =====")
+        and prompt_paste.find("christmas wish list")
         < prompt_paste.lower().find("person card"),
         checks,
         problems,

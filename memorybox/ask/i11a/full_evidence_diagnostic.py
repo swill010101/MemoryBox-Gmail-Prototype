@@ -1049,6 +1049,24 @@ def _canonical_alias_texts(aliases: Any, *, limit: int = 32) -> list[str]:
     return out
 
 
+def _slim_relationship_rows_for_facts(rows: Any, *, limit: int) -> list[dict[str, Any]]:
+    """Ids + role only. Provenance blobs must not eat the single-pass window."""
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "from_person_id": row.get("from_person_id"),
+                "to_person_id": row.get("to_person_id"),
+                "role_kind": row.get("role_kind"),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _slim_comm_identities_for_facts(rows: Any) -> list[dict[str, Any]]:
     slim: list[dict[str, Any]] = []
     for row in rows or []:
@@ -1079,8 +1097,12 @@ def _person_fact_items(person_context: dict[str, Any]) -> list[dict[str, Any]]:
             "communication_identities": _slim_comm_identities_for_facts(
                 card.get("communication_identities") or []
             ),
-            "known_relationships": card.get("known_relationships") or [],
-            "inferred_relationships": card.get("inferred_relationships") or [],
+            "known_relationships": _slim_relationship_rows_for_facts(
+                card.get("known_relationships") or [], limit=24
+            ),
+            "inferred_relationships": _slim_relationship_rows_for_facts(
+                card.get("inferred_relationships") or [], limit=12
+            ),
             "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],
         }
         body = json.dumps(facts, indent=2, default=str, ensure_ascii=False)
