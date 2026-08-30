@@ -741,10 +741,11 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("-Step Freeze")
         < gate_txt.find("-Step Pipeline")
         < gate_txt.find("-Step VerifyReports")
-        < gate_txt.find("-Step Chunks")
+        and "-Step Chunks" not in gate_txt
         and "trusted FEV2 freeze" in gate_txt
         and "--authorize-phase3" not in gate_txt
-        and "Phase 3 chunk models (after Phase 2 verifier)" in gate_txt
+        and "Phase 3 is not authorized" in gate_txt
+        and "Phase 3 chunk models (after Phase 2 verifier)" not in gate_txt
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
@@ -2732,6 +2733,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         classify_body_source,
         classify_review_authorship,
         group_conversations,
+        participation_exclusion_reason,
         plan_gemma_replay,
         propose_five_year_interval,
         render_model_paste,
@@ -2739,6 +2741,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         segment_review_body,
         _prepare_message,
     )
+    from memorybox.ask.authored import authored_email_text as _authored_text
     from datetime import datetime, timezone as _tz
 
     _html = classify_body_source(
@@ -2920,10 +2923,112 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "review_prep_keeps_short_quotes_and_forward_not_as_sender",
         any("Yes." in str(q.get("body") or "") for q in _fwd["quote_turns"])
-        and _fwd["lead"].startswith("See you."),
+        and _fwd["lead"].startswith("See you.")
+        and not any(
+            str(q.get("from") or "").startswith("Peggy") for q in _fwd["quote_turns"]
+        ),
         checks,
         problems,
         detail=_fwd,
+    )
+    _capped, _ = _authored_text(_long)
+    _uncapped, _ = _authored_text(_long, max_chars=None)
+    _check(
+        "review_prep_lossless_vs_capped_authored_helper",
+        "TAILUNIQUE" not in _capped
+        and "TAILUNIQUE" in _uncapped
+        and "TAILUNIQUE" in _seg_plain["lead"],
+        checks,
+        problems,
+        detail={"capped_len": len(_capped), "uncapped_len": len(_uncapped)},
+    )
+    _orig = segment_review_body(
+        "Ok.\n\n-----Original Message-----\nFrom: Sam Example <sam@example.test>\n"
+        "Sent: Mon, 1 Jan 2009 12:00:00 -0600\nSubject: X\n\nYes short.\n"
+    )
+    _dash_fwd = segment_review_body(
+        "Ok.\n\n-----Forwarded message-----\nFrom: Sam Example <sam@example.test>\n"
+        "Date: Mon, 1 Jan 2009 12:00:00 -0600\n\nUnique fwd body.\n"
+    )
+    _hdr = segment_review_body(
+        "Ok.\n\nFrom: Sam Example <sam@example.test>\nSent: Monday, January 1, 2009 12:00 PM\n"
+        "To: peg@example.test\n\nHeader-block unique.\n"
+    )
+    _nested = segment_review_body(
+        "Thanks.\n\nOn Mon, Jan 1, 2009 at 3:14 PM, Sam Example <sam@example.test> wrote:\n"
+        "Outer unique.\n\nOn Sun, Dec 31, 2008 at 9:00 AM, Pat Example <pat@example.test> wrote:\n"
+        "Nested unique inner.\n"
+    )
+    _inline = segment_review_body("See below.\n> inline unique quote\n")
+    _html_fwd = classify_body_source(
+        {
+            "body_html": (
+                "<p>See you.</p><p>Begin forwarded message:</p>"
+                "<p>From: Sam Example &lt;sam@example.test&gt;</p>"
+                "<p>Date: Mon, 1 Jan 2009 12:00:00 -0600</p>"
+                "<p>Yes unique html fwd.</p>"
+            )
+        }
+    )
+    _html_seg = segment_review_body(_html_fwd[1])
+    _check(
+        "review_prep_keeps_forward_original_header_nested_inline_html",
+        any("Yes short." in str(q.get("body") or "") for q in _orig["quote_turns"])
+        and any("Sam Example" in str(q.get("from") or "") for q in _orig["quote_turns"])
+        and any("1 Jan 2009" in str(q.get("when") or "") for q in _orig["quote_turns"])
+        and any("Unique fwd body." in str(q.get("body") or "") for q in _dash_fwd["quote_turns"])
+        and any("Header-block unique." in str(q.get("body") or "") for q in _hdr["quote_turns"])
+        and any("Nested unique inner." in str(q.get("body") or "") for q in _nested["quote_turns"])
+        and any("inline unique quote" in str(q.get("body") or "") for q in _inline["quote_turns"])
+        and _html_fwd[0] == "html_recovered"
+        and any("Yes unique html fwd." in str(q.get("body") or "") for q in _html_seg["quote_turns"])
+        and _orig["lead"] == "Ok."
+        and _inline["lead"] == "See below.",
+        checks,
+        problems,
+        detail={
+            "orig": _orig,
+            "dash": _dash_fwd,
+            "hdr": _hdr,
+            "nested": _nested,
+            "inline": _inline,
+            "html": _html_seg,
+        },
+    )
+    _same_subj = group_conversations(
+        [
+            LightRow(
+                evidence_id="u1",
+                sent_at=datetime(2009, 4, 1, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<u1@x>",
+                reply_ids=[],
+                from_addrs={"a@x.test"},
+                addresses={"a@x.test", "b@x.test"},
+                peggy_authored=False,
+                subject="Picnic",
+                skip=False,
+            ),
+            LightRow(
+                evidence_id="u2",
+                sent_at=datetime(2009, 4, 2, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<u2@x>",
+                reply_ids=[],
+                from_addrs={"b@x.test"},
+                addresses={"a@x.test", "b@x.test"},
+                peggy_authored=False,
+                subject="Re: Picnic",
+                skip=False,
+            ),
+        ]
+    )
+    _check(
+        "review_unrelated_shared_subject_is_uncertain_not_confirmed",
+        len(_same_subj) == 1 and _same_subj[0]["grouping"] == "uncertain",
+        checks,
+        problems,
+        detail=_same_subj,
     )
     _svc = classify_review_authorship(
         lead=(
@@ -2977,6 +3082,58 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_svc_user[:400],
     )
+    _weak = classify_review_authorship(
+        lead="See you Friday. Click unsubscribe if this was forwarded.",
+        from_trusted=True,
+    )
+    _check(
+        "review_weak_keyword_is_unresolved_not_service",
+        _weak["kind"] == "unresolved" and _weak["peggy_personal"] is False,
+        checks,
+        problems,
+        detail=_weak,
+    )
+    _greet = classify_review_authorship(
+        lead="Hi Sam — thanks. This is an automated notification. Do not reply to this email.",
+        from_trusted=True,
+    )
+    _check(
+        "review_personal_greeting_kept_beside_service_notice",
+        _greet["kind"] == "personal_plus_service"
+        and _greet["peggy_personal"] is True
+        and "Hi Sam" in _greet["personal_lead"],
+        checks,
+        problems,
+        detail=_greet,
+    )
+    _check(
+        "review_service_only_packet_excluded_unresolved_trusted_kept",
+        participation_exclusion_reason([_svc_msg])
+        == "service_only_no_personal_contribution"
+        and participation_exclusion_reason(
+            [
+                _prepare_message(
+                    "weak-1",
+                    {
+                        "sent_at": "2009-01-01T12:00:00Z",
+                        "from_parsed": [
+                            {"address": "peggo417@hotmail.com", "display_name": "Peg"}
+                        ],
+                        "from": "peggo417@hotmail.com",
+                        "body_text": (
+                            "Dinner Friday. Click unsubscribe if this was forwarded."
+                        ),
+                    },
+                    trusted={"peggo417@hotmail.com"},
+                    in_interval=True,
+                    packet_texts=[],
+                )
+            ]
+        )
+        is None,
+        checks,
+        problems,
+    )
     from memorybox.providers.llm._ollama_http import ollama_chat_request_payload
 
     _req = ollama_chat_request_payload(
@@ -3021,6 +3178,83 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_bad,
     )
+    _paste_hash = __import__("hashlib").sha256(
+        (_td / "MODEL_PASTE.txt").read_bytes()
+    ).hexdigest()
+    (_td / "SOURCE_MAP.json").write_text(
+        json.dumps(
+            {
+                "budget": {
+                    "capacity_certainty": "observed_env",
+                    "proposed_request": {
+                        "model": "gemma4:26b",
+                        "provider": "ollama",
+                        "num_ctx": 32768,
+                        "temperature": 0.1,
+                    },
+                    "prompt_tokens": 10,
+                    "usable_input_tokens": 28000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _plan_ok = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_serializes_reviewed_num_ctx",
+        _plan_ok.get("ok") is True
+        and ((_plan_ok.get("request_payload") or {}).get("options") or {}).get("num_ctx")
+        == 32768
+        and _plan_ok.get("provider") == "ollama"
+        and _plan_ok.get("chunking") is False,
+        checks,
+        problems,
+        detail=_plan_ok.get("request_payload"),
+    )
+    (_td / "SOURCE_MAP.json").write_text(
+        json.dumps(
+            {
+                "budget": {
+                    "capacity_certainty": "advertised_only",
+                    "proposed_request": {"num_ctx": 99991},
+                    "prompt_tokens": 10,
+                    "usable_input_tokens": 28000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _plan_adv = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_refuses_advertised_only_without_env",
+        _plan_adv.get("ok") is False
+        and "advertised_only" in str(_plan_adv.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_adv,
+    )
+    (_td / "SOURCE_MAP.json").write_text(
+        json.dumps(
+            {
+                "budget": {
+                    "capacity_certainty": "observed_env",
+                    "proposed_request": {"num_ctx": 8192},
+                    "prompt_tokens": 20000,
+                    "usable_input_tokens": 4000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _plan_big = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_refuses_oversize_without_truncate",
+        _plan_big.get("ok") is False
+        and "oversize" in str(_plan_big.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_big,
+    )
     from memorybox.ask.i11a.trusted_email_review import PreparedMessage
 
     _sys, _user, _cites = render_model_paste(
@@ -3054,6 +3288,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                             ],
                             "from": "peggo417@hotmail.com",
                         },
+                        authorship_kind="personal",
+                        peggy_personal=True,
                     ),
                     PreparedMessage(
                         evidence_id="ev-2",
@@ -3073,6 +3309,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                             ],
                             "from": "Rick <rick@x.test>",
                         },
+                        authorship_kind="quoted_or_other",
+                        peggy_personal=False,
                     ),
                 ],
             }
@@ -3112,6 +3350,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         ).prepare_trusted_email_review
     )
     replay_src = inspect.getsource(run_trusted_email_review_gemma)
+    plan_src = inspect.getsource(plan_gemma_replay)
+    replay_all = replay_src + "\n" + plan_src
     _check(
         "review_prepare_has_no_model_and_no_sample_cap",
         "models_called" in review_src
@@ -3124,13 +3364,13 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "review_replay_is_ollama_only_no_pipeline_no_refreeze",
-        '"provider": "ollama"' in replay_src
-        and "run_trusted_evidence_pipeline" not in replay_src
-        and "chunking" in replay_src
-        and "hash_mismatch" in replay_src
-        and "num_ctx" in replay_src
-        and "HistorianCloud" not in replay_src
-        and "_CloudOpenAICompatChat" not in replay_src,
+        '"provider": "ollama"' in replay_all
+        and "run_trusted_evidence_pipeline" not in replay_all
+        and "chunking" in replay_all
+        and "hash_mismatch" in replay_all
+        and "num_ctx" in replay_all
+        and "HistorianCloud" not in replay_all
+        and "_CloudOpenAICompatChat" not in replay_all,
         checks,
         problems,
     )
@@ -3151,8 +3391,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "review_gate_does_not_auto_prepare_or_run_models",
         "prepare-trusted-email-review" not in gate_txt
-        and "-Step Chunks" in gate_txt
-        and "Phase 3 chunk models (after Phase 2 verifier)" in gate_txt,
+        and "-Step Chunks" not in gate_txt
+        and "Phase 3 is not authorized" in gate_txt,
         checks,
         problems,
     )

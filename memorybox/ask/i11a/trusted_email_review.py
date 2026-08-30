@@ -614,6 +614,17 @@ _FWD_SPLIT = re.compile(
     r"|(?:\n|^)_{8,}\s*\nFrom:"
     r"|(?:\n|^)From:\s+.+\nSent:"
 )
+_FROM_LINE = re.compile(r"(?im)^from:\s*(.+)$")
+_DATE_LINE = re.compile(r"(?im)^(?:date|sent|sent at):\s*(.+)$")
+_ON_WROTE_WHEN = re.compile(
+    r"(?is)^On\s+(.+?)\s*,\s*[^,<\n]+(?:\s*<[^>]+>)?\s+wrote:\s*$"
+)
+_DELIM_LINE = re.compile(
+    r"(?i)^(?:begin forwarded message:|"
+    r"-{2,}\s*original message\s*-{2,}|"
+    r"-{2,}\s*forwarded message\s*-{2,}|"
+    r"_{8,})$"
+)
 _SERVICE_STRONG = (
     re.compile(r"(?i)\bthis is an automated (?:message|notification|email)\b"),
     re.compile(r"(?i)\bthis is an automatic notification\b"),
@@ -624,6 +635,124 @@ _SERVICE_WEAK = (
     re.compile(r"(?i)\btracking (?:number|code)\b"),
     re.compile(r"(?i)\byour (?:order|package|shipment) (?:has|is)\b"),
 )
+
+
+def _norm_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
+
+
+def _strip_leading_delimiters(text: str) -> str:
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    i = 0
+    while i < len(lines) and (
+        not lines[i].strip() or _DELIM_LINE.match(lines[i].strip())
+    ):
+        i += 1
+    return "\n".join(lines[i:]).strip()
+
+
+def _peel_header_block(text: str) -> tuple[str | None, str | None, str]:
+    """Peel leading From/Date/Sent/Subject lines. Does not invent speakers."""
+    raw = _strip_leading_delimiters(text or "")
+    lines = raw.split("\n")
+    speaker = None
+    when = None
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    consumed = False
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            consumed = True
+            break
+        fm = _FROM_LINE.match(line)
+        dt = _DATE_LINE.match(line)
+        if fm:
+            speaker = fm.group(1).strip() or speaker
+            consumed = True
+            i += 1
+            continue
+        if dt:
+            when = (dt.group(1).strip() or "")[:120] or when
+            consumed = True
+            i += 1
+            continue
+        if re.match(r"(?i)^(?:to|cc|bcc|subject|reply-to):\s+", line):
+            consumed = True
+            i += 1
+            continue
+        break
+    rest = "\n".join(lines[i:]).strip()
+    if not consumed:
+        return None, None, (text or "").strip()
+    return speaker, when, rest
+
+
+def _when_from_on_wrote(header: str) -> str | None:
+    m = _ON_WROTE_WHEN.match((header or "").strip())
+    if m:
+        return (m.group(1).strip() or "")[:80] or None
+    return None
+
+
+def _clean_quote_speaker(speaker: Any) -> str | None:
+    text = str(speaker or "").strip()
+    if not text:
+        return None
+    if re.search(r"(?i)forwarded message|original message|earlier message", text):
+        return None
+    return text
+
+
+def _extract_gt_quotes(lead: str) -> tuple[str, list[str]]:
+    authored: list[str] = []
+    quoted: list[str] = []
+    for line in (lead or "").splitlines():
+        match = re.match(r"^>+ ?(.*)$", line)
+        if match:
+            quoted.append(match.group(1))
+        else:
+            authored.append(line)
+    bundle = "\n".join(quoted).strip()
+    return "\n".join(authored).strip(), ([bundle] if bundle else [])
+
+
+def _packet_duplicate_source(body: str, priors: list[str]) -> str | None:
+    """Exact or long contained copy only. Short unique quotes stay."""
+    nb = _norm_ws(body)
+    if not nb:
+        return None
+    for idx, prior in enumerate(priors):
+        np = _norm_ws(prior)
+        if not np:
+            continue
+        if nb == np:
+            return f"packet_exact:{idx}"
+        if len(nb) >= 40 and nb in np:
+            return f"packet_contained:{idx}"
+    return None
+
+
+def _quote_turn(
+    *,
+    header: str | None,
+    speaker: str | None,
+    when: str | None,
+    body: str,
+    provenance: str,
+) -> dict[str, Any]:
+    return {
+        "header": header,
+        "from": speaker,
+        "when": when,
+        "body": body,
+        "provenance": provenance,
+        "uncertainty": (
+            "quoted_speaker_from_header" if speaker else "quoted_speaker_uncertain"
+        ),
+    }
 
 
 def segment_review_body(recovered: str) -> dict[str, Any]:
@@ -640,39 +769,48 @@ def segment_review_body(recovered: str) -> dict[str, Any]:
     if cut and cut.start() > 1:
         leftover = lead[cut.start() :].strip()
         lead = lead[: cut.start() - 1].strip()
+    lead, gt_quotes = _extract_gt_quotes(lead)
     quote_turns: list[dict[str, Any]] = []
-    if leftover:
+    for gt in gt_quotes:
         quote_turns.append(
-            {
-                "header": "forward_or_original_delimiter",
-                "from": None,
-                "when": None,
-                "body": leftover,
-                "provenance": "delimiter_cut_from_lead",
-                "uncertainty": "quoted_speaker_uncertain",
-            }
+            _quote_turn(
+                header="inline_gt_quote",
+                speaker=None,
+                when=None,
+                body=gt,
+                provenance="gt_quoted_lines",
+            )
+        )
+    if leftover:
+        speaker, when, rest = _peel_header_block(leftover)
+        quote_turns.append(
+            _quote_turn(
+                header="forward_or_original_delimiter",
+                speaker=_clean_quote_speaker(speaker),
+                when=when,
+                body=rest or leftover,
+                provenance="delimiter_cut_from_lead",
+            )
         )
     for turn in turns[1:]:
         body = str((turn or {}).get("body") or "").strip()
         header = str((turn or {}).get("header") or "") or None
-        speaker = (turn or {}).get("from")
-        if speaker and re.search(
-            r"(?i)forwarded message|original message", str(speaker)
-        ):
-            speaker = None
+        speaker = _clean_quote_speaker((turn or {}).get("from"))
+        peeled_s, peeled_w, peeled_b = _peel_header_block(body)
+        if peeled_s:
+            speaker = speaker or _clean_quote_speaker(peeled_s)
+        when = peeled_w or _when_from_on_wrote(header or "")
+        body = peeled_b or body
         if not body and not header:
             continue
         quote_turns.append(
-            {
-                "header": header,
-                "from": speaker,
-                "when": None,
-                "body": body,
-                "provenance": "quoted_turn_parser",
-                "uncertainty": (
-                    "quoted_speaker_from_header" if speaker else "quoted_speaker_uncertain"
-                ),
-            }
+            _quote_turn(
+                header=header,
+                speaker=speaker,
+                when=when,
+                body=body,
+                provenance="quoted_turn_parser",
+            )
         )
     return {"lead": lead, "quote_turns": quote_turns}
 
@@ -774,11 +912,7 @@ def _prepare_message(
         body = str(qt.get("body") or "").strip()
         if not body:
             continue
-        retained_in = None
-        for prior in packet_texts:
-            if body and body in prior:
-                retained_in = "packet_duplicate"
-                break
+        retained_in = _packet_duplicate_source(body, packet_texts)
         if retained_in:
             dedupe.append(
                 {
@@ -811,6 +945,17 @@ def _prepare_message(
         quote_dedupe=dedupe,
         service_body=str(auth.get("service_body") or ""),
     )
+
+
+def participation_exclusion_reason(msgs: list[PreparedMessage]) -> str | None:
+    """Exclude service-only packets. Keep unresolved trusted-From as flagged."""
+    if any(m.peggy_personal for m in msgs):
+        return None
+    if any(m.peggy_authored and m.authorship_kind == "unresolved" for m in msgs):
+        return None
+    if any(m.authorship_kind == "service_generated" for m in msgs):
+        return "service_only_no_personal_contribution"
+    return "no_attributable_personal_contribution"
 
 
 def inspect_gemma_context(model: str = ESTABLISHED_GEMMA_MODEL) -> dict[str, Any]:
@@ -1019,9 +1164,11 @@ def render_model_paste(
                     qfrom = qt.get("from") or "quoted speaker uncertain"
                     qhead = qt.get("header") or ""
                     lines.append("")
+                    qwhen = qt.get("when") or "date uncertain"
                     lines.append(
                         f"[quoted/forwarded — not the enclosing sender; "
                         f"attribution={qfrom}; "
+                        f"when={qwhen}; "
                         f"uncertainty={qt.get('uncertainty')}; "
                         f"header={qhead}]"
                     )
@@ -1206,12 +1353,13 @@ def prepare_trusted_email_review(
                 packet_texts.append(msg.quoted)
             body_counts[msg.body_kind] = int(body_counts.get(msg.body_kind) or 0) + 1
             msgs.append(msg)
-        if not any(m.peggy_personal for m in msgs):
+        exclude = participation_exclusion_reason(msgs)
+        if exclude:
             excluded_service.append(
                 {
                     "grouping": g.get("grouping"),
                     "message_ids": [m.evidence_id for m in msgs],
-                    "reason": "no_attributable_personal_contribution",
+                    "reason": exclude,
                     "authorship": [m.authorship_kind for m in msgs],
                 }
             )

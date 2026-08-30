@@ -129,7 +129,7 @@ if errorlevel 1 (
   echo Paste the PHASE2_SUMMARY block printed above.
   echo If gemma error is ollama_model_missing: ollama pull gemma4:26b
   echo If sol error is cloud_sol_not_configured / no_sol_model: set MEMORYBOX_CLOUD_LLM_* in config\memorybox_app.env
-  echo Phase 3 waits until Phase 2 verifier PASSes.
+  echo Phase 3 is not authorized. Do not run chunk compare or model-per-chunk.
   call :deliver_evidence "evidence(flightsim): pipeline stop (Phase 2 incomplete)"
   exit /b 1
 )
@@ -141,15 +141,8 @@ if errorlevel 1 (
 )
 call :deliver_evidence "evidence(flightsim): trusted FEV2 Gemma+Sol reports"
 echo.
-echo === Phase 3 chunk models (after Phase 2 verifier) ===
-"%PS_REAL%" -NoProfile -ExecutionPolicy Bypass -File "%PROVE_PS1%" -Step Chunks
-if errorlevel 1 (
-  echo PHASE 3 CHUNK MODELS FAILED
-  echo Phase 2 reports above still stand. Re-run only chunk models, not Phase 1.
-  echo python -m memorybox run-trusted-fev2-chunked-models --from-dir docs\test-output\trusted-full-evidence-v2
-  exit /b 1
-)
-call :deliver_evidence "evidence(flightsim): trusted FEV2 + L1 chunk models"
+echo === Phase 2 complete. Phase 3 is not authorized. ===
+echo Do not run chunk compare or model-per-chunk until Tom authorizes Phase 3.
 echo Paste PHASE2_SUMMARY. Do not paste PHASE1_SUMMARY emails into cmd.
 echo Cloud Sol needs MEMORYBOX_CLOUD_LLM_BASE_URL + MEMORYBOX_CLOUD_LLM_API_KEY + MEMORYBOX_CLOUD_LLM_MODEL
 echo Reports: docs\test-output\trusted-full-evidence-v2\
