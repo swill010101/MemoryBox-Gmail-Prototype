@@ -3197,6 +3197,30 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_mention,
     )
+    _footer_only = classify_review_authorship(
+        lead=(
+            ("Family seasonal paragraph. " * 50)
+            + "This is an automated notification. Do not reply to this email."
+        ),
+        from_trusted=True,
+    )
+    _ecard_no_footer = classify_review_authorship(
+        lead=(
+            "You have received an e-card greeting. "
+            "Click here to view your greeting."
+        ),
+        from_trusted=True,
+    )
+    _check(
+        "review_footer_or_ecard_signals_are_not_personal_without_greeting",
+        _footer_only["kind"] == "service_generated"
+        and _footer_only["peggy_personal"] is False
+        and _ecard_no_footer["kind"] == "service_generated"
+        and _ecard_no_footer["peggy_personal"] is False,
+        checks,
+        problems,
+        detail={"footer_only": _footer_only, "ecard_no_footer": _ecard_no_footer},
+    )
     _keep_q = _prepare_message(
         "keep-q",
         {
@@ -3553,15 +3577,17 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
     )
     _check(
-        "review_prepare_cmd_syncs_with_preset_commit_message",
+        "review_prepare_cmd_refuses_unrelated_merge_and_rebase_fallback",
         "GIT_MERGE_AUTOEDIT=no" in prep_cmd
         and "core.editor=true" in prep_cmd
         and "--no-edit" in prep_cmd
-        and 'commit --no-edit -m "sync(flightsim):' in prep_cmd
-        and 'merge --no-edit -m "sync(flightsim):' in prep_cmd
         and "GIT_EDITOR=true" in prep_cmd
         and "abbrev-ref" in prep_cmd
-        and "Will not finish a merge or prepare on the wrong branch." in prep_cmd,
+        and "Will not finish a merge or prepare on the wrong branch." in prep_cmd
+        and "Will not fall back to merge" in prep_cmd
+        and "Will not commit --continue" in prep_cmd
+        and 'commit --no-edit -m "sync(flightsim):' not in prep_cmd
+        and 'merge --no-edit -m "sync(flightsim):' not in prep_cmd,
         checks,
         problems,
     )

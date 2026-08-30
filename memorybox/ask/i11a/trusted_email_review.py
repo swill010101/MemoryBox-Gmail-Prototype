@@ -636,9 +636,21 @@ _SERVICE_WEAK = (
     re.compile(r"(?i)\byour (?:order|package|shipment) (?:has|is)\b"),
 )
 _SHORT_GREETING = re.compile(
-    r"(?is)^\s*(?:hi|hello|hey|thanks|thank you|dear)\b[\s\S]{0,120}$"
+    r"(?is)^\s*(?:hi|hello|hey|thanks|thank you|dear|love|"
+    r"good (?:morning|afternoon|evening))\b[\s\S]{0,120}$"
 )
 _MAX_GREETING_CHARS = 160
+# Card-send / view / notification phrasing — not a brand-name blacklist.
+_SERVICE_NOTIFICATION = (
+    re.compile(r"(?i)\be-?cards?\b"),
+    re.compile(r"(?i)\bsent you (?:a|an)\b.{0,80}\b(?:e-?card|greeting card|card)\b"),
+    re.compile(
+        r"(?i)\byou (?:have )?received (?:a|an)\b.{0,80}\b(?:e-?card|greeting card)\b"
+    ),
+    re.compile(r"(?i)\bview your (?:e-?card|greeting card|card|greeting)\b"),
+    re.compile(r"(?i)\bclick (?:here|the link|below) to (?:view|see|open)\b"),
+    re.compile(r"(?i)\bgreeting card (?:was |has been )?(?:sent|delivered)\b"),
+)
 
 
 def _norm_ws(text: str) -> str:
@@ -826,7 +838,21 @@ def _looks_like_short_personal_greeting(text: str) -> bool:
         return False
     if any(pat.search(t) for pat in _SERVICE_STRONG):
         return False
+    if looks_like_service_notification(t):
+        return False
     return bool(_SHORT_GREETING.match(t))
+
+
+def service_notification_signal_count(text: str) -> int:
+    return sum(1 for pat in _SERVICE_NOTIFICATION if pat.search(text or ""))
+
+
+def looks_like_service_notification(text: str) -> bool:
+    """E-card / view-link notification language. Not a brand-name delete."""
+    body = text or ""
+    hits = service_notification_signal_count(body)
+    strong = any(pat.search(body) for pat in _SERVICE_STRONG)
+    return hits >= 2 or (hits >= 1 and strong)
 
 
 def classify_review_authorship(
@@ -852,6 +878,13 @@ def classify_review_authorship(
                 "personal_lead": prefix,
                 "service_body": text[split_at:].strip(),
             }
+        return {
+            "kind": "service_generated",
+            "peggy_personal": False,
+            "personal_lead": "",
+            "service_body": text,
+        }
+    if looks_like_service_notification(text):
         return {
             "kind": "service_generated",
             "peggy_personal": False,
@@ -924,7 +957,9 @@ def _prepare_message(
         if not body:
             continue
         q_auth = classify_review_authorship(lead=body, from_trusted=False)
-        if q_auth["kind"] in {"service_generated", "personal_plus_service"}:
+        if q_auth["kind"] in {"service_generated", "personal_plus_service"} or (
+            looks_like_service_notification(body)
+        ):
             dedupe.append(
                 {
                     "body": body,

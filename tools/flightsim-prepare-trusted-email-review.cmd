@@ -18,13 +18,9 @@ if /I not "%CUR_BR%"=="%BRANCH%" (
   exit /b 1
 )
 if exist ".git\MERGE_HEAD" (
-  echo Finishing in-progress merge on %BRANCH% with a preset message.
-  git -c core.editor=true commit --no-edit -m "sync(flightsim): finish merge of origin/%BRANCH% for trusted email review prepare"
-  if errorlevel 1 (
-    echo ERROR: in-progress merge could not be committed. Do not run Gemma.
-    git status
-    exit /b 1
-  )
+  echo ERROR: in-progress merge on this tree. Will not commit --continue or prepare. Resolve or abort locally.
+  git status
+  exit /b 1
 )
 git fetch origin %BRANCH%
 if errorlevel 1 (
@@ -33,16 +29,12 @@ if errorlevel 1 (
 )
 git -c core.editor=true pull --rebase --no-edit origin %BRANCH%
 if errorlevel 1 (
-  echo Rebase not clean. Aborting rebase, then merging with a preset message.
+  echo ERROR: rebase not clean. Aborting rebase. Will not fall back to merge. Do not run Gemma.
   if exist ".git\REBASE_HEAD" git rebase --abort
   if exist ".git\rebase-merge" git rebase --abort
   if exist ".git\rebase-apply" git rebase --abort
-  git -c core.editor=true merge --no-edit -m "sync(flightsim): origin/%BRANCH% for trusted email review prepare" origin/%BRANCH%
-  if errorlevel 1 (
-    echo ERROR: sync failed. Do not force-push. Do not run Gemma.
-    git status
-    exit /b 1
-  )
+  git status
+  exit /b 1
 )
 git rev-parse HEAD
 set MEMORYBOX_P1_RUNTIME_HOST=1
