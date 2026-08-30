@@ -3271,6 +3271,194 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail={"kept": _mixed_kept, "quoted": _mixed_msg.quoted, "dedupe": _mixed_msg.quote_dedupe},
     )
+    _card_notice = (
+        "You received an e-card greeting.\n"
+        "View your e-card\n"
+        "Click here to view your greeting.\n"
+        "https://notify.example.test/click?utm_source=ecard\n"
+        "Home | Cards | Gifts\n"
+        "Unsubscribe | Privacy Policy\n"
+        "This is an automated notification. Do not reply to this email.\n"
+    )
+    _card_wrap = _prepare_message(
+        "card-wrap",
+        {
+            "sent_at": "2013-05-12T15:00:00Z",
+            "subject": "A card for you",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "Thinking of you this week.\n\n"
+                + _card_notice
+                + "\n-----Original Message-----\n"
+                "From: Card Notice <notice@cards.example.test>\n"
+                "Sent: Sun, 12 May 2013 10:00:00 +0000\n\n"
+                + _card_notice
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _card_reply = _prepare_message(
+        "card-reply",
+        {
+            "sent_at": "2013-05-12T18:00:00Z",
+            "subject": "Re: A card for you",
+            "from_parsed": [{"address": "sam@example.test", "display_name": "Sam"}],
+            "from": "Sam <sam@example.test>",
+            "body_text": (
+                "That was sweet — thank you.\n\n"
+                "> Thinking of you this week.\n"
+                "> You received an e-card greeting.\n"
+                "> View your e-card\n"
+                "> https://notify.example.test/click?utm_source=ecard\n"
+                "> Unsubscribe | Privacy Policy\n"
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[_card_wrap.authored, _card_wrap.quoted],
+    )
+    _, _card_user, _card_cites = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2011-01-01", "end": "2015-12-31"},
+        conversations=[
+            {
+                "grouping": "confirmed",
+                "grouping_detail": "shared_thread_id_or_in_reply_to_match",
+                "messages": [_card_wrap, _card_reply],
+            }
+        ],
+    )
+    _card_low = _card_user.lower()
+    _check(
+        "review_hallmark_thread_keeps_wrapper_strips_template_and_dupes",
+        _card_wrap.authorship_kind == "personal"
+        and _card_wrap.peggy_personal is True
+        and participation_exclusion_reason([_card_wrap, _card_reply]) is None
+        and "Thinking of you this week." in _card_user
+        and "That was sweet — thank you." in _card_user
+        and "[email_1]" in _card_user
+        and "[email_2]" in _card_user
+        and {_c.get("cite_as") for _c in _card_cites} == {"email_1", "email_2"}
+        and "view your e-card" not in _card_low
+        and "unsubscribe" not in _card_low
+        and "notify.example.test" not in _card_low
+        and "utm_source" not in _card_low
+        and "home | cards" not in _card_low
+        and _card_user.count("Thinking of you this week.") == 1
+        and "I mailed a Hallmark card Friday after the party." 
+        in _prepare_message(
+            "card-mention",
+            {
+                "sent_at": "2013-05-13T12:00:00Z",
+                "from_parsed": [
+                    {"address": "peggo417@hotmail.com", "display_name": "Peg"}
+                ],
+                "from": "peggo417@hotmail.com",
+                "body_text": "I mailed a Hallmark card Friday after the party.",
+            },
+            trusted={"peggo417@hotmail.com"},
+            in_interval=True,
+            packet_texts=[],
+        ).authored,
+        checks,
+        problems,
+        detail={
+            "wrap_kind": _card_wrap.authorship_kind,
+            "wrap_authored": _card_wrap.authored,
+            "wrap_quoted": _card_wrap.quoted,
+            "wrap_dedupe": _card_wrap.quote_dedupe,
+            "reply_quoted": _card_reply.quoted,
+            "paste_tail": _card_user[-600:],
+        },
+    )
+    _newsletter = (
+        "<table><tr><td>SHOP NOW | Home | Deals</td></tr></table>\n"
+        "Huge sale this weekend click "
+        "https://track.example.test/c?utm_campaign=sale\n"
+        "You are receiving this email because you subscribed.\n"
+        "Unsubscribe | Privacy Policy | Terms\n"
+        "© 2014 Example Shop. All rights reserved.\n"
+    )
+    _fwd_news = _prepare_message(
+        "fwd-news",
+        {
+            "sent_at": "2014-03-08T12:00:00Z",
+            "subject": "Fwd: Weekend sale",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "FYI — this is the store update I mentioned.\n\n"
+                "---------- Forwarded message ----------\n"
+                "From: Store Newsletter <news@shop.example.test>\n"
+                "Date: Sat, 8 Mar 2014 09:00:00 +0000\n"
+                "Subject: Weekend sale\n\n"
+                + _newsletter
+                + "\nOn Fri, 7 Mar 2014, Store Newsletter wrote:\n"
+                "You are receiving this email because you subscribed.\n"
+                "Unsubscribe | Privacy Policy\n"
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _, _news_user, _news_cites = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2011-01-01", "end": "2015-12-31"},
+        conversations=[
+            {
+                "grouping": "singleton",
+                "grouping_detail": "identified_message_id_no_reply_edge",
+                "messages": [_fwd_news],
+            }
+        ],
+    )
+    _news_low = _news_user.lower()
+    _check(
+        "review_forwarded_newsletter_keeps_fyi_strips_chrome",
+        _fwd_news.authorship_kind == "personal"
+        and _fwd_news.peggy_personal is True
+        and participation_exclusion_reason([_fwd_news]) is None
+        and "FYI — this is the store update I mentioned." in _news_user
+        and "[email_1]" in _news_user
+        and {_c.get("cite_as") for _c in _news_cites} == {"email_1"}
+        and "shop now" not in _news_low
+        and "unsubscribe" not in _news_low
+        and "privacy policy" not in _news_low
+        and "all rights reserved" not in _news_low
+        and "you are receiving this email" not in _news_low
+        and "track.example.test" not in _news_low
+        and "utm_campaign" not in _news_low
+        and "<table" not in _news_low
+        and "huge sale" not in _news_low,
+        checks,
+        problems,
+        detail={
+            "kind": _fwd_news.authorship_kind,
+            "authored": _fwd_news.authored,
+            "quoted": _fwd_news.quoted,
+            "dedupe": _fwd_news.quote_dedupe,
+            "paste_tail": _news_user[-600:],
+        },
+    )
+    _five_src = inspect.getsource(propose_five_year_interval)
+    _check(
+        "review_five_year_grouping_is_not_sanitation",
+        "Retrieval-window control" in _five_src
+        and "Not a substitute for evidence-packet sanitation" in _five_src
+        and _prop.get("ok") is True
+        and str(_prop.get("start") or "").startswith("2008"),
+        checks,
+        problems,
+        detail=_prop,
+    )
     _cst = _payload_sort_key(
         "b", {"sent_at": "2009-01-01T10:00:00-06:00"}
     )

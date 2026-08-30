@@ -336,6 +336,7 @@ def inventory_trusted_email_light(
 
 
 def propose_five_year_interval(rows: list[LightRow]) -> dict[str, Any]:
+    """Retrieval-window control. Not a substitute for evidence-packet sanitation."""
     dated = [r for r in rows if r.sent_at is not None]
     if not dated:
         return {"ok": False, "error": "no_dated_trusted_email"}
@@ -762,6 +763,256 @@ _SERVICE_NOTIFICATION = (
     ),
 )
 _MAX_SALVAGE_CHARS = 200
+_SANITIZE_MAX_DEPTH = 6
+_URL_TOKEN = re.compile(r"(?i)https?://[^\s<>\"']+")
+_TRACKING_MARK = re.compile(
+    r"(?i)(?:[?&](?:utm_[a-z]+|gclid|fbclid|mc_[a-z]+)=|/click\?|/c\?utm_)"
+)
+_NAV_LINE = re.compile(
+    r"(?i)^(?:home|shop|store|cards?|gifts?|deals|sale|account|help|"
+    r"contact|about|blog|cart)"
+    r"(?:\s*[|•·/]\s*(?:home|shop|store|cards?|gifts?|deals|sale|"
+    r"account|help|contact|about|blog|cart))+\s*$"
+)
+_PROMO_CTA_LINE = re.compile(
+    r"(?i)^\s*(?:shop now|buy now|order now|add to cart|"
+    r"limited time(?: only)?|use code\b[\w\s-]*|free shipping|"
+    r"save \d+%|\d+%\s*off|"
+    r"view (?:this )?(?:email )?in (?:your )?(?:a )?browser)\s*"
+    r"(?:[|•·].*)?$"
+)
+_UNSUB_LEGAL_LINE = re.compile(
+    r"(?i)^\s*(?:"
+    r"(?:to\s+)?(?:click\s+)?(?:here\s+to\s+)?unsubscribe\b|"
+    r"unsubscribe\s*[|/]\s*(?:privacy|preferences|manage|terms)|"
+    r"privacy(?:\s+policy)?\s*[|/]|"
+    r"view (?:this )?(?:email )?in (?:your )?(?:a )?browser|"
+    r"you are receiving this (?:email|message) because|"
+    r"(?:copyright\s+)?©\s*\d{4}|"
+    r"all rights reserved|"
+    r"manage (?:your )?(?:email )?preferences|"
+    r"this email was sent to|"
+    r"update your (?:email )?preferences|"
+    r"terms(?:\s+of\s+(?:use|service))?\s*[|/]"
+    r")"
+)
+_PROMO_REMAINDER = re.compile(
+    r"(?i)\b(?:shop now|limited time|use code|%\s*off|weekend sale|"
+    r"add to cart|order now|free shipping|view in browser|huge sale)\b"
+)
+_PERSONAL_VOICE = re.compile(
+    r"(?i)\b(?:i|i['’]m|i['’]ve|i['’]ll|we|we['’]re|my|our)\b"
+)
+
+
+def _is_tracking_url(url: str) -> bool:
+    return bool(_TRACKING_MARK.search(url or ""))
+
+
+def _strip_tracking_urls(text: str) -> str:
+    return _URL_TOKEN.sub(
+        lambda m: "" if _is_tracking_url(m.group(0)) else m.group(0),
+        text or "",
+    )
+
+
+def _strip_leftover_html(text: str) -> str:
+    """Review-only cleanup of leftover promotional markup in already-recovered text."""
+    raw = text or ""
+    if "<" not in raw:
+        return raw
+    import html as htmlmod
+
+    cleaned = re.sub(r"(?is)<(script|style|head)\b[^>]*>.*?</\1>", " ", raw)
+    cleaned = re.sub(r"(?is)<!--.*?-->", " ", cleaned)
+    cleaned = re.sub(r"(?i)<br\s*/?>", "\n", cleaned)
+    cleaned = re.sub(r"(?i)</(p|div|tr|h[1-6]|li|table)>", "\n", cleaned)
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = htmlmod.unescape(re.sub(r"[ \t]+\n", "\n", cleaned))
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
+
+
+def _is_service_notice_line(line: str) -> bool:
+    """One notification line is enough. Does not blacklist brand names."""
+    if any(pat.search(line) for pat in _SERVICE_NOTIFICATION):
+        return True
+    if any(pat.search(line) for pat in _SERVICE_STRONG):
+        kept, omitted = extract_non_service_text(line)
+        return bool(omitted and not kept.strip())
+    return False
+
+
+def _is_contamination_line(line: str) -> bool:
+    s = (line or "").strip()
+    if not s:
+        return False
+    if re.fullmatch(r"https?://\S+", s) and _is_tracking_url(s):
+        return True
+    if _NAV_LINE.match(s) or _PROMO_CTA_LINE.match(s) or _UNSUB_LEGAL_LINE.match(s):
+        return True
+    return _is_service_notice_line(s)
+
+
+def strip_contamination_lines(text: str) -> str:
+    """Drop tracking, nav, unsub/legal, promo CTA, and service-notice lines."""
+    raw = _strip_leftover_html(text or "")
+    out: list[str] = []
+    for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        s = line.strip()
+        if not s:
+            out.append("")
+            continue
+        s = _strip_tracking_urls(s).strip()
+        s = re.sub(r"\s{2,}", " ", s).strip(" -|•·")
+        if not s or _is_contamination_line(s):
+            continue
+        kept, omitted = extract_non_service_text(s)
+        if omitted and kept:
+            out.append(kept)
+            continue
+        if omitted and not kept:
+            continue
+        out.append(s)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _has_newsletter_chrome(text: str) -> bool:
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if _NAV_LINE.match(s) or _UNSUB_LEGAL_LINE.match(s) or _PROMO_CTA_LINE.match(s):
+            return True
+        if any(_is_tracking_url(u) for u in _URL_TOKEN.findall(s)):
+            return True
+    return False
+
+
+def _has_personal_voice(text: str) -> bool:
+    t = text or ""
+    return bool(_PERSONAL_VOICE.search(t) or _looks_like_short_personal_greeting(t))
+
+
+def _block_is_disposable_service_or_promo(original: str, cleaned: str) -> bool:
+    """Quoted/forwarded block with no remaining human conversation."""
+    if not (cleaned or "").strip():
+        return True
+    kept, omitted = extract_non_service_text(cleaned)
+    if omitted and not kept.strip():
+        return True
+    if looks_like_service_notification(cleaned) and not kept.strip():
+        return True
+    if (
+        _has_newsletter_chrome(original)
+        and _PROMO_REMAINDER.search(cleaned)
+        and not _has_personal_voice(cleaned)
+    ):
+        return True
+    return False
+
+
+def sanitize_review_tree(
+    recovered: str,
+    *,
+    packet_texts: list[str] | None = None,
+    depth: int = 0,
+) -> dict[str, Any]:
+    """Recursively sanitize original, quoted, and forwarded segments."""
+    priors = packet_texts or []
+    if depth > _SANITIZE_MAX_DEPTH:
+        return {
+            "lead": strip_contamination_lines(recovered),
+            "quote_turns": [],
+            "omissions": [],
+        }
+    segmented = segment_review_body(recovered)
+    lead = strip_contamination_lines(segmented["lead"])
+    extra_quotes = list(segmented["quote_turns"])
+    if depth < _SANITIZE_MAX_DEPTH and lead and _FWD_SPLIT.search("\n" + lead):
+        again = segment_review_body(lead)
+        if again["quote_turns"]:
+            lead = strip_contamination_lines(again["lead"])
+            extra_quotes = list(again["quote_turns"]) + extra_quotes
+    omissions: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _accept_quote(qt: dict[str, Any], body: str) -> None:
+        nb = (body or "").strip()
+        if not nb:
+            return
+        fp = _norm_ws(nb)[:400]
+        if fp in seen:
+            omissions.append(
+                {
+                    "body": nb,
+                    "retained_source": "in_message_duplicate",
+                    "action": "omitted_duplicate",
+                }
+            )
+            return
+        src = _packet_duplicate_source(nb, priors)
+        if src:
+            omissions.append(
+                {
+                    "body": nb,
+                    "retained_source": src,
+                    "action": "omitted_duplicate",
+                }
+            )
+            return
+        seen.add(fp)
+        kept.append({**qt, "body": nb})
+
+    for qt in extra_quotes:
+        body = str(qt.get("body") or "").strip()
+        if not body:
+            continue
+        inner = sanitize_review_tree(body, packet_texts=priors, depth=depth + 1)
+        omissions.extend(inner.get("omissions") or [])
+        inner_lead = str(inner.get("lead") or "").strip()
+        inner_quotes = list(inner.get("quote_turns") or [])
+        if _block_is_disposable_service_or_promo(body, inner_lead) and not inner_quotes:
+            omissions.append(
+                {
+                    "body": body,
+                    "retained_source": "excluded_evaluation_service_notice",
+                    "action": "omitted_service_notice",
+                }
+            )
+            continue
+        if inner_lead:
+            if _block_is_disposable_service_or_promo(body, inner_lead):
+                omissions.append(
+                    {
+                        "body": inner_lead,
+                        "retained_source": "excluded_evaluation_service_notice",
+                        "action": "omitted_service_notice",
+                    }
+                )
+            else:
+                kept_q, omitted_q = extract_non_service_text(inner_lead)
+                if omitted_q and not kept_q:
+                    omissions.append(
+                        {
+                            "body": inner_lead,
+                            "retained_source": "excluded_evaluation_service_notice",
+                            "action": "omitted_service_notice",
+                        }
+                    )
+                else:
+                    if omitted_q and kept_q:
+                        omissions.append(
+                            {
+                                "body": omitted_q,
+                                "retained_source": "personal_portion_kept_in_quote",
+                                "action": "omitted_service_notice",
+                            }
+                        )
+                    _accept_quote(qt, kept_q if (omitted_q and kept_q) else inner_lead)
+        for nested in inner_quotes:
+            _accept_quote(nested, str(nested.get("body") or ""))
+    return {"lead": lead, "quote_turns": kept, "omissions": omissions}
 
 
 def _norm_ws(text: str) -> str:
@@ -1073,11 +1324,17 @@ def _prepare_message(
     packet_texts: list[str],
 ) -> PreparedMessage:
     kind, recovered = classify_body_source(payload)
-    segmented = segment_review_body(recovered)
-    lead = segmented["lead"]
-    quote_turns = list(segmented["quote_turns"])
+    tree = sanitize_review_tree(recovered, packet_texts=packet_texts)
+    lead = str(tree.get("lead") or "")
+    kept_quotes = list(tree.get("quote_turns") or [])
+    dedupe = list(tree.get("omissions") or [])
     from_trusted = message_is_peggy_authored(payload, trusted)
     auth = classify_review_authorship(lead=lead, from_trusted=from_trusted)
+    if not lead.strip():
+        raw_lead = segment_review_body(recovered)["lead"]
+        raw_auth = classify_review_authorship(lead=raw_lead, from_trusted=from_trusted)
+        if raw_auth["kind"] == "service_generated":
+            auth = raw_auth
     authored = auth["personal_lead"] if auth["kind"] != "service_generated" else ""
     if auth["kind"] == "personal_plus_service":
         authored = auth["personal_lead"]
@@ -1087,43 +1344,6 @@ def _prepare_message(
         authored = ""
     else:
         authored = lead
-    kept_quotes: list[dict[str, Any]] = []
-    dedupe: list[dict[str, Any]] = []
-    for qt in quote_turns:
-        body = str(qt.get("body") or "").strip()
-        if not body:
-            continue
-        kept_q, omitted_q = extract_non_service_text(body)
-        if omitted_q and not kept_q:
-            dedupe.append(
-                {
-                    "body": body,
-                    "retained_source": "excluded_evaluation_service_notice",
-                    "action": "omitted_service_notice",
-                }
-            )
-            continue
-        if omitted_q and kept_q:
-            dedupe.append(
-                {
-                    "body": omitted_q,
-                    "retained_source": "personal_portion_kept_in_quote",
-                    "action": "omitted_service_notice",
-                }
-            )
-            qt = {**qt, "body": kept_q}
-            body = kept_q
-        retained_in = _packet_duplicate_source(body, packet_texts)
-        if retained_in:
-            dedupe.append(
-                {
-                    "body": body,
-                    "retained_source": retained_in,
-                    "action": "omitted_duplicate",
-                }
-            )
-            continue
-        kept_quotes.append(qt)
     quoted = "\n\n".join(
         str(q.get("body") or "").strip() for q in kept_quotes if str(q.get("body") or "").strip()
     )
