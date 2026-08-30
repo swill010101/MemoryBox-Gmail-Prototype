@@ -2227,6 +2227,13 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
                 thread_id=str(payload.get("event_uid") or "") or None,
             )
         )
+        notes = getattr(plan, "notes", ()) or ()
+        if (
+            "trusted_full_evidence_v2" in notes
+            and int(limit) > 0
+            and len(hits) >= int(limit)
+        ):
+            break
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     total = len(hits)
     scan_note = (

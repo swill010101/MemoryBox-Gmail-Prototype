@@ -1550,7 +1550,8 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=out,
             complete_trusted=bool(getattr(args, "complete_trusted", False)),
         )
-        print(json.dumps(payload, indent=2, default=str), flush=True)
+        printed = {k: v for k, v in payload.items() if k != "fixture"}
+        print(json.dumps(printed, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "run-trusted-full-evidence-v2":

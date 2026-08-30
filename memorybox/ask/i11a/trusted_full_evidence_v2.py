@@ -198,6 +198,20 @@ def item_is_trusted_email(item: dict[str, Any], trusted: set[str]) -> bool:
     return bool(found & trusted_n)
 
 
+def _trim_fev2_email_payloads(hits: list[Any]) -> None:
+    """Cap HTML/text on the hit before normalize (200 full Takeout bodies)."""
+    n = SINGLE_PASS_EMAIL_BODY_CHARS
+    keys = ("body_text", "body_html", "html", "text", "snippet")
+    for hit in hits:
+        payload = getattr(hit, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        for key in keys:
+            val = payload.get(key)
+            if isinstance(val, str) and len(val) > n:
+                payload[key] = val[:n]
+
+
 def select_single_pass_items(
     items: list[dict[str, Any]],
     *,
@@ -672,18 +686,19 @@ def freeze_trusted_full_evidence_v2(
             "chunking": False,
         }
     if plan is None:
-        # Trusted email + established text only. Do not pull complete SMS or
-        # unbounded Immich — that hangs FlightSim.
+        # Year-fair trusted email + slim person. Calendar/story/journal/artifact
+        # scans stay off unless complete_trusted — FlightSim calendar paging
+        # loads every ICS payload_json before limit=12.
         plan = QueryPlan(
             original_ask=ask,
             effective_ask=ask,
             is_followup=False,
             want_photo=False,
             want_communication=True,
-            want_calendar=True,
-            want_story=True,
-            want_journal=True,
-            want_artifact=True,
+            want_calendar=complete_trusted,
+            want_story=complete_trusted,
+            want_journal=complete_trusted,
+            want_artifact=complete_trusted,
             want_visual=False,
             want_still=False,
             want_video=False,
@@ -696,9 +711,15 @@ def freeze_trusted_full_evidence_v2(
             temporal_windows=(),
             notes=("complete_comm_retrieve", "trusted_full_evidence_v2"),
         )
+    print(
+        f"fev2 freeze: person={person_id} trusted={sorted(trusted)} "
+        f"complete_trusted={complete_trusted} email_cap={SINGLE_PASS_EMAIL_RETRIEVE_CAP}",
+        flush=True,
+    )
     person_context = build_person_context(plan)
     from memorybox.ask import retrieve as R
 
+    print("fev2 freeze: year-fair trusted email light scan", flush=True)
     mail = list(
         R.search_email_messages(plan, limit=SINGLE_PASS_EMAIL_RETRIEVE_CAP) or []
     )
@@ -710,6 +731,11 @@ def freeze_trusted_full_evidence_v2(
             match_total = head.get("match_total")
         archive_email_n = int(match_total or archive_email_n)
     mail = cap_single_pass_retrieved_emails(mail)
+    _trim_fev2_email_payloads(mail)
+    print(
+        f"fev2 freeze: email archive={archive_email_n} sample={len(mail)}",
+        flush=True,
+    )
     cal = (
         list(R.search_calendar_events(plan, limit=12) or [])
         if plan.want_calendar
@@ -731,7 +757,12 @@ def freeze_trusted_full_evidence_v2(
         "photo_status": {"skipped": "single_pass_no_unbounded_immich"},
         "video_status": {"skipped": "single_pass_no_unbounded_immich"},
         "sms_status": {"skipped": "single_pass_no_unbounded_sms"},
+        "calendar_status": {
+            "skipped": None if cal else "single_pass_no_calendar_scan"
+        },
+        "story_status": {"skipped": None if stories else "single_pass_no_story_scan"},
     }
+    print("fev2 freeze: normalize + pack trusted email", flush=True)
     norm = normalize_retrieved(retrieved, person_context=person_context)
     budget = 1_000_000_000 if complete_trusted else token_budget
     items = select_single_pass_items(
@@ -783,6 +814,11 @@ def freeze_trusted_full_evidence_v2(
     fname = f"{prefix}_{body['built_at']}_{body['input_sha256'][:8]}.json"
     path = out / fname
     path.write_text(serialize_fixture_document(body), encoding="utf-8")
+    print(
+        f"fev2 freeze: wrote {path.name} selected_email={selected_email_n} "
+        f"tokens={body['estimated_tokens']}",
+        flush=True,
+    )
     paste_path = out / f"FEV2_paste_{body['input_sha256'][:8]}.txt"
     paste_path.write_text(paste, encoding="utf-8")
     manifest = {

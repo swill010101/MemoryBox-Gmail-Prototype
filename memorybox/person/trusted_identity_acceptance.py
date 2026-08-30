@@ -1756,8 +1756,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "search_calendar_events(plan, limit=12)" in freeze_src
         and "search_stories(plan, limit=12)" in freeze_src
         and "search_journals(plan, limit=12)" in freeze_src
+        and "want_calendar=complete_trusted" in freeze_src
+        and "single_pass_no_calendar_scan" in freeze_src
+        and "_trim_fev2_email_payloads" in freeze_src
         and "SINGLE_PASS_EMAIL_RETRIEVE_CAP" in freeze_src
         and "cap_single_pass_retrieved_emails" in freeze_src,
+        checks,
+        problems,
+    )
+    _check(
+        "freeze_cli_omits_fixture_dump",
+        'if k != "fixture"' in main_src
+        and "printed = {k: v for k, v in payload.items()" in main_src,
         checks,
         problems,
     )
