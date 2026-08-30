@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from typing import Any
 
 from memorybox.person.comm_identity import _header_records, corroborate_email_candidate
@@ -1611,6 +1612,61 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=remapped_ground,
     )
+    from pathlib import Path as _P
+
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        all_fixture_evidence_ids,
+        build_phase2_model_report,
+    )
+
+    _legacy_fx = (
+        _P("docs")
+        / "test-output"
+        / "trusted-full-evidence-v2"
+        / "FEV2_20260829T215848Z_3cf95fa4.json"
+    )
+    _legacy_rep = (
+        _P("docs")
+        / "test-output"
+        / "trusted-full-evidence-v2"
+        / "FEV2REPORT_ollama_gemma4-26b_3cf95fa4.json"
+    )
+    if _legacy_fx.is_file() and _legacy_rep.is_file():
+        _fx = json.loads(_legacy_fx.read_text(encoding="utf-8"))
+        _rep = json.loads(_legacy_rep.read_text(encoding="utf-8"))
+        _doc = {
+            "episodes": _rep.get("episodes"),
+            "claims": _rep.get("claims"),
+            "relationships": _rep.get("relationships"),
+            "narrator": _rep.get("narrator"),
+        }
+        _items = list(_fx.get("items") or [])
+        _rewritten = remap_placeholder_evidence_ids(_doc, _items)
+        _ground = validate_fev2_document(
+            _rewritten,
+            allowed_ids=all_fixture_evidence_ids(_items),
+            email_evidence_ids={str(x) for x in (_fx.get("email_evidence_ids") or [])},
+        )
+        _phase2 = build_phase2_model_report(
+            fixture=_fx,
+            document=_rewritten,
+            provider="ollama",
+            model="gemma4:26b",
+            grounding=_ground,
+        )
+        _check(
+            "remap_recovers_flightsim_gemma_placeholder_ids",
+            _phase2.get("ok") is True
+            and _phase2.get("email_reached_model_and_grounded_output") is True
+            and not (_phase2.get("invented_or_unsupported_claims") or []),
+            checks,
+            problems,
+            detail={
+                "ok": _phase2.get("ok"),
+                "invented": _ground.get("invented_evidence_ids"),
+                "cited": _ground.get("email_evidence_cited"),
+            },
+        )
     huge_mail = select_single_pass_items(
         [
             {
