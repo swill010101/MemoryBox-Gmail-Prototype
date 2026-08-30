@@ -726,8 +726,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "prove-trusted-identity-retrieval --flightsim" in gate_txt
         and "errorlevel 1" in gate_txt
         and "verify-trusted-identity-gate.py" in gate_txt
+        and "Phase 1 already PASS" in gate_txt
+        and "goto phase2_freeze" in gate_txt
         and gate_txt.find("prove-trusted-identity-retrieval")
-        < gate_txt.find("verify-trusted-identity-gate.py")
+        < gate_txt.find(":phase2_freeze")
         < gate_txt.find("freeze-trusted-full-evidence-v2")
         < gate_txt.find("run-trusted-evidence-pipeline")
         < gate_txt.find("verify-trusted-fev2-reports.py")

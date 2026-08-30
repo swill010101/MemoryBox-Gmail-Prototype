@@ -29,6 +29,15 @@ echo.
 echo === migrate ===
 python -m memorybox migrate
 echo.
+echo === Phase 1 (reuse green FlightSim gate; otherwise prove) ===
+if exist docs\test-output\trusted-full-evidence-v2\TRUSTED_IDENTITY_GATE.json (
+  python tools\verify-trusted-identity-gate.py
+  if not errorlevel 1 (
+    echo Phase 1 already PASS — skip archive prove so year-fair freeze / Gemma / Sol can start.
+    goto phase2_freeze
+  )
+  echo Existing Phase 1 gate failed verifier — re-prove. Do not widen matching.
+)
 echo === Phase 1 prove (trusted retrieve + Gallery report) ===
 python -m memorybox prove-trusted-identity-retrieval --flightsim
 if errorlevel 1 (
@@ -50,6 +59,7 @@ if errorlevel 1 (
   exit /b 1
 )
 call :deliver_evidence "evidence(flightsim): trusted-identity Phase 1 gate"
+:phase2_freeze
 echo.
 echo === Phase 2 freeze (commit before Gemma/Sol so a model timeout still leaves the fixture) ===
 python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs\test-output\trusted-full-evidence-v2

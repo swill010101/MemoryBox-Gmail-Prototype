@@ -62,7 +62,8 @@ The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
 `MEMORYBOX_ALLOW_DEV_DEFAULTS`, and defaults `MEMORYBOX_QDRANT_URL` to
 `http://127.0.0.1:6333` (same as address-centric prove.ps1). Clearing ALLOW_DEV
 drops the `:memory:` Qdrant fallback; without the URL, migrate/prove crash
-before the trusted report. Then: Phase 1 prove,
+before the trusted report. Then: if `TRUSTED_IDENTITY_GATE.json` already verifies, skip archive prove
+and start year-fair freeze. Otherwise Phase 1 prove,
 `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
 fakes), then `freeze-trusted-full-evidence-v2` (committed before models), then
 `run-trusted-evidence-pipeline` (reuses that year-fair freeze). Pipeline
