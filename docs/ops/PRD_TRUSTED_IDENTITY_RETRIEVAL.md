@@ -44,7 +44,9 @@ not acceptable for the I11A model benchmark.
 
 - Historian / I11B expansion
 - Gemma/Sol benchmark (Phase 2)
-- Chunking (Phase 3)
+- Chunking (Phase 3) — L1 units still apply; trusted FEV2 packs at
+  4k–12k tokens (not the 75k diagnostic default) so year-fair mail
+  becomes multiple thread/episode model calls.
 - Merging PR #74 / #76
 
 ## FlightSim (after pull)

@@ -1652,7 +1652,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                     }
                 ],
                 "subject": f"Note {i}",
-                "body": "planning dinner",
+                "body": ("planning dinner with family. " * 120),
                 "thread_id": f"t-{i // 4}",
             }
         )
@@ -1699,6 +1699,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         l1_cmp.get("ok") is True
         and not (l1_cmp.get("evidence_lost") or [])
         and "email_thread" in (l1_cmp.get("l1_unit_kinds") or {})
+        and int(l1_cmp.get("chunk_count") or 0) >= 2
         and int((l1_body.get("evidence_type_counts") or {}).get("email") or 0) >= 8,
         checks,
         problems,
@@ -2159,7 +2160,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _check(
         "chunk_compare_fails_closed_without_raising",
-        "l1_chunker" in compare_src and "except Exception" in compare_src,
+        "l1_chunker" in compare_src
+        and "except Exception" in compare_src
+        and "_fev2_l1_pack_kwargs" in compare_src,
         checks,
         problems,
     )

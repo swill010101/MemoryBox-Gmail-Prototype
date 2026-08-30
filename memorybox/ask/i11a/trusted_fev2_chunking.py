@@ -20,6 +20,20 @@ from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     validate_fev2_document,
 )
 
+# Diagnostic L1 defaults (75k–125k) collapse a year-fair freeze into one
+# model call. Phase 3 packs by thread/episode at a window Gemma can finish.
+FEV2_L1_PACK_MIN = 4_000
+FEV2_L1_PACK_MAX = 12_000
+FEV2_L1_PACK_OVERSHOOT = 20_000
+
+
+def _fev2_l1_pack_kwargs() -> dict[str, int]:
+    return {
+        "pack_target_min": FEV2_L1_PACK_MIN,
+        "pack_target_max": FEV2_L1_PACK_MAX,
+        "pack_overshoot_max": FEV2_L1_PACK_OVERSHOOT,
+    }
+
 
 def compare_chunked_vs_unchunked(fixture_path: Path | str) -> dict[str, Any]:
     """Partition by semantic units; report loss vs the frozen unchunked item set."""
@@ -41,6 +55,7 @@ def compare_chunked_vs_unchunked(fixture_path: Path | str) -> dict[str, Any]:
             items,
             person_context=data.get("person_context") or {},
             ask=str(data.get("ask") or ""),
+            **_fev2_l1_pack_kwargs(),
         )
     except Exception as exc:  # noqa: BLE001
         return {
@@ -118,6 +133,7 @@ def compare_chunked_vs_unchunked(fixture_path: Path | str) -> dict[str, Any]:
         "missing_semantic_unit_kinds": missing_kinds,
         "completeness_proof": proof,
         "chunking": True,
+        "pack_target_max": FEV2_L1_PACK_MAX,
         "model_calls": 0,
         "note": (
             "Structure-only compare. Run models per chunk only after both "
@@ -295,6 +311,7 @@ def run_provider_over_chunks(
         items,
         person_context=data.get("person_context") or {},
         ask=str(data.get("ask") or ""),
+        **_fev2_l1_pack_kwargs(),
     )
     docs: list[dict[str, Any]] = []
     per_chunk: list[dict[str, Any]] = []

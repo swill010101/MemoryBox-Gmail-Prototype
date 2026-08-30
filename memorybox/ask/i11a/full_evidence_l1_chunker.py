@@ -651,6 +651,7 @@ def build_chunk_manifest(
     compaction: dict[str, Any] | None = None,
     sms_rules: dict[str, Any] | None = None,
     proof: dict[str, Any] | None = None,
+    chunk_sizing: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     proof = proof or prove_chunk_completeness(items, chunks)
     return {
@@ -667,7 +668,8 @@ def build_chunk_manifest(
         },
         "compaction": compaction or {},
         "completeness_proof": proof,
-        "chunk_sizing": {
+        "chunk_sizing": chunk_sizing
+        or {
             "target_min_tokens": L1_CHUNK_TARGET_MIN,
             "target_max_tokens": L1_CHUNK_TARGET_MAX,
             "overshoot_max_tokens": L1_CHUNK_OVERSHOOT_MAX,
@@ -695,12 +697,23 @@ def run_l1_chunker(
     *,
     person_context: dict[str, Any] | None = None,
     ask: str = "",
+    pack_target_min: int | None = None,
+    pack_target_max: int | None = None,
+    pack_overshoot_max: int | None = None,
 ) -> dict[str, Any]:
     """Compact → L1 units → model chunks → completeness proof."""
     compacted, compaction = apply_safe_compaction(items)
     # Exact-dupe already applied upstream; keep key for report symmetry.
     units = build_l1_units(compacted)
-    chunks = pack_model_chunks(units)
+    target_min = int(pack_target_min or L1_CHUNK_TARGET_MIN)
+    target_max = int(pack_target_max or L1_CHUNK_TARGET_MAX)
+    overshoot_max = int(pack_overshoot_max or L1_CHUNK_OVERSHOOT_MAX)
+    chunks = pack_model_chunks(
+        units,
+        target_min=target_min,
+        target_max=target_max,
+        overshoot_max=overshoot_max,
+    )
     proof = prove_chunk_completeness(compacted, chunks)
     if not proof.get("ok"):
         raise RuntimeError(
@@ -741,6 +754,11 @@ def run_l1_chunker(
         compaction=compaction,
         sms_rules=sms_rules,
         proof=proof,
+        chunk_sizing={
+            "target_min_tokens": target_min,
+            "target_max_tokens": target_max,
+            "overshoot_max_tokens": overshoot_max,
+        },
     )
     return {
         "items": compacted,
