@@ -40,6 +40,7 @@ _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
 PERSON_FACT_TOKEN_CAP = 4_000
 MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
+SINGLE_PASS_EMAIL_RETRIEVE_CAP = 200
 SINGLE_PASS_EMAIL_BODY_CHARS = 2_500
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
 _PLACEHOLDER_EVIDENCE_ID = re.compile(
@@ -160,7 +161,8 @@ def select_single_pass_items(
                 email.append(_cap_single_pass_email_body(it))
         else:
             non_email.append(it)
-    email.sort(key=lambda i: str(i.get("sent_at") or i.get("start") or ""), reverse=True)
+    # Keep retrieve order (year-fair sample). Newest-only packing
+    # collapsed Peggy's archive to late spam after the person card ate budget.
     non_email.sort(
         key=lambda i: str(i.get("sent_at") or i.get("start") or i.get("timestamp") or ""),
         reverse=True,
@@ -537,7 +539,9 @@ def freeze_trusted_full_evidence_v2(
     person_context = build_person_context(plan)
     from memorybox.ask import retrieve as R
 
-    mail = list(R.search_email_messages(plan) or [])
+    mail = list(
+        R.search_email_messages(plan, limit=SINGLE_PASS_EMAIL_RETRIEVE_CAP) or []
+    )
     cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
     stories = list(R.search_stories(plan, limit=12) or []) if plan.want_story else []
     journals = list(R.search_journals(plan, limit=12) or []) if plan.want_journal else []
@@ -622,6 +626,12 @@ def freeze_trusted_full_evidence_v2(
     )
     selected_email_n = int(by_source.get("email") or 0)
     retrieved_email_n = len(mail)
+    if mail:
+        head = mail[0]
+        match_total = getattr(head, "match_total", None)
+        if match_total is None and isinstance(head, dict):
+            match_total = head.get("match_total")
+        retrieved_email_n = int(match_total or retrieved_email_n)
     coverage_ok = single_pass_email_coverage_ok(
         retrieved_email_n=retrieved_email_n,
         selected_email_n=selected_email_n,
