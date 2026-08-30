@@ -1466,7 +1466,55 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "retrieve_eligible_hits" not in freeze_src
         and "search_stories(plan, limit=12)" in freeze_src
         and "search_journals(plan, limit=12)" in freeze_src
-        and "SINGLE_PASS_EMAIL_RETRIEVE_CAP" in freeze_src,
+        and "SINGLE_PASS_EMAIL_RETRIEVE_CAP" in freeze_src
+        and "cap_single_pass_retrieved_emails" in freeze_src,
+        checks,
+        problems,
+    )
+    from memorybox.ask.retrieve import EvidenceHit
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        SINGLE_PASS_EMAIL_RETRIEVE_CAP,
+        cap_single_pass_retrieved_emails,
+    )
+
+    archive_hits = [
+        EvidenceHit(
+            evidence_id=f"e{year}-{i}",
+            evidence_kind="email_message",
+            summary=f"{year} {i}",
+            score=1.0,
+            excerpt="",
+            source="email_mbox",
+            sent_at=f"{year}-06-01T12:00:00Z",
+            channel="email",
+            match_total=400,
+        )
+        for year in range(2005, 2015)
+        for i in range(40)
+    ]
+    sampled = cap_single_pass_retrieved_emails(archive_hits)
+    sample_years = {(h.sent_at or "")[:4] for h in sampled}
+    _check(
+        "single_pass_year_fair_caps_complete_archive",
+        len(archive_hits) == 400
+        and len(sampled) == SINGLE_PASS_EMAIL_RETRIEVE_CAP
+        and sample_years == {str(y) for y in range(2005, 2015)},
+        checks,
+        problems,
+        detail={"n": len(sampled), "years": sorted(sample_years)},
+    )
+    retrieve_complete = inspect.getsource(
+        __import__("memorybox.ask.retrieve", fromlist=["_complete_comm_retrieve"])._complete_comm_retrieve
+    )
+    retrieve_email = inspect.getsource(
+        __import__("memorybox.ask.retrieve", fromlist=["search_email_messages"]).search_email_messages
+    )
+    _check(
+        "trusted_fev2_retrieve_year_fairs_not_complete_archive",
+        'if "trusted_full_evidence_v2" in notes:' in retrieve_complete
+        and "return False" in retrieve_complete
+        and "trusted_full_evidence_v2" in retrieve_email
+        and "keywords = []" in retrieve_email,
         checks,
         problems,
     )

@@ -562,6 +562,11 @@ def _complete_comm_retrieve(plan: QueryPlan) -> bool:
     notes = getattr(plan, "notes", ()) or ()
     if "gallery_email_eligible" in notes:
         return False
+    # Single-pass FEV2 must year-fair-slice. Complete retrieve ignores limit=
+    # and would normalize the whole trusted archive (5k+ HTML bodies) before
+    # Gemma/Sol — that is the FlightSim hang/1-email starve path.
+    if "trusted_full_evidence_v2" in notes:
+        return False
     if _bounded_period_tell(plan) or _tell_pack_comms(plan):
         return True
     if plan.want_communication and (plan.person_ids or plan.person_names):
@@ -1092,7 +1097,8 @@ def _year_fair_slice(hits: list[EvidenceHit], limit: int) -> tuple[list[Evidence
         year = (h.sent_at or "")[:4] or "undated"
         by_year.setdefault(year, []).append(h)
     years = sorted(by_year)
-    min_per = max(24, cap // max(len(years), 1))
+    # Floor of 24 dropped recent years when years > cap/24 (Peggy ~20y @ 200).
+    min_per = max(1, cap // max(len(years), 1))
     selected: list[EvidenceHit] = []
     leftovers: list[EvidenceHit] = []
     budget = cap
@@ -1814,6 +1820,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     if person_ids and (
         _complete_comm_retrieve(plan)
         or "gallery_email_eligible" in (plan.notes or ())
+        or "trusted_full_evidence_v2" in (plan.notes or ())
     ):
         keywords = []
     holiday_ask = bool(

@@ -256,6 +256,20 @@ def remap_placeholder_evidence_ids(
     return rewritten
 
 
+def cap_single_pass_retrieved_emails(mail: list[Any]) -> list[Any]:
+    """Year-fair sample so freeze does not normalize the whole trusted archive.
+
+    ``search_email_messages`` still scans identity-closed rows; this cap is
+    what the model sees. Complete Person retrieve must stay unbounded.
+    """
+    from memorybox.ask.retrieve import _year_fair_slice
+
+    if len(mail) <= SINGLE_PASS_EMAIL_RETRIEVE_CAP:
+        return list(mail)
+    sliced, _truncated = _year_fair_slice(mail, SINGLE_PASS_EMAIL_RETRIEVE_CAP)
+    return list(sliced)
+
+
 def single_pass_email_coverage_ok(
     *,
     retrieved_email_n: int,
@@ -542,6 +556,14 @@ def freeze_trusted_full_evidence_v2(
     mail = list(
         R.search_email_messages(plan, limit=SINGLE_PASS_EMAIL_RETRIEVE_CAP) or []
     )
+    archive_email_n = len(mail)
+    if mail:
+        head = mail[0]
+        match_total = getattr(head, "match_total", None)
+        if match_total is None and isinstance(head, dict):
+            match_total = head.get("match_total")
+        archive_email_n = int(match_total or archive_email_n)
+    mail = cap_single_pass_retrieved_emails(mail)
     cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
     stories = list(R.search_stories(plan, limit=12) or []) if plan.want_story else []
     journals = list(R.search_journals(plan, limit=12) or []) if plan.want_journal else []
@@ -618,6 +640,8 @@ def freeze_trusted_full_evidence_v2(
         "trusted_addresses": sorted(trusted),
         "email_evidence_ids": sorted(email_ids),
         "estimated_tokens": body["estimated_tokens"],
+        "archive_email_count": archive_email_n,
+        "freeze_email_sample_n": len(mail),
         "chunking": False,
     }
     (out / f"FEV2_manifest_{body['input_sha256'][:8]}.json").write_text(
@@ -625,13 +649,7 @@ def freeze_trusted_full_evidence_v2(
         encoding="utf-8",
     )
     selected_email_n = int(by_source.get("email") or 0)
-    retrieved_email_n = len(mail)
-    if mail:
-        head = mail[0]
-        match_total = getattr(head, "match_total", None)
-        if match_total is None and isinstance(head, dict):
-            match_total = head.get("match_total")
-        retrieved_email_n = int(match_total or retrieved_email_n)
+    retrieved_email_n = archive_email_n
     coverage_ok = single_pass_email_coverage_ok(
         retrieved_email_n=retrieved_email_n,
         selected_email_n=selected_email_n,
@@ -649,6 +667,7 @@ def freeze_trusted_full_evidence_v2(
         "error": error,
         "retrieved_email_count": retrieved_email_n,
         "selected_email_count": selected_email_n,
+        "freeze_email_sample_n": len(mail),
         "fixture": body,
         **manifest,
     }

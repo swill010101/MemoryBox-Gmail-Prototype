@@ -140,6 +140,9 @@ def run_trusted_evidence_pipeline(
         "evidence_type_counts": freeze.get("evidence_type_counts"),
         "email_evidence_ids": freeze.get("email_evidence_ids"),
         "trusted_addresses": freeze.get("trusted_addresses"),
+        "retrieved_email_count": freeze.get("retrieved_email_count"),
+        "selected_email_count": freeze.get("selected_email_count"),
+        "freeze_email_sample_n": freeze.get("freeze_email_sample_n"),
         "error": freeze.get("error"),
     }
     if not freeze.get("ok") or not freeze.get("fixture_path"):
@@ -302,6 +305,9 @@ def format_phase2_summary(result: dict[str, Any]) -> str:
             f"ok: {result.get('ok')}",
             f"stop: {result.get('stop')}",
             f"freeze_ok: {freeze.get('ok')} error={freeze.get('error') or ''}",
+            f"freeze_emails: archive={freeze.get('retrieved_email_count')} "
+            f"sample={freeze.get('freeze_email_sample_n')} "
+            f"selected={freeze.get('selected_email_count')}",
             f"fixture: {result.get('fixture_path') or freeze.get('fixture_path') or ''}",
             f"gemma: ok={gemma.get('ok')} skipped={gemma.get('skipped')} "
             f"error={gemma.get('error') or ''}",
