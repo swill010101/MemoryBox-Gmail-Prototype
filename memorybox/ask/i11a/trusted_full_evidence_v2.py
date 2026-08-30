@@ -43,6 +43,9 @@ MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
 SINGLE_PASS_EMAIL_RETRIEVE_CAP = 200
 SINGLE_PASS_EMAIL_BODY_CHARS = 2_500
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
+# FlightSim 2026-08-29: 1 email + 241k-token person card. Remap can make
+# that Gemma report look ok — it is not a year-fair Phase 2 freeze.
+LEGACY_STARVED_FREEZE_HASH_PREFIX = "3cf95fa4"
 _PLACEHOLDER_EVIDENCE_ID = re.compile(
     r"^(?P<kind>email|person|calendar|sms|story|journal|artifact|travel|photo|video)_(?P<n>\d+)$",
     re.I,
@@ -284,6 +287,35 @@ def single_pass_email_coverage_ok(
     if int(retrieved_email_n) >= 20:
         return int(selected_email_n) >= MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE
     return True
+
+
+def fixture_selected_email_count(data: dict[str, Any]) -> int:
+    counts = data.get("evidence_type_counts")
+    if isinstance(counts, dict) and counts.get("email") is not None:
+        return int(counts.get("email") or 0)
+    if data.get("selected_email_count") is not None:
+        return int(data.get("selected_email_count") or 0)
+    return sum(
+        1
+        for it in (data.get("items") or [])
+        if isinstance(it, dict) and str(it.get("source") or "").lower() == "email"
+    )
+
+
+def fixture_is_single_pass_coverage_ok(data: dict[str, Any]) -> bool:
+    """Reject the 1-email 3cf95fa4 freeze and any archive-starved sample."""
+    digest = str(data.get("input_sha256") or "")
+    if digest.startswith(LEGACY_STARVED_FREEZE_HASH_PREFIX):
+        return False
+    selected = fixture_selected_email_count(data)
+    archive = int(
+        data.get("archive_email_count") or data.get("retrieved_email_count") or 0
+    )
+    return single_pass_email_coverage_ok(
+        retrieved_email_n=archive,
+        selected_email_n=selected,
+        complete_trusted=bool(data.get("complete_trusted")),
+    )
 
 
 def format_trusted_fev2_paste(
@@ -606,6 +638,7 @@ def freeze_trusted_full_evidence_v2(
     for it in items:
         if str(it.get("source") or "") == "email":
             email_ids.update(item_evidence_ids(it))
+    selected_email_n = int(by_source.get("email") or 0)
     body = {
         "fixture_kind": (
             "full_evidence_v2_trusted_complete"
@@ -622,6 +655,9 @@ def freeze_trusted_full_evidence_v2(
         "email_evidence_ids": sorted(email_ids),
         "token_budget": budget,
         "estimated_tokens": _estimate_tokens(paste),
+        "archive_email_count": archive_email_n,
+        "freeze_email_sample_n": len(mail),
+        "selected_email_count": selected_email_n,
         "source_commit": _git_commit(),
         "built_at": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
         "chunking": False,
@@ -652,7 +688,6 @@ def freeze_trusted_full_evidence_v2(
         json.dumps(manifest, indent=2, default=str),
         encoding="utf-8",
     )
-    selected_email_n = int(by_source.get("email") or 0)
     retrieved_email_n = archive_email_n
     coverage_ok = single_pass_email_coverage_ok(
         retrieved_email_n=retrieved_email_n,
@@ -691,6 +726,17 @@ def run_trusted_full_evidence_v2(
     recomputed = fev2_input_sha256(data)
     if stored and stored != recomputed:
         raise ValueError(f"fixture hash mismatch file={stored} recomputed={recomputed}")
+    if not data.get("complete_trusted") and not fixture_is_single_pass_coverage_ok(data):
+        return {
+            "ok": False,
+            "skipped": True,
+            "error": "trusted_email_starved_fixture",
+            "input_sha256": stored,
+            "provider": provider,
+            "model": model,
+            "chunking": False,
+            "selected_email_count": fixture_selected_email_count(data),
+        }
     email_ids = {str(x) for x in (data.get("email_evidence_ids") or []) if x}
     allowed = all_fixture_evidence_ids(list(data.get("items") or []))
     if data.get("prepared"):

@@ -462,9 +462,60 @@ def run_chunked_models_from_dir(
         except Exception:  # noqa: BLE001
             pass
         return blocked
-    fixture = max(fixtures, key=lambda p: p.stat().st_mtime)
-    gemma_path = max(gemma_paths, key=lambda p: p.stat().st_mtime)
-    sol_path = max(sol_paths, key=lambda p: p.stat().st_mtime)
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        fixture_is_single_pass_coverage_ok,
+    )
+
+    coverage_ok = []
+    for path in fixtures:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if fixture_is_single_pass_coverage_ok(payload):
+            coverage_ok.append(path)
+    fixture = max(coverage_ok or fixtures, key=lambda p: p.stat().st_mtime)
+    try:
+        fx_hash = str(json.loads(fixture.read_text(encoding="utf-8")).get("input_sha256") or "")
+    except Exception:  # noqa: BLE001
+        fx_hash = ""
+
+    def _report_hash(path: Path) -> str:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return ""
+        if isinstance(payload.get("phase2_report"), dict):
+            payload = payload["phase2_report"]
+        return str(payload.get("input_sha256") or "")
+
+    gemma_matched = [p for p in gemma_paths if fx_hash and _report_hash(p) == fx_hash]
+    sol_matched = [p for p in sol_paths if fx_hash and _report_hash(p) == fx_hash]
+    if not gemma_matched or not sol_matched:
+        blocked = {
+            "ok": False,
+            "ran": False,
+            "error": "missing_phase2_reports_for_fixture_hash",
+            "input_sha256": fx_hash,
+            "chunking": True,
+        }
+        summary = "\n".join(
+            [
+                "TRUSTED-EVIDENCE PHASE 3 SUMMARY",
+                "ok: False",
+                "error: missing_phase2_reports_for_fixture_hash",
+                f"input_sha256: {fx_hash}",
+                "ran: False",
+            ]
+        )
+        blocked["phase3_summary"] = summary
+        try:
+            (dest / "PHASE3_SUMMARY.txt").write_text(summary, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return blocked
+    gemma_path = max(gemma_matched, key=lambda p: p.stat().st_mtime)
+    sol_path = max(sol_matched, key=lambda p: p.stat().st_mtime)
     cloud = (
         (sol_model or "").strip()
         or (os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL") or "").strip()

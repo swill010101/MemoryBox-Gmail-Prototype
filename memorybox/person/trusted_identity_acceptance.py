@@ -815,6 +815,65 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=pass_audit.get("problems"),
     )
+    starved_hash = "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8"
+    starve_rep = {**good_rep, "input_sha256": starved_hash}
+    starve_sol = {**sol_rep, "input_sha256": starved_hash}
+    starve_audit = _fmod.audit_fev2_reports(
+        starve_rep,
+        starve_sol,
+        fixture_hash=starved_hash,
+        fixture={
+            "input_sha256": starved_hash,
+            "evidence_type_counts": {"email": 1, "person": 1},
+        },
+    )
+    _check(
+        "fev2_verifier_rejects_legacy_one_email_3cf95fa4_freeze",
+        starve_audit.get("ok") is False
+        and any("P2-15" in str(p) for p in (starve_audit.get("problems") or [])),
+        checks,
+        problems,
+        detail=starve_audit.get("problems"),
+    )
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        fixture_is_single_pass_coverage_ok,
+        run_trusted_full_evidence_v2,
+    )
+
+    _check(
+        "coverage_helper_rejects_3cf95fa4_prefix",
+        fixture_is_single_pass_coverage_ok({"input_sha256": starved_hash, "evidence_type_counts": {"email": 1}})
+        is False
+        and fixture_is_single_pass_coverage_ok(
+            {
+                "input_sha256": "aa" * 32,
+                "evidence_type_counts": {"email": 12},
+                "archive_email_count": 5716,
+            }
+        )
+        is True,
+        checks,
+        problems,
+    )
+    pipe_mod = __import__(
+        "memorybox.ask.i11a.trusted_evidence_pipeline",
+        fromlist=["load_reusable_year_fair_freeze"],
+    )
+    _check(
+        "pipeline_reuses_year_fair_freeze_helper",
+        hasattr(pipe_mod, "load_reusable_year_fair_freeze")
+        and "load_reusable_year_fair_freeze" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline),
+        checks,
+        problems,
+    )
+    run_src = inspect.getsource(run_trusted_full_evidence_v2)
+    _check(
+        "phase2_run_refuses_starved_legacy_fixture",
+        "trusted_email_starved_fixture" in run_src
+        and "fixture_is_single_pass_coverage_ok" in run_src,
+        checks,
+        problems,
+    )
     loss_audit = _fmod.audit_fev2_reports(
         good_rep,
         sol_rep,
@@ -1654,6 +1713,17 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             model="gemma4:26b",
             grounding=_ground,
         )
+        refused_legacy = run_trusted_full_evidence_v2(
+            _legacy_fx, provider="ollama", model="gemma4:26b"
+        )
+        _check(
+            "run_refuses_flightsim_3cf95fa4_starved_fixture",
+            refused_legacy.get("ok") is False
+            and refused_legacy.get("error") == "trusted_email_starved_fixture",
+            checks,
+            problems,
+            detail=refused_legacy.get("error"),
+        )
         _check(
             "remap_recovers_flightsim_gemma_placeholder_ids",
             _phase2.get("ok") is True
@@ -1895,6 +1965,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "chunk_models_write_phase3_human_summary",
         "PHASE3_SUMMARY.txt" in chunk_run_src
         and "TRUSTED-EVIDENCE PHASE 3 SUMMARY" in chunk_run_src,
+        checks,
+        problems,
+    )
+    from_dir_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_fev2_chunking",
+            fromlist=["run_chunked_models_from_dir"],
+        ).run_chunked_models_from_dir
+    )
+    _check(
+        "chunk_from_dir_pairs_reports_to_fixture_hash",
+        "missing_phase2_reports_for_fixture_hash" in from_dir_src
+        and "fixture_is_single_pass_coverage_ok" in from_dir_src,
         checks,
         problems,
     )

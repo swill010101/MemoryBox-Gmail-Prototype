@@ -4,8 +4,10 @@
 **Parent:** `cursor/p2-i11a-address-centric-email-49da` (PR #74 — do not merge)  
 **Do not merge:** PR #76 (gate artifacts)
 
-**Stop this slice at Phase 1.** Phase 2 (Gemma/Sol fixture) and Phase 3 (chunking)
-start only after Phase 1 product acceptance.
+Phase 1 product acceptance is **done on FlightSim** (trusted `peggo417`,
+retrieve/Gallery 5716, unsupported 0). This branch now continues Phase 2
+(year-fair frozen Gemma+Sol Full-Evidence V2) then Phase 3 (L1 chunk models).
+Do not treat the 1-email `3cf95fa4` freeze as Phase 2 complete.
 
 ## Problem
 
@@ -62,13 +64,13 @@ The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
 drops the `:memory:` Qdrant fallback; without the URL, migrate/prove crash
 before the trusted report. Then: Phase 1 prove,
 `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
-fakes), then `run-trusted-evidence-pipeline`. Pipeline skip/fail is
-`errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py` requires both
-Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email grounded,
-chunking still off. The gate prints `PHASE2_SUMMARY` and **exits**. Phase 3
-chunk compare / model-per-chunk stay off until explicitly authorized
-(`--authorize-phase3` or a later go).
-It stops on Phase 1 failure and does not widen matching.
+fakes), then `freeze-trusted-full-evidence-v2` (committed before models), then
+`run-trusted-evidence-pipeline` (reuses that year-fair freeze). Pipeline
+skip/fail is `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py`
+requires both Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email
+grounded, selected emails ≥ 8 (rejects `3cf95fa4`). After that verifier the
+gate runs `run-trusted-fev2-chunked-models`. It stops on Phase 1 failure and
+does not widen matching.
 
 A green product report (`trusted=peggo417`, retrieve/Gallery > 0, unsupported=0)
 with `C2`/`C2a` fail is a false fail: ALLOW_DEV leftover demoted the FlightSim
@@ -107,6 +109,8 @@ python -m memorybox run-trusted-full-evidence-v2 --fixture <same file> --provide
 ```
 
 Cloud Sol is opt-in and stateless: `MEMORYBOX_CLOUD_LLM_BASE_URL` + `MEMORYBOX_CLOUD_LLM_API_KEY`.
-No chunking on these two runs. **Stop after Phase 2.** Do not run
-`compare-trusted-fev2-chunks` or `run-trusted-fev2-chunked-models` until
-Phase 3 is explicitly authorized.
+No chunking on the two single-pass runs. After both reports verify, run:
+
+```
+python -m memorybox run-trusted-fev2-chunked-models --from-dir docs/test-output/trusted-full-evidence-v2
+```

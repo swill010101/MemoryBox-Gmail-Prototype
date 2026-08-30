@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+    LEGACY_STARVED_FREEZE_HASH_PREFIX,
+    fixture_is_single_pass_coverage_ok,
+    fixture_selected_email_count,
+)
+
 DEFAULT_DIR = Path("docs/test-output/trusted-full-evidence-v2")
 ESTABLISHED_GEMMA = "gemma4:26b"
 
@@ -68,7 +74,15 @@ def discover_reports(out_dir: Path) -> dict[str, Any]:
         and not p.name.startswith("FEV2_paste_")
         and not p.name.startswith("FEV2_manifest_")
     ]
-    fixture_path = _latest(fixtures)
+    coverage_ok = []
+    for path in fixtures:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if fixture_is_single_pass_coverage_ok(payload):
+            coverage_ok.append(path)
+    fixture_path = _latest(coverage_ok) or _latest(fixtures)
     fixture_hash = _json_hash(fixture_path, "input_sha256") if fixture_path else ""
     pipeline_path = _latest(pipeline_paths)
     if pipeline_path and fixture_hash:
@@ -90,6 +104,7 @@ def audit_fev2_reports(
     *,
     pipeline: dict[str, Any] | None = None,
     fixture_hash: str | None = None,
+    fixture: dict[str, Any] | None = None,
     chunk_structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
@@ -164,6 +179,29 @@ def audit_fev2_reports(
         not (s.get("invented_or_unsupported_claims") or []),
         {"invented_or_unsupported_claims": s.get("invented_or_unsupported_claims")},
     )
+    starved_hash = bool(
+        (fixture_hash or g_hash or s_hash or "").startswith(
+            LEGACY_STARVED_FREEZE_HASH_PREFIX
+        )
+        or g_hash.startswith(LEGACY_STARVED_FREEZE_HASH_PREFIX)
+        or s_hash.startswith(LEGACY_STARVED_FREEZE_HASH_PREFIX)
+    )
+    selected_emails = fixture_selected_email_count(fixture or {})
+    coverage_ok = True
+    if fixture:
+        coverage_ok = fixture_is_single_pass_coverage_ok(fixture)
+    elif starved_hash:
+        coverage_ok = False
+    check(
+        "P2-15",
+        "year-fair freeze (not the 1-email 3cf95fa4 starve)",
+        coverage_ok and not starved_hash,
+        {
+            "fixture_hash": fixture_hash or g_hash,
+            "selected_email_count": selected_emails,
+            "legacy_starved_hash": starved_hash,
+        },
+    )
     if pipeline:
         check(
             "P2-12",
@@ -223,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     sol: dict[str, Any] | None = None
     pipeline: dict[str, Any] | None = None
     fixture_hash: str | None = None
+    fixture_payload: dict[str, Any] | None = None
     chunk_structure: dict[str, Any] | None = None
     if args.gemma and args.sol:
         gemma = json.loads(Path(args.gemma).read_text(encoding="utf-8"))
@@ -247,9 +286,16 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         gemma = json.loads(found["gemma_path"].read_text(encoding="utf-8"))
         sol = json.loads(found["sol_path"].read_text(encoding="utf-8"))
+        if found.get("fixture_path"):
+            fixture_payload = json.loads(
+                found["fixture_path"].read_text(encoding="utf-8")
+            )
+            fixture_hash = str(fixture_payload.get("input_sha256") or "") or fixture_hash
         if found["pipeline_path"]:
             pipeline = json.loads(found["pipeline_path"].read_text(encoding="utf-8"))
-            fixture_hash = str(pipeline.get("input_sha256") or "") or None
+            pipe_hash = str(pipeline.get("input_sha256") or "")
+            if pipe_hash and (not fixture_hash or pipe_hash == fixture_hash):
+                fixture_hash = pipe_hash or fixture_hash
         if found.get("fixture_path"):
             from memorybox.ask.i11a.trusted_fev2_chunking import (
                 compare_chunked_vs_unchunked,
@@ -266,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         sol,
         pipeline=pipeline,
         fixture_hash=fixture_hash,
+        fixture=fixture_payload,
         chunk_structure=chunk_structure,
     )
     print(json.dumps(audit, indent=2, default=str))

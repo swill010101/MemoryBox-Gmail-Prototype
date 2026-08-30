@@ -14,12 +14,71 @@ from typing import Any
 
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     ESTABLISHED_GEMMA_MODEL,
+    fixture_is_single_pass_coverage_ok,
+    fixture_selected_email_count,
     freeze_trusted_full_evidence_v2,
     run_trusted_full_evidence_v2,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
+
+
+def load_reusable_year_fair_freeze(out: Path, person_id: str) -> dict[str, Any] | None:
+    """Reuse the gate's year-fair freeze so FlightSim does not normalize twice."""
+    fixtures = [
+        p
+        for p in out.glob("FEV2_*.json")
+        if p.name.startswith("FEV2_")
+        and not p.name.startswith("FEV2REPORT_")
+        and not p.name.startswith("FEV2CHUNK_")
+        and not p.name.startswith("FEV2COMPLETE_")
+        and not p.name.startswith("FEV2_paste_")
+        and not p.name.startswith("FEV2_manifest_")
+    ]
+    ranked: list[tuple[float, Path, dict[str, Any]]] = []
+    for path in fixtures:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if str(data.get("person_id") or "") != str(person_id):
+            continue
+        if not fixture_is_single_pass_coverage_ok(data):
+            continue
+        ranked.append((path.stat().st_mtime, path, data))
+    if not ranked:
+        return None
+    _mtime, path, data = max(ranked, key=lambda row: row[0])
+    digest = str(data.get("input_sha256") or "")
+    manifest: dict[str, Any] = {}
+    manifest_path = out / f"FEV2_manifest_{digest[:8]}.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            manifest = {}
+    selected = fixture_selected_email_count(data)
+    return {
+        "ok": True,
+        "reused": True,
+        "error": None,
+        "fixture_path": str(path),
+        "input_sha256": digest,
+        "evidence_type_counts": data.get("evidence_type_counts") or {},
+        "email_evidence_ids": data.get("email_evidence_ids") or [],
+        "trusted_addresses": data.get("trusted_addresses") or [],
+        "retrieved_email_count": (
+            data.get("archive_email_count")
+            or manifest.get("archive_email_count")
+        ),
+        "selected_email_count": selected,
+        "freeze_email_sample_n": (
+            data.get("freeze_email_sample_n")
+            or manifest.get("freeze_email_sample_n")
+            or selected
+        ),
+    }
 
 
 def _write(path: Path, payload: dict[str, Any]) -> Path:
@@ -131,7 +190,9 @@ def run_trusted_evidence_pipeline(
 
     resolved = resolve_person_by_name(person_name, create_if_missing=False, confirm=False)
     pid = str(getattr(resolved, "person_id", "") or getattr(resolved, "id", "") or "")
-    freeze = freeze_trusted_full_evidence_v2(person_id=pid, ask=ask, out_dir=out)
+    freeze = load_reusable_year_fair_freeze(out, pid)
+    if freeze is None:
+        freeze = freeze_trusted_full_evidence_v2(person_id=pid, ask=ask, out_dir=out)
     result["phase"] = 2
     result["freeze"] = {
         "ok": freeze.get("ok"),
@@ -143,6 +204,7 @@ def run_trusted_evidence_pipeline(
         "retrieved_email_count": freeze.get("retrieved_email_count"),
         "selected_email_count": freeze.get("selected_email_count"),
         "freeze_email_sample_n": freeze.get("freeze_email_sample_n"),
+        "reused": bool(freeze.get("reused")),
         "error": freeze.get("error"),
     }
     if not freeze.get("ok") or not freeze.get("fixture_path"):
@@ -304,7 +366,8 @@ def format_phase2_summary(result: dict[str, Any]) -> str:
             "TRUSTED-EVIDENCE PHASE 2 SUMMARY",
             f"ok: {result.get('ok')}",
             f"stop: {result.get('stop')}",
-            f"freeze_ok: {freeze.get('ok')} error={freeze.get('error') or ''}",
+            f"freeze_ok: {freeze.get('ok')} reused={freeze.get('reused')} "
+            f"error={freeze.get('error') or ''}",
             f"freeze_emails: archive={freeze.get('retrieved_email_count')} "
             f"sample={freeze.get('freeze_email_sample_n')} "
             f"selected={freeze.get('selected_email_count')}",
