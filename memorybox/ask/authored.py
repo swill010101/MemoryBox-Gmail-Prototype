@@ -18,6 +18,26 @@ _QUOTE_CUT = re.compile(
 )
 
 
+def plain_email_body(payload: dict[str, Any] | None, *, excerpt: str = "") -> str:
+    """Plain text from Takeout payload. Hotmail rows are often HTML-only."""
+    data = payload if isinstance(payload, dict) else {}
+    text = str(data.get("body_text") or "").strip()
+    if text:
+        return text
+    html = str(data.get("body_html") or data.get("html") or "").strip()
+    if html:
+        import html as htmlmod
+
+        converted = re.sub(r"(?i)<br\s*/?>", "\n", html)
+        converted = re.sub(r"(?i)</p>", "\n", converted)
+        converted = re.sub(r"<[^>]+>", " ", converted)
+        converted = htmlmod.unescape(re.sub(r"[ \t]+\n", "\n", converted))
+        converted = re.sub(r"\n{3,}", "\n\n", converted).strip()
+        if converted:
+            return converted
+    return str(data.get("snippet") or data.get("text") or excerpt or "").strip()
+
+
 def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
     from memorybox.explore.email_attach import split_quoted_email
     flags = {"quote_uncertain": False, "boilerplate_uncertain": False}

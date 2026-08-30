@@ -913,9 +913,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                 "input_sha256": "aa" * 32,
                 "evidence_type_counts": {"email": 12},
                 "archive_email_count": 5716,
+                "paste_format": "trusted_email_threads_v1",
             }
         )
-        is True,
+        is True
+        and fixture_is_single_pass_coverage_ok(
+            {
+                "input_sha256": "bb" * 32,
+                "evidence_type_counts": {"email": 12},
+                "archive_email_count": 5716,
+            }
+        )
+        is False,
         checks,
         problems,
     )
@@ -1689,18 +1698,18 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         ask="tell me about this person",
         person_context={},
     )
-    allowed_line = ""
+    tag_line = ""
     for line in trusted_paste.splitlines():
-        if line.startswith("ALLOWED_EVIDENCE_IDS:"):
-            allowed_line = line
+        if line.startswith("Turn tags:"):
+            tag_line = line
             break
     _check(
         "trusted_fev2_paste_lists_real_evidence_ids",
-        "992d6453-3376-425c-a62b-fa05db1b4a3e" in allowed_line
-        and "email_1" in allowed_line,
+        "992d6453-3376-425c-a62b-fa05db1b4a3e" in tag_line
+        and "email_1" in tag_line,
         checks,
         problems,
-        detail=allowed_line or trusted_paste[:400],
+        detail=tag_line or trusted_paste[:400],
     )
     empty_trusted = select_single_pass_items(
         items, trusted_addrs=set(), token_budget=50_000
@@ -1788,24 +1797,117 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     prompt_paste = format_trusted_fev2_paste(
         prompt_order,
         ask="tell me what you know",
-        person_context={},
+        person_context={
+            "focal_subjects": [
+                {
+                    "display_name": "Peggy George",
+                    "communication_identities": [
+                        {"contact_kind": "email", "value_text": "peggo417@hotmail.com"}
+                    ],
+                }
+            ]
+        },
+        trusted_addresses=["peggo417@hotmail.com"],
     )
     _check(
         "single_pass_orders_email_before_person_in_model_prompt",
         prompt_order
         and str(prompt_order[0].get("source")) == "email"
-        and "===== TRUSTED EMAIL EVIDENCE =====" in prompt_paste
+        and "===== TRUSTED EMAIL THREADS =====" in prompt_paste
+        and "BEGIN THREAD" in prompt_paste
+        and "END THREAD" in prompt_paste
+        and "christmas wish list" in prompt_paste
+        and "Peggy George said:" in prompt_paste
         and prompt_paste.find("christmas wish list")
-        < prompt_paste.find("===== PERSON CONTEXT =====")
-        and prompt_paste.find("christmas wish list")
-        < prompt_paste.lower().find("person card")
-        and prompt_paste.find("===== TRUSTED EMAIL EVIDENCE =====")
-        < prompt_paste.find("ALLOWED_EVIDENCE_IDS:")
+        < prompt_paste.find("Turn tags:")
         and str(prompt_order[0].get("cite_as") or "") == "email_1"
-        and "cite_as: email_1" in prompt_paste,
+        and "[email_1]" in prompt_paste
+        and "people:" not in prompt_paste.lower(),
         checks,
         problems,
-        detail=[i.get("source") for i in prompt_order],
+        detail=prompt_paste[:500],
+    )
+    thread_paste = format_trusted_fev2_paste(
+        [
+            {
+                "source": "email",
+                "item_id": "e-rick",
+                "evidence_id": "ev-rick",
+                "subject": "Re: Harbor dinner",
+                "timestamp": "2020-01-01T18:00:00Z",
+                "from": "Rick <rick@example.test>",
+                "from_parsed": [
+                    {"display_name": "Rick", "address": "rick@example.test"}
+                ],
+                "addresses": ["rick@example.test", "peggo417@hotmail.com"],
+                "body": "Peg, dinner is at seven.",
+            },
+            {
+                "source": "email",
+                "item_id": "e-peg",
+                "evidence_id": "ev-peg",
+                "subject": "Harbor dinner",
+                "timestamp": "2020-01-01T18:10:00Z",
+                "from": "peggo417@hotmail.com",
+                "from_parsed": [
+                    {
+                        "display_name": "Peg Legg",
+                        "address": "peggo417@hotmail.com",
+                    }
+                ],
+                "addresses": ["rick@example.test", "peggo417@hotmail.com"],
+                "body": "See you there.",
+            },
+        ],
+        ask="tell me what you know about this person",
+        person_context={
+            "focal_subjects": [
+                {
+                    "display_name": "Peggy George",
+                    "communication_identities": [
+                        {"contact_kind": "email", "value_text": "peggo417@hotmail.com"}
+                    ],
+                }
+            ]
+        },
+        trusted_addresses=["peggo417@hotmail.com"],
+    )
+    _check(
+        "fev2_paste_is_dated_speaker_threads",
+        "BEGIN THREAD: Harbor dinner" in thread_paste
+        and "END THREAD" in thread_paste
+        and "Rick said:" in thread_paste
+        and "Peggy George said:" in thread_paste
+        and thread_paste.find("Rick said:") < thread_paste.find("Peggy George said:")
+        and "Peg, dinner is at seven." in thread_paste
+        and "See you there." in thread_paste
+        and "people:" not in thread_paste.lower(),
+        checks,
+        problems,
+        detail=thread_paste,
+    )
+    from memorybox.ask.authored import plain_email_body
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import FEV2_SYSTEM
+
+    _check(
+        "html_only_takeout_email_becomes_plain_body",
+        "Hello Pegs" in plain_email_body(
+            {"body_html": "<p>Hello Pegs</p><br>Stay warm"}
+        )
+        and plain_email_body({"body_text": "plain wins", "body_html": "<p>nope</p>"})
+        == "plain wins",
+        checks,
+        problems,
+    )
+    _check(
+        "fev2_system_has_role_and_summarization_objective",
+        "family historian" in FEV2_SYSTEM
+        and "Objective:" in FEV2_SYSTEM
+        and "who said what" in FEV2_SYSTEM
+        and "ASK" in FEV2_SYSTEM,
+        checks,
+        problems,
+        detail=FEV2_SYSTEM[:240],
     )
     l1_items = [
         {

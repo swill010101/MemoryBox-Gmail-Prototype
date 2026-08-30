@@ -73,9 +73,11 @@ scan — does not load every trusted HTML body; committed before models), then
 `run-trusted-evidence-pipeline` (reuses the green Phase 1 gate and that
 year-fair freeze — no second Takeout identity scan). Freeze uses
 `--reuse-if-coverage-ok` so a later gate retry does not rebuild a good
-year-fair fixture. The frozen paste puts trusted email blocks before the
-full ALLOWED_EVIDENCE_IDS roster so a short Ollama context still sees
-mail (not just a 100k-token id list). Pipeline
+year-fair fixture. The frozen paste is dated speaker threads (`BEGIN THREAD` / `when, Name said:`
+/ `END THREAD`) from trusted email only, with HTML-only Hotmail bodies
+converted to plain text. The system prompt gives a historian role and a
+summarization objective. Old header/ID freezes (including `fe8a128c`) are
+not reused. Pipeline
 skip/fail is `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py`
 requires both Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email
 grounded, selected emails ≥ 8 (rejects `3cf95fa4`). After that verifier the

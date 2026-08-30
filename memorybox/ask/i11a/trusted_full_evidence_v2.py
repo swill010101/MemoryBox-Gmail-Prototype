@@ -87,18 +87,27 @@ _PLACEHOLDER_EVIDENCE_ID = re.compile(
     re.I,
 )
 
-FEV2_SYSTEM = """You are MemoryBox Full-Evidence V2. Use only the supplied evidence.
+TRUSTED_EMAIL_THREADS_PASTE = "trusted_email_threads_v1"
+
+FEV2_SYSTEM = """You are a careful family historian for MemoryBox.
+
+Objective: Read the trusted email threads in the user message and write what
+can actually be known about the person named in ASK. Treat each thread as a
+conversation (who said what, and when). Summarize that life evidence. Do not
+invent facts, dates, or relationships. Do not treat header names as family
+unless the thread text itself says so.
+
+Use only this packet. No outside knowledge. No MemoryBox memory. No ChatGPT
+history. Stateless. No chunking.
+
 Return JSON only:
 {"episodes":[{"title":"","when":"","summary":"","evidence_ids":[]}],
  "claims":[{"text":"","evidence_ids":[]}],
  "relationships":[{"from":"","to":"","role":"","evidence_ids":[]}],
  "narrator":""}
-Every accepted claim, episode, and relationship MUST cite original evidence_ids
-from the input (the UUID after evidence_id: and/or the cite_as token such as
-email_1 / person_1 printed on that same block). Invented facts or unknown ids
-are forbidden. If email evidence is present, grounded output must use those
-email ids when they support a claim.
-No chunking. Stateless. Do not use outside knowledge."""
+Cite each accepted claim, episode, and relationship with the [email_N] tag
+printed on that turn (or the evidence_id UUID if shown). Invented ids are
+forbidden. If a thread supports a claim, use that turn's tag."""
 
 
 def _git_commit() -> str:
@@ -128,6 +137,8 @@ def fev2_input_sha256(body: dict[str, Any]) -> str:
         "system": body.get("system"),
         "chunking": False,
     }
+    if body.get("paste_format"):
+        payload["paste_format"] = body.get("paste_format")
     if body.get("prepared"):
         return historian_input_sha256(body)
     digest = canonical_json_dumps(payload)
@@ -391,6 +402,10 @@ def fixture_is_single_pass_coverage_ok(data: dict[str, Any]) -> bool:
     digest = str(data.get("input_sha256") or "")
     if digest.startswith(LEGACY_STARVED_FREEZE_HASH_PREFIX):
         return False
+    paste = str(data.get("user_message") or "")
+    if str(data.get("paste_format") or "") != TRUSTED_EMAIL_THREADS_PASTE:
+        if "BEGIN THREAD" not in paste:
+            return False
     selected = fixture_selected_email_count(data)
     archive = int(
         data.get("archive_email_count") or data.get("retrieved_email_count") or 0
@@ -402,69 +417,143 @@ def fixture_is_single_pass_coverage_ok(data: dict[str, Any]) -> bool:
     )
 
 
+def _focal_display_name(person_context: dict[str, Any] | None) -> str:
+    for sub in (person_context or {}).get("focal_subjects") or []:
+        if not isinstance(sub, dict):
+            continue
+        name = str(sub.get("display_name") or "").strip()
+        if name:
+            return name
+    return ""
+
+
+def _trusted_addr_set(
+    person_context: dict[str, Any] | None,
+    trusted_addresses: list[str] | set[str] | None,
+) -> set[str]:
+    out = {normalize_handle(a) for a in (trusted_addresses or []) if a}
+    for sub in (person_context or {}).get("focal_subjects") or []:
+        if not isinstance(sub, dict):
+            continue
+        for ident in sub.get("communication_identities") or []:
+            if not isinstance(ident, dict):
+                continue
+            kind = str(ident.get("contact_kind") or ident.get("kind") or "").lower()
+            if kind and kind != "email":
+                continue
+            val = ident.get("value_text") or ident.get("value")
+            if val:
+                out.add(normalize_handle(str(val)))
+    return {a for a in out if a}
+
+
+def _speaker_label(
+    item: dict[str, Any],
+    *,
+    trusted: set[str],
+    person_name: str,
+) -> str:
+    """Who spoke this message. Trusted mailbox uses the Person display name."""
+    addr = ""
+    display = ""
+    for rec in list(item.get("from_parsed") or []):
+        if not isinstance(rec, dict):
+            continue
+        cand = str(rec.get("normalized") or rec.get("address") or "").strip()
+        if cand and "@" in cand:
+            addr = normalize_handle(cand)
+            display = str(rec.get("display_name") or "").strip()
+            break
+    if not addr:
+        blob = str(item.get("from") or item.get("from_header") or "")
+        match = re.search(
+            r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", blob
+        )
+        if match:
+            addr = normalize_handle(match.group(0))
+        name_m = re.match(r"\s*([^<@]+)\s*<", blob)
+        if name_m:
+            display = display or name_m.group(1).strip().strip('"')
+    if addr and addr in trusted and person_name:
+        return person_name
+    if display and "@" not in display:
+        return display
+    if addr:
+        return addr.split("@", 1)[0]
+    return "Unknown"
+
+
+def _turn_when(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return "unknown time"
+    return text.replace("T", " ").replace("+00:00", " UTC").rstrip("Z")
+
+
+def _thread_subject(item: dict[str, Any]) -> str:
+    raw = str(item.get("subject") or item.get("title") or "").strip()
+    if not raw:
+        return "(no subject)"
+    return re.sub(r"^(?:(?:re|fw|fwd)\s*:\s*)+", "", raw, flags=re.I).strip() or raw
+
+
 def format_trusted_fev2_paste(
     items: list[dict[str, Any]],
     *,
     ask: str,
     person_context: dict[str, Any],
+    trusted_addresses: list[str] | set[str] | None = None,
 ) -> str:
-    """Historian paste plus the exact evidence_ids models must copy."""
+    """Readable trusted-email threads for summarization, with turn cite tags."""
+    from memorybox.ask.i11a.full_evidence_l1_chunker import group_email_threads
+
     items = attach_fev2_cite_aliases(list(items))
-    email_items: list[dict[str, Any]] = []
-    other_items: list[dict[str, Any]] = []
-    for it in items:
-        if str(it.get("source") or it.get("channel") or "").lower() == "email":
-            email_items.append(it)
-        else:
-            other_items.append(it)
-    ordered = email_items + other_items
-    allowed: list[str] = []
-    for it in ordered:
-        allowed.extend(item_evidence_ids(it))
-    allowed = list(dict.fromkeys(a for a in allowed if a))
-    slim = slim_person_context_for_model(person_context)
-
-    def _blocks(rows: list[dict[str, Any]]) -> list[str]:
-        out: list[str] = []
-        for it in rows:
-            clean = {
-                k: v
-                for k, v in it.items()
-                if k
-                not in {
-                    "content_fingerprint",
-                    "retrieved_index",
-                    "normalization",
-                    "raw_body_chars",
-                    "metadata",
-                }
-            }
-            out.append(format_item_block(clean))
-        return out
-
-    # Email blocks before the full id roster. Ollama default num_ctx often
-    # truncates the tail — a 100k-token ALLOWED list at the top is how the
-    # model never sees trusted mail and invents email_1.
+    email_items = [
+        it
+        for it in items
+        if str(it.get("source") or it.get("channel") or "").lower() == "email"
+    ]
+    trusted = _trusted_addr_set(person_context, trusted_addresses)
+    person_name = _focal_display_name(person_context)
+    threads = group_email_threads(email_items)
+    thread_blocks: list[str] = []
+    tags: list[str] = []
+    for unit in threads:
+        msgs = list(unit.get("items") or [])
+        if not msgs:
+            continue
+        subject = _thread_subject(msgs[0])
+        lines = [f"BEGIN THREAD: {subject}"]
+        for msg in msgs:
+            cite = str(msg.get("cite_as") or "").strip()
+            eid = str(msg.get("evidence_id") or msg.get("native_id") or "").strip()
+            if cite and eid and eid not in {cite, str(msg.get("item_id") or "")}:
+                tags.append(f"{cite}={eid}")
+            elif cite:
+                tags.append(cite)
+            speaker = _speaker_label(msg, trusted=trusted, person_name=person_name)
+            when = _turn_when(msg.get("timestamp") or msg.get("sent_at"))
+            tag = f" [{cite}]" if cite else ""
+            body = str(msg.get("body") or "").strip() or "(no message text)"
+            lines.append(f"{when}, {speaker} said:{tag}")
+            lines.append(body)
+            lines.append("")
+        lines.append("END THREAD")
+        thread_blocks.append("\n".join(lines).rstrip())
+    who = person_name or "this person"
+    mailboxes = ", ".join(sorted(trusted)) if trusted else "(trusted mailbox from retrieve)"
     parts = [
-        "Cite evidence_ids by copying evidence_id or cite_as from the evidence blocks.",
-        "cite_as tokens such as email_1 are valid only when printed on a block.",
-        "",
-        "Use only the Person context and evidence below. Do not invent facts.",
         f"ASK: {ask}",
+        f"Person under review: {who}",
+        f"Trusted mailbox: {mailboxes}",
+        "Read the threads. Each turn is one message in that conversation.",
+        "Cite a turn with the [email_N] tag on that speaker line.",
         "",
-        "===== TRUSTED EMAIL EVIDENCE =====",
+        "===== TRUSTED EMAIL THREADS =====",
         "",
-        *(_blocks(email_items) or ["(no trusted email in this freeze)"]),
+        *(thread_blocks or ["(no trusted email in this freeze)"]),
         "",
-        "===== PERSON CONTEXT =====",
-        "",
-        json.dumps(slim, indent=2, default=str, ensure_ascii=False),
-        "",
-        "===== OTHER EVIDENCE =====",
-        "",
-        *_blocks(other_items),
-        "",
-        "ALLOWED_EVIDENCE_IDS: " + ", ".join(allowed),
+        "Turn tags: " + ", ".join(dict.fromkeys(tags)),
     ]
     return "\n".join(parts).rstrip() + "\n"
 
@@ -777,6 +866,7 @@ def freeze_trusted_full_evidence_v2(
         items,
         ask=ask,
         person_context=person_context,
+        trusted_addresses=trusted,
     )
     by_source: dict[str, int] = {}
     for it in items:
@@ -811,6 +901,7 @@ def freeze_trusted_full_evidence_v2(
         "chunking": False,
         "system": FEV2_SYSTEM,
         "user_message": paste,
+        "paste_format": TRUSTED_EMAIL_THREADS_PASTE,
     }
     body["input_sha256"] = fev2_input_sha256(body)
     prefix = "FEV2COMPLETE" if complete_trusted else "FEV2"

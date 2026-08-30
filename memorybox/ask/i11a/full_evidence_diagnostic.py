@@ -634,7 +634,9 @@ def _normalize_comm_hit(hit: Any, *, retrieved_index: int) -> tuple[dict[str, An
         "sms_message",
         "text_message",
     }
-    raw_body = str((payload or {}).get("body_text") or d.get("excerpt") or "")
+    from memorybox.ask.authored import plain_email_body
+
+    raw_body = plain_email_body(payload or {}, excerpt=str(d.get("excerpt") or ""))
     when = str(d.get("sent_at") or (payload or {}).get("sent_at") or "") or None
     thread_id = (
         d.get("thread_id")
