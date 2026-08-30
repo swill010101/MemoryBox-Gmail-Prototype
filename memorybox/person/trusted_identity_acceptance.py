@@ -859,7 +859,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "flightsim_cli_clears_allow_dev",
         "_apply_trusted_identity_flightsim_env" in main_src
         and 'MEMORYBOX_ALLOW_DEV_DEFAULTS"] = ""' in main_src
-        and main_src.count("_apply_trusted_identity_flightsim_env") >= 3,
+        and main_src.count("_apply_trusted_identity_flightsim_env") >= 3
+        and 'if "--flightsim" in argv_list:' in main_src
+        and main_src.find('if "--flightsim" in argv_list:')
+        < main_src.find('MEMORYBOX_ALLOW_DEV_DEFAULTS"] = "1"'),
         checks,
         problems,
     )

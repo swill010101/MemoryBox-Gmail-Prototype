@@ -14,7 +14,14 @@ def _apply_trusted_identity_flightsim_env() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if "MEMORYBOX_DATABASE_URL" not in os.environ and "MEMORYBOX_ALLOW_DEV_DEFAULTS" not in os.environ:
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    # Apply --flightsim before any Settings cache or ALLOW_DEV desktop default.
+    if "--flightsim" in argv_list:
+        _apply_trusted_identity_flightsim_env()
+    elif (
+        "MEMORYBOX_DATABASE_URL" not in os.environ
+        and "MEMORYBOX_ALLOW_DEV_DEFAULTS" not in os.environ
+    ):
         os.environ["MEMORYBOX_ALLOW_DEV_DEFAULTS"] = "1"
 
     parser = argparse.ArgumentParser(prog="memorybox", description="MemoryBox monolith CLI")
@@ -954,7 +961,7 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
 
     if args.cmd == "migrate":
         from memorybox.migrate import migrate
