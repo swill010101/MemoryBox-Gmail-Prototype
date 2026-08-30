@@ -22,6 +22,15 @@ if exist ".git\MERGE_HEAD" (
   git status
   exit /b 1
 )
+if exist ".git\REBASE_HEAD" goto :rebase_in_progress
+if exist ".git\rebase-merge" goto :rebase_in_progress
+if exist ".git\rebase-apply" goto :rebase_in_progress
+goto :sync_fetch
+:rebase_in_progress
+echo ERROR: in-progress rebase on this tree. Will not pull, abort that rebase, or prepare.
+git status
+exit /b 1
+:sync_fetch
 git fetch origin %BRANCH%
 if errorlevel 1 (
   echo ERROR: git fetch failed — will not prepare on a stale tree.

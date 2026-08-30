@@ -82,11 +82,14 @@ def ollama_chat_request_payload(
     temperature: float = 0.1,
     keep_alive: str = "30m",
     num_ctx: int | None = None,
+    num_predict: int | None = None,
 ) -> dict[str, Any]:
     """Exact JSON body that ollama_chat would POST. No network."""
     options: dict[str, Any] = {"temperature": temperature}
     if num_ctx is not None and int(num_ctx) > 0:
         options["num_ctx"] = int(num_ctx)
+    if num_predict is not None and int(num_predict) > 0:
+        options["num_predict"] = int(num_predict)
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
@@ -113,6 +116,7 @@ def ollama_chat(
     timeout: int = 600,
     keep_alive: str = "30m",
     num_ctx: int | None = None,
+    num_predict: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     payload = ollama_chat_request_payload(
         model,
@@ -122,6 +126,7 @@ def ollama_chat(
         temperature=temperature,
         keep_alive=keep_alive,
         num_ctx=num_ctx,
+        num_predict=num_predict,
     )
     options = dict(payload.get("options") or {})
     try:

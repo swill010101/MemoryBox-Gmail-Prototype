@@ -2731,10 +2731,13 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         EMAIL_REVIEW_SYSTEM,
         LightRow,
         classify_body_source,
+        attach_rfc_neighbors,
         classify_review_authorship,
+        extract_non_service_text,
         group_conversations,
         participation_exclusion_reason,
         plan_gemma_replay,
+        _payload_sort_key,
         propose_five_year_interval,
         render_model_paste,
         run_trusted_email_review_gemma,
@@ -3221,6 +3224,104 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail={"footer_only": _footer_only, "ecard_no_footer": _ecard_no_footer},
     )
+    _hi_card = classify_review_authorship(
+        lead="Hi, your e-card is ready. This is an automated message.",
+        from_trusted=True,
+    )
+    _i_sent = classify_review_authorship(
+        lead="I sent you an e-card because I miss you.",
+        from_trusted=True,
+    )
+    _check(
+        "review_greeting_plus_card_notice_is_not_personal",
+        _hi_card["kind"] == "service_generated"
+        and _hi_card["peggy_personal"] is False
+        and _i_sent["kind"] == "personal"
+        and _i_sent["peggy_personal"] is True,
+        checks,
+        problems,
+        detail={"hi_card": _hi_card, "i_sent": _i_sent},
+    )
+    _mixed_kept, _mixed_omit = extract_non_service_text(
+        "See you Friday.\n\nThis is an automated notification. Do not reply to this email."
+    )
+    _mixed_msg = _prepare_message(
+        "mixed-q",
+        {
+            "sent_at": "2009-01-04T12:00:00Z",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "Ok.\n\n-----Original Message-----\nFrom: Sam <sam@example.test>\n\n"
+                "See you Friday.\n\nThis is an automated notification. "
+                "Do not reply to this email."
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _check(
+        "review_mixed_quote_keeps_personal_portion",
+        _mixed_kept == "See you Friday."
+        and "automated" in _mixed_omit
+        and "See you Friday." in (_mixed_msg.quoted or "")
+        and "automated notification" not in (_mixed_msg.quoted or ""),
+        checks,
+        problems,
+        detail={"kept": _mixed_kept, "quoted": _mixed_msg.quoted, "dedupe": _mixed_msg.quote_dedupe},
+    )
+    _cst = _payload_sort_key(
+        "b", {"sent_at": "2009-01-01T10:00:00-06:00"}
+    )
+    _utc = _payload_sort_key(
+        "a", {"sent_at": "2009-01-01T12:00:00+00:00"}
+    )
+    _check(
+        "review_sort_uses_normalized_timezone",
+        _utc[0] < _cst[0]
+        and "2009-01-01T10:00:00-06:00" < "2009-01-01T12:00:00+00:00",
+        checks,
+        problems,
+        detail={"utc": str(_utc[0]), "cst": str(_cst[0])},
+    )
+    _linked = attach_rfc_neighbors(
+        [
+            LightRow(
+                evidence_id="child",
+                sent_at=datetime(2009, 1, 2, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<child@x>",
+                reply_ids=["<parent@x>"],
+                from_addrs={"peggo417@hotmail.com"},
+                addresses={"peggo417@hotmail.com"},
+                peggy_authored=True,
+                subject="Re: Dinner",
+                skip=False,
+            )
+        ],
+        [
+            LightRow(
+                evidence_id="parent",
+                sent_at=datetime(2009, 1, 1, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<parent@x>",
+                reply_ids=[],
+                from_addrs={"sam@example.test"},
+                addresses={"sam@example.test"},
+                peggy_authored=False,
+                subject="Dinner",
+                skip=False,
+            )
+        ],
+    )
+    _check(
+        "review_reply_neighbor_without_trusted_from_is_attached",
+        {r.evidence_id for r in _linked} == {"child", "parent"},
+        checks,
+        problems,
+        detail=[r.evidence_id for r in _linked],
+    )
     _keep_q = _prepare_message(
         "keep-q",
         {
@@ -3338,12 +3439,16 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "===== USER QUESTION AND EVIDENCE =====\nuser\n",
         encoding="utf-8",
     )
+    _paste_hash = __import__("hashlib").sha256(
+        (_td / "MODEL_PASTE.txt").read_bytes()
+    ).hexdigest()
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
+                "frozen_input_sha256": _paste_hash,
                 "budget": {
                     "capacity_certainty": "unknown",
-                    "proposed_request": {"num_ctx": None},
+                    "proposed_request": {"num_ctx": None, "output_reserve": 2048},
                     "prompt_tokens": 10,
                     "usable_input_tokens": 100,
                 }
@@ -3351,9 +3456,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         ),
         encoding="utf-8",
     )
-    _plan_bad = plan_gemma_replay(paste_dir=_td, require_hash=__import__("hashlib").sha256(
-        (_td / "MODEL_PASTE.txt").read_bytes()
-    ).hexdigest())
+    _plan_bad = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
     _check(
         "review_replay_plan_refuses_unknown_capacity",
         _plan_bad.get("ok") is False and "unknown_capacity" in str(_plan_bad.get("error")),
@@ -3361,12 +3464,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_bad,
     )
-    _paste_hash = __import__("hashlib").sha256(
-        (_td / "MODEL_PASTE.txt").read_bytes()
-    ).hexdigest()
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
+                "frozen_input_sha256": _paste_hash,
                 "budget": {
                     "capacity_certainty": "observed_env",
                     "proposed_request": {
@@ -3374,6 +3475,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                         "provider": "ollama",
                         "num_ctx": 32768,
                         "temperature": 0.1,
+                        "output_reserve": 2048,
                     },
                     "prompt_tokens": 10,
                     "usable_input_tokens": 28000,
@@ -3388,6 +3490,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         _plan_ok.get("ok") is True
         and ((_plan_ok.get("request_payload") or {}).get("options") or {}).get("num_ctx")
         == 32768
+        and ((_plan_ok.get("request_payload") or {}).get("options") or {}).get("num_predict")
+        == 2048
         and _plan_ok.get("provider") == "ollama"
         and _plan_ok.get("chunking") is False,
         checks,
@@ -3397,9 +3501,36 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
+                "frozen_input_sha256": "deadbeef" * 8,
+                "budget": {
+                    "capacity_certainty": "observed_env",
+                    "proposed_request": {
+                        "num_ctx": 32768,
+                        "output_reserve": 2048,
+                    },
+                    "prompt_tokens": 10,
+                    "usable_input_tokens": 28000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _plan_side = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_refuses_unbound_source_map",
+        _plan_side.get("ok") is False
+        and "source_map_hash_mismatch" in str(_plan_side.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_side,
+    )
+    (_td / "SOURCE_MAP.json").write_text(
+        json.dumps(
+            {
+                "frozen_input_sha256": _paste_hash,
                 "budget": {
                     "capacity_certainty": "advertised_only",
-                    "proposed_request": {"num_ctx": 99991},
+                    "proposed_request": {"num_ctx": 99991, "output_reserve": 2048},
                     "prompt_tokens": 10,
                     "usable_input_tokens": 28000,
                 }
@@ -3419,9 +3550,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
+                "frozen_input_sha256": _paste_hash,
                 "budget": {
                     "capacity_certainty": "observed_env",
-                    "proposed_request": {"num_ctx": 8192},
+                    "proposed_request": {"num_ctx": 8192, "output_reserve": 2048},
                     "prompt_tokens": 20000,
                     "usable_input_tokens": 4000,
                 }
@@ -3586,6 +3718,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "Will not finish a merge or prepare on the wrong branch." in prep_cmd
         and "Will not fall back to merge" in prep_cmd
         and "Will not commit --continue" in prep_cmd
+        and "Will not pull, abort that rebase, or prepare." in prep_cmd
         and 'commit --no-edit -m "sync(flightsim):' not in prep_cmd
         and 'merge --no-edit -m "sync(flightsim):' not in prep_cmd,
         checks,

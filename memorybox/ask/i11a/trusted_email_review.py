@@ -576,6 +576,111 @@ def group_conversations(rows: list[LightRow]) -> list[dict[str, Any]]:
     return out
 
 
+def attach_rfc_neighbors(rows: list[LightRow], extras: list[LightRow]) -> list[LightRow]:
+    """Add archive rows that share a reply/Message-ID edge. Not a retrieve widen."""
+    added = list(rows)
+    have = {r.evidence_id for r in added}
+    changed = True
+    while changed:
+        changed = False
+        known_rfc = {_own_rfc(r) for r in added if _own_rfc(r)}
+        needed_parents = {
+            rid for r in added for rid in _reply_rfcs(r) if rid not in known_rfc
+        }
+        for extra in extras:
+            if extra.evidence_id in have:
+                continue
+            own = _own_rfc(extra)
+            replies = set(_reply_rfcs(extra))
+            if (own and own in needed_parents) or (replies & known_rfc):
+                added.append(extra)
+                have.add(extra.evidence_id)
+                changed = True
+    return added
+
+
+def fetch_rfc_neighbor_rows(rows: list[LightRow]) -> list[LightRow]:
+    """Load reply parents/children by RFC id. Does not filter by trusted From."""
+    from memorybox.db import connection
+
+    wanted = []
+    for row in rows:
+        if _own_rfc(row):
+            wanted.append(_own_rfc(row))
+        wanted.extend(_reply_rfcs(row))
+    wanted = [w for w in dict.fromkeys(wanted) if w]
+    if not wanted:
+        return []
+    have = {r.evidence_id for r in rows}
+    out: list[LightRow] = []
+    with connection() as conn:
+        fetched = conn.execute(
+            """
+            SELECT id,
+                   payload_json->>'sent_at' AS sent_at,
+                   payload_json->>'thread_id' AS thread_id,
+                   coalesce(
+                       payload_json->>'rfc_message_id',
+                       payload_json->>'message_id',
+                       ''
+                   ) AS rfc_message_id,
+                   payload_json->>'in_reply_to' AS in_reply_to,
+                   payload_json->'in_reply_to_ids' AS in_reply_to_ids,
+                   payload_json->>'references' AS refs,
+                   payload_json->'from_parsed' AS from_parsed,
+                   payload_json->>'from' AS from_header,
+                   payload_json->>'subject' AS subject,
+                   lower(coalesce(
+                       payload_json->>'evidence_channel', 'email'
+                   )) AS ch
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+            LIMIT 8000
+            """,
+        ).fetchall()
+    for raw in fetched:
+        if str(raw["ch"] or "email") != "email":
+            continue
+        eid = str(raw["id"])
+        if eid in have:
+            continue
+        payload_lite = {
+            "from_parsed": raw["from_parsed"] or [],
+            "from": raw["from_header"],
+            "in_reply_to": raw["in_reply_to"],
+            "in_reply_to_ids": raw["in_reply_to_ids"] or [],
+            "references": raw["refs"],
+            "rfc_message_id": raw["rfc_message_id"],
+        }
+        reply_ids = _rfc_ids(
+            raw["in_reply_to"], raw["in_reply_to_ids"], raw["refs"]
+        )
+        cand = LightRow(
+            evidence_id=eid,
+            sent_at=_parse_sent_at(raw["sent_at"]),
+            thread_id=str(raw["thread_id"] or "").strip(),
+            rfc_message_id=str(raw["rfc_message_id"] or "").strip(),
+            reply_ids=reply_ids,
+            from_addrs=_payload_email_addresses(
+                {
+                    "from_parsed": payload_lite.get("from_parsed"),
+                    "from": payload_lite.get("from"),
+                }
+            ),
+            addresses=_payload_email_addresses(payload_lite),
+            peggy_authored=False,
+            subject=str(raw["subject"] or ""),
+            skip=False,
+        )
+        own = _own_rfc(cand)
+        replies = set(_reply_rfcs(cand))
+        if own in wanted or (replies & set(wanted)):
+            out.append(cand)
+    return out
+
+
 def load_payloads(evidence_ids: list[str]) -> dict[str, dict[str, Any]]:
     from memorybox.db import connection
     from uuid import UUID
@@ -640,17 +745,23 @@ _SHORT_GREETING = re.compile(
     r"good (?:morning|afternoon|evening))\b[\s\S]{0,120}$"
 )
 _MAX_GREETING_CHARS = 160
-# Card-send / view / notification phrasing — not a brand-name blacklist.
+# Template / delivery / view-link phrasing — not a brand-name blacklist
+# and not first-person “I sent you an e-card…”.
 _SERVICE_NOTIFICATION = (
-    re.compile(r"(?i)\be-?cards?\b"),
-    re.compile(r"(?i)\bsent you (?:a|an)\b.{0,80}\b(?:e-?card|greeting card|card)\b"),
+    re.compile(
+        r"(?i)\byour e-?card (?:is ready|was delivered|has been (?:sent|delivered))\b"
+    ),
     re.compile(
         r"(?i)\byou (?:have )?received (?:a|an)\b.{0,80}\b(?:e-?card|greeting card)\b"
     ),
     re.compile(r"(?i)\bview your (?:e-?card|greeting card|card|greeting)\b"),
     re.compile(r"(?i)\bclick (?:here|the link|below) to (?:view|see|open)\b"),
     re.compile(r"(?i)\bgreeting card (?:was |has been )?(?:sent|delivered)\b"),
+    re.compile(
+        r"(?i)\b(?:we|the system) sent you (?:a|an)\b.{0,40}\b(?:e-?card|card)\b"
+    ),
 )
+_MAX_SALVAGE_CHARS = 200
 
 
 def _norm_ws(text: str) -> str:
@@ -831,28 +942,59 @@ def segment_review_body(recovered: str) -> dict[str, Any]:
     return {"lead": lead, "quote_turns": quote_turns}
 
 
-def _looks_like_short_personal_greeting(text: str) -> bool:
-    """Prefix before an automation footer is not itself proof of authorship."""
-    t = (text or "").strip()
-    if not t or len(t) > _MAX_GREETING_CHARS:
-        return False
-    if any(pat.search(t) for pat in _SERVICE_STRONG):
-        return False
-    if looks_like_service_notification(t):
-        return False
-    return bool(_SHORT_GREETING.match(t))
-
-
 def service_notification_signal_count(text: str) -> int:
     return sum(1 for pat in _SERVICE_NOTIFICATION if pat.search(text or ""))
 
 
 def looks_like_service_notification(text: str) -> bool:
-    """E-card / view-link notification language. Not a brand-name delete."""
+    """Template / view-link notification language. Not a brand-name delete."""
     body = text or ""
     hits = service_notification_signal_count(body)
     strong = any(pat.search(body) for pat in _SERVICE_STRONG)
     return hits >= 2 or (hits >= 1 and strong)
+
+
+def _first_strong_split(text: str) -> int | None:
+    split_at = None
+    for pat in _SERVICE_STRONG:
+        m = pat.search(text or "")
+        if m and (split_at is None or m.start() < split_at):
+            split_at = m.start()
+    return split_at
+
+
+def extract_non_service_text(text: str) -> tuple[str, str]:
+    """Return (kept_personal, omitted_service). Long templates are not kept."""
+    raw = text or ""
+    split_at = _first_strong_split(raw)
+    if split_at is None:
+        if looks_like_service_notification(raw):
+            return "", raw
+        return raw.strip(), ""
+    prefix = raw[:split_at].strip()
+    rest = raw[split_at:].strip()
+    if (
+        prefix
+        and len(prefix) <= _MAX_SALVAGE_CHARS
+        and service_notification_signal_count(prefix) == 0
+        and not looks_like_service_notification(prefix)
+    ):
+        return prefix, rest
+    return "", raw
+
+
+def _looks_like_short_personal_greeting(text: str) -> bool:
+    """A greeting is not proof of authorship if notification language is present."""
+    t = (text or "").strip()
+    if not t or len(t) > _MAX_GREETING_CHARS:
+        return False
+    if any(pat.search(t) for pat in _SERVICE_STRONG):
+        return False
+    if service_notification_signal_count(t) >= 1:
+        return False
+    if looks_like_service_notification(t):
+        return False
+    return bool(_SHORT_GREETING.match(t))
 
 
 def classify_review_authorship(
@@ -865,18 +1007,13 @@ def classify_review_authorship(
     strong = sum(1 for pat in _SERVICE_STRONG if pat.search(text))
     weak = sum(1 for pat in _SERVICE_WEAK if pat.search(text))
     if strong:
-        split_at = None
-        for pat in _SERVICE_STRONG:
-            m = pat.search(text)
-            if m and (split_at is None or m.start() < split_at):
-                split_at = m.start()
-        prefix = text[:split_at].strip() if split_at else ""
-        if from_trusted and _looks_like_short_personal_greeting(prefix):
+        kept, omitted = extract_non_service_text(text)
+        if from_trusted and _looks_like_short_personal_greeting(kept):
             return {
                 "kind": "personal_plus_service",
                 "peggy_personal": True,
-                "personal_lead": prefix,
-                "service_body": text[split_at:].strip(),
+                "personal_lead": kept,
+                "service_body": omitted or text[_first_strong_split(text) or 0 :].strip(),
             }
         return {
             "kind": "service_generated",
@@ -956,10 +1093,8 @@ def _prepare_message(
         body = str(qt.get("body") or "").strip()
         if not body:
             continue
-        q_auth = classify_review_authorship(lead=body, from_trusted=False)
-        if q_auth["kind"] in {"service_generated", "personal_plus_service"} or (
-            looks_like_service_notification(body)
-        ):
+        kept_q, omitted_q = extract_non_service_text(body)
+        if omitted_q and not kept_q:
             dedupe.append(
                 {
                     "body": body,
@@ -968,6 +1103,16 @@ def _prepare_message(
                 }
             )
             continue
+        if omitted_q and kept_q:
+            dedupe.append(
+                {
+                    "body": omitted_q,
+                    "retained_source": "personal_portion_kept_in_quote",
+                    "action": "omitted_service_notice",
+                }
+            )
+            qt = {**qt, "body": kept_q}
+            body = kept_q
         retained_in = _packet_duplicate_source(body, packet_texts)
         if retained_in:
             dedupe.append(
@@ -1048,6 +1193,7 @@ def inspect_gemma_context(model: str = ESTABLISHED_GEMMA_MODEL) -> dict[str, Any
             "provider": "ollama",
             "num_ctx": int(env_ctx) if env_ctx.isdigit() else None,
             "output_reserve": _OUTPUT_TOKEN_ROOM,
+            "num_predict": _OUTPUT_TOKEN_ROOM,
             "safety_margin": _SAFETY_TOKEN_ROOM,
             "temperature": 0.1,
             "format": "json",
@@ -1095,6 +1241,7 @@ def inspect_gemma_context(model: str = ESTABLISHED_GEMMA_MODEL) -> dict[str, Any
         "provider": "ollama",
         "num_ctx": info.get("configured_num_ctx"),
         "output_reserve": _OUTPUT_TOKEN_ROOM,
+        "num_predict": _OUTPUT_TOKEN_ROOM,
         "safety_margin": _SAFETY_TOKEN_ROOM,
         "temperature": 0.1,
         "format": "json",
@@ -1120,6 +1267,16 @@ def measure_prompt_tokens(system: str, user: str, *, model: str) -> dict[str, An
         "measured_tokens_ollama_tokenize": measured,
         "measurement": "measured" if measured is not None else "estimate_only",
     }
+
+
+def _payload_sort_key(eid: str, payload: dict[str, Any]) -> tuple[datetime, str]:
+    """Normalized UTC instant. Raw timestamp strings must not decide order."""
+    when = _parse_sent_at(payload.get("sent_at"))
+    if when is None:
+        return datetime.max.replace(tzinfo=timezone.utc), eid
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc), eid
 
 
 def _in_interval(when: datetime | None, start: datetime, end: datetime) -> bool:
@@ -1185,14 +1342,10 @@ def render_model_paste(
             kind = msg.authorship_kind
             if kind == "service_generated":
                 lines.append(
-                    f"{when}, service-generated notice (From {speaker}; "
-                    f"not personal speech): [{cite}]{extra}"
+                    f"{when}, [service-generated notice omitted from this evaluation; "
+                    f"From {speaker}; not personal speech]: [{cite}]{extra}"
                 )
-                body = (msg.service_body or "").strip()
-                if not body:
-                    _kind, recovered = classify_body_source(msg.payload)
-                    _ = _kind
-                    body = recovered or "(service-generated notice — no recovered body)"
+                body = ""
             elif kind == "unresolved":
                 lines.append(
                     f"{when}, {speaker} (authorship unresolved) said: [{cite}]{extra}"
@@ -1211,11 +1364,9 @@ def render_model_paste(
             if kind == "personal_plus_service":
                 lines.append("")
                 lines.append(
-                    "[service-generated notice in the same message — not personal speech]"
+                    "[service-generated notice in the same message omitted "
+                    "from this evaluation — not personal speech]"
                 )
-                svc = (msg.service_body or "").strip()
-                if svc:
-                    lines.append(svc)
             if msg.quote_turns:
                 for qt in msg.quote_turns:
                     qfrom = qt.get("from") or "quoted speaker uncertain"
@@ -1315,6 +1466,12 @@ def prepare_trusted_email_review(
         }
 
     light = inventory_trusted_email_light(trusted=trusted)
+    try:
+        extras = fetch_rfc_neighbor_rows(light)
+        if extras:
+            light = attach_rfc_neighbors(light, extras)
+    except Exception:  # noqa: BLE001
+        extras = []
     inventory = {
         "trusted_message_n": len(light),
         "dated_n": sum(1 for r in light if r.sent_at),
@@ -1386,10 +1543,7 @@ def prepare_trusted_email_review(
     for g in primary_groups:
         ordered_ids = sorted(
             g["in_interval_ids"] + g["context_ids"],
-            key=lambda i: (
-                str((payloads.get(i) or {}).get("sent_at") or ""),
-                i,
-            ),
+            key=lambda i: _payload_sort_key(i, payloads.get(i) or {}),
         )
         packet_texts: list[str] = []
         msgs: list[PreparedMessage] = []
@@ -1475,6 +1629,19 @@ def prepare_trusted_email_review(
                 "peggy_authored_n": sum(1 for m in c["messages"] if m.peggy_authored),
                 "peggy_personal_n": sum(1 for m in c["messages"] if m.peggy_personal),
                 "message_ids": [m.evidence_id for m in c["messages"]],
+                "connecting_evidence": c.get("connecting_evidence"),
+                "missing_parent_ids": c.get("missing_parent_ids"),
+                "quote_turns": [
+                    {
+                        "evidence_id": m.evidence_id,
+                        "from": q.get("from"),
+                        "when": q.get("when"),
+                        "provenance": q.get("provenance"),
+                        "uncertainty": q.get("uncertainty"),
+                    }
+                    for m in c["messages"]
+                    for q in (m.quote_turns or [])
+                ],
                 "quote_omissions": [
                     {
                         "evidence_id": m.evidence_id,
@@ -1677,6 +1844,26 @@ def plan_gemma_replay(
         }
     if digest.startswith(_FORBIDDEN_FREEZE_PREFIX):
         return {"ok": False, "error": "forbidden_fe8a128c"}
+    smap = source_map
+    if smap is None and path.is_dir() and (path / "SOURCE_MAP.json").is_file():
+        try:
+            smap = json.loads((path / "SOURCE_MAP.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            smap = {}
+    if not isinstance(smap, dict) or not smap:
+        return {
+            "ok": False,
+            "error": "source_map_missing — will not guess budget or model",
+            "input_sha256": digest,
+        }
+    mapped = str(smap.get("frozen_input_sha256") or "").strip().lower()
+    if mapped != digest.lower():
+        return {
+            "ok": False,
+            "error": "source_map_hash_mismatch — sidecar is not bound to this paste",
+            "expected": digest,
+            "source_map_hash": mapped,
+        }
     if "===== SYSTEM INSTRUCTIONS =====" not in text:
         return {"ok": False, "error": "paste_missing_system_marker"}
     _, rest = text.split("===== SYSTEM INSTRUCTIONS =====", 1)
@@ -1685,18 +1872,18 @@ def plan_gemma_replay(
     system, user = rest.split("===== USER QUESTION AND EVIDENCE =====", 1)
     system = system.strip()
     user = user.strip()
-    smap = source_map
-    if smap is None and path.is_dir() and (path / "SOURCE_MAP.json").is_file():
-        try:
-            smap = json.loads((path / "SOURCE_MAP.json").read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            smap = {}
     budget = (smap or {}).get("budget") if isinstance(smap, dict) else {}
     proposed = (budget or {}).get("proposed_request") or {}
     certainty = str((budget or {}).get("capacity_certainty") or "unknown")
     num_ctx = proposed.get("num_ctx")
     prompt_tokens = budget.get("prompt_tokens")
     usable = budget.get("usable_input_tokens")
+    if prompt_tokens is None or usable is None:
+        return {
+            "ok": False,
+            "error": "budget_fields_missing — will not skip the oversize check",
+            "input_sha256": digest,
+        }
     if certainty == "unknown" or not num_ctx:
         return {
             "ok": False,
@@ -1724,6 +1911,15 @@ def plan_gemma_replay(
             "usable_input_tokens": usable,
             "input_sha256": digest,
         }
+    num_predict = proposed.get("num_predict")
+    if num_predict is None:
+        num_predict = proposed.get("output_reserve")
+    if not num_predict:
+        return {
+            "ok": False,
+            "error": "output_limit_missing — will not send an unbounded request",
+            "input_sha256": digest,
+        }
     payload = ollama_chat_request_payload(
         str(proposed.get("model") or ESTABLISHED_GEMMA_MODEL),
         system,
@@ -1731,9 +1927,12 @@ def plan_gemma_replay(
         format_json=True,
         temperature=float(proposed.get("temperature") or 0.1),
         num_ctx=int(num_ctx),
+        num_predict=int(num_predict),
     )
     if "num_ctx" not in (payload.get("options") or {}):
         return {"ok": False, "error": "request_missing_num_ctx"}
+    if "num_predict" not in (payload.get("options") or {}):
+        return {"ok": False, "error": "request_missing_num_predict"}
     return {
         "ok": True,
         "provider": "ollama",
@@ -1790,6 +1989,7 @@ def run_trusted_email_review_gemma(
         format_json=True,
         timeout=int(timeout_seconds),
         num_ctx=int(plan["num_ctx"]),
+        num_predict=int((req.get("options") or {}).get("num_predict") or 0) or None,
     )
     return {
         "ok": True,
