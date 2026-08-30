@@ -197,20 +197,43 @@ class _CloudOpenAICompatChat:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
-        req = urllib.request.Request(
-            url,
-            data=_json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                body = _json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+        delays = (4, 8, 16, 32)
+        body: dict[str, Any] | None = None
+        last_exc: BaseException | None = None
+        for attempt in range(len(delays) + 1):
+            req = urllib.request.Request(
+                url,
+                data=_json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                    body = _json.loads(resp.read().decode("utf-8"))
+                last_exc = None
+                break
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                try:
+                    exc.read()
+                except Exception:  # noqa: BLE001
+                    pass
+                if int(getattr(exc, "code", 0) or 0) != 429 or attempt >= len(delays):
+                    raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+                wait_s = float(delays[attempt])
+                raw_after = ""
+                if exc.headers is not None:
+                    raw_after = str(exc.headers.get("Retry-After") or "").strip()
+                if raw_after.isdigit():
+                    wait_s = max(wait_s, float(int(raw_after)))
+                time.sleep(min(wait_s, 90.0))
+            except Exception as exc:  # noqa: BLE001
+                raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+        if body is None:
+            raise ProviderUnavailable(f"cloud chat failed: {last_exc}")
         choices = body.get("choices") or []
         content = ""
         if choices:

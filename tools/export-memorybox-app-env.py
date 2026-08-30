@@ -85,12 +85,28 @@ def apply_unset_keys_to_environ() -> dict[str, str]:
     return emit
 
 
+def cmd_escape_value(val: str) -> str:
+    """Make a value safe inside cmd `set "KEY=..."` from `for /f ... do %%L`.
+
+    `%` is doubled. `& | < > ^` are caret-escaped so they are not executed.
+    Embedded `"` would break the quoted set line — drop them (app.env already
+    strips wrapping quotes).
+    """
+    safe = val.replace("%", "%%").replace('"', "")
+    escaped: list[str] = []
+    for ch in safe:
+        if ch in "&|<>^":
+            escaped.append("^" + ch)
+        else:
+            escaped.append(ch)
+    return "".join(escaped)
+
+
 def cmd_set_lines(values: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for key, val in values.items():
         # set "KEY=value" keeps spaces and extra '=' in the value.
-        safe = val.replace("%", "%%")
-        lines.append(f'set "{key}={safe}"')
+        lines.append(f'set "{key}={cmd_escape_value(val)}"')
     return lines
 
 

@@ -136,6 +136,95 @@ def _write_phase2_summary_files(out: Path, result: dict[str, Any], stamp: str) -
         pass
 
 
+def _model_fail_error(row: dict[str, Any]) -> str:
+    raw = row.get("error") or row.get("reason")
+    if raw:
+        return str(raw)
+    p2 = row.get("phase2_report") if isinstance(row.get("phase2_report"), dict) else {}
+    val = row.get("email_grounding") if isinstance(row.get("email_grounding"), dict) else {}
+    if not val:
+        val = p2.get("validation") if isinstance(p2.get("validation"), dict) else {}
+    invented = list(val.get("invented_evidence_ids") or [])
+    if not invented:
+        invented = [
+            str(x.get("id") or x)
+            for x in (p2.get("invented_or_unsupported_claims") or [])
+            if isinstance(x, dict) and x.get("reason") == "invented_evidence_id"
+        ]
+    if invented:
+        return "grounding_invented_ids:" + ",".join(str(x) for x in invented[:6])
+    missing = list(val.get("rows_missing_provenance") or [])
+    if missing:
+        return "grounding_missing_provenance"
+    if p2.get("email_reached_model_and_grounded_output") is False:
+        return "email_not_grounded"
+    if p2.get("ok") is False or row.get("ok") is False:
+        return "phase2_report_not_ok"
+    return ""
+
+
+def _model_attempted(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("report_path")
+        or row.get("phase2_report")
+        or row.get("error")
+        or row.get("skipped") is False
+    )
+
+
+def load_reusable_phase2_run(
+    out: Path,
+    *,
+    provider: str,
+    model: str,
+    fixture_hash: str,
+) -> dict[str, Any] | None:
+    """Reuse an existing FEV2 report for this fixture hash — do not re-pay Gemma.
+
+    Passing reports skip the model. Failed reports are reused so a Sol 429
+    retry does not launch another multi-hour Gemma call; the fail reason is
+    surfaced instead of a blank error / models_not_run stop.
+    """
+    digest = str(fixture_hash or "").strip()
+    if not digest:
+        return None
+    safe_model = str(model or "").replace(":", "-")
+    path = out / f"FEV2REPORT_{provider}_{safe_model}_{digest[:8]}.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    inner = data.get("phase2_report") if isinstance(data.get("phase2_report"), dict) else data
+    stored = str(inner.get("input_sha256") or data.get("input_sha256") or "")
+    if stored and stored != digest:
+        return None
+    ok = inner.get("ok") is True or data.get("ok") is True
+    loaded = {
+        "ok": bool(ok),
+        "skipped": False,
+        "reused": True,
+        "error": None,
+        "input_sha256": stored or digest,
+        "provider": provider,
+        "model": model,
+        "report_path": str(path),
+        "phase2_report": inner,
+        "email_grounding": (
+            data.get("email_grounding")
+            if isinstance(data.get("email_grounding"), dict)
+            else inner.get("validation")
+        ),
+        "chunking": False,
+    }
+    if not ok:
+        loaded["error"] = _model_fail_error(loaded)
+    return loaded
+
+
 def _try_model_run(
     fixture_path: str,
     *,
@@ -264,7 +353,9 @@ def run_trusted_evidence_pipeline(
     gemma: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
     sol: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
     if run_models:
-        gemma = _try_model_run(
+        gemma = load_reusable_phase2_run(
+            out, provider="ollama", model=gemma_model, fixture_hash=str(fixture_hash or "")
+        ) or _try_model_run(
             fixture_path,
             provider="ollama",
             model=gemma_model,
@@ -272,7 +363,13 @@ def run_trusted_evidence_pipeline(
             timeout_seconds=timeout_seconds,
         )
         cloud_model = (sol_model or os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL") or "").strip()
-        if not cloud_model:
+        if not gemma.get("ok"):
+            sol = {
+                "ok": False,
+                "skipped": True,
+                "reason": "blocked_until_gemma_ok — fix Gemma grounding before paying Sol",
+            }
+        elif not cloud_model:
             sol = {
                 "ok": False,
                 "skipped": True,
@@ -288,7 +385,12 @@ def run_trusted_evidence_pipeline(
                 "reason": "cloud_sol_not_configured",
             }
         else:
-            sol = _try_model_run(
+            sol = load_reusable_phase2_run(
+                out,
+                provider="cloud",
+                model=cloud_model,
+                fixture_hash=str(fixture_hash or ""),
+            ) or _try_model_run(
                 fixture_path,
                 provider="cloud",
                 model=cloud_model,
@@ -299,7 +401,8 @@ def run_trusted_evidence_pipeline(
     result["gemma"] = {
         "ok": gemma.get("ok"),
         "skipped": gemma.get("skipped"),
-        "error": gemma.get("error") or gemma.get("reason"),
+        "reused": bool(gemma.get("reused")),
+        "error": _model_fail_error(gemma),
         "model": gemma.get("model") or gemma_model,
         "input_sha256": gemma.get("input_sha256") or fixture_hash,
         "report_path": gemma.get("report_path"),
@@ -308,7 +411,8 @@ def run_trusted_evidence_pipeline(
     result["sol"] = {
         "ok": sol.get("ok"),
         "skipped": sol.get("skipped"),
-        "error": sol.get("error") or sol.get("reason"),
+        "reused": bool(sol.get("reused")),
+        "error": _model_fail_error(sol),
         "model": sol.get("model") or sol_model,
         "input_sha256": sol.get("input_sha256") or fixture_hash,
         "report_path": sol.get("report_path"),
@@ -381,12 +485,17 @@ def run_trusted_evidence_pipeline(
         result["stop"] = (
             "phase_2_complete — Phase 3 chunking requires explicit authorization"
         )
+    elif not gemma.get("ok") and _model_attempted(gemma):
+        result["ok"] = False
+        result["stop"] = "phase_2_gemma_incomplete — do not chunk-with-models yet"
     elif gemma.get("ok") and not sol.get("ok"):
         result["ok"] = False
         result["stop"] = "phase_2_sol_incomplete — do not chunk-with-models yet"
-    elif sol.get("ok") and not gemma.get("ok"):
+    elif _model_attempted(gemma) or _model_attempted(sol):
         result["ok"] = False
-        result["stop"] = "phase_2_gemma_incomplete — do not chunk-with-models yet"
+        result["stop"] = (
+            "phase_2_incomplete — Gemma and/or Sol ran but did not pass (see errors)"
+        )
     else:
         result["ok"] = False
         result["stop"] = "phase_2_models_not_run — fixture frozen; run Gemma then Sol on FlightSim"
@@ -414,9 +523,9 @@ def format_phase2_summary(result: dict[str, Any]) -> str:
             f"selected={freeze.get('selected_email_count')}",
             f"fixture: {result.get('fixture_path') or freeze.get('fixture_path') or ''}",
             f"gemma: ok={gemma.get('ok')} skipped={gemma.get('skipped')} "
-            f"error={gemma.get('error') or ''}",
+            f"reused={gemma.get('reused')} error={gemma.get('error') or ''}",
             f"sol: ok={sol.get('ok')} skipped={sol.get('skipped')} "
-            f"error={sol.get('error') or ''}",
+            f"reused={sol.get('reused')} error={sol.get('error') or ''}",
             f"phase3: {(result.get('phase3_model_per_chunk') or {}).get('reason') or 'not_run'}",
         ]
     )

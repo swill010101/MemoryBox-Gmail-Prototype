@@ -741,10 +741,11 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < gate_txt.find("-Step Freeze")
         < gate_txt.find("-Step Pipeline")
         < gate_txt.find("-Step VerifyReports")
-        < gate_txt.find("-Step Chunks")
+        and "-Step Chunks" not in gate_txt
         and "trusted FEV2 freeze" in gate_txt
         and "--authorize-phase3" not in gate_txt
-        and "Phase 3 chunk models (after Phase 2 verifier)" in gate_txt
+        and "Phase 3 is not authorized" in gate_txt
+        and "Phase 3 chunk models (after Phase 2 verifier)" not in gate_txt
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
@@ -1023,6 +1024,116 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         '"max_tokens"' in cloud_src
         and "MEMORYBOX_CLOUD_LLM_MAX_TOKENS" in cloud_src
         and "MEMORYBOX_CLOUD_LLM_MAX_TOKENS" in export_src,
+        checks,
+        problems,
+    )
+    _check(
+        "cloud_chat_retries_http_429",
+        "429" in cloud_src
+        and "Retry-After" in cloud_src
+        and "time.sleep" in cloud_src
+        and "HTTPError" in cloud_src,
+        checks,
+        problems,
+    )
+    import io as _io
+    import os as _os
+    import urllib.error as _ue
+    from unittest.mock import patch as _patch
+
+    _prev_url = _os.environ.get("MEMORYBOX_CLOUD_LLM_BASE_URL")
+    _prev_key = _os.environ.get("MEMORYBOX_CLOUD_LLM_API_KEY")
+    _os.environ["MEMORYBOX_CLOUD_LLM_BASE_URL"] = "https://example.test/v1"
+    _os.environ["MEMORYBOX_CLOUD_LLM_API_KEY"] = "test-key"
+    _cloud_calls = {"n": 0}
+
+    class _Hdr:
+        def get(self, name, default=""):
+            return "1" if str(name) == "Retry-After" else default
+
+    class _OkResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return (
+                b'{"choices":[{"message":{"content":"{\\"ok\\":true}"}}],'
+                b'"usage":{"total_tokens":1}}'
+            )
+
+    def _urlopen_429_then_ok(req, timeout=None):
+        _ = req, timeout
+        _cloud_calls["n"] += 1
+        if _cloud_calls["n"] < 3:
+            raise _ue.HTTPError(
+                "https://example.test/v1/chat/completions",
+                429,
+                "Too Many Requests",
+                _Hdr(),
+                _io.BytesIO(b""),
+            )
+        return _OkResp()
+
+    _retry_ok = False
+    _retry_detail: dict[str, object] = {}
+    try:
+        from memorybox.ask.i11a.historian_provider import _CloudOpenAICompatChat
+        from memorybox.providers.llm.dto import ChatMessage
+
+        with _patch(
+            "urllib.request.urlopen", _urlopen_429_then_ok
+        ), _patch("memorybox.ask.i11a.historian_provider.time.sleep", lambda _s: None):
+            _out = _CloudOpenAICompatChat(
+                chat_model="sol-test", timeout_seconds=5
+            ).chat([ChatMessage(role="user", content="hi")])
+        _retry_ok = _cloud_calls["n"] == 3 and "ok" in (_out.content or "")
+        _retry_detail = {"calls": _cloud_calls["n"], "content": _out.content}
+    except Exception as exc:  # noqa: BLE001
+        _retry_detail = {"error": f"{type(exc).__name__}:{exc}", "calls": _cloud_calls["n"]}
+    finally:
+        if _prev_url is None:
+            _os.environ.pop("MEMORYBOX_CLOUD_LLM_BASE_URL", None)
+        else:
+            _os.environ["MEMORYBOX_CLOUD_LLM_BASE_URL"] = _prev_url
+        if _prev_key is None:
+            _os.environ.pop("MEMORYBOX_CLOUD_LLM_API_KEY", None)
+        else:
+            _os.environ["MEMORYBOX_CLOUD_LLM_API_KEY"] = _prev_key
+    _check(
+        "cloud_chat_recovers_after_http_429",
+        _retry_ok,
+        checks,
+        problems,
+        detail=_retry_detail,
+    )
+    escaped_sets = _emod.cmd_set_lines(
+        {"MEMORYBOX_CLOUD_LLM_API_KEY": r'pre&post|x>y<z^q%pct"q'}
+    )
+    _check(
+        "cmd_set_escapes_metacharacters",
+        bool(escaped_sets)
+        and "^&" in escaped_sets[0]
+        and "^|" in escaped_sets[0]
+        and "^>" in escaped_sets[0]
+        and "^<" in escaped_sets[0]
+        and "^^" in escaped_sets[0]
+        and "%%" in escaped_sets[0]
+        and '"' not in escaped_sets[0].split("=", 1)[-1][:-1],
+        checks,
+        problems,
+        detail=escaped_sets,
+    )
+    _check(
+        "gate_comments_phase2_summary_only",
+        'gh pr comment 77 --body-file "%EVIDENCE_DIR%\\PHASE2_SUMMARY.txt"'
+        in gate_txt
+        and 'gh pr comment 77 --body-file "%EVIDENCE_DIR%\\PHASE1_SUMMARY.txt"'
+        not in gate_txt
+        and 'gh pr comment 77 --body-file "%EVIDENCE_DIR%\\PHASE3_SUMMARY.txt"'
+        not in gate_txt,
         checks,
         problems,
     )
@@ -2229,6 +2340,84 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < pipe_src.find("run_chunked_models_after_single_pass"),
         checks,
         problems,
+    )
+    _check(
+        "pipeline_reuses_existing_phase2_reports",
+        "load_reusable_phase2_run" in pipe_src
+        and "blocked_until_gemma_ok" in pipe_src
+        and "grounding_invented_ids" in inspect.getsource(
+            __import__(
+                "memorybox.ask.i11a.trusted_evidence_pipeline",
+                fromlist=["_model_fail_error"],
+            )._model_fail_error
+        ),
+        checks,
+        problems,
+    )
+    from memorybox.ask.i11a.trusted_evidence_pipeline import (
+        load_reusable_phase2_run as _load_p2,
+        format_phase2_summary as _fmt_p2,
+    )
+    import tempfile
+    from pathlib import Path as _Tmp
+
+    _p2_dir = _Tmp(tempfile.mkdtemp())
+    _p2_hash = "fe8a128c" + ("0" * 56)
+    _p2_fail = {
+        "ok": False,
+        "input_sha256": _p2_hash,
+        "validation": {
+            "ok": False,
+            "invented_evidence_ids": ["email_1", "person_1"],
+        },
+        "invented_or_unsupported_claims": [
+            {"id": "email_1", "reason": "invented_evidence_id"}
+        ],
+        "email_reached_model_and_grounded_output": False,
+    }
+    (
+        _p2_dir / f"FEV2REPORT_ollama_gemma4-26b_{_p2_hash[:8]}.json"
+    ).write_text(__import__("json").dumps(_p2_fail), encoding="utf-8")
+    _reused_fail = _load_p2(
+        _p2_dir, provider="ollama", model="gemma4:26b", fixture_hash=_p2_hash
+    )
+    _check(
+        "pipeline_reuses_failed_gemma_report_with_reason",
+        _reused_fail is not None
+        and _reused_fail.get("ok") is False
+        and _reused_fail.get("reused") is True
+        and "grounding_invented_ids:email_1" in str(_reused_fail.get("error") or ""),
+        checks,
+        problems,
+        detail=_reused_fail,
+    )
+    _p2_summary = _fmt_p2(
+        {
+            "ok": False,
+            "stop": "phase_2_gemma_incomplete — do not chunk-with-models yet",
+            "freeze": {"ok": True, "reused": True},
+            "gemma": {
+                "ok": False,
+                "skipped": False,
+                "reused": True,
+                "error": "grounding_invented_ids:email_1,person_1",
+            },
+            "sol": {
+                "ok": False,
+                "skipped": True,
+                "reused": False,
+                "error": "blocked_until_gemma_ok — fix Gemma grounding before paying Sol",
+            },
+        }
+    )
+    _check(
+        "phase2_summary_includes_reuse_and_fail_reason",
+        "reused=True" in _p2_summary
+        and "grounding_invented_ids:email_1,person_1" in _p2_summary
+        and "blocked_until_gemma_ok" in _p2_summary,
+        checks,
+        problems,
+        detail=_p2_summary,
     )
     _check(
         "pipeline_defers_larger_set_until_both_single_pass",
