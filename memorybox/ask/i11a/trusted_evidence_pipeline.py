@@ -14,6 +14,7 @@ from typing import Any
 
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     ESTABLISHED_GEMMA_MODEL,
+    apply_flightsim_app_env,
     fixture_is_single_pass_coverage_ok,
     fixture_selected_email_count,
     freeze_trusted_full_evidence_v2,
@@ -144,6 +145,7 @@ def run_trusted_evidence_pipeline(
     """
     out = Path(out_dir) if out_dir else _DEFAULT_OUT
     out.mkdir(parents=True, exist_ok=True)
+    apply_flightsim_app_env()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     from memorybox.person.trusted_identity import report_named_person_identity_trust
 

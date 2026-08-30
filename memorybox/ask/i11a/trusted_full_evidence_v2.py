@@ -36,6 +36,24 @@ from memorybox.person.trusted_identity import trusted_emails_for_people
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 
+
+def apply_flightsim_app_env() -> dict[str, Any]:
+    """Load MEMORYBOX_CLOUD_LLM_* from repo config/*.env into os.environ.
+
+    FlightSim last skipped Sol with no_sol_model because the Python pipeline
+    only saw process env. cmd `for /f` set lines can miss; startmb vars stay
+    in PowerShell. Does not clobber keys already set.
+    """
+    import importlib.util
+
+    export = _REPO_ROOT / "tools" / "export-memorybox-app-env.py"
+    spec = importlib.util.spec_from_file_location("export_memorybox_app_env", export)
+    if spec is None or spec.loader is None:
+        return {}
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return dict(mod.apply_unset_keys_to_environ())
+
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
 PERSON_FACT_TOKEN_CAP = 4_000
 MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
@@ -774,6 +792,7 @@ def run_trusted_full_evidence_v2(
     out_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     """Replay a frozen FEV2 fixture through one model. No retrieval. No chunking."""
+    apply_flightsim_app_env()
     data = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
     stored = data.get("input_sha256")
     recomputed = fev2_input_sha256(data)

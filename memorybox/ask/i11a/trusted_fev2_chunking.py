@@ -14,6 +14,7 @@ from memorybox.ask.i11a.full_evidence_diagnostic import estimate_tokens
 from memorybox.ask.i11a.full_evidence_l1_chunker import run_l1_chunker
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
     all_fixture_evidence_ids,
+    apply_flightsim_app_env,
     fev2_input_sha256,
     item_evidence_ids,
     validate_fev2_document,
@@ -345,6 +346,7 @@ def run_chunked_models_after_single_pass(
     out_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     """Phase 3 model-per-chunk. Refuses unless both single-pass reports are ready."""
+    apply_flightsim_app_env()
     gemma_rep = _load_json(gemma_report_path)
     sol_rep = _load_json(sol_report_path)
     gate = ready_for_chunk_models(fixture_path, gemma_rep, sol_rep)
@@ -424,6 +426,8 @@ def run_chunked_models_from_dir(
     import os
 
     from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+    apply_flightsim_app_env()
 
     dest = Path(out_dir)
     fixtures = [

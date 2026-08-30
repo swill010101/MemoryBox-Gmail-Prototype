@@ -903,12 +903,29 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     tmp_env.write('MEMORYBOX_CLOUD_LLM_MODEL="sol-quoted"\r\n')
     tmp_env.close()
     parsed_env = _emod.parse_env_file(__import__("pathlib").Path(tmp_env.name))
+    export_src = _env_export.read_text(encoding="utf-8")
     _check(
         "app_env_loader_strips_quotes_and_cr",
         parsed_env.get("MEMORYBOX_CLOUD_LLM_MODEL") == "sol-quoted",
         checks,
         problems,
         detail=parsed_env,
+    )
+    _check(
+        "pipeline_loads_flightsim_app_env_before_sol",
+        "apply_flightsim_app_env" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline)
+        and "apply_flightsim_app_env" in run_src
+        and "apply_unset_keys_to_environ" in export_src
+        and "_REPO_ROOT" in export_src,
+        checks,
+        problems,
+    )
+    _check(
+        "export_app_env_can_apply_to_os_environ",
+        hasattr(_emod, "apply_unset_keys_to_environ")
+        and hasattr(_emod, "env_files"),
+        checks,
+        problems,
     )
     _check(
         "flightsim_gate_clears_allow_dev_before_prove",

@@ -21,11 +21,26 @@ KEYS = (
     "MEMORYBOX_CLOUD_LLM_MODEL",
 )
 
-_ENV_FILES = (
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ENV_RELATIVE = (
     Path("config") / "memorybox_app.env",
     Path("config") / "video_worker.env",
     Path("config") / "memorybox_sources.env",
 )
+
+
+def env_files() -> list[Path]:
+    """Repo-root files first, then cwd — cmd may start in either MemoryBox path."""
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for rel in _ENV_RELATIVE:
+        for base in (_REPO_ROOT, Path.cwd()):
+            path = (base / rel).resolve()
+            if path in seen:
+                continue
+            seen.add(path)
+            out.append(path)
+    return out
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -49,7 +64,7 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 def merged_unset_keys() -> dict[str, str]:
     merged: dict[str, str] = {}
-    for path in _ENV_FILES:
+    for path in env_files():
         merged.update(parse_env_file(path))
     emit: dict[str, str] = {}
     for key in KEYS:
@@ -58,6 +73,14 @@ def merged_unset_keys() -> dict[str, str]:
         val = merged.get(key) or ""
         if val:
             emit[key] = val
+    return emit
+
+
+def apply_unset_keys_to_environ() -> dict[str, str]:
+    """Load FlightSim app.env into this process (cmd `for /f` set lines can miss)."""
+    emit = merged_unset_keys()
+    for key, val in emit.items():
+        os.environ[key] = val
     return emit
 
 

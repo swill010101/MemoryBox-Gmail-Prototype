@@ -93,9 +93,10 @@ Auto-expand must not clobber an owner/operator profile contact. People UI
 `add_contact` upserts and promotes an existing auto-expand row.
 
 Phase 2 is included in the pipeline when Ollama has `gemma4:26b` and cloud Sol
-env is set. The gate loads `MEMORYBOX_CLOUD_LLM_*` and `MEMORYBOX_OLLAMA_BASE_URL`
-from `config\memorybox_app.env` (startmb-only vars are otherwise invisible to
-cmd). A skipped Gemma/Sol run is a hard gate fail. Paste `PHASE2_SUMMARY`.
+env is set. The gate and the Python pipeline both load `MEMORYBOX_CLOUD_LLM_*`
+and `MEMORYBOX_OLLAMA_BASE_URL` from repo `config\memorybox_app.env` (startmb-only
+vars are otherwise invisible to cmd; `for /f` set lines can miss). A skipped
+Gemma/Sol run is a hard gate fail. Paste `PHASE2_SUMMARY`.
 If `ollama_model_missing`: `ollama pull gemma4:26b`. If `cloud_sol_not_configured`:
 put `MEMORYBOX_CLOUD_LLM_BASE_URL`, `MEMORYBOX_CLOUD_LLM_API_KEY`, and
 `MEMORYBOX_CLOUD_LLM_MODEL` in `config\memorybox_app.env`.
