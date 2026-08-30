@@ -1497,6 +1497,41 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=packed_ids,
     )
+    prompt_order = select_single_pass_items(
+        [
+            {
+                "source": "person",
+                "item_id": "p-card",
+                "body": "person card",
+                "facts": {"display_name": "Peggy George"},
+            },
+            {
+                "source": "email",
+                "item_id": "e-first",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "body": "christmas wish list",
+                "evidence_id": "ev-mail-1",
+            },
+        ],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=20_000,
+    )
+    prompt_paste = format_trusted_fev2_paste(
+        prompt_order,
+        ask="tell me what you know",
+        person_context={},
+    )
+    _check(
+        "single_pass_orders_email_before_person_in_model_prompt",
+        prompt_order
+        and str(prompt_order[0].get("source")) == "email"
+        and prompt_paste.lower().find("christmas wish list")
+        < prompt_paste.lower().find("person card"),
+        checks,
+        problems,
+        detail=[i.get("source") for i in prompt_order],
+    )
     freeze_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.trusted_full_evidence_v2",

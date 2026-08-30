@@ -205,7 +205,21 @@ def select_single_pass_items(
         used += block_tok
     if email and not any(item_is_trusted_email(i, trusted) for i in selected):
         selected.append(email[0])
-    return selected
+    # Model default num_ctx often truncates the tail. Person-first + a fat
+    # card is how FlightSim Gemma cited placeholders after 11s on 241k tokens.
+    # Email first so a short window still grounds on trusted mail.
+    ordered_email: list[dict[str, Any]] = []
+    ordered_person: list[dict[str, Any]] = []
+    ordered_other: list[dict[str, Any]] = []
+    for it in selected:
+        src = str(it.get("source") or it.get("channel") or "").lower()
+        if src == "email":
+            ordered_email.append(it)
+        elif src == "person":
+            ordered_person.append(it)
+        else:
+            ordered_other.append(it)
+    return ordered_email + ordered_person + ordered_other
 
 
 def _cap_single_pass_email_body(item: dict[str, Any]) -> dict[str, Any]:
@@ -325,8 +339,16 @@ def format_trusted_fev2_paste(
     person_context: dict[str, Any],
 ) -> str:
     """Historian paste plus the exact evidence_ids models must copy."""
-    allowed: list[str] = []
+    email_items: list[dict[str, Any]] = []
+    other_items: list[dict[str, Any]] = []
     for it in items:
+        if str(it.get("source") or it.get("channel") or "").lower() == "email":
+            email_items.append(it)
+        else:
+            other_items.append(it)
+    ordered = email_items + other_items
+    allowed: list[str] = []
+    for it in ordered:
         allowed.extend(item_evidence_ids(it))
     allowed = list(dict.fromkeys(a for a in allowed if a))
     head = [
@@ -336,7 +358,7 @@ def format_trusted_fev2_paste(
         "",
     ]
     return "\n".join(head) + format_cloud_paste(
-        items, ask=ask, person_context=person_context
+        ordered, ask=ask, person_context=person_context
     )
 
 
