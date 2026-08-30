@@ -61,6 +61,10 @@ if errorlevel 1 (
 call :deliver_evidence "evidence(flightsim): trusted-identity Phase 1 gate"
 :phase2_freeze
 echo.
+echo === Phase 2 preflight (Ollama Gemma + cloud Sol; commit even if missing) ===
+python -m memorybox fev2-preflight --out-dir docs\test-output\trusted-full-evidence-v2
+call :deliver_evidence "evidence(flightsim): Phase 2 preflight"
+echo.
 echo === Phase 2 freeze (year-fair email + slim person; no calendar/story scan) ===
 echo Commit before Gemma/Sol so a model timeout still leaves the fixture.
 python -m memorybox freeze-trusted-full-evidence-v2 --person "Peggy George" --out-dir docs\test-output\trusted-full-evidence-v2 --reuse-if-coverage-ok
@@ -111,6 +115,7 @@ if not exist "%EVIDENCE_DIR%" goto :eof
 if exist "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json" git add -- "%EVIDENCE_DIR%\TRUSTED_IDENTITY_GATE.json"
 if exist "%EVIDENCE_DIR%\PHASE1_prove.json" git add -- "%EVIDENCE_DIR%\PHASE1_prove.json"
 if exist "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE1_SUMMARY.txt"
+if exist "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json" git add -- "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json"
 if exist "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt"
 if exist "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt"
 for %%F in ("%EVIDENCE_DIR%\FEV2REPORT_*.json") do if exist "%%F" git add -- "%%F"

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -714,12 +715,13 @@ def freeze_trusted_full_evidence_v2(
     print(
         f"fev2 freeze: person={person_id} trusted={sorted(trusted)} "
         f"complete_trusted={complete_trusted} email_cap={SINGLE_PASS_EMAIL_RETRIEVE_CAP}",
+        file=sys.stderr,
         flush=True,
     )
     person_context = build_person_context(plan)
     from memorybox.ask import retrieve as R
 
-    print("fev2 freeze: year-fair trusted email light scan", flush=True)
+    print("fev2 freeze: year-fair trusted email light scan", file=sys.stderr, flush=True)
     mail = list(
         R.search_email_messages(plan, limit=SINGLE_PASS_EMAIL_RETRIEVE_CAP) or []
     )
@@ -734,6 +736,7 @@ def freeze_trusted_full_evidence_v2(
     _trim_fev2_email_payloads(mail)
     print(
         f"fev2 freeze: email archive={archive_email_n} sample={len(mail)}",
+        file=sys.stderr,
         flush=True,
     )
     cal = (
@@ -762,7 +765,7 @@ def freeze_trusted_full_evidence_v2(
         },
         "story_status": {"skipped": None if stories else "single_pass_no_story_scan"},
     }
-    print("fev2 freeze: normalize + pack trusted email", flush=True)
+    print("fev2 freeze: normalize + pack trusted email", file=sys.stderr, flush=True)
     norm = normalize_retrieved(retrieved, person_context=person_context)
     budget = 1_000_000_000 if complete_trusted else token_budget
     items = select_single_pass_items(
@@ -817,6 +820,7 @@ def freeze_trusted_full_evidence_v2(
     print(
         f"fev2 freeze: wrote {path.name} selected_email={selected_email_n} "
         f"tokens={body['estimated_tokens']}",
+        file=sys.stderr,
         flush=True,
     )
     paste_path = out / f"FEV2_paste_{body['input_sha256'][:8]}.txt"

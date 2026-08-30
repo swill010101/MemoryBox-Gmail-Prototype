@@ -740,9 +740,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "evidence(flightsim): trusted-identity Phase 1 gate" in gate_txt
         and "TRUSTED_IDENTITY_GATE.json" in gate_txt
         and "PHASE2_SUMMARY.txt" in gate_txt
+        and "PHASE2_PREFLIGHT.json" in gate_txt
+        and "fev2-preflight" in gate_txt
+        and gate_txt.find("fev2-preflight")
+        < gate_txt.find("freeze-trusted-full-evidence-v2")
         and "--reuse-if-coverage-ok" in gate_txt
         and "git pull --rebase" in gate_txt
         and "--force" not in gate_txt,
+        checks,
+        problems,
+    )
+    pre_mod = __import__(
+        "memorybox.ask.i11a.trusted_fev2_preflight",
+        fromlist=["run_phase2_preflight"],
+    )
+    pre_src = inspect.getsource(pre_mod)
+    _check(
+        "phase2_preflight_records_gemma_and_sol_without_skipping_freeze",
+        "PHASE2_PREFLIGHT.json" in pre_src
+        and "has_gemma4_26b" in pre_src
+        and "MEMORYBOX_CLOUD_LLM_MODEL" in pre_src
+        and hasattr(pre_mod, "run_phase2_preflight"),
         checks,
         problems,
     )

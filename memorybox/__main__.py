@@ -672,6 +672,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_attest_trust.add_argument("--person", required=True, help="Person display name")
     p_attest_trust.add_argument("--email", required=True, help="Email address")
+    p_fev2_pre = sub.add_parser(
+        "fev2-preflight",
+        help="Phase 2: record Ollama Gemma + cloud Sol readiness (no freeze)",
+    )
+    p_fev2_pre.add_argument("--out-dir", default=None)
     p_fev2_freeze = sub.add_parser(
         "freeze-trusted-full-evidence-v2",
         help="Phase 2: freeze trusted Full-Evidence V2 fixture (no model, no chunking)",
@@ -1518,6 +1523,17 @@ def main(argv: list[str] | None = None) -> int:
         payload = attest_trusted_email(resolved.person_id, args.email)
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("upserted") or payload.get("address") else 1
+
+    if args.cmd == "fev2-preflight":
+        from pathlib import Path as _Pre
+
+        from memorybox.ask.i11a.trusted_fev2_preflight import run_phase2_preflight
+
+        payload = run_phase2_preflight(
+            out_dir=_Pre(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0
 
     if args.cmd == "freeze-trusted-full-evidence-v2":
         from pathlib import Path
