@@ -25,6 +25,43 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 
 
+def load_reusable_phase1_report(out: Path) -> dict[str, Any] | None:
+    """Reuse the FlightSim Phase 1 gate so the pipeline does not re-scan Takeout."""
+    for name in ("TRUSTED_IDENTITY_GATE.json", "PHASE1_prove.json"):
+        path = out / name
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict):
+            continue
+        runtime = data.get("runtime") or {}
+        flightsim = bool(data.get("flightsim") or runtime.get("flightsim"))
+        if not flightsim or runtime.get("allow_dev_defaults") is True:
+            continue
+        if data.get("ok") is not True:
+            continue
+        inner = data.get("phase1") or data.get("flightsim_report") or {}
+        if not isinstance(inner, dict):
+            continue
+        trusted = list(inner.get("trusted_addresses") or [])
+        if (
+            inner.get("ok") is True
+            and trusted
+            and int(inner.get("retrieve_hit_count") or 0) > 0
+            and int(inner.get("gallery_email_count") or 0) > 0
+            and not (inner.get("unsupported_retrieve_addresses") or [])
+            and int(inner.get("unsupported_retrieve_hit_count") or 0) == 0
+        ):
+            reused = dict(inner)
+            reused["reused"] = True
+            reused["reused_from"] = str(path)
+            return reused
+    return None
+
+
 def load_reusable_year_fair_freeze(out: Path, person_id: str) -> dict[str, Any] | None:
     """Reuse the gate's year-fair freeze so FlightSim does not normalize twice."""
     fixtures = [
@@ -149,7 +186,9 @@ def run_trusted_evidence_pipeline(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     from memorybox.person.trusted_identity import report_named_person_identity_trust
 
-    phase1 = report_named_person_identity_trust(person_name)
+    phase1 = load_reusable_phase1_report(out)
+    if phase1 is None:
+        phase1 = report_named_person_identity_trust(person_name)
     phase1_path = _write(out / f"PHASE1_{stamp}.json", phase1)
     result: dict[str, Any] = {
         "ok": False,

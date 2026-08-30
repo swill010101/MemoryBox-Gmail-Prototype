@@ -864,9 +864,27 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "pipeline_reuses_year_fair_freeze_helper",
         hasattr(pipe_mod, "load_reusable_year_fair_freeze")
-        and "load_reusable_year_fair_freeze" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline),
+        and "load_reusable_year_fair_freeze" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline)
+        and hasattr(pipe_mod, "load_reusable_phase1_report")
+        and "load_reusable_phase1_report" in inspect.getsource(pipe_mod.run_trusted_evidence_pipeline),
         checks,
         problems,
+    )
+    gate_dir = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "docs"
+        / "test-output"
+        / "trusted-full-evidence-v2"
+    )
+    reused_p1 = pipe_mod.load_reusable_phase1_report(gate_dir)
+    _check(
+        "pipeline_reuses_flightsim_phase1_gate_without_rescan",
+        bool(reused_p1)
+        and reused_p1.get("ok") is True
+        and "peggo417@hotmail.com" in (reused_p1.get("trusted_addresses") or []),
+        checks,
+        problems,
+        detail=(reused_p1 or {}).get("reused_from"),
     )
     run_src = inspect.getsource(run_trusted_full_evidence_v2)
     _check(

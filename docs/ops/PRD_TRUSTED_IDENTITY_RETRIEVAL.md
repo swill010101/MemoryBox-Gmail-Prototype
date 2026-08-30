@@ -66,7 +66,8 @@ before the trusted report. Then: if `TRUSTED_IDENTITY_GATE.json` already verifie
 and start year-fair freeze. Otherwise Phase 1 prove,
 `tools/verify-trusted-identity-gate.py` (rejects ALLOW_DEV / cloud hostname
 fakes), then `freeze-trusted-full-evidence-v2` (committed before models), then
-`run-trusted-evidence-pipeline` (reuses that year-fair freeze). Pipeline
+`run-trusted-evidence-pipeline` (reuses the green Phase 1 gate and that
+year-fair freeze — no second Takeout identity scan). Pipeline
 skip/fail is `errorlevel 1`. Then `tools/verify-trusted-fev2-reports.py`
 requires both Gemma (`gemma4:26b`) and Sol reports: same freeze hash, email
 grounded, selected emails ≥ 8 (rejects `3cf95fa4`). After that verifier the
