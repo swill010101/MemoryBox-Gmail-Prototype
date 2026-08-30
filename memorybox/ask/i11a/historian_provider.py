@@ -36,6 +36,7 @@ class HistorianProviderSpec:
     provider: HistorianProviderKind
     model: str
     timeout_seconds: int
+    num_ctx: int | None = None
 
 
 def normalize_provider_kind(raw: str | None) -> HistorianProviderKind:
@@ -81,10 +82,18 @@ class _TimeoutOllamaChat:
 
     provider_key = "ollama"
 
-    def __init__(self, *, base_url: str, chat_model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        chat_model: str,
+        timeout_seconds: int,
+        num_ctx: int | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
         self.timeout_seconds = int(timeout_seconds)
+        self.num_ctx = int(num_ctx) if num_ctx else None
 
     def health(self) -> Any:
         from memorybox.providers.llm.ollama import OllamaLlmProvider
@@ -110,6 +119,7 @@ class _TimeoutOllamaChat:
                 user,
                 format_json=json_mode,
                 timeout=self.timeout_seconds,
+                num_ctx=self.num_ctx,
             )
         except TimeoutError as exc:
             raise ProviderUnavailable(f"timed out after {self.timeout_seconds}s") from exc
@@ -227,6 +237,7 @@ def build_historian_provider(spec: HistorianProviderSpec) -> Any:
         base_url=base,
         chat_model=model,
         timeout_seconds=spec.timeout_seconds,
+        num_ctx=spec.num_ctx,
     )
 
 

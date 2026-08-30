@@ -99,7 +99,9 @@ python -m memorybox prove-trusted-identity-retrieval --flightsim
 Auto-expand must not clobber an owner/operator profile contact. People UI
 `add_contact` upserts and promotes an existing auto-expand row.
 
-Phase 2 is included in the pipeline when Ollama has `gemma4:26b` and cloud Sol
+Phase 2 Gemma calls set Ollama `options.num_ctx` from the freeze token
+estimate (min 32k, max 128k, override `MEMORYBOX_FEV2_OLLAMA_NUM_CTX`) so
+the year-fair paste is not tail-truncated. Phase 2 is included in the pipeline when Ollama has `gemma4:26b` and cloud Sol
 env is set. The gate and the Python pipeline both load `MEMORYBOX_CLOUD_LLM_*`
 and `MEMORYBOX_OLLAMA_BASE_URL` from repo `config\memorybox_app.env` (startmb-only
 vars are otherwise invisible to cmd; `for /f` set lines can miss). A skipped

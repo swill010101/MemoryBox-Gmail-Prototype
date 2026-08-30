@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -37,6 +38,20 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 
 
+def fev2_ollama_num_ctx(estimated_tokens: int | None) -> int:
+    """Ollama window large enough for the frozen paste, not the model default.
+
+    FlightSim Gemma finished the 241k-token starve in 11s and cited email_1
+    because default num_ctx tail-truncated the year-fair mail.
+    ``MEMORYBOX_FEV2_OLLAMA_NUM_CTX`` overrides when a host OOMs at 128k.
+    """
+    override = (os.environ.get("MEMORYBOX_FEV2_OLLAMA_NUM_CTX") or "").strip()
+    if override.isdigit():
+        return max(2_048, min(int(override), FEV2_OLLAMA_NUM_CTX_MAX))
+    need = int(estimated_tokens or 0) + FEV2_OLLAMA_GEN_ROOM
+    return max(FEV2_OLLAMA_NUM_CTX_MIN, min(need, FEV2_OLLAMA_NUM_CTX_MAX))
+
+
 def apply_flightsim_app_env() -> dict[str, Any]:
     """Load MEMORYBOX_CLOUD_LLM_* from repo config/*.env into os.environ.
 
@@ -60,6 +75,9 @@ MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
 SINGLE_PASS_EMAIL_RETRIEVE_CAP = 200
 SINGLE_PASS_EMAIL_BODY_CHARS = 2_500
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
+FEV2_OLLAMA_NUM_CTX_MIN = 32_768
+FEV2_OLLAMA_NUM_CTX_MAX = 131_072
+FEV2_OLLAMA_GEN_ROOM = 4_096
 # FlightSim 2026-08-29: 1 email + 241k-token person card. Remap can make
 # that Gemma report look ok — it is not a year-fair Phase 2 freeze.
 LEGACY_STARVED_FREEZE_HASH_PREFIX = "3cf95fa4"
@@ -868,6 +886,9 @@ def run_trusted_full_evidence_v2(
         provider=normalize_provider_kind(provider),
         model=model,
         timeout_seconds=int(timeout_seconds),
+        num_ctx=fev2_ollama_num_ctx(
+            int(data.get("estimated_tokens") or _estimate_tokens(user_message))
+        ),
     )
     if spec.provider == "ollama":
         from memorybox.config import OLLAMA_AUTODETECT_URLS, settings

@@ -82,12 +82,16 @@ def ollama_chat(
     temperature: float = 0.1,
     timeout: int = 600,
     keep_alive: str = "30m",
+    num_ctx: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
+    options: dict[str, Any] = {"temperature": temperature}
+    if num_ctx is not None and int(num_ctx) > 0:
+        options["num_ctx"] = int(num_ctx)
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
         "keep_alive": keep_alive,
-        "options": {"temperature": temperature},
+        "options": options,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -115,11 +119,13 @@ def ollama_chat(
         "eval_duration": data.get("eval_duration"),
         "timeout_seconds": timeout,
         "keep_alive": keep_alive,
-        "options": {"temperature": temperature},
-        "num_ctx": (data.get("options") or {}).get("num_ctx")
-        if isinstance(data.get("options"), dict)
-        else None,
-        "num_ctx_note": "Chat options set temperature only; num_ctx is the model default",
+        "options": dict(options),
+        "num_ctx": options.get("num_ctx"),
+        "num_ctx_note": (
+            "FEV2/historian set options.num_ctx so a large paste is not tail-truncated"
+            if options.get("num_ctx")
+            else "Chat options set temperature only; num_ctx is the model default"
+        ),
         "done_reason": data.get("done_reason"),
     }
     return str(content), usage

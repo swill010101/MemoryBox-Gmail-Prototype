@@ -251,10 +251,13 @@ def _chat_chunk(
     )
     from memorybox.ask.i11a.validate import parse_inference_json
 
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import fev2_ollama_num_ctx
+
     spec = HistorianProviderSpec(
         provider=normalize_provider_kind(provider),
         model=model,
         timeout_seconds=int(timeout_seconds),
+        num_ctx=fev2_ollama_num_ctx(max(1, len(user_message.encode("utf-8")) // 4)),
     )
     llm = build_historian_provider(spec)
     raw, usage, wall_ms = historian_chat_json(
@@ -278,9 +281,9 @@ def run_provider_over_chunks(
     timeout_seconds: int = 1800,
 ) -> dict[str, Any]:
     """Replay each L1 chunk through one model; chrono-reduce + fail closed."""
-    from memorybox.ask.i11a.full_evidence_diagnostic import format_cloud_paste
     from memorybox.ask.i11a.trusted_full_evidence_v2 import (
         FEV2_SYSTEM,
+        format_trusted_fev2_paste,
         remap_placeholder_evidence_ids,
     )
 
@@ -297,7 +300,7 @@ def run_provider_over_chunks(
     per_chunk: list[dict[str, Any]] = []
     for i, ch in enumerate(chunked.get("chunks") or []):
         ch_items = list(ch.get("items") or [])
-        paste = format_cloud_paste(
+        paste = format_trusted_fev2_paste(
             ch_items,
             ask=str(data.get("ask") or ""),
             person_context=data.get("person_context") or {},

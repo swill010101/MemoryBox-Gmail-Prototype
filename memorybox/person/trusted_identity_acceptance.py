@@ -1984,6 +1984,40 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        FEV2_OLLAMA_NUM_CTX_MIN,
+        fev2_ollama_num_ctx,
+    )
+
+    _check(
+        "fev2_ollama_num_ctx_covers_year_fair_paste",
+        fev2_ollama_num_ctx(100_000) >= 100_000
+        and fev2_ollama_num_ctx(1_000) == FEV2_OLLAMA_NUM_CTX_MIN
+        and "num_ctx=fev2_ollama_num_ctx" in run_src,
+        checks,
+        problems,
+        detail=fev2_ollama_num_ctx(100_000),
+    )
+    chunk_chat_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_fev2_chunking",
+            fromlist=["_chat_chunk"],
+        )._chat_chunk
+    )
+    chunk_run_src_ctx = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_fev2_chunking",
+            fromlist=["run_provider_over_chunks"],
+        ).run_provider_over_chunks
+    )
+    _check(
+        "phase3_chunks_use_trusted_email_first_paste_and_num_ctx",
+        "format_trusted_fev2_paste" in chunk_run_src_ctx
+        and "format_cloud_paste" not in chunk_run_src_ctx
+        and "num_ctx=fev2_ollama_num_ctx" in chunk_chat_src,
+        checks,
+        problems,
+    )
     ollama_http_src = open(
         __import__("pathlib").Path(__file__).resolve().parents[1]
         / "providers"
