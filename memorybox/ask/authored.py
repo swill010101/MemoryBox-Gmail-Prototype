@@ -40,7 +40,11 @@ def plain_email_body(payload: dict[str, Any] | None, *, excerpt: str = "") -> st
     return str(data.get("snippet") or data.get("text") or excerpt or "").strip()
 
 
-def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
+def authored_email_text(
+    body: str, *, max_chars: int | None = 8000
+) -> tuple[str, dict[str, bool]]:
+    """Lead authored text. Default 8k cap is for Ask/FEV2 — pass max_chars=None
+    for lossless review preparation."""
     from memorybox.explore.email_attach import split_quoted_email
     flags = {"quote_uncertain": False, "boilerplate_uncertain": False}
     turns = split_quoted_email(body or "")
@@ -61,8 +65,11 @@ def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
         flags["quote_uncertain"] = True
     if not lead:
         flags["quote_uncertain"] = True
-        lead = (body or "").strip()[:4000]
-    return lead[:8000], flags
+        fallback = (body or "").strip()
+        lead = fallback if max_chars is None else fallback[:4000]
+    if max_chars is None:
+        return lead, flags
+    return lead[: int(max_chars)], flags
 
 
 def sms_location_assertions(

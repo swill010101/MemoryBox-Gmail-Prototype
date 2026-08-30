@@ -2730,10 +2730,14 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         EMAIL_REVIEW_SYSTEM,
         LightRow,
         classify_body_source,
+        classify_review_authorship,
         group_conversations,
+        plan_gemma_replay,
         propose_five_year_interval,
         render_model_paste,
         run_trusted_email_review_gemma,
+        segment_review_body,
+        _prepare_message,
     )
     from datetime import datetime, timezone as _tz
 
@@ -2855,6 +2859,168 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_g,
     )
+    _solo = group_conversations(
+        [
+            LightRow(
+                evidence_id="solo",
+                sent_at=datetime(2009, 3, 1, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<solo@x>",
+                reply_ids=[],
+                from_addrs={"peggo417@hotmail.com"},
+                addresses={"peggo417@hotmail.com"},
+                peggy_authored=True,
+                subject="Alone",
+                skip=False,
+            )
+        ]
+    )
+    _miss = group_conversations(
+        [
+            LightRow(
+                evidence_id="orphan",
+                sent_at=datetime(2009, 3, 2, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<orphan@x>",
+                reply_ids=["<missing-parent@x>"],
+                from_addrs={"peggo417@hotmail.com"},
+                addresses={"peggo417@hotmail.com"},
+                peggy_authored=True,
+                subject="Re: Gone",
+                skip=False,
+            )
+        ]
+    )
+    _check(
+        "review_message_id_alone_is_singleton_not_confirmed_conversation",
+        len(_solo) == 1
+        and _solo[0]["grouping"] == "singleton"
+        and _miss[0]["grouping"] == "missing_parent",
+        checks,
+        problems,
+        detail={"solo": _solo, "miss": _miss},
+    )
+    _long = "HEADUNIQUE " + ("word " * 3000) + " TAILUNIQUE"
+    _seg_plain = segment_review_body(_long)
+    _seg_html = classify_body_source(
+        {"body_html": "<p>" + "x" * 9000 + " HTMLTAILUNIQUE</p>"}
+    )
+    _fwd = segment_review_body(
+        "See you.\n\nBegin forwarded message:\nFrom: Sam\nYes.\n"
+    )
+    _check(
+        "review_prep_keeps_long_plain_and_html_tails",
+        "TAILUNIQUE" in _seg_plain["lead"]
+        and "HEADUNIQUE" in _seg_plain["lead"]
+        and _seg_html[0] == "html_recovered"
+        and "HTMLTAILUNIQUE" in _seg_html[1],
+        checks,
+        problems,
+    )
+    _check(
+        "review_prep_keeps_short_quotes_and_forward_not_as_sender",
+        any("Yes." in str(q.get("body") or "") for q in _fwd["quote_turns"])
+        and _fwd["lead"].startswith("See you."),
+        checks,
+        problems,
+        detail=_fwd,
+    )
+    _svc = classify_review_authorship(
+        lead=(
+            "This is an automated notification. Your card was updated. "
+            "Do not reply to this email."
+        ),
+        from_trusted=True,
+    )
+    _check(
+        "review_service_notice_is_not_personal_speech",
+        _svc["kind"] == "service_generated" and _svc["peggy_personal"] is False,
+        checks,
+        problems,
+        detail=_svc,
+    )
+    _svc_msg = _prepare_message(
+        "svc-1",
+        {
+            "sent_at": "2009-01-01T12:00:00Z",
+            "subject": "Notice",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "This is an automated notification. Card updated. "
+                "Do not reply to this email."
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _svc_sys, _svc_user, _ = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2008-01-01", "end": "2012-12-31"},
+        conversations=[
+            {
+                "grouping": "singleton",
+                "grouping_detail": "identified_message_id_no_reply_edge",
+                "messages": [_svc_msg],
+            }
+        ],
+    )
+    _check(
+        "review_paste_does_not_label_service_as_person_said",
+        "not personal speech" in _svc_user
+        and "Peggy George said:" not in _svc_user
+        and "source text is evidence" in _svc_sys.lower(),
+        checks,
+        problems,
+        detail=_svc_user[:400],
+    )
+    from memorybox.providers.llm._ollama_http import ollama_chat_request_payload
+
+    _req = ollama_chat_request_payload(
+        "gemma4:26b", "sys", "user", format_json=True, num_ctx=32768
+    )
+    _check(
+        "review_ollama_request_serializes_num_ctx",
+        (_req.get("options") or {}).get("num_ctx") == 32768,
+        checks,
+        problems,
+        detail=_req.get("options"),
+    )
+    import tempfile
+    from pathlib import Path as _Ptmp
+
+    _td = _Ptmp(tempfile.mkdtemp())
+    (_td / "MODEL_PASTE.txt").write_text(
+        "===== SYSTEM INSTRUCTIONS =====\nsys\n\n"
+        "===== USER QUESTION AND EVIDENCE =====\nuser\n",
+        encoding="utf-8",
+    )
+    (_td / "SOURCE_MAP.json").write_text(
+        json.dumps(
+            {
+                "budget": {
+                    "capacity_certainty": "unknown",
+                    "proposed_request": {"num_ctx": None},
+                    "prompt_tokens": 10,
+                    "usable_input_tokens": 100,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _plan_bad = plan_gemma_replay(paste_dir=_td, require_hash=__import__("hashlib").sha256(
+        (_td / "MODEL_PASTE.txt").read_bytes()
+    ).hexdigest())
+    _check(
+        "review_replay_plan_refuses_unknown_capacity",
+        _plan_bad.get("ok") is False and "unknown_capacity" in str(_plan_bad.get("error")),
+        checks,
+        problems,
+        detail=_plan_bad,
+    )
     from memorybox.ask.i11a.trusted_email_review import PreparedMessage
 
     _sys, _user, _cites = render_model_paste(
@@ -2962,6 +3128,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "run_trusted_evidence_pipeline" not in replay_src
         and "chunking" in replay_src
         and "hash_mismatch" in replay_src
+        and "num_ctx" in replay_src
         and "HistorianCloud" not in replay_src
         and "_CloudOpenAICompatChat" not in replay_src,
         checks,

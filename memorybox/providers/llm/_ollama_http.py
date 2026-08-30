@@ -73,18 +73,17 @@ def ollama_embed(
         raise RuntimeError(f"ollama embeddings HTTP {e.code}: {body[:400]}") from e
 
 
-def ollama_chat(
-    base_url: str,
+def ollama_chat_request_payload(
     model: str,
     system: str,
     user: str,
     *,
     format_json: bool = False,
     temperature: float = 0.1,
-    timeout: int = 600,
     keep_alive: str = "30m",
     num_ctx: int | None = None,
-) -> tuple[str, dict[str, Any]]:
+) -> dict[str, Any]:
+    """Exact JSON body that ollama_chat would POST. No network."""
     options: dict[str, Any] = {"temperature": temperature}
     if num_ctx is not None and int(num_ctx) > 0:
         options["num_ctx"] = int(num_ctx)
@@ -100,6 +99,31 @@ def ollama_chat(
     }
     if format_json:
         payload["format"] = "json"
+    return payload
+
+
+def ollama_chat(
+    base_url: str,
+    model: str,
+    system: str,
+    user: str,
+    *,
+    format_json: bool = False,
+    temperature: float = 0.1,
+    timeout: int = 600,
+    keep_alive: str = "30m",
+    num_ctx: int | None = None,
+) -> tuple[str, dict[str, Any]]:
+    payload = ollama_chat_request_payload(
+        model,
+        system,
+        user,
+        format_json=format_json,
+        temperature=temperature,
+        keep_alive=keep_alive,
+        num_ctx=num_ctx,
+    )
+    options = dict(payload.get("options") or {})
     try:
         data = _post_json(
             f"{base_url.rstrip('/')}/api/chat", payload, timeout=timeout

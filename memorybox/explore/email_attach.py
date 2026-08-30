@@ -131,7 +131,13 @@ def split_quoted_email(text: str) -> list[dict[str, str | None]]:
     if not raw:
         return []
     splitter = re.compile(
-        r"(?m)^(On .{8,240}? wrote:|-----Original Message-----)\s*$"
+        r"(?im)^("
+        r"On .{8,400}? wrote:"
+        r"|-{2,}\s*Original Message\s*-{2,}"
+        r"|-{2,}\s*Forwarded message\s*-{2,}"
+        r"|Begin forwarded message:"
+        r"|_{8,}"
+        r")\s*$"
     )
     parts = splitter.split(raw)
     turns: list[dict[str, str | None]] = []
