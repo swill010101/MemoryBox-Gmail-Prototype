@@ -3107,7 +3107,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=_greet,
     )
     _check(
-        "review_service_only_packet_excluded_unresolved_trusted_kept",
+        "review_service_only_and_unresolved_packets_are_excluded",
         participation_exclusion_reason([_svc_msg])
         == "service_only_no_personal_contribution"
         and participation_exclusion_reason(
@@ -3130,9 +3130,168 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                 )
             ]
         )
-        is None,
+        == "no_attributable_personal_contribution",
         checks,
         problems,
+    )
+    _tmpl = (
+        "Your e-card was delivered. The recipient can open the card from this notice. "
+        "This notice describes a card that was sent; it does not include the card artwork. "
+        "Card delivery confirmation follows. "
+    ) * 6 + "This is an automated notification. Do not reply to this email."
+    _long_svc = classify_review_authorship(lead=_tmpl, from_trusted=True)
+    _html_svc = _prepare_message(
+        "html-svc",
+        {
+            "sent_at": "2009-01-02T12:00:00Z",
+            "subject": "Card notice",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_html": "<p>" + _tmpl + "</p>",
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _thanks = _prepare_message(
+        "thanks-1",
+        {
+            "sent_at": "2009-01-02T13:00:00Z",
+            "subject": "Re: Card notice",
+            "from_parsed": [{"address": "sam@example.test", "display_name": "Sam"}],
+            "from": "Sam <sam@example.test>",
+            "body_text": (
+                "Thanks for sending that.\n\n-----Original Message-----\n"
+                "From: Peg <peggo417@hotmail.com>\n\n" + _tmpl
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _check(
+        "review_long_template_before_footer_is_not_personal",
+        _long_svc["kind"] == "service_generated"
+        and _long_svc["peggy_personal"] is False
+        and _html_svc.authorship_kind == "service_generated"
+        and _html_svc.peggy_personal is False
+        and participation_exclusion_reason([_html_svc, _thanks])
+        == "service_only_no_personal_contribution",
+        checks,
+        problems,
+        detail={
+            "plain": _long_svc,
+            "html_kind": _html_svc.authorship_kind,
+            "thanks_kind": _thanks.authorship_kind,
+            "quotes": _thanks.quote_dedupe,
+        },
+    )
+    _mention = classify_review_authorship(
+        lead="I mailed a Hallmark card Friday after the party.",
+        from_trusted=True,
+    )
+    _check(
+        "review_personal_card_mention_is_not_service_exclusion",
+        _mention["kind"] == "personal" and _mention["peggy_personal"] is True,
+        checks,
+        problems,
+        detail=_mention,
+    )
+    _keep_q = _prepare_message(
+        "keep-q",
+        {
+            "sent_at": "2009-01-03T12:00:00Z",
+            "subject": "Dinner",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "See you Friday.\n\n-----Original Message-----\n"
+                "From: Sam <sam@example.test>\n\nCan you come Friday?\n"
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _omit_q = _prepare_message(
+        "omit-q",
+        {
+            "sent_at": "2009-01-03T13:00:00Z",
+            "subject": "Dinner",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": (
+                "See you Friday.\n\n-----Original Message-----\n"
+                "From: Notice <notice@example.test>\n\n" + _tmpl
+            ),
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _, _keep_user, _ = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2008-01-01", "end": "2012-12-31"},
+        conversations=[
+            {
+                "grouping": "singleton",
+                "grouping_detail": "identified_message_id_no_reply_edge",
+                "messages": [_keep_q],
+            }
+        ],
+    )
+    _, _omit_user, _ = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2008-01-01", "end": "2012-12-31"},
+        conversations=[
+            {
+                "grouping": "singleton",
+                "grouping_detail": "identified_message_id_no_reply_edge",
+                "messages": [_omit_q],
+            }
+        ],
+    )
+    _, _bad_user, _ = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2008-01-01", "end": "2012-12-31"},
+        conversations=[
+            {
+                "grouping": "confirmed",
+                "grouping_detail": "shared_thread_id_or_in_reply_to_match",
+                "messages": [_html_svc, _thanks],
+            }
+        ],
+    )
+    _check(
+        "review_paste_keeps_genuine_quotes_omits_service_template",
+        "See you Friday." in _keep_user
+        and "Can you come Friday?" in _keep_user
+        and "See you Friday." in _omit_user
+        and "Your e-card was delivered" not in _omit_user
+        and any(
+            d.get("action") == "omitted_service_notice" for d in _omit_q.quote_dedupe
+        )
+        and any(
+            d.get("action") == "omitted_service_notice" for d in _thanks.quote_dedupe
+        ),
+        checks,
+        problems,
+        detail={"keep": _keep_user[-400:], "omit": _omit_user[-400:]},
+    )
+    _check(
+        "review_paste_excludes_service_exchange_from_personal_label",
+        participation_exclusion_reason([_html_svc, _thanks]) is not None
+        and "personal greeting" not in _bad_user
+        and "Peggy George said:" not in _bad_user,
+        checks,
+        problems,
+        detail=_bad_user[:500],
     )
     from memorybox.providers.llm._ollama_http import ollama_chat_request_payload
 
@@ -3400,7 +3559,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "--no-edit" in prep_cmd
         and 'commit --no-edit -m "sync(flightsim):' in prep_cmd
         and 'merge --no-edit -m "sync(flightsim):' in prep_cmd
-        and "GIT_EDITOR=true" in prep_cmd,
+        and "GIT_EDITOR=true" in prep_cmd
+        and "abbrev-ref" in prep_cmd
+        and "Will not finish a merge or prepare on the wrong branch." in prep_cmd,
         checks,
         problems,
     )

@@ -635,6 +635,10 @@ _SERVICE_WEAK = (
     re.compile(r"(?i)\btracking (?:number|code)\b"),
     re.compile(r"(?i)\byour (?:order|package|shipment) (?:has|is)\b"),
 )
+_SHORT_GREETING = re.compile(
+    r"(?is)^\s*(?:hi|hello|hey|thanks|thank you|dear)\b[\s\S]{0,120}$"
+)
+_MAX_GREETING_CHARS = 160
 
 
 def _norm_ws(text: str) -> str:
@@ -815,6 +819,16 @@ def segment_review_body(recovered: str) -> dict[str, Any]:
     return {"lead": lead, "quote_turns": quote_turns}
 
 
+def _looks_like_short_personal_greeting(text: str) -> bool:
+    """Prefix before an automation footer is not itself proof of authorship."""
+    t = (text or "").strip()
+    if not t or len(t) > _MAX_GREETING_CHARS:
+        return False
+    if any(pat.search(t) for pat in _SERVICE_STRONG):
+        return False
+    return bool(_SHORT_GREETING.match(t))
+
+
 def classify_review_authorship(
     *,
     lead: str,
@@ -825,20 +839,17 @@ def classify_review_authorship(
     strong = sum(1 for pat in _SERVICE_STRONG if pat.search(text))
     weak = sum(1 for pat in _SERVICE_WEAK if pat.search(text))
     if strong:
-        personal = ""
-        # Keep a short greeting before the template, if present.
         split_at = None
         for pat in _SERVICE_STRONG:
             m = pat.search(text)
             if m and (split_at is None or m.start() < split_at):
                 split_at = m.start()
-        if split_at and split_at > 8:
-            personal = text[:split_at].strip()
-        if personal and len(personal) >= 2 and from_trusted:
+        prefix = text[:split_at].strip() if split_at else ""
+        if from_trusted and _looks_like_short_personal_greeting(prefix):
             return {
                 "kind": "personal_plus_service",
                 "peggy_personal": True,
-                "personal_lead": personal,
+                "personal_lead": prefix,
                 "service_body": text[split_at:].strip(),
             }
         return {
@@ -912,6 +923,16 @@ def _prepare_message(
         body = str(qt.get("body") or "").strip()
         if not body:
             continue
+        q_auth = classify_review_authorship(lead=body, from_trusted=False)
+        if q_auth["kind"] in {"service_generated", "personal_plus_service"}:
+            dedupe.append(
+                {
+                    "body": body,
+                    "retained_source": "excluded_evaluation_service_notice",
+                    "action": "omitted_service_notice",
+                }
+            )
+            continue
         retained_in = _packet_duplicate_source(body, packet_texts)
         if retained_in:
             dedupe.append(
@@ -948,10 +969,8 @@ def _prepare_message(
 
 
 def participation_exclusion_reason(msgs: list[PreparedMessage]) -> str | None:
-    """Exclude service-only packets. Keep unresolved trusted-From as flagged."""
+    """Keep only packets with independently attributable personal speech."""
     if any(m.peggy_personal for m in msgs):
-        return None
-    if any(m.peggy_authored and m.authorship_kind == "unresolved" for m in msgs):
         return None
     if any(m.authorship_kind == "service_generated" for m in msgs):
         return "service_only_no_personal_contribution"
@@ -1159,6 +1178,9 @@ def render_model_paste(
                 lines.append(
                     "[service-generated notice in the same message — not personal speech]"
                 )
+                svc = (msg.service_body or "").strip()
+                if svc:
+                    lines.append(svc)
             if msg.quote_turns:
                 for qt in msg.quote_turns:
                     qfrom = qt.get("from") or "quoted speaker uncertain"
@@ -1416,7 +1438,17 @@ def prepare_trusted_email_review(
                 "in_interval_n": sum(1 for m in c["messages"] if m.in_interval),
                 "linked_context_n": sum(1 for m in c["messages"] if not m.in_interval),
                 "peggy_authored_n": sum(1 for m in c["messages"] if m.peggy_authored),
+                "peggy_personal_n": sum(1 for m in c["messages"] if m.peggy_personal),
                 "message_ids": [m.evidence_id for m in c["messages"]],
+                "quote_omissions": [
+                    {
+                        "evidence_id": m.evidence_id,
+                        "action": d.get("action"),
+                        "retained_source": d.get("retained_source"),
+                    }
+                    for m in c["messages"]
+                    for d in (m.quote_dedupe or [])
+                ],
             }
             for c in conversations
         ],
@@ -1464,6 +1496,7 @@ def prepare_trusted_email_review(
             f"singleton={sum(1 for c in conversations if c['grouping']=='singleton')} "
             f"missing_parent={sum(1 for c in conversations if c['grouping']=='missing_parent')})",
             f"excluded_no_personal_contribution: {len(excluded_service)}",
+            f"omitted_service_quotes: {sum(1 for c in conversations for m in c['messages'] for d in (m.quote_dedupe or []) if d.get('action')=='omitted_service_notice')}",
             f"authorship_personal: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='personal')}",
             f"authorship_service: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='service_generated')}",
             f"authorship_unresolved: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='unresolved')}",

@@ -10,8 +10,15 @@ set GIT_MERGE_AUTOEDIT=no
 set GIT_EDITOR=true
 set GIT_SEQUENCE_EDITOR=true
 echo ===== sync origin/%BRANCH% (preset commit message, no editor) =====
+for /f %%B in ('git rev-parse --abbrev-ref HEAD') do set CUR_BR=%%B
+if /I not "%CUR_BR%"=="%BRANCH%" (
+  echo ERROR: checked out %CUR_BR% — expected %BRANCH%.
+  echo Will not finish a merge or prepare on the wrong branch.
+  git status
+  exit /b 1
+)
 if exist ".git\MERGE_HEAD" (
-  echo Finishing in-progress merge with a preset message.
+  echo Finishing in-progress merge on %BRANCH% with a preset message.
   git -c core.editor=true commit --no-edit -m "sync(flightsim): finish merge of origin/%BRANCH% for trusted email review prepare"
   if errorlevel 1 (
     echo ERROR: in-progress merge could not be committed. Do not run Gemma.
