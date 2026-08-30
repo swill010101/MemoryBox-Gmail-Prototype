@@ -29,6 +29,29 @@ def _latest(paths: list[Path]) -> Path | None:
     return max(paths, key=lambda p: p.stat().st_mtime)
 
 
+def _json_hash(path: Path, *keys: str) -> str:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return ""
+    if isinstance(data.get("phase2_report"), dict):
+        data = data["phase2_report"]
+    for key in keys:
+        val = str(data.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _match_hash_or_latest(paths: list[Path], want_hash: str) -> Path | None:
+    """Prefer reports for this freeze. Do not pair Sol with a stale Gemma hash."""
+    if want_hash:
+        matched = [p for p in paths if _json_hash(p, "input_sha256") == want_hash]
+        if matched:
+            return _latest(matched)
+    return _latest(paths)
+
+
 def discover_reports(out_dir: Path) -> dict[str, Any]:
     gemma_paths = sorted(out_dir.glob("FEV2REPORT_ollama_*.json"))
     sol_paths = sorted(
@@ -45,11 +68,19 @@ def discover_reports(out_dir: Path) -> dict[str, Any]:
         and not p.name.startswith("FEV2_paste_")
         and not p.name.startswith("FEV2_manifest_")
     ]
+    fixture_path = _latest(fixtures)
+    fixture_hash = _json_hash(fixture_path, "input_sha256") if fixture_path else ""
+    pipeline_path = _latest(pipeline_paths)
+    if pipeline_path and fixture_hash:
+        pipe_hash = _json_hash(pipeline_path, "input_sha256")
+        if pipe_hash and pipe_hash != fixture_hash:
+            pipeline_path = None
     return {
-        "gemma_path": _latest(gemma_paths),
-        "sol_path": _latest(sol_paths),
-        "pipeline_path": _latest(pipeline_paths),
-        "fixture_path": _latest(fixtures),
+        "gemma_path": _match_hash_or_latest(gemma_paths, fixture_hash),
+        "sol_path": _match_hash_or_latest(sol_paths, fixture_hash),
+        "pipeline_path": pipeline_path,
+        "fixture_path": fixture_path,
+        "fixture_hash": fixture_hash,
     }
 
 

@@ -770,6 +770,15 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _fmod = importlib.util.module_from_spec(_fspec)  # type: ignore[arg-type]
     assert _fspec and _fspec.loader
     _fspec.loader.exec_module(_fmod)
+    _check(
+        "fev2_verifier_pairs_reports_to_fixture_hash",
+        hasattr(_fmod, "_match_hash_or_latest")
+        and "Do not pair Sol with a stale Gemma hash" in fev2_verify_path.read_text(
+            encoding="utf-8"
+        ),
+        checks,
+        problems,
+    )
     skip_audit = _fmod.audit_fev2_reports(
         {"ok": False, "skipped": True, "error": "ollama_model_missing:gemma4:26b"},
         None,
