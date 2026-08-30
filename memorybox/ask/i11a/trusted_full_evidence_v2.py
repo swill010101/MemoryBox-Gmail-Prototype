@@ -93,8 +93,10 @@ Return JSON only:
  "relationships":[{"from":"","to":"","role":"","evidence_ids":[]}],
  "narrator":""}
 Every accepted claim, episode, and relationship MUST cite original evidence_ids
-from the input. Invented facts or unknown ids are forbidden. If email evidence
-is present, grounded output must use those email ids when they support a claim.
+from the input (the UUID after evidence_id: and/or the cite_as token such as
+email_1 / person_1 printed on that same block). Invented facts or unknown ids
+are forbidden. If email evidence is present, grounded output must use those
+email ids when they support a claim.
 No chunking. Stateless. Do not use outside knowledge."""
 
 
@@ -133,7 +135,7 @@ def fev2_input_sha256(body: dict[str, Any]) -> str:
 
 def item_evidence_ids(item: dict[str, Any]) -> list[str]:
     ids: list[str] = []
-    for key in ("evidence_id", "item_id", "id", "native_id"):
+    for key in ("evidence_id", "item_id", "id", "native_id", "cite_as"):
         raw = item.get(key)
         if raw:
             ids.append(str(raw))
@@ -141,6 +143,24 @@ def item_evidence_ids(item: dict[str, Any]) -> list[str]:
         if raw:
             ids.append(str(raw))
     return list(dict.fromkeys(ids))
+
+
+def attach_fev2_cite_aliases(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Bind Gemma-style email_1 / person_1 to the nth item of that source.
+
+    FlightSim gemma4:26b read the Christmas-wishlist mail and still cited
+    email_1 / person_1. Those tokens are aliases of the real evidence_id,
+    not invented ids, when they appear on the block.
+    """
+    counts: dict[str, int] = {}
+    out: list[dict[str, Any]] = []
+    for it in items:
+        slim = dict(it)
+        src = str(it.get("source") or it.get("channel") or "other").lower() or "other"
+        counts[src] = int(counts.get(src) or 0) + 1
+        slim["cite_as"] = f"{src}_{counts[src]}"
+        out.append(slim)
+    return out
 
 
 def item_is_trusted_email(item: dict[str, Any], trusted: set[str]) -> bool:
@@ -254,7 +274,7 @@ def select_single_pass_items(
             ordered_person.append(it)
         else:
             ordered_other.append(it)
-    return ordered_email + ordered_person + ordered_other
+    return attach_fev2_cite_aliases(ordered_email + ordered_person + ordered_other)
 
 
 def _cap_single_pass_email_body(item: dict[str, Any]) -> dict[str, Any]:
@@ -374,6 +394,7 @@ def format_trusted_fev2_paste(
     person_context: dict[str, Any],
 ) -> str:
     """Historian paste plus the exact evidence_ids models must copy."""
+    items = attach_fev2_cite_aliases(list(items))
     email_items: list[dict[str, Any]] = []
     other_items: list[dict[str, Any]] = []
     for it in items:
@@ -410,8 +431,8 @@ def format_trusted_fev2_paste(
     # truncates the tail — a 100k-token ALLOWED list at the top is how the
     # model never sees trusted mail and invents email_1.
     parts = [
-        "Cite evidence_ids by copying these strings exactly from the evidence blocks.",
-        "Do not invent placeholders such as email_1 or person_1.",
+        "Cite evidence_ids by copying evidence_id or cite_as from the evidence blocks.",
+        "cite_as tokens such as email_1 are valid only when printed on a block.",
         "",
         "Use only the Person context and evidence below. Do not invent facts.",
         f"ASK: {ask}",

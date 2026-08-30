@@ -1512,7 +1512,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "trusted_fev2_paste_lists_real_evidence_ids",
         "992d6453-3376-425c-a62b-fa05db1b4a3e" in allowed_line
-        and "email_1" not in allowed_line,
+        and "email_1" in allowed_line,
         checks,
         problems,
         detail=allowed_line or trusted_paste[:400],
@@ -1615,7 +1615,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and prompt_paste.find("christmas wish list")
         < prompt_paste.lower().find("person card")
         and prompt_paste.find("===== TRUSTED EMAIL EVIDENCE =====")
-        < prompt_paste.find("ALLOWED_EVIDENCE_IDS:"),
+        < prompt_paste.find("ALLOWED_EVIDENCE_IDS:")
+        and str(prompt_order[0].get("cite_as") or "") == "email_1"
+        and "cite_as: email_1" in prompt_paste,
         checks,
         problems,
         detail=[i.get("source") for i in prompt_order],

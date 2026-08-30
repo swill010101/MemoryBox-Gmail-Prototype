@@ -1245,6 +1245,8 @@ def _item_text_blob(item: dict[str, Any]) -> str:
 def format_item_block(item: dict[str, Any]) -> str:
     src = str(item.get("source") or "other").upper()
     lines = [f"### [{src}] {item.get('item_id')}"]
+    if item.get("cite_as"):
+        lines.append(f"cite_as: {item.get('cite_as')}")
     if item.get("evidence_id") or item.get("native_id"):
         lines.append(f"evidence_id: {item.get('evidence_id') or item.get('native_id')}")
     if item.get("timestamp"):
