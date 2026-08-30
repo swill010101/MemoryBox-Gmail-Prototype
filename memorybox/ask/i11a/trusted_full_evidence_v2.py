@@ -39,6 +39,7 @@ _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
 PERSON_FACT_TOKEN_CAP = 4_000
+MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
 
 FEV2_SYSTEM = """You are MemoryBox Full-Evidence V2. Use only the supplied evidence.
@@ -199,6 +200,22 @@ def select_single_pass_items(
     if email and not any(item_is_trusted_email(i, trusted) for i in selected):
         selected.append(email[0])
     return selected
+
+
+def single_pass_email_coverage_ok(
+    *,
+    retrieved_email_n: int,
+    selected_email_n: int,
+    complete_trusted: bool,
+) -> bool:
+    """Refuse a 1-email freeze when trusted retrieve already has an archive."""
+    if selected_email_n <= 0:
+        return False
+    if complete_trusted:
+        return True
+    if int(retrieved_email_n) >= 20:
+        return int(selected_email_n) >= MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE
+    return True
 
 
 def format_trusted_fev2_paste(
@@ -551,7 +568,28 @@ def freeze_trusted_full_evidence_v2(
         json.dumps(manifest, indent=2, default=str),
         encoding="utf-8",
     )
-    return {"ok": bool(trusted) and bool(email_ids), "fixture": body, **manifest}
+    selected_email_n = int(by_source.get("email") or 0)
+    retrieved_email_n = len(mail)
+    coverage_ok = single_pass_email_coverage_ok(
+        retrieved_email_n=retrieved_email_n,
+        selected_email_n=selected_email_n,
+        complete_trusted=bool(complete_trusted),
+    )
+    error = None
+    if not trusted:
+        error = "no_trusted_retrieve_addresses"
+    elif not email_ids:
+        error = "no_trusted_email_in_fixture"
+    elif not coverage_ok:
+        error = "trusted_email_starved"
+    return {
+        "ok": error is None,
+        "error": error,
+        "retrieved_email_count": retrieved_email_n,
+        "selected_email_count": selected_email_n,
+        "fixture": body,
+        **manifest,
+    }
 
 
 def run_trusted_full_evidence_v2(

@@ -1415,6 +1415,34 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
     )
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        single_pass_email_coverage_ok,
+    )
+
+    _check(
+        "single_pass_refuses_one_email_when_archive_is_large",
+        single_pass_email_coverage_ok(
+            retrieved_email_n=5716, selected_email_n=1, complete_trusted=False
+        )
+        is False
+        and single_pass_email_coverage_ok(
+            retrieved_email_n=5716, selected_email_n=8, complete_trusted=False
+        )
+        is True
+        and single_pass_email_coverage_ok(
+            retrieved_email_n=3, selected_email_n=1, complete_trusted=False
+        )
+        is True,
+        checks,
+        problems,
+    )
+    _check(
+        "freeze_fail_closed_when_trusted_email_starved",
+        "trusted_email_starved" in freeze_src
+        and "single_pass_email_coverage_ok" in freeze_src,
+        checks,
+        problems,
+    )
     run_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.trusted_full_evidence_v2",
