@@ -178,20 +178,16 @@ def select_single_pass_items(
         slim["facts"] = keep
         slim["body"] = json.dumps(keep, indent=2, default=str, ensure_ascii=False)
         capped_person.append(slim)
-    # Reserve budget so a large photo/SMS library cannot crowd out trusted email.
-    email_reserve = max(token_budget // 3, 8_000) if email else 0
+    # Trusted email first. Calendar/story/journal fill whatever budget remains.
     selected = list(capped_person)
     used = _estimate_tokens("\n".join(format_item_block(i) for i in selected)) if selected else 0
-    non_email_room = max(0, token_budget - email_reserve - used)
-    non_used = 0
-    for it in non_email:
+    for it in email:
         block_tok = _estimate_tokens(format_item_block(it))
-        if non_used + block_tok > non_email_room:
+        if selected and used + block_tok > token_budget:
             break
         selected.append(it)
-        non_used += block_tok
         used += block_tok
-    for it in email:
+    for it in non_email:
         block_tok = _estimate_tokens(format_item_block(it))
         if selected and used + block_tok > token_budget:
             break
@@ -487,10 +483,10 @@ def freeze_trusted_full_evidence_v2(
 
     mail = list(R.search_email_messages(plan) or [])
     cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
-    stories = list(R.search_stories(plan, limit=0) or []) if plan.want_story else []
-    journals = list(R.search_journals(plan, limit=0) or []) if plan.want_journal else []
+    stories = list(R.search_stories(plan, limit=12) or []) if plan.want_story else []
+    journals = list(R.search_journals(plan, limit=12) or []) if plan.want_journal else []
     artifacts = (
-        list(R.search_artifacts(plan, limit=0) or []) if plan.want_artifact else []
+        list(R.search_artifacts(plan, limit=12) or []) if plan.want_artifact else []
     )
     retrieved = {
         "evidence": mail + cal,

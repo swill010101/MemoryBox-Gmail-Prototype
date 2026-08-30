@@ -1383,6 +1383,36 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=crowded_ids,
     )
+    packed = select_single_pass_items(
+        [
+            {
+                "source": "story",
+                "item_id": f"st{i}",
+                "body": "s" * 8000,
+            }
+            for i in range(30)
+        ]
+        + [
+            {
+                "source": "email",
+                "item_id": f"em{i}",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "body": "hi",
+            }
+            for i in range(8)
+        ],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=20_000,
+    )
+    packed_ids = {str(i.get("item_id")) for i in packed}
+    _check(
+        "single_pass_packs_trusted_email_before_stories",
+        all(f"em{i}" in packed_ids for i in range(8)),
+        checks,
+        problems,
+        detail=packed_ids,
+    )
     freeze_src = inspect.getsource(
         __import__(
             "memorybox.ask.i11a.trusted_full_evidence_v2",
@@ -1411,7 +1441,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "search_email_messages" in freeze_src
         and "search_sms_messages" not in freeze_src
         and "single_pass_no_unbounded_sms" in freeze_src
-        and "retrieve_eligible_hits" not in freeze_src,
+        and "retrieve_eligible_hits" not in freeze_src
+        and "search_stories(plan, limit=12)" in freeze_src
+        and "search_journals(plan, limit=12)" in freeze_src,
         checks,
         problems,
     )
