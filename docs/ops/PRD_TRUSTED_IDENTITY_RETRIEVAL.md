@@ -59,7 +59,10 @@ tools\flightsim-trusted-identity-gate.cmd
 
 The gate fetches and hard-resets onto
 `origin/cursor/p2-i11a-trusted-identity-retrieve-49da` (no force-push, does not
-merge #74/#76). Do not `git pull` this branch into some other local branch.
+merge #74/#76). Evidence commits also fast-forward
+`cursor/flightsim-trusted-identity-result-49da` so a #77 rebase miss still
+publishes `PHASE2_GATE_STARTED` / freeze / reports. Do not `git pull` this
+branch into some other local branch.
 
 The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
 `MEMORYBOX_ALLOW_DEV_DEFAULTS`, and defaults `MEMORYBOX_QDRANT_URL` to
