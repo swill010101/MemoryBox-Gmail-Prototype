@@ -2739,14 +2739,20 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         fetch_rfc_neighbor_rows,
         group_conversations,
         looks_like_residual_promo,
+        NeighborFetchResult,
         participation_exclusion_reason,
         plan_gemma_replay,
         replay_binding_payload,
+        _neighbor_row_matches_wanted,
+        _light_row_from_neighbor_raw,
+        _norm_rfc,
         _RFC_NEIGHBOR_SQL,
+        _RFC_NEIGHBOR_PAGE_SIZE,
         _estimate_tokens,
         _has_independent_human_speech,
         _payload_sort_key,
         _sanitation_measurement,
+        prepare_trusted_email_review,
         propose_five_year_interval,
         render_model_paste,
         run_trusted_email_review_gemma,
@@ -3678,13 +3684,222 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     _fetch_src = inspect.getsource(fetch_rfc_neighbor_rows)
     _check(
-        "review_rfc_neighbor_fetch_is_targeted",
+        "review_rfc_neighbor_fetch_is_targeted_and_keyset_paged",
         "ANY(%s)" in _RFC_NEIGHBOR_SQL
         and "LIMIT 8000" not in _RFC_NEIGHBOR_SQL
-        and "LIMIT 8000" not in _fetch_src
-        and "rfc_neighbor_query_saturated" in _fetch_src,
+        and "OFFSET" not in _RFC_NEIGHBOR_SQL.upper()
+        and "{id_clause}" in _RFC_NEIGHBOR_SQL
+        and "id > %s" in _fetch_src
+        and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL
+        and "NeighborFetchResult" in _fetch_src
+        and "rfc_neighbor_query_saturated" not in _fetch_src,
         checks,
         problems,
+    )
+
+    def _neighbor_catalog_row(
+        eid: str,
+        rfc: str,
+        *,
+        in_reply_to: str = "",
+        refs: str = "",
+    ) -> dict:
+        return {
+            "id": eid,
+            "sent_at": "2009-01-01T12:00:00Z",
+            "thread_id": "",
+            "rfc_message_id": rfc,
+            "in_reply_to": in_reply_to,
+            "in_reply_to_ids": [],
+            "refs": refs,
+            "from_parsed": [],
+            "from_header": "other@example.test",
+            "subject": "Re: Dinner",
+            "ch": "email",
+        }
+
+    class _NeighborPageConn:
+        def __init__(self, catalog: list[dict]) -> None:
+            self.catalog = catalog
+            self.executes: list[tuple] = []
+
+        def execute(self, sql, params):
+            self.executes.append((sql, params))
+            wanted = {_norm_rfc(w) for w in params[0] if _norm_rfc(w)}
+            last_id = params[-2] if "id >" in sql else None
+            page_size = int(params[-1])
+            matched: list[dict] = []
+            for raw in sorted(self.catalog, key=lambda r: r["id"]):
+                if last_id is not None and raw["id"] <= last_id:
+                    continue
+                row = _light_row_from_neighbor_raw(raw)
+                if _neighbor_row_matches_wanted(row, wanted):
+                    matched.append(raw)
+                if len(matched) >= page_size:
+                    break
+            return matched
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    _child = LightRow(
+        evidence_id="child",
+        sent_at=datetime(2009, 1, 3, tzinfo=_tz.utc),
+        thread_id="",
+        rfc_message_id="<peggy-child@x.test>",
+        reply_ids=["<parent-b@x.test>"],
+        from_addrs={"peggo417@hotmail.com"},
+        addresses={"peggo417@hotmail.com"},
+        peggy_authored=True,
+        subject="Re: Dinner",
+        skip=False,
+    )
+    _cat3 = [
+        _neighbor_catalog_row("id-a", "<grand@x.test>"),
+        _neighbor_catalog_row(
+            "id-b",
+            "<parent-b@x.test>",
+            in_reply_to="<grand@x.test>",
+        ),
+    ]
+    _conn3 = _NeighborPageConn(_cat3)
+
+    def _factory3():
+        return _conn3
+
+    _hop3 = fetch_rfc_neighbor_rows([_child], connection_factory=_factory3)
+    _linked3 = attach_rfc_neighbors([_child], _hop3.rows)
+    _check(
+        "review_neighbor_three_hop_chain_attaches_grandparent",
+        {r.evidence_id for r in _linked3} == {"child", "id-b", "id-a"}
+        and _hop3.neighbor_context_complete is True
+        and _hop3.hops_used >= 2,
+        checks,
+        problems,
+        detail={
+            "rows": [r.evidence_id for r in _hop3.rows],
+            "hops": _hop3.hops_used,
+            "pages": _hop3.pages_fetched,
+        },
+    )
+
+    _big_cat = [
+        _neighbor_catalog_row(
+            f"id-{i:04d}",
+            f"<m{i}@x.test>",
+            in_reply_to="<peggy-child@x.test>",
+        )
+        for i in range(1200)
+    ]
+    _conn_pages = _NeighborPageConn(_big_cat)
+
+    def _factory_pages():
+        return _conn_pages
+
+    _page_res = fetch_rfc_neighbor_rows(
+        [_child],
+        connection_factory=_factory_pages,
+        page_size=500,
+        attach_cap=5000,
+    )
+    _check(
+        "review_neighbor_keyset_pages_multiple_filled_pages",
+        _page_res.pages_fetched >= 3
+        and _page_res.attached_n == 1200
+        and all("OFFSET" not in sql.upper() for sql, _ in _conn_pages.executes)
+        and any("id >" in sql for sql, _ in _conn_pages.executes[1:]),
+        checks,
+        problems,
+        detail={
+            "pages": _page_res.pages_fetched,
+            "attached": _page_res.attached_n,
+            "executes": len(_conn_pages.executes),
+        },
+    )
+
+    _cycle_a = LightRow(
+        evidence_id="cyc-a",
+        sent_at=datetime(2009, 1, 1, tzinfo=_tz.utc),
+        thread_id="",
+        rfc_message_id="<a@cycle.test>",
+        reply_ids=["<b@cycle.test>"],
+        from_addrs={"peggo417@hotmail.com"},
+        addresses={"peggo417@hotmail.com"},
+        peggy_authored=True,
+        subject="Re:",
+        skip=False,
+    )
+    _cat_cycle = [
+        _neighbor_catalog_row("cyc-b", "<b@cycle.test>", in_reply_to="<a@cycle.test>"),
+        _neighbor_catalog_row("cyc-a2", "<a@cycle.test>", in_reply_to="<b@cycle.test>"),
+    ]
+    _conn_cycle = _NeighborPageConn(_cat_cycle)
+
+    def _factory_cycle():
+        return _conn_cycle
+
+    _cycle_res = fetch_rfc_neighbor_rows(
+        [_cycle_a],
+        connection_factory=_factory_cycle,
+        max_hops=8,
+    )
+    _check(
+        "review_neighbor_cycle_terminates_without_duplicate_attach",
+        len(_cycle_res.rows) <= 2
+        and len({r.evidence_id for r in _cycle_res.rows}) == len(_cycle_res.rows)
+        and _conn_cycle.executes,
+        checks,
+        problems,
+        detail={
+            "rows": [r.evidence_id for r in _cycle_res.rows],
+            "executes": len(_conn_cycle.executes),
+            "complete": _cycle_res.neighbor_context_complete,
+        },
+    )
+
+    _cap_res = fetch_rfc_neighbor_rows(
+        [_child],
+        connection_factory=_factory_pages,
+        page_size=500,
+        attach_cap=50,
+    )
+    _check(
+        "review_neighbor_attach_cap_returns_incomplete_metadata",
+        _cap_res.neighbor_context_complete is False
+        and str(_cap_res.stopping_reason or "").startswith("attach_cap:")
+        and _cap_res.attached_n == 50,
+        checks,
+        problems,
+        detail=_cap_res.__dict__,
+    )
+
+    class _DbFailConn:
+        def execute(self, *_a, **_k):
+            raise RuntimeError("db_unreachable")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def _factory_fail():
+        return _DbFailConn()
+
+    try:
+        fetch_rfc_neighbor_rows([_child], connection_factory=_factory_fail)
+        _db_fail = {"ok": True}
+    except RuntimeError as exc:
+        _db_fail = {"ok": False, "error": str(exc)}
+    _check(
+        "review_neighbor_db_error_propagates_for_fail_closed_prepare",
+        _db_fail.get("ok") is False and "db_unreachable" in str(_db_fail.get("error")),
+        checks,
+        problems,
+        detail=_db_fail,
     )
     _keep_love = PreparedMessage(
         evidence_id="keep-love",
@@ -4163,6 +4378,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "rfc_neighbor_fetch_failed" in review_src
         and "fail_closed" in review_src
         and "extras = []" not in review_src
+        and "neighbor_context_complete" in review_src
         and "encode_replay_binding" in review_src
         and "_REPLAY_BIND_MARK" in review_src,
         checks,

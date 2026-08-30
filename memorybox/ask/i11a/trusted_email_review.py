@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from memorybox.ask.authored import plain_email_body
 from memorybox.ask.i11a.trusted_full_evidence_v2 import (
@@ -608,68 +608,258 @@ def attach_rfc_neighbors(rows: list[LightRow], extras: list[LightRow]) -> list[L
     return added
 
 
-def fetch_rfc_neighbor_rows(rows: list[LightRow]) -> list[LightRow]:
-    """Load reply parents/children by RFC id. Does not filter by trusted From."""
-    from memorybox.db import connection
+_RFC_NEIGHBOR_SQL = """
+            SELECT id,
+                   payload_json->>'sent_at' AS sent_at,
+                   payload_json->>'thread_id' AS thread_id,
+                   coalesce(
+                       payload_json->>'rfc_message_id',
+                       payload_json->>'message_id',
+                       ''
+                   ) AS rfc_message_id,
+                   payload_json->>'in_reply_to' AS in_reply_to,
+                   payload_json->'in_reply_to_ids' AS in_reply_to_ids,
+                   payload_json->>'references' AS refs,
+                   payload_json->'from_parsed' AS from_parsed,
+                   payload_json->>'from' AS from_header,
+                   payload_json->>'subject' AS subject,
+                   lower(coalesce(
+                       payload_json->>'evidence_channel', 'email'
+                   )) AS ch
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND (
+                    coalesce(
+                        payload_json->>'rfc_message_id',
+                        payload_json->>'message_id',
+                        ''
+                    ) = ANY(%s)
+                 OR coalesce(payload_json->>'in_reply_to', '') = ANY(%s)
+                 OR (
+                        jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(
+                            payload_json->'in_reply_to_ids'
+                        ) AS rid
+                        WHERE rid = ANY(%s)
+                    )
+                 )
+                 OR (
+                        coalesce(payload_json->>'references', '') <> ''
+                    AND EXISTS (
+                        SELECT 1 FROM unnest(%s::text[]) AS w
+                        WHERE w = ANY(
+                            regexp_split_to_array(
+                                trim(both from payload_json->>'references'),
+                                E'\\\\s+'
+                            )
+                        )
+                    )
+                 )
+              )
+              {id_clause}
+            ORDER BY id
+            LIMIT %s
+"""
+_RFC_NEIGHBOR_PAGE_SIZE = 500
+_RFC_NEIGHBOR_ATTACH_CAP = 10_000
+_RFC_NEIGHBOR_MAX_HOPS = 64
+_RFC_WANTED_CHUNK = 200
 
-    wanted = []
+
+@dataclass
+class NeighborFetchResult:
+    rows: list[LightRow]
+    neighbor_context_complete: bool = True
+    stopping_reason: str | None = None
+    unresolved_rfc_ids: list[str] = field(default_factory=list)
+    attached_n: int = 0
+    hops_used: int = 0
+    pages_fetched: int = 0
+
+
+def _light_row_from_neighbor_raw(raw: Any) -> LightRow:
+    payload_lite = {
+        "from_parsed": raw["from_parsed"] or [],
+        "from": raw["from_header"],
+        "in_reply_to": raw["in_reply_to"],
+        "in_reply_to_ids": raw["in_reply_to_ids"] or [],
+        "references": raw["refs"],
+        "rfc_message_id": raw["rfc_message_id"],
+    }
+    reply_ids = _rfc_ids(
+        raw["in_reply_to"], raw["in_reply_to_ids"], raw["refs"]
+    )
+    return LightRow(
+        evidence_id=str(raw["id"]),
+        sent_at=_parse_sent_at(raw["sent_at"]),
+        thread_id=str(raw["thread_id"] or "").strip(),
+        rfc_message_id=str(raw["rfc_message_id"] or "").strip(),
+        reply_ids=reply_ids,
+        from_addrs=_payload_email_addresses(
+            {
+                "from_parsed": payload_lite.get("from_parsed"),
+                "from": payload_lite.get("from"),
+            }
+        ),
+        addresses=_payload_email_addresses(payload_lite),
+        peggy_authored=False,
+        subject=str(raw["subject"] or ""),
+        skip=False,
+    )
+
+
+def _neighbor_row_matches_wanted(row: LightRow, wanted: set[str]) -> bool:
+    own = _own_rfc(row)
+    if own and own in wanted:
+        return True
+    if set(_reply_rfcs(row)) & wanted:
+        return True
+    ref_ids = {_norm_rfc(r) for r in _rfc_ids(*(row.reply_ids or [])) if _norm_rfc(r)}
+    return bool(ref_ids & wanted)
+
+
+def _collect_known_rfc(rows: Iterable[LightRow]) -> set[str]:
+    known: set[str] = set()
     for row in rows:
-        if _own_rfc(row):
-            wanted.append(_own_rfc(row))
-        wanted.extend(_reply_rfcs(row))
-    wanted = [w for w in dict.fromkeys(wanted) if w]
-    if not wanted:
-        return []
-    have = {r.evidence_id for r in rows}
-    out: list[LightRow] = []
-    with connection() as conn:
-        fetched = conn.execute(
-            _RFC_NEIGHBOR_SQL,
-            (wanted, wanted, wanted, wanted),
-        ).fetchall()
-    if len(fetched) >= _RFC_NEIGHBOR_CAP:
-        raise RuntimeError(
-            f"rfc_neighbor_query_saturated:{len(fetched)}"
-        )
-    for raw in fetched:
-        if str(raw["ch"] or "email") != "email":
-            continue
-        eid = str(raw["id"])
-        if eid in have:
-            continue
-        payload_lite = {
-            "from_parsed": raw["from_parsed"] or [],
-            "from": raw["from_header"],
-            "in_reply_to": raw["in_reply_to"],
-            "in_reply_to_ids": raw["in_reply_to_ids"] or [],
-            "references": raw["refs"],
-            "rfc_message_id": raw["rfc_message_id"],
+        own = _own_rfc(row)
+        if own:
+            known.add(own)
+        known.update(_reply_rfcs(row))
+    return known
+
+
+def _unresolved_parent_rfcs(rows: Iterable[LightRow]) -> list[str]:
+    known = _collect_known_rfc(rows)
+    missing = sorted(
+        {
+            rid
+            for row in rows
+            for rid in _reply_rfcs(row)
+            if rid and rid not in known
         }
-        reply_ids = _rfc_ids(
-            raw["in_reply_to"], raw["in_reply_to_ids"], raw["refs"]
-        )
-        cand = LightRow(
-            evidence_id=eid,
-            sent_at=_parse_sent_at(raw["sent_at"]),
-            thread_id=str(raw["thread_id"] or "").strip(),
-            rfc_message_id=str(raw["rfc_message_id"] or "").strip(),
-            reply_ids=reply_ids,
-            from_addrs=_payload_email_addresses(
-                {
-                    "from_parsed": payload_lite.get("from_parsed"),
-                    "from": payload_lite.get("from"),
-                }
-            ),
-            addresses=_payload_email_addresses(payload_lite),
-            peggy_authored=False,
-            subject=str(raw["subject"] or ""),
-            skip=False,
-        )
-        own = _own_rfc(cand)
-        replies = set(_reply_rfcs(cand))
-        if own in wanted or (replies & set(wanted)):
-            out.append(cand)
-    return out
+    )
+    return missing
+
+
+def fetch_rfc_neighbor_rows(
+    rows: list[LightRow],
+    *,
+    connection_factory: Any | None = None,
+    page_size: int = _RFC_NEIGHBOR_PAGE_SIZE,
+    attach_cap: int = _RFC_NEIGHBOR_ATTACH_CAP,
+    max_hops: int = _RFC_NEIGHBOR_MAX_HOPS,
+) -> NeighborFetchResult:
+    """Paged, multi-hop RFC neighbor fetch. DB errors propagate; caps return incomplete."""
+    from memorybox.db import connection as default_connection
+
+    conn_factory = connection_factory or default_connection
+    have_eids: set[str] = {r.evidence_id for r in rows}
+    extras: list[LightRow] = []
+    extras_by_id: dict[str, LightRow] = {}
+    known_rfc = _collect_known_rfc(rows)
+    queried_rfc: set[str] = set()
+    neighbor_context_complete = True
+    stopping_reason: str | None = None
+    hops_used = 0
+    pages_fetched = 0
+
+    def _attach_cap_hit() -> bool:
+        return len(extras) >= attach_cap
+
+    with conn_factory() as conn:
+        for hop in range(max_hops):
+            to_query = sorted(r for r in known_rfc if r and r not in queried_rfc)
+            if not to_query:
+                break
+            queried_rfc.update(to_query)
+            hops_used = hop + 1
+            newly_discovered: set[str] = set()
+
+            for chunk_start in range(0, len(to_query), _RFC_WANTED_CHUNK):
+                chunk = to_query[chunk_start : chunk_start + _RFC_WANTED_CHUNK]
+                wanted_set = {_norm_rfc(w) for w in chunk if _norm_rfc(w)}
+                if not wanted_set:
+                    continue
+                chunk_list = sorted(wanted_set)
+                last_id: Any = None
+                while True:
+                    if _attach_cap_hit():
+                        neighbor_context_complete = False
+                        stopping_reason = f"attach_cap:{attach_cap}"
+                        break
+                    params: list[Any] = [chunk_list, chunk_list, chunk_list, chunk_list]
+                    id_clause = ""
+                    if last_id is not None:
+                        id_clause = "AND id > %s"
+                        params.append(last_id)
+                    params.append(int(page_size))
+                    sql = _RFC_NEIGHBOR_SQL.format(id_clause=id_clause)
+                    result = conn.execute(sql, params)
+                    fetched = (
+                        result.fetchall()
+                        if hasattr(result, "fetchall")
+                        else list(result)
+                    )
+                    pages_fetched += 1
+                    if not fetched:
+                        break
+                    for raw in fetched:
+                        last_id = raw["id"]
+                        if str(raw["ch"] or "email") != "email":
+                            continue
+                        eid = str(raw["id"])
+                        if eid in have_eids or eid in extras_by_id:
+                            continue
+                        cand = _light_row_from_neighbor_raw(raw)
+                        if not _neighbor_row_matches_wanted(cand, wanted_set):
+                            continue
+                        if _attach_cap_hit():
+                            neighbor_context_complete = False
+                            stopping_reason = f"attach_cap:{attach_cap}"
+                            break
+                        extras.append(cand)
+                        extras_by_id[eid] = cand
+                        own = _own_rfc(cand)
+                        if own:
+                            newly_discovered.add(own)
+                        newly_discovered.update(_reply_rfcs(cand))
+                    if not neighbor_context_complete:
+                        break
+                    if len(fetched) < page_size:
+                        break
+                if not neighbor_context_complete:
+                    break
+            if not neighbor_context_complete:
+                break
+            frontier = newly_discovered - known_rfc
+            known_rfc.update(newly_discovered)
+            if not frontier:
+                break
+        else:
+            pending = sorted(r for r in known_rfc if r and r not in queried_rfc)
+            if pending and neighbor_context_complete:
+                neighbor_context_complete = False
+                stopping_reason = f"hop_cap:{max_hops}"
+
+    all_rows = list(rows) + extras
+    unresolved = _unresolved_parent_rfcs(all_rows)
+    if unresolved:
+        neighbor_context_complete = False
+        stopping_reason = stopping_reason or "unresolved_parent_rfc_ids"
+
+    return NeighborFetchResult(
+        rows=extras,
+        neighbor_context_complete=neighbor_context_complete,
+        stopping_reason=stopping_reason,
+        unresolved_rfc_ids=unresolved,
+        attached_n=len(extras),
+        hops_used=hops_used,
+        pages_fetched=pages_fetched,
+    )
 
 
 def load_payloads(evidence_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -809,56 +999,6 @@ _INSTITUTIONAL_WE = re.compile(
     r"our (?:members|customers|collection|store|latest)|"
     r"share (?:our|the) (?:seasonal|latest))\b"
 )
-_RFC_NEIGHBOR_SQL = """
-            SELECT id,
-                   payload_json->>'sent_at' AS sent_at,
-                   payload_json->>'thread_id' AS thread_id,
-                   coalesce(
-                       payload_json->>'rfc_message_id',
-                       payload_json->>'message_id',
-                       ''
-                   ) AS rfc_message_id,
-                   payload_json->>'in_reply_to' AS in_reply_to,
-                   payload_json->'in_reply_to_ids' AS in_reply_to_ids,
-                   payload_json->>'references' AS refs,
-                   payload_json->'from_parsed' AS from_parsed,
-                   payload_json->>'from' AS from_header,
-                   payload_json->>'subject' AS subject,
-                   lower(coalesce(
-                       payload_json->>'evidence_channel', 'email'
-                   )) AS ch
-            FROM evidence
-            WHERE evidence_kind = 'communication'
-              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
-                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-              AND (
-                    coalesce(
-                        payload_json->>'rfc_message_id',
-                        payload_json->>'message_id',
-                        ''
-                    ) = ANY(%s)
-                 OR coalesce(payload_json->>'in_reply_to', '') = ANY(%s)
-                 OR (
-                        jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
-                    AND EXISTS (
-                        SELECT 1
-                        FROM jsonb_array_elements_text(
-                            payload_json->'in_reply_to_ids'
-                        ) AS rid
-                        WHERE rid = ANY(%s)
-                    )
-                 )
-                 OR (
-                        coalesce(payload_json->>'references', '') <> ''
-                    AND EXISTS (
-                        SELECT 1 FROM unnest(%s::text[]) AS w
-                        WHERE position(w in payload_json->>'references') > 0
-                    )
-                 )
-              )
-            LIMIT 500
-"""
-_RFC_NEIGHBOR_CAP = 500
 _REPLAY_BIND_MARK = "===== REPLAY BINDING ====="
 _GENERIC_IMAGE_MARK = re.compile(r"(?i)\[(?:image|img|cid:[^\]]*)\]")
 
@@ -2156,15 +2296,23 @@ def prepare_trusted_email_review(
 
     light = inventory_trusted_email_light(trusted=trusted)
     try:
-        extras = fetch_rfc_neighbor_rows(light)
+        neighbor = fetch_rfc_neighbor_rows(light)
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
             "error": f"rfc_neighbor_fetch_failed:{type(exc).__name__}:{exc}",
             "fail_closed": True,
         }
-    if extras:
-        light = attach_rfc_neighbors(light, extras)
+    if neighbor.rows:
+        light = attach_rfc_neighbors(light, neighbor.rows)
+    neighbor_context = {
+        "neighbor_context_complete": neighbor.neighbor_context_complete,
+        "stopping_reason": neighbor.stopping_reason,
+        "unresolved_rfc_ids": neighbor.unresolved_rfc_ids,
+        "attached_n": neighbor.attached_n,
+        "hops_used": neighbor.hops_used,
+        "pages_fetched": neighbor.pages_fetched,
+    }
     inventory = {
         "trusted_message_n": len(light),
         "dated_n": sum(1 for r in light if r.sent_at),
@@ -2172,6 +2320,7 @@ def prepare_trusted_email_review(
         "year_min": min((r.sent_at.year for r in light if r.sent_at), default=None),
         "year_max": max((r.sent_at.year for r in light if r.sent_at), default=None),
         "rfc_or_reply_n": sum(1 for r in light if r.thread_id or r.reply_ids),
+        **neighbor_context,
     }
     proposed = propose_five_year_interval(light)
     if interval_start and interval_end:
@@ -2395,6 +2544,12 @@ def prepare_trusted_email_review(
             f"inventory_trusted_messages: {inventory['trusted_message_n']} "
             f"dated={inventory['dated_n']} peggy_authored={inventory['peggy_authored_n']} "
             f"years={inventory['year_min']}-{inventory['year_max']}",
+            f"neighbor_context_complete: {inventory.get('neighbor_context_complete')}",
+            f"neighbor_stopping_reason: {inventory.get('stopping_reason') or ''}",
+            f"neighbor_unresolved_rfc_ids: {json.dumps(inventory.get('unresolved_rfc_ids') or [])}",
+            f"neighbor_attached_n: {inventory.get('attached_n')}",
+            f"neighbor_hops_used: {inventory.get('hops_used')}",
+            f"neighbor_pages_fetched: {inventory.get('pages_fetched')}",
             f"proposed_interval: {proposed.get('start')} to {proposed.get('end')}",
             f"proposed_why: {proposed.get('why')}",
             f"used_interval: {interval.get('start')} to {interval.get('end')} "
@@ -2497,6 +2652,7 @@ def prepare_trusted_email_review(
         "preparation_report": str(run_dir / "PREPARATION_REPORT.txt"),
         "preparation_report_text": report,
         "excluded_no_personal_contribution": excluded_service,
+        "neighbor_context": neighbor_context,
         "later_gemma_only": (
             "python -m memorybox run-trusted-email-review-gemma "
             f"--paste-dir {run_dir} --require-hash {digest}"
