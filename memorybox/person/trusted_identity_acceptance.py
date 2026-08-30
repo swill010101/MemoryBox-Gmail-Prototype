@@ -1155,7 +1155,12 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and gate_txt.find("MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333")
         < gate_txt.find("-Step Migrate")
         and "export-memorybox-app-env.py" in gate_txt
-        and "MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434" in gate_txt,
+        and "MEMORYBOX_OLLAMA_BASE_URL=http://127.0.0.1:11434" in gate_txt
+        and "started_pre_migrate" in gate_txt
+        and "FEV2_paste_*.txt" in gate_txt
+        and gate_txt.find("started_pre_migrate")
+        < gate_txt.find("export-memorybox-app-env.py")
+        < gate_txt.find("-Step Migrate"),
         checks,
         problems,
     )

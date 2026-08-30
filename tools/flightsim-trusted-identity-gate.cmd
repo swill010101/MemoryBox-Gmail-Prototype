@@ -36,6 +36,15 @@ if errorlevel 1 (
 )
 git rev-parse --short HEAD
 echo.
+REM Heartbeat before env python / migrate. PATH `python` can be a WindowsApps
+REM stub that hangs; without this commit we cannot see that the gate ran.
+if not exist "docs\test-output\trusted-full-evidence-v2" mkdir "docs\test-output\trusted-full-evidence-v2"
+for /f %%H in ('git rev-parse --short HEAD') do set "GATE_TIP=%%H"
+> "docs\test-output\trusted-full-evidence-v2\PHASE2_GATE_STARTED.txt" (
+  echo started_pre_migrate hostname=%COMPUTERNAME% tip=%GATE_TIP%
+)
+call :deliver_evidence "evidence(flightsim): trusted-identity gate started"
+echo.
 REM Same as address-centric prove.ps1: P1=1 and no ALLOW_DEV so --flightsim
 REM can stamp flightsim=true. Clearing ALLOW_DEV drops the :memory: Qdrant
 REM default — set the startmb localhost URL when app.env did not export it.
@@ -157,6 +166,7 @@ if exist "%EVIDENCE_DIR%\PHASE2_GATE_STARTED.txt" git add -- "%EVIDENCE_DIR%\PHA
 if exist "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json" git add -- "%EVIDENCE_DIR%\PHASE2_PREFLIGHT.json"
 if exist "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE2_SUMMARY.txt"
 if exist "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt" git add -- "%EVIDENCE_DIR%\PHASE3_SUMMARY.txt"
+for %%F in ("%EVIDENCE_DIR%\FEV2_paste_*.txt") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\FEV2REPORT_*.json") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\PIPELINE_*.json") do if exist "%%F" git add -- "%%F"
 for %%F in ("%EVIDENCE_DIR%\FEV2_*.json") do if exist "%%F" git add -- "%%F"
