@@ -2730,14 +2730,23 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     from memorybox.ask.i11a.trusted_email_review import (
         EMAIL_REVIEW_SYSTEM,
         LightRow,
+        PreparedMessage,
         classify_body_source,
         attach_rfc_neighbors,
         classify_review_authorship,
+        encode_replay_binding,
         extract_non_service_text,
+        fetch_rfc_neighbor_rows,
         group_conversations,
+        looks_like_residual_promo,
         participation_exclusion_reason,
         plan_gemma_replay,
+        replay_binding_payload,
+        _RFC_NEIGHBOR_SQL,
+        _estimate_tokens,
+        _has_independent_human_speech,
         _payload_sort_key,
+        _sanitation_measurement,
         propose_five_year_interval,
         render_model_paste,
         run_trusted_email_review_gemma,
@@ -3478,6 +3487,45 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail={"kind": _resid_msg.authorship_kind, "authored": _resid_msg.authored},
     )
+    _fp_promo = (
+        "We're excited to share our seasonal collection with our members this week.\n"
+        "View your e-card\n"
+        "This is an automated notification. Do not reply to this email.\n"
+    )
+    _fp_msg = _prepare_message(
+        "resid-fp-1",
+        {
+            "sent_at": "2013-06-01T12:00:00Z",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": _fp_promo,
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _check(
+        "review_first_person_promo_is_not_peggy_speech",
+        _fp_msg.peggy_personal is False
+        and _fp_msg.authorship_kind == "service_generated"
+        and "seasonal collection" not in (_fp_msg.authored or "").lower()
+        and looks_like_residual_promo(
+            "We're excited to share our seasonal collection with our members this week.",
+            had_service_context=True,
+        )
+        is True
+        and looks_like_residual_promo(
+            "I mailed a Hallmark card Friday after the party."
+        )
+        is False
+        and looks_like_residual_promo(
+            "I sent you an e-card because I miss you."
+        )
+        is False,
+        checks,
+        problems,
+        detail={"kind": _fp_msg.authorship_kind, "authored": _fp_msg.authored},
+    )
     _mixed_line = sanitize_text_block(
         "I picked this for you — view your e-card"
     )
@@ -3628,6 +3676,75 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=[r.evidence_id for r in _linked],
     )
+    _fetch_src = inspect.getsource(fetch_rfc_neighbor_rows)
+    _check(
+        "review_rfc_neighbor_fetch_is_targeted",
+        "ANY(%s)" in _RFC_NEIGHBOR_SQL
+        and "LIMIT 8000" not in _RFC_NEIGHBOR_SQL
+        and "LIMIT 8000" not in _fetch_src
+        and "rfc_neighbor_query_saturated" in _fetch_src,
+        checks,
+        problems,
+    )
+    _keep_love = PreparedMessage(
+        evidence_id="keep-love",
+        sent_at=datetime(2009, 1, 1, tzinfo=_tz.utc),
+        in_interval=True,
+        peggy_authored=True,
+        body_kind="plain_text",
+        authored="Love you. See you Friday.",
+        quoted="",
+        quote_kept=False,
+        quote_uncertain=False,
+        payload={"body_text": "Love you. See you Friday."},
+        authorship_kind="personal",
+        peggy_personal=True,
+    )
+    _meas_payloads = {
+        "keep-love": {"body_text": "Love you. See you Friday."},
+        "ex-bday": {"body_text": "Happy birthday. Hope the party was fun."},
+    }
+    _meas = _sanitation_measurement(
+        payloads=_meas_payloads,
+        need_ids=["keep-love", "ex-bday"],
+        conversations=[{"messages": [_keep_love]}],
+        excluded=[
+            {
+                "grouping": "singleton",
+                "message_ids": ["ex-bday"],
+                "reason": "service_only_no_personal_contribution",
+            }
+        ],
+        paste_text="===== SYSTEM INSTRUCTIONS =====\n" + ("wrapper " * 80),
+        prompt_tokens=9999,
+    )
+    _raw_join = "\n".join(
+        classify_body_source(_meas_payloads[i])[1] for i in ["keep-love", "ex-bday"]
+    )
+    _after_join = "Love you. See you Friday."
+    _check(
+        "review_measurement_same_unit_and_scans_excluded_human",
+        _meas.get("token_compare_unit") == "recovered_body_bytes_div_4"
+        and _meas.get("body_tokens_before_estimate") == _estimate_tokens(_raw_join)
+        and _meas.get("body_tokens_after_estimate") == _estimate_tokens(_after_join)
+        and _meas.get("tokens_after") == _estimate_tokens(_after_join)
+        and _meas.get("paste_tokens_reported") == 9999
+        and _meas.get("paste_tokens_reported") != _meas.get("body_tokens_after_estimate")
+        and _meas.get("human_evidence_loss_includes_excluded") is True
+        and set(_meas.get("human_evidence_loss_scanned_ids") or [])
+        == {"keep-love", "ex-bday"}
+        and "ex-bday" in (_meas.get("human_evidence_ids_lost") or [])
+        and "keep-love" not in (_meas.get("human_evidence_ids_lost") or [])
+        and _has_independent_human_speech("Happy birthday.")
+        and _has_independent_human_speech("Love you.")
+        and not _has_independent_human_speech(
+            "We're excited to share our seasonal collection with our members."
+        )
+        and _meas.get("human_evidence_loss_required_zero") is False,
+        checks,
+        problems,
+        detail=_meas,
+    )
     _keep_q = _prepare_message(
         "keep-q",
         {
@@ -3739,28 +3856,76 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     import tempfile
     from pathlib import Path as _Ptmp
 
+    def _write_bound_replay(td, *, system: str, user: str, source_map: dict) -> str:
+        binding = encode_replay_binding(source_map)
+        paste = (
+            "===== SYSTEM INSTRUCTIONS =====\n"
+            + system
+            + "\n\n===== REPLAY BINDING =====\n"
+            + binding
+            + "\n\n===== USER QUESTION AND EVIDENCE =====\n"
+            + user
+            + "\n"
+        )
+        (td / "MODEL_PASTE.txt").write_text(paste, encoding="utf-8")
+        digest = __import__("hashlib").sha256(paste.encode("utf-8")).hexdigest()
+        written = dict(source_map)
+        written["frozen_input_sha256"] = digest
+        (td / "SOURCE_MAP.json").write_text(json.dumps(written), encoding="utf-8")
+        return digest
+
     _td = _Ptmp(tempfile.mkdtemp())
     (_td / "MODEL_PASTE.txt").write_text(
         "===== SYSTEM INSTRUCTIONS =====\nsys\n\n"
         "===== USER QUESTION AND EVIDENCE =====\nuser\n",
         encoding="utf-8",
     )
-    _paste_hash = __import__("hashlib").sha256(
+    _unbound_hash = __import__("hashlib").sha256(
         (_td / "MODEL_PASTE.txt").read_bytes()
     ).hexdigest()
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
-                "frozen_input_sha256": _paste_hash,
+                "frozen_input_sha256": _unbound_hash,
                 "budget": {
-                    "capacity_certainty": "unknown",
-                    "proposed_request": {"num_ctx": None, "output_reserve": 2048},
+                    "capacity_certainty": "observed_env",
+                    "proposed_request": {
+                        "model": "gemma4:26b",
+                        "num_ctx": 32768,
+                        "output_reserve": 2048,
+                    },
                     "prompt_tokens": 10,
-                    "usable_input_tokens": 100,
-                }
+                    "usable_input_tokens": 28000,
+                },
             }
         ),
         encoding="utf-8",
+    )
+    _plan_missing = plan_gemma_replay(paste_dir=_td, require_hash=_unbound_hash)
+    _check(
+        "review_replay_plan_refuses_missing_binding",
+        _plan_missing.get("ok") is False
+        and "replay_binding_missing" in str(_plan_missing.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_missing,
+    )
+    _paste_hash = _write_bound_replay(
+        _td,
+        system="sys",
+        user="user",
+        source_map={
+            "budget": {
+                "capacity_certainty": "unknown",
+                "proposed_request": {
+                    "model": "gemma4:26b",
+                    "num_ctx": None,
+                    "output_reserve": 2048,
+                },
+                "prompt_tokens": 10,
+                "usable_input_tokens": 100,
+            }
+        },
     )
     _plan_bad = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
     _check(
@@ -3770,27 +3935,26 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_bad,
     )
-    (_td / "SOURCE_MAP.json").write_text(
-        json.dumps(
-            {
-                "frozen_input_sha256": _paste_hash,
-                "budget": {
-                    "capacity_certainty": "observed_env",
-                    "proposed_request": {
-                        "model": "gemma4:26b",
-                        "provider": "ollama",
-                        "num_ctx": 32768,
-                        "temperature": 0.1,
-                        "output_reserve": 2048,
-                    },
-                    "prompt_tokens": 10,
-                    "usable_input_tokens": 28000,
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
+    _ok_map = {
+        "budget": {
+            "capacity_certainty": "observed_env",
+            "proposed_request": {
+                "model": "gemma4:26b",
+                "provider": "ollama",
+                "num_ctx": 32768,
+                "temperature": 0.1,
+                "output_reserve": 2048,
+            },
+            "prompt_tokens": 10,
+            "usable_input_tokens": 28000,
+        }
+    }
+    _paste_hash = _write_bound_replay(_td, system="sys", user="user", source_map=_ok_map)
     _plan_ok = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _req_msgs = (_plan_ok.get("request_payload") or {}).get("messages") or []
+    _sys_joined = " ".join(
+        str(m.get("content") or "") for m in _req_msgs if m.get("role") == "system"
+    )
     _check(
         "review_replay_plan_serializes_reviewed_num_ctx",
         _plan_ok.get("ok") is True
@@ -3799,24 +3963,31 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and ((_plan_ok.get("request_payload") or {}).get("options") or {}).get("num_predict")
         == 2048
         and _plan_ok.get("provider") == "ollama"
-        and _plan_ok.get("chunking") is False,
+        and _plan_ok.get("chunking") is False
+        and "REPLAY BINDING" not in _sys_joined
+        and _plan_ok.get("replay_binding") == replay_binding_payload(_ok_map),
         checks,
         problems,
         detail=_plan_ok.get("request_payload"),
     )
+    _mutated = json.loads((_td / "SOURCE_MAP.json").read_text(encoding="utf-8"))
+    _mutated["budget"]["proposed_request"]["num_ctx"] = 99991
+    (_td / "SOURCE_MAP.json").write_text(json.dumps(_mutated), encoding="utf-8")
+    _plan_mut = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_binding_refuses_mutated_sidecar_settings",
+        _plan_mut.get("ok") is False
+        and "source_map_replay_binding_mismatch" in str(_plan_mut.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_mut,
+    )
+    _paste_hash = _write_bound_replay(_td, system="sys", user="user", source_map=_ok_map)
     (_td / "SOURCE_MAP.json").write_text(
         json.dumps(
             {
                 "frozen_input_sha256": "deadbeef" * 8,
-                "budget": {
-                    "capacity_certainty": "observed_env",
-                    "proposed_request": {
-                        "num_ctx": 32768,
-                        "output_reserve": 2048,
-                    },
-                    "prompt_tokens": 10,
-                    "usable_input_tokens": 28000,
-                }
+                "budget": _ok_map["budget"],
             }
         ),
         encoding="utf-8",
@@ -3830,19 +4001,22 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_side,
     )
-    (_td / "SOURCE_MAP.json").write_text(
-        json.dumps(
-            {
-                "frozen_input_sha256": _paste_hash,
-                "budget": {
-                    "capacity_certainty": "advertised_only",
-                    "proposed_request": {"num_ctx": 99991, "output_reserve": 2048},
-                    "prompt_tokens": 10,
-                    "usable_input_tokens": 28000,
-                }
+    _paste_hash = _write_bound_replay(
+        _td,
+        system="sys",
+        user="user",
+        source_map={
+            "budget": {
+                "capacity_certainty": "advertised_only",
+                "proposed_request": {
+                    "model": "gemma4:26b",
+                    "num_ctx": 99991,
+                    "output_reserve": 2048,
+                },
+                "prompt_tokens": 10,
+                "usable_input_tokens": 28000,
             }
-        ),
-        encoding="utf-8",
+        },
     )
     _plan_adv = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
     _check(
@@ -3853,19 +4027,22 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_adv,
     )
-    (_td / "SOURCE_MAP.json").write_text(
-        json.dumps(
-            {
-                "frozen_input_sha256": _paste_hash,
-                "budget": {
-                    "capacity_certainty": "observed_env",
-                    "proposed_request": {"num_ctx": 8192, "output_reserve": 2048},
-                    "prompt_tokens": 20000,
-                    "usable_input_tokens": 4000,
-                }
+    _paste_hash = _write_bound_replay(
+        _td,
+        system="sys",
+        user="user",
+        source_map={
+            "budget": {
+                "capacity_certainty": "observed_env",
+                "proposed_request": {
+                    "model": "gemma4:26b",
+                    "num_ctx": 8192,
+                    "output_reserve": 2048,
+                },
+                "prompt_tokens": 20000,
+                "usable_input_tokens": 4000,
             }
-        ),
-        encoding="utf-8",
+        },
     )
     _plan_big = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
     _check(
@@ -3876,8 +4053,6 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_plan_big,
     )
-    from memorybox.ask.i11a.trusted_email_review import PreparedMessage
-
     _sys, _user, _cites = render_model_paste(
         ask="tell me what you know about this person",
         person_name="Peggy George",
@@ -3980,6 +4155,16 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "SINGLE_PASS_EMAIL_BODY_CHARS" not in review_src
         and "fe8a128c" in review_src
         and "run_trusted_evidence_pipeline" not in review_src,
+        checks,
+        problems,
+    )
+    _check(
+        "review_prepare_fail_closed_on_neighbor_fetch",
+        "rfc_neighbor_fetch_failed" in review_src
+        and "fail_closed" in review_src
+        and "extras = []" not in review_src
+        and "encode_replay_binding" in review_src
+        and "_REPLAY_BIND_MARK" in review_src,
         checks,
         problems,
     )

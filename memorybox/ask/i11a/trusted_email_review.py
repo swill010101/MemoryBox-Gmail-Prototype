@@ -624,31 +624,13 @@ def fetch_rfc_neighbor_rows(rows: list[LightRow]) -> list[LightRow]:
     out: list[LightRow] = []
     with connection() as conn:
         fetched = conn.execute(
-            """
-            SELECT id,
-                   payload_json->>'sent_at' AS sent_at,
-                   payload_json->>'thread_id' AS thread_id,
-                   coalesce(
-                       payload_json->>'rfc_message_id',
-                       payload_json->>'message_id',
-                       ''
-                   ) AS rfc_message_id,
-                   payload_json->>'in_reply_to' AS in_reply_to,
-                   payload_json->'in_reply_to_ids' AS in_reply_to_ids,
-                   payload_json->>'references' AS refs,
-                   payload_json->'from_parsed' AS from_parsed,
-                   payload_json->>'from' AS from_header,
-                   payload_json->>'subject' AS subject,
-                   lower(coalesce(
-                       payload_json->>'evidence_channel', 'email'
-                   )) AS ch
-            FROM evidence
-            WHERE evidence_kind = 'communication'
-              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
-                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
-            LIMIT 8000
-            """,
+            _RFC_NEIGHBOR_SQL,
+            (wanted, wanted, wanted, wanted),
         ).fetchall()
+    if len(fetched) >= _RFC_NEIGHBOR_CAP:
+        raise RuntimeError(
+            f"rfc_neighbor_query_saturated:{len(fetched)}"
+        )
     for raw in fetched:
         if str(raw["ch"] or "email") != "email":
             continue
@@ -812,12 +794,131 @@ _PERSONAL_VOICE = re.compile(
     r"(?i)\b(?:i|i['’]m|i['’]ve|i['’]ll|we|we['’]re|my|our)\b"
 )
 _RESIDUAL_PROMO = re.compile(
-    r"(?i)\b(?:seasonal (?:joy|greetings)|share (?:the )?(?:joy|smiles)|"
+    r"(?i)\b(?:seasonal (?:joy|greetings|collection)|share (?:the )?(?:joy|smiles)|"
     r"special greeting experience|browse (?:our )?(?:cards|gifts)|"
     r"this (?:exclusive|limited) offer|click (?:the )?(?:button|banner)|"
     r"customer (?:care|support) hours)\b"
 )
+_HUMAN_WRAPPER = re.compile(
+    r"(?i)\b(?:thinking of you|miss you|love you|happy birthday|"
+    r"fyi\b|thank(?:s| you)\b|picked this|chose this|"
+    r"i (?:sent|mailed|picked|chose|made))\b"
+)
+_INSTITUTIONAL_WE = re.compile(
+    r"(?i)\b(?:we(?:'re| are)? (?:excited|delighted|pleased|happy) to|"
+    r"our (?:members|customers|collection|store|latest)|"
+    r"share (?:our|the) (?:seasonal|latest))\b"
+)
+_RFC_NEIGHBOR_SQL = """
+            SELECT id,
+                   payload_json->>'sent_at' AS sent_at,
+                   payload_json->>'thread_id' AS thread_id,
+                   coalesce(
+                       payload_json->>'rfc_message_id',
+                       payload_json->>'message_id',
+                       ''
+                   ) AS rfc_message_id,
+                   payload_json->>'in_reply_to' AS in_reply_to,
+                   payload_json->'in_reply_to_ids' AS in_reply_to_ids,
+                   payload_json->>'references' AS refs,
+                   payload_json->'from_parsed' AS from_parsed,
+                   payload_json->>'from' AS from_header,
+                   payload_json->>'subject' AS subject,
+                   lower(coalesce(
+                       payload_json->>'evidence_channel', 'email'
+                   )) AS ch
+            FROM evidence
+            WHERE evidence_kind = 'communication'
+              AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
+                  NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
+              AND (
+                    coalesce(
+                        payload_json->>'rfc_message_id',
+                        payload_json->>'message_id',
+                        ''
+                    ) = ANY(%s)
+                 OR coalesce(payload_json->>'in_reply_to', '') = ANY(%s)
+                 OR (
+                        jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(
+                            payload_json->'in_reply_to_ids'
+                        ) AS rid
+                        WHERE rid = ANY(%s)
+                    )
+                 )
+                 OR (
+                        coalesce(payload_json->>'references', '') <> ''
+                    AND EXISTS (
+                        SELECT 1 FROM unnest(%s::text[]) AS w
+                        WHERE position(w in payload_json->>'references') > 0
+                    )
+                 )
+              )
+            LIMIT 500
+"""
+_RFC_NEIGHBOR_CAP = 500
+_REPLAY_BIND_MARK = "===== REPLAY BINDING ====="
 _GENERIC_IMAGE_MARK = re.compile(r"(?i)\[(?:image|img|cid:[^\]]*)\]")
+
+
+def replay_binding_payload(source_map: dict[str, Any]) -> dict[str, Any]:
+    """Canonical request settings. Paste hash covers these; sidecar cannot mutate them."""
+    budget = source_map.get("budget") or {}
+    proposed = budget.get("proposed_request") or {}
+    num_predict = proposed.get("num_predict")
+    if num_predict is None:
+        num_predict = proposed.get("output_reserve")
+    certainty = budget.get("capacity_certainty")
+    if certainty is None:
+        certainty = source_map.get("capacity_certainty")
+    return {
+        "capacity_certainty": str(certainty or ""),
+        "format": "json",
+        "model": str(proposed.get("model") or ""),
+        "num_ctx": int(proposed.get("num_ctx") or 0),
+        "num_predict": int(num_predict or 0),
+        "provider": str(proposed.get("provider") or "ollama"),
+        "temperature": float(proposed.get("temperature") or 0.1),
+    }
+
+
+def encode_replay_binding(source_map: dict[str, Any]) -> str:
+    return json.dumps(
+        replay_binding_payload(source_map),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def extract_replay_binding(paste: str) -> dict[str, Any] | None:
+    if _REPLAY_BIND_MARK not in (paste or ""):
+        return None
+    after = paste.split(_REPLAY_BIND_MARK, 1)[1]
+    if "===== USER QUESTION AND EVIDENCE =====" in after:
+        raw = after.split("===== USER QUESTION AND EVIDENCE =====", 1)[0]
+    else:
+        raw = after
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _sanitized_retained_text(msg: PreparedMessage) -> str:
+    parts = [msg.authored or "", msg.quoted or ""]
+    parts.extend(msg.collapsed_notices or [])
+    parts.extend((msg.sanitation or {}).get("attachment_markers") or [])
+    return "\n".join(p for p in parts if str(p).strip())
+
+
 _MIXED_CLAUSE_SPLIT = re.compile(r"\s+[—–]\s+|\s+ - \s+|\s+\|\s+")
 _ECARD_EVENT_MARKER = (
     "[service notice: a named sender sent a greeting card; "
@@ -902,15 +1003,32 @@ def _is_contamination_line(line: str) -> bool:
 
 
 def looks_like_residual_promo(text: str, *, had_service_context: bool = False) -> bool:
-    """Unrecognized leftover promo after recognized template lines is not speech."""
+    """Leftover promo is not speech. I/we/my/our in templates is not a wrapper."""
     t = (text or "").strip()
-    if not t or _has_personal_voice(t):
+    if not t:
         return False
-    if _PROMO_REMAINDER.search(t) and len(t) >= 24:
+    if (
+        _HUMAN_WRAPPER.search(t)
+        and not _PROMO_REMAINDER.search(t)
+        and not _RESIDUAL_PROMO.search(t)
+    ):
+        return False
+    if _PROMO_REMAINDER.search(t) and (had_service_context or len(t) >= 24):
         return True
     if _RESIDUAL_PROMO.search(t) and (had_service_context or len(t) >= 40):
         return True
+    if (
+        had_service_context
+        and _INSTITUTIONAL_WE.search(t)
+        and not _HUMAN_WRAPPER.search(t)
+    ):
+        return True
     return False
+
+
+def _has_independent_human_speech(text: str) -> bool:
+    """Love-you / birthday / I-mailed wrappers. Not bare I/we in a template."""
+    return bool(_HUMAN_WRAPPER.search(text or ""))
 
 
 def _ecard_event_in(text: str) -> bool:
@@ -1035,7 +1153,7 @@ def _block_is_disposable_service_or_promo(original: str, cleaned: str) -> bool:
     if (
         _has_newsletter_chrome(original)
         and _PROMO_REMAINDER.search(cleaned)
-        and not _has_personal_voice(cleaned)
+        and not _HUMAN_WRAPPER.search(cleaned)
     ):
         return True
     return False
@@ -1925,13 +2043,17 @@ def _sanitation_measurement(
         raw_parts.append(rec or "")
     raw_blob = "\n".join(raw_parts)
     retained_ids = [m.evidence_id for c in conversations for m in c["messages"]]
+    retained_by_id = {m.evidence_id: m for c in conversations for m in c["messages"]}
     excluded_ids = [i for row in excluded for i in (row.get("message_ids") or [])]
+    excluded_set = set(excluded_ids)
+    after_parts: list[str] = []
     collapsed_by_reason: dict[str, int] = {}
     generic_images = 0
     attachments = 0
     depth_fallbacks = 0
     speaker_turns = 0
     human_loss: list[str] = []
+    scanned_ids = list(need_ids)
     for conv in conversations:
         for msg in conv["messages"]:
             speaker_turns += 1
@@ -1940,33 +2062,44 @@ def _sanitation_measurement(
             generic_images += int(san.get("generic_images_removed") or 0)
             attachments += int(san.get("attachments_retained") or 0)
             depth_fallbacks += int(san.get("depth_fallbacks") or 0)
+            after_parts.append(_sanitized_retained_text(msg))
             for notice in msg.collapsed_notices or []:
                 key = "ecard_event" if "greeting card" in notice else "promo_or_other"
                 collapsed_by_reason[key] = collapsed_by_reason.get(key, 0) + 1
             for d in msg.quote_dedupe or []:
                 act = str(d.get("action") or "omitted")
                 collapsed_by_reason[act] = collapsed_by_reason.get(act, 0) + 1
-            raw = segment_review_body(
-                classify_body_source(msg.payload)[1]
-            )["lead"]
-            if (
-                msg.peggy_authored
-                and _has_personal_voice(raw)
-                and not (msg.authored or "").strip()
-                and not looks_like_service_notification(raw)
-                and service_notification_signal_count(raw) == 0
-                and not looks_like_residual_promo(raw)
-            ):
-                human_loss.append(msg.evidence_id)
+    for eid in need_ids:
+        _kind, raw = classify_body_source(payloads.get(eid) or {})
+        _ = _kind
+        if not _has_independent_human_speech(raw):
+            continue
+        msg = retained_by_id.get(eid)
+        kept = _sanitized_retained_text(msg) if msg else ""
+        if eid in excluded_set or msg is None or not _has_independent_human_speech(kept):
+            human_loss.append(eid)
     for row in excluded:
         collapsed_by_reason[str(row.get("reason") or "excluded")] = (
             collapsed_by_reason.get(str(row.get("reason") or "excluded"), 0) + 1
         )
+    after_blob = "\n".join(after_parts)
+    body_bytes_before = len(raw_blob.encode("utf-8"))
+    body_bytes_after = len(after_blob.encode("utf-8"))
+    body_tokens_before = _estimate_tokens(raw_blob)
+    body_tokens_after = _estimate_tokens(after_blob)
     return {
-        "bytes_before": len(raw_blob.encode("utf-8")),
-        "bytes_after": len((paste_text or "").encode("utf-8")),
-        "tokens_before_estimate": _estimate_tokens(raw_blob),
-        "tokens_after": prompt_tokens,
+        "token_compare_unit": "recovered_body_bytes_div_4",
+        "bytes_before": body_bytes_before,
+        "bytes_after": body_bytes_after,
+        "body_bytes_before": body_bytes_before,
+        "body_bytes_after": body_bytes_after,
+        "tokens_before_estimate": body_tokens_before,
+        "tokens_after": body_tokens_after,
+        "body_tokens_before_estimate": body_tokens_before,
+        "body_tokens_after_estimate": body_tokens_after,
+        "paste_bytes": len((paste_text or "").encode("utf-8")),
+        "paste_tokens_reported": prompt_tokens,
+        "paste_tokens_unit": "prompt_system_plus_user_separate_from_body",
         "conversations_retained": len(conversations),
         "messages_retained": len(retained_ids),
         "speaker_turns_retained": speaker_turns,
@@ -1977,7 +2110,9 @@ def _sanitation_measurement(
         "real_attachments_retained": attachments,
         "deep_nesting_fallbacks": depth_fallbacks,
         "human_evidence_ids_lost": human_loss,
-        "human_evidence_loss_required_zero": human_loss == [],
+        "human_evidence_loss_scanned_ids": scanned_ids,
+        "human_evidence_loss_includes_excluded": True,
+        "human_evidence_loss_required_zero": False,
     }
 
 
@@ -2022,10 +2157,14 @@ def prepare_trusted_email_review(
     light = inventory_trusted_email_light(trusted=trusted)
     try:
         extras = fetch_rfc_neighbor_rows(light)
-        if extras:
-            light = attach_rfc_neighbors(light, extras)
-    except Exception:  # noqa: BLE001
-        extras = []
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": f"rfc_neighbor_fetch_failed:{type(exc).__name__}:{exc}",
+            "fail_closed": True,
+        }
+    if extras:
+        light = attach_rfc_neighbors(light, extras)
     inventory = {
         "trusted_message_n": len(light),
         "dated_n": sum(1 for r in light if r.sent_at),
@@ -2155,9 +2294,25 @@ def prepare_trusted_email_review(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = out_root / f"REVIEW_{stamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
+    budget = {
+        "advertised_context": gemma.get("advertised_context"),
+        "observed_env_num_ctx": gemma.get("env_num_ctx"),
+        "capacity_certainty": gemma.get("capacity_certainty"),
+        "proposed_request": gemma.get("proposed_request"),
+        "tokens": tokens,
+        "prompt_tokens": prompt_tokens,
+        "usable_input_tokens": usable,
+        "fits_configured_gemma": fits,
+        "token_method": tokens.get("measurement"),
+    }
+    binding = encode_replay_binding({"budget": budget})
     paste_text = (
         "===== SYSTEM INSTRUCTIONS =====\n"
         + system
+        + "\n\n"
+        + _REPLAY_BIND_MARK
+        + "\n"
+        + binding
         + "\n\n===== USER QUESTION AND EVIDENCE =====\n"
         + user
     )
@@ -2220,17 +2375,8 @@ def prepare_trusted_email_review(
             prompt_tokens=prompt_tokens,
         ),
         "excluded_no_personal_contribution": excluded_service,
-        "budget": {
-            "advertised_context": gemma.get("advertised_context"),
-            "observed_env_num_ctx": gemma.get("env_num_ctx"),
-            "capacity_certainty": gemma.get("capacity_certainty"),
-            "proposed_request": gemma.get("proposed_request"),
-            "tokens": tokens,
-            "prompt_tokens": prompt_tokens,
-            "usable_input_tokens": usable,
-            "fits_configured_gemma": fits,
-            "token_method": tokens.get("measurement"),
-        },
+        "replay_binding": replay_binding_payload({"budget": budget}),
+        "budget": budget,
     }
     (run_dir / "SOURCE_MAP.json").write_text(
         json.dumps(source_map, indent=2, default=str, ensure_ascii=False),
@@ -2260,10 +2406,14 @@ def prepare_trusted_email_review(
             f"singleton={sum(1 for c in conversations if c['grouping']=='singleton')} "
             f"missing_parent={sum(1 for c in conversations if c['grouping']=='missing_parent')})",
             f"excluded_no_personal_contribution: {len(excluded_service)}",
+            f"sanitation_token_compare_unit: {source_map['sanitation_measurement']['token_compare_unit']}",
             f"sanitation_bytes_before: {source_map['sanitation_measurement']['bytes_before']}",
             f"sanitation_bytes_after: {source_map['sanitation_measurement']['bytes_after']}",
-            f"sanitation_tokens_before_estimate: {source_map['sanitation_measurement']['tokens_before_estimate']}",
-            f"sanitation_tokens_after: {source_map['sanitation_measurement']['tokens_after']}",
+            f"sanitation_body_tokens_before_estimate: {source_map['sanitation_measurement']['body_tokens_before_estimate']}",
+            f"sanitation_body_tokens_after_estimate: {source_map['sanitation_measurement']['body_tokens_after_estimate']}",
+            f"sanitation_paste_bytes: {source_map['sanitation_measurement']['paste_bytes']}",
+            f"sanitation_paste_tokens_reported: {source_map['sanitation_measurement']['paste_tokens_reported']}",
+            f"sanitation_paste_tokens_unit: {source_map['sanitation_measurement']['paste_tokens_unit']}",
             f"sanitation_conversations: {source_map['sanitation_measurement']['conversations_retained']}",
             f"sanitation_messages: {source_map['sanitation_measurement']['messages_retained']}",
             f"sanitation_speaker_turns: {source_map['sanitation_measurement']['speaker_turns_retained']}",
@@ -2272,6 +2422,8 @@ def prepare_trusted_email_review(
             f"sanitation_attachments_retained: {source_map['sanitation_measurement']['real_attachments_retained']}",
             f"sanitation_depth_fallbacks: {source_map['sanitation_measurement']['deep_nesting_fallbacks']}",
             f"sanitation_human_evidence_ids_lost: {source_map['sanitation_measurement']['human_evidence_ids_lost']}",
+            f"sanitation_human_evidence_loss_scanned_n: {len(source_map['sanitation_measurement']['human_evidence_loss_scanned_ids'])}",
+            f"sanitation_human_evidence_loss_includes_excluded: {source_map['sanitation_measurement']['human_evidence_loss_includes_excluded']}",
             f"omitted_service_quotes: {sum(1 for c in conversations for m in c['messages'] for d in (m.quote_dedupe or []) if d.get('action')=='omitted_service_notice')}",
             f"authorship_personal: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='personal')}",
             f"authorship_service: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='service_generated')}",
@@ -2443,13 +2595,31 @@ def plan_gemma_replay(
     _, rest = text.split("===== SYSTEM INSTRUCTIONS =====", 1)
     if "===== USER QUESTION AND EVIDENCE =====" not in rest:
         return {"ok": False, "error": "paste_missing_user_marker"}
-    system, user = rest.split("===== USER QUESTION AND EVIDENCE =====", 1)
+    if _REPLAY_BIND_MARK not in rest:
+        return {"ok": False, "error": "replay_binding_missing"}
+    system, after_bind = rest.split(_REPLAY_BIND_MARK, 1)
+    if "===== USER QUESTION AND EVIDENCE =====" not in after_bind:
+        return {"ok": False, "error": "paste_missing_user_marker"}
+    bind_raw, user = after_bind.split("===== USER QUESTION AND EVIDENCE =====", 1)
     system = system.strip()
     user = user.strip()
+    try:
+        binding = json.loads(bind_raw.strip())
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "replay_binding_missing"}
+    if not isinstance(binding, dict):
+        return {"ok": False, "error": "replay_binding_missing"}
+    expected_binding = replay_binding_payload(smap)
+    if binding != expected_binding:
+        return {
+            "ok": False,
+            "error": "source_map_replay_binding_mismatch",
+            "paste_binding": binding,
+            "source_map_binding": expected_binding,
+        }
     budget = (smap or {}).get("budget") if isinstance(smap, dict) else {}
-    proposed = (budget or {}).get("proposed_request") or {}
-    certainty = str((budget or {}).get("capacity_certainty") or "unknown")
-    num_ctx = proposed.get("num_ctx")
+    certainty = str(binding.get("capacity_certainty") or "unknown")
+    num_ctx = binding.get("num_ctx")
     prompt_tokens = budget.get("prompt_tokens")
     usable = budget.get("usable_input_tokens")
     if prompt_tokens is None or usable is None:
@@ -2485,21 +2655,26 @@ def plan_gemma_replay(
             "usable_input_tokens": usable,
             "input_sha256": digest,
         }
-    num_predict = proposed.get("num_predict")
-    if num_predict is None:
-        num_predict = proposed.get("output_reserve")
+    num_predict = binding.get("num_predict")
     if not num_predict:
         return {
             "ok": False,
             "error": "output_limit_missing — will not send an unbounded request",
             "input_sha256": digest,
         }
+    model = str(binding.get("model") or "")
+    if not model:
+        return {
+            "ok": False,
+            "error": "source_map_missing_request",
+            "input_sha256": digest,
+        }
     payload = ollama_chat_request_payload(
-        str(proposed.get("model") or ESTABLISHED_GEMMA_MODEL),
+        model,
         system,
         user,
         format_json=True,
-        temperature=float(proposed.get("temperature") or 0.1),
+        temperature=float(binding.get("temperature") or 0.1),
         num_ctx=int(num_ctx),
         num_predict=int(num_predict),
     )
@@ -2513,6 +2688,7 @@ def plan_gemma_replay(
         "model": payload["model"],
         "input_sha256": digest,
         "request_payload": payload,
+        "replay_binding": binding,
         "num_ctx": int(num_ctx),
         "capacity_certainty": certainty,
         "cloud": False,
