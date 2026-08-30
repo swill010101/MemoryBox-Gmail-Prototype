@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -143,6 +144,58 @@ def ollama_reachable(base_url: str, timeout: float = 1.5) -> bool:
 def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as resp:
         return json.load(resp)
+
+
+def ollama_show(base_url: str, model: str, *, timeout: int = 15) -> dict[str, Any]:
+    """Model metadata from /api/show. Does not generate tokens."""
+    return _post_json(
+        f"{base_url.rstrip('/')}/api/show",
+        {"name": model},
+        timeout=timeout,
+    )
+
+
+def ollama_context_length(show: dict[str, Any] | None) -> int | None:
+    """Best-effort context window from /api/show. None if unknown."""
+    if not isinstance(show, dict):
+        return None
+    info = show.get("model_info") or show.get("details") or {}
+    if isinstance(info, dict):
+        for key in (
+            "llama.context_length",
+            "gemma.context_length",
+            "general.context_length",
+            "context_length",
+        ):
+            raw = info.get(key)
+            if raw is not None and str(raw).isdigit():
+                return int(raw)
+        for key, raw in info.items():
+            if "context_length" in str(key).lower() and str(raw).isdigit():
+                return int(raw)
+    params = str(show.get("parameters") or "")
+    match = re.search(r"num_ctx\s+(\d+)", params, re.I)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def ollama_tokenize(
+    base_url: str, model: str, text: str, *, timeout: int = 120
+) -> list[int] | None:
+    """Token ids from /api/tokenize when the daemon supports it. Not a chat."""
+    try:
+        data = _post_json(
+            f"{base_url.rstrip('/')}/api/tokenize",
+            {"model": model, "prompt": text},
+            timeout=timeout,
+        )
+    except Exception:
+        return None
+    tokens = data.get("tokens")
+    if isinstance(tokens, list):
+        return tokens
+    return None
 
 
 def ollama_has_model(base_url: str, model: str, *, timeout: float = 8.0) -> bool:

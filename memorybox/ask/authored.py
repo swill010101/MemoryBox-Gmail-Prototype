@@ -28,8 +28,10 @@ def plain_email_body(payload: dict[str, Any] | None, *, excerpt: str = "") -> st
     if html:
         import html as htmlmod
 
-        converted = re.sub(r"(?i)<br\s*/?>", "\n", html)
-        converted = re.sub(r"(?i)</p>", "\n", converted)
+        cleaned = re.sub(r"(?is)<(script|style|head)\b[^>]*>.*?</\1>", " ", html)
+        cleaned = re.sub(r"(?is)<!--.*?-->", " ", cleaned)
+        converted = re.sub(r"(?i)<br\s*/?>", "\n", cleaned)
+        converted = re.sub(r"(?i)</(p|div|tr|h[1-6]|li)>", "\n", converted)
         converted = re.sub(r"<[^>]+>", " ", converted)
         converted = htmlmod.unescape(re.sub(r"[ \t]+\n", "\n", converted))
         converted = re.sub(r"\n{3,}", "\n\n", converted).strip()

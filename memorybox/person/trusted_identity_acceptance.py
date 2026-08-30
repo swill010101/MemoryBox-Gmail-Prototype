@@ -2725,6 +2725,271 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=merged,
     )
 
+    from memorybox.ask.authored import plain_email_body as _plain_body
+    from memorybox.ask.i11a.trusted_email_review import (
+        EMAIL_REVIEW_SYSTEM,
+        LightRow,
+        classify_body_source,
+        group_conversations,
+        propose_five_year_interval,
+        render_model_paste,
+        run_trusted_email_review_gemma,
+    )
+    from datetime import datetime, timezone as _tz
+
+    _html = classify_body_source(
+        {
+            "body_html": "<style>x{}</style><script>alert(1)</script><p>Hello Pegs</p>",
+        }
+    )
+    _check(
+        "review_html_strips_style_script_keeps_prose",
+        _html[0] == "html_recovered"
+        and "Hello Pegs" in _html[1]
+        and "alert" not in _html[1]
+        and "x{}" not in _html[1],
+        checks,
+        problems,
+        detail=_html,
+    )
+    _check(
+        "review_plain_body_prefers_body_text",
+        _plain_body({"body_text": "plain wins", "body_html": "<p>nope</p>"}) == "plain wins",
+        checks,
+        problems,
+    )
+    _rows = []
+    for year, authored, rfc in (
+        (2005, True, False),
+        (2008, True, True),
+        (2009, True, True),
+        (2010, True, True),
+        (2011, True, True),
+        (2012, True, True),
+        (2018, False, False),
+    ):
+        _rows.append(
+            LightRow(
+                evidence_id=f"e-{year}",
+                sent_at=datetime(year, 6, 1, tzinfo=_tz.utc),
+                thread_id="tid-a" if rfc else "",
+                rfc_message_id=f"<m{year}@x>" if rfc else "",
+                reply_ids=[f"<m{year-1}@x>"] if rfc else [],
+                from_addrs={"peggo417@hotmail.com"} if authored else {"other@x.test"},
+                addresses={"peggo417@hotmail.com"} if authored else {"other@x.test"},
+                peggy_authored=authored,
+                subject="Re: Harbor",
+                skip=False,
+            )
+        )
+    _prop = propose_five_year_interval(_rows)
+    _check(
+        "review_proposes_five_year_window_with_most_peggy_authored",
+        _prop.get("ok") is True
+        and str(_prop.get("start") or "").startswith("2008")
+        and str(_prop.get("end") or "").startswith("2012")
+        and int(_prop.get("peggy_authored") or 0) >= 5
+        and "Peggy-authored" in str(_prop.get("why") or ""),
+        checks,
+        problems,
+        detail=_prop,
+    )
+    _g = group_conversations(
+        [
+            LightRow(
+                evidence_id="a",
+                sent_at=datetime(2009, 1, 1, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<a@x>",
+                reply_ids=[],
+                from_addrs={"peggo417@hotmail.com"},
+                addresses={"peggo417@hotmail.com", "rick@x.test"},
+                peggy_authored=True,
+                subject="Dinner",
+                skip=False,
+            ),
+            LightRow(
+                evidence_id="b",
+                sent_at=datetime(2009, 1, 2, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="<b@x>",
+                reply_ids=["<a@x>"],
+                from_addrs={"rick@x.test"},
+                addresses={"peggo417@hotmail.com", "rick@x.test"},
+                peggy_authored=False,
+                subject="Re: Dinner",
+                skip=False,
+            ),
+            LightRow(
+                evidence_id="c",
+                sent_at=datetime(2009, 2, 1, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="",
+                reply_ids=[],
+                from_addrs={"sue@x.test"},
+                addresses={"sue@x.test", "other@x.test"},
+                peggy_authored=False,
+                subject="Unrelated",
+                skip=False,
+            ),
+            LightRow(
+                evidence_id="d",
+                sent_at=datetime(2009, 2, 2, tzinfo=_tz.utc),
+                thread_id="",
+                rfc_message_id="",
+                reply_ids=[],
+                from_addrs={"other@x.test"},
+                addresses={"sue@x.test", "other@x.test"},
+                peggy_authored=False,
+                subject="Unrelated",
+                skip=False,
+            ),
+        ]
+    )
+    _g_by = {tuple(sorted(x["message_ids"])): x["grouping"] for x in _g}
+    _check(
+        "review_rfc_reply_is_confirmed_subject_fallback_is_uncertain",
+        _g_by.get(tuple(sorted(["a", "b"]))) == "confirmed"
+        and _g_by.get(tuple(sorted(["c", "d"]))) == "uncertain",
+        checks,
+        problems,
+        detail=_g,
+    )
+    from memorybox.ask.i11a.trusted_email_review import PreparedMessage
+
+    _sys, _user, _cites = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2008-01-01", "end": "2012-12-31"},
+        conversations=[
+            {
+                "grouping": "confirmed",
+                "grouping_detail": "rfc_thread_or_in_reply_to",
+                "messages": [
+                    PreparedMessage(
+                        evidence_id="ev-1",
+                        sent_at=datetime(2009, 1, 1, tzinfo=_tz.utc),
+                        in_interval=True,
+                        peggy_authored=True,
+                        body_kind="html_recovered",
+                        authored="See you Friday.",
+                        quoted="",
+                        quote_kept=False,
+                        quote_uncertain=False,
+                        payload={
+                            "sent_at": "2009-01-01T12:00:00Z",
+                            "subject": "Dinner",
+                            "from_parsed": [
+                                {
+                                    "display_name": "Peg",
+                                    "address": "peggo417@hotmail.com",
+                                }
+                            ],
+                            "from": "peggo417@hotmail.com",
+                        },
+                    ),
+                    PreparedMessage(
+                        evidence_id="ev-2",
+                        sent_at=datetime(2007, 12, 31, tzinfo=_tz.utc),
+                        in_interval=False,
+                        peggy_authored=False,
+                        body_kind="plain_text",
+                        authored="Can you come?",
+                        quoted="",
+                        quote_kept=False,
+                        quote_uncertain=False,
+                        payload={
+                            "sent_at": "2007-12-31T12:00:00Z",
+                            "subject": "Dinner",
+                            "from_parsed": [
+                                {"display_name": "Rick", "address": "rick@x.test"}
+                            ],
+                            "from": "Rick <rick@x.test>",
+                        },
+                    ),
+                ],
+            }
+        ],
+    )
+    _check(
+        "review_paste_is_dated_speaker_conversations_with_linked_context",
+        "BEGIN CONVERSATION:" in _user
+        and "Peggy George said: [email_1]" in _user
+        and "Rick said:" in _user
+        and "linked context; outside the candidate interval" in _user
+        and "See you Friday." in _user
+        and "people:" not in _user.lower()
+        and "family historian" in _sys
+        and "narrator field must be readable" in _sys
+        and "ASK:" in _user,
+        checks,
+        problems,
+        detail=_user[:500],
+    )
+    _refused = run_trusted_email_review_gemma(
+        paste_dir="/tmp/missing-review-dir",
+        require_hash="abc",
+    )
+    _check(
+        "review_gemma_replay_refuses_missing_paste_or_hash",
+        _refused.get("ok") is False
+        and "model_paste_missing" in str(_refused.get("error") or ""),
+        checks,
+        problems,
+        detail=_refused,
+    )
+    review_src = inspect.getsource(
+        __import__(
+            "memorybox.ask.i11a.trusted_email_review",
+            fromlist=["prepare_trusted_email_review"],
+        ).prepare_trusted_email_review
+    )
+    replay_src = inspect.getsource(run_trusted_email_review_gemma)
+    _check(
+        "review_prepare_has_no_model_and_no_sample_cap",
+        "models_called" in review_src
+        and "SINGLE_PASS_EMAIL_RETRIEVE_CAP" not in review_src
+        and "SINGLE_PASS_EMAIL_BODY_CHARS" not in review_src
+        and "fe8a128c" in review_src
+        and "run_trusted_evidence_pipeline" not in review_src,
+        checks,
+        problems,
+    )
+    _check(
+        "review_replay_is_ollama_only_no_pipeline_no_refreeze",
+        '"provider": "ollama"' in replay_src
+        and "run_trusted_evidence_pipeline" not in replay_src
+        and "chunking" in replay_src
+        and "hash_mismatch" in replay_src
+        and "HistorianCloud" not in replay_src
+        and "_CloudOpenAICompatChat" not in replay_src,
+        checks,
+        problems,
+    )
+    main_txt = (
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "__main__.py"
+    ).read_text(encoding="utf-8")
+    gi_txt = (
+        __import__("pathlib").Path(__file__).resolve().parents[2] / ".gitignore"
+    ).read_text(encoding="utf-8")
+    _check(
+        "review_cli_and_gitignore_keep_paste_off_github",
+        "prepare-trusted-email-review" in main_txt
+        and "run-trusted-email-review-gemma" in main_txt
+        and "trusted-email-review/**" in gi_txt,
+        checks,
+        problems,
+    )
+    _check(
+        "review_gate_does_not_auto_prepare_or_run_models",
+        "prepare-trusted-email-review" not in gate_txt
+        and "-Step Chunks" not in gate_txt
+        and "Phase 3 is not authorized" in gate_txt,
+        checks,
+        problems,
+    )
+
     try:
         from memorybox.person.trusted_identity_e2e import run_trusted_identity_db_e2e
 

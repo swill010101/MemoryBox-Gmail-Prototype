@@ -753,6 +753,35 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run Phase 3 chunk compare + model-per-chunk. Default off.",
     )
+    p_email_review = sub.add_parser(
+        "prepare-trusted-email-review",
+        help="Date-bounded trusted email conversations for human review (no models)",
+    )
+    p_email_review.add_argument("--person", required=True)
+    p_email_review.add_argument(
+        "--ask",
+        default="tell me what you know about this person",
+    )
+    p_email_review.add_argument("--out-dir", default=None)
+    p_email_review.add_argument("--interval-start", default=None, help="YYYY-MM-DD")
+    p_email_review.add_argument("--interval-end", default=None, help="YYYY-MM-DD")
+    p_email_review.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
+    p_email_review_gemma = sub.add_parser(
+        "run-trusted-email-review-gemma",
+        help="Later: Ollama/Gemma-only replay of an approved review paste (no Sol)",
+    )
+    p_email_review_gemma.add_argument("--paste-dir", required=True)
+    p_email_review_gemma.add_argument(
+        "--require-hash",
+        required=True,
+        help="Frozen SHA-256 of MODEL_PASTE.txt; refuse if different",
+    )
+    p_email_review_gemma.add_argument("--timeout-seconds", type=int, default=1800)
+    p_email_review_gemma.add_argument("--flightsim", action="store_true")
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -1656,6 +1685,44 @@ def main(argv: list[str] | None = None) -> int:
         if phase2_summary:
             print("\n===== PHASE2_SUMMARY (paste this) =====", flush=True)
             print(phase2_summary, flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prepare-trusted-email-review":
+        from pathlib import Path as _P
+
+        from memorybox.ask.i11a.trusted_email_review import prepare_trusted_email_review
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = prepare_trusted_email_review(
+            person_name=args.person,
+            ask=args.ask,
+            out_dir=_P(args.out_dir) if args.out_dir else None,
+            interval_start=args.interval_start,
+            interval_end=args.interval_end,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        report = payload.get("preparation_report_text")
+        if report:
+            print("\n===== PREPARATION_REPORT =====", flush=True)
+            print(report, flush=True)
+        print(
+            "STOP. Inspect MODEL_PASTE.txt locally. Do not run Gemma until approved.",
+            flush=True,
+        )
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-email-review-gemma":
+        from memorybox.ask.i11a.trusted_email_review import run_trusted_email_review_gemma
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = run_trusted_email_review_gemma(
+            paste_dir=args.paste_dir,
+            require_hash=args.require_hash,
+            timeout_seconds=int(args.timeout_seconds),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":

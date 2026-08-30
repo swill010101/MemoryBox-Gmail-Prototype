@@ -5,9 +5,11 @@
 **Do not merge:** PR #76 (gate artifacts)
 
 Phase 1 product acceptance is **done on FlightSim** (trusted `peggo417`,
-retrieve/Gallery 5716, unsupported 0). This branch now continues Phase 2
-(year-fair frozen Gemma+Sol Full-Evidence V2) then Phase 3 (L1 chunk models).
-Do not treat the 1-email `3cf95fa4` freeze as Phase 2 complete.
+retrieve/Gallery 5716, unsupported 0). The next evaluation step is **not**
+paired Gemma/Sol. It is a human-reviewed, date-bounded trusted-email
+conversation packet (`prepare-trusted-email-review`). No model calls until
+Tom approves the paste. `fe8a128c` is a failed artifact. Phase 3 / Sol /
+I11B stay off.
 
 ## Problem
 
