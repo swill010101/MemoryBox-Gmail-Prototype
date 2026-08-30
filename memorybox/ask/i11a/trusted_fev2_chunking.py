@@ -278,7 +278,10 @@ def run_provider_over_chunks(
 ) -> dict[str, Any]:
     """Replay each L1 chunk through one model; chrono-reduce + fail closed."""
     from memorybox.ask.i11a.full_evidence_diagnostic import format_cloud_paste
-    from memorybox.ask.i11a.trusted_full_evidence_v2 import FEV2_SYSTEM
+    from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        FEV2_SYSTEM,
+        remap_placeholder_evidence_ids,
+    )
 
     data = _load_json(fixture_path)
     items = list(data.get("items") or [])
@@ -305,7 +308,9 @@ def run_provider_over_chunks(
             model=model,
             timeout_seconds=timeout_seconds,
         )
-        docs.append(one.get("document") or {})
+        docs.append(
+            remap_placeholder_evidence_ids(one.get("document") or {}, ch_items)
+        )
         per_chunk.append(
             {
                 "chunk_index": i,

@@ -1448,7 +1448,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
     )
     from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+        remap_placeholder_evidence_ids,
         single_pass_email_coverage_ok,
+        validate_fev2_document,
     )
 
     _check(
@@ -1474,6 +1476,90 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "single_pass_email_coverage_ok" in freeze_src,
         checks,
         problems,
+    )
+    fixture_items = [
+        {
+            "source": "person",
+            "item_id": "person:cc6eb438-86a9-405c-89aa-6c6fc43de076",
+            "native_id": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        },
+        {
+            "source": "email",
+            "item_id": "email:992d6453-3376-425c-a62b-fa05db1b4a3e",
+            "evidence_id": "992d6453-3376-425c-a62b-fa05db1b4a3e",
+        },
+    ]
+    remapped = remap_placeholder_evidence_ids(
+        {
+            "claims": [
+                {
+                    "text": "Peg sent a wish list",
+                    "evidence_ids": ["email_1", "person_1"],
+                }
+            ],
+            "episodes": [
+                {"title": "wishlist", "evidence_ids": ["email_1"]}
+            ],
+            "relationships": [
+                {
+                    "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+                    "to": "other",
+                    "role": "sibling",
+                    "evidence_ids": ["person_1"],
+                }
+            ],
+        },
+        fixture_items,
+    )
+    allowed_ids = {
+        "person:cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        "email:992d6453-3376-425c-a62b-fa05db1b4a3e",
+        "992d6453-3376-425c-a62b-fa05db1b4a3e",
+    }
+    remapped_ground = validate_fev2_document(
+        remapped,
+        allowed_ids=allowed_ids,
+        email_evidence_ids={
+            "992d6453-3376-425c-a62b-fa05db1b4a3e",
+            "email:992d6453-3376-425c-a62b-fa05db1b4a3e",
+        },
+    )
+    _check(
+        "phase2_remaps_email_1_person_1_placeholders",
+        remapped["claims"][0]["evidence_ids"][0]
+        == "992d6453-3376-425c-a62b-fa05db1b4a3e"
+        and remapped["claims"][0]["evidence_ids"][1]
+        == "person:cc6eb438-86a9-405c-89aa-6c6fc43de076"
+        and remapped_ground.get("ok")
+        and not remapped_ground.get("invented_evidence_ids"),
+        checks,
+        problems,
+        detail=remapped_ground,
+    )
+    huge_mail = select_single_pass_items(
+        [
+            {
+                "source": "email",
+                "item_id": f"em-big-{i}",
+                "from": "peggo417@hotmail.com",
+                "addresses": ["peggo417@hotmail.com"],
+                "body": "H" * 80_000,
+            }
+            for i in range(8)
+        ],
+        trusted_addrs={"peggo417@hotmail.com"},
+        token_budget=20_000,
+    )
+    _check(
+        "single_pass_truncates_huge_email_bodies",
+        len(huge_mail) >= 8
+        and all(
+            len(str(i.get("body") or "")) < 8_000 for i in huge_mail
+        ),
+        checks,
+        problems,
+        detail=len(huge_mail),
     )
     run_src = inspect.getsource(
         __import__(

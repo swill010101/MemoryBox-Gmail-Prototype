@@ -40,7 +40,12 @@ _DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
 SINGLE_PASS_TOKEN_BUDGET = min(100_000, CHUNK_TRIGGER_TOKENS)
 PERSON_FACT_TOKEN_CAP = 4_000
 MIN_SINGLE_PASS_EMAILS_WHEN_ARCHIVE_LARGE = 8
+SINGLE_PASS_EMAIL_BODY_CHARS = 2_500
 ESTABLISHED_GEMMA_MODEL = "gemma4:26b"
+_PLACEHOLDER_EVIDENCE_ID = re.compile(
+    r"^(?P<kind>email|person|calendar|sms|story|journal|artifact|travel|photo|video)_(?P<n>\d+)$",
+    re.I,
+)
 
 FEV2_SYSTEM = """You are MemoryBox Full-Evidence V2. Use only the supplied evidence.
 Return JSON only:
@@ -152,7 +157,7 @@ def select_single_pass_items(
         elif src == "email":
             # Fail closed: no trusted keys means no email evidence.
             if trusted and item_is_trusted_email(it, trusted):
-                email.append(it)
+                email.append(_cap_single_pass_email_body(it))
         else:
             non_email.append(it)
     email.sort(key=lambda i: str(i.get("sent_at") or i.get("start") or ""), reverse=True)
@@ -196,6 +201,57 @@ def select_single_pass_items(
     if email and not any(item_is_trusted_email(i, trusted) for i in selected):
         selected.append(email[0])
     return selected
+
+
+def _cap_single_pass_email_body(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep enough of each message for grounding without one HTML body eating the budget."""
+    body = str(item.get("body") or "")
+    if len(body) <= SINGLE_PASS_EMAIL_BODY_CHARS:
+        return item
+    slim = dict(item)
+    slim["body"] = (
+        body[:SINGLE_PASS_EMAIL_BODY_CHARS].rstrip() + "\n…[truncated for single-pass]"
+    )
+    return slim
+
+
+def remap_placeholder_evidence_ids(
+    document: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Map Gemma-style email_1 / person_1 onto the nth fixture item of that source."""
+    by_kind: dict[str, list[str]] = {}
+    for it in items:
+        src = str(it.get("source") or "").lower()
+        ids = item_evidence_ids(it)
+        if not src or not ids:
+            continue
+        by_kind.setdefault(src, []).append(ids[0])
+    allowed = all_fixture_evidence_ids(items)
+
+    def rewrite(eid: Any) -> str:
+        raw = str(eid)
+        if raw in allowed:
+            return raw
+        match = _PLACEHOLDER_EVIDENCE_ID.match(raw)
+        if not match:
+            return raw
+        kind = match.group("kind").lower()
+        idx = int(match.group("n"))
+        bucket = by_kind.get(kind) or []
+        if 1 <= idx <= len(bucket):
+            return bucket[idx - 1]
+        return raw
+
+    rewritten = json.loads(json.dumps(document, default=str))
+    for section in ("claims", "episodes", "relationships"):
+        for row in rewritten.get(section) or []:
+            if not isinstance(row, dict):
+                continue
+            ids = row.get("evidence_ids")
+            if isinstance(ids, list):
+                row["evidence_ids"] = [rewrite(x) for x in ids]
+    return rewritten
 
 
 def single_pass_email_coverage_ok(
@@ -612,7 +668,10 @@ def run_trusted_full_evidence_v2(
             timeout_seconds=timeout_seconds,
             out_dir=Path(out_dir) if out_dir else None,
         )
-        doc = result.get("document") or {}
+        doc = remap_placeholder_evidence_ids(
+            result.get("document") or {}, list(data.get("items") or [])
+        )
+        result["document"] = doc
         grounding = validate_fev2_document(
             doc, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
         )
@@ -686,6 +745,7 @@ def run_trusted_full_evidence_v2(
     parsed = parse_inference_json(raw) if raw else {}
     if not isinstance(parsed, dict):
         parsed = {}
+    parsed = remap_placeholder_evidence_ids(parsed, list(data.get("items") or []))
     grounding = validate_fev2_document(
         parsed, allowed_ids=allowed or email_ids, email_evidence_ids=email_ids
     )
