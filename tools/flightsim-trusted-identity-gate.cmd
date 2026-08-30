@@ -1,10 +1,41 @@
 @echo off
 REM FlightSim: Phase 1 product report first, then freeze + Gemma/Sol.
 REM Do not merge PR 74 or PR 76. Stop on Phase 1 failure — do not widen matching.
-cd /d C:\memorybox 2>nul
-if not exist python.exe if not exist .git (
+REM Self-sync onto origin tip like address-centric (no force-push, no merge).
+setlocal
+set BRANCH=cursor/p2-i11a-trusted-identity-retrieve-49da
+set REPO_ROOT=%~dp0..
+pushd "%REPO_ROOT%" 2>nul
+if errorlevel 1 (
+  cd /d C:\memorybox 2>nul
+)
+if not exist .git (
   cd /d C:\MemoryBox 2>nul
 )
+if exist ".git\MERGE_HEAD" git merge --abort
+if exist ".git\REBASE_HEAD" git rebase --abort
+if exist ".git\CHERRY_PICK_HEAD" git cherry-pick --abort
+if exist ".git\rebase-merge" git rebase --abort
+if exist ".git\rebase-apply" git rebase --abort
+echo ===== sync origin/%BRANCH% =====
+git fetch origin %BRANCH%
+if errorlevel 1 (
+  echo ERROR: git fetch failed — will not run Phase 2 on a stale tree.
+  exit /b 1
+)
+git checkout -B %BRANCH% origin/%BRANCH%
+if errorlevel 1 (
+  echo ERROR: checkout %BRANCH% failed
+  git status
+  exit /b 1
+)
+git reset --hard origin/%BRANCH%
+if errorlevel 1 (
+  echo ERROR: hard reset failed
+  exit /b 1
+)
+git rev-parse --short HEAD
+echo.
 REM Same as address-centric prove.ps1: P1=1 and no ALLOW_DEV so --flightsim
 REM can stamp flightsim=true. Clearing ALLOW_DEV drops the :memory: Qdrant
 REM default — set the startmb localhost URL when app.env did not export it.

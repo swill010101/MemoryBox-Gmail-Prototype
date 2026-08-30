@@ -53,12 +53,13 @@ not acceptable for the I11A model benchmark.
 
 ```
 cd C:\memorybox
-git fetch origin cursor/p2-i11a-trusted-identity-retrieve-49da
-git checkout cursor/p2-i11a-trusted-identity-retrieve-49da
-git pull origin cursor/p2-i11a-trusted-identity-retrieve-49da
-python -m memorybox migrate
+tools\flightsim-trusted-identity-reset.cmd
 tools\flightsim-trusted-identity-gate.cmd
 ```
+
+The gate fetches and hard-resets onto
+`origin/cursor/p2-i11a-trusted-identity-retrieve-49da` (no force-push, does not
+merge #74/#76). Do not `git pull` this branch into some other local branch.
 
 The gate sets `MEMORYBOX_P1_RUNTIME_HOST=1`, clears
 `MEMORYBOX_ALLOW_DEV_DEFAULTS`, and defaults `MEMORYBOX_QDRANT_URL` to

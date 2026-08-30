@@ -750,6 +750,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "PHASE2_SUMMARY.txt" in gate_txt
         and "PHASE2_PREFLIGHT.json" in gate_txt
         and "git pull --rebase" in gate_txt
+        and "checkout -B" in gate_txt
+        and "reset --hard" in gate_txt
+        and "cursor/p2-i11a-trusted-identity-retrieve-49da" in gate_txt
         and "--force" not in gate_txt,
         checks,
         problems,
@@ -772,6 +775,21 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         < prove_ps1.find("freeze-trusted-full-evidence-v2")
         < prove_ps1.find("run-trusted-evidence-pipeline")
         < prove_ps1.find("run-trusted-fev2-chunked-models"),
+        checks,
+        problems,
+    )
+    reset_cmd = (
+        __import__("pathlib").Path(__file__).resolve().parents[2]
+        / "tools"
+        / "flightsim-trusted-identity-reset.cmd"
+    ).read_text(encoding="utf-8")
+    _check(
+        "flightsim_reset_hard_resets_trusted_identity_branch_without_force_push",
+        "cursor/p2-i11a-trusted-identity-retrieve-49da" in reset_cmd
+        and "reset --hard" in reset_cmd
+        and "checkout -B" in reset_cmd
+        and "--force" not in reset_cmd
+        and "p2-i11a-address-centric-email-49da" not in reset_cmd,
         checks,
         problems,
     )
