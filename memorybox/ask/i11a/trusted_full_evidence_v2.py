@@ -564,7 +564,11 @@ def freeze_trusted_full_evidence_v2(
             match_total = head.get("match_total")
         archive_email_n = int(match_total or archive_email_n)
     mail = cap_single_pass_retrieved_emails(mail)
-    cal = list(R.search_calendar_events(plan) or []) if plan.want_calendar else []
+    cal = (
+        list(R.search_calendar_events(plan, limit=12) or [])
+        if plan.want_calendar
+        else []
+    )
     stories = list(R.search_stories(plan, limit=12) or []) if plan.want_story else []
     journals = list(R.search_journals(plan, limit=12) or []) if plan.want_journal else []
     artifacts = (

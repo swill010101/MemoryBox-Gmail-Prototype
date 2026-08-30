@@ -1464,6 +1464,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "search_sms_messages" not in freeze_src
         and "single_pass_no_unbounded_sms" in freeze_src
         and "retrieve_eligible_hits" not in freeze_src
+        and "search_calendar_events(plan, limit=12)" in freeze_src
         and "search_stories(plan, limit=12)" in freeze_src
         and "search_journals(plan, limit=12)" in freeze_src
         and "SINGLE_PASS_EMAIL_RETRIEVE_CAP" in freeze_src
