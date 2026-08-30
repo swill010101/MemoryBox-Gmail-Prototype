@@ -68,6 +68,12 @@ history. Stateless. No chunking. No hierarchical summarization.
 The narrator field must be readable, evidence-grounded prose about the person
 — not a metadata list, id roster, or header dump.
 
+Generic [image] placeholders, logos, tracking pixels, and navigation
+graphics are not life evidence. An [attached image: filename/type] marker
+records that a file existed; it does not describe unseen picture contents.
+A [service notice: …] marker records that a notification existed; it is
+not personal speech and does not reveal unseen card or newsletter contents.
+
 Return JSON only:
 {"episodes":[{"title":"","when":"","summary":"","evidence_ids":[]}],
  "claims":[{"text":"","evidence_ids":[]}],
@@ -214,6 +220,8 @@ class PreparedMessage:
     quote_turns: list[dict[str, Any]] = field(default_factory=list)
     quote_dedupe: list[dict[str, Any]] = field(default_factory=list)
     service_body: str = ""
+    collapsed_notices: list[str] = field(default_factory=list)
+    sanitation: dict[str, Any] = field(default_factory=dict)
 
 
 def _mailbox_skip(payload: dict[str, Any]) -> bool:
@@ -785,7 +793,7 @@ _UNSUB_LEGAL_LINE = re.compile(
     r"(?i)^\s*(?:"
     r"(?:to\s+)?(?:click\s+)?(?:here\s+to\s+)?unsubscribe\b|"
     r"unsubscribe\s*[|/]\s*(?:privacy|preferences|manage|terms)|"
-    r"privacy(?:\s+policy)?\s*[|/]|"
+    r"privacy(?:\s+policy)?(?:\s*[|/]|$)|"
     r"view (?:this )?(?:email )?in (?:your )?(?:a )?browser|"
     r"you are receiving this (?:email|message) because|"
     r"(?:copyright\s+)?©\s*\d{4}|"
@@ -802,6 +810,22 @@ _PROMO_REMAINDER = re.compile(
 )
 _PERSONAL_VOICE = re.compile(
     r"(?i)\b(?:i|i['’]m|i['’]ve|i['’]ll|we|we['’]re|my|our)\b"
+)
+_RESIDUAL_PROMO = re.compile(
+    r"(?i)\b(?:seasonal (?:joy|greetings)|share (?:the )?(?:joy|smiles)|"
+    r"special greeting experience|browse (?:our )?(?:cards|gifts)|"
+    r"this (?:exclusive|limited) offer|click (?:the )?(?:button|banner)|"
+    r"customer (?:care|support) hours)\b"
+)
+_GENERIC_IMAGE_MARK = re.compile(r"(?i)\[(?:image|img|cid:[^\]]*)\]")
+_MIXED_CLAUSE_SPLIT = re.compile(r"\s+[—–]\s+|\s+ - \s+|\s+\|\s+")
+_ECARD_EVENT_MARKER = (
+    "[service notice: a named sender sent a greeting card; "
+    "unseen contents unavailable]"
+)
+_PROMO_EVENT_MARKER = (
+    "[service notice: promotional or newsletter block omitted; "
+    "not personal speech]"
 )
 
 
@@ -842,38 +866,144 @@ def _is_service_notice_line(line: str) -> bool:
     return False
 
 
-def _is_contamination_line(line: str) -> bool:
-    s = (line or "").strip()
+def _clause_is_service(text: str) -> bool:
+    s = (text or "").strip()
     if not s:
         return False
     if re.fullmatch(r"https?://\S+", s) and _is_tracking_url(s):
         return True
     if _NAV_LINE.match(s) or _PROMO_CTA_LINE.match(s) or _UNSUB_LEGAL_LINE.match(s):
         return True
-    return _is_service_notice_line(s)
+    return _is_service_notice_line(s) or looks_like_service_notification(s)
+
+
+def _salvage_mixed_line(line: str) -> tuple[str, str] | None:
+    """Keep the personal clause when personal and service share one line."""
+    parts = [p.strip() for p in _MIXED_CLAUSE_SPLIT.split(line or "") if p.strip()]
+    if len(parts) < 2:
+        return None
+    kept: list[str] = []
+    dropped: list[str] = []
+    for part in parts:
+        if _clause_is_service(part):
+            dropped.append(part)
+        else:
+            kept.append(part)
+    if kept and dropped:
+        return " — ".join(kept), " — ".join(dropped)
+    return None
+
+
+def _is_contamination_line(line: str) -> bool:
+    s = (line or "").strip()
+    if not s or _GENERIC_IMAGE_MARK.fullmatch(s):
+        return bool(s)
+    return _clause_is_service(s)
+
+
+def looks_like_residual_promo(text: str, *, had_service_context: bool = False) -> bool:
+    """Unrecognized leftover promo after recognized template lines is not speech."""
+    t = (text or "").strip()
+    if not t or _has_personal_voice(t):
+        return False
+    if _PROMO_REMAINDER.search(t) and len(t) >= 24:
+        return True
+    if _RESIDUAL_PROMO.search(t) and (had_service_context or len(t) >= 40):
+        return True
+    return False
+
+
+def _ecard_event_in(text: str) -> bool:
+    return service_notification_signal_count(text) >= 1 or looks_like_service_notification(
+        text
+    )
 
 
 def strip_contamination_lines(text: str) -> str:
-    """Drop tracking, nav, unsub/legal, promo CTA, and service-notice lines."""
-    raw = _strip_leftover_html(text or "")
+    """Block-aware drop of tracking/nav/legal/service; salvage mixed lines."""
+    return str(sanitize_text_block(text).get("text") or "")
+
+
+def sanitize_text_block(text: str) -> dict[str, Any]:
+    """Segment-aware sanitation: mixed-line salvage + collapsed service blocks."""
+    raw = _GENERIC_IMAGE_MARK.sub(" ", _strip_leftover_html(text or ""))
+    raw = _strip_tracking_urls(raw)
+    dropped_service = False
+    dropped_promo = False
+    generic_images = len(_GENERIC_IMAGE_MARK.findall(text or ""))
+    collapsed: list[str] = []
     out: list[str] = []
+    pending_ecard = False
+    pending_promo = False
+
+    def _flush_block() -> None:
+        nonlocal pending_ecard, pending_promo
+        if pending_ecard:
+            if _ECARD_EVENT_MARKER not in collapsed:
+                collapsed.append(_ECARD_EVENT_MARKER)
+            pending_ecard = False
+        elif pending_promo:
+            pending_promo = False
+
     for line in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         s = line.strip()
         if not s:
+            _flush_block()
             out.append("")
             continue
-        s = _strip_tracking_urls(s).strip()
         s = re.sub(r"\s{2,}", " ", s).strip(" -|•·")
-        if not s or _is_contamination_line(s):
+        s = _GENERIC_IMAGE_MARK.sub(" ", s).strip()
+        if not s:
+            continue
+        mixed = _salvage_mixed_line(s)
+        if mixed:
+            _flush_block()
+            out.append(mixed[0])
+            dropped_service = True
+            if _ecard_event_in(mixed[1]):
+                pending_ecard = True
+                _flush_block()
             continue
         kept, omitted = extract_non_service_text(s)
         if omitted and kept:
+            _flush_block()
             out.append(kept)
+            dropped_service = True
+            if _ecard_event_in(omitted):
+                pending_ecard = True
+                _flush_block()
             continue
         if omitted and not kept:
+            dropped_service = True
+            pending_ecard = pending_ecard or _ecard_event_in(omitted)
             continue
+        if _is_contamination_line(s):
+            dropped_service = True
+            if _ecard_event_in(s):
+                pending_ecard = True
+            elif (
+                _NAV_LINE.match(s)
+                or _PROMO_CTA_LINE.match(s)
+                or _UNSUB_LEGAL_LINE.match(s)
+            ):
+                dropped_promo = True
+                pending_promo = True
+            continue
+        _flush_block()
         out.append(s)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    _flush_block()
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    if looks_like_residual_promo(cleaned, had_service_context=dropped_service):
+        collapsed.append(_PROMO_EVENT_MARKER)
+        cleaned = ""
+        dropped_promo = True
+    return {
+        "text": cleaned,
+        "collapsed": collapsed,
+        "dropped_service": dropped_service,
+        "dropped_promo": dropped_promo,
+        "generic_images_removed": generic_images,
+    }
 
 
 def _has_newsletter_chrome(text: str) -> bool:
@@ -920,18 +1050,63 @@ def sanitize_review_tree(
     """Recursively sanitize original, quoted, and forwarded segments."""
     priors = packet_texts or []
     if depth > _SANITIZE_MAX_DEPTH:
+        segmented = segment_review_body(recovered)
+        lead_block = sanitize_text_block(segmented["lead"])
+        omissions: list[dict[str, Any]] = [
+            {
+                "body": (recovered or "")[:240],
+                "retained_source": "sanitize_max_depth",
+                "action": "depth_fallback",
+            }
+        ]
+        kept_deep: list[dict[str, Any]] = []
+        for qt in segmented.get("quote_turns") or []:
+            inner = sanitize_text_block(str(qt.get("body") or ""))
+            body = str(inner.get("text") or "").strip()
+            if not body:
+                continue
+            kept_deep.append(
+                {
+                    **qt,
+                    "body": body,
+                    "uncertainty": "nested_forward_depth_uncertain",
+                    "provenance": "depth_fallback_kept",
+                }
+            )
+            omissions.append(
+                {
+                    "body": body[:240],
+                    "retained_source": "sanitize_max_depth",
+                    "action": "depth_fallback_kept_with_uncertainty",
+                }
+            )
         return {
-            "lead": strip_contamination_lines(recovered),
-            "quote_turns": [],
-            "omissions": [],
+            "lead": str(lead_block.get("text") or ""),
+            "quote_turns": kept_deep,
+            "omissions": omissions,
+            "collapsed": list(lead_block.get("collapsed") or []),
+            "generic_images_removed": int(lead_block.get("generic_images_removed") or 0),
+            "dropped_service": bool(lead_block.get("dropped_service")),
         }
     segmented = segment_review_body(recovered)
-    lead = strip_contamination_lines(segmented["lead"])
+    lead_block = sanitize_text_block(segmented["lead"])
+    lead = str(lead_block.get("text") or "")
     extra_quotes = list(segmented["quote_turns"])
     if depth < _SANITIZE_MAX_DEPTH and lead and _FWD_SPLIT.search("\n" + lead):
         again = segment_review_body(lead)
         if again["quote_turns"]:
-            lead = strip_contamination_lines(again["lead"])
+            again_block = sanitize_text_block(again["lead"])
+            lead = str(again_block.get("text") or "")
+            lead_block = {
+                **lead_block,
+                "text": lead,
+                "collapsed": list(lead_block.get("collapsed") or [])
+                + list(again_block.get("collapsed") or []),
+                "generic_images_removed": int(lead_block.get("generic_images_removed") or 0)
+                + int(again_block.get("generic_images_removed") or 0),
+                "dropped_service": bool(lead_block.get("dropped_service"))
+                or bool(again_block.get("dropped_service")),
+            }
             extra_quotes = list(again["quote_turns"]) + extra_quotes
     omissions: list[dict[str, Any]] = []
     kept: list[dict[str, Any]] = []
@@ -964,11 +1139,13 @@ def sanitize_review_tree(
         seen.add(fp)
         kept.append({**qt, "body": nb})
 
-    for qt in extra_quotes:
+    for chain_i, qt in enumerate(extra_quotes):
         body = str(qt.get("body") or "").strip()
         if not body:
             continue
-        inner = sanitize_review_tree(body, packet_texts=priors, depth=depth + 1)
+        inner = sanitize_review_tree(
+            body, packet_texts=priors, depth=depth + 1 + chain_i
+        )
         omissions.extend(inner.get("omissions") or [])
         inner_lead = str(inner.get("lead") or "").strip()
         inner_quotes = list(inner.get("quote_turns") or [])
@@ -1012,7 +1189,14 @@ def sanitize_review_tree(
                     _accept_quote(qt, kept_q if (omitted_q and kept_q) else inner_lead)
         for nested in inner_quotes:
             _accept_quote(nested, str(nested.get("body") or ""))
-    return {"lead": lead, "quote_turns": kept, "omissions": omissions}
+    return {
+        "lead": lead,
+        "quote_turns": kept,
+        "omissions": omissions,
+        "collapsed": list(lead_block.get("collapsed") or []),
+        "generic_images_removed": int(lead_block.get("generic_images_removed") or 0),
+        "dropped_service": bool(lead_block.get("dropped_service")),
+    }
 
 
 def _norm_ws(text: str) -> str:
@@ -1293,7 +1477,21 @@ def classify_review_authorship(
             "personal_lead": text,
             "service_body": "",
         }
+    if looks_like_residual_promo(text):
+        return {
+            "kind": "service_generated",
+            "peggy_personal": False,
+            "personal_lead": "",
+            "service_body": text,
+        }
     if from_trusted and text.strip():
+        if text.strip() in {_ECARD_EVENT_MARKER, _PROMO_EVENT_MARKER}:
+            return {
+                "kind": "service_generated",
+                "peggy_personal": False,
+                "personal_lead": "",
+                "service_body": text,
+            }
         return {
             "kind": "personal",
             "peggy_personal": True,
@@ -1315,6 +1513,36 @@ def classify_review_authorship(
     }
 
 
+def _attachment_image_markers(payload: dict[str, Any]) -> list[str]:
+    """Filename/type only. Does not claim unseen visual contents."""
+    raw = (
+        payload.get("attachments")
+        or payload.get("files")
+        or payload.get("attachment_names")
+        or []
+    )
+    if isinstance(raw, str):
+        raw = [raw]
+    marks: list[str] = []
+    for item in raw:
+        name = ""
+        typ = ""
+        if isinstance(item, dict):
+            name = str(item.get("filename") or item.get("name") or "").strip()
+            typ = str(
+                item.get("content_type") or item.get("mime") or item.get("type") or ""
+            ).strip()
+        else:
+            name = str(item or "").strip()
+        image_like = typ.lower().startswith("image") or bool(
+            re.search(r"\.(jpe?g|png|gif|webp|heic)$", name, re.I)
+        )
+        if not image_like:
+            continue
+        marks.append(f"[attached image: {name or 'unnamed'}/{typ or 'image'}]")
+    return marks
+
+
 def _prepare_message(
     evidence_id: str,
     payload: dict[str, Any],
@@ -1328,9 +1556,25 @@ def _prepare_message(
     lead = str(tree.get("lead") or "")
     kept_quotes = list(tree.get("quote_turns") or [])
     dedupe = list(tree.get("omissions") or [])
+    collapsed = [str(x) for x in (tree.get("collapsed") or []) if str(x).strip()]
     from_trusted = message_is_peggy_authored(payload, trusted)
     auth = classify_review_authorship(lead=lead, from_trusted=from_trusted)
-    if not lead.strip():
+    if not lead.strip() and collapsed:
+        auth = {
+            "kind": "service_generated",
+            "peggy_personal": False,
+            "personal_lead": "",
+            "service_body": " ".join(collapsed),
+        }
+    if looks_like_residual_promo(lead, had_service_context=bool(tree.get("dropped_service"))):
+        auth = {
+            "kind": "service_generated",
+            "peggy_personal": False,
+            "personal_lead": "",
+            "service_body": lead,
+        }
+        lead = ""
+    if not lead.strip() and not collapsed:
         raw_lead = segment_review_body(recovered)["lead"]
         raw_auth = classify_review_authorship(lead=raw_lead, from_trusted=from_trusted)
         if raw_auth["kind"] == "service_generated":
@@ -1347,6 +1591,7 @@ def _prepare_message(
     quoted = "\n\n".join(
         str(q.get("body") or "").strip() for q in kept_quotes if str(q.get("body") or "").strip()
     )
+    attach_marks = _attachment_image_markers(payload)
     return PreparedMessage(
         evidence_id=evidence_id,
         sent_at=_parse_sent_at(payload.get("sent_at")),
@@ -1365,6 +1610,18 @@ def _prepare_message(
         quote_turns=kept_quotes,
         quote_dedupe=dedupe,
         service_body=str(auth.get("service_body") or ""),
+        collapsed_notices=collapsed,
+        sanitation={
+            "generic_images_removed": int(tree.get("generic_images_removed") or 0),
+            "attachments_retained": len(attach_marks),
+            "attachment_markers": attach_marks,
+            "dropped_service": bool(tree.get("dropped_service")),
+            "depth_fallbacks": sum(
+                1
+                for d in dedupe
+                if str(d.get("action") or "").startswith("depth_fallback")
+            ),
+        },
     )
 
 
@@ -1580,7 +1837,12 @@ def render_model_paste(
             else:
                 lines.append(f"{when}, {speaker} said: [{cite}]{extra}")
                 body = (msg.authored or "").strip() or "(no message text — body missing)"
+            body = _GENERIC_IMAGE_MARK.sub("", body).strip()
             lines.append(body)
+            for mark in (msg.sanitation or {}).get("attachment_markers") or []:
+                lines.append(str(mark))
+            for notice in msg.collapsed_notices or []:
+                lines.append(str(notice))
             if kind == "personal_plus_service":
                 lines.append("")
                 lines.append(
@@ -1600,7 +1862,7 @@ def render_model_paste(
                         f"uncertainty={qt.get('uncertainty')}; "
                         f"header={qhead}]"
                     )
-                    qbody = str(qt.get("body") or "").strip()
+                    qbody = _GENERIC_IMAGE_MARK.sub("", str(qt.get("body") or "")).strip()
                     if qbody:
                         lines.append(qbody)
             elif msg.quote_kept and msg.quoted:
@@ -1645,6 +1907,78 @@ def render_model_paste(
         ]
     ).rstrip() + "\n"
     return EMAIL_REVIEW_SYSTEM, user, cites
+
+
+def _sanitation_measurement(
+    *,
+    payloads: dict[str, dict[str, Any]],
+    need_ids: list[str],
+    conversations: list[dict[str, Any]],
+    excluded: list[dict[str, Any]],
+    paste_text: str,
+    prompt_tokens: int,
+) -> dict[str, Any]:
+    raw_parts: list[str] = []
+    for eid in need_ids:
+        _kind, rec = classify_body_source(payloads.get(eid) or {})
+        _ = _kind
+        raw_parts.append(rec or "")
+    raw_blob = "\n".join(raw_parts)
+    retained_ids = [m.evidence_id for c in conversations for m in c["messages"]]
+    excluded_ids = [i for row in excluded for i in (row.get("message_ids") or [])]
+    collapsed_by_reason: dict[str, int] = {}
+    generic_images = 0
+    attachments = 0
+    depth_fallbacks = 0
+    speaker_turns = 0
+    human_loss: list[str] = []
+    for conv in conversations:
+        for msg in conv["messages"]:
+            speaker_turns += 1
+            speaker_turns += len(msg.quote_turns or [])
+            san = msg.sanitation or {}
+            generic_images += int(san.get("generic_images_removed") or 0)
+            attachments += int(san.get("attachments_retained") or 0)
+            depth_fallbacks += int(san.get("depth_fallbacks") or 0)
+            for notice in msg.collapsed_notices or []:
+                key = "ecard_event" if "greeting card" in notice else "promo_or_other"
+                collapsed_by_reason[key] = collapsed_by_reason.get(key, 0) + 1
+            for d in msg.quote_dedupe or []:
+                act = str(d.get("action") or "omitted")
+                collapsed_by_reason[act] = collapsed_by_reason.get(act, 0) + 1
+            raw = segment_review_body(
+                classify_body_source(msg.payload)[1]
+            )["lead"]
+            if (
+                msg.peggy_authored
+                and _has_personal_voice(raw)
+                and not (msg.authored or "").strip()
+                and not looks_like_service_notification(raw)
+                and service_notification_signal_count(raw) == 0
+                and not looks_like_residual_promo(raw)
+            ):
+                human_loss.append(msg.evidence_id)
+    for row in excluded:
+        collapsed_by_reason[str(row.get("reason") or "excluded")] = (
+            collapsed_by_reason.get(str(row.get("reason") or "excluded"), 0) + 1
+        )
+    return {
+        "bytes_before": len(raw_blob.encode("utf-8")),
+        "bytes_after": len((paste_text or "").encode("utf-8")),
+        "tokens_before_estimate": _estimate_tokens(raw_blob),
+        "tokens_after": prompt_tokens,
+        "conversations_retained": len(conversations),
+        "messages_retained": len(retained_ids),
+        "speaker_turns_retained": speaker_turns,
+        "evidence_ids_retained": retained_ids,
+        "evidence_ids_excluded": excluded_ids,
+        "collapsed_or_excluded_by_reason": collapsed_by_reason,
+        "generic_image_markers_removed": generic_images,
+        "real_attachments_retained": attachments,
+        "deep_nesting_fallbacks": depth_fallbacks,
+        "human_evidence_ids_lost": human_loss,
+        "human_evidence_loss_required_zero": human_loss == [],
+    }
 
 
 def _parse_interval_bounds(start: str, end: str) -> tuple[datetime, datetime]:
@@ -1877,6 +2211,14 @@ def prepare_trusted_email_review(
         "forbidden_reuse": ["fe8a128c"],
         "source_commit": _git_commit(),
         "frozen_input_sha256": digest,
+        "sanitation_measurement": _sanitation_measurement(
+            payloads=payloads,
+            need_ids=need_ids,
+            conversations=conversations,
+            excluded=excluded_service,
+            paste_text=paste_text,
+            prompt_tokens=prompt_tokens,
+        ),
         "excluded_no_personal_contribution": excluded_service,
         "budget": {
             "advertised_context": gemma.get("advertised_context"),
@@ -1918,6 +2260,18 @@ def prepare_trusted_email_review(
             f"singleton={sum(1 for c in conversations if c['grouping']=='singleton')} "
             f"missing_parent={sum(1 for c in conversations if c['grouping']=='missing_parent')})",
             f"excluded_no_personal_contribution: {len(excluded_service)}",
+            f"sanitation_bytes_before: {source_map['sanitation_measurement']['bytes_before']}",
+            f"sanitation_bytes_after: {source_map['sanitation_measurement']['bytes_after']}",
+            f"sanitation_tokens_before_estimate: {source_map['sanitation_measurement']['tokens_before_estimate']}",
+            f"sanitation_tokens_after: {source_map['sanitation_measurement']['tokens_after']}",
+            f"sanitation_conversations: {source_map['sanitation_measurement']['conversations_retained']}",
+            f"sanitation_messages: {source_map['sanitation_measurement']['messages_retained']}",
+            f"sanitation_speaker_turns: {source_map['sanitation_measurement']['speaker_turns_retained']}",
+            f"sanitation_collapsed_or_excluded: {json.dumps(source_map['sanitation_measurement']['collapsed_or_excluded_by_reason'])}",
+            f"sanitation_generic_images_removed: {source_map['sanitation_measurement']['generic_image_markers_removed']}",
+            f"sanitation_attachments_retained: {source_map['sanitation_measurement']['real_attachments_retained']}",
+            f"sanitation_depth_fallbacks: {source_map['sanitation_measurement']['deep_nesting_fallbacks']}",
+            f"sanitation_human_evidence_ids_lost: {source_map['sanitation_measurement']['human_evidence_ids_lost']}",
             f"omitted_service_quotes: {sum(1 for c in conversations for m in c['messages'] for d in (m.quote_dedupe or []) if d.get('action')=='omitted_service_notice')}",
             f"authorship_personal: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='personal')}",
             f"authorship_service: {sum(1 for c in conversations for m in c['messages'] if m.authorship_kind=='service_generated')}",

@@ -2741,7 +2741,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         propose_five_year_interval,
         render_model_paste,
         run_trusted_email_review_gemma,
+        sanitize_review_tree,
+        sanitize_text_block,
         segment_review_body,
+        _ECARD_EVENT_MARKER,
         _prepare_message,
     )
     from memorybox.ask.authored import authored_email_text as _authored_text
@@ -3448,6 +3451,121 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "paste_tail": _news_user[-600:],
         },
     )
+    _long_residual = (
+        "View your e-card\n"
+        + ("Seasonal joy awaits in this special greeting experience. " * 8)
+        + "Share smiles today.\n"
+        "This is an automated notification. Do not reply to this email.\n"
+    )
+    _resid_msg = _prepare_message(
+        "resid-1",
+        {
+            "sent_at": "2013-06-01T12:00:00Z",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": _long_residual,
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _check(
+        "review_residual_promo_after_template_is_not_personal",
+        _resid_msg.peggy_personal is False
+        and _resid_msg.authorship_kind == "service_generated"
+        and "Seasonal joy" not in (_resid_msg.authored or ""),
+        checks,
+        problems,
+        detail={"kind": _resid_msg.authorship_kind, "authored": _resid_msg.authored},
+    )
+    _mixed_line = sanitize_text_block(
+        "I picked this for you — view your e-card"
+    )
+    _check(
+        "review_mixed_line_keeps_personal_clause",
+        "I picked this for you" in str(_mixed_line.get("text") or "")
+        and "view your e-card" not in str(_mixed_line.get("text") or "").lower(),
+        checks,
+        problems,
+        detail=_mixed_line,
+    )
+    _img_msg = _prepare_message(
+        "img-1",
+        {
+            "sent_at": "2013-06-02T12:00:00Z",
+            "from_parsed": [{"address": "peggo417@hotmail.com", "display_name": "Peg"}],
+            "from": "peggo417@hotmail.com",
+            "body_text": "Dinner Friday.\n[image]\n[cid:logo@shop]",
+            "attachments": [
+                {"filename": "picnic.jpg", "content_type": "image/jpeg"}
+            ],
+        },
+        trusted={"peggo417@hotmail.com"},
+        in_interval=True,
+        packet_texts=[],
+    )
+    _, _img_user, _ = render_model_paste(
+        ask="tell me what you know about this person",
+        person_name="Peggy George",
+        trusted={"peggo417@hotmail.com"},
+        interval={"start": "2011-01-01", "end": "2015-12-31"},
+        conversations=[
+            {
+                "grouping": "singleton",
+                "grouping_detail": "identified_message_id_no_reply_edge",
+                "messages": [_img_msg],
+            }
+        ],
+    )
+    _check(
+        "review_generic_image_stripped_real_attachment_marked",
+        "Dinner Friday." in _img_user
+        and "[attached image: picnic.jpg/image/jpeg]" in _img_user
+        and "[image]" not in _img_user
+        and "[cid:logo@shop]" not in _img_user
+        and "generic [image]" in EMAIL_REVIEW_SYSTEM.lower(),
+        checks,
+        problems,
+        detail=_img_user[-400:],
+    )
+    _deep = "UNIQUE_DEEPEST picnic lemonade"
+    for _i in range(7):
+        _deep = (
+            f"Wrap layer {_i}.\n\n-----Original Message-----\n"
+            f"From: Nest{_i} <n{_i}@x.test>\n\n{_deep}"
+        )
+    _deep_tree = sanitize_review_tree(_deep)
+    _deep_blob = json.dumps(_deep_tree)
+    _check(
+        "review_deep_nest_keeps_unique_text_with_uncertainty",
+        "UNIQUE_DEEPEST picnic lemonade" in _deep_blob
+        and any(
+            str(d.get("action") or "").startswith("depth_fallback")
+            for d in (_deep_tree.get("omissions") or [])
+        )
+        and (
+            any(
+                "nested_forward_depth_uncertain" in str(q.get("uncertainty") or "")
+                for q in (_deep_tree.get("quote_turns") or [])
+            )
+            or "depth_fallback" in _deep_blob
+        ),
+        checks,
+        problems,
+        detail={
+            "lead": _deep_tree.get("lead"),
+            "quotes": _deep_tree.get("quote_turns"),
+            "omissions": _deep_tree.get("omissions"),
+        },
+    )
+    _check(
+        "review_ecard_event_marker_is_generic",
+        "greeting card" in _ECARD_EVENT_MARKER
+        and "Hallmark" not in _ECARD_EVENT_MARKER
+        and "Threadless" not in _ECARD_EVENT_MARKER,
+        checks,
+        problems,
+    )
     _five_src = inspect.getsource(propose_five_year_interval)
     _check(
         "review_five_year_grouping_is_not_sanitation",
@@ -3904,9 +4022,11 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "GIT_EDITOR=true" in prep_cmd
         and "abbrev-ref" in prep_cmd
         and "Will not finish a merge or prepare on the wrong branch." in prep_cmd
-        and "Will not fall back to merge" in prep_cmd
+        and "working tree is dirty" in prep_cmd
         and "Will not commit --continue" in prep_cmd
         and "Will not pull, abort that rebase, or prepare." in prep_cmd
+        and "Will not abort, merge, or prepare" in prep_cmd
+        and "git rebase --abort" not in prep_cmd
         and 'commit --no-edit -m "sync(flightsim):' not in prep_cmd
         and 'merge --no-edit -m "sync(flightsim):' not in prep_cmd,
         checks,

@@ -22,6 +22,12 @@ if exist ".git\MERGE_HEAD" (
   git status
   exit /b 1
 )
+for /f %%Z in ('git status --porcelain') do set DIRTY=1
+if defined DIRTY (
+  echo ERROR: working tree is dirty. Will not pull, modify, abort, or prepare.
+  git status
+  exit /b 1
+)
 if exist ".git\REBASE_HEAD" goto :rebase_in_progress
 if exist ".git\rebase-merge" goto :rebase_in_progress
 if exist ".git\rebase-apply" goto :rebase_in_progress
@@ -38,10 +44,7 @@ if errorlevel 1 (
 )
 git -c core.editor=true pull --rebase --no-edit origin %BRANCH%
 if errorlevel 1 (
-  echo ERROR: rebase not clean. Aborting rebase. Will not fall back to merge. Do not run Gemma.
-  if exist ".git\REBASE_HEAD" git rebase --abort
-  if exist ".git\rebase-merge" git rebase --abort
-  if exist ".git\rebase-apply" git rebase --abort
+  echo ERROR: rebase not clean. Will not abort, merge, or prepare. Inspect locally. Do not run Gemma.
   git status
   exit /b 1
 )
